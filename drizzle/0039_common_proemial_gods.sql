@@ -1,0 +1,1 @@
+ALTER TABLE `appointments` ADD `bath_queue_order` int;

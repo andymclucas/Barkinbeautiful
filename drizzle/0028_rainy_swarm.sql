@@ -1,0 +1,3 @@
+ALTER TABLE `appointments` MODIFY COLUMN `workflow_state` enum('scheduled','checked_in','waiting_for_bath','bathing','waiting_for_dry','drying','waiting_for_groom','grooming','ready','complete','cancelled','no_show') NOT NULL DEFAULT 'scheduled';--> statement-breakpoint
+ALTER TABLE `workflow_logs` MODIFY COLUMN `from_state` enum('scheduled','checked_in','waiting_for_bath','bathing','waiting_for_dry','drying','waiting_for_groom','grooming','ready','complete','cancelled','no_show');--> statement-breakpoint
+ALTER TABLE `workflow_logs` MODIFY COLUMN `to_state` enum('scheduled','checked_in','waiting_for_bath','bathing','waiting_for_dry','drying','waiting_for_groom','grooming','ready','complete','cancelled','no_show') NOT NULL;

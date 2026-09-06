@@ -1,0 +1,1 @@
+ALTER TABLE `appointments` ADD `bath_group_id` varchar(64);

@@ -1,0 +1,2 @@
+ALTER TABLE `staff_access_events` MODIFY COLUMN `event_type` enum('invited','accepted','approved','revoked','workflow_updated','bath_priority_updated','grooming_card_uploaded') NOT NULL;--> statement-breakpoint
+ALTER TABLE `appointments` ADD `bath_priority` int;

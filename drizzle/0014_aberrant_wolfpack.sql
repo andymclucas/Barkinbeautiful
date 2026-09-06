@@ -1,0 +1,1 @@
+ALTER TABLE `tenants` ADD `online_bath_capacity_per_slot` int DEFAULT 3 NOT NULL;

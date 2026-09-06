@@ -1,0 +1,1 @@
+ALTER TABLE `membership_ledger_entries` MODIFY COLUMN `source` enum('stripe','moego_import','manual','cash','system') NOT NULL DEFAULT 'manual';

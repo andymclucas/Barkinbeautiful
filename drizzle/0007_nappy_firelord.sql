@@ -1,0 +1,1 @@
+ALTER TABLE `grooming_reports` ADD `groomer_notes` text;

@@ -1,0 +1,1 @@
+ALTER TABLE `tenants` ADD `brand_font` varchar(80) DEFAULT 'Inter' NOT NULL;

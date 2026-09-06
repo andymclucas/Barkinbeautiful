@@ -1,0 +1,2 @@
+ALTER TABLE `workflow_logs` MODIFY COLUMN `from_state` enum('scheduled','checked_in','bathing','drying','grooming','ready','complete','cancelled','no_show');--> statement-breakpoint
+ALTER TABLE `workflow_logs` MODIFY COLUMN `to_state` enum('scheduled','checked_in','bathing','drying','grooming','ready','complete','cancelled','no_show') NOT NULL;

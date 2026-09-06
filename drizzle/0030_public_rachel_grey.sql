@@ -1,0 +1,1 @@
+ALTER TABLE `clients` ADD CONSTRAINT `uq_clients_tenant_portal_login_email` UNIQUE(`tenant_id`,`portal_login_email`);

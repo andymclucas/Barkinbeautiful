@@ -1,0 +1,230 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─── GSOS Design Tokens ─────────────────────────────────────────────────── */
+/* Palette: Deep navy + teal accent + warm amber highlight + clean white */
+@theme inline {
+  --color-background:    oklch(0.98 0.004 240);
+  --color-foreground:    oklch(0.15 0.02 240);
+  --color-card:          oklch(1 0 0);
+  --color-card-foreground: oklch(0.15 0.02 240);
+  --color-popover:       oklch(1 0 0);
+  --color-popover-foreground: oklch(0.15 0.02 240);
+
+  /* Primary: Deep teal */
+  --color-primary:       oklch(0.42 0.12 200);
+  --color-primary-foreground: oklch(0.98 0 0);
+
+  /* Secondary: Soft slate */
+  --color-secondary:     oklch(0.94 0.01 240);
+  --color-secondary-foreground: oklch(0.25 0.02 240);
+
+  /* Accent: Warm amber */
+  --color-accent:        oklch(0.78 0.14 75);
+  --color-accent-foreground: oklch(0.15 0.02 240);
+
+  /* Muted */
+  --color-muted:         oklch(0.95 0.005 240);
+  --color-muted-foreground: oklch(0.52 0.02 240);
+
+  /* Destructive */
+  --color-destructive:   oklch(0.55 0.22 25);
+  --color-destructive-foreground: oklch(0.98 0 0);
+
+  /* Border / Input / Ring */
+  --color-border:        oklch(0.88 0.01 240);
+  --color-input:         oklch(0.88 0.01 240);
+  --color-ring:          oklch(0.42 0.12 200);
+
+  /* Sidebar */
+  --color-sidebar:       oklch(0.14 0.03 240);
+  --color-sidebar-foreground: oklch(0.90 0.01 240);
+  --color-sidebar-primary: oklch(0.55 0.14 200);
+  --color-sidebar-primary-foreground: oklch(0.98 0 0);
+  --color-sidebar-accent: oklch(0.30 0.10 195);
+  --color-sidebar-accent-foreground: oklch(0.97 0.02 195);
+  --color-sidebar-border: oklch(0.22 0.04 240);
+  --color-sidebar-ring:  oklch(0.55 0.14 200);
+
+  /* Chart colours */
+  --color-chart-1: oklch(0.42 0.12 200);
+  --color-chart-2: oklch(0.78 0.14 75);
+  --color-chart-3: oklch(0.60 0.15 155);
+  --color-chart-4: oklch(0.65 0.18 280);
+  --color-chart-5: oklch(0.55 0.20 25);
+
+  /* Typography */
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+
+  /* Radius */
+  --radius: 0.625rem;
+}
+
+/* ─── Staff colour palette (for calendar) ───────────────────────────────── */
+:root {
+  /* White-label defaults for Barkin' Beautiful. Other tenants override only these values. */
+  --brand-primary: oklch(0.58 0.24 355);
+  --brand-primary-strong: oklch(0.49 0.24 350);
+  --brand-accent: oklch(0.91 0.10 345);
+  --brand-page: oklch(0.975 0.012 340);
+  --brand-ink: oklch(0.20 0.03 310);
+  --brand-sidebar: oklch(0.18 0.035 310);
+  --staff-1: oklch(0.55 0.20 280);   /* Purple */
+  --staff-2: oklch(0.55 0.18 155);   /* Green */
+  --staff-3: oklch(0.55 0.20 25);    /* Red-orange */
+  --staff-4: oklch(0.55 0.18 200);   /* Teal */
+  --staff-5: oklch(0.65 0.18 75);    /* Amber */
+  --staff-6: oklch(0.55 0.18 320);   /* Pink */
+  --staff-7: oklch(0.55 0.18 240);   /* Blue */
+
+  /* Workflow stage colours */
+  --stage-scheduled:   oklch(0.88 0.01 240);
+  --stage-checked-in:  oklch(0.85 0.12 200);
+  --stage-bathing:     oklch(0.80 0.14 240);
+  --stage-grooming:    oklch(0.82 0.14 280);
+  --stage-ready:       oklch(0.82 0.14 155);
+  --stage-complete:    oklch(0.75 0.10 155);
+}
+
+/* ─── Base layer ─────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image: radial-gradient(circle at 86% -8%, color-mix(in oklch, var(--brand-accent) 48%, transparent), transparent 31rem), radial-gradient(circle at 18% 108%, color-mix(in oklch, var(--brand-primary) 9%, transparent), transparent 28rem);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+}
+
+/* ─── Utilities ──────────────────────────────────────────────────────────── */
+@layer utilities {
+  .container {
+    @apply mx-auto px-4 sm:px-6 lg:px-8;
+    max-width: 1400px;
+  }
+
+  .flex {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* Scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.80 0.01 240) transparent;
+  }
+
+  /* Stage badge colours */
+  .stage-scheduled  { background: var(--stage-scheduled);  color: oklch(0.30 0.02 240); }
+  .stage-checked-in { background: var(--stage-checked-in); color: oklch(0.20 0.08 200); }
+  .stage-bathing    { background: var(--stage-bathing);    color: oklch(0.20 0.08 240); }
+  .stage-grooming   { background: var(--stage-grooming);   color: oklch(0.20 0.08 280); }
+  .stage-ready      { background: var(--stage-ready);      color: oklch(0.20 0.08 155); }
+  .stage-complete   { background: var(--stage-complete);   color: oklch(0.98 0 0); }
+
+  /* Button press micro-interaction */
+  button:active:not(:disabled) {
+    transform: scale(0.97);
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .brand-lift {
+    transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms ease;
+  }
+  .brand-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 30px -24px var(--brand-primary-strong), 0 0 0 1px color-mix(in oklch, var(--brand-primary) 26%, white);
+  }
+}
+
+/* White-label shared polish. */
+[data-sidebar="sidebar"] { background: linear-gradient(165deg, var(--brand-sidebar) 0%, oklch(0.13 0.03 285) 100%) !important; }
+[data-sidebar="sidebar"] [data-sidebar="menu-button"] { border-radius: 0.75rem; transition: transform 180ms cubic-bezier(0.23,1,0.32,1), background 180ms ease, color 180ms ease; }
+[data-sidebar="sidebar"] [data-sidebar="menu-button"]:hover { transform: translateX(3px); background: color-mix(in oklch, var(--brand-primary) 18%, transparent); }
+[data-slot="card"] { border-color: color-mix(in oklch, var(--brand-primary) 12%, white); box-shadow: 0 12px 30px -26px oklch(0.28 0.06 315 / 0.5); }
+[data-slot="card"].cursor-pointer, [data-slot="card"]:has(a) { transition: transform 180ms cubic-bezier(0.23,1,0.32,1), box-shadow 180ms cubic-bezier(0.23,1,0.32,1), border-color 180ms ease; }
+[data-slot="card"].cursor-pointer:hover, [data-slot="card"]:has(a):hover { transform: translateY(-2px); border-color: color-mix(in oklch, var(--brand-primary) 34%, white); box-shadow: 0 20px 32px -24px oklch(0.42 0.12 335 / 0.65); }
+button:not([data-sidebar="menu-button"]), [role="button"] { transition: transform 160ms cubic-bezier(0.23,1,0.32,1), box-shadow 160ms ease, filter 160ms ease; }
+button:not(:disabled):hover { filter: saturate(1.08); }
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-lift, [data-sidebar="sidebar"] [data-sidebar="menu-button"], [data-slot="card"], button, [role="button"] { transition: none !important; }
+  .brand-lift:hover, [data-sidebar="sidebar"] [data-sidebar="menu-button"]:hover, [data-slot="card"]:hover { transform: none !important; }
+}
+
+/* ─── Active nav link teal glow ─────────────────────────────────────────── */
+[data-active=true].peer\/menu-button,
+[data-sidebar=menu-button][data-active=true] {
+  box-shadow: 0 0 0 1px oklch(0.55 0.14 200 / 0.35), inset 0 0 12px oklch(0.55 0.14 200 / 0.12);
+}
+
+/* ─── Mobile sidebar slide-in animation ─────────────────────────────────── */
+@keyframes sidebar-slide-in {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes sidebar-slide-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+
+/* Apply slide-in to the shadcn sidebar on mobile */
+@media (max-width: 768px) {
+  [data-sidebar=sidebar] {
+    transition: transform 280ms cubic-bezier(0.23, 1, 0.32, 1), opacity 280ms ease !important;
+  }
+  [data-state=expanded][data-sidebar=sidebar] {
+    animation: sidebar-slide-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+  [data-state=collapsed][data-sidebar=sidebar] {
+    animation: sidebar-slide-out 220ms cubic-bezier(0.77, 0, 0.175, 1) both;
+  }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  [data-sidebar=sidebar] {
+    transition: opacity 150ms ease !important;
+    animation: none !important;
+  }
+}
+
+/* ─── Groomigo logo animations ───────────────────────────────────────────── */
+@keyframes groomigo-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.95);
+  }
+  to {
+    opacity: 0.95;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes groomigo-fadein {
+    from { opacity: 0; }
+    to   { opacity: 0.95; }
+  }
+}

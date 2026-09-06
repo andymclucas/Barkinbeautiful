@@ -1,0 +1,1 @@
+ALTER TABLE `clients` ADD `portal_session_version` int DEFAULT 0 NOT NULL;

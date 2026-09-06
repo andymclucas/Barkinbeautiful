@@ -1,0 +1,1 @@
+ALTER TABLE `memberships` ADD `appointment_interval_weeks` int;
