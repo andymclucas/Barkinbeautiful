@@ -26,6 +26,18 @@ export async function getDb() {
       const pool = mysql.createPool({
         uri: process.env.DATABASE_URL,
         ssl: { minVersion: "TLSv1.2", rejectUnauthorized: true },
+        // The default connectionLimit (10) is far too low for this app: a
+        // single Dashboard or Calendar page load fires 10-15 queries at
+        // once, so just two or three staff loading pages around the same
+        // time exhausts the pool. Worse, mysql2's default queueLimit (0)
+        // means anything beyond the limit waits *indefinitely* instead of
+        // failing \u2014 which looks exactly like a page that "just won't load."
+        // Raised to values with real headroom for this app's actual usage,
+        // and queueLimit is bounded so requests fail with a clear error
+        // instead of hanging forever if the pool is ever genuinely maxed.
+        connectionLimit: 30,
+        queueLimit: 50,
+        connectTimeout: 10000,
       });
       _db = drizzle(pool);
     } catch (error) {
