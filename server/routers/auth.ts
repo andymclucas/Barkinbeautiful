@@ -147,7 +147,7 @@ export const authRouter = router({
       // Store token hash in passwordHash temporarily (prefixed so we know it's a reset token)
       await db.update(users).set({ passwordHash: `RESET:${tokenHash}:${Date.now()}` }).where(eq(users.id, user.id));
 
-      const resetLink = `${process.env.VITE_OAUTH_PORTAL_URL ? "" : "https://groomingsos-mqzfsvzv.manus.space"}/login?reset=${token}&email=${encodeURIComponent(input.email)}`;
+      const resetLink = `${process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space"}/login?reset=${token}&email=${encodeURIComponent(input.email)}`;
 
       await sendEmail({
         to: input.email,

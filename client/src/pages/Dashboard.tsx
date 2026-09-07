@@ -1,5 +1,4 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { startLogin } from "@/const";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,9 +62,11 @@ export default function Dashboard() {
         <h1 className="text-3xl font-bold font-display text-foreground">GSOS</h1>
         <p className="text-muted-foreground">Grooming Salon Operating System</p>
       </div>
-      <Button onClick={() => startLogin()} size="lg" className="gap-2">
-        Sign In to Continue <ArrowRight className="h-4 w-4" />
-      </Button>
+      <Link href="/login">
+        <Button size="lg" className="gap-2">
+          Sign In to Continue <ArrowRight className="h-4 w-4" />
+        </Button>
+      </Link>
     </div>
   );
 
