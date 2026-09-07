@@ -23,6 +23,24 @@ export default function Login() {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
 
+  // If this page was opened from a password-reset email link
+  // (/login?reset=TOKEN&email=you@example.com), show a "set new password"
+  // form instead of the normal sign-in form.
+  const [resetParams, setResetParams] = useState<{ token: string; email: string } | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
+  const [resetCompleted, setResetCompleted] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("reset");
+    const emailParam = params.get("email");
+    if (token && emailParam) {
+      setResetParams({ token, email: emailParam });
+    }
+  }, []);
+
   useEffect(() => {
     // Trigger entrance animation after mount
     const t = setTimeout(() => setMounted(true), 50);
@@ -51,6 +69,16 @@ export default function Login() {
     },
   });
 
+  const completeResetMutation = trpc.auth.completePasswordReset.useMutation({
+    onSuccess: () => {
+      setResetCompleted(true);
+      toast.success("Password updated \u2014 you can sign in now");
+    },
+    onError: (err) => {
+      toast.error(err.message || "This reset link is invalid or has expired.");
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -66,6 +94,22 @@ export default function Login() {
     if (!forgotEmail) { toast.error("Please enter your email address"); return; }
     resetMutation.mutate({ email: forgotEmail });
   };
+
+  const handleCompleteReset = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetParams) return;
+    if (resetPasswordValue.length < 8) { toast.error("Password must be at least 8 characters"); return; }
+    if (resetPasswordValue !== resetPasswordConfirm) { toast.error("Passwords don't match"); return; }
+    completeResetMutation.mutate({ email: resetParams.email, token: resetParams.token, newPassword: resetPasswordValue });
+  };
+
+  const finishResetAndSignIn = () => {
+    if (resetParams) setEmail(resetParams.email);
+    setResetParams(null);
+    // Clean the reset params out of the URL so refreshing doesn't re-show this form.
+    window.history.replaceState({}, "", "/login");
+  };
+
 
   const slideStyle = (delayMs: number): React.CSSProperties => ({
     transition: `opacity 0.7s ease ${delayMs}ms, transform 0.7s cubic-bezier(0.23,1,0.32,1) ${delayMs}ms`,
@@ -128,6 +172,85 @@ export default function Login() {
             padding: "2rem",
           }}
         >
+          {resetParams ? (
+            resetCompleted ? (
+              <div className="text-center py-4">
+                <div className="text-4xl mb-3">✅</div>
+                <h3 className="text-lg font-semibold text-white mb-2">Password updated</h3>
+                <p className="text-sm mb-5" style={{ color: "#94a3b8" }}>
+                  Your password has been changed. You can sign in with it now.
+                </p>
+                <Button
+                  onClick={finishResetAndSignIn}
+                  className="w-full font-semibold text-white rounded-xl"
+                  style={{ background: "linear-gradient(135deg, #00c9a7 0%, #008f7a 100%)", boxShadow: "0 4px 16px rgba(0,201,167,0.3)" }}
+                >
+                  Continue to sign in
+                </Button>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-xl font-semibold text-white mb-1">Set a new password</h2>
+                <p className="text-sm mb-6" style={{ color: "#94a3b8" }}>
+                  Choose a new password for <strong className="text-white">{resetParams.email}</strong>
+                </p>
+                <form onSubmit={handleCompleteReset} className="space-y-5">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reset-password" className="text-sm" style={{ color: "#cbd5e1" }}>New password</Label>
+                    <div className="relative">
+                      <Input
+                        id="reset-password"
+                        type={showResetPassword ? "text" : "password"}
+                        value={resetPasswordValue}
+                        onChange={(e) => setResetPasswordValue(e.target.value)}
+                        placeholder="At least 8 characters"
+                        autoComplete="new-password"
+                        className="text-white placeholder:text-slate-500 pr-10"
+                        style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,200,0.18)" }}
+                        disabled={completeResetMutation.isPending}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowResetPassword(!showResetPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
+                        style={{ color: "#64748b" }}
+                      >
+                        {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reset-password-confirm" className="text-sm" style={{ color: "#cbd5e1" }}>Confirm new password</Label>
+                    <Input
+                      id="reset-password-confirm"
+                      type={showResetPassword ? "text" : "password"}
+                      value={resetPasswordConfirm}
+                      onChange={(e) => setResetPasswordConfirm(e.target.value)}
+                      placeholder="Re-enter your new password"
+                      autoComplete="new-password"
+                      className="text-white placeholder:text-slate-500"
+                      style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,200,0.18)" }}
+                      disabled={completeResetMutation.isPending}
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
+                    style={{ background: "linear-gradient(135deg, #00c9a7 0%, #00a896 50%, #008f7a 100%)", boxShadow: "0 4px 20px rgba(0,201,167,0.35)" }}
+                    disabled={completeResetMutation.isPending}
+                  >
+                    {completeResetMutation.isPending ? (
+                      <span className="flex items-center gap-2 justify-center">
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Saving...
+                      </span>
+                    ) : "Set new password"}
+                  </Button>
+                </form>
+              </>
+            )
+          ) : (
+          <>
           <h2 className="text-xl font-semibold text-white mb-1">Sign in</h2>
           <p className="text-sm mb-6" style={{ color: "#94a3b8" }}>Enter your credentials to access the dashboard</p>
 
@@ -250,6 +373,8 @@ export default function Login() {
           <p className="text-center text-xs mt-4" style={{ color: "#475569" }}>
             Barkin Beautiful Grooming Studio &amp; Playgroup
           </p>
+          </>
+          )}
 
         </div>
 

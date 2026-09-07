@@ -140,12 +140,20 @@ export const authRouter = router({
       // Always return success to prevent email enumeration
       if (!user || !user.passwordHash) return { success: true };
 
-      // Generate a temporary reset token (store as bcrypt hash of token)
       const token = crypto.randomBytes(32).toString("hex");
       const tokenHash = await bcrypt.hash(token, 10);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-      // Store token hash in passwordHash temporarily (prefixed so we know it's a reset token)
-      await db.update(users).set({ passwordHash: `RESET:${tokenHash}:${Date.now()}` }).where(eq(users.id, user.id));
+      // Store the reset token in its own dedicated columns \u2014 the user's
+      // actual passwordHash is never touched until they successfully complete
+      // the reset with a new password. (A previous version of this code
+      // overwrote passwordHash directly with the reset token, which
+      // permanently destroyed the account's real password the moment a
+      // reset was *requested*, with no way to recover it if the reset was
+      // never completed \u2014 e.g. because the email didn't arrive.)
+      await db.update(users)
+        .set({ passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt })
+        .where(eq(users.id, user.id));
 
       const resetLink = `${process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space"}/login?reset=${token}&email=${encodeURIComponent(input.email)}`;
 
@@ -155,9 +163,49 @@ export const authRouter = router({
         html: `<p>Hi ${user.name ?? "there"},</p>
 <p>A password reset was requested for your Groomigo account.</p>
 <p><a href="${resetLink}" style="background:#00c9a7;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin:12px 0">Reset my password</a></p>
-<p>This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>
+<p>This link expires in 1 hour. If you didn't request this, you can safely ignore this email \u2014 your current password will keep working.</p>
 <p>— The Groomigo team</p>`,
       });
+
+      return { success: true };
+    }),
+
+  // ── Complete password reset ─────────────────────────────────────────────────
+  completePasswordReset: publicProcedure
+    .input(z.object({
+      email: z.string().email(),
+      token: z.string().min(1),
+      newPassword: z.string().min(8),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const invalidOrExpired = new TRPCError({
+        code: "BAD_REQUEST",
+        message: "This reset link is invalid or has expired. Please request a new one.",
+      });
+
+      const [user] = await db
+        .select({
+          id: users.id,
+          passwordResetTokenHash: users.passwordResetTokenHash,
+          passwordResetExpiresAt: users.passwordResetExpiresAt,
+        })
+        .from(users)
+        .where(eq(users.email, input.email.toLowerCase()))
+        .limit(1);
+
+      if (!user || !user.passwordResetTokenHash || !user.passwordResetExpiresAt) throw invalidOrExpired;
+      if (user.passwordResetExpiresAt.getTime() < Date.now()) throw invalidOrExpired;
+
+      const tokenValid = await bcrypt.compare(input.token, user.passwordResetTokenHash);
+      if (!tokenValid) throw invalidOrExpired;
+
+      const newHash = await bcrypt.hash(input.newPassword, 12);
+      await db.update(users)
+        .set({ passwordHash: newHash, passwordResetTokenHash: null, passwordResetExpiresAt: null })
+        .where(eq(users.id, user.id));
 
       return { success: true };
     }),

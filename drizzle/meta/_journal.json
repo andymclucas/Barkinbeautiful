@@ -288,6 +288,13 @@
       "when": 1788793245584,
       "tag": "0040_add_fft_service_type",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1788819490136,
+      "tag": "0041_add_password_reset_columns",
+      "breakpoints": true
     }
   ]
 }
