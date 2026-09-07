@@ -40,6 +40,7 @@ import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlign
 import { resolveAppointmentMembershipCoverage, type AppointmentService } from "../shared/appointmentMembershipCoverage";
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
+import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
 
 async function requireApprovedStaffTenant(db: any, user: { id: number; role: string }) {
   if (user.role === "admin") return null;
@@ -251,8 +252,8 @@ const calendarRouter = router({
         petId: input.petId,
         staffId: input.staffId,
         serviceType: input.serviceType,
-        scheduledStart: new Date(input.scheduledStart),
-        scheduledEnd: new Date(input.scheduledEnd),
+        scheduledStart: parseBrisbaneLocalDateTime(input.scheduledStart),
+        scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
         notes: input.notes,
         price: coverage.fullyCovered ? "0.00" : input.price,
         membershipId: coveredMembership?.id ?? null,
@@ -299,8 +300,8 @@ const calendarRouter = router({
           petId,
           staffId: input.staffId,
           serviceType: input.serviceType,
-          scheduledStart: new Date(input.scheduledStart),
-          scheduledEnd: new Date(input.scheduledEnd),
+          scheduledStart: parseBrisbaneLocalDateTime(input.scheduledStart),
+          scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
           notes: input.notes,
           price: coverage.fullyCovered ? "0.00" : input.price,
           membershipId: coverage.membershipByPetId[petId]?.id ?? null,
@@ -530,8 +531,8 @@ const calendarRouter = router({
       if (!db) throw new Error("DB unavailable");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
       await db.update(appointments).set({
-        scheduledStart: new Date(input.scheduledStart),
-        scheduledEnd: new Date(input.scheduledEnd),
+        scheduledStart: parseBrisbaneLocalDateTime(input.scheduledStart),
+        scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
         staffId: input.staffId ?? null,
       }).where(eq(appointments.id, input.appointmentId));
       return { success: true };
@@ -778,10 +779,38 @@ const workflowRouter = router({
         }
       }
 
+      const appointmentIds = boardRows.map(row => row.id);
+      const latestGroomNoteByAppointment = new Map<number, { note: string; warnings: string | null; alertLevel: string | null }>();
+      if (appointmentIds.length > 0) {
+        const styleNoteRows = await db
+          .select({
+            appointmentId: groomStyleNotes.appointmentId,
+            note: groomStyleNotes.note,
+            warnings: groomStyleNotes.warnings,
+            alertLevel: groomStyleNotes.alertLevel,
+            createdAt: groomStyleNotes.createdAt,
+          })
+          .from(groomStyleNotes)
+          .where(inArray(groomStyleNotes.appointmentId, appointmentIds))
+          .orderBy(asc(groomStyleNotes.createdAt));
+        // Rows are ordered oldest-first, so the last write per appointmentId
+        // (via Map overwrite) ends up being the most recent style note.
+        for (const noteRow of styleNoteRows) {
+          if (noteRow.appointmentId === null) continue;
+          latestGroomNoteByAppointment.set(noteRow.appointmentId, {
+            note: noteRow.note,
+            warnings: noteRow.warnings,
+            alertLevel: noteRow.alertLevel,
+          });
+        }
+      }
+
       return boardRows.map(row => ({
         ...row,
         familyPetNames: row.petFamilyGroupId ? familyPetNamesByGroup.get(row.petFamilyGroupId) ?? [row.petName] : [],
         petAlertLevel: normalizePetAlertLevel(row.petAlertLevel),
+        groomStyleNote: latestGroomNoteByAppointment.get(row.id)?.note ?? null,
+        groomStyleWarnings: latestGroomNoteByAppointment.get(row.id)?.warnings ?? null,
       }));
     }),
 

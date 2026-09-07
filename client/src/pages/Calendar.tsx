@@ -2150,7 +2150,7 @@ export default function Calendar() {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Additional Notes <span className="text-red-500">*</span></Label>
+                    <Label className="text-xs">Additional Notes</Label>
                     <Textarea rows={2} className="text-xs" placeholder="Any other style instructions, client preferences…" value={styleNoteForm.note} onChange={e => setStyleNoteForm(f => ({ ...f, note: e.target.value }))} />
                   </div>
                   <div className="space-y-1">
@@ -2178,7 +2178,7 @@ export default function Calendar() {
                       </label>
                     )}
                   </div>
-                  <Button size="sm" className="w-full" disabled={!styleNoteForm.note.trim() || createStyleNote.isPending || photoUploading}
+                  <Button size="sm" className="w-full" disabled={createStyleNote.isPending || photoUploading}
                     onClick={() => createStyleNote.mutate({
                       petId: selectedStylePetId ?? editAppt.petId,
                       appointmentId: (() => { if (!selectedStylePetId || selectedStylePetId === editAppt.petId) return editAppt.id; const sib = editSiblings.find(s => s.petId === selectedStylePetId); return sib?.id ?? editAppt.id; })(),

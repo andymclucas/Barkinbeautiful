@@ -542,6 +542,7 @@ export default function WorkflowBoard() {
                         {appt.membershipId && <span className="ml-1 text-xs text-amber-400">M</span>}
                         {appt.petAlertLevel === "danger" && <AlertTriangle className="inline h-3.5 w-3.5 text-red-400 ml-1" />}
                         {appt.petAlertLevel === "caution" && <AlertTriangle className="inline h-3.5 w-3.5 text-yellow-400 ml-1" />}
+                        {appt.groomStyleNote && <span title={appt.groomStyleNote}><FileText className="inline h-3.5 w-3.5 text-teal-400 ml-1" /></span>}
                       </td>
                       <td className="px-3 py-2 text-gray-300">{appt.petBreed ?? "—"}</td>
                       <td className="px-3 py-2">
