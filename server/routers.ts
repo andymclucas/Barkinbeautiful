@@ -225,7 +225,7 @@ const calendarRouter = router({
       clientId: z.number(),
       petId: z.number(),
       staffId: z.number().optional(),
-      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "other"]).default("classic_groom"),
+      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "other"]).default("classic_groom"),
       scheduledStart: z.string(),
       scheduledEnd: z.string(),
       notes: z.string().optional(),
@@ -269,7 +269,7 @@ const calendarRouter = router({
       clientId: z.number(),
       petIds: z.array(z.number()).min(1),
       staffId: z.number().optional(),
-      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]).default("classic_groom"),
+      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]).default("classic_groom"),
       scheduledStart: z.string(),
       scheduledEnd: z.string(),
       notes: z.string().optional(),
@@ -319,7 +319,7 @@ const calendarRouter = router({
       tenantId: z.number().default(1),
       clientId: z.number(),
       petIds: z.array(z.number()).min(1),
-      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]),
+      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]),
     }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
@@ -540,7 +540,7 @@ const calendarRouter = router({
   updateDetails: operationalProcedure
     .input(z.object({
       appointmentId: z.number(),
-      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "other"]).optional(),
+      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "other"]).optional(),
       notes: z.string().optional().nullable(),
       price: z.string().optional().nullable(),
     }))
@@ -4084,23 +4084,23 @@ const onlineBookingRouter = router({
     const db = await getDb(); if (!db) return [];
     return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl, bio: staff.onlineBio, services: staff.onlineServices, maxDogsPerSlot: staff.onlineMaxDogsPerSlot }).from(staff).where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true))).orderBy(asc(staff.name));
   }),
-  listAvailableSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
+  listAvailableSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
     return listAvailableOnlineSlots(input);
   }),
-  listPreviewAvailableSlots: protectedProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input, ctx }) => {
+  listPreviewAvailableSlots: protectedProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     return listAvailableOnlineSlots(input, { preview: true });
   }),
-  validateSlot: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), scheduledStart: z.coerce.date() })).mutation(async ({ input }) => {
+  validateSlot: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), scheduledStart: z.coerce.date() })).mutation(async ({ input }) => {
     if (!isEligibleOnlineBookingService(input.serviceType, input.petWeightKg)) throw new Error("Select a valid dog weight to see eligible booking services");
     return checkOnlineCapacity(input);
   }),
-  validatePreviewSlot: protectedProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), scheduledStart: z.coerce.date() })).mutation(async ({ input, ctx }) => {
+  validatePreviewSlot: protectedProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), scheduledStart: z.coerce.date() })).mutation(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     if (!isEligibleOnlineBookingService(input.serviceType, input.petWeightKg)) throw new Error("Select a valid dog weight to see eligible booking services");
     return checkOnlineCapacity(input, { preview: true });
   }),
-  create: publicProcedure.input(z.object({ tenantId: z.number().default(1), clientId: z.number(), petId: z.number(), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]), scheduledStart: z.coerce.date(), notes: z.string().max(1000).optional() })).mutation(async ({ input }) => {
+  create: publicProcedure.input(z.object({ tenantId: z.number().default(1), clientId: z.number(), petId: z.number(), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), scheduledStart: z.coerce.date(), notes: z.string().max(1000).optional() })).mutation(async ({ input }) => {
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
     const [pet] = await db.select({ id: pets.id, weightKg: pets.weightKg, weight: pets.weight }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, input.tenantId))).limit(1);
     if (!pet) throw new Error("Pet does not belong to the selected client");
@@ -4120,7 +4120,7 @@ const onlineBookingRouter = router({
     breed: z.string().trim().max(100).optional(),
     weightKg: z.coerce.number().min(0).max(80),
     staffId: z.number(),
-    serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]),
+    serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]),
     scheduledStart: z.coerce.date(),
     notes: z.string().max(1000).optional(),
   })).mutation(async ({ input }) => {
@@ -4156,7 +4156,7 @@ const onlineBookingRouter = router({
     breed: z.string().trim().max(100).optional(),
     weightKg: z.coerce.number().min(0).max(80),
     staffId: z.number(),
-    serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]),
+    serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]),
     scheduledStart: z.coerce.date(),
     notes: z.string().max(1000).optional(),
   })).mutation(async ({ input, ctx }) => {

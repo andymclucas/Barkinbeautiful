@@ -32,7 +32,8 @@ const STATUS_COLOURS: Record<string, string> = {
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom",
   styled_groom: "Styled Groom",
-  bath_only: "Bath / Tidy",
+  bath_only: "Bath",
+  fft: "FFT (Face, Feet & Hygiene Tidy)",
   nail_trim: "Nail Trim",
   daycare: "Daycare",
   deshed: "Deshed",

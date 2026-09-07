@@ -12,8 +12,8 @@ type PortalGroomingCard = { id: number; petId: number; petName: string; appointm
 type PortalData = { salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[] };
 
 const SERVICE_LABELS: Record<string, string> = {
-  classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath & Blow Dry",
-  nail_trim: "Nail Trim", daycare: "Daycare", deshed: "De-shed", other: "Other",
+  classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
+  fft: "FFT (Face, Feet & Hygiene Tidy)", nail_trim: "Nail Trim", daycare: "Daycare", deshed: "De-shed", other: "Other",
 };
 
 function portalDate(value: Date | string | null) {

@@ -1,4 +1,4 @@
-export type AppointmentService = "classic_groom" | "styled_groom" | "bath_only" | "nail_trim" | "daycare" | "deshed" | "other";
+export type AppointmentService = "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other";
 
 export type ActivePetMembership = {
   id: number;

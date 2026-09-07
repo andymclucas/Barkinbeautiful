@@ -247,7 +247,7 @@ export const appointments = mysqlTable("appointments", {
   clientId: int("client_id").notNull().references(() => clients.id),
   petId: int("pet_id").notNull().references(() => pets.id),
   staffId: int("staff_id").references(() => staff.id),
-  serviceType: mysqlEnum("service_type", ["classic_groom", "styled_groom", "bath_only", "nail_trim", "daycare", "deshed", "other"]).default("classic_groom").notNull(),
+  serviceType: mysqlEnum("service_type", ["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]).default("classic_groom").notNull(),
   scheduledStart: timestamp("scheduled_start").notNull(),
   scheduledEnd: timestamp("scheduled_end").notNull(),
   actualStart: timestamp("actual_start"),

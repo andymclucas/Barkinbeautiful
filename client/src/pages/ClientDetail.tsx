@@ -26,13 +26,13 @@ import { resolveAppointmentMembershipCoverage } from "@shared/appointmentMembers
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom",
-  bath_only: "Bath & Blow Dry", nail_trim: "Nail Trim",
+  bath_only: "Bath", fft: "FFT (Face, Feet & Hygiene Tidy)", nail_trim: "Nail Trim",
   daycare: "Daycare", deshed: "De-shed", other: "Other",
 };
 
 const SERVICE_COLOUR: Record<string, string> = {
   classic_groom: "#22c55e", styled_groom: "#22c55e",
-  bath_only: "#3b82f6", nail_trim: "#a78bfa",
+  bath_only: "#3b82f6", fft: "#ec4899", nail_trim: "#a78bfa",
   daycare: "#f59e0b", deshed: "#f97316", other: "#94a3b8",
 };
 
@@ -334,7 +334,7 @@ export default function ClientDetail() {
   const bookingPetIds = Array.from(new Set([bookPetId, ...bookFamilyPetIds])).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0);
   const bookingMembershipCoverage = resolveAppointmentMembershipCoverage(
     bookingPetIds,
-    bookService as "classic_groom" | "styled_groom" | "bath_only" | "nail_trim" | "daycare" | "deshed" | "other",
+    bookService as "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other",
     activeMemberships,
   );
   const totalSpend = appointments.reduce((sum, a) => sum + parseFloat(a.price ?? "0"), 0);
@@ -1094,7 +1094,8 @@ export default function ClientDetail() {
                 <SelectContent>
                   <SelectItem value="classic_groom">Classic Groom</SelectItem>
                   <SelectItem value="styled_groom">Styled Groom</SelectItem>
-                  <SelectItem value="bath_only">Bath &amp; Blow Dry</SelectItem>
+                  <SelectItem value="bath_only">Bath</SelectItem>
+                  <SelectItem value="fft">FFT (Face, Feet &amp; Hygiene Tidy)</SelectItem>
                   <SelectItem value="deshed">De-shed</SelectItem>
                   <SelectItem value="nail_trim">Nail Trim</SelectItem>
                   <SelectItem value="daycare">Daycare</SelectItem>

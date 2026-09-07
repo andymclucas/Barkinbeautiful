@@ -41,7 +41,8 @@ const TIME_COL_W = 52; // px for the time gutter
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom",
   styled_groom:  "Styled Groom",
-  bath_only:     "Bath / Tidy",
+  bath_only:     "Bath",
+  fft:           "FFT (Face, Feet & Hygiene Tidy)",
   nail_trim:     "Nail Trim",
   daycare:       "Daycare",
   deshed:        "Deshed",
@@ -52,6 +53,7 @@ const SERVICE_COLOURS: Record<string, { bg: string; border: string; text: string
   classic_groom: { bg: "#dbeafe", border: "#3b82f6", text: "#1d4ed8" },
   styled_groom:  { bg: "#ede9fe", border: "#8b5cf6", text: "#6d28d9" },
   bath_only:     { bg: "#cffafe", border: "#06b6d4", text: "#0e7490" },
+  fft:           { bg: "#fce7f3", border: "#ec4899", text: "#be185d" },
   nail_trim:     { bg: "#fef9c3", border: "#eab308", text: "#a16207" },
   daycare:       { bg: "#dcfce7", border: "#22c55e", text: "#15803d" },
   deshed:        { bg: "#fff7ed", border: "#f97316", text: "#c2410c" },
@@ -1116,7 +1118,7 @@ export default function Calendar() {
       tenantId: 1,
       clientId: Number(newAppt.clientId),
       petIds: selectedAppointmentPetIds,
-      serviceType: newAppt.serviceType as "classic_groom" | "styled_groom" | "bath_only" | "nail_trim" | "daycare" | "deshed" | "other",
+      serviceType: newAppt.serviceType as "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other",
     },
     { enabled: !!newAppt.clientId && selectedAppointmentPetIds.length > 0 },
   );

@@ -281,6 +281,13 @@
       "when": 1788403707817,
       "tag": "0039_common_proemial_gods",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1788793245584,
+      "tag": "0040_add_fft_service_type",
+      "breakpoints": true
     }
   ]
 }
