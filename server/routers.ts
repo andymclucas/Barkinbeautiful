@@ -107,6 +107,47 @@ async function getAppointmentMembershipCoverage(db: any, tenantId: number, clien
 
 // ─── Calendar / Appointments ──────────────────────────────────────────────────
 const calendarRouter = router({
+  searchAppointments: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      query: z.string().min(1),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      if (ctx.user.role === "staff") {
+        const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+        if (portalStaff && portalStaff.tenantId !== input.tenantId) {
+          throw new Error("This calendar is not available to your salon staff profile");
+        }
+      }
+      const term = `%${input.query.trim()}%`;
+      const rows = await db
+        .select({
+          id: appointments.id,
+          scheduledStart: appointments.scheduledStart,
+          scheduledEnd: appointments.scheduledEnd,
+          workflowState: appointments.workflowState,
+          status: appointments.status,
+          serviceType: appointments.serviceType,
+          clientFirstName: clients.firstName,
+          clientLastName: clients.lastName,
+          petName: pets.name,
+          staffName: staff.name,
+        })
+        .from(appointments)
+        .leftJoin(clients, eq(appointments.clientId, clients.id))
+        .leftJoin(pets, eq(appointments.petId, pets.id))
+        .leftJoin(staff, eq(appointments.staffId, staff.id))
+        .where(and(
+          eq(appointments.tenantId, input.tenantId),
+          sql`${pets.name} LIKE ${term} OR ${clients.firstName} LIKE ${term} OR ${clients.lastName} LIKE ${term} OR CONCAT(${clients.firstName}, ' ', ${clients.lastName}) LIKE ${term}`,
+        ))
+        .orderBy(desc(appointments.scheduledStart))
+        .limit(50);
+      return rows;
+    }),
+
   getAppointments: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),

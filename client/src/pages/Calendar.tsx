@@ -759,6 +759,8 @@ export default function Calendar() {
   const [viewMode, setViewMode]     = useState<"week" | "day">("day");
   const [dayDate, setDayDate]       = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
   const [visibleStaffIds, setVisibleStaffIds] = useState<number[] | null>(null);
+  const [apptSearchOpen, setApptSearchOpen] = useState(false);
+  const [apptSearchTerm, setApptSearchTerm] = useState("");
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -909,6 +911,21 @@ export default function Calendar() {
     dateFrom: queryFrom.toISOString(),
     dateTo:   queryTo.toISOString(),
   });
+
+  const { data: apptSearchResults, isFetching: isApptSearchFetching } = trpc.calendar.searchAppointments.useQuery(
+    { tenantId: 1, query: apptSearchTerm },
+    { enabled: apptSearchTerm.trim().length >= 2 },
+  );
+
+  const jumpToAppointment = (scheduledStart: string | Date) => {
+    const target = new Date(scheduledStart);
+    target.setHours(0, 0, 0, 0);
+    setDayDate(target);
+    setViewMode("day");
+    setWeekStart(getWeekStart(target));
+    setApptSearchOpen(false);
+    setApptSearchTerm("");
+  };
 
   const { data: staffList }  = trpc.staff.listOperational.useQuery({ tenantId: 1 });
   const editableAppointmentPets = trpc.pets.listByClient.useQuery(
@@ -1565,6 +1582,72 @@ export default function Calendar() {
             <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">{totalThisView} appointments</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <Popover open={apptSearchOpen} onOpenChange={(open) => { setApptSearchOpen(open); if (!open) setApptSearchTerm(""); }}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="brand-lift h-9 gap-1.5 bg-white/80 text-xs shadow-sm" title="Find any appointment by dog or client name">
+                  <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                  Find appointment
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full max-w-[calc(100vw-2rem)] p-0" align="start" style={{ width: "var(--radix-popover-trigger-width, 360px)" }}>
+                <div className="p-2 border-b">
+                  <div className="relative">
+                    <Input
+                      autoFocus
+                      placeholder="Dog name or client name…"
+                      value={apptSearchTerm}
+                      onChange={e => setApptSearchTerm(e.target.value)}
+                      className="h-8 pr-9 text-sm"
+                    />
+                    {apptSearchTerm && (
+                      <button
+                        type="button"
+                        className="absolute right-1 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => setApptSearchTerm("")}
+                        aria-label="Clear appointment search"
+                        title="Clear search"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div
+                  className="max-h-[min(52dvh,20rem)] overflow-y-auto overscroll-contain touch-pan-y pb-2 [-webkit-overflow-scrolling:touch]"
+                  style={{ WebkitOverflowScrolling: "touch" }}
+                  role="listbox"
+                  aria-label="Matching appointments"
+                >
+                  {apptSearchTerm.trim().length < 2 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4" aria-live="polite">Type at least 2 characters</p>
+                  ) : isApptSearchFetching ? (
+                    <p className="text-xs text-muted-foreground text-center py-4" aria-live="polite">Searching…</p>
+                  ) : !apptSearchResults || apptSearchResults.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4" aria-live="polite">No appointments found</p>
+                  ) : (
+                    apptSearchResults.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        role="option"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2"
+                        onClick={() => jumpToAppointment(r.scheduledStart)}
+                      >
+                        <span className="min-w-0">
+                          <span className="font-semibold block truncate">{r.petName ?? "Unnamed pet"}</span>
+                          <span className="text-xs text-muted-foreground block truncate">{[r.clientFirstName, r.clientLastName].filter(Boolean).join(" ") || "Unknown client"} · {SERVICE_LABELS[r.serviceType] ?? r.serviceType}</span>
+                        </span>
+                        <span className="text-xs text-muted-foreground shrink-0 text-right">
+                          {new Date(r.scheduledStart).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+                          <br />
+                          {new Date(r.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true })}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="brand-lift h-9 min-w-40 justify-start gap-1.5 bg-white/80 text-xs shadow-sm" title="Choose the staff columns shown on this calendar">
