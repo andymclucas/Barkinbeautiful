@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2";
 import { InsertUser, users } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -19,7 +20,14 @@ export function resolveAutomaticOwnerRole(input: {
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // TiDB Cloud (and most managed MySQL-compatible hosts) require TLS.
+      // Passing the connection string alone via mysql2's URI parsing does
+      // not reliably enable SSL, so we build the pool explicitly here.
+      const pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        ssl: { minVersion: "TLSv1.2", rejectUnauthorized: true },
+      });
+      _db = drizzle(pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
