@@ -24,6 +24,11 @@ export type SessionPayload = {
   name: string;
 };
 
+// Email-password authentication is self-hosted and does not require a Manus app
+// identifier. Keep a non-empty, explicit audience marker so the existing signed
+// session validation contract remains intact after migration away from Manus OAuth.
+const SELF_HOSTED_PASSWORD_APP_ID = "groomigo-self-hosted-password";
+
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
@@ -170,7 +175,7 @@ class SDKServer {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId,
+        appId: ENV.appId || SELF_HOSTED_PASSWORD_APP_ID,
         name: options.name || "",
       },
       options
