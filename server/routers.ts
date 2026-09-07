@@ -21,7 +21,7 @@ import { buildOnlineBookingNotes } from "../shared/onlineBookingPreview";
 import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
 import { getLargeDogCapacityResult, isLargeDogFullGroom } from "../shared/onlineBookingLargeDogCapacity";
 import { sendSms, buildAppointmentReminderSms, buildPetTrackerSms, buildReadyForPickupSms, buildMembershipPaymentFailedSms, buildCustomSms } from "./sms";
-import { notifyOwner } from "./_core/notification";
+import { notifyOwner } from "./ownerNotification";
 import { calculateGroomIntervalStats } from "./groomInterval";
 import { resolveLastAppointmentDates } from "./lastAppointment";
 import { resolveAppointmentDeletionIds } from "../shared/appointmentDeletion";

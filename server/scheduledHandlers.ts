@@ -16,7 +16,7 @@ import {
   buildAdminFailedPaymentEmail,
   buildClientFailedPaymentEmail,
 } from "./email";
-import { notifyOwner } from "./_core/notification";
+import { notifyOwner } from "./ownerNotification";
 import { sendSms, buildAppointmentReminderSms } from "./sms";
 import { appointments, staff } from "../drizzle/schema";
 import { gte, isNotNull } from "drizzle-orm";
