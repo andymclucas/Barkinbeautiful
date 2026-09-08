@@ -171,8 +171,8 @@ export default function Messages() {
                 It records each reminder once per appointment and will only send after the salon explicitly enables live SMS automation.
               </p>
               <div className="mt-2 flex items-center gap-2">
-                <Badge className="bg-blue-100 text-blue-700 text-xs">Twilio Trial</Badge>
-                <span className="text-xs text-blue-600">SMS can only be sent to verified numbers until you upgrade to a paid Twilio account</span>
+                <Badge className="bg-blue-100 text-blue-700 text-xs">SMS_AUTOMATION_ENABLED</Badge>
+                <span className="text-xs text-blue-600">Set this environment variable to "true" in Render when you're ready to turn on automated reminders</span>
               </div>
             </div>
           </CardContent>
