@@ -43,6 +43,7 @@ import { trpc } from "@/lib/trpc";
 const menuItems = [
   { icon: CalendarDays,   label: "Appointments",     path: "/calendar" },
   { icon: Workflow,       label: "Workflow",          path: "/workflow" },
+  { icon: DollarSign,     label: "Pricing & Services", path: "/pricing" },
   { icon: CreditCard,     label: "Memberships",       path: "/memberships" },
   { icon: Users,          label: "Clients",           path: "/clients" },
   { icon: BarChart3,      label: "Analytics",         path: "/analytics" },

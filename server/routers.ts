@@ -10,7 +10,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -41,6 +41,7 @@ import { resolveAppointmentMembershipCoverage, type AppointmentService } from ".
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
+import { normalisePricingCode } from "../shared/pricingCatalogue";
 
 async function requireApprovedStaffTenant(db: any, user: { id: number; role: string }) {
   if (user.role === "admin") return null;
@@ -3217,6 +3218,140 @@ const membershipsRouter = router({
 });
 
 // ─── Retail ───────────────────────────────────────────────────────────────────
+const pricingServiceInput = z.object({
+  tenantId: z.number().int().positive().default(1),
+  catalogueType: z.enum(["service", "add_on"]),
+  name: z.string().trim().min(1).max(255),
+  code: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(2000).optional(),
+  priceAud: z.coerce.number().finite().min(0).max(100000),
+  durationMinutes: z.coerce.number().int().positive().max(1440).optional(),
+  legacyServiceType: z.string().trim().max(50).optional(),
+  weightBand: z.string().trim().max(80).optional(),
+  isActive: z.boolean().default(true),
+  sortOrder: z.coerce.number().int().min(0).max(100000).default(0),
+});
+
+const membershipPlanInput = z.object({
+  tenantId: z.number().int().positive().default(1),
+  name: z.string().trim().min(1).max(255),
+  code: z.string().trim().min(1).max(80),
+  tier: z.string().trim().min(1).max(50),
+  serviceVariant: z.string().trim().max(80).optional(),
+  weightBand: z.string().trim().max(80).optional(),
+  weeklyPriceAud: z.coerce.number().finite().min(0).max(100000),
+  billingCycleWeeks: z.coerce.number().int().positive().max(104).default(1),
+  appointmentIntervalWeeks: z.coerce.number().int().positive().max(104),
+  description: z.string().trim().max(2000).optional(),
+  isActive: z.boolean().default(true),
+  sortOrder: z.coerce.number().int().min(0).max(100000).default(0),
+});
+
+const pricingRouter = router({
+  listServices: adminProcedure
+    .input(z.object({ tenantId: z.number().int().positive().default(1) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(pricingServices)
+        .where(eq(pricingServices.tenantId, input.tenantId))
+        .orderBy(asc(pricingServices.catalogueType), asc(pricingServices.sortOrder), asc(pricingServices.name));
+    }),
+  createService: adminProcedure
+    .input(pricingServiceInput)
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await db.insert(pricingServices).values({
+        ...input,
+        code: normalisePricingCode(input.code),
+        description: input.description || null,
+        legacyServiceType: input.legacyServiceType || null,
+        weightBand: input.weightBand || null,
+        durationMinutes: input.durationMinutes ?? null,
+        priceAud: input.priceAud.toFixed(2),
+      });
+      return { success: true };
+    }),
+  updateService: adminProcedure
+    .input(pricingServiceInput.extend({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { id, tenantId, ...values } = input;
+      const result = await db.update(pricingServices).set({
+        ...values,
+        code: normalisePricingCode(values.code),
+        description: values.description || null,
+        legacyServiceType: values.legacyServiceType || null,
+        weightBand: values.weightBand || null,
+        durationMinutes: values.durationMinutes ?? null,
+        priceAud: values.priceAud.toFixed(2),
+      }).where(and(eq(pricingServices.id, id), eq(pricingServices.tenantId, tenantId)));
+      if (result[0].affectedRows !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Catalogue item not found" });
+      return { success: true };
+    }),
+  deleteService: adminProcedure
+    .input(z.object({ tenantId: z.number().int().positive().default(1), id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const result = await db.delete(pricingServices).where(and(eq(pricingServices.id, input.id), eq(pricingServices.tenantId, input.tenantId)));
+      if (result[0].affectedRows !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Catalogue item not found" });
+      return { success: true };
+    }),
+  listMembershipPlans: adminProcedure
+    .input(z.object({ tenantId: z.number().int().positive().default(1) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select().from(membershipPlans)
+        .where(eq(membershipPlans.tenantId, input.tenantId))
+        .orderBy(asc(membershipPlans.sortOrder), asc(membershipPlans.name));
+    }),
+  createMembershipPlan: adminProcedure
+    .input(membershipPlanInput)
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await db.insert(membershipPlans).values({
+        ...input,
+        code: normalisePricingCode(input.code),
+        serviceVariant: input.serviceVariant || null,
+        weightBand: input.weightBand || null,
+        description: input.description || null,
+        weeklyPriceAud: input.weeklyPriceAud.toFixed(2),
+      });
+      return { success: true };
+    }),
+  updateMembershipPlan: adminProcedure
+    .input(membershipPlanInput.extend({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { id, tenantId, ...values } = input;
+      const result = await db.update(membershipPlans).set({
+        ...values,
+        code: normalisePricingCode(values.code),
+        serviceVariant: values.serviceVariant || null,
+        weightBand: values.weightBand || null,
+        description: values.description || null,
+        weeklyPriceAud: values.weeklyPriceAud.toFixed(2),
+      }).where(and(eq(membershipPlans.id, id), eq(membershipPlans.tenantId, tenantId)));
+      if (result[0].affectedRows !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Membership plan not found" });
+      return { success: true };
+    }),
+  deleteMembershipPlan: adminProcedure
+    .input(z.object({ tenantId: z.number().int().positive().default(1), id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const result = await db.delete(membershipPlans).where(and(eq(membershipPlans.id, input.id), eq(membershipPlans.tenantId, input.tenantId)));
+      if (result[0].affectedRows !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Membership plan not found" });
+      return { success: true };
+    }),
+});
+
 const retailRouter = router({
   list: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), search: z.string().optional() }))
@@ -5477,6 +5612,7 @@ export const appRouter = router({
   groomNotes: groomStyleNotesRouter,
   groomingReports: groomingReportsRouter,
   groomStylePresets: groomStylePresetsRouter,
+  pricing: pricingRouter,
   retail: retailRouter,
   analytics: analyticsRouter,
   analyticsExt: analyticsRouterExtended,

@@ -13,6 +13,7 @@ import StaffPortal from "./pages/StaffPortal";
 import Clients from "./pages/Clients";
 import ClientDetail from "./pages/ClientDetail";
 import Memberships from "./pages/Memberships";
+import Pricing from "./pages/Pricing";
 import Retail from "./pages/Retail";
 import Analytics from "./pages/Analytics";
 import Staff, { StaffReviewProfile } from "./pages/Staff";
@@ -52,6 +53,7 @@ function Router() {
       <Route path="/clients" component={Clients} />
       <Route path="/clients/:id" component={ClientDetail} />
       <Route path="/memberships" component={Memberships} />
+      <Route path="/pricing" component={Pricing} />
       <Route path="/retail" component={Retail} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/staff/review/:staffId" component={StaffReviewProfile} />

@@ -1,0 +1,42 @@
+CREATE TABLE IF NOT EXISTS `membership_plans` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`tenant_id` int NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`code` varchar(80) NOT NULL,
+	`tier` varchar(50) NOT NULL,
+	`service_variant` varchar(80),
+	`weight_band` varchar(80),
+	`weekly_price_aud` decimal(10,2) NOT NULL,
+	`billing_cycle_weeks` int NOT NULL DEFAULT 1,
+	`appointment_interval_weeks` int NOT NULL,
+	`description` text,
+	`is_active` boolean NOT NULL DEFAULT true,
+	`sort_order` int NOT NULL DEFAULT 0,
+	`created_at` timestamp NOT NULL DEFAULT (now()),
+	`updated_at` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `membership_plans_id` PRIMARY KEY(`id`),
+	CONSTRAINT `uq_membership_plans_tenant_code` UNIQUE(`tenant_id`,`code`),
+	CONSTRAINT `membership_plans_tenant_id_tenants_id_fk` FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON DELETE no action ON UPDATE no action,
+	INDEX `idx_membership_plans_tenant_active` (`tenant_id`,`is_active`)
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `pricing_services` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`tenant_id` int NOT NULL,
+	`catalogue_type` enum('service','add_on') NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`code` varchar(80) NOT NULL,
+	`description` text,
+	`price_aud` decimal(10,2) NOT NULL,
+	`duration_minutes` int,
+	`legacy_service_type` varchar(50),
+	`weight_band` varchar(80),
+	`is_active` boolean NOT NULL DEFAULT true,
+	`sort_order` int NOT NULL DEFAULT 0,
+	`created_at` timestamp NOT NULL DEFAULT (now()),
+	`updated_at` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `pricing_services_id` PRIMARY KEY(`id`),
+	CONSTRAINT `uq_pricing_services_tenant_code` UNIQUE(`tenant_id`,`code`),
+	CONSTRAINT `pricing_services_tenant_id_tenants_id_fk` FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON DELETE no action ON UPDATE no action,
+	INDEX `idx_pricing_services_tenant_type` (`tenant_id`,`catalogue_type`)
+);

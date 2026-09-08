@@ -332,6 +332,51 @@ export const memberships = mysqlTable("memberships", {
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (t) => [index("idx_membership_tenant").on(t.tenantId), index("idx_membership_client").on(t.clientId)]);
 
+// ─── Pricing & Services (Phase 1 foundation) ──────────────────────────────────
+// These editable catalogues are intentionally additive. Existing appointments,
+// memberships and historical prices continue to use their established fields until
+// a separately tested Phase 3 cutover reads from these records.
+export const pricingServices = mysqlTable("pricing_services", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  catalogueType: mysqlEnum("catalogue_type", ["service", "add_on"]).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  code: varchar("code", { length: 80 }).notNull(),
+  description: text("description"),
+  priceAud: decimal("price_aud", { precision: 10, scale: 2 }).notNull(),
+  durationMinutes: int("duration_minutes"),
+  legacyServiceType: varchar("legacy_service_type", { length: 50 }),
+  weightBand: varchar("weight_band", { length: 80 }),
+  isActive: boolean("is_active").default(true).notNull(),
+  sortOrder: int("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_pricing_services_tenant_code").on(t.tenantId, t.code),
+  index("idx_pricing_services_tenant_type").on(t.tenantId, t.catalogueType),
+]);
+
+export const membershipPlans = mysqlTable("membership_plans", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  code: varchar("code", { length: 80 }).notNull(),
+  tier: varchar("tier", { length: 50 }).notNull(),
+  serviceVariant: varchar("service_variant", { length: 80 }),
+  weightBand: varchar("weight_band", { length: 80 }),
+  weeklyPriceAud: decimal("weekly_price_aud", { precision: 10, scale: 2 }).notNull(),
+  billingCycleWeeks: int("billing_cycle_weeks").default(1).notNull(),
+  appointmentIntervalWeeks: int("appointment_interval_weeks").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true).notNull(),
+  sortOrder: int("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_membership_plans_tenant_code").on(t.tenantId, t.code),
+  index("idx_membership_plans_tenant_active").on(t.tenantId, t.isActive),
+]);
+
 // ─── Membership Payments ──────────────────────────────────────────────────────
 export const membershipPayments = mysqlTable("membership_payments", {
   id: int("id").autoincrement().primaryKey(),
