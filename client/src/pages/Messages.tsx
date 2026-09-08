@@ -189,11 +189,11 @@ export default function Messages() {
             <div className="space-y-2">
               <div className="rounded-md bg-muted p-2">
                 <div className="text-xs font-medium text-muted-foreground mb-1">Status Callback URL (POST)</div>
-                <code className="text-xs break-all">https://groomingsos-mqzfsvzv.manus.space/api/twilio/status</code>
+                <code className="text-xs break-all">{typeof window !== "undefined" ? window.location.origin : ""}/api/twilio/status</code>
               </div>
               <div className="rounded-md bg-muted p-2">
                 <div className="text-xs font-medium text-muted-foreground mb-1">Inbound SMS Webhook (POST)</div>
-                <code className="text-xs break-all">https://groomingsos-mqzfsvzv.manus.space/api/twilio/inbound</code>
+                <code className="text-xs break-all">{typeof window !== "undefined" ? window.location.origin : ""}/api/twilio/inbound</code>
               </div>
             </div>
           </CardContent>
