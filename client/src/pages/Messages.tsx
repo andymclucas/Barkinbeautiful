@@ -596,6 +596,7 @@ export default function Messages() {
                 setOpenThread(null);
                 setToNumber(openThread.toNumber);
                 setSelectedClientId(openThread.clientId);
+                setClientSearch(openThread.clientId ? (openThread.clientName?.trim() || "") : "");
                 setComposeOpen(true);
               }}
             >
