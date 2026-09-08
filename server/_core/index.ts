@@ -16,6 +16,8 @@ import { and, asc, desc, eq, gt, inArray, isNotNull } from "drizzle-orm";
 import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNumber } from "../inboundSms";
 import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
+import { appEvents, emitNewMessage } from "../eventBus";
+import { sdk } from "./sdk";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -145,10 +147,48 @@ async function startServer() {
         direction: "inbound",
         replyIntent: intent,
       });
+      emitNewMessage(1);
     }
     res.set("Content-Type", "text/xml");
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
   });
+
+  // Server-Sent Events: pushes real-time notifications (e.g. a new inbound
+  // SMS just arrived) to connected browser tabs, so the notification bell
+  // updates instantly instead of waiting for the next poll.
+  app.get("/api/events", async (req, res) => {
+    try {
+      await sdk.authenticateRequest(req);
+    } catch {
+      res.sendStatus(401);
+      return;
+    }
+
+    res.set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    });
+    res.flushHeaders?.();
+
+    const send = (event: unknown) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+    send({ type: "connected" });
+
+    const onAppEvent = (event: unknown) => send(event);
+    appEvents.on("app-event", onAppEvent);
+
+    // Keep the connection alive through proxies/load balancers that would
+    // otherwise time out an idle HTTP connection.
+    const heartbeat = setInterval(() => res.write(`: heartbeat\n\n`), 25000);
+
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      appEvents.off("app-event", onAppEvent);
+    });
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

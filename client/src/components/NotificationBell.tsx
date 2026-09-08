@@ -1,4 +1,5 @@
 import { Bell } from "lucide-react";
+import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,10 +19,33 @@ function timeAgo(date: Date | string) {
 
 export default function NotificationBell() {
   const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const { data } = trpc.sms.getUnreadPreview.useQuery(
     { limit: 6 },
     { refetchInterval: 20000, refetchOnWindowFocus: true }
   );
+
+  // Real-time push: the moment a new inbound SMS arrives, the server pushes
+  // an event over this connection and we refresh immediately, instead of
+  // waiting for the next 20-second poll. The 20s poll above stays as a
+  // fallback in case this connection ever drops and doesn't reconnect.
+  useEffect(() => {
+    const source = new EventSource("/api/events");
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload?.type === "new-message") {
+          utils.sms.getUnreadPreview.invalidate();
+          utils.sms.getThreads.invalidate();
+          utils.sms.getLogs.invalidate();
+        }
+      } catch {
+        // ignore malformed events
+      }
+    };
+    return () => source.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const unreadCount = data?.unreadCount ?? 0;
   const recent = data?.recent ?? [];
