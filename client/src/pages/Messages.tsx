@@ -171,8 +171,8 @@ export default function Messages() {
                 It records each reminder once per appointment and will only send after the salon explicitly enables live SMS automation.
               </p>
               <div className="mt-2 flex items-center gap-2">
-                <Badge className="bg-blue-100 text-blue-700 text-xs">Twilio Trial</Badge>
-                <span className="text-xs text-blue-600">SMS can only be sent to verified numbers until you upgrade to a paid Twilio account</span>
+                <Badge className="bg-blue-100 text-blue-700 text-xs">SMS_AUTOMATION_ENABLED</Badge>
+                <span className="text-xs text-blue-600">Set this environment variable to "true" in Render when you're ready to turn on automated reminders</span>
               </div>
             </div>
           </CardContent>
@@ -189,11 +189,11 @@ export default function Messages() {
             <div className="space-y-2">
               <div className="rounded-md bg-muted p-2">
                 <div className="text-xs font-medium text-muted-foreground mb-1">Status Callback URL (POST)</div>
-                <code className="text-xs break-all">https://groomingsos-mqzfsvzv.manus.space/api/twilio/status</code>
+                <code className="text-xs break-all">{typeof window !== "undefined" ? window.location.origin : ""}/api/twilio/status</code>
               </div>
               <div className="rounded-md bg-muted p-2">
                 <div className="text-xs font-medium text-muted-foreground mb-1">Inbound SMS Webhook (POST)</div>
-                <code className="text-xs break-all">https://groomingsos-mqzfsvzv.manus.space/api/twilio/inbound</code>
+                <code className="text-xs break-all">{typeof window !== "undefined" ? window.location.origin : ""}/api/twilio/inbound</code>
               </div>
             </div>
           </CardContent>
