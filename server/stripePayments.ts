@@ -15,10 +15,9 @@ export type StripeCheckoutRequest = {
   origin: string;
 };
 
-export function requireStripeTestClient() {
+export function requireStripeClient() {
   const key = process.env.STRIPE_SECRET_KEY ?? "";
   if (!key) throw new Error("Stripe is not configured. Open Settings → Payment to complete setup.");
-  if (!key.startsWith("sk_test_")) throw new Error("Groomigo is still in prototype mode and accepts Stripe test-mode Checkout only.");
   return new Stripe(key, { typescript: true });
 }
 
@@ -32,10 +31,10 @@ export function buildInvoiceCheckoutMetadata(input: Pick<StripeCheckoutRequest, 
   };
 }
 
-export async function createTestInvoiceCheckout(input: StripeCheckoutRequest) {
+export async function createInvoiceCheckout(input: StripeCheckoutRequest) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const stripe = requireStripeTestClient();
+  const stripe = requireStripeClient();
   const [client] = await db.select({ stripeCustomerId: clients.stripeCustomerId }).from(clients).where(eq(clients.id, input.clientId)).limit(1);
   let customerId = client?.stripeCustomerId ?? null;
   if (!customerId) {
@@ -88,7 +87,7 @@ export async function processStripeEvent(event: Stripe.Event) {
     await db.update(invoices).set({ status: "paid", paymentMethod: "stripe", paidAt: new Date() }).where(eq(invoices.id, invoiceId));
     if (membershipId) {
       await db.insert(membershipPayments).values({ membershipId, amount: String(amount), status: "paid", stripePaymentIntentId: typeof object.payment_intent === "string" ? object.payment_intent : null, paidAt: new Date() });
-      await db.insert(membershipLedgerEntries).values({ tenantId, membershipId, invoiceId, entryType: "payment", amount: String(amount), source: "stripe", externalReference: event.id, note: `Stripe test Checkout settlement for invoice ${invoiceId}` });
+      await db.insert(membershipLedgerEntries).values({ tenantId, membershipId, invoiceId, entryType: "payment", amount: String(amount), source: "stripe", externalReference: event.id, note: `Stripe Checkout settlement for invoice ${invoiceId}` });
     }
   }
   if (event.type === "payment_intent.payment_failed" && membershipId) {

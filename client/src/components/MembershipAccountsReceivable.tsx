@@ -35,7 +35,7 @@ export function MembershipAccountsReceivable() {
     onError: error => toast.error(error.message),
   });
   const createStripeCheckout = trpc.stripeBilling.createInvoiceCheckout.useMutation({
-    onSuccess: result => { toast.success("Stripe test Checkout opened in a new tab. No email has been sent."); window.open(result.checkoutUrl, "_blank", "noopener,noreferrer"); refetch(); },
+    onSuccess: result => { toast.success("Stripe Checkout opened in a new tab."); window.open(result.checkoutUrl, "_blank", "noopener,noreferrer"); refetch(); },
     onError: error => toast.error(error.message),
   });
 
@@ -66,7 +66,7 @@ export function MembershipAccountsReceivable() {
                 {firstUnvalued && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setValueTarget({ membershipId: account.id, appointmentId: firstUnvalued.id, clientName: `${account.clientFirstName} ${account.clientLastName}`, petName: account.petName }); setGroomValue(""); }}>Value groom</Button>}
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPaymentTarget({ membershipId: account.id, clientName: `${account.clientFirstName} ${account.clientLastName}`, petName: account.petName }); setPaymentAmount(""); setPaymentNote(""); }}>Record payment</Button>
                 {account.invoiceReady && account.arrearsAmount > 0 && !account.openInvoice && <Button size="sm" className="h-7 text-xs" disabled={createInvoice.isPending} onClick={() => createInvoice.mutate({ membershipId: account.id })}><FileText className="mr-1 h-3 w-3" />Draft invoice</Button>}
-                {account.openInvoice && <><Badge variant="outline" className="h-7 px-2 text-xs">{account.openInvoice.invoiceNumber} · {account.openInvoice.status}</Badge><Button size="sm" variant="outline" className="h-7 text-xs" disabled={createStripeCheckout.isPending || account.openInvoice.status === "paid"} onClick={() => createStripeCheckout.mutate({ invoiceId: account.openInvoice!.id })}><CreditCard className="mr-1 h-3 w-3" />Stripe test checkout</Button></>}
+                {account.openInvoice && <><Badge variant="outline" className="h-7 px-2 text-xs">{account.openInvoice.invoiceNumber} · {account.openInvoice.status}</Badge><Button size="sm" variant="outline" className="h-7 text-xs" disabled={createStripeCheckout.isPending || account.openInvoice.status === "paid"} onClick={() => createStripeCheckout.mutate({ invoiceId: account.openInvoice!.id })}><CreditCard className="mr-1 h-3 w-3" />Stripe checkout</Button></>}
                 {account.requiresBookingReview && <Button size="sm" variant="outline" className={`h-7 text-xs ${account.bookingSuspended ? "border-red-300 text-red-700" : ""}`} disabled={setHold.isPending} onClick={() => setHold.mutate({ membershipId: account.id, hold: !account.bookingSuspended })}><LockKeyhole className="mr-1 h-3 w-3" />{account.bookingSuspended ? "Release hold" : "Place hold"}</Button>}
               </div></td>
             </tr>;

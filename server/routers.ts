@@ -31,7 +31,7 @@ import { getReplacementWeightBand, isEligibleMembershipReplacement } from "../sh
 import { getStripePrototypeStatus } from "../shared/stripeMembershipReconciliation";
 import { calculateMembershipAccount } from "../shared/membershipAccountsReceivable";
 import { createStaffInvitationToken, hashStaffInvitationToken, isLinkedStaffUser, isStaffInvitationExpired } from "../shared/staffInvitation";
-import { createTestInvoiceCheckout } from "./stripePayments";
+import { createInvoiceCheckout } from "./stripePayments";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
@@ -4007,8 +4007,8 @@ const stripeBillingRouter = router({
       }).from(invoices).innerJoin(clients, eq(invoices.clientId, clients.id)).where(and(eq(invoices.id, input.invoiceId), eq(invoices.tenantId, input.tenantId))).limit(1);
       if (!invoice) throw new Error("Invoice not found");
       if (invoice.status === "paid" || invoice.status === "cancelled") throw new Error("This invoice is no longer available for payment");
-      const origin = typeof ctx.req.headers.origin === "string" ? ctx.req.headers.origin : "https://groomingsos-mqzfsvzv.manus.space";
-      return createTestInvoiceCheckout({
+      const origin = typeof ctx.req.headers.origin === "string" ? ctx.req.headers.origin : (process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space");
+      return createInvoiceCheckout({
         invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, totalCents: Math.round(Number(invoice.total) * 100),
         clientId: invoice.clientId, clientName: `${invoice.clientFirstName} ${invoice.clientLastName}`.trim(), clientEmail: invoice.clientEmail,
         membershipId: invoice.membershipId, tenantId: invoice.tenantId, origin,
