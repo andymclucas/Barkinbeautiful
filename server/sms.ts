@@ -23,7 +23,8 @@ export async function sendSms(to: string, body: string): Promise<{ success: bool
   if (toNorm.startsWith("04")) toNorm = "+61" + toNorm.slice(1);
   if (!toNorm.startsWith("+")) toNorm = "+" + toNorm;
   try {
-    const msg = await client.messages.create({ from, to: toNorm, body });
+    const statusCallback = process.env.VITE_APP_URL ? `${process.env.VITE_APP_URL}/api/twilio/status` : undefined;
+    const msg = await client.messages.create({ from, to: toNorm, body, ...(statusCallback ? { statusCallback } : {}) });
     return { success: true, sid: msg.sid };
   } catch (err: any) {
     console.error("[SMS] Failed to send to", toNorm, err?.message);
