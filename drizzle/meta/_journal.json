@@ -302,6 +302,13 @@
       "when": 1788845317335,
       "tag": "0042_pricing_services_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1788846665130,
+      "tag": "0043_pricing_service_price_modes",
+      "breakpoints": true
     }
   ]
 }

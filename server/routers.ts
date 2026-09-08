@@ -41,7 +41,7 @@ import { resolveAppointmentMembershipCoverage, type AppointmentService } from ".
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
-import { normalisePricingCode } from "../shared/pricingCatalogue";
+import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 
 async function requireApprovedStaffTenant(db: any, user: { id: number; role: string }) {
   if (user.role === "admin") return null;
@@ -3224,7 +3224,9 @@ const pricingServiceInput = z.object({
   name: z.string().trim().min(1).max(255),
   code: z.string().trim().min(1).max(80),
   description: z.string().trim().max(2000).optional(),
-  priceAud: z.coerce.number().finite().min(0).max(100000),
+  priceMode: z.enum(["fixed", "range", "from", "quote"]).default("fixed"),
+  priceAud: z.coerce.number().finite().min(0).max(100000).optional(),
+  priceMaxAud: z.coerce.number().finite().min(0).max(100000).optional(),
   durationMinutes: z.coerce.number().int().positive().max(1440).optional(),
   legacyServiceType: z.string().trim().max(50).optional(),
   weightBand: z.string().trim().max(80).optional(),
@@ -3262,6 +3264,7 @@ const pricingRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      assertPricingServiceAmount(input);
       await db.insert(pricingServices).values({
         ...input,
         code: normalisePricingCode(input.code),
@@ -3269,7 +3272,8 @@ const pricingRouter = router({
         legacyServiceType: input.legacyServiceType || null,
         weightBand: input.weightBand || null,
         durationMinutes: input.durationMinutes ?? null,
-        priceAud: input.priceAud.toFixed(2),
+        priceAud: input.priceAud === undefined ? null : input.priceAud.toFixed(2),
+        priceMaxAud: input.priceMaxAud === undefined ? null : input.priceMaxAud.toFixed(2),
       });
       return { success: true };
     }),
@@ -3279,6 +3283,7 @@ const pricingRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const { id, tenantId, ...values } = input;
+      assertPricingServiceAmount(values);
       const result = await db.update(pricingServices).set({
         ...values,
         code: normalisePricingCode(values.code),
@@ -3286,7 +3291,8 @@ const pricingRouter = router({
         legacyServiceType: values.legacyServiceType || null,
         weightBand: values.weightBand || null,
         durationMinutes: values.durationMinutes ?? null,
-        priceAud: values.priceAud.toFixed(2),
+        priceAud: values.priceAud === undefined ? null : values.priceAud.toFixed(2),
+        priceMaxAud: values.priceMaxAud === undefined ? null : values.priceMaxAud.toFixed(2),
       }).where(and(eq(pricingServices.id, id), eq(pricingServices.tenantId, tenantId)));
       if (result[0].affectedRows !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Catalogue item not found" });
       return { success: true };
@@ -3349,8 +3355,13 @@ const pricingRouter = router({
       const result = await db.delete(membershipPlans).where(and(eq(membershipPlans.id, input.id), eq(membershipPlans.tenantId, input.tenantId)));
       if (result[0].affectedRows !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Membership plan not found" });
       return { success: true };
-    }),
+  }),
 });
+
+function assertPricingServiceAmount(input: { priceMode: "fixed" | "range" | "from" | "quote"; priceAud?: number; priceMaxAud?: number }) {
+  const message = getPricingAmountValidationError(input);
+  if (message) throw new TRPCError({ code: "BAD_REQUEST", message });
+}
 
 const retailRouter = router({
   list: protectedProcedure

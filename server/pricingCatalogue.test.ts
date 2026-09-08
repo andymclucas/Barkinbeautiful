@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { normalisePricingCode } from "../shared/pricingCatalogue";
+import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 
 describe("Pricing & Services catalogue safeguards", () => {
   it("normalises stable catalogue codes without permitting unsafe characters", () => {
@@ -29,5 +29,14 @@ describe("Pricing & Services catalogue safeguards", () => {
     ]) {
       expect(pricingBlock).toContain(operation);
     }
+  });
+
+  it("preserves qualified published prices without representing them as fixed fees", () => {
+    expect(getPricingAmountValidationError({ priceMode: "fixed", priceAud: 100 })).toBeNull();
+    expect(getPricingAmountValidationError({ priceMode: "range", priceAud: 180, priceMaxAud: 200 })).toBeNull();
+    expect(getPricingAmountValidationError({ priceMode: "from", priceAud: 230 })).toBeNull();
+    expect(getPricingAmountValidationError({ priceMode: "quote" })).toBeNull();
+    expect(getPricingAmountValidationError({ priceMode: "range", priceAud: 200, priceMaxAud: 180 })).toContain("maximum price");
+    expect(getPricingAmountValidationError({ priceMode: "quote", priceAud: 30 })).toContain("cannot include");
   });
 });

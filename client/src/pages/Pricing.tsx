@@ -17,12 +17,31 @@ type ServiceRecord = {
   name: string;
   code: string;
   description: string | null;
-  priceAud: string;
+  priceMode: "fixed" | "range" | "from" | "quote";
+  priceAud: string | null;
+  priceMaxAud: string | null;
   durationMinutes: number | null;
   legacyServiceType: string | null;
   weightBand: string | null;
   isActive: boolean;
   sortOrder: number;
+};
+
+type PriceMode = "fixed" | "range" | "from" | "quote";
+
+type ServiceFormState = {
+  catalogueType: "service" | "add_on";
+  name: string;
+  code: string;
+  description: string;
+  priceMode: PriceMode;
+  priceAud: string;
+  priceMaxAud: string;
+  durationMinutes: string;
+  legacyServiceType: string;
+  weightBand: string;
+  isActive: boolean;
+  sortOrder: string;
 };
 
 type MembershipPlanRecord = {
@@ -40,12 +59,14 @@ type MembershipPlanRecord = {
   sortOrder: number;
 };
 
-const emptyServiceForm = (catalogueType: "service" | "add_on") => ({
+const emptyServiceForm = (catalogueType: "service" | "add_on"): ServiceFormState => ({
   catalogueType,
   name: "",
   code: "",
   description: "",
+  priceMode: "fixed",
   priceAud: "",
+  priceMaxAud: "",
   durationMinutes: "",
   legacyServiceType: "",
   weightBand: "",
@@ -70,11 +91,19 @@ const emptyPlanForm = () => ({
 const aud = (amount: string | number) =>
   new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(Number(amount));
 
+const displayServicePrice = (record: Pick<ServiceRecord, "priceMode" | "priceAud" | "priceMaxAud">) => {
+  if (record.priceMode === "quote") return "Quote required";
+  if (record.priceAud === null) return "Price pending";
+  if (record.priceMode === "from") return `From ${aud(record.priceAud)}`;
+  if (record.priceMode === "range") return `${aud(record.priceAud)}–${aud(record.priceMaxAud ?? record.priceAud)}`;
+  return aud(record.priceAud);
+};
+
 export default function Pricing() {
   const { user, loading } = useAuth();
   const utils = trpc.useUtils();
   const [activeTab, setActiveTab] = useState<"services" | "add-ons" | "memberships">("services");
-  const [serviceEditor, setServiceEditor] = useState<{ record?: ServiceRecord; form: ReturnType<typeof emptyServiceForm> } | null>(null);
+  const [serviceEditor, setServiceEditor] = useState<{ record?: ServiceRecord; form: ServiceFormState } | null>(null);
   const [planEditor, setPlanEditor] = useState<{ record?: MembershipPlanRecord; form: ReturnType<typeof emptyPlanForm> } | null>(null);
 
   const { data: serviceRows = [], isLoading: servicesLoading } = trpc.pricing.listServices.useQuery(
@@ -123,7 +152,9 @@ export default function Pricing() {
         name: record.name,
         code: record.code,
         description: record.description ?? "",
-        priceAud: String(record.priceAud),
+        priceMode: record.priceMode,
+        priceAud: record.priceAud ?? "",
+        priceMaxAud: record.priceMaxAud === null ? "" : String(record.priceMaxAud),
         durationMinutes: record.durationMinutes === null ? "" : String(record.durationMinutes),
         legacyServiceType: record.legacyServiceType ?? "",
         weightBand: record.weightBand ?? "",
@@ -188,10 +219,10 @@ export default function Pricing() {
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader><DialogTitle>{serviceEditor?.record ? "Edit" : "Add"} {serviceEditor?.form.catalogueType === "add_on" ? "Add-on" : "Service"}</DialogTitle></DialogHeader>
           {serviceEditor && <ServiceForm form={serviceEditor.form} onChange={(form) => setServiceEditor((current) => current ? { ...current, form } : current)} />}
-          <DialogFooter><Button variant="outline" onClick={() => setServiceEditor(null)}>Cancel</Button><Button disabled={!serviceEditor?.form.name || !serviceEditor?.form.code || !serviceEditor?.form.priceAud || serviceMutation.isPending || updateServiceMutation.isPending} onClick={() => {
+          <DialogFooter><Button variant="outline" onClick={() => setServiceEditor(null)}>Cancel</Button><Button disabled={!serviceEditor?.form.name || !serviceEditor?.form.code || (serviceEditor?.form.priceMode !== "quote" && !serviceEditor?.form.priceAud) || (serviceEditor?.form.priceMode === "range" && !serviceEditor?.form.priceMaxAud) || serviceMutation.isPending || updateServiceMutation.isPending} onClick={() => {
             if (!serviceEditor) return;
             const { form, record } = serviceEditor;
-            const payload = { tenantId: 1, catalogueType: form.catalogueType, name: form.name, code: form.code, description: form.description || undefined, priceAud: Number(form.priceAud), durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : undefined, legacyServiceType: form.legacyServiceType || undefined, weightBand: form.weightBand || undefined, isActive: form.isActive, sortOrder: Number(form.sortOrder || 0) };
+            const payload = { tenantId: 1, catalogueType: form.catalogueType, name: form.name, code: form.code, description: form.description || undefined, priceMode: form.priceMode, priceAud: form.priceMode === "quote" ? undefined : Number(form.priceAud), priceMaxAud: form.priceMode === "range" ? Number(form.priceMaxAud) : undefined, durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : undefined, legacyServiceType: form.legacyServiceType || undefined, weightBand: form.weightBand || undefined, isActive: form.isActive, sortOrder: Number(form.sortOrder || 0) };
             if (record) updateServiceMutation.mutate({ ...payload, id: record.id }); else serviceMutation.mutate(payload);
           }}>{serviceEditor?.record ? "Save Changes" : "Add to Catalogue"}</Button></DialogFooter>
         </DialogContent>
@@ -214,16 +245,16 @@ export default function Pricing() {
 }
 
 function CatalogueTable({ rows, loading, onEdit, onDelete }: { rows: ServiceRecord[]; loading: boolean; onEdit: (record: ServiceRecord) => void; onDelete: (record: ServiceRecord) => void }) {
-  return <div className="overflow-hidden rounded-xl border bg-card"><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="p-3 text-left font-medium text-muted-foreground">Name</th><th className="hidden p-3 text-left font-medium text-muted-foreground md:table-cell">Code</th><th className="hidden p-3 text-left font-medium text-muted-foreground lg:table-cell">Details</th><th className="p-3 text-right font-medium text-muted-foreground">Price</th><th className="p-3 text-right font-medium text-muted-foreground">Actions</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="p-10 text-center text-muted-foreground">Loading catalogue…</td></tr> : rows.length === 0 ? <tr><td colSpan={5} className="p-10 text-center text-muted-foreground">No catalogue items yet. Add your first item when you are ready.</td></tr> : rows.map((record) => <tr key={record.id} className="border-b last:border-0 hover:bg-muted/20"><td className="p-3"><div className="flex items-center gap-2"><span className="font-medium">{record.name}</span>{record.isActive ? <Badge className="bg-emerald-100 text-emerald-800">Active</Badge> : <Badge variant="secondary">Inactive</Badge>}</div>{record.description && <p className="mt-1 max-w-md truncate text-xs text-muted-foreground">{record.description}</p>}</td><td className="hidden p-3 font-mono text-xs text-muted-foreground md:table-cell">{record.code}</td><td className="hidden p-3 text-muted-foreground lg:table-cell">{record.durationMinutes ? `${record.durationMinutes} min` : "No duration"}{record.weightBand ? ` · ${record.weightBand}` : ""}</td><td className="p-3 text-right font-medium">{aud(record.priceAud)}</td><td className="p-3"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => onEdit(record)} aria-label={`Edit ${record.name}`}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => onDelete(record)} aria-label={`Remove ${record.name}`}><Trash2 className="h-4 w-4" /></Button></div></td></tr>)}</tbody></table></div>;
+  return <div className="overflow-hidden rounded-xl border bg-card"><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="p-3 text-left font-medium text-muted-foreground">Name</th><th className="hidden p-3 text-left font-medium text-muted-foreground md:table-cell">Code</th><th className="hidden p-3 text-left font-medium text-muted-foreground lg:table-cell">Details</th><th className="p-3 text-right font-medium text-muted-foreground">Price</th><th className="p-3 text-right font-medium text-muted-foreground">Actions</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="p-10 text-center text-muted-foreground">Loading catalogue…</td></tr> : rows.length === 0 ? <tr><td colSpan={5} className="p-10 text-center text-muted-foreground">No catalogue items yet. Add your first item when you are ready.</td></tr> : rows.map((record) => <tr key={record.id} className="border-b last:border-0 hover:bg-muted/20"><td className="p-3"><div className="flex items-center gap-2"><span className="font-medium">{record.name}</span>{record.isActive ? <Badge className="bg-emerald-100 text-emerald-800">Active</Badge> : <Badge variant="secondary">Inactive</Badge>}</div>{record.description && <p className="mt-1 max-w-md truncate text-xs text-muted-foreground">{record.description}</p>}</td><td className="hidden p-3 font-mono text-xs text-muted-foreground md:table-cell">{record.code}</td><td className="hidden p-3 text-muted-foreground lg:table-cell">{record.durationMinutes ? `${record.durationMinutes} min` : "No duration"}{record.weightBand ? ` · ${record.weightBand}` : ""}</td><td className="p-3 text-right font-medium">{displayServicePrice(record)}</td><td className="p-3"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => onEdit(record)} aria-label={`Edit ${record.name}`}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => onDelete(record)} aria-label={`Remove ${record.name}`}><Trash2 className="h-4 w-4" /></Button></div></td></tr>)}</tbody></table></div>;
 }
 
 function MembershipPlanTable({ rows, loading, onEdit, onDelete }: { rows: MembershipPlanRecord[]; loading: boolean; onEdit: (record: MembershipPlanRecord) => void; onDelete: (record: MembershipPlanRecord) => void }) {
   return <div className="overflow-hidden rounded-xl border bg-card"><table className="w-full text-sm"><thead className="border-b bg-muted/50"><tr><th className="p-3 text-left font-medium text-muted-foreground">Plan</th><th className="hidden p-3 text-left font-medium text-muted-foreground md:table-cell">Frequency</th><th className="p-3 text-right font-medium text-muted-foreground">Weekly price</th><th className="p-3 text-right font-medium text-muted-foreground">Actions</th></tr></thead><tbody>{loading ? <tr><td colSpan={4} className="p-10 text-center text-muted-foreground">Loading plans…</td></tr> : rows.length === 0 ? <tr><td colSpan={4} className="p-10 text-center text-muted-foreground">No membership plans yet. Existing memberships are unchanged.</td></tr> : rows.map((record) => <tr key={record.id} className="border-b last:border-0 hover:bg-muted/20"><td className="p-3"><div className="flex items-center gap-2"><span className="font-medium">{record.name}</span>{record.isActive ? <Badge className="bg-emerald-100 text-emerald-800">Active</Badge> : <Badge variant="secondary">Inactive</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{record.tier}{record.serviceVariant ? ` · ${record.serviceVariant}` : ""}{record.weightBand ? ` · ${record.weightBand}` : ""}</p></td><td className="hidden p-3 text-muted-foreground md:table-cell">Every {record.appointmentIntervalWeeks} weeks</td><td className="p-3 text-right font-medium">{aud(record.weeklyPriceAud)}</td><td className="p-3"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => onEdit(record)} aria-label={`Edit ${record.name}`}><Pencil className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => onDelete(record)} aria-label={`Remove ${record.name}`}><Trash2 className="h-4 w-4" /></Button></div></td></tr>)}</tbody></table></div>;
 }
 
-function ServiceForm({ form, onChange }: { form: ReturnType<typeof emptyServiceForm>; onChange: (form: ReturnType<typeof emptyServiceForm>) => void }) {
-  const update = (key: keyof typeof form, value: string | boolean) => onChange({ ...form, [key]: value });
-  return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label>Catalogue type</Label><select value={form.catalogueType} onChange={(event) => update("catalogueType", event.target.value as "service" | "add_on")} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="service">Service</option><option value="add_on">Add-on</option></select></div><div className="space-y-1.5"><Label>Sort order</Label><Input type="number" min="0" value={form.sortOrder} onChange={(event) => update("sortOrder", event.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>Name *</Label><Input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. Full Groom" /></div><div className="space-y-1.5"><Label>Unique code *</Label><Input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="e.g. full-groom" /></div><div className="space-y-1.5"><Label>Price (AUD) *</Label><Input type="number" min="0" step="0.01" value={form.priceAud} onChange={(event) => update("priceAud", event.target.value)} /></div><div className="space-y-1.5"><Label>Duration (minutes)</Label><Input type="number" min="1" value={form.durationMinutes} onChange={(event) => update("durationMinutes", event.target.value)} /></div><div className="space-y-1.5"><Label>Legacy service key</Label><Input value={form.legacyServiceType} onChange={(event) => update("legacyServiceType", event.target.value)} placeholder="e.g. classic_groom" /></div><div className="space-y-1.5 sm:col-span-2"><Label>Weight band</Label><Input value={form.weightBand} onChange={(event) => update("weightBand", event.target.value)} placeholder="Optional, e.g. Large 17–25kg" /></div><div className="space-y-1.5 sm:col-span-2"><Label>Description</Label><textarea value={form.description} onChange={(event) => update("description", event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional internal description" /></div><label className="flex items-center gap-2 text-sm font-medium sm:col-span-2"><input type="checkbox" checked={form.isActive} onChange={(event) => update("isActive", event.target.checked)} /> Active and ready for future use</label></div>;
+function ServiceForm({ form, onChange }: { form: ServiceFormState; onChange: (form: ServiceFormState) => void }) {
+  const update = <K extends keyof ServiceFormState>(key: K, value: ServiceFormState[K]) => onChange({ ...form, [key]: value } as ServiceFormState);
+  return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label>Catalogue type</Label><select value={form.catalogueType} onChange={(event) => update("catalogueType", event.target.value as "service" | "add_on")} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="service">Service</option><option value="add_on">Add-on</option></select></div><div className="space-y-1.5"><Label>Sort order</Label><Input type="number" min="0" value={form.sortOrder} onChange={(event) => update("sortOrder", event.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>Name *</Label><Input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. Full Groom" /></div><div className="space-y-1.5"><Label>Unique code *</Label><Input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="e.g. full-groom" /></div><div className="space-y-1.5"><Label>Price treatment *</Label><select value={form.priceMode} onChange={(event) => update("priceMode", event.target.value as "fixed" | "range" | "from" | "quote")} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="fixed">Fixed price</option><option value="range">Price range</option><option value="from">From price</option><option value="quote">Quote required</option></select></div>{form.priceMode !== "quote" && <div className="space-y-1.5"><Label>{form.priceMode === "range" ? "Minimum price (AUD) *" : form.priceMode === "from" ? "From price (AUD) *" : "Price (AUD) *"}</Label><Input type="number" min="0" step="0.01" value={form.priceAud} onChange={(event) => update("priceAud", event.target.value)} /></div>}{form.priceMode === "range" && <div className="space-y-1.5"><Label>Maximum price (AUD) *</Label><Input type="number" min="0" step="0.01" value={form.priceMaxAud} onChange={(event) => update("priceMaxAud", event.target.value)} /></div>}<div className="space-y-1.5"><Label>Duration (minutes)</Label><Input type="number" min="1" value={form.durationMinutes} onChange={(event) => update("durationMinutes", event.target.value)} /></div><div className="space-y-1.5"><Label>Legacy service key</Label><Input value={form.legacyServiceType} onChange={(event) => update("legacyServiceType", event.target.value)} placeholder="e.g. classic_groom" /></div><div className="space-y-1.5 sm:col-span-2"><Label>Weight band</Label><Input value={form.weightBand} onChange={(event) => update("weightBand", event.target.value)} placeholder="Optional, e.g. Large 17–25kg" /></div><div className="space-y-1.5 sm:col-span-2"><Label>Description</Label><textarea value={form.description} onChange={(event) => update("description", event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional internal description" /></div><label className="flex items-center gap-2 text-sm font-medium sm:col-span-2"><input type="checkbox" checked={form.isActive} onChange={(event) => update("isActive", event.target.checked)} /> Active and ready for future use</label></div>;
 }
 
 function MembershipPlanForm({ form, onChange }: { form: ReturnType<typeof emptyPlanForm>; onChange: (form: ReturnType<typeof emptyPlanForm>) => void }) {
