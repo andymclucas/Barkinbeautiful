@@ -5049,6 +5049,36 @@ const smsRouter = router({
       return { unreadCount: Number(count), recent: unread };
     }),
 
+  deleteMessage: protectedProcedure
+    .input(z.object({ id: z.number(), tenantId: z.number().default(1) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      await db.delete(smsLogs).where(and(eq(smsLogs.id, input.id), eq(smsLogs.tenantId, input.tenantId)));
+      return { success: true };
+    }),
+
+  deleteThread: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number().optional(), toNumber: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      if (!input.clientId && !input.toNumber) return { success: true };
+      const conditions = [eq(smsLogs.tenantId, input.tenantId)];
+      conditions.push(input.clientId ? eq(smsLogs.clientId, input.clientId) : eq(smsLogs.toNumber, input.toNumber!));
+      await db.delete(smsLogs).where(and(...conditions));
+      return { success: true };
+    }),
+
+  clearFailed: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      await db.delete(smsLogs).where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.status, "failed")));
+      return { success: true };
+    }),
+
 
   reviewInboundReply: protectedProcedure
     .input(z.object({

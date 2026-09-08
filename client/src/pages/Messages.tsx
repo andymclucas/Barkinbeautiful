@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw } from "lucide-react";
+import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2 } from "lucide-react";
 
 const SMS_TEMPLATES = [
   { key: "reminder", label: "Appointment Reminder", preview: "Hi {name}! Just a reminder that {pet} has a grooming appointment at Barkin' Beautiful tomorrow. See you then! 🐾" },
@@ -58,6 +58,25 @@ export default function Messages() {
       refetchThreads();
       utils.sms.getUnreadPreview.invalidate();
     },
+  });
+
+  const deleteMessageMutation = trpc.sms.deleteMessage.useMutation({
+    onSuccess: () => { toast.success("Message deleted"); refetch(); refetchThreads(); utils.sms.getUnreadPreview.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteThreadMutation = trpc.sms.deleteThread.useMutation({
+    onSuccess: () => {
+      toast.success("Conversation deleted");
+      refetch(); refetchThreads(); utils.sms.getUnreadPreview.invalidate();
+      setOpenThread(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const clearFailedMutation = trpc.sms.clearFailed.useMutation({
+    onSuccess: () => { toast.success("Failed messages cleared"); refetch(); refetchThreads(); },
+    onError: (e) => toast.error(e.message),
   });
 
   const openThreadDialog = (thread: { clientId: number | null; toNumber: string; clientName: string | null }) => {
@@ -291,28 +310,47 @@ export default function Messages() {
             ) : (
               <div className="divide-y">
                 {threads.map((thread: any) => (
-                  <button
+                  <div
                     key={thread.threadKey}
-                    className="w-full text-left py-3 flex items-center justify-between gap-3 hover:bg-accent/50 transition-colors px-2 -mx-2 rounded-md"
-                    onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
+                    className="w-full flex items-center gap-2 py-1 hover:bg-accent/50 transition-colors px-2 -mx-2 rounded-md group"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate">{thread.clientName?.trim() || thread.toNumber}</span>
-                        {thread.unreadCount > 0 && (
-                          <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center shrink-0">
-                            {thread.unreadCount}
-                          </span>
-                        )}
+                    <button
+                      className="flex-1 min-w-0 text-left py-2 flex items-center justify-between gap-3"
+                      onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{thread.clientName?.trim() || thread.toNumber}</span>
+                          {thread.unreadCount > 0 && (
+                            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center shrink-0">
+                              {thread.unreadCount}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">
-                        {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
-                      </p>
-                    </div>
-                    <span className="text-[11px] text-muted-foreground shrink-0">
-                      {new Date(thread.lastAt).toLocaleDateString("en-AU", { day: "2-digit", month: "short" })}
-                    </span>
-                  </button>
+                      <span className="text-[11px] text-muted-foreground shrink-0">
+                        {new Date(thread.lastAt).toLocaleDateString("en-AU", { day: "2-digit", month: "short" })}
+                      </span>
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      disabled={deleteThreadMutation.isPending}
+                      aria-label="Delete conversation"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete this entire conversation with ${thread.clientName?.trim() || thread.toNumber}? This can't be undone.`)) {
+                          deleteThreadMutation.mutate(thread.clientId ? { tenantId: 1, clientId: thread.clientId } : { tenantId: 1, toNumber: thread.toNumber });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 ))}
               </div>
             )}
@@ -353,6 +391,21 @@ export default function Messages() {
                   <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                   <Input placeholder="Search messages..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
+                {(logs ?? []).some((l: any) => l.status === "failed") && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs text-red-600 hover:text-red-700"
+                    disabled={clearFailedMutation.isPending}
+                    onClick={() => {
+                      if (confirm("Delete all failed messages? This can't be undone.")) {
+                        clearFailedMutation.mutate({ tenantId: 1 });
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear failed
+                  </Button>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -368,6 +421,7 @@ export default function Messages() {
                     <th className="text-left py-2 font-medium text-muted-foreground text-xs">Type</th>
                     <th className="text-left py-2 font-medium text-muted-foreground text-xs">Message</th>
                     <th className="text-right py-2 font-medium text-muted-foreground text-xs">Status</th>
+                    <th className="text-right py-2 font-medium text-muted-foreground text-xs w-8"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -413,6 +467,18 @@ export default function Messages() {
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs text-amber-600"><Clock className="h-3.5 w-3.5" /> Pending</span>
                         )}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-red-600"
+                          disabled={deleteMessageMutation.isPending}
+                          onClick={() => deleteMessageMutation.mutate({ id: log.id, tenantId: 1 })}
+                          aria-label="Delete message"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -506,7 +572,21 @@ export default function Messages() {
               })}
             </div>
           </ScrollArea>
-          <div className="flex justify-end pt-2 border-t">
+          <div className="flex justify-between items-center pt-2 border-t">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5 text-muted-foreground hover:text-red-600"
+              disabled={deleteThreadMutation.isPending}
+              onClick={() => {
+                if (!openThread) return;
+                if (confirm(`Delete this entire conversation with ${openThread.clientName?.trim() || openThread.toNumber}? This can't be undone.`)) {
+                  deleteThreadMutation.mutate(openThread.clientId ? { tenantId: 1, clientId: openThread.clientId } : { tenantId: 1, toNumber: openThread.toNumber });
+                }
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete conversation
+            </Button>
             <Button
               size="sm"
               variant="outline"
