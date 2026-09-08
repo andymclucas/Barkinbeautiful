@@ -1,6 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw } from "lucide-react";
 
@@ -43,10 +44,53 @@ export default function Messages() {
   const [sending, setSending] = useState(false);
 
   const { data: logs, refetch } = trpc.sms.getLogs.useQuery({ tenantId: 1, limit: 100 });
+  const { data: threads, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({ tenantId: 1, limit: 50 });
   const { data: clientResults } = trpc.memberships.searchClients.useQuery(
     { search: clientSearch, tenantId: 1 },
     { enabled: clientSearch.length >= 2 }
   );
+
+  const utils = trpc.useUtils();
+  const [openThread, setOpenThread] = useState<{ clientId: number | null; toNumber: string; clientName: string | null } | null>(null);
+
+  const markThreadReadMutation = trpc.sms.markThreadRead.useMutation({
+    onSuccess: () => {
+      refetchThreads();
+      utils.sms.getUnreadPreview.invalidate();
+    },
+  });
+
+  const openThreadDialog = (thread: { clientId: number | null; toNumber: string; clientName: string | null }) => {
+    setOpenThread(thread);
+    markThreadReadMutation.mutate(thread.clientId ? { tenantId: 1, clientId: thread.clientId } : { tenantId: 1, toNumber: thread.toNumber });
+  };
+
+  // Support arriving here from the notification bell with ?clientId=X or ?toNumber=Y
+  useEffect(() => {
+    if (!threads || threads.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const clientIdParam = params.get("clientId");
+    const toNumberParam = params.get("toNumber");
+    if (!clientIdParam && !toNumberParam) return;
+    const match = threads.find((t: any) =>
+      (clientIdParam && t.clientId === Number(clientIdParam)) ||
+      (toNumberParam && t.toNumber === toNumberParam)
+    );
+    if (match) {
+      openThreadDialog({ clientId: match.clientId, toNumber: match.toNumber, clientName: match.clientName });
+      window.history.replaceState({}, "", "/messages");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threads]);
+
+  const threadMessages = useMemo(() => {
+    if (!openThread || !logs) return [];
+    return logs
+      .filter((l: any) => (openThread.clientId ? l.clientId === openThread.clientId : l.toNumber === openThread.toNumber))
+      .slice()
+      .sort((a: any, b: any) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+  }, [openThread, logs]);
+
 
   const sendMutation = trpc.sms.send.useMutation({
     onSuccess: (result) => {
@@ -239,6 +283,44 @@ export default function Messages() {
 
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold">Conversations</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            {!threads || threads.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
+            ) : (
+              <div className="divide-y">
+                {threads.map((thread: any) => (
+                  <button
+                    key={thread.threadKey}
+                    className="w-full text-left py-3 flex items-center justify-between gap-3 hover:bg-accent/50 transition-colors px-2 -mx-2 rounded-md"
+                    onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{thread.clientName?.trim() || thread.toNumber}</span>
+                        {thread.unreadCount > 0 && (
+                          <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center shrink-0">
+                            {thread.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
+                      </p>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground shrink-0">
+                      {new Date(thread.lastAt).toLocaleDateString("en-AU", { day: "2-digit", month: "short" })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-semibold">SMS History</CardTitle>
               <div className="flex flex-wrap items-center justify-end gap-2">
@@ -392,6 +474,53 @@ export default function Messages() {
                 <Send className="h-3.5 w-3.5" /> {sending ? "Sending..." : "Send SMS"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Thread conversation dialog ── */}
+      <Dialog open={!!openThread} onOpenChange={(open) => !open && setOpenThread(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{openThread?.clientName?.trim() || openThread?.toNumber}</DialogTitle>
+            {openThread?.clientName && <p className="text-xs text-muted-foreground -mt-1">{openThread.toNumber}</p>}
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] pr-3">
+            <div className="flex flex-col gap-2 py-2">
+              {threadMessages.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">No messages in this conversation yet.</p>
+              )}
+              {threadMessages.map((msg: any) => {
+                const isOutbound = msg.direction === "outbound";
+                return (
+                  <div key={msg.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
+                      <p className="whitespace-pre-wrap break-words">{msg.body}</p>
+                      <div className={`mt-1 text-[10px] ${isOutbound ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                        {new Date(msg.sentAt).toLocaleString("en-AU", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}
+                        {isOutbound && ` · ${msg.status}`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+          <div className="flex justify-end pt-2 border-t">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => {
+                if (!openThread) return;
+                setOpenThread(null);
+                setToNumber(openThread.toNumber);
+                setSelectedClientId(openThread.clientId);
+                setComposeOpen(true);
+              }}
+            >
+              <Send className="h-3.5 w-3.5" /> Reply
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

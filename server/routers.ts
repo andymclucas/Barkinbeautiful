@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
 import { getDb } from "./db";
 import { z } from "zod";
-import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray } from "drizzle-orm";
+import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, isNull } from "drizzle-orm";
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
@@ -4973,6 +4973,82 @@ const smsRouter = router({
         .leftJoin(users, eq(smsLogs.processedByUserId, users.id))
         .where(and(...conditions)).orderBy(desc(smsLogs.sentAt)).limit(input.limit);
     }),
+
+  // Conversation threads: one row per client/number, with their most recent
+  // message and how many inbound messages from them are still unread.
+  getThreads: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(50) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db.select({
+        id: smsLogs.id, toNumber: smsLogs.toNumber, body: smsLogs.body,
+        direction: smsLogs.direction, sentAt: smsLogs.sentAt, readAt: smsLogs.readAt,
+        clientId: smsLogs.clientId,
+        clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
+      }).from(smsLogs)
+        .leftJoin(clients, eq(smsLogs.clientId, clients.id))
+        .where(eq(smsLogs.tenantId, input.tenantId))
+        .orderBy(desc(smsLogs.sentAt))
+        .limit(1000);
+
+      // Group in memory by a stable thread key (clientId if known, else the raw number).
+      const threads = new Map<string, {
+        threadKey: string; clientId: number | null; clientName: string | null; toNumber: string;
+        lastMessage: string; lastDirection: string; lastAt: Date; unreadCount: number;
+      }>();
+      for (const row of rows) {
+        const key = row.clientId ? `client:${row.clientId}` : `number:${row.toNumber}`;
+        const unread = row.direction === "inbound" && !row.readAt;
+        const existing = threads.get(key);
+        if (!existing) {
+          threads.set(key, {
+            threadKey: key, clientId: row.clientId, clientName: (row.clientName as string) ?? null, toNumber: row.toNumber,
+            lastMessage: row.body, lastDirection: row.direction, lastAt: row.sentAt, unreadCount: unread ? 1 : 0,
+          });
+        } else {
+          if (unread) existing.unreadCount += 1;
+        }
+      }
+      return Array.from(threads.values()).sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime()).slice(0, input.limit);
+    }),
+
+  markThreadRead: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number().optional(), toNumber: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      if (!input.clientId && !input.toNumber) return { success: true };
+      const conditions = [
+        eq(smsLogs.tenantId, input.tenantId),
+        eq(smsLogs.direction, "inbound" as const),
+        isNull(smsLogs.readAt),
+      ];
+      conditions.push(input.clientId ? eq(smsLogs.clientId, input.clientId) : eq(smsLogs.toNumber, input.toNumber!));
+      await db.update(smsLogs).set({ readAt: new Date() }).where(and(...conditions));
+      return { success: true };
+    }),
+
+  // Lightweight, frequently-polled preview for the notification bell.
+  getUnreadPreview: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(5) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { unreadCount: 0, recent: [] };
+      const unread = await db.select({
+        id: smsLogs.id, body: smsLogs.body, sentAt: smsLogs.sentAt,
+        clientId: smsLogs.clientId, toNumber: smsLogs.toNumber,
+        clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
+      }).from(smsLogs)
+        .leftJoin(clients, eq(smsLogs.clientId, clients.id))
+        .where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.direction, "inbound"), isNull(smsLogs.readAt)))
+        .orderBy(desc(smsLogs.sentAt))
+        .limit(input.limit);
+      const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(smsLogs)
+        .where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.direction, "inbound"), isNull(smsLogs.readAt)));
+      return { unreadCount: Number(count), recent: unread };
+    }),
+
 
   reviewInboundReply: protectedProcedure
     .input(z.object({
