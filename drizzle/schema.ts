@@ -726,6 +726,7 @@ export const smsLogs = mysqlTable("sms_logs", {
   direction: mysqlEnum("direction", ["outbound", "inbound"]).default("outbound").notNull(),
   replyIntent: mysqlEnum("reply_intent", ["confirm", "cancel", "unknown"]),
   processedAt: timestamp("processed_at"),
+  readAt: timestamp("read_at"),
   reviewAction: mysqlEnum("review_action", ["confirm", "cancel"]),
   processedByUserId: int("processed_by_user_id").references(() => users.id),
   errorMessage: text("error_message"),
