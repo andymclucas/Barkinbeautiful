@@ -260,7 +260,7 @@ function ApptBlock({
         boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}`,
         zIndex: 2,
       }}
-      onClick={onClick}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
       onDragStart={canDrag && onDragStart ? (e) => onDragStart(e, appt) : undefined}
       onDragEnd={onDragEnd}
       aria-label={`${isCancelled ? "Cancelled " : ""}appointment for ${sharedAppointmentLabel || "pet"}`}
@@ -1307,6 +1307,13 @@ export default function Calendar() {
               <div
                 key={di}
                 className={`border-r last:border-r-0 min-h-[400px] p-1.5 space-y-1 ${isToday ? "bg-primary/[0.02]" : ""}`}
+                onClick={() => {
+                  const y = day.getFullYear();
+                  const mo = String(day.getMonth() + 1).padStart(2, "0");
+                  const d = String(day.getDate()).padStart(2, "0");
+                  setNewAppt(p => ({ ...p, scheduledStart: `${y}-${mo}-${d}T09:00`, scheduledEnd: `${y}-${mo}-${d}T10:00` }));
+                  setShowNewAppt(true);
+                }}
               >
                 {dayAppts.length === 0 ? (
                   <div className="flex items-center justify-center h-20 text-xs text-muted-foreground/50">
@@ -1325,7 +1332,7 @@ export default function Calendar() {
                         key={appt.id}
                         className={`brand-lift rounded-md border border-white/80 px-2 py-1.5 cursor-pointer text-[11px] leading-tight ${isCancelled ? "bg-red-50" : ""}`}
                         style={{ background: isCancelled ? "linear-gradient(135deg, #fee2e2 0%, #fff7f7 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`, borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`, boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}` }}
-                        onClick={() => openEdit(appt as Appt)}
+                        onClick={(e) => { e.stopPropagation(); openEdit(appt as Appt); }}
                       >
                         {isCancelled && <div className="mb-1 inline-flex rounded-sm bg-red-700 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">Cancelled</div>}
                         <div className={`font-bold truncate ${isCancelled ? "line-through decoration-2 decoration-red-700" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
@@ -1428,6 +1435,29 @@ export default function Calendar() {
                   style={{ height: GRID_HEIGHT, backgroundImage: "linear-gradient(to bottom, rgba(255,255,255,0.52), rgba(255,255,255,0.18))" }}
                   onDragOver={(e) => handleDragOverColumn(e, s.id)}
                   onDrop={(e) => handleDropOnColumn(e, s.id)}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const offsetY = e.clientY - rect.top;
+                    let hourFraction = 7 + offsetY / HOUR_HEIGHT;
+                    hourFraction = Math.max(7, Math.min(19.75, hourFraction));
+                    const snappedMinutes = Math.round((hourFraction * 60) / 15) * 15;
+                    const startH = Math.floor(snappedMinutes / 60);
+                    const startM = snappedMinutes % 60;
+                    const endTotal = snappedMinutes + 60;
+                    const endH = Math.floor(endTotal / 60);
+                    const endM = endTotal % 60;
+                    const y = dayDate.getFullYear();
+                    const mo = String(dayDate.getMonth() + 1).padStart(2, "0");
+                    const d = String(dayDate.getDate()).padStart(2, "0");
+                    const pad = (n: number) => String(n).padStart(2, "0");
+                    setNewAppt(p => ({
+                      ...p,
+                      staffId: String(s.id),
+                      scheduledStart: `${y}-${mo}-${d}T${pad(startH)}:${pad(startM)}`,
+                      scheduledEnd: `${y}-${mo}-${d}T${pad(endH)}:${pad(endM)}`,
+                    }));
+                    setShowNewAppt(true);
+                  }}
                 >
                   {/* Hour lines */}
                   {HOURS.map(hour => (
@@ -1471,7 +1501,7 @@ export default function Calendar() {
                             <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 flex items-center gap-1">
                               <Ban className="h-2.5 w-2.5" /> {b.reason || "Day Off"}
                             </span>
-                            <button className="pointer-events-auto text-red-400 hover:text-red-600" onClick={() => setConfirmDelete({ type: "blockout", id: b.id, label: b.reason || "Day Off" })}>
+                            <button className="pointer-events-auto text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: b.reason || "Day Off" }); }}>
                               <Trash2 className="h-3 w-3" />
                             </button>
                           </div>
@@ -1489,7 +1519,7 @@ export default function Calendar() {
                           <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 flex items-center gap-1">
                             <Ban className="h-2.5 w-2.5" /> {b.startTime}–{b.endTime} {b.reason || "Blocked"}
                           </span>
-                          <button className="pointer-events-auto text-red-400 hover:text-red-600" onClick={() => setConfirmDelete({ type: "blockout", id: b.id, label: `${b.startTime}–${b.endTime} ${b.reason || "Blocked"}` })}>
+                          <button className="pointer-events-auto text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: `${b.startTime}–${b.endTime} ${b.reason || "Blocked"}` }); }}>
                             <Trash2 className="h-3 w-3" />
                           </button>
                         </div>
