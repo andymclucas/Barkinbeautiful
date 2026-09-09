@@ -10,7 +10,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -517,6 +517,29 @@ const calendarRouter = router({
         toState: input.newState,
         changedByStaffId: portalStaff?.id ?? input.staffId,
       });
+
+      // Automatically draw down the client's store credit balance the moment
+      // an appointment is completed, up to whatever balance is available.
+      // Never goes negative — if credit doesn't fully cover it, we deduct
+      // what's there and leave the rest for normal invoicing.
+      if (input.newState === "complete" && appt.workflowState !== "complete" && appt.price && Number(appt.price) > 0) {
+        const [balanceRow] = await db.select({ total: sql<string>`COALESCE(SUM(${storeCreditTransactions.amount}), 0)` })
+          .from(storeCreditTransactions)
+          .where(and(eq(storeCreditTransactions.tenantId, appt.tenantId), eq(storeCreditTransactions.clientId, appt.clientId)));
+        const availableBalance = Number(balanceRow?.total ?? 0);
+        if (availableBalance > 0) {
+          const deduction = Math.min(availableBalance, Number(appt.price));
+          await db.insert(storeCreditTransactions).values({
+            tenantId: appt.tenantId,
+            clientId: appt.clientId,
+            amount: (-deduction).toFixed(2),
+            type: "appointment_deduction",
+            appointmentId: appt.id,
+            note: `Auto-deducted on appointment completion`,
+          });
+        }
+      }
+
 
       // Pet Tracker links are operationally useful but must not be sent during the
       // prototype. A successful send is logged and marked once to prevent repeats.
@@ -3249,6 +3272,87 @@ const membershipPlanInput = z.object({
   sortOrder: z.coerce.number().int().min(0).max(100000).default(0),
 });
 
+// ─── Store Credit ──────────────────────────────────────────────────────────
+const storeCreditRouter = router({
+  getBalance: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { balance: "0.00" };
+      const [row] = await db.select({ total: sql<string>`COALESCE(SUM(${storeCreditTransactions.amount}), 0)` })
+        .from(storeCreditTransactions)
+        .where(and(eq(storeCreditTransactions.tenantId, input.tenantId), eq(storeCreditTransactions.clientId, input.clientId)));
+      return { balance: row?.total ?? "0.00" };
+    }),
+
+  getHistory: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number(), limit: z.number().default(50) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        id: storeCreditTransactions.id,
+        amount: storeCreditTransactions.amount,
+        type: storeCreditTransactions.type,
+        method: storeCreditTransactions.method,
+        note: storeCreditTransactions.note,
+        appointmentId: storeCreditTransactions.appointmentId,
+        createdAt: storeCreditTransactions.createdAt,
+        createdByName: users.name,
+      }).from(storeCreditTransactions)
+        .leftJoin(users, eq(storeCreditTransactions.createdByUserId, users.id))
+        .where(and(eq(storeCreditTransactions.tenantId, input.tenantId), eq(storeCreditTransactions.clientId, input.clientId)))
+        .orderBy(desc(storeCreditTransactions.createdAt))
+        .limit(input.limit);
+    }),
+
+  addCredit: adminProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      clientId: z.number(),
+      amount: z.string(),
+      method: z.enum(["cash", "bank_transfer", "card", "other"]),
+      note: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      if (Number(input.amount) <= 0) throw new Error("Amount must be greater than zero");
+      await db.insert(storeCreditTransactions).values({
+        tenantId: input.tenantId,
+        clientId: input.clientId,
+        amount: input.amount,
+        type: "credit_added",
+        method: input.method,
+        note: input.note,
+        createdByUserId: ctx.user?.id,
+      });
+      return { success: true };
+    }),
+
+  adjustCredit: adminProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      clientId: z.number(),
+      amount: z.string(),
+      note: z.string().max(500),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      if (Number(input.amount) === 0) throw new Error("Adjustment amount can't be zero");
+      await db.insert(storeCreditTransactions).values({
+        tenantId: input.tenantId,
+        clientId: input.clientId,
+        amount: input.amount,
+        type: "adjustment",
+        note: input.note,
+        createdByUserId: ctx.user?.id,
+      });
+      return { success: true };
+    }),
+});
+
 const pricingRouter = router({
   listServices: adminProcedure
     .input(z.object({ tenantId: z.number().int().positive().default(1) }))
@@ -5730,6 +5834,7 @@ export const appRouter = router({
   groomingReports: groomingReportsRouter,
   groomStylePresets: groomStylePresetsRouter,
   pricing: pricingRouter,
+  storeCredit: storeCreditRouter,
   retail: retailRouter,
   analytics: analyticsRouter,
   analyticsExt: analyticsRouterExtended,

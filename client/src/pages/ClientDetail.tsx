@@ -104,6 +104,128 @@ function ClientProfileSkeleton() {
   );
 }
 
+function StoreCreditCard({ clientId }: { clientId: number }) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<"cash" | "bank_transfer" | "card" | "other">("bank_transfer");
+  const [note, setNote] = useState("");
+
+  const utils = trpc.useUtils();
+  const { data: balanceData } = trpc.storeCredit.getBalance.useQuery({ clientId });
+  const { data: history } = trpc.storeCredit.getHistory.useQuery({ clientId }, { enabled: showHistory });
+  const balance = Number(balanceData?.balance ?? 0);
+
+  const addCreditMutation = trpc.storeCredit.addCredit.useMutation({
+    onSuccess: () => {
+      toast.success("Store credit added");
+      utils.storeCredit.getBalance.invalidate({ clientId });
+      utils.storeCredit.getHistory.invalidate({ clientId });
+      setAddOpen(false);
+      setAmount("");
+      setNote("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const typeLabel: Record<string, string> = {
+    credit_added: "Credit added",
+    appointment_deduction: "Used on appointment",
+    refund: "Refund",
+    adjustment: "Adjustment",
+  };
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-primary" /> Store Credit
+        </CardTitle>
+        <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Plus className="h-3.5 w-3.5 mr-1" /> Add credit
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-bold">${balance.toFixed(2)}</span>
+          <span className="text-sm text-muted-foreground">available</span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          Automatically applied to each appointment's cost as it's completed, until used up.
+        </p>
+        <button
+          className="text-sm text-primary font-medium mt-3 flex items-center gap-1"
+          onClick={() => setShowHistory(!showHistory)}
+        >
+          <History className="h-3.5 w-3.5" /> {showHistory ? "Hide" : "View"} history
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showHistory ? "rotate-180" : ""}`} />
+        </button>
+        {showHistory && (
+          <div className="mt-3 border rounded-lg divide-y">
+            {!history || history.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No store credit activity yet.</p>
+            ) : (
+              history.map((tx: any) => (
+                <div key={tx.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <div>
+                    <div className="font-medium">{typeLabel[tx.type] ?? tx.type}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(tx.createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                      {tx.method ? ` · ${tx.method.replace("_", " ")}` : ""}
+                      {tx.createdByName ? ` · ${tx.createdByName}` : ""}
+                      {tx.note ? ` · ${tx.note}` : ""}
+                    </div>
+                  </div>
+                  <span className={`font-semibold ${Number(tx.amount) >= 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                    {Number(tx.amount) >= 0 ? "+" : ""}{Number(tx.amount).toFixed(2)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Add store credit</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Amount ($)</Label>
+              <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="600.00" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Payment method</Label>
+              <Select value={method} onValueChange={(v: any) => setMethod(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank_transfer">Bank transfer</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Note (optional)</Label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Full year prepay" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button
+              disabled={addCreditMutation.isPending}
+              onClick={() => addCreditMutation.mutate({ clientId, amount: amount.trim(), method, note: note.trim() || undefined })}
+            >
+              Add credit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
 export default function ClientDetail() {
   const params = useParams<{ id: string }>();
   const clientId = parseInt(params.id ?? "0");
@@ -987,6 +1109,8 @@ export default function ClientDetail() {
 
           {/* ── Payments tab ── */}
           <TabsContent value="payments" className="mt-4">
+            <StoreCreditCard clientId={client.id} />
+
             <div className="bg-card rounded-xl border overflow-hidden shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b">

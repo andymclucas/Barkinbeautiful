@@ -316,6 +316,13 @@
       "when": 1788897412983,
       "tag": "0044_sms_logs_read_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "5",
+      "when": 1788927568937,
+      "tag": "0045_store_credit",
+      "breakpoints": true
     }
   ]
 }

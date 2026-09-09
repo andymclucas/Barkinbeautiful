@@ -734,3 +734,21 @@ export const smsLogs = mysqlTable("sms_logs", {
 }, (t) => [index("idx_sms_tenant").on(t.tenantId), index("idx_sms_client").on(t.clientId)]);
 
 export type SmsLog = typeof smsLogs.$inferSelect;
+
+// ─── Store Credit (client prepaid balance, ledger-based) ──────────────────────
+export const storeCreditTransactions = mysqlTable("store_credit_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  clientId: int("client_id").notNull().references(() => clients.id),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), // +ve = credit added, -ve = credit used
+  type: mysqlEnum("type", ["credit_added", "appointment_deduction", "refund", "adjustment"]).notNull(),
+  method: varchar("method", { length: 50 }), // cash, bank_transfer, card, other — only set for credit_added
+  appointmentId: int("appointment_id").references(() => appointments.id),
+  note: text("note"),
+  createdByUserId: int("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_store_credit_tenant_client").on(t.tenantId, t.clientId),
+]);
+
+export type StoreCreditTransaction = typeof storeCreditTransactions.$inferSelect;
