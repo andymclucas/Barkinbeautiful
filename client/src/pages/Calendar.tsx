@@ -1634,7 +1634,7 @@ export default function Calendar() {
                   Find appointment
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-full max-w-[calc(100vw-2rem)] p-0" align="start" style={{ width: "var(--radix-popover-trigger-width, 360px)" }}>
+              <PopoverContent className="w-full max-w-[calc(100vw-2rem)] p-0" align="start" style={{ width: "360px" }}>
                 <div className="p-2 border-b">
                   <div className="relative">
                     <Input
@@ -1678,11 +1678,11 @@ export default function Calendar() {
                         className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2"
                         onClick={() => jumpToAppointment(r.scheduledStart)}
                       >
-                        <span className="min-w-0">
+                        <span className="min-w-0 flex-1">
                           <span className="font-semibold block truncate">{r.petName ?? "Unnamed pet"}</span>
                           <span className="text-xs text-muted-foreground block truncate">{[r.clientFirstName, r.clientLastName].filter(Boolean).join(" ") || "Unknown client"} · {SERVICE_LABELS[r.serviceType] ?? r.serviceType}</span>
                         </span>
-                        <span className="text-xs text-muted-foreground shrink-0 text-right">
+                        <span className="text-xs text-muted-foreground shrink-0 text-right whitespace-nowrap">
                           {new Date(r.scheduledStart).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric", timeZone: "Australia/Brisbane" })}
                           <br />
                           {new Date(r.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Australia/Brisbane" })}
