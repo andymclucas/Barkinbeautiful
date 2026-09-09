@@ -1,9 +1,16 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const SERVICE_LABELS: Record<string, string> = {
+  classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
+  fft: "FFT (Face, Feet & Hygiene Tidy)", nail_trim: "Nail Trim", daycare: "Daycare", deshed: "De-shed", other: "Other",
+};
 
 function getDateRange(period: string): { from: string; to: string } {
   const now = new Date();
@@ -29,6 +36,37 @@ export default function Reporting() {
     tenantId: 1, dateFrom: from, dateTo: to,
   });
 
+  const { data: financials, isLoading: loadingFinancials } = trpc.analytics.financialBreakdown.useQuery({
+    tenantId: 1, dateFrom: from, dateTo: to,
+  });
+
+  const { data: timing, isLoading: loadingTiming } = trpc.analytics.workflowTiming.useQuery({
+    tenantId: 1, dateFrom: from, dateTo: to,
+  });
+
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/reports/export?tenantId=1&dateFrom=${from}&dateTo=${to}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `barkin-beautiful-report-${from}-to-${to}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Report downloaded");
+    } catch {
+      toast.error("Couldn't export the report. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const periodLabels: Record<string, string> = {
     "7d": "Last 7 days", "30d": "Last 30 days", "90d": "Last 90 days",
     "ytd": "Year to date", "1y": "Last 12 months",
@@ -44,18 +82,23 @@ export default function Reporting() {
               Business performance and operational reports
             </p>
           </div>
-          <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-40 h-9 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">Last 7 days</SelectItem>
-              <SelectItem value="30d">Last 30 days</SelectItem>
-              <SelectItem value="90d">Last 90 days</SelectItem>
-              <SelectItem value="ytd">Year to date</SelectItem>
-              <SelectItem value="1y">Last 12 months</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Select value={period} onValueChange={setPeriod}>
+              <SelectTrigger className="w-40 h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="90d">Last 90 days</SelectItem>
+                <SelectItem value="ytd">Year to date</SelectItem>
+                <SelectItem value="1y">Last 12 months</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" className="h-9 gap-1.5" disabled={exporting} onClick={handleExport}>
+              <Download className="h-3.5 w-3.5" /> {exporting ? "Exporting…" : "Export full report"}
+            </Button>
+          </div>
         </div>
 
         {/* KPI summary */}
@@ -142,6 +185,104 @@ export default function Reporting() {
                           className="h-full rounded-full transition-all"
                           style={{ width: `${pct}%`, backgroundColor: s.staffColour || "#6366f1" }}
                         />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Financial breakdown */}
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">
+              Financial Breakdown — {periodLabels[period]}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingFinancials ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">Loading…</div>
+            ) : !financials || financials.byServiceType.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">
+                No completed appointments for this period.
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Revenue</p>
+                    <p className="text-lg font-bold mt-0.5">${financials.totalRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Membership</p>
+                    <p className="text-lg font-bold mt-0.5">${financials.membershipRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">One-off</p>
+                    <p className="text-lg font-bold mt-0.5">${financials.oneOffRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">By service type</p>
+                  {financials.byServiceType.map((s: any) => {
+                    const pct = financials.totalRevenue > 0 ? (s.revenue / financials.totalRevenue) * 100 : 0;
+                    return (
+                      <div key={s.serviceType} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium">{SERVICE_LABELS[s.serviceType] ?? s.serviceType}</span>
+                          <div className="flex items-center gap-4 text-muted-foreground text-xs">
+                            <span>{s.count} appts</span>
+                            <span className="font-medium text-foreground">${s.revenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </div>
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Workflow timing */}
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" /> Workflow Timing — {periodLabels[period]}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">Average time spent in each stage, from check-in to completion.</p>
+          </CardHeader>
+          <CardContent>
+            {loadingTiming ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">Loading…</div>
+            ) : !timing || timing.sampleSize === 0 ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">
+                No workflow timing data for this period.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {timing.stages.map((s: any) => {
+                  const maxMinutes = Math.max(...timing.stages.map((x: any) => x.avgMinutes), 1);
+                  const pct = (s.avgMinutes / maxMinutes) * 100;
+                  const isTotal = s.key === "total";
+                  return (
+                    <div key={s.key} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className={isTotal ? "font-semibold" : "font-medium"}>{s.label}</span>
+                        <div className="flex items-center gap-3 text-muted-foreground text-xs">
+                          <span>{s.sampleSize} samples</span>
+                          <span className="font-medium text-foreground">
+                            {s.avgMinutes > 0 ? `${Math.floor(s.avgMinutes / 60) > 0 ? `${Math.floor(s.avgMinutes / 60)}h ` : ""}${Math.round(s.avgMinutes % 60)}m` : "—"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${isTotal ? "bg-primary" : "bg-teal-500"}`} style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                   );

@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
 import { getDb } from "./db";
 import { z } from "zod";
-import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, isNull, isNotNull } from "drizzle-orm";
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
@@ -3554,6 +3554,99 @@ const analyticsRouter = router({
         activeMemberships: membershipCount?.count ?? 0,
         activeClients: clientCount?.count ?? 0,
       };
+    }),
+
+  financialBreakdown: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { byServiceType: [], membershipRevenue: 0, oneOffRevenue: 0, totalRevenue: 0 };
+      const range = [
+        eq(appointments.tenantId, input.tenantId),
+        eq(appointments.workflowState, "complete"),
+        gte(appointments.scheduledStart, new Date(input.dateFrom)),
+        lte(appointments.scheduledStart, new Date(input.dateTo)),
+      ];
+
+      const byServiceType = await db.select({
+        serviceType: appointments.serviceType,
+        count: sql<number>`COUNT(*)`,
+        revenue: sql<string>`COALESCE(SUM(${appointments.price}), 0)`,
+      }).from(appointments).where(and(...range)).groupBy(appointments.serviceType);
+
+      const [membershipRow] = await db.select({ total: sql<string>`COALESCE(SUM(${appointments.price}), 0)` })
+        .from(appointments)
+        .where(and(...range, isNotNull(appointments.membershipId)));
+
+      const totalRevenue = byServiceType.reduce((sum: number, r: any) => sum + parseFloat(r.revenue || "0"), 0);
+      const membershipRevenue = parseFloat(membershipRow?.total ?? "0");
+
+      return {
+        byServiceType: byServiceType.map((r: any) => ({
+          serviceType: r.serviceType ?? "other",
+          count: r.count,
+          revenue: Math.round(parseFloat(r.revenue || "0") * 100) / 100,
+        })).sort((a: any, b: any) => b.revenue - a.revenue),
+        membershipRevenue: Math.round(membershipRevenue * 100) / 100,
+        oneOffRevenue: Math.round((totalRevenue - membershipRevenue) * 100) / 100,
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+      };
+    }),
+
+  workflowTiming: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { stages: [], sampleSize: 0 };
+      const rows = await db.select({
+        checkedInAt: appointments.checkedInAt,
+        bathingStartedAt: appointments.bathingStartedAt,
+        bathingCompletedAt: appointments.bathingCompletedAt,
+        dryingStartedAt: appointments.dryingStartedAt,
+        dryingCompletedAt: appointments.dryingCompletedAt,
+        groomingStartedAt: appointments.groomingStartedAt,
+        groomingCompletedAt: appointments.groomingCompletedAt,
+        readyAt: appointments.readyAt,
+        pickedUpAt: appointments.pickedUpAt,
+        completedAt: appointments.completedAt,
+      }).from(appointments).where(and(
+        eq(appointments.tenantId, input.tenantId),
+        eq(appointments.workflowState, "complete"),
+        gte(appointments.scheduledStart, new Date(input.dateFrom)),
+        lte(appointments.scheduledStart, new Date(input.dateTo)),
+        isNotNull(appointments.checkedInAt),
+      ));
+
+      // Average (in minutes) for each stage, only counting appointments that
+      // actually have both timestamps needed for that specific stage — a
+      // salon might skip bathing or drying for some appointments, so those
+      // shouldn't drag the average down to zero.
+      const stageDefs: { key: string; label: string; from: keyof typeof rows[0]; to: keyof typeof rows[0] }[] = [
+        { key: "wait", label: "Check-in → Bathing start", from: "checkedInAt", to: "bathingStartedAt" },
+        { key: "bathing", label: "Bathing", from: "bathingStartedAt", to: "bathingCompletedAt" },
+        { key: "drying", label: "Drying", from: "dryingStartedAt", to: "dryingCompletedAt" },
+        { key: "grooming", label: "Grooming", from: "groomingStartedAt", to: "groomingCompletedAt" },
+        { key: "readyWait", label: "Ready → Picked up", from: "readyAt", to: "pickedUpAt" },
+        { key: "total", label: "Total (check-in → complete)", from: "checkedInAt", to: "completedAt" },
+      ];
+
+      const stages = stageDefs.map(def => {
+        const durations: number[] = [];
+        for (const row of rows) {
+          const from = row[def.from] as number | null;
+          const to = row[def.to] as number | null;
+          if (from && to && to > from) durations.push((to - from) / 60000);
+        }
+        const avg = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
+        return {
+          key: def.key,
+          label: def.label,
+          avgMinutes: Math.round(avg * 10) / 10,
+          sampleSize: durations.length,
+        };
+      });
+
+      return { stages, sampleSize: rows.length };
     }),
 
   membershipBreakdown: protectedProcedure
