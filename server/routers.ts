@@ -5328,7 +5328,7 @@ async function buildClientPortalPayload(db: any, access: {
   salonPhone: string | null;
   salonEmail: string | null;
 }) {
-  const [clientPets, clientAppointments, clientMemberships, clientReports] = await Promise.all([
+  const [clientPets, clientAppointments, clientMemberships, clientReports, creditBalanceRow] = await Promise.all([
     db.select({ id: pets.id, name: pets.name, breed: pets.breed, species: pets.species, status: pets.status })
       .from(pets)
       .where(and(eq(pets.clientId, access.clientId), eq(pets.tenantId, access.tenantId)))
@@ -5384,6 +5384,9 @@ async function buildClientPortalPayload(db: any, access: {
       ))
       .orderBy(desc(appointments.scheduledStart))
       .limit(12),
+    db.select({ total: sql<string>`COALESCE(SUM(${storeCreditTransactions.amount}), 0)` })
+      .from(storeCreditTransactions)
+      .where(and(eq(storeCreditTransactions.tenantId, access.tenantId), eq(storeCreditTransactions.clientId, access.clientId))),
   ]);
 
   return {
@@ -5393,7 +5396,38 @@ async function buildClientPortalPayload(db: any, access: {
     appointments: clientAppointments,
     memberships: clientMemberships,
     groomingCards: clientReports,
+    storeCreditBalance: creditBalanceRow[0]?.total ?? "0.00",
   };
+}
+
+// Resolves which client is making a portal request, whether they're using a
+// temporary token link or a full logged-in account. Both paths are supported
+// everywhere a client can act on their own data (e.g. reschedule/cancel).
+async function resolvePortalClient(db: any, input: { token?: string }, req: any) {
+  if (input.token) {
+    const [access] = await db.select({
+      id: clientPortalAccess.id,
+      clientId: clientPortalAccess.clientId,
+      tenantId: clientPortalAccess.tenantId,
+      status: clientPortalAccess.status,
+      expiresAt: clientPortalAccess.expiresAt,
+    })
+      .from(clientPortalAccess)
+      .where(and(eq(clientPortalAccess.tokenHash, hashClientPortalToken(input.token)), eq(clientPortalAccess.status, "active")))
+      .limit(1);
+    if (!access || isClientPortalLinkExpired(access.expiresAt)) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "This client portal link is invalid or has expired." });
+    }
+    return { clientId: access.clientId as number, tenantId: access.tenantId as number };
+  }
+  const session = await readClientPortalSession(req);
+  if (!session) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
+  const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId })
+    .from(clients)
+    .where(and(eq(clients.id, session.clientId), eq(clients.tenantId, session.tenantId), eq(clients.portalAccountStatus, "active"), eq(clients.portalSessionVersion, session.sessionVersion)))
+    .limit(1);
+  if (!client) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
+  return { clientId: client.id as number, tenantId: client.tenantId as number };
 }
 
 const clientPortalRouter = router({
@@ -5816,6 +5850,81 @@ const clientPortalRouter = router({
       .limit(1);
     if (!access) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
     return buildClientPortalPayload(db, access);
+    }),
+
+  cancelAppointment: publicProcedure
+    .input(z.object({ token: z.string().optional(), appointmentId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+
+      const [appt] = await db.select({
+        id: appointments.id, clientId: appointments.clientId, tenantId: appointments.tenantId,
+        scheduledStart: appointments.scheduledStart, workflowState: appointments.workflowState, status: appointments.status,
+      }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+
+      if (!appt || appt.clientId !== clientId || appt.tenantId !== tenantId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found." });
+      }
+      if (appt.workflowState !== "scheduled" || appt.status === "cancelled") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This appointment can no longer be cancelled online \u2014 please call the salon." });
+      }
+      if (new Date(appt.scheduledStart).getTime() <= Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This appointment has already started or passed." });
+      }
+
+      await db.update(appointments).set({ status: "cancelled", workflowState: "cancelled" }).where(eq(appointments.id, appt.id));
+      return { success: true };
+    }),
+
+  rescheduleAppointment: publicProcedure
+    .input(z.object({ token: z.string().optional(), appointmentId: z.number(), newStart: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+
+      const [appt] = await db.select({
+        id: appointments.id, clientId: appointments.clientId, tenantId: appointments.tenantId, staffId: appointments.staffId,
+        scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd,
+        workflowState: appointments.workflowState, status: appointments.status,
+      }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+
+      if (!appt || appt.clientId !== clientId || appt.tenantId !== tenantId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found." });
+      }
+      if (appt.workflowState !== "scheduled" || appt.status === "cancelled") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This appointment can no longer be rescheduled online \u2014 please call the salon." });
+      }
+      if (new Date(appt.scheduledStart).getTime() <= Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This appointment has already started or passed." });
+      }
+
+      const newStart = new Date(input.newStart);
+      if (Number.isNaN(newStart.getTime()) || newStart.getTime() <= Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Please choose a valid future date and time." });
+      }
+      const durationMs = new Date(appt.scheduledEnd).getTime() - new Date(appt.scheduledStart).getTime();
+      const newEnd = new Date(newStart.getTime() + durationMs);
+
+      if (appt.staffId) {
+        const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
+          eq(appointments.staffId, appt.staffId),
+          eq(appointments.tenantId, tenantId),
+          ne(appointments.id, appt.id),
+          ne(appointments.workflowState, "cancelled"),
+          ne(appointments.status, "cancelled"),
+          lt(appointments.scheduledStart, newEnd),
+          gt(appointments.scheduledEnd, newStart),
+        )).limit(1);
+        if (conflict) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "That time is no longer available. Please choose another time or call the salon." });
+        }
+      }
+
+      await db.update(appointments).set({ scheduledStart: newStart, scheduledEnd: newEnd }).where(eq(appointments.id, appt.id));
+      return { success: true, scheduledStart: newStart, scheduledEnd: newEnd };
     }),
 });
 
