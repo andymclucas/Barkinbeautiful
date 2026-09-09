@@ -122,6 +122,15 @@ function fmtDateShort(date: Date) {
   return date.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" });
 }
 
+// "Today" per Brisbane's calendar, not whatever timezone the device's system
+// clock happens to be set to. Without this, opening the calendar or clicking
+// "Today" near a day boundary could silently land on the wrong day if the
+// computer isn't set to Australian time.
+function getTodayAEST(): Date {
+  const aest = toAESTDate(new Date());
+  return new Date(aest.getUTCFullYear(), aest.getUTCMonth(), aest.getUTCDate());
+}
+
 /** Convert AEST hour+minute into a pixel offset from the top of the grid (7am = 0) */
 function timeToTop(aestDate: Date): number {
   const h = aestDate.getUTCHours();
@@ -752,12 +761,12 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function Calendar() {
-  const [weekStart, setWeekStart]   = useState(() => getWeekStart(new Date()));
+  const [weekStart, setWeekStart]   = useState(() => getWeekStart(getTodayAEST()));
   const [showNewAppt, setShowNewAppt] = useState(false);
   const [editAppt, setEditAppt]     = useState<Appt | null>(null);
   const [copySnap, setCopySnap]     = useState<ReportSnapshot | null>(null);
   const [viewMode, setViewMode]     = useState<"week" | "day">("day");
-  const [dayDate, setDayDate]       = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
+  const [dayDate, setDayDate]       = useState(() => getTodayAEST());
   const [visibleStaffIds, setVisibleStaffIds] = useState<number[] | null>(null);
   const [apptSearchOpen, setApptSearchOpen] = useState(false);
   const [apptSearchTerm, setApptSearchTerm] = useState("");
@@ -918,8 +927,14 @@ export default function Calendar() {
   );
 
   const jumpToAppointment = (scheduledStart: string | Date) => {
-    const target = new Date(scheduledStart);
-    target.setHours(0, 0, 0, 0);
+    // Don't use setHours(0,0,0,0) here — that computes midnight in whatever
+    // timezone the browser's system clock happens to be set to, which can
+    // silently land on the wrong calendar day if it isn't set to Brisbane.
+    // Instead, work out the correct Brisbane calendar date first (the same
+    // safe conversion used everywhere else in this file), then build a
+    // plain local midnight Date from those exact year/month/day numbers.
+    const aest = toAESTDate(new Date(scheduledStart));
+    const target = new Date(aest.getUTCFullYear(), aest.getUTCMonth(), aest.getUTCDate());
     setDayDate(target);
     setViewMode("day");
     setWeekStart(getWeekStart(target));
@@ -1163,7 +1178,7 @@ export default function Calendar() {
   const navigateDay = (dir: number) =>
     setDayDate(d => { const n = new Date(d); n.setDate(n.getDate() + dir); return n; });
   const goToToday = () => {
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today = getTodayAEST();
     setWeekStart(getWeekStart(today));
     setDayDate(today);
   };
@@ -1274,7 +1289,7 @@ export default function Calendar() {
           style={{ gridTemplateColumns: `repeat(7, 1fr)` }}
         >
           {weekDays.map((day, i) => {
-            const isToday = day.toDateString() === new Date().toDateString();
+            const isToday = day.toDateString() === getTodayAEST().toDateString();
             const dayAppts = filteredAppts.filter(a => aestDateKey(new Date(a.scheduledStart)) === dayDateKey(day));
             return (
               <div
@@ -1299,7 +1314,7 @@ export default function Calendar() {
         {/* Agenda rows — one scrollable list per day column */}
         <div className="grid" style={{ gridTemplateColumns: `repeat(7, 1fr)` }}>
           {weekDays.map((day, di) => {
-            const isToday = day.toDateString() === new Date().toDateString();
+            const isToday = day.toDateString() === getTodayAEST().toDateString();
             const dayAppts = filteredAppts
               .filter(a => aestDateKey(new Date(a.scheduledStart)) === dayDateKey(day))
               .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime());
@@ -1668,9 +1683,9 @@ export default function Calendar() {
                           <span className="text-xs text-muted-foreground block truncate">{[r.clientFirstName, r.clientLastName].filter(Boolean).join(" ") || "Unknown client"} · {SERVICE_LABELS[r.serviceType] ?? r.serviceType}</span>
                         </span>
                         <span className="text-xs text-muted-foreground shrink-0 text-right">
-                          {new Date(r.scheduledStart).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}
+                          {new Date(r.scheduledStart).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric", timeZone: "Australia/Brisbane" })}
                           <br />
-                          {new Date(r.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true })}
+                          {new Date(r.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Australia/Brisbane" })}
                         </span>
                       </button>
                     ))
