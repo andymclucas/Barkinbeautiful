@@ -19,7 +19,7 @@ import {
 import { notifyOwner } from "./ownerNotification";
 import { sendSms, buildAppointmentReminderSms } from "./sms";
 import { appointments, staff } from "../drizzle/schema";
-import { gte, isNotNull } from "drizzle-orm";
+import { gte, isNotNull, lt } from "drizzle-orm";
 
 function nextBusinessDay(from: Date): Date {
   const d = new Date(from);
@@ -195,9 +195,19 @@ export async function paymentRetryHandler(req: Request, res: Response) {
  */
 export async function appointmentReminderHandler(req: Request, res: Response) {
   try {
-    const user = await sdk.authenticateRequest(req);
-    if (!user.isCron) {
-      return res.status(403).json({ error: "cron-only" });
+    // Support two ways of authenticating a cron-triggered call: Manus's own
+    // scheduled-task auth (if it's ever restored), or a simple shared secret
+    // for an external trigger like a Render Cron Job — set CRON_SECRET in
+    // the environment and have the cron job call this endpoint with
+    // Authorization: Bearer <CRON_SECRET>.
+    const authHeader = req.headers.authorization;
+    const hasValidCronSecret =
+      !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+    if (!hasValidCronSecret) {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron) {
+        return res.status(403).json({ error: "cron-only" });
+      }
     }
 
     const db = await getDb();
@@ -206,84 +216,111 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
       return res.json({ ok: true, skipped: "automation-disabled" });
     }
 
-    // Tomorrow in AEST (UTC+10): window is 14:00 UTC today → 14:00 UTC tomorrow
-    const now = new Date();
-    const tomorrowStart = new Date(now);
-    tomorrowStart.setUTCHours(14, 0, 0, 0); // midnight AEST tomorrow
-    const tomorrowEnd = new Date(tomorrowStart);
-    tomorrowEnd.setUTCDate(tomorrowEnd.getUTCDate() + 1);
+    // Brisbane is UTC+10 with no DST, so "midnight AEST" is always 14:00 UTC
+    // the previous day.
+    // Figure out which AEST calendar day "now" actually falls on, so day
+    // offsets are computed from the correct starting point (not always
+    // assuming "now" is before this UTC instant's midnight boundary).
+    const nowAestDayStart = (() => {
+      const now = new Date();
+      const brisbaneNow = new Date(now.getTime() + 10 * 60 * 60 * 1000);
+      const d = new Date(Date.UTC(brisbaneNow.getUTCFullYear(), brisbaneNow.getUTCMonth(), brisbaneNow.getUTCDate()));
+      d.setUTCHours(d.getUTCHours() - 10); // back to the UTC instant of that AEST midnight
+      return d;
+    })();
+    const windowFor = (daysFromToday: number) => {
+      const start = new Date(nowAestDayStart);
+      start.setUTCDate(start.getUTCDate() + daysFromToday);
+      const end = new Date(start);
+      end.setUTCDate(end.getUTCDate() + 1);
+      return { start, end };
+    };
 
-    const rows = await db
-      .select({
-        apptId: appointments.id,
-        clientId: appointments.clientId,
-        scheduledStart: appointments.scheduledStart,
-        serviceType: appointments.serviceType,
-        clientFirstName: clients.firstName,
-        clientPhone: clients.phone,
-        petName: pets.name,
-        staffName: staff.name,
-      })
-      .from(appointments)
-      .leftJoin(clients, eq(appointments.clientId, clients.id))
-      .leftJoin(pets, eq(appointments.petId, pets.id))
-      .leftJoin(staff, eq(appointments.staffId, staff.id))
-      .where(
-        and(
-          gte(appointments.scheduledStart, tomorrowStart),
-          lte(appointments.scheduledStart, tomorrowEnd),
-          isNotNull(clients.phone),
-          sql`appointments.reminder_sent_at IS NULL`
-        )
-      );
+    const stages: { key: "4d" | "2d" | "morning"; daysOut: number; column: "reminder4dSentAt" | "reminder2dSentAt" | "reminderMorningSentAt"; sqlColumn: string }[] = [
+      { key: "4d", daysOut: 4, column: "reminder4dSentAt", sqlColumn: "reminder_4d_sent_at" },
+      { key: "2d", daysOut: 2, column: "reminder2dSentAt", sqlColumn: "reminder_2d_sent_at" },
+      { key: "morning", daysOut: 0, column: "reminderMorningSentAt", sqlColumn: "reminder_morning_sent_at" },
+    ];
 
     let sent = 0;
     let skipped = 0;
+    const breakdown: Record<string, number> = {};
 
-    for (const row of rows) {
-      if (!row.clientPhone || !row.scheduledStart) { skipped++; continue; }
+    for (const stage of stages) {
+      const { start, end } = windowFor(stage.daysOut);
 
-      const apptDate = row.scheduledStart.toLocaleDateString("en-AU", {
-        weekday: "long", day: "numeric", month: "long", timeZone: "Australia/Brisbane",
-      });
-      const apptTime = row.scheduledStart.toLocaleTimeString("en-AU", {
-        hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Australia/Brisbane",
-      });
+      const rows = await db
+        .select({
+          apptId: appointments.id,
+          clientId: appointments.clientId,
+          scheduledStart: appointments.scheduledStart,
+          clientFirstName: clients.firstName,
+          clientPhone: clients.phone,
+          petName: pets.name,
+          staffName: staff.name,
+        })
+        .from(appointments)
+        .leftJoin(clients, eq(appointments.clientId, clients.id))
+        .leftJoin(pets, eq(appointments.petId, pets.id))
+        .leftJoin(staff, eq(appointments.staffId, staff.id))
+        .where(
+          and(
+            gte(appointments.scheduledStart, start),
+            lt(appointments.scheduledStart, end),
+            isNotNull(clients.phone),
+            eq(appointments.status, "confirmed"),
+            sql`appointments.${sql.raw(stage.sqlColumn)} IS NULL`
+          )
+        );
 
-      const body = buildAppointmentReminderSms({
-        clientFirstName: row.clientFirstName ?? "there",
-        petName: row.petName ?? "your dog",
-        date: apptDate,
-        time: apptTime,
-        groomer: row.staffName ?? "our team",
-      });
+      let stageSent = 0;
+      for (const row of rows) {
+        if (!row.clientPhone || !row.scheduledStart) { skipped++; continue; }
 
-      const result = await sendSms(row.clientPhone, body);
-
-      if (result.success) {
-        // Mark reminder as sent so we don't double-send
-        await db
-          .update(appointments)
-          .set({ reminderSentAt: new Date() } as any)
-          .where(eq(appointments.id, row.apptId));
-        await db.insert(smsLogs).values({
-          tenantId: 1,
-          clientId: row.clientId,
-          appointmentId: row.apptId,
-          toNumber: row.clientPhone,
-          body,
-          twilioSid: result.sid,
-          status: "sent",
-          type: "reminder",
-          direction: "outbound",
+        const apptDate = row.scheduledStart.toLocaleDateString("en-AU", {
+          weekday: "long", day: "numeric", month: "long", timeZone: "Australia/Brisbane",
         });
-        sent++;
-      } else {
-        skipped++;
+        const apptTime = row.scheduledStart.toLocaleTimeString("en-AU", {
+          hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Australia/Brisbane",
+        });
+
+        const body = buildAppointmentReminderSms({
+          clientFirstName: row.clientFirstName ?? "there",
+          petName: row.petName ?? "your dog",
+          date: apptDate,
+          time: apptTime,
+          groomer: row.staffName ?? "our team",
+          stage: stage.key,
+        });
+
+        const result = await sendSms(row.clientPhone, body);
+
+        if (result.success) {
+          await db
+            .update(appointments)
+            .set({ [stage.column]: new Date() } as any)
+            .where(eq(appointments.id, row.apptId));
+          await db.insert(smsLogs).values({
+            tenantId: 1,
+            clientId: row.clientId,
+            appointmentId: row.apptId,
+            toNumber: row.clientPhone,
+            body,
+            twilioSid: result.sid,
+            status: "sent",
+            type: "reminder",
+            direction: "outbound",
+          });
+          sent++;
+          stageSent++;
+        } else {
+          skipped++;
+        }
       }
+      breakdown[stage.key] = stageSent;
     }
 
-    return res.json({ ok: true, sent, skipped });
+    return res.json({ ok: true, sent, skipped, breakdown });
   } catch (err) {
     console.error("[appointmentReminderHandler] Error:", err);
     return res.status(500).json({ error: String(err), timestamp: new Date().toISOString() });

@@ -230,8 +230,8 @@ export default function Messages() {
             <div>
               <div className="font-medium text-sm text-blue-900">Automated Appointment Reminders</div>
               <p className="text-xs text-blue-700 mt-1">
-                The 24-hour reminder workflow is ready but deliberately disabled while Groomigo remains a prototype.
-                It records each reminder once per appointment and will only send after the salon explicitly enables live SMS automation.
+                Three-stage reminders are ready: 4 days before, 2 days before, and the morning of each appointment.
+                Each stage sends once per appointment and will only send after the salon explicitly enables live SMS automation.
               </p>
               <div className="mt-2 flex items-center gap-2">
                 <Badge className="bg-blue-100 text-blue-700 text-xs">SMS_AUTOMATION_ENABLED</Badge>

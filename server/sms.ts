@@ -41,8 +41,18 @@ export function buildAppointmentReminderSms(opts: {
   time: string;
   groomer: string;
   salonName?: string;
+  stage?: "4d" | "2d" | "morning";
 }) {
   const salon = opts.salonName ?? "Barkin' Beautiful";
+  if (opts.stage === "4d") {
+    return `Hi ${opts.clientFirstName}! Just a heads up \u2014 ${opts.petName} has a grooming appointment coming up at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. See you soon! 🐾`;
+  }
+  if (opts.stage === "2d") {
+    return `Hi ${opts.clientFirstName}! Reminder: ${opts.petName}'s grooming appointment at ${salon} is in 2 days, on ${opts.date} at ${opts.time} with ${opts.groomer}. 🐾`;
+  }
+  if (opts.stage === "morning") {
+    return `Good morning ${opts.clientFirstName}! Just a reminder that ${opts.petName} has a grooming appointment today at ${opts.time} with ${opts.groomer} at ${salon}. See you soon! 🐾`;
+  }
   return `Hi ${opts.clientFirstName}! Just a reminder that ${opts.petName} has a grooming appointment at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. See you then! 🐾`;
 }
 

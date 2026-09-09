@@ -286,6 +286,9 @@ export const appointments = mysqlTable("appointments", {
   completedAt: bigint("completed_at", { mode: "number" }),
   pickedUpAt: bigint("picked_up_at", { mode: "number" }),
   reminderSentAt: timestamp("reminder_sent_at"),
+  reminder4dSentAt: timestamp("reminder_4d_sent_at"),
+  reminder2dSentAt: timestamp("reminder_2d_sent_at"),
+  reminderMorningSentAt: timestamp("reminder_morning_sent_at"),
 }, (t) => [
   index("idx_appt_tenant_date").on(t.tenantId, t.scheduledStart),
   index("idx_appt_staff").on(t.staffId),
