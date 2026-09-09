@@ -58,10 +58,28 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // index.html must always be revalidated — it references the JS/CSS bundle
+  // filenames from whatever the *current* deploy is, and those filenames
+  // change on every build. If a browser caches an old index.html, it'll try
+  // to fetch JS chunks that no longer exist on the server (removed by a
+  // later deploy) and the app fails to load at all, showing a blank page.
+  // The actual bundle files are safe to cache aggressively since their
+  // filenames are content-hashed by the build — a new build never reuses an
+  // old filename, so there's no staleness risk in caching them for a year.
+  app.use(express.static(distPath, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith("index.html")) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      } else {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    },
+  }));
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
