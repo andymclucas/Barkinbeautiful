@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { PetAvatar } from "@/components/PetAvatar";
 import { shiftDateKey } from "@/lib/workflowDates";
 import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workflowStageTimer";
 import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
@@ -851,10 +852,13 @@ export default function WorkflowBoard() {
                     {/* Dog / Owner */}
                     <td className="px-2 py-1.5">
                       <div className="flex items-center gap-1.5">
-                        <div
-                          className="h-2.5 w-2.5 rounded-full flex-shrink-0"
-                          style={{ background: SERVICE_COLOUR[appt.serviceType] ?? "#94a3b8" }}
-                        />
+                        <div className="relative h-7 w-7 shrink-0">
+                          <PetAvatar petId={appt.petId} petName={appt.petName} className="h-7 w-7" />
+                          <div
+                            className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-1 ring-white"
+                            style={{ background: SERVICE_COLOUR[appt.serviceType] ?? "#94a3b8" }}
+                          />
+                        </div>
                         <div className="min-w-0">
                           <button
                             className="font-semibold text-sm leading-tight truncate text-left hover:text-primary hover:underline transition-colors flex items-center gap-1"

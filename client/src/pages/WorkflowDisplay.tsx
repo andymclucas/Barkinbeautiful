@@ -8,6 +8,7 @@ import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
 import { isTerminalWorkflowState } from "@/lib/workflowTerminalStates";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { BATH_PRIORITY_META, buildBathPriorityQueue } from "@shared/bathPriorityQueue";
+import { PetAvatar } from "@/components/PetAvatar";
 
 const STAGES = [
   { key: "scheduled", label: "Waiting", colour: "#94a3b8" },
@@ -295,10 +296,13 @@ export default function WorkflowDisplay() {
             return (
               <div key={appt.id} className={`grid grid-cols-[0.9fr_1.5fr_0.8fr_1.1fr_1.1fr_1.1fr_1.1fr] items-center border-b border-white/5 border-l-4 px-4 transition-[opacity,transform] duration-700 ease-out motion-reduce:transition-none ${rowPaddingClass} ${rowTextClass} ${alternateRow} ${isCompletedReviewRow ? "opacity-65" : ""} ${isLeavingRow ? "translate-y-2 opacity-0" : "translate-y-0 opacity-100"} ${isPastScheduledTime && !isCompletedReviewRow ? "animate-[pulse_2.8s_ease-in-out_infinite] ring-1 ring-inset ring-amber-300/40" : ""}`} style={{ borderLeftColor: isCompletedReviewRow ? "#34d399" : isPastScheduledTime ? "#fbbf24" : stage.colour }}>
                 <div className="font-mono text-slate-300">{new Date(appt.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true })}</div>
-                <div className="min-w-0">
-                  <div className="font-bold text-white">{appt.petName}</div>
-                  <div className={`${rowDetailClass} text-slate-400`}>{appt.clientLastName}{isPastScheduledTime ? " · Past scheduled time" : ""}</div>
-                  {appt.groomStyleNote && <div className={`${rowDetailClass} mt-0.5 truncate text-teal-300`} title={appt.groomStyleNote}>📝 {appt.groomStyleNote}</div>}
+                <div className="min-w-0 flex items-center gap-2.5">
+                  <PetAvatar petId={appt.petId} petName={appt.petName} className={isFocusRegister ? "h-11 w-11" : "h-9 w-9"} />
+                  <div className="min-w-0">
+                    <div className="font-bold text-white">{appt.petName}</div>
+                    <div className={`${rowDetailClass} text-slate-400`}>{appt.clientLastName}{isPastScheduledTime ? " · Past scheduled time" : ""}</div>
+                    {appt.groomStyleNote && <div className={`${rowDetailClass} mt-0.5 truncate text-teal-300`} title={appt.groomStyleNote}>📝 {appt.groomStyleNote}</div>}
+                  </div>
                 </div>
                 <div className="font-black" style={{ color: appt.bathPriority ? BATH_PRIORITY_META[appt.bathPriority as keyof typeof BATH_PRIORITY_META]?.colour : "#94a3b8" }}>{appt.bathPriority ? `#${appt.bathPriority}` : "—"}</div>
                 <div className="text-slate-300">{appt.bathStaffId ? "Assigned" : "—"}</div>

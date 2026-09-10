@@ -3,7 +3,7 @@ import { storageGet, storagePut } from "./storage";
 import { sdk } from "./_core/sdk";
 import { buildPetPhotoStorageKey } from "./petPhotoStorage";
 import { getDb } from "./db";
-import { appointments, staff } from "../drizzle/schema";
+import { appointments, staff, pets } from "../drizzle/schema";
 import { and, eq, or } from "drizzle-orm";
 
 export function registerUploadRoutes(app: Router) {
@@ -170,6 +170,34 @@ export function registerUploadRoutes(app: Router) {
     } catch (err: any) {
       console.error("[upload/salon-logo]", err);
       res.status(500).json({ error: err.message ?? "Upload failed" });
+    }
+  });
+
+  // GET /api/pets/:id/photo — serves a pet's photo straight from the
+  // database (stored as base64 via the MoeGo migration import), rather than
+  // the external Forge storage the routes above depend on. Cached for a
+  // while client-side since a pet's photo rarely changes.
+  app.get("/api/pets/:id/photo", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const petId = Number(req.params.id);
+      if (!Number.isInteger(petId) || petId <= 0) { res.status(400).json({ error: "Invalid pet id" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const [pet] = await db.select({ photoData: pets.photoData, photoContentType: pets.photoContentType })
+        .from(pets).where(eq(pets.id, petId)).limit(1);
+      if (!pet?.photoData) { res.status(404).json({ error: "No photo" }); return; }
+      const buffer = Buffer.from(pet.photoData, "base64");
+      res.set({
+        "Content-Type": pet.photoContentType || "image/jpeg",
+        "Cache-Control": "private, max-age=86400",
+      });
+      res.send(buffer);
+    } catch (err: any) {
+      console.error("[pets/:id/photo]", err);
+      res.status(500).json({ error: err.message ?? "Failed to load photo" });
     }
   });
 }
