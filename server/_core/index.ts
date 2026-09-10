@@ -72,6 +72,39 @@ async function startServer() {
   app.post("/api/scheduled/payment-retry", paymentRetryHandler);
   app.post("/api/scheduled/appointment-reminders", appointmentReminderHandler);
 
+  // One-off admin utility: given a MoeGo pet ID and its photo URL (from the
+  // old platform we're migrating away from), download the image server-side
+  // and store it against the matching pet. Protected by the same shared
+  // secret as the cron endpoints — this isn't meant to be a public API, just
+  // a way to feed it a list of URLs from a trusted script.
+  app.post("/api/admin/import-pet-photo", express.json(), async (req, res) => {
+    const authHeader = req.headers.authorization;
+    const hasValidSecret = !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+    if (!hasValidSecret) return res.status(403).json({ error: "forbidden" });
+
+    const { moegoPetId, photoUrl } = req.body ?? {};
+    if (!moegoPetId || !photoUrl) return res.status(400).json({ error: "moegoPetId and photoUrl required" });
+
+    try {
+      const db = await getDb();
+      if (!db) return res.status(503).json({ error: "no-db" });
+
+      const imgResp = await fetch(photoUrl);
+      if (!imgResp.ok) return res.status(502).json({ error: `fetch-failed-${imgResp.status}` });
+      const contentType = imgResp.headers.get("content-type") || "image/jpeg";
+      const buf = Buffer.from(await imgResp.arrayBuffer());
+      const base64 = buf.toString("base64");
+
+      const result = await db.update(pets)
+        .set({ photoData: base64, photoContentType: contentType })
+        .where(eq(pets.moegoClientId, String(moegoPetId)));
+
+      return res.json({ ok: true, moegoPetId, bytes: buf.length, contentType });
+    } catch (err) {
+      return res.status(500).json({ error: String(err) });
+    }
+  });
+
   // Twilio webhook for SMS status callbacks
   app.post("/api/twilio/status", express.urlencoded({ extended: false }), async (req, res) => {
     const { MessageSid, MessageStatus, To } = req.body;
