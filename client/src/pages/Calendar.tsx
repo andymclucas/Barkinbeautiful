@@ -1735,7 +1735,14 @@ export default function Calendar() {
                 onClick={() => setViewMode("day")}
               >Day</button>
             </div>
-            <Button variant="outline" onClick={() => setShowBlockoutDialog(true)} size="sm" className="brand-lift gap-1.5 bg-white/80 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const defaultDate = dayDateKey(viewMode === "day" ? dayDate : weekStart);
+                setBlockoutForm(f => ({ ...f, blockoutDate: defaultDate }));
+                setShowBlockoutDialog(true);
+              }}
+              size="sm" className="brand-lift gap-1.5 bg-white/80 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
               <Ban className="h-4 w-4" /> Block Out
             </Button>
             <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
