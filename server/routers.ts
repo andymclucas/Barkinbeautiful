@@ -1443,8 +1443,14 @@ const clientsRouter = router({
       const conditions = [eq(clients.tenantId, input.tenantId)];
       if (input.status) conditions.push(eq(clients.status, input.status));
       if (input.search) {
+        const term = `%${input.search}%`;
         conditions.push(
-          sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName}) LIKE ${`%${input.search}%`}`
+          sql`(
+            CONCAT(${clients.firstName}, ' ', ${clients.lastName}) LIKE ${term}
+            OR ${clients.phone} LIKE ${term}
+            OR ${clients.email} LIKE ${term}
+            OR EXISTS (SELECT 1 FROM ${pets} WHERE ${pets.clientId} = ${clients.id} AND ${pets.name} LIKE ${term})
+          )`
         );
       }
       const colMap = {
@@ -1559,8 +1565,14 @@ const clientsRouter = router({
       const conditions = [eq(clients.tenantId, input.tenantId)];
       if (input.status) conditions.push(eq(clients.status, input.status));
       if (input.search) {
+        const term = `%${input.search}%`;
         conditions.push(
-          sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName}) LIKE ${`%${input.search}%`}`
+          sql`(
+            CONCAT(${clients.firstName}, ' ', ${clients.lastName}) LIKE ${term}
+            OR ${clients.phone} LIKE ${term}
+            OR ${clients.email} LIKE ${term}
+            OR EXISTS (SELECT 1 FROM ${pets} WHERE ${pets.clientId} = ${clients.id} AND ${pets.name} LIKE ${term})
+          )`
         );
       }
       const colMap = {
