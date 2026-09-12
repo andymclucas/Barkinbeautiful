@@ -810,6 +810,7 @@ export default function Calendar() {
     clientId: "", petIds: [] as string[], staffId: "", serviceType: "classic_groom",
     scheduledStart: "", scheduledEnd: "", notes: "", price: "",
   });
+  const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
   const [editForm, setEditForm] = useState({
     staffId: "", serviceType: "", scheduledStart: "", scheduledEnd: "",
     notes: "", price: "", workflowState: "",
@@ -1194,9 +1195,44 @@ export default function Calendar() {
     onError: (e) => toast.error(e.message),
   });
 
+  const createRecurringMutation = trpc.calendar.createRecurringAppointments.useMutation({
+    onSuccess: (r) => {
+      const skippedMsg = r.skipped.length > 0 ? ` (${r.skipped.length} skipped due to a groomer clash)` : "";
+      toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created${skippedMsg}`);
+      setShowNewAppt(false);
+      setNewAppt({ clientId: "", petIds: [], staffId: "", serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
+      setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });
+      setClientSearch("");
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const handleCreate = () => {
     if (!newAppt.clientId || newAppt.petIds.length === 0 || !newAppt.scheduledStart || !newAppt.scheduledEnd) {
       toast.error("Please select a client, at least one pet, and the appointment times"); return;
+    }
+    if (repeatForm.enabled) {
+      if (newAppt.petIds.length !== 1) {
+        toast.error("Recurring bookings currently support one dog at a time"); return;
+      }
+      if (!repeatForm.untilDate) {
+        toast.error("Please choose a date to repeat until"); return;
+      }
+      createRecurringMutation.mutate({
+        tenantId: 1,
+        clientId: parseInt(newAppt.clientId),
+        petId: parseInt(newAppt.petIds[0]),
+        staffId: newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
+        serviceType: newAppt.serviceType as "classic_groom",
+        scheduledStart: newAppt.scheduledStart,
+        scheduledEnd: newAppt.scheduledEnd,
+        frequencyWeeks: parseInt(repeatForm.frequencyWeeks),
+        untilDate: repeatForm.untilDate,
+        notes: newAppt.notes || undefined,
+        price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
+      });
+      return;
     }
     multiPetCreateMutation.mutate({
       tenantId: 1,
@@ -1788,7 +1824,7 @@ export default function Calendar() {
       </div>
 
       {/* ── New Appointment Dialog ── */}
-      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" }); } }}>
+      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1977,6 +2013,41 @@ export default function Calendar() {
                 {membershipCoverage.data?.fullyCovered && <p id="membership-covered-price-note" className="text-xs text-emerald-700">Set to $0.00 because the selected dogs are covered by active weekly memberships.</p>}
               </div>
             </div>
+            {newAppt.petIds.length === 1 && (
+              <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={repeatForm.enabled}
+                    onChange={e => setRepeatForm(f => ({ ...f, enabled: e.target.checked }))}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <span className="text-sm font-medium">Repeat this booking</span>
+                </label>
+                {repeatForm.enabled && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Every</Label>
+                      <Select value={repeatForm.frequencyWeeks} onValueChange={v => setRepeatForm(f => ({ ...f, frequencyWeeks: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 10, 12].map(w => (
+                            <SelectItem key={w} value={String(w)}>{w === 1 ? "1 week" : `${w} weeks`}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Until *</Label>
+                      <Input type="date" value={repeatForm.untilDate} onChange={e => setRepeatForm(f => ({ ...f, untilDate: e.target.value }))} />
+                    </div>
+                    <p className="col-span-2 text-xs text-muted-foreground">
+                      Creates a booking every {repeatForm.frequencyWeeks} week{repeatForm.frequencyWeeks === "1" ? "" : "s"} at the same time, starting from the date above, up to and including the "Until" date. If the groomer is already booked on a particular date, that one occurrence is skipped and the rest still get created.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Notes</Label>
               <Textarea rows={2} placeholder="Any special instructions..." value={newAppt.notes} onChange={e => setNewAppt(p => ({ ...p, notes: e.target.value }))} />
@@ -1984,8 +2055,10 @@ export default function Calendar() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewAppt(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={multiPetCreateMutation.isPending}>
-              {multiPetCreateMutation.isPending ? "Creating..." : "Create Appointment"}
+            <Button onClick={handleCreate} disabled={multiPetCreateMutation.isPending || createRecurringMutation.isPending}>
+              {multiPetCreateMutation.isPending || createRecurringMutation.isPending
+                ? "Creating..."
+                : repeatForm.enabled ? "Create Recurring Bookings" : "Create Appointment"}
             </Button>
           </DialogFooter>
         </DialogContent>

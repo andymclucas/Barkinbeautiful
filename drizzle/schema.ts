@@ -267,6 +267,7 @@ export const appointments = mysqlTable("appointments", {
   status: mysqlEnum("status", ["confirmed", "pending", "cancelled", "no_show"]).default("confirmed").notNull(),
   moegoAppointmentId: varchar("moego_appointment_id", { length: 100 }),
   sessionId: varchar("session_id", { length: 64 }),
+  recurringGroupId: varchar("recurring_group_id", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
   cageNumber: int("cage_number"),

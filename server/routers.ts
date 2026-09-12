@@ -306,6 +306,99 @@ const calendarRouter = router({
       return { success: true, trackerToken: token, membershipCovered: coverage.fullyCovered };
     }),
 
+  createRecurringAppointments: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      clientId: z.number(),
+      petId: z.number(),
+      staffId: z.number().optional(),
+      serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "other"]).default("classic_groom"),
+      scheduledStart: z.string(), // first occurrence's start
+      scheduledEnd: z.string(),   // first occurrence's end
+      frequencyWeeks: z.number().int().min(1).max(26),
+      untilDate: z.string(), // yyyy-mm-dd, inclusive
+      notes: z.string().optional(),
+      price: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your staff profile");
+      const [pet] = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
+        .from(pets).where(eq(pets.id, input.petId)).limit(1);
+      if (!pet || pet.clientId !== input.clientId || pet.tenantId !== input.tenantId) {
+        throw new Error("The selected client and pet are not available to this salon");
+      }
+
+      const firstStart = parseBrisbaneLocalDateTime(input.scheduledStart);
+      const firstEnd = parseBrisbaneLocalDateTime(input.scheduledEnd);
+      const durationMs = firstEnd.getTime() - firstStart.getTime();
+      const until = new Date(input.untilDate + "T23:59:59");
+      if (Number.isNaN(until.getTime()) || until.getTime() < firstStart.getTime()) {
+        throw new Error("The 'repeat until' date must be after the first appointment");
+      }
+      const stepMs = input.frequencyWeeks * 7 * 24 * 60 * 60 * 1000;
+      const maxOccurrences = 60; // safety cap (~2 years weekly, well beyond any sane single request)
+
+      const recurringGroupId = nanoid(24);
+      const created: { scheduledStart: Date }[] = [];
+      const skipped: { scheduledStart: Date; reason: string }[] = [];
+
+      let occurrenceStart = firstStart;
+      let count = 0;
+      while (occurrenceStart.getTime() <= until.getTime() && count < maxOccurrences) {
+        count++;
+        const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+
+        if (input.staffId) {
+          const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
+            eq(appointments.staffId, input.staffId),
+            eq(appointments.tenantId, input.tenantId),
+            ne(appointments.workflowState, "cancelled"),
+            ne(appointments.status, "cancelled"),
+            lt(appointments.scheduledStart, occurrenceEnd),
+            gt(appointments.scheduledEnd, occurrenceStart),
+          )).limit(1);
+          if (conflict) {
+            skipped.push({ scheduledStart: occurrenceStart, reason: "Groomer already booked at this time" });
+            occurrenceStart = new Date(occurrenceStart.getTime() + stepMs);
+            continue;
+          }
+        }
+
+        const coverage = await getAppointmentMembershipCoverage(db, input.tenantId, input.clientId, [input.petId], input.serviceType);
+        const coveredMembership = coverage.membershipByPetId[input.petId] ?? null;
+        await db.insert(appointments).values({
+          tenantId: input.tenantId,
+          clientId: input.clientId,
+          petId: input.petId,
+          staffId: input.staffId,
+          serviceType: input.serviceType,
+          scheduledStart: occurrenceStart,
+          scheduledEnd: occurrenceEnd,
+          notes: input.notes,
+          price: coverage.fullyCovered ? "0.00" : input.price,
+          membershipId: coveredMembership?.id ?? null,
+          trackerToken: nanoid(32),
+          workflowState: "scheduled",
+          status: "confirmed",
+          recurringGroupId,
+        });
+        created.push({ scheduledStart: occurrenceStart });
+        occurrenceStart = new Date(occurrenceStart.getTime() + stepMs);
+      }
+
+      return {
+        success: true,
+        recurringGroupId,
+        createdCount: created.length,
+        skipped,
+        hitSafetyCap: count >= maxOccurrences,
+      };
+    }),
+
+
   createMultiPetAppointment: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
