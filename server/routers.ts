@@ -1505,6 +1505,26 @@ const clientsRouter = router({
       return { client, pets: clientPets, memberships: clientMemberships, appointments: recentAppointments };
     }),
 
+  updateDetails: operationalProcedure
+    .input(z.object({
+      clientId: z.number(),
+      email: z.string().email().optional().or(z.literal("")).nullable(),
+      address: z.string().optional().nullable(),
+      notes: z.string().optional().nullable(),
+      referralSource: z.string().optional().nullable(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (input.email !== undefined) updates.email = input.email || null;
+      if (input.address !== undefined) updates.address = input.address;
+      if (input.notes !== undefined) updates.notes = input.notes;
+      if (input.referralSource !== undefined) updates.referralSource = input.referralSource;
+      await db.update(clients).set(updates).where(eq(clients.id, input.clientId));
+      return { success: true };
+    }),
+
   create: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),

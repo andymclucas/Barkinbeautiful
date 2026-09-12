@@ -12,9 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dog, Phone, Mail, MapPin, CalendarDays, CreditCard, ArrowLeft,
-  AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus
+  AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil
 } from "lucide-react";
 import { Link2, Link2Off, Search } from "lucide-react";
 import { Link } from "wouter";
@@ -251,6 +252,16 @@ export default function ClientDetail() {
   const [portalRevokeConfirm, setPortalRevokeConfirm] = useState(false);
   const [portalAccountRevokeConfirm, setPortalAccountRevokeConfirm] = useState(false);
   const [contactForm, setContactForm] = useState({ name: "", phone: "", email: "", relationship: "" });
+  const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", address: "", notes: "", referralSource: "" });
+  const updateClientDetails = trpc.clients.updateDetails.useMutation({
+    onSuccess: async () => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      setEditDetailsOpen(false);
+      toast.success("Client details updated");
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const [editingWeightPetId, setEditingWeightPetId] = useState<number | null>(null);
   const [weightDraft, setWeightDraft] = useState("");
   const isAdmin = currentUser?.role === "admin";
@@ -616,16 +627,86 @@ export default function ClientDetail() {
               <p className="font-medium text-foreground">
                 {new Date(client.createdAt).toLocaleDateString("en-AU", { month: "short", year: "numeric" })}
               </p>
+              <Button
+                variant="ghost" size="sm" className="mt-1.5 h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setEditDetailsForm({
+                    email: client.email ?? "",
+                    address: client.address ?? "",
+                    notes: client.notes ?? "",
+                    referralSource: client.referralSource ?? "",
+                  });
+                  setEditDetailsOpen(true);
+                }}
+              >
+                <Pencil className="h-3 w-3 mr-1" /> Edit details
+              </Button>
             </div>
           </div>
 
-          {client.notes && (
+          {client.notes ? (
             <>
               <Separator className="my-4" />
               <p className="text-sm text-muted-foreground italic">{client.notes}</p>
             </>
+          ) : (
+            <>
+              <Separator className="my-4" />
+              <button
+                className="text-sm text-muted-foreground/70 hover:text-muted-foreground italic underline decoration-dotted underline-offset-2"
+                onClick={() => {
+                  setEditDetailsForm({
+                    email: client.email ?? "",
+                    address: client.address ?? "",
+                    notes: client.notes ?? "",
+                    referralSource: client.referralSource ?? "",
+                  });
+                  setEditDetailsOpen(true);
+                }}
+              >
+                + Add a note about this client (pickup arrangements, family bookings, preferences...)
+              </button>
+            </>
           )}
         </div>
+
+        <Dialog open={editDetailsOpen} onOpenChange={setEditDetailsOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader><DialogTitle>Edit client details</DialogTitle></DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label>Email</Label>
+                <Input value={editDetailsForm.email} onChange={e => setEditDetailsForm(f => ({ ...f, email: e.target.value }))} placeholder="client@example.com" />
+              </div>
+              <div>
+                <Label>Address</Label>
+                <Input value={editDetailsForm.address} onChange={e => setEditDetailsForm(f => ({ ...f, address: e.target.value }))} placeholder="123 Example St, Suburb" />
+              </div>
+              <div>
+                <Label>Referral source</Label>
+                <Input value={editDetailsForm.referralSource} onChange={e => setEditDetailsForm(f => ({ ...f, referralSource: e.target.value }))} placeholder="e.g. Instagram, word of mouth" />
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  value={editDetailsForm.notes}
+                  onChange={e => setEditDetailsForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="e.g. Dad Raymond usually does pickup and drop-off — we text him too. Sister's dogs (Mae) are often booked the same day."
+                  rows={4}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditDetailsOpen(false)} disabled={updateClientDetails.isPending}>Cancel</Button>
+              <Button
+                onClick={() => updateClientDetails.mutate({ clientId, ...editDetailsForm })}
+                disabled={updateClientDetails.isPending}
+              >
+                {updateClientDetails.isPending ? "Saving…" : "Save changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {isAdmin && (
           <Card>
