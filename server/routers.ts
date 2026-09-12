@@ -310,7 +310,7 @@ const calendarRouter = router({
     .input(z.object({
       tenantId: z.number().default(1),
       clientId: z.number(),
-      petId: z.number(),
+      petIds: z.array(z.number()).min(1),
       staffId: z.number().optional(),
       serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "other"]).default("classic_groom"),
       scheduledStart: z.string(), // first occurrence's start
@@ -324,11 +324,12 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your staff profile");
-      const [pet] = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
-        .from(pets).where(eq(pets.id, input.petId)).limit(1);
-      if (!pet || pet.clientId !== input.clientId || pet.tenantId !== input.tenantId) {
-        throw new Error("The selected client and pet are not available to this salon");
+      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your salon profile");
+      const petIds = Array.from(new Set(input.petIds));
+      const selectedPets = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
+        .from(pets).where(inArray(pets.id, petIds));
+      if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== input.tenantId)) {
+        throw new Error("The selected client and pets are not available to this salon");
       }
 
       const firstStart = parseBrisbaneLocalDateTime(input.scheduledStart);
@@ -342,7 +343,7 @@ const calendarRouter = router({
       const maxOccurrences = 60; // safety cap (~2 years weekly, well beyond any sane single request)
 
       const recurringGroupId = nanoid(24);
-      const created: { scheduledStart: Date }[] = [];
+      const created: { scheduledStart: Date; petCount: number }[] = [];
       const skipped: { scheduledStart: Date; reason: string }[] = [];
 
       let occurrenceStart = firstStart;
@@ -351,6 +352,9 @@ const calendarRouter = router({
         count++;
         const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
 
+        // For a family booking (multiple dogs), a clash for the groomer at this
+        // time skips the whole occurrence rather than booking some dogs and not
+        // others \u2014 keeps each occurrence's dogs together or not booked at all.
         if (input.staffId) {
           const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
             eq(appointments.staffId, input.staffId),
@@ -367,25 +371,28 @@ const calendarRouter = router({
           }
         }
 
-        const coverage = await getAppointmentMembershipCoverage(db, input.tenantId, input.clientId, [input.petId], input.serviceType);
-        const coveredMembership = coverage.membershipByPetId[input.petId] ?? null;
-        await db.insert(appointments).values({
-          tenantId: input.tenantId,
-          clientId: input.clientId,
-          petId: input.petId,
-          staffId: input.staffId,
-          serviceType: input.serviceType,
-          scheduledStart: occurrenceStart,
-          scheduledEnd: occurrenceEnd,
-          notes: input.notes,
-          price: coverage.fullyCovered ? "0.00" : input.price,
-          membershipId: coveredMembership?.id ?? null,
-          trackerToken: nanoid(32),
-          workflowState: "scheduled",
-          status: "confirmed",
-          recurringGroupId,
-        });
-        created.push({ scheduledStart: occurrenceStart });
+        const coverage = await getAppointmentMembershipCoverage(db, input.tenantId, input.clientId, petIds, input.serviceType);
+        const sessionId = petIds.length > 1 ? nanoid(16) : null;
+        for (const petId of petIds) {
+          await db.insert(appointments).values({
+            tenantId: input.tenantId,
+            clientId: input.clientId,
+            petId,
+            staffId: input.staffId,
+            serviceType: input.serviceType,
+            scheduledStart: occurrenceStart,
+            scheduledEnd: occurrenceEnd,
+            notes: input.notes,
+            price: coverage.fullyCovered ? "0.00" : input.price,
+            membershipId: coverage.membershipByPetId[petId]?.id ?? null,
+            trackerToken: nanoid(32),
+            sessionId,
+            workflowState: "scheduled",
+            status: "confirmed",
+            recurringGroupId,
+          });
+        }
+        created.push({ scheduledStart: occurrenceStart, petCount: petIds.length });
         occurrenceStart = new Date(occurrenceStart.getTime() + stepMs);
       }
 

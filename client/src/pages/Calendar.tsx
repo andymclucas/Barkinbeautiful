@@ -1213,16 +1213,13 @@ export default function Calendar() {
       toast.error("Please select a client, at least one pet, and the appointment times"); return;
     }
     if (repeatForm.enabled) {
-      if (newAppt.petIds.length !== 1) {
-        toast.error("Recurring bookings currently support one dog at a time"); return;
-      }
       if (!repeatForm.untilDate) {
         toast.error("Please choose a date to repeat until"); return;
       }
       createRecurringMutation.mutate({
         tenantId: 1,
         clientId: parseInt(newAppt.clientId),
-        petId: parseInt(newAppt.petIds[0]),
+        petIds: newAppt.petIds.map(id => parseInt(id)),
         staffId: newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
         serviceType: newAppt.serviceType as "classic_groom",
         scheduledStart: newAppt.scheduledStart,
@@ -2013,7 +2010,7 @@ export default function Calendar() {
                 {membershipCoverage.data?.fullyCovered && <p id="membership-covered-price-note" className="text-xs text-emerald-700">Set to $0.00 because the selected dogs are covered by active weekly memberships.</p>}
               </div>
             </div>
-            {newAppt.petIds.length === 1 && (
+            {newAppt.petIds.length >= 1 && (
               <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -2042,7 +2039,11 @@ export default function Calendar() {
                       <Input type="date" value={repeatForm.untilDate} onChange={e => setRepeatForm(f => ({ ...f, untilDate: e.target.value }))} />
                     </div>
                     <p className="col-span-2 text-xs text-muted-foreground">
-                      Creates a booking every {repeatForm.frequencyWeeks} week{repeatForm.frequencyWeeks === "1" ? "" : "s"} at the same time, starting from the date above, up to and including the "Until" date. If the groomer is already booked on a particular date, that one occurrence is skipped and the rest still get created.
+                      Creates a booking every {repeatForm.frequencyWeeks} week{repeatForm.frequencyWeeks === "1" ? "" : "s"} at the same time
+                      {newAppt.petIds.length > 1 ? ` for all ${newAppt.petIds.length} selected dogs together` : ""}, starting from the date above, up to and including the "Until" date.
+                      {newAppt.petIds.length > 1
+                        ? " If the groomer is already booked on a particular date, that whole occurrence (all dogs) is skipped and the rest of the series still gets created."
+                        : " If the groomer is already booked on a particular date, that one occurrence is skipped and the rest still get created."}
                     </p>
                   </div>
                 )}
