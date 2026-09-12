@@ -556,7 +556,7 @@ const calendarRouter = router({
           .where(eq(appointments.id, input.appointmentId))
           .limit(1);
         if (trackerRecipient?.phone) {
-          const trackerUrl = `https://groomingsos-mqzfsvzv.manus.space/track/${appt.trackerToken}`;
+          const trackerUrl = `${process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space"}/track/${appt.trackerToken}`;
           const body = buildPetTrackerSms({
             clientFirstName: trackerRecipient.firstName ?? "there",
             petName: trackerRecipient.petName ?? "your dog",
@@ -2219,7 +2219,7 @@ const staffRouter = router({
         note: `Invitation prepared for ${email}`,
       });
 
-      const invitationLink = `https://groomingsos-mqzfsvzv.manus.space/staff-invite/${invitation.token}`;
+      const invitationLink = `${process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space"}/staff-invite/${invitation.token}`;
       const { sendEmail } = await import("./email");
       const emailSent = await sendEmail({
         to: email,
