@@ -164,7 +164,7 @@ function computeColumns<T extends { scheduledStart: Date; scheduledEnd: Date }>(
   while (i < result.length) {
     let maxEnd = new Date(result[i].appt.scheduledEnd).getTime();
     let j = i;
-    while (j < result.length && new Date(result[j].appt.scheduledStart).getTime() < maxEnd) {
+    while (j < result.length && (j === i || new Date(result[j].appt.scheduledStart).getTime() < maxEnd)) {
       maxEnd = Math.max(maxEnd, new Date(result[j].appt.scheduledEnd).getTime());
       j++;
     }
