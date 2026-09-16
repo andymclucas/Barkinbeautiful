@@ -197,7 +197,7 @@ async function startServer() {
     res.set("Content-Type", "text/xml");
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="/api/twilio/voice-no-answer">
+  <Dial timeout="12" action="/api/twilio/voice-no-answer">
     <Number>+61738232090</Number>
   </Dial>
 </Response>`);
