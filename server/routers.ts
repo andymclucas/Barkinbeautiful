@@ -5396,13 +5396,13 @@ const smsRouter = router({
       return { unreadCount: Number(messageCount) + Number(callCount), recent: combined };
     }),
 
-  markMissedCallsRead: protectedProcedure
-    .input(z.object({ tenantId: z.number().default(1) }))
+  clearMissedCall: protectedProcedure
+    .input(z.object({ id: z.number(), tenantId: z.number().default(1) }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
       await db.update(missedCalls).set({ readAt: new Date() })
-        .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)));
+        .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, input.tenantId)));
       return { success: true };
     }),
 

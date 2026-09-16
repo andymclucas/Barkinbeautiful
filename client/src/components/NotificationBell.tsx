@@ -1,4 +1,4 @@
-import { Bell, Phone } from "lucide-react";
+import { Bell, Phone, X } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,7 +20,7 @@ function timeAgo(date: Date | string) {
 export default function NotificationBell() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
-  const markMissedCallsRead = trpc.sms.markMissedCallsRead.useMutation({
+  const clearMissedCall = trpc.sms.clearMissedCall.useMutation({
     onSuccess: () => utils.sms.getUnreadPreview.invalidate(),
   });
   const { data } = trpc.sms.getUnreadPreview.useQuery(
@@ -56,11 +56,14 @@ export default function NotificationBell() {
   const unreadCount = data?.unreadCount ?? 0;
   const recent = data?.recent ?? [];
 
+  // Opening a missed call (to see the caller's client record, say) never
+  // clears it \u2014 a missed call stays as a notification until someone
+  // explicitly dismisses it with the X, regardless of how many times it's
+  // been viewed, so it can't quietly slip past everyone.
   const openItem = (item: any) => {
     if (item.kind === "missed_call") {
-      markMissedCallsRead.mutate({});
-      if (item.clientId) { setLocation(`/clients/${item.clientId}`); return; }
-      setLocation("/messages");
+      if (item.clientId) setLocation(`/clients/${item.clientId}`);
+      else setLocation("/messages");
       return;
     }
     const params = item.clientId ? `clientId=${item.clientId}` : `toNumber=${encodeURIComponent(item.toNumber)}`;
@@ -92,22 +95,32 @@ export default function NotificationBell() {
         {recent.length > 0 ? (
           <ScrollArea className="max-h-80">
             {recent.map((item: any) => (
-              <button
+              <div
                 key={`${item.kind}-${item.id}`}
-                className="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-accent transition-colors"
-                onClick={() => openItem(item)}
+                className="w-full flex items-start gap-1 px-4 py-3 border-b last:border-b-0 hover:bg-accent transition-colors"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium truncate flex items-center gap-1.5">
-                    {item.kind === "missed_call" && <Phone className="h-3 w-3 text-amber-600 shrink-0" />}
-                    {item.clientName?.trim() || item.toNumber}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(item.at)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground truncate mt-0.5">
-                  {item.kind === "missed_call" ? `Missed call: "${item.body}"` : item.body}
-                </p>
-              </button>
+                <button className="min-w-0 flex-1 text-left" onClick={() => openItem(item)}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium truncate flex items-center gap-1.5">
+                      {item.kind === "missed_call" && <Phone className="h-3 w-3 text-amber-600 shrink-0" />}
+                      {item.clientName?.trim() || item.toNumber}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(item.at)}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">
+                    {item.kind === "missed_call" ? `Missed call: "${item.body}"` : item.body}
+                  </p>
+                </button>
+                {item.kind === "missed_call" && (
+                  <button
+                    className="shrink-0 h-5 w-5 mt-0.5 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"
+                    title="Clear this notification"
+                    onClick={() => clearMissedCall.mutate({ id: item.id })}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
             ))}
           </ScrollArea>
         ) : (
