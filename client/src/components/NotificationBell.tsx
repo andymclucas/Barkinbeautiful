@@ -1,4 +1,4 @@
-import { Bell } from "lucide-react";
+import { Bell, Phone } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -20,15 +20,19 @@ function timeAgo(date: Date | string) {
 export default function NotificationBell() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const markMissedCallsRead = trpc.sms.markMissedCallsRead.useMutation({
+    onSuccess: () => utils.sms.getUnreadPreview.invalidate(),
+  });
   const { data } = trpc.sms.getUnreadPreview.useQuery(
     { limit: 6 },
     { refetchInterval: 20000, refetchOnWindowFocus: true }
   );
 
-  // Real-time push: the moment a new inbound SMS arrives, the server pushes
-  // an event over this connection and we refresh immediately, instead of
-  // waiting for the next 20-second poll. The 20s poll above stays as a
-  // fallback in case this connection ever drops and doesn't reconnect.
+  // Real-time push: the moment a new inbound SMS or missed-call voicemail
+  // transcript arrives, the server pushes an event over this connection and
+  // we refresh immediately, instead of waiting for the next 20-second poll.
+  // The 20s poll above stays as a fallback in case this connection ever
+  // drops and doesn't reconnect.
   useEffect(() => {
     const source = new EventSource("/api/events");
     source.onmessage = (event) => {
@@ -38,6 +42,8 @@ export default function NotificationBell() {
           utils.sms.getUnreadPreview.invalidate();
           utils.sms.getThreads.invalidate();
           utils.sms.getLogs.invalidate();
+        } else if (payload?.type === "missed-call") {
+          utils.sms.getUnreadPreview.invalidate();
         }
       } catch {
         // ignore malformed events
@@ -50,8 +56,14 @@ export default function NotificationBell() {
   const unreadCount = data?.unreadCount ?? 0;
   const recent = data?.recent ?? [];
 
-  const openThread = (clientId: number | null, toNumber: string) => {
-    const params = clientId ? `clientId=${clientId}` : `toNumber=${encodeURIComponent(toNumber)}`;
+  const openItem = (item: any) => {
+    if (item.kind === "missed_call") {
+      markMissedCallsRead.mutate({});
+      if (item.clientId) { setLocation(`/clients/${item.clientId}`); return; }
+      setLocation("/messages");
+      return;
+    }
+    const params = item.clientId ? `clientId=${item.clientId}` : `toNumber=${encodeURIComponent(item.toNumber)}`;
     setLocation(`/messages?${params}`);
   };
 
@@ -60,7 +72,7 @@ export default function NotificationBell() {
       <PopoverTrigger asChild>
         <button
           className="relative h-9 w-9 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/12 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-          aria-label={unreadCount > 0 ? `${unreadCount} unread messages` : "Notifications"}
+          aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
         >
           <Bell className="h-4 w-4 text-muted-foreground" />
           {unreadCount > 0 && (
@@ -72,29 +84,34 @@ export default function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-0">
         <div className="px-4 py-3 border-b">
-          <h3 className="text-sm font-semibold">Messages</h3>
+          <h3 className="text-sm font-semibold">Notifications</h3>
           <p className="text-xs text-muted-foreground">
-            {unreadCount === 0 ? "You're all caught up" : `${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`}
+            {unreadCount === 0 ? "You're all caught up" : `${unreadCount} unread`}
           </p>
         </div>
         {recent.length > 0 ? (
           <ScrollArea className="max-h-80">
-            {recent.map((msg: any) => (
+            {recent.map((item: any) => (
               <button
-                key={msg.id}
+                key={`${item.kind}-${item.id}`}
                 className="w-full text-left px-4 py-3 border-b last:border-b-0 hover:bg-accent transition-colors"
-                onClick={() => openThread(msg.clientId, msg.toNumber)}
+                onClick={() => openItem(item)}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium truncate">{msg.clientName?.trim() || msg.toNumber}</span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(msg.sentAt)}</span>
+                  <span className="text-sm font-medium truncate flex items-center gap-1.5">
+                    {item.kind === "missed_call" && <Phone className="h-3 w-3 text-amber-600 shrink-0" />}
+                    {item.clientName?.trim() || item.toNumber}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(item.at)}</span>
                 </div>
-                <p className="text-xs text-muted-foreground truncate mt-0.5">{msg.body}</p>
+                <p className="text-xs text-muted-foreground truncate mt-0.5">
+                  {item.kind === "missed_call" ? `Missed call: "${item.body}"` : item.body}
+                </p>
               </button>
             ))}
           </ScrollArea>
         ) : (
-          <p className="text-sm text-muted-foreground text-center py-6">No new messages</p>
+          <p className="text-sm text-muted-foreground text-center py-6">No new notifications</p>
         )}
         <button
           className="w-full text-center text-xs font-medium text-primary py-2.5 border-t hover:bg-accent transition-colors"
@@ -106,3 +123,4 @@ export default function NotificationBell() {
     </Popover>
   );
 }
+

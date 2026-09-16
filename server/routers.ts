@@ -10,7 +10,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -5373,9 +5373,37 @@ const smsRouter = router({
         .where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.direction, "inbound"), isNull(smsLogs.readAt)))
         .orderBy(desc(smsLogs.sentAt))
         .limit(input.limit);
-      const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(smsLogs)
+      const [{ count: messageCount }] = await db.select({ count: sql<number>`count(*)` }).from(smsLogs)
         .where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.direction, "inbound"), isNull(smsLogs.readAt)));
-      return { unreadCount: Number(count), recent: unread };
+
+      const unreadCalls = await db.select({
+        id: missedCalls.id, transcriptText: missedCalls.transcriptText, receivedAt: missedCalls.receivedAt,
+        clientId: missedCalls.clientId, fromNumber: missedCalls.fromNumber,
+        clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
+      }).from(missedCalls)
+        .leftJoin(clients, eq(missedCalls.clientId, clients.id))
+        .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)))
+        .orderBy(desc(missedCalls.receivedAt))
+        .limit(input.limit);
+      const [{ count: callCount }] = await db.select({ count: sql<number>`count(*)` }).from(missedCalls)
+        .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)));
+
+      const combined = [
+        ...unread.map(m => ({ kind: "message" as const, id: m.id, body: m.body, at: m.sentAt, clientId: m.clientId, toNumber: m.toNumber, clientName: m.clientName })),
+        ...unreadCalls.map(c => ({ kind: "missed_call" as const, id: c.id, body: c.transcriptText || "(no transcript available)", at: c.receivedAt, clientId: c.clientId, toNumber: c.fromNumber, clientName: c.clientName })),
+      ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, input.limit);
+
+      return { unreadCount: Number(messageCount) + Number(callCount), recent: combined };
+    }),
+
+  markMissedCallsRead: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      await db.update(missedCalls).set({ readAt: new Date() })
+        .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)));
+      return { success: true };
     }),
 
   deleteMessage: protectedProcedure

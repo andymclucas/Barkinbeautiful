@@ -742,6 +742,22 @@ export const smsLogs = mysqlTable("sms_logs", {
 
 export type SmsLog = typeof smsLogs.$inferSelect;
 
+// ─── Missed Calls (landline voicemail-to-text, via Twilio) ────────────────────
+export const missedCalls = mysqlTable("missed_calls", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().default(1),
+  clientId: int("client_id").references(() => clients.id),
+  fromNumber: varchar("from_number", { length: 30 }).notNull(),
+  recordingUrl: text("recording_url"),
+  transcriptText: text("transcript_text"),
+  transcriptionStatus: mysqlEnum("transcription_status", ["pending", "completed", "failed"]).default("pending").notNull(),
+  twilioCallSid: varchar("twilio_call_sid", { length: 64 }),
+  readAt: timestamp("read_at"),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+}, (t) => [index("idx_missed_calls_tenant").on(t.tenantId), index("idx_missed_calls_client").on(t.clientId)]);
+
+export type MissedCall = typeof missedCalls.$inferSelect;
+
 // ─── Store Credit (client prepaid balance, ledger-based) ──────────────────────
 export const storeCreditTransactions = mysqlTable("store_credit_transactions", {
   id: int("id").autoincrement().primaryKey(),

@@ -19,6 +19,15 @@ export type NewMessageEvent = {
   tenantId: number;
 };
 
+export type MissedCallEvent = {
+  type: "missed-call";
+  tenantId: number;
+};
+
 export function emitNewMessage(tenantId: number) {
   appEvents.emit("app-event", { type: "new-message", tenantId } satisfies NewMessageEvent);
+}
+
+export function emitMissedCall(tenantId: number) {
+  appEvents.emit("app-event", { type: "missed-call", tenantId } satisfies MissedCallEvent);
 }

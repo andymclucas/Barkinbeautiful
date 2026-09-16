@@ -11,12 +11,12 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { getDb } from "../db";
-import { appointments, clients, smsLogs, pets, staff } from "../../drizzle/schema";
+import { appointments, clients, smsLogs, pets, staff, missedCalls } from "../../drizzle/schema";
 import { and, asc, desc, eq, gt, gte, lte, inArray, isNotNull } from "drizzle-orm";
 import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNumber } from "../inboundSms";
 import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
-import { appEvents, emitNewMessage } from "../eventBus";
+import { appEvents, emitNewMessage, emitMissedCall } from "../eventBus";
 import { sdk } from "./sdk";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -184,6 +184,42 @@ async function startServer() {
     }
     res.set("Content-Type", "text/xml");
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+  });
+
+  // Twilio webhook fired once a missed-call voicemail has been recorded and
+  // transcribed (see the <Record transcribe="true" transcribeCallback="..."/>
+  // verb in the call-handling TwiML). Stores it and pushes a live
+  // notification to the notification bell, the same way a new inbound SMS
+  // does.
+  app.post("/api/twilio/voicemail-transcription", express.urlencoded({ extended: false }), async (req, res) => {
+    const { From, CallSid, RecordingUrl, TranscriptionText, TranscriptionStatus } = req.body;
+    console.log(`[Twilio] Voicemail transcription for call ${CallSid} from ${From}: ${TranscriptionStatus}`);
+    const db = await getDb();
+    if (db && From) {
+      const inboundNumber = normaliseAustralianMobile(String(From));
+      const numberVariants = Array.from(new Set([
+        From,
+        inboundNumber,
+        inboundNumber.replace(/^\+61/, "0"),
+        inboundNumber.replace(/^\+/, ""),
+      ]));
+      const clientCandidates = await db.select({ id: clients.id, phone: clients.phone })
+        .from(clients)
+        .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
+      const client = clientCandidates.find(candidate => phoneMatchesInboundNumber(candidate.phone, inboundNumber));
+
+      await db.insert(missedCalls).values({
+        tenantId: 1,
+        clientId: client?.id,
+        fromNumber: inboundNumber,
+        recordingUrl: RecordingUrl,
+        transcriptText: TranscriptionText || null,
+        transcriptionStatus: TranscriptionStatus === "completed" ? "completed" : "failed",
+        twilioCallSid: CallSid,
+      });
+      emitMissedCall(1);
+    }
+    res.sendStatus(200);
   });
 
   // Server-Sent Events: pushes real-time notifications (e.g. a new inbound
