@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { CheckCircle2, Clock3, Dog, RefreshCw, Sparkles, Wifi, WifiOff } from "lucide-react";
+import { CheckCircle2, Clock3, Dog, Phone, RefreshCw, Sparkles, Wifi, WifiOff, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
 import { isTerminalWorkflowState } from "@/lib/workflowTerminalStates";
@@ -55,6 +55,9 @@ export default function WorkflowDisplay() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const knownActiveIdsRef = useRef<number[] | null>(null);
   const [boardDate, setBoardDate] = useState(() => new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10));
+  const [missedCallAlert, setMissedCallAlert] = useState<{ id: number; clientName: string | null; toNumber: string; body: string; at: string | Date } | null>(null);
+  const dismissedMissedCallIdRef = useRef<number | null>(null);
+  const utils = trpc.useUtils();
   const { data: boardData, refetch, isFetching, isLoading: isBoardLoading, isError } = trpc.workflow.getBoard.useQuery(
     { tenantId: 1, date: boardDate },
     { ...workflowBoardRefreshOptions, enabled: !!user },
@@ -113,6 +116,42 @@ export default function WorkflowDisplay() {
     }, 760);
     return () => window.clearTimeout(clearTimer);
   }, [activeRows]);
+
+  // Missed-call popup: this display runs unattended on a TV, so a missed
+  // call needs to be impossible to miss rather than just quietly sitting in
+  // the notification bell for whenever someone next opens the main app.
+  // Auto-dismisses after 25s, or immediately if the same call gets
+  // dismissed from the bell elsewhere while this is still showing.
+  useEffect(() => {
+    const source = new EventSource("/api/events");
+    source.onmessage = async (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload?.type !== "missed-call") return;
+        const preview = await utils.sms.getUnreadPreview.fetch({ limit: 6 });
+        const latestCall = preview.recent.find((item: any) => item.kind === "missed_call");
+        if (latestCall && latestCall.id !== dismissedMissedCallIdRef.current) {
+          setMissedCallAlert({
+            id: latestCall.id,
+            clientName: (latestCall.clientName as string | null) ?? null,
+            toNumber: latestCall.toNumber,
+            body: latestCall.body,
+            at: latestCall.at,
+          });
+        }
+      } catch {
+        // ignore malformed events
+      }
+    };
+    return () => source.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!missedCallAlert) return;
+    const timer = window.setTimeout(() => setMissedCallAlert(null), 25000);
+    return () => window.clearTimeout(timer);
+  }, [missedCallAlert]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -201,6 +240,31 @@ export default function WorkflowDisplay() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-white p-5 md:p-8">
+      {missedCallAlert && (
+        <div className="fixed bottom-6 right-6 z-50 w-96 rounded-2xl border border-amber-400/40 bg-slate-900 shadow-2xl shadow-black/50 animate-in slide-in-from-bottom-4 fade-in duration-300">
+          <div className="flex items-start gap-3 p-4">
+            <div className="shrink-0 h-10 w-10 rounded-full bg-amber-400/15 flex items-center justify-center">
+              <Phone className="h-5 w-5 text-amber-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-400">Missed call</p>
+              <p className="text-base font-bold text-white truncate mt-0.5">
+                {missedCallAlert.clientName?.trim() || missedCallAlert.toNumber}
+              </p>
+              <p className="text-sm text-slate-300 mt-1 line-clamp-3">"{missedCallAlert.body}"</p>
+            </div>
+            <button
+              className="shrink-0 h-6 w-6 flex items-center justify-center rounded-full hover:bg-white/10 text-slate-400"
+              onClick={() => {
+                dismissedMissedCallIdRef.current = missedCallAlert.id;
+                setMissedCallAlert(null);
+              }}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
       <header className="flex items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-12 w-12 object-contain rounded bg-white p-1" />
