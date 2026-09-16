@@ -5396,6 +5396,28 @@ const smsRouter = router({
       return { unreadCount: Number(messageCount) + Number(callCount), recent: combined };
     }),
 
+  getMissedCalls: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(100) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        id: missedCalls.id,
+        fromNumber: missedCalls.fromNumber,
+        clientId: missedCalls.clientId,
+        clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
+        transcriptText: missedCalls.transcriptText,
+        transcriptionStatus: missedCalls.transcriptionStatus,
+        recordingUrl: missedCalls.recordingUrl,
+        readAt: missedCalls.readAt,
+        receivedAt: missedCalls.receivedAt,
+      }).from(missedCalls)
+        .leftJoin(clients, eq(missedCalls.clientId, clients.id))
+        .where(eq(missedCalls.tenantId, input.tenantId))
+        .orderBy(desc(missedCalls.receivedAt))
+        .limit(input.limit);
+    }),
+
   clearMissedCall: protectedProcedure
     .input(z.object({ id: z.number(), tenantId: z.number().default(1) }))
     .mutation(async ({ input }) => {

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2 } from "lucide-react";
+import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X } from "lucide-react";
 
 const SMS_TEMPLATES = [
   { key: "reminder", label: "Appointment Reminder", preview: "Hi {name}! Just a reminder that {pet} has a grooming appointment at Barkin' Beautiful tomorrow. See you then! 🐾" },
@@ -45,6 +45,8 @@ export default function Messages() {
 
   const { data: logs, refetch } = trpc.sms.getLogs.useQuery({ tenantId: 1, limit: 100 });
   const { data: threads, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({ tenantId: 1, limit: 50 });
+  const { data: missedCallsList, refetch: refetchMissedCalls } = trpc.sms.getMissedCalls.useQuery({ tenantId: 1, limit: 100 });
+  const clearMissedCall = trpc.sms.clearMissedCall.useMutation({ onSuccess: () => refetchMissedCalls() });
   const { data: clientResults } = trpc.memberships.searchClients.useQuery(
     { search: clientSearch, tenantId: 1 },
     { enabled: clientSearch.length >= 2 }
@@ -101,6 +103,26 @@ export default function Messages() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threads]);
+
+  // Live refresh: while this page is open, new inbound messages and missed
+  // calls should appear without needing a manual refresh click.
+  useEffect(() => {
+    const source = new EventSource("/api/events");
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload?.type === "new-message") {
+          refetch(); refetchThreads();
+        } else if (payload?.type === "missed-call") {
+          refetchMissedCalls();
+        }
+      } catch {
+        // ignore malformed events
+      }
+    };
+    return () => source.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const threadMessages = useMemo(() => {
     if (!openThread || !logs) return [];
@@ -209,6 +231,63 @@ export default function Messages() {
             </Card>
           ))}
         </div>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <PhoneMissed className="h-4 w-4 text-amber-600" /> Missed Calls
+              {missedCallsList && missedCallsList.filter(c => !c.readAt).length > 0 && (
+                <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                  {missedCallsList.filter(c => !c.readAt).length} unread
+                </Badge>
+              )}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">Voicemail transcripts from missed landline calls, routed via Twilio</p>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {missedCallsList && missedCallsList.length > 0 ? (
+              <ScrollArea className="max-h-80">
+                <div className="space-y-2">
+                  {missedCallsList.map(call => (
+                    <div
+                      key={call.id}
+                      className={`flex items-start gap-3 rounded-lg border p-3 ${call.readAt ? "bg-background" : "bg-amber-50/60 border-amber-200"}`}
+                    >
+                      <Phone className={`h-4 w-4 mt-0.5 shrink-0 ${call.readAt ? "text-muted-foreground" : "text-amber-600"}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold truncate">
+                            {(call.clientName as string | null)?.trim() || call.fromNumber}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground shrink-0">
+                            {new Date(call.receivedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                          </span>
+                        </div>
+                        {(call.clientName as string | null)?.trim() && <p className="text-xs text-muted-foreground">{call.fromNumber}</p>}
+                        <p className="text-sm mt-1">
+                          {call.transcriptionStatus === "completed"
+                            ? `"${call.transcriptText}"`
+                            : <span className="italic text-muted-foreground">No transcript available</span>}
+                        </p>
+                      </div>
+                      {!call.readAt && (
+                        <button
+                          className="shrink-0 h-6 w-6 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"
+                          title="Clear this notification"
+                          onClick={() => clearMissedCall.mutate({ id: call.id })}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-6">No missed calls recorded yet</p>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
