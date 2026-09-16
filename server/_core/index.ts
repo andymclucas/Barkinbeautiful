@@ -14,6 +14,7 @@ import { getDb } from "../db";
 import { appointments, clients, smsLogs, pets, staff, missedCalls } from "../../drizzle/schema";
 import { and, asc, desc, eq, gt, gte, lte, inArray, isNotNull } from "drizzle-orm";
 import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNumber } from "../inboundSms";
+import { sendSms } from "../sms";
 import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
 import { appEvents, emitNewMessage, emitMissedCall } from "../eventBus";
@@ -186,7 +187,48 @@ async function startServer() {
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
   });
 
-  // Twilio webhook fired once a missed-call voicemail has been recorded and
+  // Twilio voice webhook: handles an incoming call to the salon's Twilio
+  // number (this is what the Telstra DOT landline's "Forward/Divert"
+  // setting points to once that's switched over). Tries the existing
+  // office phone first; Twilio calls /api/twilio/voice-no-answer once that
+  // dial finishes, whether answered or not.
+  app.post("/api/twilio/voice-incoming", express.urlencoded({ extended: false }), async (req, res) => {
+    console.log(`[Twilio] Incoming call ${req.body.CallSid} from ${req.body.From}`);
+    res.set("Content-Type", "text/xml");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="20" action="/api/twilio/voice-no-answer">
+    <Number>+61738232090</Number>
+  </Dial>
+</Response>`);
+  });
+
+  // Fires once the <Dial> above finishes. If the office phone actually
+  // answered, DialCallStatus is "completed" and there's nothing more to
+  // do. Otherwise (no-answer, busy, failed) this is a missed call: text
+  // the caller straight away, then record + transcribe a voicemail (the
+  // transcript arrives separately via /api/twilio/voicemail-transcription
+  // once Twilio finishes transcribing, which can take a few seconds).
+  app.post("/api/twilio/voice-no-answer", express.urlencoded({ extended: false }), async (req, res) => {
+    const { DialCallStatus, From } = req.body;
+    console.log(`[Twilio] Dial result for call from ${From}: ${DialCallStatus}`);
+    res.set("Content-Type", "text/xml");
+    if (DialCallStatus === "completed") {
+      res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+      return;
+    }
+    if (From) {
+      sendSms(String(From), "Sorry we missed your call! We'll get back to you shortly \u2014 feel free to reply to this text and let us know what you need.")
+        .catch(err => console.error("[Twilio] Missed-call auto-text failed:", err));
+    }
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Sorry, we can't take your call right now. Please leave a message after the tone.</Say>
+  <Record maxLength="120" playBeep="true" transcribe="true" transcribeCallback="/api/twilio/voicemail-transcription" />
+</Response>`);
+  });
+
+
   // transcribed (see the <Record transcribe="true" transcribeCallback="..."/>
   // verb in the call-handling TwiML). Stores it and pushes a live
   // notification to the notification bell, the same way a new inbound SMS
