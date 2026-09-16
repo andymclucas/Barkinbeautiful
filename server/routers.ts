@@ -1630,7 +1630,7 @@ const clientsRouter = router({
       tenantId: z.number().default(1),
       firstName: z.string(),
       lastName: z.string(),
-      email: z.string().email().optional(),
+      email: z.string().email().optional().or(z.literal("")),
       phone: z.string().optional(),
       address: z.string().optional(),
       notes: z.string().optional(),
@@ -1897,7 +1897,7 @@ const clientsRouter = router({
     }),
 
   addContact: adminProcedure
-    .input(z.object({ clientId: z.number(), name: z.string().trim().min(1).max(255), phone: z.string().trim().min(6).max(30), email: z.string().email().optional(), relationship: z.string().trim().max(100).optional() }))
+    .input(z.object({ clientId: z.number(), name: z.string().trim().min(1).max(255), phone: z.string().trim().min(6).max(30), email: z.string().email().optional().or(z.literal("")), relationship: z.string().trim().max(100).optional() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
@@ -2059,7 +2059,7 @@ const staffRouter = router({
     .input(z.object({
       tenantId: z.number().default(1),
       name: z.string(),
-      email: z.string().email().optional(),
+      email: z.string().email().optional().or(z.literal("")),
       phone: z.string().optional(),
       role: z.enum(["owner", "groomer", "bather", "receptionist", "manager"]).default("groomer"),
       colourHex: z.string().default("#6366f1"),
@@ -2231,7 +2231,7 @@ const staffRouter = router({
     .input(z.object({
       staffId: z.number(),
       name: z.string().optional(),
-      email: z.string().email().optional().nullable(),
+      email: z.string().email().optional().or(z.literal("")).nullable(),
       phone: z.string().optional().nullable(),
       address: z.string().optional().nullable(),
       notes: z.string().optional().nullable(),
