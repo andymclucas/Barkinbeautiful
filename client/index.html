@@ -2,6 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Self-healing for stale deploys: if the page somehow ends up trying to
+      // load a JS/CSS file that no longer exists on the server (removed by a
+      // newer deploy since this tab last loaded — e.g. a phone browser
+      // resuming a backgrounded tab rather than doing a fresh navigation),
+      // that script/link 404s, nothing ever mounts, and the person is left
+      // looking at a blank white page with no way to know why. Since these
+      // load-failure events don't bubble normally, listen on the capture
+      // phase at the window level to catch them regardless of which tag
+      // failed, and reload once to fetch the current index.html and its
+      // current (correct) bundle references. Capped to once per 10 seconds
+      // so a genuinely broken deploy doesn't loop forever instead of just
+      // showing the error.
+      (function () {
+        var RELOAD_KEY = "gsos-stale-reload-at";
+        function reloadOnce() {
+          var last = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
+          var now = Date.now();
+          if (now - last > 10000) {
+            sessionStorage.setItem(RELOAD_KEY, String(now));
+            window.location.reload();
+          }
+        }
+        window.addEventListener("error", function (e) {
+          var target = e.target;
+          if (target && (target.tagName === "SCRIPT" || target.tagName === "LINK")) {
+            reloadOnce();
+          }
+        }, true);
+        window.addEventListener("vite:preloadError", reloadOnce);
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>GSOS — Grooming Salon Operating System</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
