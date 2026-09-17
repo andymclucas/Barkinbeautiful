@@ -209,15 +209,28 @@ async function startServer() {
   // the caller straight away, then record + transcribe a voicemail (the
   // transcript arrives separately via /api/twilio/voicemail-transcription
   // once Twilio finishes transcribing, which can take a few seconds).
+  const processedNoAnswerCallSids = new Set<string>();
+
   app.post("/api/twilio/voice-no-answer", express.urlencoded({ extended: false }), async (req, res) => {
-    const { DialCallStatus, From } = req.body;
+    const { DialCallStatus, From, CallSid } = req.body;
     console.log(`[Twilio] Dial result for call from ${From}: ${DialCallStatus}`);
     res.set("Content-Type", "text/xml");
     if (DialCallStatus === "completed") {
       res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
       return;
     }
-    if (From) {
+    // Twilio can retry a webhook that doesn't respond fast enough, which
+    // would otherwise text the caller twice for one missed call. CallSid is
+    // unique per call, so track which ones we've already actioned.
+    const alreadyProcessed = CallSid && processedNoAnswerCallSids.has(String(CallSid));
+    if (CallSid && !alreadyProcessed) {
+      processedNoAnswerCallSids.add(String(CallSid));
+      if (processedNoAnswerCallSids.size > 500) {
+        const oldest = processedNoAnswerCallSids.values().next().value;
+        if (oldest) processedNoAnswerCallSids.delete(oldest);
+      }
+    }
+    if (From && !alreadyProcessed) {
       sendSms(String(From), "Sorry we missed your call! We'll get back to you shortly \u2014 feel free to reply to this text and let us know what you need.")
         .catch(err => console.error("[Twilio] Missed-call auto-text failed:", err));
     }
@@ -228,7 +241,7 @@ async function startServer() {
 </Response>`);
   });
 
-
+  // Twilio webhook fired once a missed-call voicemail has been recorded and
   // transcribed (see the <Record transcribe="true" transcribeCallback="..."/>
   // verb in the call-handling TwiML). Stores it and pushes a live
   // notification to the notification bell, the same way a new inbound SMS
