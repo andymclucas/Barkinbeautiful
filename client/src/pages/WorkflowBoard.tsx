@@ -14,6 +14,7 @@ import { shouldShowWorkflowRow } from "@/lib/workflowTerminalStates";
 import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresholds";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, buildBathPriorityQueue, isBathPriorityMutable } from "@shared/bathPriorityQueue";
+import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
 import { RefreshCw, Tv2, AlertTriangle, CheckCircle2, Clock, Dog, X, FileText, Filter, Save, Plus, UserPlus, ChevronLeft, ChevronRight, ExternalLink, Link2, Unlink, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
@@ -103,8 +104,7 @@ function stageColour(key: string) {
 }
 
 function fmtTime(ts: Date | number | string | null | undefined) {
-  if (!ts) return "--";
-  return new Date(ts).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true });
+  return formatAestTime(ts);
 }
 
 // ─── Inline editable cell ─────────────────────────────────────────────────────
@@ -480,7 +480,7 @@ export default function WorkflowBoard() {
               <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-10 object-contain brightness-0 invert" />
               <div>
                 <h1 className="text-2xl font-bold">Live Workflow Board</h1>
-                <p className="text-sm text-gray-400">{new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+                <p className="text-sm text-gray-400">{formatAestDate(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -584,7 +584,7 @@ export default function WorkflowBoard() {
               Workflow Board
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {isToday ? "Today" : new Date(boardDate + "T00:00:00").toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })}
+              {isToday ? "Today" : formatAestDate(boardDate + "T12:00:00Z", { weekday: "long", day: "numeric", month: "long" })}
               {" · "}{rows.length} dogs
             </p>
           </div>

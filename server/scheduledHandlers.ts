@@ -99,7 +99,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
       const membershipName = m.membershipName ?? "Membership";
       const priceStr = m.pricePerCycle ? String(m.pricePerCycle) : "0.00";
       const newFailCount = (m.failedCount ?? 0) + 1;
-      const retryDate = nextBusinessDay(now).toLocaleDateString("en-AU");
+      const retryDate = nextBusinessDay(now).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" });
 
       if (newFailCount >= 2) {
         // Strike 2 — suspend and email client

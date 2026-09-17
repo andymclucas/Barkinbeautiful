@@ -270,13 +270,13 @@ export default function WorkflowDisplay() {
           <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-12 w-12 object-contain rounded bg-white p-1" />
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Live Workflow Board</h1>
-            <p className="text-sm text-slate-400">{new Date(`${boardDate}T00:00:00`).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })} · Independent read-only display</p>
+            <p className="text-sm text-slate-400">{new Date(`${boardDate}T00:00:00`).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long" })} · Independent read-only display</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="flex items-center justify-end gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400"><Clock3 className="h-4 w-4 text-teal-300" /> Salon time</div>
-            <time className="font-mono text-3xl font-bold tabular-nums text-white md:text-4xl" dateTime={new Date(now).toISOString()}>{new Date(now).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}</time>
+            <time className="font-mono text-3xl font-bold tabular-nums text-white md:text-4xl" dateTime={new Date(now).toISOString()}>{new Date(now).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}</time>
           </div>
           <div className="hidden items-center gap-3 text-sm text-slate-400 sm:flex">
             {isFetching ? <WifiOff className="h-4 w-4 text-amber-400" /> : <Wifi className="h-4 w-4 text-emerald-400" />}
@@ -359,7 +359,7 @@ export default function WorkflowDisplay() {
             const isLeavingRow = leavingAppointmentIds.includes(appt.id);
             return (
               <div key={appt.id} className={`grid grid-cols-[0.9fr_1.5fr_0.8fr_1.1fr_1.1fr_1.1fr_1.1fr] items-center border-b border-white/5 border-l-4 px-4 transition-[opacity,transform] duration-700 ease-out motion-reduce:transition-none ${rowPaddingClass} ${rowTextClass} ${alternateRow} ${isCompletedReviewRow ? "opacity-65" : ""} ${isLeavingRow ? "translate-y-2 opacity-0" : "translate-y-0 opacity-100"} ${isPastScheduledTime && !isCompletedReviewRow ? "animate-[pulse_2.8s_ease-in-out_infinite] ring-1 ring-inset ring-amber-300/40" : ""}`} style={{ borderLeftColor: isCompletedReviewRow ? "#34d399" : isPastScheduledTime ? "#fbbf24" : stage.colour }}>
-                <div className="font-mono text-slate-300">{new Date(appt.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true })}</div>
+                <div className="font-mono text-slate-300">{new Date(appt.scheduledStart).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "numeric", minute: "2-digit", hour12: true })}</div>
                 <div className="min-w-0 flex items-center gap-2.5">
                   <PetAvatar petId={appt.petId} petName={appt.petName} className={isFocusRegister ? "h-11 w-11" : "h-9 w-9"} />
                   <div className="min-w-0">

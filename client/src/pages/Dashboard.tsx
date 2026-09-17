@@ -83,7 +83,7 @@ export default function Dashboard() {
             <p className="text-xs font-bold tracking-[0.16em] uppercase text-primary mb-1">Salon control centre</p>
             <h1 className="text-3xl font-bold font-display tracking-tight">Good morning{user?.name ? `, ${user.name.split(" ")[0]}` : ""} 👋</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+              {new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long", year: "numeric" })}
             </p>
           </div>
           <div className="flex items-center gap-2">

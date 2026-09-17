@@ -431,7 +431,7 @@ function MembershipRow({ m }: { m: MembershipItem }) {
         ${m.pricePerCycle}<span className="text-xs text-muted-foreground font-normal">/wk</span>
       </td>
       <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">
-        {m.nextBillingDate ? new Date(m.nextBillingDate).toLocaleDateString("en-AU") : "—"}
+        {m.nextBillingDate ? new Date(m.nextBillingDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" }) : "—"}
       </td>
       <td className="p-3">
         <div className="space-y-1">
@@ -917,7 +917,7 @@ export default function Memberships() {
                           </Badge>
                         </td>
                         <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">
-                          {fp.lastFailedAt ? new Date(fp.lastFailedAt).toLocaleDateString("en-AU") : "—"}
+                          {fp.lastFailedAt ? new Date(fp.lastFailedAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" }) : "—"}
                         </td>
                         <td className="p-3">
                           {fp.suspended ? (

@@ -179,7 +179,7 @@ function StoreCreditCard({ clientId, externalOpenSignal }: { clientId: number; e
                   <div>
                     <div className="font-medium">{typeLabel[tx.type] ?? tx.type}</div>
                     <div className="text-xs text-muted-foreground">
-                      {new Date(tx.createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                      {new Date(tx.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}
                       {tx.method ? ` · ${tx.method.replace("_", " ")}` : ""}
                       {tx.createdByName ? ` · ${tx.createdByName}` : ""}
                       {tx.note ? ` · ${tx.note}` : ""}
@@ -560,11 +560,11 @@ export default function ClientDetail() {
             <DialogHeader><DialogTitle>Client portal access</DialogTitle></DialogHeader>
             {!portalLink && !portalSetupLink && !portalRevokeConfirm && !portalAccountRevokeConfirm && <div className="space-y-5">
               <div className="rounded-xl border bg-muted/30 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">One-time secure link</h3><p className="text-sm text-muted-foreground">{portalAccess?.status === "active" ? `An active link expires ${new Date(portalAccess.expiresAt).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}${portalAccess.lastAccessedAt ? ` and was last opened ${new Date(portalAccess.lastAccessedAt).toLocaleDateString("en-AU")}` : ""}.` : portalAccess ? `The latest link is ${portalAccess.status}. Create a new expiry-bound link when required.` : "No one-time client portal link has been issued yet."}</p></div><Badge variant="outline" className="capitalize">{portalAccess?.status ?? "not issued"}</Badge></div>
+                <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">One-time secure link</h3><p className="text-sm text-muted-foreground">{portalAccess?.status === "active" ? `An active link expires ${new Date(portalAccess.expiresAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "long", year: "numeric" })}${portalAccess.lastAccessedAt ? ` and was last opened ${new Date(portalAccess.lastAccessedAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}` : ""}.` : portalAccess ? `The latest link is ${portalAccess.status}. Create a new expiry-bound link when required.` : "No one-time client portal link has been issued yet."}</p></div><Badge variant="outline" className="capitalize">{portalAccess?.status ?? "not issued"}</Badge></div>
                 <div className="mt-3 flex flex-wrap gap-2">{portalAccess?.status === "active" && <Button variant="destructive" size="sm" onClick={() => setPortalRevokeConfirm(true)}>Revoke active link</Button>}<Button size="sm" disabled={issuePortalLink.isPending} onClick={() => issuePortalLink.mutate({ clientId })}>{issuePortalLink.isPending ? "Creating link…" : portalAccess?.status === "active" ? "Create replacement link" : "Create secure link"}</Button></div>
               </div>
               <div className="rounded-xl border bg-muted/30 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">Client login account</h3><p className="text-sm text-muted-foreground">{portalAccount?.portalAccountStatus === "active" ? `Active login for ${portalAccount.portalLoginEmail ?? portalAccount.email ?? "this client"}${portalAccount.portalLastSignedInAt ? `, last used ${new Date(portalAccount.portalLastSignedInAt).toLocaleDateString("en-AU")}` : ""}.` : portalAccount?.portalAccountStatus === "setup_pending" ? `Setup pending for ${portalAccount.portalLoginEmail ?? portalAccount.email ?? "this client"}${portalAccount.portalSetupExpiresAt ? ` until ${new Date(portalAccount.portalSetupExpiresAt).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}` : ""}.` : portalAccount?.portalAccountStatus === "revoked" ? "Client login access is revoked. Create a new setup link only when access should be restored." : "No client login account has been enabled yet."}</p></div><Badge variant="outline" className="capitalize">{portalAccount?.setupExpired ? "setup expired" : portalAccount?.portalAccountStatus?.replace(/_/g, " ") ?? "not enabled"}</Badge></div>
+                <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">Client login account</h3><p className="text-sm text-muted-foreground">{portalAccount?.portalAccountStatus === "active" ? `Active login for ${portalAccount.portalLoginEmail ?? portalAccount.email ?? "this client"}${portalAccount.portalLastSignedInAt ? `, last used ${new Date(portalAccount.portalLastSignedInAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}` : ""}.` : portalAccount?.portalAccountStatus === "setup_pending" ? `Setup pending for ${portalAccount.portalLoginEmail ?? portalAccount.email ?? "this client"}${portalAccount.portalSetupExpiresAt ? ` until ${new Date(portalAccount.portalSetupExpiresAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "long", year: "numeric" })}` : ""}.` : portalAccount?.portalAccountStatus === "revoked" ? "Client login access is revoked. Create a new setup link only when access should be restored." : "No client login account has been enabled yet."}</p></div><Badge variant="outline" className="capitalize">{portalAccount?.setupExpired ? "setup expired" : portalAccount?.portalAccountStatus?.replace(/_/g, " ") ?? "not enabled"}</Badge></div>
                 <p className="mt-2 text-xs text-muted-foreground">Groomigo will not email or text setup links automatically. The client login uses a separate client-only session and cannot access staff or administrator screens. Use a separate browser profile or private window when demonstrating a client session on a staff device.</p>
                 <div className="mt-3 flex flex-wrap gap-2">{["active", "setup_pending"].includes(portalAccount?.portalAccountStatus ?? "") && <Button variant="destructive" size="sm" onClick={() => setPortalAccountRevokeConfirm(true)}>Revoke login access</Button>}<Button size="sm" disabled={issuePortalAccountSetupLink.isPending} onClick={() => issuePortalAccountSetupLink.mutate({ clientId })}>{issuePortalAccountSetupLink.isPending ? "Creating setup…" : portalAccount?.portalAccountStatus === "active" ? "Create password reset setup" : "Create account setup link"}</Button></div>
               </div>
@@ -572,8 +572,8 @@ export default function ClientDetail() {
             </div>}
             {!portalLink && portalRevokeConfirm && <div className="space-y-4"><p className="text-sm text-muted-foreground">Revoke the active client portal link now? It will stop working immediately and cannot be restored. Groomigo will not notify the client.</p><DialogFooter><Button variant="outline" onClick={() => setPortalRevokeConfirm(false)}>Keep active</Button><Button variant="destructive" disabled={revokePortalLink.isPending} onClick={() => revokePortalLink.mutate({ clientId })}>{revokePortalLink.isPending ? "Revoking…" : "Revoke link"}</Button></DialogFooter></div>}
             {!portalSetupLink && portalAccountRevokeConfirm && <div className="space-y-4"><p className="text-sm text-muted-foreground">Revoke this client’s portal login now? Their password will stop working and any pending setup link will be invalidated. Groomigo will not notify the client.</p><DialogFooter><Button variant="outline" onClick={() => setPortalAccountRevokeConfirm(false)}>Keep access</Button><Button variant="destructive" disabled={revokePortalAccount.isPending} onClick={() => revokePortalAccount.mutate({ clientId })}>{revokePortalAccount.isPending ? "Revoking…" : "Revoke login"}</Button></DialogFooter></div>}
-            {portalLink && <div className="space-y-4"><p className="text-sm text-muted-foreground">Share this link manually. It expires {portalLinkExpiresAt ? new Date(portalLinkExpiresAt).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" }) : "in 30 days"}.</p><div className="rounded-lg border bg-muted/40 p-3 break-all text-xs">{portalLink}</div><DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button><Button onClick={() => { navigator.clipboard.writeText(portalLink); toast.success("Client portal link copied"); }}><Copy className="mr-1.5 h-4 w-4" /> Copy link</Button></DialogFooter></div>}
-            {portalSetupLink && <div className="space-y-4"><p className="text-sm text-muted-foreground">Share this setup link manually with {portalSetupEmail ?? "the client"}. It expires {portalSetupExpiresAt ? new Date(portalSetupExpiresAt).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" }) : "in 30 days"}. Existing setup links for this client are replaced.</p><div className="rounded-lg border bg-muted/40 p-3 break-all text-xs">{portalSetupLink}</div><DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button><Button onClick={() => { navigator.clipboard.writeText(portalSetupLink); toast.success("Client portal setup link copied"); }}><Copy className="mr-1.5 h-4 w-4" /> Copy setup link</Button></DialogFooter></div>}
+            {portalLink && <div className="space-y-4"><p className="text-sm text-muted-foreground">Share this link manually. It expires {portalLinkExpiresAt ? new Date(portalLinkExpiresAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "long", year: "numeric" }) : "in 30 days"}.</p><div className="rounded-lg border bg-muted/40 p-3 break-all text-xs">{portalLink}</div><DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button><Button onClick={() => { navigator.clipboard.writeText(portalLink); toast.success("Client portal link copied"); }}><Copy className="mr-1.5 h-4 w-4" /> Copy link</Button></DialogFooter></div>}
+            {portalSetupLink && <div className="space-y-4"><p className="text-sm text-muted-foreground">Share this setup link manually with {portalSetupEmail ?? "the client"}. It expires {portalSetupExpiresAt ? new Date(portalSetupExpiresAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "long", year: "numeric" }) : "in 30 days"}. Existing setup links for this client are replaced.</p><div className="rounded-lg border bg-muted/40 p-3 break-all text-xs">{portalSetupLink}</div><DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button><Button onClick={() => { navigator.clipboard.writeText(portalSetupLink); toast.success("Client portal setup link copied"); }}><Copy className="mr-1.5 h-4 w-4" /> Copy setup link</Button></DialogFooter></div>}
           </DialogContent>
         </Dialog>
 
@@ -630,7 +630,7 @@ export default function ClientDetail() {
             <div className="text-right text-sm text-muted-foreground flex-shrink-0">
               <p className="text-xs">Client since</p>
               <p className="font-medium text-foreground">
-                {new Date(client.createdAt).toLocaleDateString("en-AU", { month: "short", year: "numeric" })}
+                {new Date(client.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", month: "short", year: "numeric" })}
               </p>
               <Button
                 variant="ghost" size="sm" className="mt-1.5 h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
@@ -784,14 +784,14 @@ export default function ClientDetail() {
               <div className="flex items-center gap-2 text-sm bg-card border rounded-lg px-3 py-2">
                 <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-muted-foreground">Last visit:</span>
-                <span className="font-medium">{new Date(lastVisit).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</span>
+                <span className="font-medium">{new Date(lastVisit).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}</span>
               </div>
             )}
             {nextVisit && (
               <div className="flex items-center gap-2 text-sm bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
                 <CalendarDays className="h-3.5 w-3.5 text-primary" />
                 <span className="text-muted-foreground">Next visit:</span>
-                <span className="font-medium text-primary">{new Date(nextVisit.scheduledStart).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</span>
+                <span className="font-medium text-primary">{new Date(nextVisit.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}</span>
                 <span className="text-muted-foreground text-xs">({nextVisit.petName})</span>
               </div>
             )}
@@ -1066,7 +1066,7 @@ export default function ClientDetail() {
                       <div key={event.id} className="rounded-lg border bg-card px-3 py-2 text-xs">
                         <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between">
                           <span className="font-medium">{description}</span>
-                          <span className="text-muted-foreground">{new Date(event.changedAt).toLocaleDateString("en-AU")} · {event.changedByName ?? "Administrator"}</span>
+                          <span className="text-muted-foreground">{new Date(event.changedAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })} · {event.changedByName ?? "Administrator"}</span>
                         </div>
                         {event.note && <p className="mt-1 text-muted-foreground italic">{event.note}</p>}
                       </div>
@@ -1100,8 +1100,8 @@ export default function ClientDetail() {
                     return (
                       <tr key={a.id} className={`border-b last:border-0 hover:bg-muted/20 ${isFuture ? "bg-primary/3" : ""}`}>
                         <td className="p-3">
-                          <div className="font-medium">{new Date(a.scheduledStart).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</div>
-                          <div className="text-xs text-muted-foreground">{new Date(a.scheduledStart).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true })}</div>
+                          <div className="font-medium">{new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}</div>
+                          <div className="text-xs text-muted-foreground">{new Date(a.scheduledStart).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: true })}</div>
                         </td>
                         <td className="p-3">
                           <span className="font-medium">{a.petName}</span>
@@ -1167,18 +1167,18 @@ export default function ClientDetail() {
                       <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                         <div>
                           <p className="text-xs text-muted-foreground">Started</p>
-                          <p className="font-medium">{new Date(m.startedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</p>
+                          <p className="font-medium">{new Date(m.startedAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}</p>
                         </div>
                         {m.nextBillingDate && (
                           <div>
                             <p className="text-xs text-muted-foreground">Next Billing</p>
-                            <p className="font-medium">{new Date(m.nextBillingDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</p>
+                            <p className="font-medium">{new Date(m.nextBillingDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}</p>
                           </div>
                         )}
                         {m.cancelledAt && (
                           <div>
                             <p className="text-xs text-muted-foreground">Cancelled</p>
-                            <p className="font-medium text-red-600">{new Date(m.cancelledAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</p>
+                            <p className="font-medium text-red-600">{new Date(m.cancelledAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}</p>
                           </div>
                         )}
                         <div>
@@ -1214,7 +1214,7 @@ export default function ClientDetail() {
                   {payments.map(p => (
                     <tr key={p.id} className="border-b last:border-0 hover:bg-muted/20">
                       <td className="p-3">
-                        {p.paidAt ? new Date(p.paidAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                        {p.paidAt ? new Date(p.paidAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" }) : "—"}
                       </td>
                       <td className="p-3 text-muted-foreground">{p.membershipName ?? "—"}</td>
                       <td className="p-3">
@@ -1257,7 +1257,7 @@ export default function ClientDetail() {
                         : `${membership ?? "Membership"} was removed for ${sourcePet}`;
                     return <div key={event.id} className="flex gap-3 px-5 py-4">
                       <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${event.eventType === "pet_marked_departed" ? "bg-amber-100 text-amber-800" : isTransfer ? "bg-teal-100 text-teal-800" : "bg-red-100 text-red-800"}`}><History className="h-4 w-4" /></div>
-                      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-sm">{description}</p><Badge variant="outline" className="text-[10px]">{event.eventType === "pet_marked_departed" ? "Pet status" : isTransfer ? "Membership transfer" : "Membership removed"}</Badge></div>{event.note && <p className="mt-1 text-sm text-muted-foreground italic">{event.note}</p>}<p className="mt-1 text-xs text-muted-foreground">{new Date(event.changedAt).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" })} · {event.changedByName ?? "Administrator"}</p></div>
+                      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-sm">{description}</p><Badge variant="outline" className="text-[10px]">{event.eventType === "pet_marked_departed" ? "Pet status" : isTransfer ? "Membership transfer" : "Membership removed"}</Badge></div>{event.note && <p className="mt-1 text-sm text-muted-foreground italic">{event.note}</p>}<p className="mt-1 text-xs text-muted-foreground">{new Date(event.changedAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", dateStyle: "medium", timeStyle: "short" })} · {event.changedByName ?? "Administrator"}</p></div>
                     </div>;
                   })}
                 </div>

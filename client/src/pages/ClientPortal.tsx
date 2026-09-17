@@ -22,11 +22,11 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 function portalDate(value: Date | string | null) {
-  return value ? new Date(value).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "Not scheduled";
+  return value ? new Date(value).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "Not scheduled";
 }
 
 function portalDateTime(value: Date | string) {
-  return new Date(value).toLocaleString("en-AU", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+  return new Date(value).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 export default function ClientPortal() {
@@ -201,7 +201,7 @@ export default function ClientPortal() {
                         onClick={() => setSelectedSlot(iso)}
                         className={`rounded-md border px-2 py-1.5 text-sm ${selectedSlot === iso ? "border-primary bg-primary text-primary-foreground" : "border-input hover:bg-accent"}`}
                       >
-                        {new Date(slot.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}
+                        {new Date(slot.scheduledStart).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "numeric", minute: "2-digit" })}
                       </button>
                     );
                   })}

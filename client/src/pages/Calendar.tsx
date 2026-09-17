@@ -7,6 +7,7 @@ import { buildAestDragSchedule } from "@/lib/calendarDragSchedule";
 import { buildSharedAppointmentPriceBreakdown } from "@shared/sharedAppointmentPricing";
 import { buildCalendarDragTargetMinutes, formatCalendarDragTargetTime } from "@shared/calendarDragTarget";
 import { formatSharedAppointmentName } from "@shared/appointmentDisplay";
+import { formatAestDate, formatAestDateTime } from "@shared/auditTimestamp";
 import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -120,7 +121,7 @@ function fmtTime(date: Date) {
 }
 
 function fmtDateShort(date: Date) {
-  return date.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" });
+  return formatAestDate(date, { weekday: "short", day: "numeric", month: "short" });
 }
 
 // "Today" per Brisbane's calendar, not whatever timezone the device's system
@@ -305,7 +306,7 @@ function ApptBlock({
                 {showService && <div className="mt-1 inline-flex max-w-full rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
                 {appt.nextAppointmentDate && (
                   <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: svc.border, opacity: 0.9 }}>
-                    Next: {new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                    Next: {new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short" })}
                   </div>
                 )}
               </>
@@ -339,8 +340,8 @@ function ApptBlock({
               <div className="flex justify-between gap-4 border-t pt-1 mt-1 font-semibold"><span>Booking total</span><span>{retainedBookingTotal ?? "Confirm each price"}</span></div>
             </div>
           ) : appt.price && <div><span className="text-muted-foreground">Price: </span>${Number(appt.price).toFixed(2)}</div>}
-          {appt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appt: </span>{new Date(appt.lastAppointmentDate).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>}
-          {appt.nextAppointmentDate && <div><span className="text-muted-foreground">Next appt: </span>{new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>}
+          {appt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appt: </span>{new Date(appt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>}
+          {appt.nextAppointmentDate && <div><span className="text-muted-foreground">Next appt: </span>{new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>}
           {appt.reminderStatus === "delivered" && <div className="text-emerald-700"><span className="text-muted-foreground">Reminder: </span>Delivered</div>}
           {appt.reminderStatus === "sent" && <div className="text-amber-700"><span className="text-muted-foreground">Reminder: </span>Sent; awaiting delivery update</div>}
         </div>
@@ -557,7 +558,7 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
       <div style="background:linear-gradient(135deg,#0f766e,#14b8a6);padding:24px 28px;border-radius:18px;color:#fff">
         <div style="font-size:11px;letter-spacing:.12em;font-weight:700;opacity:.82">BARKIN BEAUTIFUL</div>
         <div style="font-size:27px;font-weight:800;margin-top:8px">${escapeHtml(appt.petName ?? "Your pet")}'s Grooming Card</div>
-        <div style="font-size:13px;opacity:.9;margin-top:5px">${escapeHtml(new Date(appt.scheduledStart).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" }))} · Groomed by ${escapeHtml(appt.staffName ?? "your Groomigo groomer")}</div>
+        <div style="font-size:13px;opacity:.9;margin-top:5px">${escapeHtml(new Date(appt.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long", year: "numeric" }))} · Groomed by ${escapeHtml(appt.staffName ?? "your Groomigo groomer")}</div>
       </div>
       <div style="padding:24px 6px">
         <div style="font-size:11px;letter-spacing:.1em;color:#64748b;font-weight:700;margin-bottom:6px">TODAY'S SERVICE</div>
@@ -1349,7 +1350,7 @@ export default function Calendar() {
                 onClick={() => { setDayDate(day); setViewMode("day"); }}
               >
                 <div className={`text-[11px] font-semibold uppercase tracking-wide ${isToday ? "text-primary" : "text-muted-foreground"}`}>
-                  {day.toLocaleDateString("en-AU", { weekday: "short" })}
+                  {day.toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short" })}
                 </div>
                 <div className={`text-xl font-bold leading-tight ${isToday ? "text-primary" : ""}`}>
                   {day.getDate()}
@@ -1455,7 +1456,7 @@ export default function Calendar() {
                   style={{ gridTemplateColumns: colTemplate }}
                 >
                   <div className="border-r p-2 text-[11px] text-muted-foreground text-center leading-tight">
-                    {dayDate.toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                    {dayDate.toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short" })}
                   </div>
                   {cols.map((s, i) => (
                     <div key={i} className="p-2.5 border-r last:border-r-0 text-center transition-colors hover:bg-slate-50/80" style={{ borderTop: `3px solid ${s.colourHex ?? "#6366f1"}` }}>
@@ -1635,7 +1636,7 @@ export default function Calendar() {
   // ── Toolbar ────────────────────────────────────────────────────────────────
   const totalThisView = filteredAppts.length;
   const weekLabel = viewMode === "week"
-    ? `${weekDays[0].toLocaleDateString("en-AU", { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}`
+    ? `${weekDays[0].toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}`
     : fmtDateShort(dayDate);
 
   return (
@@ -2119,7 +2120,7 @@ export default function Calendar() {
                         return (
                           <span key={p.id} className="inline-flex items-center gap-1 ml-1">
                             <strong>{p.petName}</strong>{p.petBreed ? ` · ${p.petBreed}` : ""}
-                            {p.lastAppointmentDate && <span className="text-xs text-muted-foreground">· Last: {new Date(p.lastAppointmentDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</span>}
+                            {p.lastAppointmentDate && <span className="text-xs text-muted-foreground">· Last: {new Date(p.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}</span>}
                             {rStatus === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 inline" />}
                             {rStatus === "draft" && <span className="text-[10px] bg-amber-100 text-amber-700 rounded px-1">Draft</span>}
                           </span>
@@ -2135,7 +2136,7 @@ export default function Calendar() {
                     </div>
                   )}
                   <div><span className="text-muted-foreground">Client:</span> {editAppt.clientFirstName} {editAppt.clientLastName}{editAppt.clientPhone ? ` · ${editAppt.clientPhone}` : ""}</div>
-                  {editAppt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appointment:</span> {new Date(editAppt.lastAppointmentDate).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>}
+                  {editAppt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appointment:</span> {new Date(editAppt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>}
                 </div>
                 {(() => {
                   const bookedPetIds = new Set([editAppt, ...editSiblings].map((appointment) => appointment.petId));
@@ -2292,7 +2293,7 @@ export default function Calendar() {
                       ) : lastCompletedStyle.data ? (
                         <>
                           <p className="text-xs text-foreground mt-1">
-                            {new Date((lastCompletedStyle.data.completedAt ?? lastCompletedStyle.data.scheduledStart ?? lastCompletedStyle.data.createdAt) as Date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                            {new Date((lastCompletedStyle.data.completedAt ?? lastCompletedStyle.data.scheduledStart ?? lastCompletedStyle.data.createdAt) as Date).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}
                             {lastCompletedStyle.data.staffName ? ` · ${lastCompletedStyle.data.staffName}` : ""}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{lastCompletedStyle.data.note}</p>
@@ -2424,14 +2425,14 @@ export default function Calendar() {
                     <div key={n.id} className={`rounded-lg border bg-card p-3 text-xs space-y-2 ${(n as any).alertLevel === "danger" ? "border-red-400" : (n as any).alertLevel === "caution" ? "border-amber-400" : ""}`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-muted-foreground">{new Date(n.createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}{n.staffName ? ` · ${n.staffName}` : ""}</span>
+                          <span className="text-muted-foreground">{new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}{n.staffName ? ` · ${n.staffName}` : ""}</span>
                           {(n as any).serviceType && <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 capitalize">{(n as any).serviceType.replace("_"," ")}</span>}
                           {(n as any).alertLevel === "danger" && <span className="bg-red-100 text-red-600 rounded px-1.5 py-0.5 font-semibold">🔴 Danger</span>}
                           {(n as any).alertLevel === "caution" && <span className="bg-amber-100 text-amber-700 rounded px-1.5 py-0.5 font-semibold">⚠ Caution</span>}
                         </div>
                         <div className="flex items-center gap-1">
                           <button className="text-xs text-primary hover:underline" onClick={() => { setStyleNoteForm({ note: n.note ?? "", serviceType: (n as any).serviceType ?? "", bladeSize: n.bladeSize ?? "", combSize: (n as any).combSize ?? "", bodyLength: n.bodyLength ?? "", headStyle: (n as any).headStyle ?? "", faceStyle: n.faceStyle ?? "", earStyle: n.earStyle ?? "", legStyle: (n as any).legStyle ?? "", tailStyle: n.tailStyle ?? "", warnings: (n as any).warnings ?? "", alertLevel: (n as any).alertLevel ?? "", photoUrl: n.photoUrl ?? "", photoKey: "" }); toast.success("Style loaded — edit and save as new"); }}>↩ Use</button>
-                          <button className="text-muted-foreground hover:text-red-500 ml-1" onClick={() => setConfirmDelete({ type: "styleNote", id: n.id, label: new Date(n.createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) })}><Trash2 className="h-3.5 w-3.5" /></button>
+                          <button className="text-muted-foreground hover:text-red-500 ml-1" onClick={() => setConfirmDelete({ type: "styleNote", id: n.id, label: new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" }) })}><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                       </div>
                       {(n as any).warnings && <div className={`rounded px-2 py-1 text-xs ${(n as any).alertLevel === "danger" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}><span className="font-semibold">⚠ </span>{(n as any).warnings}</div>}
@@ -2461,7 +2462,7 @@ export default function Calendar() {
                       const clientName = [editAppt?.clientFirstName, editAppt?.clientLastName].filter(Boolean).join(" ");
                       const biz = tenantInfo;
                       const logoAbsUrl = biz?.logoUrl ? (biz.logoUrl.startsWith("/") ? `${window.location.origin}${biz.logoUrl}` : biz.logoUrl) : null;
-                      const html = `<!DOCTYPE html><html><head><title>Groom Style — ${petName}</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111}.header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #e5e7eb;padding-bottom:16px;margin-bottom:20px}.header-left{display:flex;align-items:center;gap:14px}.header-logo{height:52px;width:auto;object-fit:contain}.biz-name{font-size:16px;font-weight:700;margin:0 0 3px}.biz-contact{font-size:11px;color:#666;line-height:1.6}.header-right{text-align:right;font-size:11px;color:#888}.header-right strong{display:block;font-size:14px;color:#111;font-weight:600}.card{border:1px solid #ddd;border-radius:6px;padding:12px 16px;margin-bottom:12px;page-break-inside:avoid}.card.danger{border-color:#f87171}.card.caution{border-color:#fbbf24}.meta{font-size:11px;color:#888;margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap}.badge{background:#f0f0f0;border-radius:4px;padding:2px 8px;font-size:11px}.badge.alert-danger{background:#fee2e2;color:#b91c1c}.badge.alert-caution{background:#fef3c7;color:#92400e}.warning-box{background:#fef3c7;border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:12px;color:#92400e}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tag{background:#f0f0f0;border-radius:4px;padding:2px 8px;font-size:11px}.body{font-size:13px}@media print{body{margin:16px}}</style></head><body><div class="header"><div class="header-left">${logoAbsUrl ? `<img src="${logoAbsUrl}" class="header-logo" alt="logo" />` : ""}<div><p class="biz-name">${biz?.name ?? "Grooming Salon"}</p><div class="biz-contact">${biz?.phone ? `<span>${biz.phone}</span><br/>` : ""}${biz?.email ? `<span>${biz.email}</span><br/>` : ""}${biz?.address ? `<span>${biz.address}</span>` : ""}</div></div></div><div class="header-right"><strong>Groom Style History</strong>${clientName}<br/>${petName}<br/>Printed ${new Date().toLocaleDateString("en-AU",{day:"numeric",month:"long",year:"numeric"})}</div></div>${notes.map(n=>`<div class="card${(n as any).alertLevel==="danger"?" danger":(n as any).alertLevel==="caution"?" caution":""}"><div class="meta"><span>${new Date(n.createdAt).toLocaleDateString("en-AU",{day:"numeric",month:"short",year:"numeric"})}${n.staffName?` · ${n.staffName}`:""}</span>${(n as any).serviceType?`<span class="badge">${(n as any).serviceType.replace("_"," ")}</span>`:""} ${(n as any).alertLevel==="danger"?`<span class="badge alert-danger">🔴 Danger</span>`:(n as any).alertLevel==="caution"?`<span class="badge alert-caution">⚠ Caution</span>`:""}</div>${(n as any).warnings?`<div class="warning-box">⚠ ${(n as any).warnings}</div>`:""}<div class="tags">${[n.bladeSize&&`<span class="tag">Blade: ${n.bladeSize}</span>`,(n as any).combSize&&`<span class="tag">Comb: ${(n as any).combSize}</span>`,n.bodyLength&&`<span class="tag">Body: ${n.bodyLength}</span>`,(n as any).headStyle&&`<span class="tag">Head: ${(n as any).headStyle}</span>`,n.faceStyle&&`<span class="tag">Face: ${n.faceStyle}</span>`,n.earStyle&&`<span class="tag">Ears: ${n.earStyle}</span>`,(n as any).legStyle&&`<span class="tag">Legs: ${(n as any).legStyle}</span>`,n.tailStyle&&`<span class="tag">Tail: ${n.tailStyle}</span>`].filter(Boolean).join("")}</div><div class="body">${n.note}</div></div>`).join("")}</body></html>`;
+                      const html = `<!DOCTYPE html><html><head><title>Groom Style — ${petName}</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111}.header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #e5e7eb;padding-bottom:16px;margin-bottom:20px}.header-left{display:flex;align-items:center;gap:14px}.header-logo{height:52px;width:auto;object-fit:contain}.biz-name{font-size:16px;font-weight:700;margin:0 0 3px}.biz-contact{font-size:11px;color:#666;line-height:1.6}.header-right{text-align:right;font-size:11px;color:#888}.header-right strong{display:block;font-size:14px;color:#111;font-weight:600}.card{border:1px solid #ddd;border-radius:6px;padding:12px 16px;margin-bottom:12px;page-break-inside:avoid}.card.danger{border-color:#f87171}.card.caution{border-color:#fbbf24}.meta{font-size:11px;color:#888;margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap}.badge{background:#f0f0f0;border-radius:4px;padding:2px 8px;font-size:11px}.badge.alert-danger{background:#fee2e2;color:#b91c1c}.badge.alert-caution{background:#fef3c7;color:#92400e}.warning-box{background:#fef3c7;border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:12px;color:#92400e}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tag{background:#f0f0f0;border-radius:4px;padding:2px 8px;font-size:11px}.body{font-size:13px}@media print{body{margin:16px}}</style></head><body><div class="header"><div class="header-left">${logoAbsUrl ? `<img src="${logoAbsUrl}" class="header-logo" alt="logo" />` : ""}<div><p class="biz-name">${biz?.name ?? "Grooming Salon"}</p><div class="biz-contact">${biz?.phone ? `<span>${biz.phone}</span><br/>` : ""}${biz?.email ? `<span>${biz.email}</span><br/>` : ""}${biz?.address ? `<span>${biz.address}</span>` : ""}</div></div></div><div class="header-right"><strong>Groom Style History</strong>${clientName}<br/>${petName}<br/>Printed ${new Date().toLocaleDateString("en-AU",{ timeZone: "Australia/Brisbane",day:"numeric",month:"long",year:"numeric"})}</div></div>${notes.map(n=>`<div class="card${(n as any).alertLevel==="danger"?" danger":(n as any).alertLevel==="caution"?" caution":""}"><div class="meta"><span>${new Date(n.createdAt).toLocaleDateString("en-AU",{ timeZone: "Australia/Brisbane",day:"numeric",month:"short",year:"numeric"})}${n.staffName?` · ${n.staffName}`:""}</span>${(n as any).serviceType?`<span class="badge">${(n as any).serviceType.replace("_"," ")}</span>`:""} ${(n as any).alertLevel==="danger"?`<span class="badge alert-danger">🔴 Danger</span>`:(n as any).alertLevel==="caution"?`<span class="badge alert-caution">⚠ Caution</span>`:""}</div>${(n as any).warnings?`<div class="warning-box">⚠ ${(n as any).warnings}</div>`:""}<div class="tags">${[n.bladeSize&&`<span class="tag">Blade: ${n.bladeSize}</span>`,(n as any).combSize&&`<span class="tag">Comb: ${(n as any).combSize}</span>`,n.bodyLength&&`<span class="tag">Body: ${n.bodyLength}</span>`,(n as any).headStyle&&`<span class="tag">Head: ${(n as any).headStyle}</span>`,n.faceStyle&&`<span class="tag">Face: ${n.faceStyle}</span>`,n.earStyle&&`<span class="tag">Ears: ${n.earStyle}</span>`,(n as any).legStyle&&`<span class="tag">Legs: ${(n as any).legStyle}</span>`,n.tailStyle&&`<span class="tag">Tail: ${n.tailStyle}</span>`].filter(Boolean).join("")}</div><div class="body">${n.note}</div></div>`).join("")}</body></html>`;
                       const w = window.open("","_blank","width=800,height=600");
                       if (w){w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),400);}
                       else toast.error("Pop-up blocked.");

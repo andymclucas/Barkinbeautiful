@@ -170,7 +170,7 @@ export default function Migration() {
                         <Badge className={`text-xs ${STATUS_COLOURS[j.status]}`}>{j.status}</Badge>
                       </td>
                       <td className="p-3 text-xs text-muted-foreground">
-                        {new Date(j.createdAt).toLocaleDateString("en-AU")}
+                        {new Date(j.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}
                       </td>
                     </tr>
                   ))}

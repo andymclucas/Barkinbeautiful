@@ -3101,7 +3101,7 @@ const membershipsRouter = router({
         failureReason: input.failureReason ?? "Payment declined",
       });
 
-      const retryDateStr = retryDate.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+      const retryDateStr = retryDate.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Brisbane" });
       const { sendEmail, buildAdminFailedPaymentEmail, buildClientFailedPaymentEmail } = await import("./email.js");
 
       // Always notify admin
@@ -5939,7 +5939,7 @@ const clientPortalRouter = router({
       const emailSent = await sendEmail({
         to: loginEmail,
         subject: isReset ? "Reset your Barkin' Beautiful client portal password" : "Set up your Barkin' Beautiful client portal account",
-        html: `<p>Hi ${client.firstName || "there"},</p><p>${isReset ? "Here's your link to set a new password for your Barkin' Beautiful client portal account." : "You've been given access to the Barkin' Beautiful client portal, where you can see your upcoming appointments and your dog's grooming status."}</p><p><a href="${setupUrl}">${isReset ? "Reset my password" : "Set up my account"}</a></p><p>This link expires on ${setup.expiresAt.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}. It does not create staff or administrator access.</p>`,
+        html: `<p>Hi ${client.firstName || "there"},</p><p>${isReset ? "Here's your link to set a new password for your Barkin' Beautiful client portal account." : "You've been given access to the Barkin' Beautiful client portal, where you can see your upcoming appointments and your dog's grooming status."}</p><p><a href="${setupUrl}">${isReset ? "Reset my password" : "Set up my account"}</a></p><p>This link expires on ${setup.expiresAt.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Brisbane" })}. It does not create staff or administrator access.</p>`,
       });
 
       return {

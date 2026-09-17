@@ -49,6 +49,6 @@ export function getDepartedMembershipBillingImpact(
     return "Future billing stops immediately. No further membership payments will be scheduled.";
   }
   const price = Number(pricePerCycle ?? 0).toFixed(2);
-  const nextBilling = nextBillingDate ? new Date(nextBillingDate).toLocaleDateString("en-AU") : null;
+  const nextBilling = nextBillingDate ? new Date(nextBillingDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" }) : null;
   return `Future billing continues at $${price}/wk${nextBilling ? `; next billing remains ${nextBilling}` : ""}.`;
 }

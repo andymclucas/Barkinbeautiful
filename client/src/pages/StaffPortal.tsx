@@ -21,7 +21,7 @@ const STAGE_COLOURS: Record<string, string> = {
 };
 
 function formatTime(value: Date | string | number) {
-  return new Date(value).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true });
+  return new Date(value).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 function GroomingCardPhotoUpload({ appointmentId, petId }: { appointmentId: number; petId: number | null }) {
@@ -69,7 +69,7 @@ export default function StaffPortal() {
     onSuccess: () => { toast.success("Workflow updated"); refetch(); utils.workflow.getBoard.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
-  const dateLabel = useMemo(() => new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" }), []);
+  const dateLabel = useMemo(() => new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long" }), []);
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Loading Groomigo…</div>;
   if (!user) { window.location.href = "/login"; return null; }

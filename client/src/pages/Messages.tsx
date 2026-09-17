@@ -177,7 +177,7 @@ export default function Messages() {
 
   const appointmentContext = (log: any) => {
     if (!log.appointmentId || !log.appointmentStart) return "No future appointment linked";
-    const when = new Date(log.appointmentStart).toLocaleString("en-AU", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+    const when = new Date(log.appointmentStart).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
     return `${log.petName ?? "Pet"} · ${when}`;
   };
 
@@ -260,7 +260,7 @@ export default function Messages() {
                             {(call.clientName as string | null)?.trim() || call.fromNumber}
                           </span>
                           <span className="text-[11px] text-muted-foreground shrink-0">
-                            {new Date(call.receivedAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                            {new Date(call.receivedAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
                           </span>
                         </div>
                         {(call.clientName as string | null)?.trim() && <p className="text-xs text-muted-foreground">{call.fromNumber}</p>}
@@ -411,7 +411,7 @@ export default function Messages() {
                         </p>
                       </div>
                       <span className="text-[11px] text-muted-foreground shrink-0">
-                        {new Date(thread.lastAt).toLocaleDateString("en-AU", { day: "2-digit", month: "short" })}
+                        {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "2-digit", month: "short" })}
                       </span>
                     </button>
                     <Button
@@ -507,7 +507,7 @@ export default function Messages() {
                   {filteredLogs.map((log: any) => (
                     <tr key={log.id} className="border-b last:border-0">
                       <td className="py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                        {log.sentAt ? new Date(log.sentAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—"}
+                        {log.sentAt ? new Date(log.sentAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—"}
                       </td>
                       <td className="py-2.5 text-xs">
                         <div>{log.clientName || log.toNumber}{log.direction === "inbound" && <span className="ml-1 text-cyan-700">(reply)</span>}</div>
@@ -642,7 +642,7 @@ export default function Messages() {
                     <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
                       <p className="whitespace-pre-wrap break-words">{msg.body}</p>
                       <div className={`mt-1 text-[10px] ${isOutbound ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                        {new Date(msg.sentAt).toLocaleString("en-AU", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}
+                        {new Date(msg.sentAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}
                         {isOutbound && ` · ${msg.status}`}
                       </div>
                     </div>

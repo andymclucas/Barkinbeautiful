@@ -89,7 +89,7 @@ export default function PetTracker() {
               <Clock className="h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">
                 Est. pickup: <strong className="text-foreground">
-                  {new Date(data.estimatedPickupAt).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}
+                  {new Date(data.estimatedPickupAt).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit" })}
                 </strong>
               </span>
             </div>
@@ -148,7 +148,7 @@ export default function PetTracker() {
           <div className="flex justify-between">
             <span className="text-muted-foreground">Booked</span>
             <span className="font-medium">
-              {new Date(data.scheduledStart).toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}
+              {new Date(data.scheduledStart).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit" })}
             </span>
           </div>
         </div>
