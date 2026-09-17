@@ -7,6 +7,7 @@ import { buildAestDragSchedule } from "@/lib/calendarDragSchedule";
 import { buildSharedAppointmentPriceBreakdown } from "@shared/sharedAppointmentPricing";
 import { buildCalendarDragTargetMinutes, formatCalendarDragTargetTime } from "@shared/calendarDragTarget";
 import { formatSharedAppointmentName } from "@shared/appointmentDisplay";
+import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -1164,6 +1165,23 @@ export default function Calendar() {
       setNewAppt((current) => current.price === "0.00" ? current : { ...current, price: "0.00" });
     }
   }, [membershipCoverage.data?.fullyCovered]);
+  // Suggest an end time from the selected dogs' recorded weight (full
+  // grooms and FFT only) \u2014 60/90/120/180 min by size band. Purely a
+  // starting point: staff can freely edit the end time afterward, e.g. for
+  // a known-easy job on a large dog, or to overlap a booking on purpose.
+  useEffect(() => {
+    if (!newAppt.scheduledStart || selectedAppointmentPetIds.length === 0) return;
+    const weights = selectedAppointmentPetIds.map(id => selectedClientPets.data?.find(p => p.id === id)?.weightKg ?? null);
+    const suggestedMinutes = getAutoDurationMinutesForPets(newAppt.serviceType, weights);
+    if (suggestedMinutes === null) return;
+    const start = new Date(newAppt.scheduledStart);
+    if (Number.isNaN(start.getTime())) return;
+    const end = new Date(start.getTime() + suggestedMinutes * 60000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const endStr = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
+    setNewAppt(current => current.scheduledEnd === endStr ? current : { ...current, scheduledEnd: endStr });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newAppt.scheduledStart, newAppt.serviceType, selectedAppointmentPetIds.join(","), selectedClientPets.data]);
   const familyBookingCompanions = useMemo(() => {
     const selectedIds = new Set(newAppt.petIds);
     const selectedFamilyGroups = new Set((selectedClientPets.data ?? [])
