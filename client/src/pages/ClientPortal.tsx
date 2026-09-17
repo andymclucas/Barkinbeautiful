@@ -54,7 +54,7 @@ export default function ClientPortal() {
     setSelectedSlot("");
   };
 
-  const groomerProfiles = trpc.onlineBooking.listGroomerProfiles.useQuery({ tenantId: 1 });
+  const groomerProfiles = trpc.clientPortal.listReschedulableStaff.useQuery({ tenantId: 1 });
   const petWeightKg = rescheduleTarget?.petWeightKg ? Number(rescheduleTarget.petWeightKg) : 0;
   const specificSlots = trpc.onlineBooking.listAvailableSlots.useQuery(
     { tenantId: 1, staffId: Number(selectedStaffId), serviceType: rescheduleTarget?.serviceType as any, petWeightKg, date: selectedDate },

@@ -4640,7 +4640,7 @@ const onlineBookingRouter = router({
     // reschedule is confirmed, same as the existing online-booking flow.
     const db = await getDb(); if (!db) return [];
     const bookableStaff = await db.select({ id: staff.id }).from(staff)
-      .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true)));
+      .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), inArray(staff.role, ["groomer", "bather", "owner", "manager"])));
     const perStaffSlots = await Promise.all(bookableStaff.map((s: { id: number }) =>
       listAvailableOnlineSlots({ ...input, staffId: s.id }).catch(() => [])
     ));
@@ -6186,6 +6186,22 @@ const clientPortalRouter = router({
 
       await db.update(appointments).set({ status: "cancelled", workflowState: "cancelled" }).where(eq(appointments.id, appt.id));
       return { success: true };
+    }),
+
+  listReschedulableStaff: publicProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input }) => {
+      // Deliberately separate from onlineBooking.listGroomerProfiles: that
+      // list is scoped to staff who accept public web bookings, which can
+      // be a smaller set than "everyone who actually grooms dogs here."
+      // Rescheduling an existing appointment should offer every active
+      // groomer/bather, not just the online-bookable subset.
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({ id: staff.id, name: staff.name })
+        .from(staff)
+        .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), inArray(staff.role, ["groomer", "bather", "owner", "manager"])))
+        .orderBy(asc(staff.name));
     }),
 
   rescheduleAppointment: publicProcedure
