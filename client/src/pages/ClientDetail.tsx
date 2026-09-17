@@ -243,6 +243,7 @@ export default function ClientDetail() {
   const utils = trpc.useUtils();
   const [uploadingPhotoForPetId, setUploadingPhotoForPetId] = useState<number | null>(null);
   const [addCreditSignal, setAddCreditSignal] = useState(0);
+  const [activeClientTab, setActiveClientTab] = useState("pets");
   const [departedPet, setDepartedPet] = useState<{ id: number; name: string } | null>(null);
   const [departureNote, setDepartureNote] = useState("");
   const [membershipAction, setMembershipAction] = useState<{ membershipId: number; petId: number; petName: string; membershipName: string } | null>(null);
@@ -535,7 +536,7 @@ export default function ClientDetail() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
                   <DropdownMenuLabel>Pet & membership management</DropdownMenuLabel>
-                  <DropdownMenuItem onSelect={() => setAddCreditSignal(s => s + 1)}>
+                  <DropdownMenuItem onSelect={() => { setActiveClientTab("payments"); setAddCreditSignal(s => s + 1); }}>
                     Add Store Credit
                   </DropdownMenuItem>
                   {manageableDepartedMemberships.length > 0 && <DropdownMenuSeparator />}
@@ -798,7 +799,7 @@ export default function ClientDetail() {
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="pets">
+        <Tabs value={activeClientTab} onValueChange={setActiveClientTab}>
           <TabsList className="w-full justify-start">
             <TabsTrigger value="pets">
               <Dog className="h-3.5 w-3.5 mr-1.5" />Pets ({pets.length})
