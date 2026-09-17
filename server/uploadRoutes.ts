@@ -152,16 +152,19 @@ export function registerUploadRoutes(app: Router) {
         const [pet] = await db.select({ id: pets.id, tenantId: pets.tenantId }).from(pets).where(eq(pets.id, petId)).limit(1);
         if (!pet) { res.status(404).json({ error: "Pet not found" }); return; }
 
-        const appointmentIdParam = req.query.appointmentId ? Number(req.query.appointmentId) : undefined;
-        const caption = typeof req.query.caption === "string" ? req.query.caption.slice(0, 500) : undefined;
+        const appointmentIdParam = req.query.appointmentId ? Number(req.query.appointmentId) : null;
+        const caption = typeof req.query.caption === "string" ? req.query.caption.slice(0, 500) : null;
+        const contentTypeStr = String(contentType);
+        const base64Data = buffer.toString("base64");
         const [created] = await db.insert(petPhotos).values({
           tenantId: pet.tenantId,
           petId: pet.id,
-          appointmentId: Number.isInteger(appointmentIdParam) ? appointmentIdParam : undefined,
-          caption,
+          appointmentId: Number.isInteger(appointmentIdParam) ? appointmentIdParam : null,
           url: "", // superseded by the DB-served image below; kept for the not-null column
-          photoData: buffer.toString("base64"),
-          photoContentType: contentType,
+          storageKey: null,
+          caption: caption,
+          photoData: base64Data,
+          photoContentType: contentTypeStr,
         });
         const insertId = (created as any).insertId;
         await db.update(petPhotos).set({ url: `/api/pet-photos/${insertId}/image` }).where(eq(petPhotos.id, insertId));
