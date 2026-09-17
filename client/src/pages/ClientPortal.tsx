@@ -116,7 +116,7 @@ export default function ClientPortal() {
                       <PencilLine className="h-3.5 w-3.5" /> Reschedule
                     </Button>
                   ) : (
-                    <span className="text-xs text-muted-foreground italic">Within 24hrs \u2014 call the salon to reschedule</span>
+                    <span className="text-xs text-muted-foreground italic">This appointment cannot be rescheduled online. Please call Barkin' Beautiful on (07) 3823 4567.</span>
                   )}
                   <Button size="sm" variant="ghost" className="gap-1.5 h-8 text-destructive hover:text-destructive" onClick={() => setCancelTarget(appointment)}>
                     <XCircle className="h-3.5 w-3.5" /> Cancel
@@ -207,7 +207,7 @@ export default function ClientPortal() {
                   })}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No times available that day \u2014 try another date, or give the salon a call.</p>
+                <p className="text-sm text-muted-foreground">No times available that day &mdash; try another date, or give the salon a call.</p>
               )}
             </div>
           )}
