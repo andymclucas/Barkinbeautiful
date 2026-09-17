@@ -6271,6 +6271,9 @@ const clientPortalRouter = router({
       if (new Date(appt.scheduledStart).getTime() <= Date.now()) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "This appointment has already started or passed." });
       }
+      if (new Date(appt.scheduledStart).getTime() - Date.now() < 24 * 3600000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This appointment is within 24 hours \u2014 please call the salon to reschedule." });
+      }
 
       const newStart = new Date(input.newStart);
       if (Number.isNaN(newStart.getTime()) || newStart.getTime() <= Date.now()) {

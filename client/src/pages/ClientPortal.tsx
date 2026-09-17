@@ -83,6 +83,7 @@ export default function ClientPortal() {
   const past = data.appointments.filter(appointment => !upcoming.includes(appointment));
   const pastVisible = showAllHistory ? past : past.slice(0, 5);
   const canManage = (appt: PortalAppointment) => appt.workflowState === "scheduled" && appt.status !== "cancelled";
+  const canReschedule = (appt: PortalAppointment) => canManage(appt) && new Date(appt.scheduledStart).getTime() - Date.now() >= 24 * 3600000;
   const creditBalance = Number(data.storeCreditBalance ?? 0);
 
   return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-teal-50 py-8 px-4"><div className="mx-auto max-w-4xl space-y-6">
@@ -110,9 +111,13 @@ export default function ClientPortal() {
               <Badge className="capitalize">{appointment.status}</Badge>
               {canManage(appointment) && (
                 <>
-                  <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => openReschedule(appointment)}>
-                    <PencilLine className="h-3.5 w-3.5" /> Reschedule
-                  </Button>
+                  {canReschedule(appointment) ? (
+                    <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => openReschedule(appointment)}>
+                      <PencilLine className="h-3.5 w-3.5" /> Reschedule
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground italic">Within 24hrs \u2014 call the salon to reschedule</span>
+                  )}
                   <Button size="sm" variant="ghost" className="gap-1.5 h-8 text-destructive hover:text-destructive" onClick={() => setCancelTarget(appointment)}>
                     <XCircle className="h-3.5 w-3.5" /> Cancel
                   </Button>
