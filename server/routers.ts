@@ -4606,6 +4606,47 @@ async function listAvailableOnlineSlots(input: OnlineSlotListInput, options: { p
   });
 }
 
+// Real availability for RESCHEDULING an existing appointment: this is
+// deliberately separate from the online-booking capacity/eligibility rules
+// above (checkOnlineCapacity, listAvailableOnlineSlots). Those enforce
+// public-booking-specific gates \u2014 the salon's online-booking-enabled
+// toggle, each groomer's online-bookable flag, weight/service eligibility
+// for a brand-new booking \u2014 none of which make sense for moving an
+// appointment that already exists and was already validly created (most
+// often by staff, who aren't subject to any of those online-only rules).
+// All that matters here is a genuine calendar conflict: is this groomer
+// already booked at the candidate time.
+async function checkRescheduleSlotFree(input: { tenantId: number; staffId: number; scheduledStart: Date; scheduledEnd: Date; excludeAppointmentId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const dateKey = input.scheduledStart.toLocaleDateString("en-CA", { timeZone: "Australia/Brisbane" });
+  const { start, end } = aestDayBounds(dateKey);
+  const staffAppointments = await db.select({ id: appointments.id, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd })
+    .from(appointments).where(and(
+      eq(appointments.tenantId, input.tenantId),
+      eq(appointments.staffId, input.staffId),
+      gte(appointments.scheduledStart, start),
+      lte(appointments.scheduledStart, end),
+      ne(appointments.status, "cancelled"),
+      ne(appointments.id, input.excludeAppointmentId),
+    ));
+  return !staffAppointments.some(appt =>
+    input.scheduledStart.getTime() < new Date(appt.scheduledEnd).getTime() &&
+    input.scheduledEnd.getTime() > new Date(appt.scheduledStart).getTime()
+  );
+}
+
+async function listRescheduleSlots(input: { tenantId: number; staffId: number; serviceType: string; date: string; excludeAppointmentId: number }) {
+  const durationMinutes = ONLINE_SERVICE_MINUTES[input.serviceType as keyof typeof ONLINE_SERVICE_MINUTES] ?? 60;
+  const candidates = buildOnlineBookingSlotStarts(input.date, durationMinutes);
+  const results = await Promise.all(candidates.map(async scheduledStart => {
+    const scheduledEnd = new Date(scheduledStart.getTime() + durationMinutes * 60000);
+    const free = await checkRescheduleSlotFree({ tenantId: input.tenantId, staffId: input.staffId, scheduledStart, scheduledEnd, excludeAppointmentId: input.excludeAppointmentId });
+    return free ? { scheduledStart, scheduledEnd, durationMinutes } : null;
+  }));
+  return results.filter((r): r is NonNullable<typeof r> => r !== null);
+}
+
 const onlineBookingRouter = router({
   getSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
@@ -4631,27 +4672,6 @@ const onlineBookingRouter = router({
   }),
   listAvailableSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
     return listAvailableOnlineSlots(input);
-  }),
-  listAvailableSlotsAnyStaff: publicProcedure.input(z.object({ tenantId: z.number().default(1), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
-    // "No preferred groomer": a time slot is offered if AT LEAST ONE bookable
-    // groomer is free then. Checks every bookable staff member's real
-    // availability (same conflict-aware logic as picking a specific groomer)
-    // and merges the results \u2014 the actual groomer gets assigned when the
-    // reschedule is confirmed, same as the existing online-booking flow.
-    const db = await getDb(); if (!db) return [];
-    const bookableStaff = await db.select({ id: staff.id }).from(staff)
-      .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), inArray(staff.role, ["groomer", "bather", "owner", "manager"])));
-    const perStaffSlots = await Promise.all(bookableStaff.map((s: { id: number }) =>
-      listAvailableOnlineSlots({ ...input, staffId: s.id }).catch(() => [])
-    ));
-    const seen = new Map<number, { scheduledStart: Date; scheduledEnd: Date; durationMinutes: number }>();
-    for (const slots of perStaffSlots) {
-      for (const slot of slots) {
-        const key = new Date(slot.scheduledStart).getTime();
-        if (!seen.has(key)) seen.set(key, slot);
-      }
-    }
-    return Array.from(seen.values()).sort((a, b) => a.scheduledStart.getTime() - b.scheduledStart.getTime());
   }),
   listPreviewAvailableSlots: protectedProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
@@ -6187,6 +6207,31 @@ const clientPortalRouter = router({
       await db.update(appointments).set({ status: "cancelled", workflowState: "cancelled" }).where(eq(appointments.id, appt.id));
       return { success: true };
     }),
+
+  listAvailableSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.string(), petWeightKg: z.coerce.number().optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), excludeAppointmentId: z.number() })).query(async ({ input }) => {
+    return listRescheduleSlots(input);
+  }),
+  listAvailableSlotsAnyStaff: publicProcedure.input(z.object({ tenantId: z.number().default(1), serviceType: z.string(), petWeightKg: z.coerce.number().optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), excludeAppointmentId: z.number() })).query(async ({ input }) => {
+    // "No preferred groomer": a time slot is offered if AT LEAST ONE
+    // groomer/bather is free then (real calendar check, same as picking a
+    // specific groomer) \u2014 merges every active groomer's individual
+    // availability. The actual groomer gets assigned when the reschedule is
+    // confirmed.
+    const db = await getDb(); if (!db) return [];
+    const activeStaff = await db.select({ id: staff.id }).from(staff)
+      .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), inArray(staff.role, ["groomer", "bather", "owner", "manager"])));
+    const perStaffSlots = await Promise.all(activeStaff.map((s: { id: number }) =>
+      listRescheduleSlots({ ...input, staffId: s.id }).catch(() => [])
+    ));
+    const seen = new Map<number, { scheduledStart: Date; scheduledEnd: Date; durationMinutes: number }>();
+    for (const slots of perStaffSlots) {
+      for (const slot of slots) {
+        const key = new Date(slot.scheduledStart).getTime();
+        if (!seen.has(key)) seen.set(key, slot);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.scheduledStart.getTime() - b.scheduledStart.getTime());
+  }),
 
   listReschedulableStaff: publicProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
