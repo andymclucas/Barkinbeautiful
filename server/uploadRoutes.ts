@@ -3,6 +3,62 @@ import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
 import { appointments, staff, pets, petPhotos, uploadedImages } from "../drizzle/schema";
 import { and, eq, or } from "drizzle-orm";
+import sharp from "sharp";
+
+// TiDB rejects a single row/entry over ~6 MB (a TiKV-level limit, not
+// something we can raise). A base64-encoded image is ~33% larger than its
+// raw bytes, so storing an uncompressed high-resolution phone photo (often
+// several MB already) blows straight through that. Resize and recompress
+// every image before it's stored in uploaded_images or pet_photos, so the
+// stored row always stays safely under the limit regardless of what the
+// original upload looked like.
+async function compressForStorage(buffer: Buffer, contentType: string): Promise<{ buffer: Buffer; contentType: string }> {
+  // Already-small, non-photo images (icons, etc.) don't need reprocessing.
+  if (buffer.length < 400 * 1024) return { buffer, contentType };
+  try {
+    let quality = 82;
+    let maxDimension = 2000;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const out = await sharp(buffer, { failOn: "none" })
+        .rotate() // apply EXIF orientation before dropping it, so photos don't end up sideways
+        .resize({ width: maxDimension, height: maxDimension, fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality, mozjpeg: true })
+        .toBuffer();
+      // Target well under the ~6 MB TiKV entry limit once base64-encoded
+      // (base64 adds ~33%), leaving headroom for the rest of the row.
+      if (out.length < 3.5 * 1024 * 1024) return { buffer: out, contentType: "image/jpeg" };
+      quality -= 15;
+      maxDimension = Math.round(maxDimension * 0.75);
+    }
+    // Last resort after repeated attempts: whatever the final pass produced.
+    const out = await sharp(buffer, { failOn: "none" }).rotate().resize({ width: 1200, height: 1200, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 50, mozjpeg: true }).toBuffer();
+    return { buffer: out, contentType: "image/jpeg" };
+  } catch (err) {
+    console.error("[compressForStorage] falling back to original bytes:", err);
+    return { buffer, contentType };
+  }
+}
+
+// Logo-specific variant: preserves PNG (and its transparency) rather than
+// always converting to JPEG, since a branding logo is very often a PNG with
+// a transparent background that would otherwise get a black/white fill.
+async function compressLogoForStorage(buffer: Buffer, contentType: string): Promise<{ buffer: Buffer; contentType: string }> {
+  if (buffer.length < 400 * 1024) return { buffer, contentType };
+  const isPng = contentType.includes("png");
+  try {
+    let maxDimension = 1600;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const pipeline = sharp(buffer, { failOn: "none" }).resize({ width: maxDimension, height: maxDimension, fit: "inside", withoutEnlargement: true });
+      const out = isPng ? await pipeline.png({ compressionLevel: 9 }).toBuffer() : await pipeline.jpeg({ quality: 85, mozjpeg: true }).toBuffer();
+      if (out.length < 3.5 * 1024 * 1024) return { buffer: out, contentType: isPng ? "image/png" : "image/jpeg" };
+      maxDimension = Math.round(maxDimension * 0.75);
+    }
+    return { buffer, contentType };
+  } catch (err) {
+    console.error("[compressLogoForStorage] falling back to original bytes:", err);
+    return { buffer, contentType };
+  }
+}
 
 export function registerUploadRoutes(app: Router) {
   // POST /api/upload/style-note-photo
@@ -42,12 +98,13 @@ export function registerUploadRoutes(app: Router) {
 
         const db = await getDb();
         if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
-        const ext = contentType.split("/")[1]?.split(";")[0] ?? "jpg";
+        const compressed = await compressForStorage(buffer, String(contentType));
+        const ext = compressed.contentType.split("/")[1]?.split(";")[0] ?? "jpg";
         const key = `style-notes/photos/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
         await db.insert(uploadedImages).values({
           storageKey: key,
-          photoData: buffer.toString("base64"),
-          photoContentType: String(contentType),
+          photoData: compressed.buffer.toString("base64"),
+          photoContentType: compressed.contentType,
         });
 
         res.json({ url: `/api/style-note-photo?key=${encodeURIComponent(key)}`, key });
@@ -98,12 +155,13 @@ export function registerUploadRoutes(app: Router) {
         if (buffer.length > 20 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 20 MB)" }); return; }
         const db = await getDb();
         if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
-        const ext = String(contentType).split("/")[1]?.split(";")[0] ?? "jpg";
+        const compressed = await compressForStorage(buffer, String(contentType));
+        const ext = compressed.contentType.split("/")[1]?.split(";")[0] ?? "jpg";
         const key = `grooming-reports/photos/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
         await db.insert(uploadedImages).values({
           storageKey: key,
-          photoData: buffer.toString("base64"),
-          photoContentType: String(contentType),
+          photoData: compressed.buffer.toString("base64"),
+          photoContentType: compressed.contentType,
         });
         res.json({ url: `/api/grooming-report-photo?key=${encodeURIComponent(key)}`, key });
       } catch (err: any) {
@@ -158,12 +216,13 @@ export function registerUploadRoutes(app: Router) {
       const buffer: Buffer = req.body;
       if (!buffer?.length) { res.status(400).json({ error: "Empty file" }); return; }
       if (buffer.length > 20 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 20 MB)" }); return; }
-      const ext = contentType.split("/")[1]?.split(";")[0] ?? "jpg";
+      const compressed = await compressForStorage(buffer, String(contentType));
+      const ext = compressed.contentType.split("/")[1]?.split(";")[0] ?? "jpg";
       const key = `grooming-reports/staff/${appointmentId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
       await db.insert(uploadedImages).values({
         storageKey: key,
-        photoData: buffer.toString("base64"),
-        photoContentType: String(contentType),
+        photoData: compressed.buffer.toString("base64"),
+        photoContentType: compressed.contentType,
       });
       res.json({ url: `/api/grooming-report-photo?key=${encodeURIComponent(key)}`, key });
     } catch (err: any) {
@@ -199,8 +258,7 @@ export function registerUploadRoutes(app: Router) {
 
         const appointmentIdParam = req.query.appointmentId ? Number(req.query.appointmentId) : null;
         const caption = typeof req.query.caption === "string" ? req.query.caption.slice(0, 500) : null;
-        const contentTypeStr = String(contentType);
-        const base64Data = buffer.toString("base64");
+        const compressed = await compressForStorage(buffer, String(contentType));
         const [created] = await db.insert(petPhotos).values({
           tenantId: pet.tenantId,
           petId: pet.id,
@@ -208,8 +266,8 @@ export function registerUploadRoutes(app: Router) {
           url: "", // superseded by the DB-served image below; kept for the not-null column
           storageKey: null,
           caption: caption,
-          photoData: base64Data,
-          photoContentType: contentTypeStr,
+          photoData: compressed.buffer.toString("base64"),
+          photoContentType: compressed.contentType,
         });
         const insertId = (created as any).insertId;
         await db.update(petPhotos).set({ url: `/api/pet-photos/${insertId}/image` }).where(eq(petPhotos.id, insertId));
@@ -232,14 +290,15 @@ export function registerUploadRoutes(app: Router) {
       const buffer: Buffer = req.body;
       if (!buffer?.length) { res.status(400).json({ error: "Empty file" }); return; }
       if (buffer.length > 5 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 5 MB)" }); return; }
-      const ext = contentType.split("/")[1]?.split(";")[0] ?? "png";
+      const compressed = await compressLogoForStorage(buffer, String(contentType));
+      const ext = compressed.contentType.split("/")[1]?.split(";")[0] ?? "png";
       const key = `salon-branding/logos/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
       const db = await getDb();
       if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
       await db.insert(uploadedImages).values({
         storageKey: key,
-        photoData: buffer.toString("base64"),
-        photoContentType: String(contentType),
+        photoData: compressed.buffer.toString("base64"),
+        photoContentType: compressed.contentType,
       });
       res.json({ url: `/api/salon-logo?key=${encodeURIComponent(key)}`, key });
     } catch (err: any) {
