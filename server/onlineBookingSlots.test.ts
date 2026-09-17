@@ -16,4 +16,17 @@ describe("online booking slot candidates", () => {
   it("does not offer a start when the selected service cannot finish in booking hours", () => {
     expect(buildOnlineBookingSlotStarts("2026-08-11", 600)).toEqual([]);
   });
+
+  it("offers no slots on Saturday, Sunday or Monday \u2014 the salon is closed", () => {
+    expect(buildOnlineBookingSlotStarts("2026-08-08", 60)).toEqual([]); // Saturday
+    expect(buildOnlineBookingSlotStarts("2026-08-09", 60)).toEqual([]); // Sunday
+    expect(buildOnlineBookingSlotStarts("2026-08-10", 60)).toEqual([]); // Monday
+  });
+
+  it("still offers slots on the days the salon is open", () => {
+    expect(buildOnlineBookingSlotStarts("2026-08-11", 60).length).toBeGreaterThan(0); // Tuesday
+    expect(buildOnlineBookingSlotStarts("2026-08-12", 60).length).toBeGreaterThan(0); // Wednesday
+    expect(buildOnlineBookingSlotStarts("2026-08-13", 60).length).toBeGreaterThan(0); // Thursday
+    expect(buildOnlineBookingSlotStarts("2026-08-14", 60).length).toBeGreaterThan(0); // Friday
+  });
 });

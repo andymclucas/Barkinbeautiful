@@ -8,6 +8,14 @@ export function buildOnlineBookingSlotStarts(dateKey: string, durationMinutes: n
 
   // Brisbane operates on AEST year-round. Midnight AEST is 14:00 UTC the day before.
   const aestMidnight = Date.UTC(year, month - 1, day - 1, 14, 0, 0, 0);
+
+  // The salon is closed Saturday, Sunday and Monday \u2014 no online booking or
+  // reschedule slots on those days. Compute the day-of-week directly from
+  // the requested calendar date (not from aestMidnight, which is shifted
+  // into the *previous* UTC day and would give the wrong weekday).
+  const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  if (dayOfWeek === 0 || dayOfWeek === 1 || dayOfWeek === 6) return [];
+
   const lastStart = ONLINE_BOOKING_CLOSE_MINUTES - durationMinutes;
   const slots: Date[] = [];
   for (let minute = ONLINE_BOOKING_OPEN_MINUTES; minute <= lastStart; minute += ONLINE_BOOKING_SLOT_INTERVAL_MINUTES) {
