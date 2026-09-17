@@ -1,9 +1,8 @@
 import { Router } from "express";
 import { storageGet, storagePut } from "./storage";
 import { sdk } from "./_core/sdk";
-import { buildPetPhotoStorageKey } from "./petPhotoStorage";
 import { getDb } from "./db";
-import { appointments, staff, pets } from "../drizzle/schema";
+import { appointments, staff, pets, petPhotos } from "../drizzle/schema";
 import { and, eq, or } from "drizzle-orm";
 
 export function registerUploadRoutes(app: Router) {
@@ -128,9 +127,11 @@ export function registerUploadRoutes(app: Router) {
     }
   });
 
-  // POST /api/upload/pet-groom-photo
-  // The authenticated staff member uploads raw image bytes; photo metadata is
-  // then associated with a pet through the protected tRPC procedure.
+  // POST /api/upload/pet-groom-photo?petId=123&caption=...&appointmentId=456
+  // Stores the photo directly in the database (same approach as the pet
+  // profile photo below) rather than external Forge storage, which isn't
+  // configured in this environment. Creates the pet_photos row in one step
+  // \u2014 the client just needs to refetch afterward, no separate tRPC call.
   app.post(
     "/api/upload/pet-groom-photo",
     async (req, res) => {
@@ -138,14 +139,33 @@ export function registerUploadRoutes(app: Router) {
         let user;
         try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
         if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+        const petId = Number(req.query.petId);
+        if (!Number.isInteger(petId) || petId <= 0) { res.status(400).json({ error: "Missing or invalid petId" }); return; }
         const contentType = req.headers["content-type"] ?? "image/jpeg";
         if (!contentType.startsWith("image/")) { res.status(400).json({ error: "Only image uploads are allowed" }); return; }
         const buffer: Buffer = req.body;
         if (!buffer || buffer.length === 0) { res.status(400).json({ error: "Empty file" }); return; }
         if (buffer.length > 20 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 20 MB)" }); return; }
-        const key = buildPetPhotoStorageKey(contentType, Date.now(), Math.random().toString(36).slice(2, 10));
-        const { url, key: finalKey } = await storagePut(key, buffer, contentType);
-        res.json({ url, key: finalKey });
+
+        const db = await getDb();
+        if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+        const [pet] = await db.select({ id: pets.id, tenantId: pets.tenantId }).from(pets).where(eq(pets.id, petId)).limit(1);
+        if (!pet) { res.status(404).json({ error: "Pet not found" }); return; }
+
+        const appointmentIdParam = req.query.appointmentId ? Number(req.query.appointmentId) : undefined;
+        const caption = typeof req.query.caption === "string" ? req.query.caption.slice(0, 500) : undefined;
+        const [created] = await db.insert(petPhotos).values({
+          tenantId: pet.tenantId,
+          petId: pet.id,
+          appointmentId: Number.isInteger(appointmentIdParam) ? appointmentIdParam : undefined,
+          caption,
+          url: "", // superseded by the DB-served image below; kept for the not-null column
+          photoData: buffer.toString("base64"),
+          photoContentType: contentType,
+        });
+        const insertId = (created as any).insertId;
+        await db.update(petPhotos).set({ url: `/api/pet-photos/${insertId}/image` }).where(eq(petPhotos.id, insertId));
+        res.json({ success: true, id: insertId, url: `/api/pet-photos/${insertId}/image` });
       } catch (err: any) {
         console.error("[upload/pet-groom-photo]", err);
         res.status(500).json({ error: err.message ?? "Upload failed" });
@@ -197,6 +217,32 @@ export function registerUploadRoutes(app: Router) {
       res.send(buffer);
     } catch (err: any) {
       console.error("[pets/:id/photo]", err);
+      res.status(500).json({ error: err.message ?? "Failed to load photo" });
+    }
+  });
+
+  // GET /api/pet-photos/:id/image — serves one groom-photo-gallery entry
+  // stored directly in the database (see the upload route above).
+  app.get("/api/pet-photos/:id/image", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const photoId = Number(req.params.id);
+      if (!Number.isInteger(photoId) || photoId <= 0) { res.status(400).json({ error: "Invalid photo id" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const [photo] = await db.select({ photoData: petPhotos.photoData, photoContentType: petPhotos.photoContentType })
+        .from(petPhotos).where(eq(petPhotos.id, photoId)).limit(1);
+      if (!photo?.photoData) { res.status(404).json({ error: "No photo" }); return; }
+      const buffer = Buffer.from(photo.photoData, "base64");
+      res.set({
+        "Content-Type": photo.photoContentType || "image/jpeg",
+        "Cache-Control": "private, max-age=86400",
+      });
+      res.send(buffer);
+    } catch (err: any) {
+      console.error("[pet-photos/:id/image]", err);
       res.status(500).json({ error: err.message ?? "Failed to load photo" });
     }
   });

@@ -273,13 +273,6 @@ export default function ClientDetail() {
     { clientId },
     { enabled: isAdmin && Boolean(clientId) },
   );
-  const addPetPhoto = trpc.clients.addPetPhoto.useMutation({
-    onSuccess: async () => {
-      await utils.clients.getProfile.invalidate({ clientId });
-      toast.success("Groom photo added to this pet’s history");
-    },
-    onError: (error) => toast.error(error.message),
-  });
   const markDeparted = trpc.pets.markDeparted.useMutation({
     onSuccess: async (result) => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -381,19 +374,16 @@ export default function ClientDetail() {
     if (file.size > 20 * 1024 * 1024) { toast.error("Photo must be 20 MB or smaller"); return; }
     setUploadingPhotoForPetId(petId);
     try {
-      const response = await fetch("/api/upload/pet-groom-photo", {
+      const caption = encodeURIComponent(file.name.replace(/\.[^.]+$/, ""));
+      const response = await fetch(`/api/upload/pet-groom-photo?petId=${petId}&caption=${caption}`, {
         method: "POST",
         headers: { "Content-Type": file.type || "image/jpeg" },
         body: file,
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Photo upload failed");
-      await addPetPhoto.mutateAsync({
-        petId,
-        url: payload.url,
-        storageKey: payload.key,
-        caption: file.name.replace(/\.[^.]+$/, ""),
-      });
+      await utils.clients.getProfile.invalidate({ clientId });
+      toast.success("Groom photo added to this pet\u2019s history");
     } catch (error: any) {
       toast.error(error.message ?? "Photo upload failed");
     } finally {

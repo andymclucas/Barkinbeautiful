@@ -530,6 +530,8 @@ export const petPhotos = mysqlTable("pet_photos", {
   url: text("url").notNull(),
   storageKey: text("storage_key"),
   caption: text("caption"),
+  photoData: mediumtext("photo_data"),
+  photoContentType: varchar("photo_content_type", { length: 50 }),
   takenAt: timestamp("taken_at").defaultNow().notNull(),
 }, (t) => [index("idx_photo_pet").on(t.petId)]);
 
