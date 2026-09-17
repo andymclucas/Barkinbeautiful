@@ -105,12 +105,20 @@ function ClientProfileSkeleton() {
   );
 }
 
-function StoreCreditCard({ clientId }: { clientId: number }) {
+function StoreCreditCard({ clientId, externalOpenSignal }: { clientId: number; externalOpenSignal?: number }) {
   const [addOpen, setAddOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"cash" | "bank_transfer" | "card" | "other">("bank_transfer");
   const [note, setNote] = useState("");
+
+  // Lets the "Add Store Credit" item in the top Quick Actions dropdown open
+  // this same dialog without needing its own separate implementation \u2014
+  // bumping externalOpenSignal (any change in value) triggers it.
+  useEffect(() => {
+    if (externalOpenSignal !== undefined) setAddOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalOpenSignal]);
 
   const utils = trpc.useUtils();
   const { data: balanceData } = trpc.storeCredit.getBalance.useQuery({ clientId });
@@ -234,6 +242,7 @@ export default function ClientDetail() {
   const { data: currentUser } = trpc.auth.me.useQuery();
   const utils = trpc.useUtils();
   const [uploadingPhotoForPetId, setUploadingPhotoForPetId] = useState<number | null>(null);
+  const [addCreditSignal, setAddCreditSignal] = useState(0);
   const [departedPet, setDepartedPet] = useState<{ id: number; name: string } | null>(null);
   const [departureNote, setDepartureNote] = useState("");
   const [membershipAction, setMembershipAction] = useState<{ membershipId: number; petId: number; petName: string; membershipName: string } | null>(null);
@@ -519,13 +528,16 @@ export default function ClientDetail() {
           </Link>
           <div className="flex items-center gap-2">
             {isAdmin && <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setPortalLink(null); setPortalSetupLink(null); setPortalRevokeConfirm(false); setPortalAccountRevokeConfirm(false); setPortalLinkOpen(true); }}><ShieldCheck className="h-4 w-4" /> Client portal</Button>}
-            {isAdmin && (manageableDepartedMemberships.length > 0 || pets.some(pet => pet.status !== "departed")) && (
+            {isAdmin && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1.5"><ClipboardList className="h-4 w-4" /> Quick actions <ChevronDown className="h-3.5 w-3.5" /></Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
                   <DropdownMenuLabel>Pet & membership management</DropdownMenuLabel>
+                  <DropdownMenuItem onSelect={() => setAddCreditSignal(s => s + 1)}>
+                    Add Store Credit
+                  </DropdownMenuItem>
                   {manageableDepartedMemberships.length > 0 && <DropdownMenuSeparator />}
                   {manageableDepartedMemberships.map(({ pet, membership }) => (
                     <DropdownMenuItem key={membership.id} onSelect={() => openDepartedMembershipAction(pet, membership)}>
@@ -1182,7 +1194,7 @@ export default function ClientDetail() {
 
           {/* ── Payments tab ── */}
           <TabsContent value="payments" className="mt-4">
-            <StoreCreditCard clientId={client.id} />
+            <StoreCreditCard clientId={client.id} externalOpenSignal={addCreditSignal} />
 
             <div className="bg-card rounded-xl border overflow-hidden shadow-sm">
               <table className="w-full text-sm">

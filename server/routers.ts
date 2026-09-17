@@ -2670,6 +2670,7 @@ const membershipsRouter = router({
           nextBillingDate: memberships.nextBillingDate,
           failedPaymentCount: memberships.failedPaymentCount,
           bookingSuspended: memberships.bookingSuspended,
+          isTest: memberships.isTest,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           clientPhone: clients.phone,
@@ -2737,6 +2738,7 @@ const membershipsRouter = router({
       manualWeightClass: z.enum(["small", "small_medium", "medium", "large", "extra_large", "giant"]).optional(),
       paymentGateway: z.enum(["square", "stripe", "cash", "other"]).default("cash"),
       nextBillingDate: z.string().optional(),
+      isTest: z.boolean().default(false),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -2778,6 +2780,7 @@ const membershipsRouter = router({
         paymentGateway: input.paymentGateway,
         nextBillingDate: input.nextBillingDate ? new Date(input.nextBillingDate) : undefined,
         status: "active",
+        isTest: input.isTest,
       });
       return { id: (result as any).insertId };
     }),
@@ -3675,7 +3678,7 @@ const analyticsRouter = router({
       const [membershipCount] = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(memberships)
-        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active")));
+        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"), eq(memberships.isTest, false)));
       const [clientCount] = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(clients)
@@ -3708,7 +3711,8 @@ const analyticsRouter = router({
 
       const [membershipRow] = await db.select({ total: sql<string>`COALESCE(SUM(${appointments.price}), 0)` })
         .from(appointments)
-        .where(and(...range, isNotNull(appointments.membershipId)));
+        .leftJoin(memberships, eq(appointments.membershipId, memberships.id))
+        .where(and(...range, isNotNull(appointments.membershipId), or(isNull(memberships.isTest), eq(memberships.isTest, false))));
 
       const totalRevenue = byServiceType.reduce((sum: number, r: any) => sum + parseFloat(r.revenue || "0"), 0);
       const membershipRevenue = parseFloat(membershipRow?.total ?? "0");
@@ -3799,7 +3803,7 @@ const analyticsRouter = router({
         })
         .from(memberships)
         .leftJoin(clients, eq(memberships.clientId, clients.id))
-        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active")));
+        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"), eq(memberships.isTest, false)));
 
       // Group by tier
       const tierMap: Record<string, { count: number; weeklyRevenue: number; names: string[] }> = {};
@@ -3890,7 +3894,8 @@ const analyticsRouter = router({
         .innerJoin(memberships, and(
           eq(memberships.clientId, appointments.clientId),
           eq(memberships.status, "active"),
-          eq(memberships.tenantId, input.tenantId)
+          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.isTest, false)
         ))
         .where(and(
           eq(appointments.tenantId, input.tenantId),
@@ -3903,7 +3908,7 @@ const analyticsRouter = router({
       const memberRows = await db
         .select({ pricePerCycle: memberships.pricePerCycle, billingCycleWeeks: memberships.billingCycleWeeks })
         .from(memberships)
-        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active")));
+        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"), eq(memberships.isTest, false)));
 
       let totalWeeklyMemberRevenue = 0;
       for (const m of memberRows) {

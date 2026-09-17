@@ -335,6 +335,7 @@ export const memberships = mysqlTable("memberships", {
   stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   cancelledAt: timestamp("cancelled_at"),
+  isTest: boolean("is_test").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (t) => [index("idx_membership_tenant").on(t.tenantId), index("idx_membership_client").on(t.clientId)]);

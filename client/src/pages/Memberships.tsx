@@ -28,6 +28,7 @@ type MembershipItem = {
   nextBillingDate: number | Date | null;
   failedPaymentCount: number | null;
   bookingSuspended: boolean | null;
+  isTest: boolean | null;
   clientFirstName: string | null;
   clientLastName: string | null;
   clientPhone: string | null;
@@ -416,6 +417,7 @@ function MembershipRow({ m }: { m: MembershipItem }) {
         <div className="flex items-center gap-1.5">
           <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-sm">{m.name}</span>
+          {m.isTest && <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700">TEST</Badge>}
         </div>
       </td>
       <td className="p-3 hidden lg:table-cell">
