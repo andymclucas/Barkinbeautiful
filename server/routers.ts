@@ -4643,7 +4643,11 @@ async function checkRescheduleSlotFree(input: { tenantId: number; staffId: numbe
 
 async function listRescheduleSlots(input: { tenantId: number; staffId: number; serviceType: string; date: string; excludeAppointmentId: number }) {
   const durationMinutes = ONLINE_SERVICE_MINUTES[input.serviceType as keyof typeof ONLINE_SERVICE_MINUTES] ?? 60;
-  const candidates = buildOnlineBookingSlotStarts(input.date, durationMinutes);
+  const candidates = buildOnlineBookingSlotStarts(input.date, durationMinutes)
+    // A rescheduled time needs the same 24-hour minimum notice as any other
+    // booking \u2014 otherwise a client could reschedule into a slot the salon
+    // has no realistic chance to prepare or adjust staffing for.
+    .filter(start => start.getTime() - Date.now() >= 24 * 3600000);
   const results = await Promise.all(candidates.map(async scheduledStart => {
     const scheduledEnd = new Date(scheduledStart.getTime() + durationMinutes * 60000);
     const free = await checkRescheduleSlotFree({ tenantId: input.tenantId, staffId: input.staffId, scheduledStart, scheduledEnd, excludeAppointmentId: input.excludeAppointmentId });
@@ -6283,6 +6287,9 @@ const clientPortalRouter = router({
       const newStart = new Date(input.newStart);
       if (Number.isNaN(newStart.getTime()) || newStart.getTime() <= Date.now()) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Please choose a valid future date and time." });
+      }
+      if (newStart.getTime() - Date.now() < 24 * 3600000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "The new time needs to be at least 24 hours away \u2014 please call the salon for anything sooner." });
       }
       const durationMs = new Date(appt.scheduledEnd).getTime() - new Date(appt.scheduledStart).getTime();
       const newEnd = new Date(newStart.getTime() + durationMs);
