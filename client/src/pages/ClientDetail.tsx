@@ -336,7 +336,9 @@ export default function ClientDetail() {
       setPortalSetupEmail(result.loginEmail);
       setPortalLink(null);
       await utils.clientPortal.getAccountStatus.invalidate({ clientId });
-      toast.success("Client portal account setup link created. Share it manually when ready.");
+      toast.success(result.emailSent
+        ? `Setup link emailed to ${result.loginEmail}.`
+        : `Setup link created, but the email couldn't be sent \u2014 share it manually.`);
     },
     onError: (error) => toast.error(error.message),
   });

@@ -5843,7 +5843,7 @@ const clientPortalRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
-      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId, email: clients.email, portalLoginEmail: clients.portalLoginEmail })
+      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId, email: clients.email, portalLoginEmail: clients.portalLoginEmail, firstName: clients.firstName })
         .from(clients)
         .where(eq(clients.id, input.clientId))
         .limit(1);
@@ -5879,11 +5879,22 @@ const clientPortalRouter = router({
       const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(",")[0]?.trim() || ctx.req.protocol || "https";
       const host = ctx.req.get("host");
       const baseUrl = host ? `${protocol}://${host}` : "https://groomingsos-mqzfsvzv.manus.space";
+      const setupUrl = `${baseUrl}/portal/setup/${setup.token}`;
+
+      const { sendEmail } = await import("./email");
+      const isReset = client.portalLoginEmail === loginEmail; // same address already had an account \u2014 this is a reset, not a first-time setup
+      const emailSent = await sendEmail({
+        to: loginEmail,
+        subject: isReset ? "Reset your Barkin' Beautiful client portal password" : "Set up your Barkin' Beautiful client portal account",
+        html: `<p>Hi ${client.firstName || "there"},</p><p>${isReset ? "Here's your link to set a new password for your Barkin' Beautiful client portal account." : "You've been given access to the Barkin' Beautiful client portal, where you can see your upcoming appointments and your dog's grooming status."}</p><p><a href="${setupUrl}">${isReset ? "Reset my password" : "Set up my account"}</a></p><p>This link expires on ${setup.expiresAt.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}. It does not create staff or administrator access.</p>`,
+      });
+
       return {
-        setupUrl: `${baseUrl}/portal/setup/${setup.token}`,
+        setupUrl,
         loginEmail,
         expiresAt: setup.expiresAt,
-        manualShareOnly: true as const,
+        emailSent,
+        manualShareOnly: !emailSent,
       };
     }),
 

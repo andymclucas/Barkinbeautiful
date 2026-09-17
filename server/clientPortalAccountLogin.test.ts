@@ -76,12 +76,11 @@ describe("client portal account login isolation", () => {
     await expect(caller.clientPortal.getAccountStatus({ clientId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("requires an administrator for client account setup or revocation and never delivers links automatically", () => {
+  it("requires an administrator for client account setup or revocation, and emails the link automatically once issued", () => {
     expect(portalRouter).toContain("getAccountStatus: adminProcedure");
     expect(portalRouter).toContain("issueAccountSetupLink: adminProcedure");
     expect(portalRouter).toContain("revokeAccount: adminProcedure");
-    expect(portalRouter).toContain("manualShareOnly: true as const");
-    expect(portalRouter).not.toContain("sendEmail(");
+    expect(portalRouter).toContain("await sendEmail({");
     expect(portalRouter).not.toContain("sendSms(");
   });
 

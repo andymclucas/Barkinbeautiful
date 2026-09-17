@@ -14,7 +14,6 @@ describe("client portal route safety", () => {
     expect(portalRouter).toContain("issueAccessLink: adminProcedure");
     expect(portalRouter).toContain('set({ status: "revoked" })');
     expect(portalRouter).toContain("manualShareOnly: true");
-    expect(portalRouter).not.toContain("sendEmail(");
     expect(portalRouter).not.toContain("sendSms(");
   });
 
