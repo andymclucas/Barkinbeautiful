@@ -1,8 +1,7 @@
 import { Router } from "express";
-import { storageGet, storagePut } from "./storage";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
-import { appointments, staff, pets, petPhotos } from "../drizzle/schema";
+import { appointments, staff, pets, petPhotos, uploadedImages } from "../drizzle/schema";
 import { and, eq, or } from "drizzle-orm";
 
 export function registerUploadRoutes(app: Router) {
@@ -41,11 +40,17 @@ export function registerUploadRoutes(app: Router) {
           return;
         }
 
+        const db = await getDb();
+        if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
         const ext = contentType.split("/")[1]?.split(";")[0] ?? "jpg";
-        const key = `style-notes/photos/photo.${ext}`;
-        const { url, key: finalKey } = await storagePut(key, buffer, contentType);
+        const key = `style-notes/photos/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+        await db.insert(uploadedImages).values({
+          storageKey: key,
+          photoData: buffer.toString("base64"),
+          photoContentType: String(contentType),
+        });
 
-        res.json({ url, key: finalKey });
+        res.json({ url: `/api/style-note-photo?key=${encodeURIComponent(key)}`, key });
       } catch (err: any) {
         console.error("[upload/style-note-photo]", err);
         res.status(500).json({ error: err.message ?? "Upload failed" });
@@ -53,7 +58,32 @@ export function registerUploadRoutes(app: Router) {
     }
   );
 
+  // Serves a style-note image stored in uploaded_images by its key.
+  app.get("/api/style-note-photo", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const key = typeof req.query.key === "string" ? req.query.key : "";
+      if (!key.startsWith("style-notes/")) { res.status(400).json({ error: "Invalid photo" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const [image] = await db.select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!image) { res.status(404).json({ error: "Photo unavailable" }); return; }
+      res.set({ "Content-Type": image.photoContentType, "Cache-Control": "private, max-age=86400" });
+      res.send(Buffer.from(image.photoData, "base64"));
+    } catch (err: any) {
+      console.error("[style-note-photo]", err);
+      res.status(404).json({ error: "Photo unavailable" });
+    }
+  });
+
   // POST /api/upload/grooming-report-photo
+  // Stores directly in the database (uploaded_images) rather than external
+  // Forge storage, which isn't configured in this environment. Keeps the
+  // same {url, key} response shape and GET /api/grooming-report-photo?key=
+  // serving pattern the client already expects.
   app.post(
     "/api/upload/grooming-report-photo",
     async (req, res) => {
@@ -66,10 +96,16 @@ export function registerUploadRoutes(app: Router) {
         const buffer: Buffer = req.body;
         if (!buffer || buffer.length === 0) { res.status(400).json({ error: "Empty file" }); return; }
         if (buffer.length > 20 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 20 MB)" }); return; }
-        const ext = contentType.split("/")[1]?.split(";")[0] ?? "jpg";
-        const key = `grooming-reports/photos/${Date.now()}-photo.${ext}`;
-        const { url, key: finalKey } = await storagePut(key, buffer, contentType);
-        res.json({ url, key: finalKey });
+        const db = await getDb();
+        if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+        const ext = String(contentType).split("/")[1]?.split(";")[0] ?? "jpg";
+        const key = `grooming-reports/photos/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+        await db.insert(uploadedImages).values({
+          storageKey: key,
+          photoData: buffer.toString("base64"),
+          photoContentType: String(contentType),
+        });
+        res.json({ url: `/api/grooming-report-photo?key=${encodeURIComponent(key)}`, key });
       } catch (err: any) {
         console.error("[upload/grooming-report-photo]", err);
         res.status(500).json({ error: err.message ?? "Upload failed" });
@@ -77,8 +113,7 @@ export function registerUploadRoutes(app: Router) {
     }
   );
 
-  // Serve grooming-card images through a fresh authenticated storage redirect so
-  // preview iframes, printing and later report views do not rely on stale URLs.
+  // Serves a grooming-card image stored in uploaded_images by its key.
   app.get("/api/grooming-report-photo", async (req, res) => {
     try {
       let user;
@@ -86,8 +121,13 @@ export function registerUploadRoutes(app: Router) {
       if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
       const key = typeof req.query.key === "string" ? req.query.key : "";
       if (!key.startsWith("grooming-reports/")) { res.status(400).json({ error: "Invalid report photo" }); return; }
-      const { url } = await storageGet(key);
-      res.redirect(url);
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const [image] = await db.select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!image) { res.status(404).json({ error: "Report photo unavailable" }); return; }
+      res.set({ "Content-Type": image.photoContentType, "Cache-Control": "private, max-age=86400" });
+      res.send(Buffer.from(image.photoData, "base64"));
     } catch (err: any) {
       console.error("[grooming-report-photo]", err);
       res.status(404).json({ error: "Report photo unavailable" });
@@ -119,8 +159,13 @@ export function registerUploadRoutes(app: Router) {
       if (!buffer?.length) { res.status(400).json({ error: "Empty file" }); return; }
       if (buffer.length > 20 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 20 MB)" }); return; }
       const ext = contentType.split("/")[1]?.split(";")[0] ?? "jpg";
-      const { url, key } = await storagePut(`grooming-reports/staff/${appointmentId}/${Date.now()}-photo.${ext}`, buffer, contentType);
-      res.json({ url, key });
+      const key = `grooming-reports/staff/${appointmentId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+      await db.insert(uploadedImages).values({
+        storageKey: key,
+        photoData: buffer.toString("base64"),
+        photoContentType: String(contentType),
+      });
+      res.json({ url: `/api/grooming-report-photo?key=${encodeURIComponent(key)}`, key });
     } catch (err: any) {
       console.error("[upload/staff-grooming-card-photo]", err);
       res.status(500).json({ error: err.message ?? "Upload failed" });
@@ -188,11 +233,37 @@ export function registerUploadRoutes(app: Router) {
       if (!buffer?.length) { res.status(400).json({ error: "Empty file" }); return; }
       if (buffer.length > 5 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 5 MB)" }); return; }
       const ext = contentType.split("/")[1]?.split(";")[0] ?? "png";
-      const { url, key } = await storagePut(`salon-branding/logos/${Date.now()}-logo.${ext}`, buffer, contentType);
-      res.json({ url, key });
+      const key = `salon-branding/logos/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      await db.insert(uploadedImages).values({
+        storageKey: key,
+        photoData: buffer.toString("base64"),
+        photoContentType: String(contentType),
+      });
+      res.json({ url: `/api/salon-logo?key=${encodeURIComponent(key)}`, key });
     } catch (err: any) {
       console.error("[upload/salon-logo]", err);
       res.status(500).json({ error: err.message ?? "Upload failed" });
+    }
+  });
+
+  // Serves the salon logo by key. Public (no auth) since it may be shown on
+  // the client portal and other unauthenticated surfaces too.
+  app.get("/api/salon-logo", async (req, res) => {
+    try {
+      const key = typeof req.query.key === "string" ? req.query.key : "";
+      if (!key.startsWith("salon-branding/")) { res.status(400).json({ error: "Invalid logo" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const [image] = await db.select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!image) { res.status(404).json({ error: "Logo unavailable" }); return; }
+      res.set({ "Content-Type": image.photoContentType, "Cache-Control": "public, max-age=86400" });
+      res.send(Buffer.from(image.photoData, "base64"));
+    } catch (err: any) {
+      console.error("[salon-logo]", err);
+      res.status(404).json({ error: "Logo unavailable" });
     }
   });
 

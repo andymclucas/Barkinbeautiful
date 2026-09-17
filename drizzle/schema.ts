@@ -523,6 +523,20 @@ export const timesheets = mysqlTable("timesheets", {
 }, (t) => [index("idx_timesheet_staff").on(t.staffId)]);
 
 // ─── Pet Photos ───────────────────────────────────────────────────────────────
+// ─── Uploaded Images (generic DB-backed blob store) ────────────────────────────
+// Drop-in replacement for the external Forge storage used by storagePut/
+// storageGet, which isn't configured in this environment. Anything that used
+// to get a random {key, url} pair from Forge can instead store the image
+// here under a random key and serve it back by that same key \u2014 the calling
+// code barely needs to change.
+export const uploadedImages = mysqlTable("uploaded_images", {
+  id: int("id").autoincrement().primaryKey(),
+  storageKey: varchar("storage_key", { length: 255 }).notNull(),
+  photoData: mediumtext("photo_data").notNull(),
+  photoContentType: varchar("photo_content_type", { length: 50 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("uq_uploaded_images_key").on(t.storageKey)]);
+
 export const petPhotos = mysqlTable("pet_photos", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull().references(() => tenants.id),
