@@ -61,7 +61,12 @@ describe("appointment membership coverage", () => {
     expect(router).toContain("getClientMembershipSummary: operationalProcedure");
     expect(calendar).toContain("Weekly membership active");
     expect(calendar).toContain("clientMembershipSummary");
-    expect(calendar).toContain("Select the dog or dogs for this appointment to confirm coverage");
+    // Membership status is only surfaced once a pet is selected (below), not
+    // as a separate pre-selection banner \u2014 a client can have some pets
+    // covered and others not, so announcing "membership active" before any
+    // pet is chosen would be premature.
+    expect(calendar).not.toContain("Select the dog or dogs for this appointment to confirm coverage");
+    expect(calendar).toContain("A membership needs attention before it can cover a booking");
     expect(calendar).toContain("{ enabled: !!newAppt.clientId }");
     expect(calendar).toContain("Every selected dog is covered for this service");
     expect(calendar).toContain("selectedFamilyGroups.has(pet.familyGroupId)");

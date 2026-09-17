@@ -1919,20 +1919,9 @@ export default function Calendar() {
               </div>
               <div className="space-y-1.5 col-span-2">
                 <Label>Pets * <span className="text-xs text-muted-foreground font-normal">(select one or more)</span></Label>
-                {newAppt.clientId && (clientMembershipSummary.isFetching ? (
-                  <p className="text-xs text-muted-foreground py-1">Checking client membership…</p>
-                ) : clientMembershipSummary.data && clientMembershipSummary.data.activeCount > 0 ? (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-950">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>
-                      {clientMembershipSummary.data.activeMemberships.map((membership) => (
-                        <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>
-                      ))}
-                    </div>
-                    <p className="mt-1 text-xs text-emerald-800">Select the dog or dogs for this appointment to confirm coverage. The price will be set to $0.00 only when every selected dog is covered for the chosen service.</p>
-                    {clientMembershipSummary.data.suspendedPetIds.length > 0 && <p className="mt-1 text-xs font-medium text-amber-800">A membership needs attention before it can cover a booking.</p>}
-                  </div>
-                ) : null)}
+                {newAppt.clientId && clientMembershipSummary.data && clientMembershipSummary.data.suspendedPetIds.length > 0 && (
+                  <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">A membership needs attention before it can cover a booking.</p>
+                )}
                 {!newAppt.clientId ? (
                   <p className="text-xs text-muted-foreground py-2">Select a client first</p>
                 ) : selectedClientPets.isLoading ? (
