@@ -6,11 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 type PortalPet = { id: number; name: string; breed: string | null; species: string; status: string };
-type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petName: string; staffName: string | null };
+type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
 type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; sentAt: Date | string | null };
 type PortalData = { salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string };
@@ -28,12 +29,6 @@ function portalDateTime(value: Date | string) {
   return new Date(value).toLocaleString("en-AU", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-function toLocalInputValue(value: Date | string) {
-  const d = new Date(value);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 export default function ClientPortal() {
   const { token } = useParams<{ token: string }>();
   const [, navigate] = useLocation();
@@ -47,8 +42,30 @@ export default function ClientPortal() {
 
   const [rescheduleTarget, setRescheduleTarget] = useState<PortalAppointment | null>(null);
   const [cancelTarget, setCancelTarget] = useState<PortalAppointment | null>(null);
-  const [newStart, setNewStart] = useState("");
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(""); // "" = not chosen yet, "any" = no preference, else staffId
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedSlot, setSelectedSlot] = useState<string>("");
   const [showAllHistory, setShowAllHistory] = useState(false);
+
+  const openReschedule = (appt: PortalAppointment) => {
+    setRescheduleTarget(appt);
+    setSelectedStaffId(appt.staffId ? String(appt.staffId) : "any");
+    setSelectedDate(new Date(appt.scheduledStart).toISOString().slice(0, 10));
+    setSelectedSlot("");
+  };
+
+  const groomerProfiles = trpc.onlineBooking.listGroomerProfiles.useQuery({ tenantId: 1 });
+  const petWeightKg = rescheduleTarget?.petWeightKg ? Number(rescheduleTarget.petWeightKg) : 0;
+  const specificSlots = trpc.onlineBooking.listAvailableSlots.useQuery(
+    { tenantId: 1, staffId: Number(selectedStaffId), serviceType: rescheduleTarget?.serviceType as any, petWeightKg, date: selectedDate },
+    { enabled: !!rescheduleTarget && !!selectedDate && selectedStaffId !== "" && selectedStaffId !== "any" }
+  );
+  const anyStaffSlots = trpc.onlineBooking.listAvailableSlotsAnyStaff.useQuery(
+    { tenantId: 1, serviceType: rescheduleTarget?.serviceType as any, petWeightKg, date: selectedDate },
+    { enabled: !!rescheduleTarget && !!selectedDate && selectedStaffId === "any" }
+  );
+  const availableSlots = selectedStaffId === "any" ? anyStaffSlots.data : specificSlots.data;
+  const slotsLoading = selectedStaffId === "any" ? anyStaffSlots.isFetching : specificSlots.isFetching;
 
   const rescheduleMutation = trpc.clientPortal.rescheduleAppointment.useMutation({
     onSuccess: () => { toast.success("Appointment rescheduled"); setRescheduleTarget(null); refetch(); },
@@ -67,8 +84,6 @@ export default function ClientPortal() {
   const pastVisible = showAllHistory ? past : past.slice(0, 5);
   const canManage = (appt: PortalAppointment) => appt.workflowState === "scheduled" && appt.status !== "cancelled";
   const creditBalance = Number(data.storeCreditBalance ?? 0);
-
-  const openReschedule = (appt: PortalAppointment) => { setRescheduleTarget(appt); setNewStart(toLocalInputValue(appt.scheduledStart)); };
 
   return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-teal-50 py-8 px-4"><div className="mx-auto max-w-4xl space-y-6">
     <header className="rounded-2xl bg-primary p-6 text-primary-foreground"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm opacity-85">Welcome to</p><h1 className="font-display text-3xl font-bold">{data.salon.name}</h1><p className="mt-2 text-sm opacity-90">Hi {data.client.firstName}, here is a secure summary of your pets and grooming care.</p></div>{!token && <Button variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20" disabled={logout.isPending} onClick={() => logout.mutate()}>{logout.isPending ? "Signing out…" : "Sign out"}</Button>}</div></header>
@@ -140,27 +155,66 @@ export default function ClientPortal() {
     <DialogContent className="sm:max-w-sm">
       <DialogHeader><DialogTitle>Reschedule appointment</DialogTitle></DialogHeader>
       {rescheduleTarget && (
-        <div className="space-y-3 py-2">
+        <div className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">{rescheduleTarget.petName} · {SERVICE_LABELS[rescheduleTarget.serviceType] ?? rescheduleTarget.serviceType}</p>
+
           <div className="space-y-1.5">
-            <Label>New date &amp; time</Label>
+            <Label>Groomer</Label>
+            <Select value={selectedStaffId} onValueChange={(v) => { setSelectedStaffId(v); setSelectedSlot(""); }}>
+              <SelectTrigger><SelectValue placeholder="Choose a groomer" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">No preferred groomer</SelectItem>
+                {groomerProfiles.data?.map(g => <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Date</Label>
             <input
-              type="datetime-local"
+              type="date"
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={newStart}
-              onChange={(e) => setNewStart(e.target.value)}
+              value={selectedDate}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(""); }}
             />
           </div>
-          <p className="text-xs text-muted-foreground">If this time isn't available, we'll let you know so you can pick another, or give the salon a call.</p>
+
+          {selectedStaffId && selectedDate && (
+            <div className="space-y-1.5">
+              <Label>Available times</Label>
+              {slotsLoading ? (
+                <p className="text-sm text-muted-foreground">Checking availability\u2026</p>
+              ) : availableSlots && availableSlots.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                  {availableSlots.map(slot => {
+                    const iso = new Date(slot.scheduledStart).toISOString();
+                    return (
+                      <button
+                        key={iso}
+                        type="button"
+                        onClick={() => setSelectedSlot(iso)}
+                        className={`rounded-md border px-2 py-1.5 text-sm ${selectedSlot === iso ? "border-primary bg-primary text-primary-foreground" : "border-input hover:bg-accent"}`}
+                      >
+                        {new Date(slot.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No times available that day \u2014 try another date, or give the salon a call.</p>
+              )}
+            </div>
+          )}
         </div>
       )}
       <DialogFooter>
         <Button variant="outline" onClick={() => setRescheduleTarget(null)}>Cancel</Button>
         <Button
-          disabled={rescheduleMutation.isPending || !newStart}
-          onClick={() => rescheduleTarget && rescheduleMutation.mutate({ token, appointmentId: rescheduleTarget.id, newStart: new Date(newStart).toISOString() })}
+          disabled={rescheduleMutation.isPending || !selectedSlot}
+          onClick={() => rescheduleTarget && rescheduleMutation.mutate({ token, appointmentId: rescheduleTarget.id, newStart: selectedSlot })}
         >
-          {rescheduleMutation.isPending ? "Saving…" : "Confirm new time"}
+          {rescheduleMutation.isPending ? "Saving\u2026" : "Confirm new time"}
         </Button>
       </DialogFooter>
     </DialogContent>

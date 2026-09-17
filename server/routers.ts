@@ -4632,6 +4632,27 @@ const onlineBookingRouter = router({
   listAvailableSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
     return listAvailableOnlineSlots(input);
   }),
+  listAvailableSlotsAnyStaff: publicProcedure.input(z.object({ tenantId: z.number().default(1), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
+    // "No preferred groomer": a time slot is offered if AT LEAST ONE bookable
+    // groomer is free then. Checks every bookable staff member's real
+    // availability (same conflict-aware logic as picking a specific groomer)
+    // and merges the results \u2014 the actual groomer gets assigned when the
+    // reschedule is confirmed, same as the existing online-booking flow.
+    const db = await getDb(); if (!db) return [];
+    const bookableStaff = await db.select({ id: staff.id }).from(staff)
+      .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true)));
+    const perStaffSlots = await Promise.all(bookableStaff.map((s: { id: number }) =>
+      listAvailableOnlineSlots({ ...input, staffId: s.id }).catch(() => [])
+    ));
+    const seen = new Map<number, { scheduledStart: Date; scheduledEnd: Date; durationMinutes: number }>();
+    for (const slots of perStaffSlots) {
+      for (const slot of slots) {
+        const key = new Date(slot.scheduledStart).getTime();
+        if (!seen.has(key)) seen.set(key, slot);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => a.scheduledStart.getTime() - b.scheduledStart.getTime());
+  }),
   listPreviewAvailableSlots: protectedProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     return listAvailableOnlineSlots(input, { preview: true });
@@ -5615,7 +5636,10 @@ async function buildClientPortalPayload(db: any, access: {
       serviceType: appointments.serviceType,
       status: appointments.status,
       workflowState: appointments.workflowState,
+      petId: appointments.petId,
       petName: pets.name,
+      petWeightKg: pets.weightKg,
+      staffId: appointments.staffId,
       staffName: staff.name,
     })
       .from(appointments)
