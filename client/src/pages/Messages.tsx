@@ -246,8 +246,7 @@ export default function Messages() {
           </CardHeader>
           <CardContent className="pt-0">
             {missedCallsList && missedCallsList.length > 0 ? (
-              <ScrollArea className="max-h-80">
-                <div className="space-y-2">
+              <div className="space-y-2">
                   {missedCallsList.map(call => (
                     <div
                       key={call.id}
@@ -281,8 +280,7 @@ export default function Messages() {
                       )}
                     </div>
                   ))}
-                </div>
-              </ScrollArea>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-6">No missed calls recorded yet</p>
             )}
