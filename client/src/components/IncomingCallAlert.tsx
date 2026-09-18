@@ -13,10 +13,10 @@ import { toast } from "sonner";
  *    gone to voicemail.
  *  - "missed-call": once a voicemail has been recorded and transcribed.
  *
- * Each plays a distinct sound (synthesised, brand-appropriate — a warm
- * guitar strum for a missed-call voicemail, a friendly double-bark while
- * the phone is actively ringing) so staff can tell the two apart without
- * looking at the screen.
+ * Each shows a distinct toast so staff can tell "still ringing" apart from
+ * "already went to voicemail" at a glance. Both use the same friendly
+ * synthesised dog-bark sound (a guitar strum was tried first but felt too
+ * much for a frequent notification).
  */
 export default function IncomingCallAlert() {
   const audioUnlocked = useRef(false);
@@ -66,7 +66,7 @@ export default function IncomingCallAlert() {
             { duration: 12000, id: `call-ringing-${payload.fromNumber}-${Date.now()}` }
           );
         } else if (payload?.type === "missed-call") {
-          playSound("/sounds/guitar-strum.wav");
+          playSound("/sounds/dog-bark.wav");
           toast.custom(
             () => (
               <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-white px-4 py-3 shadow-lg">
