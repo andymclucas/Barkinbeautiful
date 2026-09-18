@@ -228,6 +228,8 @@ async function startServer() {
   // once Twilio finishes transcribing, which can take a few seconds).
   const processedNoAnswerCallSids = new Set<string>();
 
+  const MISSED_CALL_AUTO_TEXT = "Thank you for calling Barkin' Beautiful and we're sorry we missed your call - we will call you back as soon as we are able, but please feel free to send us a reply text and let us know what you need.";
+
   app.post("/api/twilio/voice-no-answer", express.urlencoded({ extended: false }), async (req, res) => {
     const { DialCallStatus, From, CallSid } = req.body;
     console.log(`[Twilio] Dial result for call from ${From}: ${DialCallStatus}`);
@@ -252,8 +254,37 @@ async function startServer() {
       }
     }
     if (From && !alreadyProcessed) {
-      sendSms(String(From), "Thank you for calling Barkin' Beautiful and we're sorry we missed your call - we will call you back as soon as we are able, but please feel free to send us a reply text and let us know what you need.")
-        .catch(err => console.error("[Twilio] Missed-call auto-text failed:", err));
+      const inboundNumber = normaliseAustralianMobile(String(From));
+      const db = await getDb();
+      // They've already been sent this exact auto-reply once before (from
+      // an earlier missed call) and already have the number — don't send
+      // it again every single time they call and it's not picked up.
+      let alreadySentBefore = false;
+      if (db) {
+        const priorAutoTexts = await db.select({ toNumber: smsLogs.toNumber })
+          .from(smsLogs)
+          .where(and(eq(smsLogs.tenantId, 1), eq(smsLogs.direction, "outbound"), eq(smsLogs.body, MISSED_CALL_AUTO_TEXT)));
+        alreadySentBefore = priorAutoTexts.some(row => phoneMatchesInboundNumber(row.toNumber, inboundNumber));
+      }
+      if (!alreadySentBefore) {
+        sendSms(String(From), MISSED_CALL_AUTO_TEXT)
+          .then(result => {
+            if (!db) return;
+            return db.insert(smsLogs).values({
+              tenantId: 1,
+              toNumber: inboundNumber,
+              body: MISSED_CALL_AUTO_TEXT,
+              twilioSid: result.sid,
+              status: result.success ? "sent" : "failed",
+              type: "custom",
+              direction: "outbound",
+              errorMessage: result.error,
+            });
+          })
+          .catch(err => console.error("[Twilio] Missed-call auto-text failed:", err));
+      } else {
+        console.log(`[Twilio] Skipping missed-call auto-text for ${inboundNumber} — already sent previously`);
+      }
     }
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
