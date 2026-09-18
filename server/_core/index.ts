@@ -277,6 +277,65 @@ async function startServer() {
     res.sendStatus(200);
   });
 
+  // Streams a missed-call voicemail recording to the browser. Twilio's
+  // RecordingUrl requires HTTP Basic Auth with the account SID/token, so it
+  // can't be dropped straight into an <audio src> — this proxies the request
+  // server-side (keeping the Twilio credentials off the client) and pipes
+  // the audio back with the right content type.
+  app.get("/api/twilio/voicemail-audio/:id", async (req, res) => {
+    try {
+      await sdk.authenticateRequest(req);
+    } catch {
+      res.sendStatus(401);
+      return;
+    }
+    const db = await getDb();
+    if (!db) {
+      res.sendStatus(503);
+      return;
+    }
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      res.status(400).send("Invalid id");
+      return;
+    }
+    const [call] = await db.select({ recordingUrl: missedCalls.recordingUrl })
+      .from(missedCalls)
+      .where(eq(missedCalls.id, id))
+      .limit(1);
+    if (!call?.recordingUrl) {
+      res.sendStatus(404);
+      return;
+    }
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const token = process.env.TWILIO_AUTH_TOKEN;
+    if (!sid || !token) {
+      res.sendStatus(503);
+      return;
+    }
+    try {
+      const twilioRes = await fetch(`${call.recordingUrl}.mp3`, {
+        headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}` },
+      });
+      if (!twilioRes.ok || !twilioRes.body) {
+        res.sendStatus(502);
+        return;
+      }
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      const reader = twilioRes.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+      res.end();
+    } catch (err) {
+      console.error("[Twilio] Voicemail audio proxy failed:", err);
+      res.sendStatus(502);
+    }
+  });
+
   // Server-Sent Events: pushes real-time notifications (e.g. a new inbound
   // SMS just arrived) to connected browser tabs, so the notification bell
   // updates instantly instead of waiting for the next poll.

@@ -269,6 +269,14 @@ export default function Messages() {
                             ? `"${call.transcriptText}"`
                             : <span className="italic text-muted-foreground">No transcript available</span>}
                         </p>
+                        {call.recordingUrl && (
+                          <audio
+                            className="mt-2 h-8 w-full max-w-sm"
+                            controls
+                            preload="none"
+                            src={`/api/twilio/voicemail-audio/${call.id}`}
+                          />
+                        )}
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         {!call.readAt && (
