@@ -25,8 +25,18 @@ export type NewMessageEvent = {
 export type CallRingingEvent = {
   type: "call-ringing";
   tenantId: number;
+  callSid: string;
   fromNumber: string;
   clientName: string | null;
+};
+
+/** Fired the moment Twilio's <Dial> finishes \u2014 answered, no-answer, busy,
+ * or failed \u2014 so the client can immediately dismiss the matching
+ * "call-ringing" toast instead of leaving it up until its own timer expires. */
+export type CallEndedEvent = {
+  type: "call-ended";
+  tenantId: number;
+  callSid: string;
 };
 
 export type MissedCallEvent = {
@@ -42,8 +52,12 @@ export function emitNewMessage(tenantId: number) {
   appEvents.emit("app-event", { type: "new-message", tenantId } satisfies NewMessageEvent);
 }
 
-export function emitCallRinging(tenantId: number, fromNumber: string, clientName: string | null) {
-  appEvents.emit("app-event", { type: "call-ringing", tenantId, fromNumber, clientName } satisfies CallRingingEvent);
+export function emitCallRinging(tenantId: number, callSid: string, fromNumber: string, clientName: string | null) {
+  appEvents.emit("app-event", { type: "call-ringing", tenantId, callSid, fromNumber, clientName } satisfies CallRingingEvent);
+}
+
+export function emitCallEnded(tenantId: number, callSid: string) {
+  appEvents.emit("app-event", { type: "call-ended", tenantId, callSid } satisfies CallEndedEvent);
 }
 
 export function emitMissedCall(tenantId: number, details: { id: number; fromNumber: string; clientName: string | null; transcriptText: string | null }) {

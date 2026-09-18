@@ -17,7 +17,7 @@ import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNum
 import { sendSms } from "../sms";
 import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
-import { appEvents, emitNewMessage, emitCallRinging, emitMissedCall } from "../eventBus";
+import { appEvents, emitNewMessage, emitCallRinging, emitCallEnded, emitMissedCall } from "../eventBus";
 import { sdk } from "./sdk";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -206,9 +206,9 @@ async function startServer() {
           .from(clients)
           .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
         const client = clientCandidates.find(candidate => phoneMatchesInboundNumber(candidate.phone, inboundNumber));
-        emitCallRinging(1, inboundNumber, client ? `${client.firstName} ${client.lastName}`.trim() : null);
+        emitCallRinging(1, String(CallSid), inboundNumber, client ? `${client.firstName} ${client.lastName}`.trim() : null);
       } else {
-        emitCallRinging(1, inboundNumber, null);
+        emitCallRinging(1, String(CallSid), inboundNumber, null);
       }
     }
     res.set("Content-Type", "text/xml");
@@ -231,6 +231,10 @@ async function startServer() {
   app.post("/api/twilio/voice-no-answer", express.urlencoded({ extended: false }), async (req, res) => {
     const { DialCallStatus, From, CallSid } = req.body;
     console.log(`[Twilio] Dial result for call from ${From}: ${DialCallStatus}`);
+    // The call is no longer ringing either way (answered or not) — tell the
+    // client to drop the "call-ringing" toast now rather than waiting out
+    // its own timer.
+    if (CallSid) emitCallEnded(1, String(CallSid));
     res.set("Content-Type", "text/xml");
     if (DialCallStatus === "completed") {
       res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
