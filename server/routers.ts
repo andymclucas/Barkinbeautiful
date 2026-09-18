@@ -2439,6 +2439,12 @@ const staffRouter = router({
       const reusingInvitedAccount = member.portalStatus === "invited" && isLinkedStaffUser(member.userId, existing?.id);
       if (existing && !reusingInvitedAccount) throw new Error("That email address already has a Groomigo account");
       const passwordHash = await bcrypt.hash(input.password, 12);
+      // Lauren (owner) asked for every groomer to have the same level of
+      // platform authority she has \u2014 full navigation and admin-only
+      // actions, not just the restricted Calendar/Workflow/Memberships
+      // staff-portal view. Bathers and other roles keep the standard
+      // restricted staff experience.
+      const accountRole = member.role === "groomer" ? "admin" : "staff";
       let accountId: number;
       if (reusingInvitedAccount && existing) {
         await db.update(users).set({
@@ -2446,7 +2452,7 @@ const staffRouter = router({
           name: member.name,
           loginMethod: "password",
           passwordHash,
-          role: "staff",
+          role: accountRole,
         }).where(eq(users.id, existing.id));
         accountId = existing.id;
       } else {
@@ -2457,7 +2463,7 @@ const staffRouter = router({
           email: invitation.email,
           loginMethod: "password",
           passwordHash,
-          role: "staff",
+          role: accountRole,
         });
         const [account] = await db.select({ id: users.id }).from(users).where(eq(users.email, invitation.email)).limit(1);
         if (!account) throw new Error("Could not create staff account");
