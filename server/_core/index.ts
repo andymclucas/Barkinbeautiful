@@ -231,12 +231,12 @@ async function startServer() {
       }
     }
     if (From && !alreadyProcessed) {
-      sendSms(String(From), "Sorry we missed your call! We'll get back to you shortly \u2014 feel free to reply to this text and let us know what you need.")
+      sendSms(String(From), "Thank you for calling Barkin' Beautiful and we're sorry we missed your call - we will call you back as soon as we are able, but please feel free to send us a reply text and let us know what you need.")
         .catch(err => console.error("[Twilio] Missed-call auto-text failed:", err));
     }
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>Sorry, we can't take your call right now. Please leave a message after the tone.</Say>
+  <Say>Thank you for calling Barkin' Beautiful. We're unable to take your call right now. Please leave a message after the tone and we'll get back to you as soon as possible.</Say>
   <Record maxLength="120" playBeep="true" transcribe="true" transcribeCallback="/api/twilio/voicemail-transcription" />
 </Response>`);
   });
