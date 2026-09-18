@@ -1634,7 +1634,15 @@ export default function Calendar() {
   };
 
   // ── Toolbar ────────────────────────────────────────────────────────────────
-  const totalThisView = filteredAppts.length;
+  // In day view, filteredAppts spans ±1 day for the query buffer.
+  // Narrow to just the viewed day for the count badge and unassigned strip.
+  const dayViewAppts = useMemo(() => {
+    if (viewMode !== "day") return filteredAppts;
+    const key = dayDateKey(dayDate);
+    return filteredAppts.filter(a => aestDateKey(new Date(a.scheduledStart)) === key);
+  }, [viewMode, filteredAppts, dayDate]);
+
+  const totalThisView = viewMode === "day" ? dayViewAppts.length : filteredAppts.length;
   const weekLabel = viewMode === "week"
     ? `${weekDays[0].toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "numeric" })}`
     : fmtDateShort(dayDate);
@@ -1809,13 +1817,16 @@ export default function Calendar() {
         </div>
 
         {/* Unassigned row */}
-        {filteredAppts.filter(a => !a.staffId).length ? (
+        {(() => {
+          const unassigned = (viewMode === "day" ? dayViewAppts : filteredAppts).filter(a => !a.staffId);
+          if (!unassigned.length) return null;
+          return (
           <div className="bg-card rounded-xl border p-4">
             <h3 className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-              Unassigned ({filteredAppts.filter(a => !a.staffId).length})
+              Unassigned ({unassigned.length})
             </h3>
             <div className="flex flex-wrap gap-2">
-              {filteredAppts.filter(a => !a.staffId).map(appt => {
+              {unassigned.map(appt => {
                 const sharedAppointmentLabel = formatSharedAppointmentName({
                   petNames: [appt, ...getSiblings(appt as Appt)].map((pet) => pet.petName),
                   surname: appt.clientLastName,
@@ -1836,7 +1847,8 @@ export default function Calendar() {
               })}
             </div>
           </div>
-        ) : null}
+          );
+        })()}
       </div>
 
       {/* ── New Appointment Dialog ── */}
