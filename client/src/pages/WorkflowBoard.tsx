@@ -475,17 +475,17 @@ export default function WorkflowBoard() {
       <div className="fixed inset-0 bg-gray-950 text-white overflow-auto z-50">
         <div className="p-4">
           {/* TV Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-10 object-contain brightness-0 invert" />
-              <div>
-                <h1 className="text-2xl font-bold">Live Workflow Board</h1>
-                <p className="text-sm text-gray-400">{formatAestDate(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+          <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-10 object-contain brightness-0 invert shrink-0" />
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold truncate">Live Workflow Board</h1>
+                <p className="text-sm text-gray-400 truncate">{formatAestDate(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between gap-3 sm:justify-end">
               <span className="text-sm text-gray-400">{rows.length} dogs today</span>
-              <Button variant="outline" size="sm" onClick={() => setTvMode(false)} className="border-gray-600 text-gray-300">
+              <Button variant="outline" size="sm" onClick={() => setTvMode(false)} className="border-gray-600 text-gray-300 shrink-0">
                 Exit TV Mode
               </Button>
             </div>
