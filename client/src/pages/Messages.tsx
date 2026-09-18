@@ -312,6 +312,63 @@ export default function Messages() {
 
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold">Conversations</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            {!threads || threads.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
+            ) : (
+              <div className="divide-y">
+                {threads.map((thread: any) => (
+                  <div
+                    key={thread.threadKey}
+                    className="w-full flex items-center gap-2 py-1 hover:bg-accent/50 transition-colors px-2 -mx-2 rounded-md group"
+                  >
+                    <button
+                      className="flex-1 min-w-0 text-left py-2 flex items-center justify-between gap-3"
+                      onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{thread.clientName?.trim() || thread.toNumber}</span>
+                          {thread.unreadCount > 0 && (
+                            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center shrink-0">
+                              {thread.unreadCount}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
+                        </p>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground shrink-0">
+                        {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "2-digit", month: "short" })}
+                      </span>
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      disabled={deleteThreadMutation.isPending}
+                      aria-label="Delete conversation"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete this entire conversation with ${thread.clientName?.trim() || thread.toNumber}? This can't be undone.`)) {
+                          deleteThreadMutation.mutate(thread.clientId ? { tenantId: 1, clientId: thread.clientId } : { tenantId: 1, toNumber: thread.toNumber });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold">SMS Templates</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -392,63 +449,6 @@ export default function Messages() {
                       onClick={() => reviewInboundMutation.mutate({ tenantId: 1, smsLogId: log.id, action: log.replyIntent })}
                     >
                       {log.replyIntent === "confirm" ? "Confirm appointment" : "Cancel booking"}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold">Conversations</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {!threads || threads.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
-            ) : (
-              <div className="divide-y">
-                {threads.map((thread: any) => (
-                  <div
-                    key={thread.threadKey}
-                    className="w-full flex items-center gap-2 py-1 hover:bg-accent/50 transition-colors px-2 -mx-2 rounded-md group"
-                  >
-                    <button
-                      className="flex-1 min-w-0 text-left py-2 flex items-center justify-between gap-3"
-                      onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{thread.clientName?.trim() || thread.toNumber}</span>
-                          {thread.unreadCount > 0 && (
-                            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center shrink-0">
-                              {thread.unreadCount}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
-                        </p>
-                      </div>
-                      <span className="text-[11px] text-muted-foreground shrink-0">
-                        {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "2-digit", month: "short" })}
-                      </span>
-                    </button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                      disabled={deleteThreadMutation.isPending}
-                      aria-label="Delete conversation"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete this entire conversation with ${thread.clientName?.trim() || thread.toNumber}? This can't be undone.`)) {
-                          deleteThreadMutation.mutate(thread.clientId ? { tenantId: 1, clientId: thread.clientId } : { tenantId: 1, toNumber: thread.toNumber });
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 ))}
