@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useMemo, useState } from "react";
 import { Dog, LogOut, RefreshCw, ChevronRight, CalendarDays, Camera, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
+import IncomingCallAlert from "@/components/IncomingCallAlert";
 
 const NEXT_STAGE: Record<string, { state: "checked_in" | "bathing" | "drying" | "grooming" | "ready" | "complete"; label: string }> = {
   scheduled: { state: "checked_in", label: "Check in" },
@@ -78,6 +79,7 @@ export default function StaffPortal() {
 
   return (
     <main className="min-h-screen bg-slate-50 pb-10">
+      <IncomingCallAlert />
       <header className="bg-slate-950 text-white px-5 pt-6 pb-5 rounded-b-3xl shadow-lg">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3"><img src="/groomigo_logo.png" alt="Groomigo" className="h-9 w-auto object-contain" /><span className="text-xs text-teal-300 font-semibold tracking-wide uppercase">My day</span></div>
