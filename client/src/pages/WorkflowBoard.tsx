@@ -15,7 +15,7 @@ import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresh
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, buildBathPriorityQueue, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
-import { RefreshCw, Tv2, AlertTriangle, CheckCircle2, Clock, Dog, X, FileText, Filter, Save, Plus, UserPlus, ChevronLeft, ChevronRight, ExternalLink, Link2, Unlink, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { RefreshCw, Tv2, AlertTriangle, CheckCircle2, Clock, Dog, X, FileText, Filter, Save, Plus, UserPlus, ChevronLeft, ChevronRight, ExternalLink, Link2, Unlink, GripVertical, ArrowUp, ArrowDown, Star } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -331,8 +331,18 @@ export default function WorkflowBoard() {
     onError: (error) => { setBathQueueDragId(null); toast.error(error.message); },
   });
 
-  const update = useCallback((appointmentId: number, fields: Omit<Parameters<typeof updateStage.mutate>[0], 'appointmentId'>) => {
-    updateStage.mutate({ appointmentId, ...fields });
+  const update = useCallback((appointmentId: number, fields: Omit<Parameters<typeof updateStage.mutate>[0], 'appointmentId'>, options?: { petName?: string | null }) => {
+    updateStage.mutate({ appointmentId, ...fields }, {
+      onSuccess: () => {
+        // Send the "ready for pickup" text prompt the moment a dog actually
+        // becomes ready — not after they've already been marked OUT, since
+        // by then they may already be gone.
+        if (fields.workflowState === "ready") {
+          setPickupMessageAppointment({ id: appointmentId, petName: options?.petName ?? "this dog" });
+          setSelectedPickupRecipientId("");
+        }
+      },
+    });
   }, [updateStage]);
 
   const sendPickupMessage = trpc.sms.sendPickupMessage.useMutation({
@@ -351,11 +361,7 @@ export default function WorkflowBoard() {
       completedAt: Date.now(),
       ...extraFields,
     } as Parameters<typeof updateStage.mutate>[0], {
-      onSuccess: () => {
-        refetch();
-        setPickupMessageAppointment({ id: appointment.id, petName: appointment.petName ?? "this dog" });
-        setSelectedPickupRecipientId("");
-      },
+      onSuccess: () => refetch(),
     });
   }, [refetch, updateStage]);
 
@@ -370,7 +376,7 @@ export default function WorkflowBoard() {
     const timeFields: Record<string, number | null> = {};
     if (next === "checked_in") timeFields.checkedInAt = now;
     if (next === "complete") timeFields.completedAt = now;
-    update(appt.id, { workflowState: next, ...timeFields });
+    update(appt.id, { workflowState: next, ...timeFields }, { petName: appt.petName });
   }, [completeAppointment, update]);
 
   const revertStage = useCallback((appt: { id: number; workflowState: string }) => {
@@ -747,7 +753,7 @@ export default function WorkflowBoard() {
                           }
                           const timeFields: Record<string, number | null> = {};
                           if (s.key === "checked_in") timeFields.checkedInAt = Date.now();
-                          update(id, { workflowState: s.key, ...timeFields });
+                          update(id, { workflowState: s.key, ...timeFields }, { petName: appt.petName });
                           toast.success(`🐾 ${appt.petName ?? "Dog"} → ${s.label}`, {
                             description: `Stage updated successfully`,
                             duration: 2500,
@@ -891,6 +897,14 @@ export default function WorkflowBoard() {
                           >
                             {appt.petName}
                             <FileText className="h-3 w-3 text-muted-foreground opacity-50" />
+                            {(appt as any).isVipMember && (
+                              <span
+                                className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-950 shadow-sm"
+                                title="Active VIP member"
+                              >
+                                <Star className="h-2.5 w-2.5 fill-amber-950" /> VIP
+                              </span>
+                            )}
                           </button>
                           <p className="text-[11px] text-muted-foreground truncate">{appt.clientLastName}</p>
                           {appt.petAlertLevel === "danger" && (
@@ -1049,7 +1063,7 @@ export default function WorkflowBoard() {
                           value={appt.workflowState}
                           onValueChange={(nextState) => {
                             if (nextState === appt.workflowState) return;
-                            update(appt.id, { workflowState: nextState as StageKey });
+                            update(appt.id, { workflowState: nextState as StageKey }, { petName: appt.petName });
                           }}
                           disabled={updateStage.isPending}
                         >

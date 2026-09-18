@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { CheckCircle2, Clock3, Dog, RefreshCw, Sparkles, Wifi, WifiOff } from "lucide-react";
+import { CheckCircle2, Clock3, Dog, RefreshCw, Sparkles, Wifi, WifiOff, Star } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
 import { isTerminalWorkflowState } from "@/lib/workflowTerminalStates";
@@ -301,7 +301,14 @@ export default function WorkflowDisplay() {
                 <div className="min-w-0 flex items-center gap-2.5">
                   <PetAvatar petId={appt.petId} petName={appt.petName} className={isFocusRegister ? "h-11 w-11" : "h-9 w-9"} />
                   <div className="min-w-0">
-                    <div className="font-bold text-white">{appt.petName}</div>
+                    <div className="font-bold text-white flex items-center gap-1.5">
+                      {appt.petName}
+                      {(appt as any).isVipMember && (
+                        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-950 shadow-sm">
+                          <Star className="h-2.5 w-2.5 fill-amber-950" /> VIP
+                        </span>
+                      )}
+                    </div>
                     <div className={`${rowDetailClass} text-slate-400`}>{appt.clientLastName}{isPastScheduledTime ? " · Past scheduled time" : ""}</div>
                     {appt.groomStyleNote && <div className={`${rowDetailClass} mt-0.5 truncate text-teal-300`} title={appt.groomStyleNote}>📝 {appt.groomStyleNote}</div>}
                   </div>

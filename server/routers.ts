@@ -970,12 +970,21 @@ const workflowRouter = router({
         }
       }
 
+      const petIdsOnBoard = Array.from(new Set(boardRows.map(row => row.petId).filter((id): id is number => id !== null)));
+      const vipPetIds = new Set<number>();
+      if (petIdsOnBoard.length > 0) {
+        const activeMemberships = await db.select({ petId: memberships.petId }).from(memberships)
+          .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard)));
+        for (const m of activeMemberships) vipPetIds.add(m.petId);
+      }
+
       return boardRows.map(row => ({
         ...row,
         familyPetNames: row.petFamilyGroupId ? familyPetNamesByGroup.get(row.petFamilyGroupId) ?? [row.petName] : [],
         petAlertLevel: normalizePetAlertLevel(row.petAlertLevel),
         groomStyleNote: latestGroomNoteByAppointment.get(row.id)?.note ?? null,
         groomStyleWarnings: latestGroomNoteByAppointment.get(row.id)?.warnings ?? null,
+        isVipMember: row.petId ? vipPetIds.has(row.petId) : false,
       }));
     }),
 
@@ -1026,6 +1035,58 @@ const workflowRouter = router({
       if (fields.notes !== undefined) updateData.notes = fields.notes;
       if (Object.keys(updateData).length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a workflow detail to update." });
       await db.update(appointments).set(updateData).where(eq(appointments.id, appointmentId));
+
+      // Marking one dog from a joined/family booking as OUT (picked up) means
+      // the whole party has gone \u2014 staff shouldn't have to click each dog
+      // individually. Same linked-dog cascade used elsewhere (bath priority,
+      // bath grouping): shared bath group, else shared booking session,
+      // else same pet-family at the same scheduled time.
+      let linkedCompleteIds: number[] = [];
+      if (fields.workflowState === "complete") {
+        const [linkKeys] = await db.select({
+          bathGroupId: appointments.bathGroupId,
+          sessionId: appointments.sessionId,
+          scheduledStart: appointments.scheduledStart,
+          petFamilyGroupId: pets.familyGroupId,
+        }).from(appointments).leftJoin(pets, eq(appointments.petId, pets.id))
+          .where(eq(appointments.id, appointmentId)).limit(1);
+        if (linkKeys) {
+          let linkedRows: { id: number }[] = [];
+          if (linkKeys.bathGroupId?.trim()) {
+            linkedRows = await db.select({ id: appointments.id }).from(appointments).where(and(
+              eq(appointments.tenantId, currentAppointment.tenantId),
+              eq(appointments.bathGroupId, linkKeys.bathGroupId),
+              sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
+              sql`${appointments.workflowState} <> 'complete'`,
+            ));
+          } else if (linkKeys.sessionId?.trim()) {
+            linkedRows = await db.select({ id: appointments.id }).from(appointments).where(and(
+              eq(appointments.tenantId, currentAppointment.tenantId),
+              eq(appointments.sessionId, linkKeys.sessionId),
+              sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
+              sql`${appointments.workflowState} <> 'complete'`,
+            ));
+          } else if (linkKeys.petFamilyGroupId) {
+            linkedRows = await db.select({ id: appointments.id }).from(appointments)
+              .leftJoin(pets, eq(appointments.petId, pets.id))
+              .where(and(
+                eq(appointments.tenantId, currentAppointment.tenantId),
+                eq(pets.familyGroupId, linkKeys.petFamilyGroupId),
+                eq(appointments.scheduledStart, linkKeys.scheduledStart),
+                sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
+                sql`${appointments.workflowState} <> 'complete'`,
+              ));
+          }
+          linkedCompleteIds = linkedRows.map(r => r.id).filter(id => id !== appointmentId);
+        }
+        if (linkedCompleteIds.length > 0) {
+          await db.update(appointments).set({
+            workflowState: "complete",
+            completedAt: Date.now(),
+            status: currentAppointment.status === "cancelled" || currentAppointment.status === "no_show" ? undefined : "confirmed",
+          }).where(and(eq(appointments.tenantId, currentAppointment.tenantId), inArray(appointments.id, linkedCompleteIds)));
+        }
+      }
       if (fields.workflowState !== undefined && workflowChangedAtMs !== null) {
         const [portalStaff] = await db.select({ id: staff.id, tenantId: staff.tenantId }).from(staff)
           .where(and(eq(staff.userId, ctx.user.id), eq(staff.tenantId, currentAppointment.tenantId))).limit(1);
@@ -1050,8 +1111,21 @@ const workflowRouter = router({
             note: `Appointment ${appointmentId} moved to ${fields.workflowState}`,
           });
         }
+        if (linkedCompleteIds.length > 0) {
+          for (const linkedId of linkedCompleteIds) {
+            await db.insert(workflowLogs).values({
+              appointmentId: linkedId,
+              fromState: currentAppointment.workflowState,
+              toState: "complete",
+              changedByStaffId: portalStaff?.id ?? null,
+              changedAtMs: workflowChangedAtMs,
+              changedAt: new Date(workflowChangedAtMs),
+              notes: `Auto-completed alongside appointment ${appointmentId} (joined booking)`,
+            });
+          }
+        }
       }
-      return { success: true };
+      return { success: true, linkedCompleted: linkedCompleteIds.length };
     }),
 
   setBathPriority: operationalProcedure
