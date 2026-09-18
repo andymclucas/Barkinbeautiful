@@ -191,7 +191,7 @@ export default function ClientPortal() {
               {slotsLoading ? (
                 <p className="text-sm text-muted-foreground">Checking availability\u2026</p>
               ) : availableSlots && availableSlots.length > 0 ? (
-                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
                   {availableSlots.map(slot => {
                     const iso = new Date(slot.scheduledStart).toISOString();
                     return (

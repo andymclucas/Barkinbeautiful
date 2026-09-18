@@ -332,7 +332,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
           { label: "Total appts", value: (data as any).stats?.total ?? 0 },
           { label: "Last 30 days", value: (data as any).stats?.last30 ?? 0 },

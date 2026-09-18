@@ -214,7 +214,7 @@ export default function Messages() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: "Total Sent", value: stats.total, icon: MessageSquare, colour: "text-blue-600" },
             { label: "Delivered", value: stats.sent, icon: CheckCircle2, colour: "text-emerald-600" },

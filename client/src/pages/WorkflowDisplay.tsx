@@ -294,7 +294,7 @@ export default function WorkflowDisplay() {
         </div>
       </aside>
 
-      <section className="mb-4 grid grid-cols-3 overflow-hidden rounded-2xl border border-white/10 text-center">
+      <section className="mb-4 grid grid-cols-1 sm:grid-cols-3 overflow-hidden rounded-2xl border border-white/10 text-center">
         <div className="bg-slate-700/70 px-4 py-3">
           <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-300">Waiting</div>
           <div className="mt-1 text-3xl font-black tabular-nums text-white">{waitingRows.length}</div>
