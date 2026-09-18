@@ -47,6 +47,7 @@ export default function Messages() {
   const { data: threads, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({ tenantId: 1, limit: 50 });
   const { data: missedCallsList, refetch: refetchMissedCalls } = trpc.sms.getMissedCalls.useQuery({ tenantId: 1, limit: 100 });
   const clearMissedCall = trpc.sms.clearMissedCall.useMutation({ onSuccess: () => refetchMissedCalls() });
+  const deleteMissedCall = trpc.sms.deleteMissedCall.useMutation({ onSuccess: () => { toast.success("Missed call removed"); refetchMissedCalls(); } });
   const { data: clientResults } = trpc.memberships.searchClients.useQuery(
     { search: clientSearch, tenantId: 1 },
     { enabled: clientSearch.length >= 2 }
@@ -269,15 +270,28 @@ export default function Messages() {
                             : <span className="italic text-muted-foreground">No transcript available</span>}
                         </p>
                       </div>
-                      {!call.readAt && (
+                      <div className="flex shrink-0 items-center gap-1">
+                        {!call.readAt && (
+                          <button
+                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"
+                            title="Mark as read"
+                            onClick={() => clearMissedCall.mutate({ id: call.id })}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <button
-                          className="shrink-0 h-6 w-6 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"
-                          title="Clear this notification"
-                          onClick={() => clearMissedCall.mutate({ id: call.id })}
+                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
+                          title="Delete this missed call"
+                          onClick={() => {
+                            if (confirm("Delete this missed call? This can't be undone.")) {
+                              deleteMissedCall.mutate({ id: call.id });
+                            }
+                          }}
                         >
-                          <X className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
-                      )}
+                      </div>
                     </div>
                   ))}
               </div>

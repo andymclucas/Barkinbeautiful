@@ -2,7 +2,6 @@ import { Bell, Phone, X } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { trpc } from "@/lib/trpc";
 
 function timeAgo(date: Date | string) {
@@ -85,15 +84,15 @@ export default function NotificationBell() {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0">
-        <div className="px-4 py-3 border-b">
+      <PopoverContent align="start" className="w-80 p-0 flex flex-col max-h-[28rem]">
+        <div className="px-4 py-3 border-b shrink-0">
           <h3 className="text-sm font-semibold">Notifications</h3>
           <p className="text-xs text-muted-foreground">
             {unreadCount === 0 ? "You're all caught up" : `${unreadCount} unread`}
           </p>
         </div>
         {recent.length > 0 ? (
-          <ScrollArea className="max-h-80">
+          <div className="overflow-y-auto flex-1 min-h-0">
             {recent.map((item: any) => (
               <div
                 key={`${item.kind}-${item.id}`}
@@ -122,12 +121,12 @@ export default function NotificationBell() {
                 )}
               </div>
             ))}
-          </ScrollArea>
+          </div>
         ) : (
-          <p className="text-sm text-muted-foreground text-center py-6">No new notifications</p>
+          <p className="text-sm text-muted-foreground text-center py-6 shrink-0">No new notifications</p>
         )}
         <button
-          className="w-full text-center text-xs font-medium text-primary py-2.5 border-t hover:bg-accent transition-colors"
+          className="w-full shrink-0 text-center text-xs font-medium text-primary py-2.5 border-t bg-background hover:bg-accent transition-colors"
           onClick={() => setLocation("/messages")}
         >
           View all messages

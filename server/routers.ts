@@ -5478,6 +5478,16 @@ const smsRouter = router({
       return { success: true };
     }),
 
+  deleteMissedCall: protectedProcedure
+    .input(z.object({ id: z.number(), tenantId: z.number().default(1) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      await db.delete(missedCalls)
+        .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, input.tenantId)));
+      return { success: true };
+    }),
+
   deleteMessage: protectedProcedure
     .input(z.object({ id: z.number(), tenantId: z.number().default(1) }))
     .mutation(async ({ input }) => {
