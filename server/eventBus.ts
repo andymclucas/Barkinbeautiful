@@ -28,6 +28,7 @@ export type CallRingingEvent = {
   callSid: string;
   fromNumber: string;
   clientName: string | null;
+  petNames: string[];
 };
 
 /** Fired the moment Twilio's <Dial> finishes \u2014 answered, no-answer, busy,
@@ -45,6 +46,7 @@ export type MissedCallEvent = {
   id: number;
   fromNumber: string;
   clientName: string | null;
+  petNames: string[];
   transcriptText: string | null;
 };
 
@@ -52,14 +54,14 @@ export function emitNewMessage(tenantId: number) {
   appEvents.emit("app-event", { type: "new-message", tenantId } satisfies NewMessageEvent);
 }
 
-export function emitCallRinging(tenantId: number, callSid: string, fromNumber: string, clientName: string | null) {
-  appEvents.emit("app-event", { type: "call-ringing", tenantId, callSid, fromNumber, clientName } satisfies CallRingingEvent);
+export function emitCallRinging(tenantId: number, callSid: string, fromNumber: string, clientName: string | null, petNames: string[] = []) {
+  appEvents.emit("app-event", { type: "call-ringing", tenantId, callSid, fromNumber, clientName, petNames } satisfies CallRingingEvent);
 }
 
 export function emitCallEnded(tenantId: number, callSid: string) {
   appEvents.emit("app-event", { type: "call-ended", tenantId, callSid } satisfies CallEndedEvent);
 }
 
-export function emitMissedCall(tenantId: number, details: { id: number; fromNumber: string; clientName: string | null; transcriptText: string | null }) {
-  appEvents.emit("app-event", { type: "missed-call", tenantId, ...details } satisfies MissedCallEvent);
+export function emitMissedCall(tenantId: number, details: { id: number; fromNumber: string; clientName: string | null; petNames?: string[]; transcriptText: string | null }) {
+  appEvents.emit("app-event", { type: "missed-call", tenantId, petNames: [], ...details } satisfies MissedCallEvent);
 }

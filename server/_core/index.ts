@@ -11,7 +11,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { getDb } from "../db";
-import { appointments, clients, smsLogs, pets, staff, missedCalls } from "../../drizzle/schema";
+import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls } from "../../drizzle/schema";
 import { and, asc, desc, eq, gt, gte, lte, inArray, isNotNull } from "drizzle-orm";
 import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNumber } from "../inboundSms";
 import { sendSms } from "../sms";
@@ -19,6 +19,60 @@ import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
 import { appEvents, emitNewMessage, emitCallRinging, emitCallEnded, emitMissedCall } from "../eventBus";
 import { sdk } from "./sdk";
+
+/**
+ * Identifies who is calling from a phone number, so the incoming-call and
+ * missed-call popups can show a real name (and their pets) instead of just
+ * a bare number. Checks two sources, in order:
+ *  1. The client's own primary phone number (clients.phone).
+ *  2. Any approved secondary contact's phone (client_contacts.phone) \u2014 e.g.
+ *     a spouse or partner calling from their own mobile. In this case the
+ *     contact's own name is used ("Christie McLucas"), not the primary
+ *     client's, since that's who's actually on the phone \u2014 but it still
+ *     resolves to the same client record for pulling their pets.
+ * Either way, the matched client's pet names are attached so the popup can
+ * read e.g. "Greg Blackaby (Ruby & Charlie)".
+ */
+async function lookupCallerByPhone(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, inboundNumber: string) {
+  const numberVariants = Array.from(new Set([
+    inboundNumber,
+    inboundNumber.replace(/^\+61/, "0"),
+    inboundNumber.replace(/^\+/, ""),
+  ]));
+
+  const primaryCandidates = await db.select({ id: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
+    .from(clients)
+    .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
+  const primaryMatch = primaryCandidates.find(c => phoneMatchesInboundNumber(c.phone, inboundNumber));
+
+  let clientId: number | undefined;
+  let displayName: string | null = null;
+  let isSecondaryContact = false;
+
+  if (primaryMatch) {
+    clientId = primaryMatch.id;
+    displayName = `${primaryMatch.firstName} ${primaryMatch.lastName}`.trim();
+  } else {
+    const contactCandidates = await db.select({
+      clientId: clientContacts.clientId,
+      phone: clientContacts.phone,
+      name: clientContacts.name,
+    })
+      .from(clientContacts)
+      .where(and(eq(clientContacts.tenantId, 1), inArray(clientContacts.phone, numberVariants)));
+    const contactMatch = contactCandidates.find(c => phoneMatchesInboundNumber(c.phone, inboundNumber));
+    if (contactMatch) {
+      clientId = contactMatch.clientId;
+      displayName = contactMatch.name;
+      isSecondaryContact = true;
+    }
+  }
+
+  if (!clientId) return { clientId: undefined, displayName: null as string | null, isSecondaryContact: false, petNames: [] as string[] };
+
+  const clientPets = await db.select({ name: pets.name }).from(pets).where(eq(pets.clientId, clientId));
+  return { clientId, displayName, isSecondaryContact, petNames: clientPets.map(p => p.name) };
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -199,14 +253,8 @@ async function startServer() {
       const inboundNumber = normaliseAustralianMobile(String(From));
       const db = await getDb();
       if (db) {
-        const numberVariants = Array.from(new Set([
-          From, inboundNumber, inboundNumber.replace(/^\+61/, "0"), inboundNumber.replace(/^\+/, ""),
-        ]));
-        const clientCandidates = await db.select({ id: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
-          .from(clients)
-          .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
-        const client = clientCandidates.find(candidate => phoneMatchesInboundNumber(candidate.phone, inboundNumber));
-        emitCallRinging(1, String(CallSid), inboundNumber, client ? `${client.firstName} ${client.lastName}`.trim() : null);
+        const caller = await lookupCallerByPhone(db, inboundNumber);
+        emitCallRinging(1, String(CallSid), inboundNumber, caller.displayName, caller.petNames);
       } else {
         emitCallRinging(1, String(CallSid), inboundNumber, null);
       }
@@ -304,20 +352,12 @@ async function startServer() {
     const db = await getDb();
     if (db && From) {
       const inboundNumber = normaliseAustralianMobile(String(From));
-      const numberVariants = Array.from(new Set([
-        From,
-        inboundNumber,
-        inboundNumber.replace(/^\+61/, "0"),
-        inboundNumber.replace(/^\+/, ""),
-      ]));
-      const clientCandidates = await db.select({ id: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
-        .from(clients)
-        .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
-      const client = clientCandidates.find(candidate => phoneMatchesInboundNumber(candidate.phone, inboundNumber));
+      const caller = await lookupCallerByPhone(db, inboundNumber);
 
       const [inserted] = await db.insert(missedCalls).values({
         tenantId: 1,
-        clientId: client?.id,
+        clientId: caller.clientId,
+        callerName: caller.isSecondaryContact ? caller.displayName : null,
         fromNumber: inboundNumber,
         recordingUrl: RecordingUrl,
         transcriptText: TranscriptionText || null,
@@ -327,7 +367,8 @@ async function startServer() {
       emitMissedCall(1, {
         id: inserted.id,
         fromNumber: inboundNumber,
-        clientName: client ? `${client.firstName} ${client.lastName}`.trim() : null,
+        clientName: caller.displayName,
+        petNames: caller.petNames,
         transcriptText: TranscriptionText || null,
       });
     }

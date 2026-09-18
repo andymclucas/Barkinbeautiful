@@ -764,6 +764,12 @@ export const missedCalls = mysqlTable("missed_calls", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull().default(1),
   clientId: int("client_id").references(() => clients.id),
+  // The specific person who called, when it's a secondary contact (e.g. a
+  // client's spouse) rather than the client themselves \u2014 clientId still
+  // points at the household/client record so their pets resolve correctly,
+  // but the client's own name shouldn't overwrite who was actually on the
+  // phone. Null when the caller was the client, or unrecognised.
+  callerName: varchar("caller_name", { length: 255 }),
   fromNumber: varchar("from_number", { length: 30 }).notNull(),
   recordingUrl: text("recording_url"),
   transcriptText: text("transcript_text"),

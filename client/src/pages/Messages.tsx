@@ -258,6 +258,7 @@ export default function Messages() {
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm font-semibold truncate">
                             {(call.clientName as string | null)?.trim() || call.fromNumber}
+                            {(call.petNames as string[] | undefined)?.length ? ` (${(call.petNames as string[]).join(" & ")})` : ""}
                           </span>
                           <span className="text-[11px] text-muted-foreground shrink-0">
                             {new Date(call.receivedAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}

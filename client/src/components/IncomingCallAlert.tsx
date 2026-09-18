@@ -26,6 +26,13 @@ import { toast } from "sonner";
  */
 const RINGING_TOAST_ID = (callSid: string) => `call-ringing-${callSid}`;
 
+/** "Greg Blackaby" + ["Ruby","Charlie"] -> "Greg Blackaby (Ruby & Charlie)" */
+function formatCallerLabel(clientName: string | null, petNames: string[] | undefined): string | null {
+  if (!clientName) return null;
+  if (!petNames || petNames.length === 0) return clientName;
+  return `${clientName} (${petNames.join(" & ")})`;
+}
+
 export default function IncomingCallAlert() {
   const audioUnlocked = useRef(false);
 
@@ -67,7 +74,7 @@ export default function IncomingCallAlert() {
                   <Phone className="h-5 w-5 animate-pulse text-emerald-600" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">Incoming call{payload.clientName ? ` — ${payload.clientName}` : ""}</p>
+                  <p className="text-sm font-semibold text-gray-900">Incoming call{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
                   <p className="text-xs text-gray-500">{payload.fromNumber}</p>
                 </div>
                 <button
@@ -96,7 +103,7 @@ export default function IncomingCallAlert() {
                   <PhoneMissed className="h-5 w-5 text-amber-600" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">Missed call{payload.clientName ? ` — ${payload.clientName}` : ""}</p>
+                  <p className="text-sm font-semibold text-gray-900">Missed call{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
                   <p className="text-xs text-gray-500">{payload.fromNumber}</p>
                   {payload.transcriptText && (
                     <p className="mt-1 max-w-xs truncate text-xs italic text-gray-600">"{payload.transcriptText}"</p>

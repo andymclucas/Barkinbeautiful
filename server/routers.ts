@@ -5429,6 +5429,7 @@ const smsRouter = router({
       const unreadCalls = await db.select({
         id: missedCalls.id, transcriptText: missedCalls.transcriptText, receivedAt: missedCalls.receivedAt,
         clientId: missedCalls.clientId, fromNumber: missedCalls.fromNumber,
+        callerName: missedCalls.callerName,
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
       }).from(missedCalls)
         .leftJoin(clients, eq(missedCalls.clientId, clients.id))
@@ -5440,7 +5441,7 @@ const smsRouter = router({
 
       const combined = [
         ...unread.map(m => ({ kind: "message" as const, id: m.id, body: m.body, at: m.sentAt, clientId: m.clientId, toNumber: m.toNumber, clientName: m.clientName })),
-        ...unreadCalls.map(c => ({ kind: "missed_call" as const, id: c.id, body: c.transcriptText || "(no transcript available)", at: c.receivedAt, clientId: c.clientId, toNumber: c.fromNumber, clientName: c.clientName })),
+        ...unreadCalls.map(c => ({ kind: "missed_call" as const, id: c.id, body: c.transcriptText || "(no transcript available)", at: c.receivedAt, clientId: c.clientId, toNumber: c.fromNumber, clientName: c.callerName || c.clientName })),
       ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, input.limit);
 
       return { unreadCount: Number(messageCount) + Number(callCount), recent: combined };
@@ -5451,10 +5452,11 @@ const smsRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      return db.select({
+      const rows = await db.select({
         id: missedCalls.id,
         fromNumber: missedCalls.fromNumber,
         clientId: missedCalls.clientId,
+        callerName: missedCalls.callerName,
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
         transcriptText: missedCalls.transcriptText,
         transcriptionStatus: missedCalls.transcriptionStatus,
@@ -5466,6 +5468,26 @@ const smsRouter = router({
         .where(eq(missedCalls.tenantId, input.tenantId))
         .orderBy(desc(missedCalls.receivedAt))
         .limit(input.limit);
+
+      const clientIds = Array.from(new Set(rows.map(r => r.clientId).filter((id): id is number => id != null)));
+      const petRows = clientIds.length
+        ? await db.select({ clientId: pets.clientId, name: pets.name }).from(pets).where(inArray(pets.clientId, clientIds))
+        : [];
+      const petsByClient = new Map<number, string[]>();
+      for (const p of petRows) {
+        if (!petsByClient.has(p.clientId)) petsByClient.set(p.clientId, []);
+        petsByClient.get(p.clientId)!.push(p.name);
+      }
+
+      // The caller's own name (a secondary contact like a spouse) takes
+      // priority over the household's client name, since that's who was
+      // actually on the phone \u2014 but their pets still come from the linked
+      // client record either way.
+      return rows.map(r => ({
+        ...r,
+        clientName: r.callerName || r.clientName,
+        petNames: r.clientId ? (petsByClient.get(r.clientId) ?? []) : [],
+      }));
     }),
 
   clearMissedCall: protectedProcedure
