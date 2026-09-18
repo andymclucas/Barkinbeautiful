@@ -2011,6 +2011,26 @@ export default function Calendar() {
                 <Input type="datetime-local" value={newAppt.scheduledEnd} onChange={e => setNewAppt(p => ({ ...p, scheduledEnd: e.target.value }))} />
               </div>
             </div>
+            {(() => {
+              if (!newAppt.scheduledStart) return null;
+              const d = new Date(newAppt.scheduledStart);
+              // Convert to AEST day-of-week: 0=Sun,1=Mon,6=Sat
+              const aestDate = new Date(d.getTime() + 10 * 60 * 60 * 1000);
+              const dow = aestDate.getUTCDay();
+              if (dow === 0 || dow === 1 || dow === 6) {
+                const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dow];
+                return (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-900">This date falls on a {dayName}</p>
+                      <p className="mt-0.5 text-xs text-amber-800">The salon is closed Saturday, Sunday &amp; Monday. Please confirm this date is correct before saving.</p>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Price ($)</Label>
@@ -2215,6 +2235,25 @@ export default function Calendar() {
                 {preservesCancelledSchedule && (
                   <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">Cancelled appointments stay at their original booked time for historical tracking. Create a new appointment if the client needs to be rebooked.</p>
                 )}
+                {(() => {
+                  if (!editForm.scheduledStart) return null;
+                  const d = new Date(editForm.scheduledStart);
+                  const aestDate = new Date(d.getTime() + 10 * 60 * 60 * 1000);
+                  const dow = aestDate.getUTCDay();
+                  if (dow === 0 || dow === 1 || dow === 6) {
+                    const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dow];
+                    return (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                        <div>
+                          <p className="text-sm font-semibold text-amber-900">This date falls on a {dayName}</p>
+                          <p className="mt-0.5 text-xs text-amber-800">The salon is closed Saturday, Sunday &amp; Monday. Please confirm this date is correct before saving.</p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Status</Label>
