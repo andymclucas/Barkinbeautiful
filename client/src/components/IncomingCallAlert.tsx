@@ -1,13 +1,15 @@
 import { useEffect, useRef } from "react";
-import { Phone, PhoneMissed, X } from "lucide-react";
+import { Phone, PhoneMissed, MessageSquare, X } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
 /**
- * App-wide "someone's calling" popup, mounted once in DashboardLayout so it
- * fires no matter which page the person is on (Appointments, Messages,
- * Analytics, etc.) — the same idea as a Messenger/Slack incoming-call toast.
+ * App-wide "someone's calling / texting" popup, mounted once in
+ * DashboardLayout so it fires no matter which page the person is on
+ * (Appointments, Messages, Analytics, etc.) — the same idea as a
+ * Messenger/Slack incoming-call or new-message toast.
  *
- * Three moments matter, all pushed over the shared /api/events SSE stream
+ * Four moments matter, all pushed over the shared /api/events SSE stream
  * that NotificationBell also listens on:
  *  - "call-ringing": the instant a call starts ringing in, before it's even
  *    gone to voicemail. Shown until the call's outcome is known.
@@ -16,8 +18,10 @@ import { toast } from "sonner";
  *    rather than leaving it up until an arbitrary timer runs out.
  *  - "missed-call": once a voicemail has been recorded and transcribed.
  *    Auto-dismisses well within 30 seconds; can also be closed manually.
+ *  - "new-message": an inbound SMS just arrived. Same popup treatment as
+ *    a missed call, just blue/message-themed instead of amber/phone-themed.
  *
- * Both toasts use the same soft two-tone chime (pure sine tones, smooth
+ * All toasts use the same soft two-tone chime (pure sine tones, smooth
  * envelope) — a synthesised dog bark and guitar strum were both tried
  * first, but a naive synthesis of either comes out harsh/buzzy rather
  * than warm, so a clean bell-like chime is the safer default. Swap the
@@ -35,6 +39,7 @@ function formatCallerLabel(clientName: string | null, petNames: string[] | undef
 
 export default function IncomingCallAlert() {
   const audioUnlocked = useRef(false);
+  const [, setLocation] = useLocation();
 
   useEffect(() => {
     // Browsers block audio playback until the user has interacted with the
@@ -112,6 +117,36 @@ export default function IncomingCallAlert() {
                 <button
                   className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
                   onClick={() => toast.dismiss(t)}
+                  aria-label="Dismiss"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ),
+            { duration: 15000, id }
+          );
+        } else if (payload?.type === "new-message") {
+          playSound("/sounds/notification-chime.wav");
+          const id = `new-message-${payload.id}`;
+          toast.custom(
+            (t) => (
+              <div
+                className="relative flex cursor-pointer items-start gap-3 rounded-xl border border-sky-200 bg-white px-4 py-3 pr-8 shadow-lg"
+                onClick={() => { toast.dismiss(t); setLocation("/messages"); }}
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100">
+                  <MessageSquare className="h-5 w-5 text-sky-600" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">New message{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
+                  <p className="text-xs text-gray-500">{payload.fromNumber}</p>
+                  {payload.body && (
+                    <p className="mt-1 max-w-xs truncate text-xs italic text-gray-600">"{payload.body}"</p>
+                  )}
+                </div>
+                <button
+                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  onClick={(e) => { e.stopPropagation(); toast.dismiss(t); }}
                   aria-label="Dismiss"
                 >
                   <X className="h-3.5 w-3.5" />

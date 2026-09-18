@@ -17,6 +17,11 @@ appEvents.setMaxListeners(100); // one per connected browser tab
 export type NewMessageEvent = {
   type: "new-message";
   tenantId: number;
+  id: number;
+  fromNumber: string;
+  clientName: string | null;
+  petNames: string[];
+  body: string;
 };
 
 /** Fired the instant a call rings in \u2014 before it's even gone to voicemail \u2014
@@ -50,8 +55,8 @@ export type MissedCallEvent = {
   transcriptText: string | null;
 };
 
-export function emitNewMessage(tenantId: number) {
-  appEvents.emit("app-event", { type: "new-message", tenantId } satisfies NewMessageEvent);
+export function emitNewMessage(tenantId: number, details: { id: number; fromNumber: string; clientName: string | null; petNames?: string[]; body: string }) {
+  appEvents.emit("app-event", { type: "new-message", tenantId, petNames: [], ...details } satisfies NewMessageEvent);
 }
 
 export function emitCallRinging(tenantId: number, callSid: string, fromNumber: string, clientName: string | null, petNames: string[] = []) {

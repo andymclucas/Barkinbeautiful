@@ -184,17 +184,8 @@ async function startServer() {
 
     if (db && From) {
       const inboundNumber = normaliseAustralianMobile(From);
-      const numberVariants = Array.from(new Set([
-        From,
-        inboundNumber,
-        inboundNumber.replace(/^\+61/, "0"),
-        inboundNumber.replace(/^\+/, ""),
-      ]));
-      const clientCandidates = await db.select({ id: clients.id, phone: clients.phone })
-        .from(clients)
-        .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
-      const client = clientCandidates.find(candidate => phoneMatchesInboundNumber(candidate.phone, inboundNumber));
-      clientId = client?.id;
+      const caller = await lookupCallerByPhone(db, inboundNumber);
+      clientId = caller.clientId;
 
       // Link every reply to the latest future reminder where the match is clear.
       // No inbound reply can change an appointment without an explicit staff review.
@@ -223,7 +214,7 @@ async function startServer() {
         }
       }
 
-      await db.insert(smsLogs).values({
+      const [insertedMessage] = await db.insert(smsLogs).values({
         tenantId: 1,
         clientId,
         appointmentId,
@@ -234,8 +225,14 @@ async function startServer() {
         type: "inbound",
         direction: "inbound",
         replyIntent: intent,
+      }).$returningId();
+      emitNewMessage(1, {
+        id: insertedMessage.id,
+        fromNumber: inboundNumber,
+        clientName: caller.displayName,
+        petNames: caller.petNames,
+        body: String(Body ?? ""),
       });
-      emitNewMessage(1);
     }
     res.set("Content-Type", "text/xml");
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
