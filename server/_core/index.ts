@@ -17,7 +17,7 @@ import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNum
 import { sendSms } from "../sms";
 import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
-import { appEvents, emitNewMessage, emitMissedCall } from "../eventBus";
+import { appEvents, emitNewMessage, emitCallRinging, emitMissedCall } from "../eventBus";
 import { sdk } from "./sdk";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -193,7 +193,24 @@ async function startServer() {
   // office phone first; Twilio calls /api/twilio/voice-no-answer once that
   // dial finishes, whether answered or not.
   app.post("/api/twilio/voice-incoming", express.urlencoded({ extended: false }), async (req, res) => {
-    console.log(`[Twilio] Incoming call ${req.body.CallSid} from ${req.body.From}`);
+    const { CallSid, From } = req.body;
+    console.log(`[Twilio] Incoming call ${CallSid} from ${From}`);
+    if (From) {
+      const inboundNumber = normaliseAustralianMobile(String(From));
+      const db = await getDb();
+      if (db) {
+        const numberVariants = Array.from(new Set([
+          From, inboundNumber, inboundNumber.replace(/^\+61/, "0"), inboundNumber.replace(/^\+/, ""),
+        ]));
+        const clientCandidates = await db.select({ id: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
+          .from(clients)
+          .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
+        const client = clientCandidates.find(candidate => phoneMatchesInboundNumber(candidate.phone, inboundNumber));
+        emitCallRinging(1, inboundNumber, client ? `${client.firstName} ${client.lastName}`.trim() : null);
+      } else {
+        emitCallRinging(1, inboundNumber, null);
+      }
+    }
     res.set("Content-Type", "text/xml");
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -258,12 +275,12 @@ async function startServer() {
         inboundNumber.replace(/^\+61/, "0"),
         inboundNumber.replace(/^\+/, ""),
       ]));
-      const clientCandidates = await db.select({ id: clients.id, phone: clients.phone })
+      const clientCandidates = await db.select({ id: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
         .from(clients)
         .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
       const client = clientCandidates.find(candidate => phoneMatchesInboundNumber(candidate.phone, inboundNumber));
 
-      await db.insert(missedCalls).values({
+      const [inserted] = await db.insert(missedCalls).values({
         tenantId: 1,
         clientId: client?.id,
         fromNumber: inboundNumber,
@@ -271,8 +288,13 @@ async function startServer() {
         transcriptText: TranscriptionText || null,
         transcriptionStatus: TranscriptionStatus === "completed" ? "completed" : "failed",
         twilioCallSid: CallSid,
+      }).$returningId();
+      emitMissedCall(1, {
+        id: inserted.id,
+        fromNumber: inboundNumber,
+        clientName: client ? `${client.firstName} ${client.lastName}`.trim() : null,
+        transcriptText: TranscriptionText || null,
       });
-      emitMissedCall(1);
     }
     res.sendStatus(200);
   });

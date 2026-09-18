@@ -19,15 +19,33 @@ export type NewMessageEvent = {
   tenantId: number;
 };
 
+/** Fired the instant a call rings in \u2014 before it's even gone to voicemail \u2014
+ * so staff can see "someone's calling" live, the same way Messenger/Slack
+ * surface an incoming call regardless of what page you're on. */
+export type CallRingingEvent = {
+  type: "call-ringing";
+  tenantId: number;
+  fromNumber: string;
+  clientName: string | null;
+};
+
 export type MissedCallEvent = {
   type: "missed-call";
   tenantId: number;
+  id: number;
+  fromNumber: string;
+  clientName: string | null;
+  transcriptText: string | null;
 };
 
 export function emitNewMessage(tenantId: number) {
   appEvents.emit("app-event", { type: "new-message", tenantId } satisfies NewMessageEvent);
 }
 
-export function emitMissedCall(tenantId: number) {
-  appEvents.emit("app-event", { type: "missed-call", tenantId } satisfies MissedCallEvent);
+export function emitCallRinging(tenantId: number, fromNumber: string, clientName: string | null) {
+  appEvents.emit("app-event", { type: "call-ringing", tenantId, fromNumber, clientName } satisfies CallRingingEvent);
+}
+
+export function emitMissedCall(tenantId: number, details: { id: number; fromNumber: string; clientName: string | null; transcriptText: string | null }) {
+  appEvents.emit("app-event", { type: "missed-call", tenantId, ...details } satisfies MissedCallEvent);
 }

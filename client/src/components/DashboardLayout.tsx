@@ -1,5 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import NotificationBell from "@/components/NotificationBell";
+import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -181,6 +182,7 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               <NotificationBell />
+              <IncomingCallAlert />
               {!isCollapsed && (
                 <div
                   className="flex items-center cursor-pointer min-w-0 flex-1"
