@@ -17,8 +17,12 @@ import { toast } from "sonner";
  *  - "missed-call": once a voicemail has been recorded and transcribed.
  *    Auto-dismisses well within 30 seconds; can also be closed manually.
  *
- * Both toasts use the same friendly synthesised dog-bark sound (a guitar
- * strum was tried first but felt too much for a frequent notification).
+ * Both toasts use the same soft two-tone chime (pure sine tones, smooth
+ * envelope) — a synthesised dog bark and guitar strum were both tried
+ * first, but a naive synthesis of either comes out harsh/buzzy rather
+ * than warm, so a clean bell-like chime is the safer default. Swap the
+ * files in client/public/sounds/ for real recordings if a proper bark or
+ * strum sample becomes available later.
  */
 const RINGING_TOAST_ID = (callSid: string) => `call-ringing-${callSid}`;
 
@@ -54,7 +58,7 @@ export default function IncomingCallAlert() {
       try {
         const payload = JSON.parse(event.data);
         if (payload?.type === "call-ringing") {
-          playSound("/sounds/dog-bark.wav");
+          playSound("/sounds/notification-chime.wav");
           const id = RINGING_TOAST_ID(payload.callSid);
           toast.custom(
             (t) => (
@@ -83,7 +87,7 @@ export default function IncomingCallAlert() {
         } else if (payload?.type === "call-ended") {
           toast.dismiss(RINGING_TOAST_ID(payload.callSid));
         } else if (payload?.type === "missed-call") {
-          playSound("/sounds/dog-bark.wav");
+          playSound("/sounds/notification-chime.wav");
           const id = `missed-call-${payload.id}`;
           toast.custom(
             (t) => (
