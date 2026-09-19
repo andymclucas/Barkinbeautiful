@@ -1,37 +1,58 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch } from "wouter";
+import { lazy, Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
+// Pages are lazy-loaded so the initial download is a small, focused chunk
+// per page rather than one ~1.8MB bundle containing every page in the app.
+// On a slow/congested connection (e.g. salon WiFi shared across several
+// staff phones at once), a single giant bundle is much more likely to fail
+// or time out partway through downloading \u2014 which shows as a completely
+// blank white page, since that failure happens before React (and its error
+// boundary) ever gets a chance to run. Smaller, focused chunks are far more
+// likely to complete even on a poor connection.
+
 // Pages — Admin
-import Dashboard from "./pages/Dashboard";
-import Calendar from "./pages/Calendar";
-import WorkflowBoard from "./pages/WorkflowBoard";
-import WorkflowDisplay from "./pages/WorkflowDisplay";
-import StaffPortal from "./pages/StaffPortal";
-import Clients from "./pages/Clients";
-import ClientDetail from "./pages/ClientDetail";
-import Memberships from "./pages/Memberships";
-import Pricing from "./pages/Pricing";
-import Retail from "./pages/Retail";
-import Analytics from "./pages/Analytics";
-import Staff, { StaffReviewProfile } from "./pages/Staff";
-import Messages from "./pages/Messages";
-import EmailCampaigns from "./pages/EmailCampaigns";
-import Reporting from "./pages/Reporting";
-import Migration from "./pages/Migration";
-import Settings from "./pages/Settings";
-import NotFound from "./pages/NotFound";
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Calendar = lazy(() => import("./pages/Calendar"));
+const WorkflowBoard = lazy(() => import("./pages/WorkflowBoard"));
+const WorkflowDisplay = lazy(() => import("./pages/WorkflowDisplay"));
+const StaffPortal = lazy(() => import("./pages/StaffPortal"));
+const Clients = lazy(() => import("./pages/Clients"));
+const ClientDetail = lazy(() => import("./pages/ClientDetail"));
+const Memberships = lazy(() => import("./pages/Memberships"));
+const Pricing = lazy(() => import("./pages/Pricing"));
+const Retail = lazy(() => import("./pages/Retail"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const Staff = lazy(() => import("./pages/Staff").then(m => ({ default: m.default })));
+const StaffReviewProfile = lazy(() => import("./pages/Staff").then(m => ({ default: m.StaffReviewProfile })));
+const Messages = lazy(() => import("./pages/Messages"));
+const EmailCampaigns = lazy(() => import("./pages/EmailCampaigns"));
+const Reporting = lazy(() => import("./pages/Reporting"));
+const Migration = lazy(() => import("./pages/Migration"));
+const Settings = lazy(() => import("./pages/Settings"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Pages — Public (no auth)
-import PetTracker from "./pages/PetTracker";
-import OnlineBooking from "./pages/OnlineBooking";
-import Login from "./pages/Login";
-import StaffInvitationAccept from "./pages/StaffInvitationAccept";
-import ClientPortal from "./pages/ClientPortal";
-import ClientPortalLogin from "./pages/ClientPortalLogin";
-import ClientPortalSetup from "./pages/ClientPortalSetup";
+const PetTracker = lazy(() => import("./pages/PetTracker"));
+const OnlineBooking = lazy(() => import("./pages/OnlineBooking"));
+const Login = lazy(() => import("./pages/Login"));
+const StaffInvitationAccept = lazy(() => import("./pages/StaffInvitationAccept"));
+const ClientPortal = lazy(() => import("./pages/ClientPortal"));
+const ClientPortalLogin = lazy(() => import("./pages/ClientPortalLogin"));
+const ClientPortalSetup = lazy(() => import("./pages/ClientPortalSetup"));
+
+/** Small, immediate visual feedback while a page chunk downloads — never
+ * leaves the screen blank, even on a slow connection. */
+function RouteLoadingFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+    </div>
+  );
+}
 
 function OnlineBookingPreview() {
   return <OnlineBooking previewMode />;
@@ -86,7 +107,9 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster richColors position="top-right" />
-          <Router />
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <Router />
+          </Suspense>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
