@@ -3842,7 +3842,7 @@ const analyticsRouter = router({
         { key: "bathing", label: "Bathing", from: "bathingStartedAt", to: "bathingCompletedAt" },
         { key: "drying", label: "Drying", from: "dryingStartedAt", to: "dryingCompletedAt" },
         { key: "grooming", label: "Grooming", from: "groomingStartedAt", to: "groomingCompletedAt" },
-        { key: "readyWait", label: "Ready → Picked up", from: "readyAt", to: "pickedUpAt" },
+        { key: "readyWait", label: "Ready → Picked up", from: "readyAt", to: "completedAt" },
         { key: "total", label: "Total (check-in → complete)", from: "checkedInAt", to: "completedAt" },
       ];
 

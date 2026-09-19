@@ -375,6 +375,7 @@ export default function WorkflowBoard() {
     const now = Date.now();
     const timeFields: Record<string, number | null> = {};
     if (next === "checked_in") timeFields.checkedInAt = now;
+    if (next === "ready") timeFields.readyAt = now;
     if (next === "complete") timeFields.completedAt = now;
     update(appt.id, { workflowState: next, ...timeFields }, { petName: appt.petName });
   }, [completeAppointment, update]);
@@ -753,6 +754,7 @@ export default function WorkflowBoard() {
                           }
                           const timeFields: Record<string, number | null> = {};
                           if (s.key === "checked_in") timeFields.checkedInAt = Date.now();
+                          if (s.key === "ready") timeFields.readyAt = Date.now();
                           update(id, { workflowState: s.key, ...timeFields }, { petName: appt.petName });
                           toast.success(`🐾 ${appt.petName ?? "Dog"} → ${s.label}`, {
                             description: `Stage updated successfully`,
@@ -1063,7 +1065,12 @@ export default function WorkflowBoard() {
                           value={appt.workflowState}
                           onValueChange={(nextState) => {
                             if (nextState === appt.workflowState) return;
-                            update(appt.id, { workflowState: nextState as StageKey }, { petName: appt.petName });
+                            const now = Date.now();
+                            const timeFields: Record<string, number | null> = {};
+                            if (nextState === "checked_in") timeFields.checkedInAt = now;
+                            if (nextState === "ready") timeFields.readyAt = now;
+                            if (nextState === "complete") timeFields.completedAt = now;
+                            update(appt.id, { workflowState: nextState as StageKey, ...timeFields }, { petName: appt.petName });
                           }}
                           disabled={updateStage.isPending}
                         >
