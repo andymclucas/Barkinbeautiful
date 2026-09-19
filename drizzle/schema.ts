@@ -798,3 +798,24 @@ export const storeCreditTransactions = mysqlTable("store_credit_transactions", {
 ]);
 
 export type StoreCreditTransaction = typeof storeCreditTransactions.$inferSelect;
+
+// ─── Client-side error/failure diagnostics ────────────────────────────────────
+// Captures the kinds of failure that are otherwise invisible: a blank page
+// (bundle failed to load/parse before React ever ran, so no in-app error is
+// possible), a React render crash, or an unhandled JS exception. Reported by
+// a small inline script in index.html that runs independently of the main
+// bundle, plus a global window.onerror/unhandledrejection handler and the
+// top-level ErrorBoundary — see client/src/main.tsx and ErrorBoundary.tsx.
+export const clientErrorLogs = mysqlTable("client_error_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  kind: mysqlEnum("kind", ["stuck_loading", "window_error", "unhandled_rejection", "react_error_boundary"]).notNull(),
+  message: text("message"),
+  stack: text("stack"),
+  url: varchar("url", { length: 512 }),
+  userAgent: varchar("user_agent", { length: 512 }),
+  connectionType: varchar("connection_type", { length: 30 }), // navigator.connection?.effectiveType, e.g. "3g", "4g" — helps confirm/rule out a network cause
+  msSincePageLoad: int("ms_since_page_load"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ClientErrorLog = typeof clientErrorLogs.$inferSelect;

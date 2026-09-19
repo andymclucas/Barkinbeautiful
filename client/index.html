@@ -15,23 +15,76 @@
       // current (correct) bundle references. Capped to once per 10 seconds
       // so a genuinely broken deploy doesn't loop forever instead of just
       // showing the error.
+      //
+      // Everything here runs independently of the main React bundle — that's
+      // the whole point. If the main bundle itself fails to download or
+      // parse, React (and its ErrorBoundary) never gets a chance to run, so
+      // this is the only place that can report the failure or show the
+      // person anything at all.
       (function () {
         var RELOAD_KEY = "gsos-stale-reload-at";
-        function reloadOnce() {
+        var pageLoadedAt = Date.now();
+
+        function report(kind, extra) {
+          try {
+            var body = JSON.stringify(Object.assign({
+              kind: kind,
+              url: window.location.href,
+              userAgent: navigator.userAgent,
+              connectionType: (navigator.connection && navigator.connection.effectiveType) || null,
+              msSincePageLoad: Date.now() - pageLoadedAt,
+            }, extra || {}));
+            if (navigator.sendBeacon) {
+              navigator.sendBeacon("/api/client-error", new Blob([body], { type: "application/json" }));
+            } else {
+              fetch("/api/client-error", { method: "POST", headers: { "Content-Type": "application/json" }, body: body, keepalive: true }).catch(function () {});
+            }
+          } catch (e) {
+            // Reporting must never itself throw and block recovery.
+          }
+        }
+
+        function reloadOnce(reason) {
           var last = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
           var now = Date.now();
           if (now - last > 10000) {
             sessionStorage.setItem(RELOAD_KEY, String(now));
+            report("window_error", { message: "Asset load failure, reloading: " + reason });
             window.location.reload();
           }
         }
         window.addEventListener("error", function (e) {
           var target = e.target;
           if (target && (target.tagName === "SCRIPT" || target.tagName === "LINK")) {
-            reloadOnce();
+            reloadOnce((target.src || target.href || "unknown asset"));
           }
         }, true);
-        window.addEventListener("vite:preloadError", reloadOnce);
+        window.addEventListener("vite:preloadError", function () { reloadOnce("vite:preloadError"); });
+
+        // Watchdog: if nothing has rendered into #root within 8 seconds,
+        // the person is looking at a blank page with no idea why. Show a
+        // plain-HTML fallback (no framework dependency, since the framework
+        // is exactly what may have failed to load) with a manual reload
+        // button, and report it so it shows up in server logs instead of
+        // just a shrug and a screenshot.
+        window.addEventListener("load", function () {
+          setTimeout(function () {
+            var root = document.getElementById("root");
+            if (root && root.childElementCount === 0) {
+              report("stuck_loading");
+              root.innerHTML =
+                '<div style="display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,sans-serif;background:#fafafa;">' +
+                  '<div style="max-width:360px;text-align:center;">' +
+                    '<p style="font-size:17px;font-weight:600;color:#111827;margin:0 0 8px;">This page is taking longer than expected to load</p>' +
+                    '<p style="font-size:14px;color:#6b7280;margin:0 0 20px;">This can happen on a slow or unstable connection. Tap below to try again.</p>' +
+                    '<button onclick="window.location.reload()" style="background:#0f766e;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:600;cursor:pointer;">Reload</button>' +
+                  '</div>' +
+                '</div>';
+            }
+          }, 8000);
+        });
+
+        window.__gsosReportClientError = report;
       })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />

@@ -11,7 +11,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { getDb } from "../db";
-import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls } from "../../drizzle/schema";
+import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, clientErrorLogs } from "../../drizzle/schema";
 import { and, asc, desc, eq, gt, gte, lte, inArray, isNotNull } from "drizzle-orm";
 import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNumber } from "../inboundSms";
 import { sendSms } from "../sms";
@@ -174,6 +174,34 @@ async function startServer() {
   });
 
   // Twilio webhook for inbound SMS (reply handling)
+  // Public and deliberately minimal: this has to work even when the main
+  // app bundle has failed entirely (that's the whole point \u2014 the blank-page
+  // failure mode is otherwise invisible). No auth, no dependency on the rest
+  // of the app's request pipeline succeeding.
+  app.post("/api/client-error", express.json(), async (req, res) => {
+    try {
+      const db = await getDb();
+      if (db) {
+        const { kind, message, stack, url, userAgent, connectionType, msSincePageLoad } = req.body ?? {};
+        const validKinds = ["stuck_loading", "window_error", "unhandled_rejection", "react_error_boundary"] as const;
+        if (typeof kind === "string" && (validKinds as readonly string[]).includes(kind)) {
+          await db.insert(clientErrorLogs).values({
+            kind: kind as typeof validKinds[number],
+            message: typeof message === "string" ? message.slice(0, 2000) : null,
+            stack: typeof stack === "string" ? stack.slice(0, 4000) : null,
+            url: typeof url === "string" ? url.slice(0, 512) : null,
+            userAgent: typeof userAgent === "string" ? userAgent.slice(0, 512) : null,
+            connectionType: typeof connectionType === "string" ? connectionType.slice(0, 30) : null,
+            msSincePageLoad: typeof msSincePageLoad === "number" ? Math.round(msSincePageLoad) : null,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[client-error] Failed to log report:", err);
+    }
+    res.sendStatus(204);
+  });
+
   app.post("/api/twilio/inbound", express.urlencoded({ extended: false }), async (req, res) => {
     const { From, Body, MessageSid } = req.body;
     console.log(`[Twilio] Inbound SMS from ${From}: ${Body}`);

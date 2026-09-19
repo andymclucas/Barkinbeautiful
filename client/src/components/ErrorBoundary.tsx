@@ -21,6 +21,13 @@ class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
+  componentDidCatch(error: Error) {
+    (window as any).__gsosReportClientError?.("react_error_boundary", {
+      message: error.message,
+      stack: error.stack,
+    });
+  }
+
   render() {
     if (this.state.hasError) {
       return (
