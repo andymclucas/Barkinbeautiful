@@ -44,7 +44,19 @@
           }
         }
 
-        function reloadOnce(reason) {
+        function reloadOnce(reason, forceReload) {
+          // Only a genuine Vite build asset (/assets/...) failing to load, or
+          // a Vite dynamic-import preload failure (always a stale-chunk
+          // reference \u2014 especially relevant now that pages are lazy-loaded),
+          // indicates a stale deploy that a reload can actually fix. Any
+          // other failed script/link (a third-party embed with a bad or
+          // unconfigured URL, for instance) will fail again identically
+          // after a reload \u2014 retrying just adds a pointless full-page
+          // reload to every affected page view instead of fixing anything.
+          if (!forceReload && !/\/assets\//.test(reason)) {
+            report("window_error", { message: "Non-build asset failed to load (not reloading): " + reason });
+            return;
+          }
           var last = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
           var now = Date.now();
           if (now - last > 10000) {
@@ -59,7 +71,7 @@
             reloadOnce((target.src || target.href || "unknown asset"));
           }
         }, true);
-        window.addEventListener("vite:preloadError", function () { reloadOnce("vite:preloadError"); });
+        window.addEventListener("vite:preloadError", function (e) { reloadOnce("vite:preloadError: " + (e && e.payload && e.payload.message || "lazy chunk failed"), true); });
 
         // Watchdog: if nothing has rendered into #root within 8 seconds,
         // the person is looking at a blank page with no idea why. Show a
@@ -96,9 +108,5 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
   </body>
 </html>
