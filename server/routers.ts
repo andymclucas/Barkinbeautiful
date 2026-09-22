@@ -2,14 +2,14 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
-import { getDb } from "./db";
+import { getDb } from "./db"
 import { z } from "zod";
 import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, isNull, isNotNull } from "drizzle-orm";
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
-  emailCampaigns, emailCampaignSends, emailUnsubscribes,
+  emailCampaigns, emailCampaignSends, emailUnsubscribes
   groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
@@ -4109,7 +4109,7 @@ const groomStyleNotesRouter = router({
       petId: z.number(),
       appointmentId: z.number().optional(),
       staffId: z.number().optional(),
-      note: z.string().min(1),
+      note: z.string().default(""),
       serviceType: z.string().optional(),
       bladeSize: z.string().optional(),
       combSize: z.string().optional(),
