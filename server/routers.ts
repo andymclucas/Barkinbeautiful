@@ -9,7 +9,7 @@ import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
-  emailCampaigns, emailCampaignSends, emailUnsubscribes
+  emailCampaigns, emailCampaignSends, emailUnsubscribes,
   groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
