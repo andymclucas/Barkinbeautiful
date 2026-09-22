@@ -919,6 +919,24 @@ export default function WorkflowBoard() {
                               <AlertTriangle className="h-2.5 w-2.5" /> CAUTION{appt.petWarnings ? ` — ${appt.petWarnings.slice(0, 15)}` : ""}
                             </span>
                           )}
+                          {(() => {
+                            const petCodes = (appt as any).petMoeGoPetCodes as Array<{ codeId: string; abbreviation: string; color?: string; description?: string }> | null | undefined;
+                            if (!Array.isArray(petCodes) || petCodes.length === 0) return null;
+                            return (
+                              <div className="flex flex-wrap gap-0.5 mt-0.5">
+                                {petCodes.map((code) => (
+                                  <span
+                                    key={code.codeId}
+                                    className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold text-white leading-none"
+                                    style={{ background: code.color ?? "#6b7280" }}
+                                    title={code.description ? `${code.abbreviation}: ${code.description}` : code.abbreviation}
+                                  >
+                                    {code.abbreviation}
+                                  </span>
+                                ))}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     </td>
