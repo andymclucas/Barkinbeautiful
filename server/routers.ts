@@ -4919,6 +4919,41 @@ const migrationRouter = router({
       }).where(eq(migrationJobs.id, input.jobId));
       return { success: true, processed, errors };
     }),
+
+  // Bulk-update MoeGo pet codes on pets matched by their MoeGo pet ID.
+  // Called from the browser extraction script after fetching petCodes
+  // from MoeGo's BFF API for every known pet.
+  syncMoegoPetCodes: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      records: z.array(z.object({
+        moegoPetId: z.string(),
+        petCodes: z.array(z.object({
+          codeId: z.string(),
+          abbreviation: z.string(),
+          color: z.string().optional(),
+          description: z.string().optional(),
+          sort: z.number().optional(),
+          comment: z.string().optional(),
+        })),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      let updated = 0;
+      let skipped = 0;
+      for (const { moegoPetId, petCodes } of input.records) {
+        const result = await db.update(pets)
+          .set({ moeGoPetCodes: petCodes, updatedAt: new Date() })
+          .where(and(eq(pets.tenantId, input.tenantId), eq(pets.moegoClientId, moegoPetId)));
+        // affectedRows > 0 means at least one pet was matched & updated
+        const affected = (result as any)?.[0]?.affectedRows ?? (Array.isArray(result) ? result[0]?.affectedRows : 0) ?? 0;
+        if (affected > 0) updated++;
+        else skipped++;
+      }
+      return { success: true, updated, skipped };
+    }),
 });
 
 // ─── Email Campaigns ────────────────────────────────────────────────────────
