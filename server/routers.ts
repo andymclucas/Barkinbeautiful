@@ -984,7 +984,6 @@ const workflowRouter = router({
           petAlertLevel: pets.alertLevel,
           petWarnings: pets.warnings,
           petFamilyGroupId: pets.familyGroupId,
-          petMoeGoPetCodes: pets.moeGoPetCodes,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           staffName: staff.name,
