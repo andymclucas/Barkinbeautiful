@@ -820,6 +820,8 @@ export default function Calendar() {
   const preservesCancelledSchedule = editAppt?.status === "cancelled" || editAppt?.workflowState === "cancelled" || editForm.workflowState === "cancelled";
   // Per-pet groomer overrides for multi-pet sessions: { [appointmentId]: staffId }
   const [siblingGroomers, setSiblingGroomers] = useState<Record<number, string>>({});
+  // Per-pet price overrides for multi-pet sessions: { [appointmentId]: price string }
+  const [siblingPrices, setSiblingPrices] = useState<Record<number, string>>({});
   const [styleNoteForm, setStyleNoteForm] = useState({
     note: "", serviceType: "", bladeSize: "", combSize: "", bodyLength: "", headStyle: "", faceStyle: "", earStyle: "", legStyle: "", tailStyle: "", warnings: "", alertLevel: "", photoUrl: "", photoKey: "",
   });
@@ -1007,6 +1009,14 @@ export default function Calendar() {
     onError: (e) => toast.error(e.message),
   });
   const updateDetailsMutation = trpc.calendar.updateDetails.useMutation({
+    onError: (e) => toast.error(e.message),
+  });
+  const createSessionBillsMutation = trpc.calendar.createSessionBills.useMutation({
+    onSuccess: (data) => {
+      const lines = data.created.map(b => `${b.petName}: $${b.total} (${b.invoiceNumber})`).join("\n");
+      toast.success(`${data.created.length} draft invoice${data.created.length !== 1 ? "s" : ""} created:\n${lines}`);
+      refetch();
+    },
     onError: (e) => toast.error(e.message),
   });
   const addPetsToSharedAppointmentMutation = trpc.calendar.addPetsToSharedAppointment.useMutation({
@@ -1306,13 +1316,27 @@ export default function Calendar() {
         }));
       }
     }
-    if (editForm.serviceType !== editAppt.serviceType || editForm.notes !== (editAppt.notes ?? "") || editForm.price !== (editAppt.price ?? "")) {
+    // For multi-pet sessions, per-dog prices come from siblingPrices; single-pet uses editForm.price
+    const effectivePrimaryPrice = (siblings.length > 0 && siblingPrices[editAppt.id] !== undefined)
+      ? siblingPrices[editAppt.id]
+      : editForm.price;
+    if (editForm.serviceType !== editAppt.serviceType || editForm.notes !== (editAppt.notes ?? "") || effectivePrimaryPrice !== (editAppt.price ?? "")) {
       promises.push(updateDetailsMutation.mutateAsync({
         appointmentId: editAppt.id,
         serviceType:   editForm.serviceType as "classic_groom",
         notes:         editForm.notes || null,
-        price:         editForm.price || null,
+        price:         effectivePrimaryPrice || null,
       }));
+    }
+    // Save per-dog price overrides for siblings
+    for (const sib of siblings) {
+      const newPrice = siblingPrices[sib.id];
+      if (newPrice !== undefined && newPrice !== (sib.price ?? "")) {
+        promises.push(updateDetailsMutation.mutateAsync({
+          appointmentId: sib.id,
+          price: newPrice || null,
+        }));
+      }
     }
     if (editForm.workflowState !== editAppt.workflowState) {
       promises.push(workflowMutation.mutateAsync({
@@ -2106,7 +2130,7 @@ export default function Calendar() {
       </Dialog>
 
       {/* ── Edit Appointment Dialog ── */}
-      <Dialog open={!!editAppt} onOpenChange={open => { if (!open) { setEditAppt(null); setSelectedStylePetId(null); setSiblingGroomers({}); setAdditionalFamilyPetIds([]); } }}>
+      <Dialog open={!!editAppt} onOpenChange={open => { if (!open) { setEditAppt(null); setSelectedStylePetId(null); setSiblingGroomers({}); setSiblingPrices({}); setAdditionalFamilyPetIds([]); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2280,7 +2304,23 @@ export default function Calendar() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Price ($)</Label>
-                    <Input placeholder="0.00" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value }))} />
+                    {editSiblings.length > 0 ? (
+                      <div className="space-y-2">
+                        {[editAppt, ...editSiblings].map(pet => (
+                          <div key={pet.id} className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground w-16 shrink-0 truncate">{pet.petName}:</span>
+                            <Input
+                              className="h-8 text-xs flex-1"
+                              placeholder="0.00"
+                              value={siblingPrices[pet.id] !== undefined ? siblingPrices[pet.id] : (pet.price ?? "")}
+                              onChange={e => setSiblingPrices(prev => ({ ...prev, [pet.id]: e.target.value }))}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <Input placeholder="0.00" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value }))} />
+                    )}
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -2301,6 +2341,27 @@ export default function Calendar() {
                   >
                     <Trash2 className="h-4 w-4" /> Delete booking
                   </Button>
+                  {editSiblings.length > 0 && (() => {
+                    const allPets = [editAppt, ...editSiblings];
+                    const allHavePrices = allPets.every(p => {
+                      const price = siblingPrices[p.id] !== undefined ? siblingPrices[p.id] : (p.price ?? "");
+                      return price !== "" && parseFloat(price) > 0;
+                    });
+                    return (
+                      <Button
+                        variant="outline"
+                        className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                        disabled={!allHavePrices || createSessionBillsMutation.isPending}
+                        title={!allHavePrices ? "Set a price for each dog before generating bills" : "Create a separate draft invoice for each dog"}
+                        onClick={() => createSessionBillsMutation.mutate({
+                          tenantId: 1,
+                          appointmentIds: allPets.map(p => p.id),
+                        })}
+                      >
+                        {createSessionBillsMutation.isPending ? "Creating..." : "Create Bills"}
+                      </Button>
+                    );
+                  })()}
                   <Button variant="outline" onClick={() => setEditAppt(null)}>Cancel</Button>
                   <Button onClick={handleSaveEdit} disabled={rescheduleMutation.isPending || workflowMutation.isPending}>
                     {rescheduleMutation.isPending ? "Saving..." : "Save Changes"}

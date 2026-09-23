@@ -811,6 +811,78 @@ const calendarRouter = router({
 
       return { success: true, restored: snapshot.appointments.length };
     }),
+
+  createSessionBills: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      appointmentIds: z.array(z.number()).min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffTenant(db, ctx.user);
+
+      const appts = await db
+        .select({
+          id: appointments.id,
+          petId: appointments.petId,
+          clientId: appointments.clientId,
+          membershipId: appointments.membershipId,
+          price: appointments.price,
+          serviceType: appointments.serviceType,
+          scheduledStart: appointments.scheduledStart,
+          petName: pets.name,
+        })
+        .from(appointments)
+        .leftJoin(pets, eq(appointments.petId, pets.id))
+        .leftJoin(clients, eq(appointments.clientId, clients.id))
+        .where(and(
+          eq(appointments.tenantId, input.tenantId),
+          inArray(appointments.id, input.appointmentIds),
+        ));
+
+      const SERVICE_LABELS_SERVER: Record<string, string> = {
+        classic_groom: "Classic Groom", styled_groom: "Styled Groom",
+        bath_only: "Bath Only", fft: "FFT", nail_trim: "Nail Trim",
+        daycare: "Daycare", deshed: "Deshed", other: "Other",
+      };
+
+      const created: Array<{ invoiceId: number; invoiceNumber: string; petName: string; total: string }> = [];
+      for (const appt of appts) {
+        const price = appt.price ? parseFloat(String(appt.price)) : 0;
+        const total = price.toFixed(2);
+        const petSlug = (appt.petName ?? "PET").toUpperCase().replace(/[^A-Z0-9]/g, "-").slice(0, 8);
+        const datePart = new Date(appt.scheduledStart).toLocaleDateString("en-AU", {
+          timeZone: "Australia/Brisbane", day: "2-digit", month: "2-digit", year: "2-digit",
+        }).replace(/\//g, "");
+        const invNum = `GROOM-${petSlug}-${datePart}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+        const serviceLabel = SERVICE_LABELS_SERVER[appt.serviceType] ?? appt.serviceType;
+        const description = `${appt.petName ?? "Pet"} — ${serviceLabel}`;
+        const [result] = await db.insert(invoices).values({
+          tenantId: input.tenantId,
+          clientId: appt.clientId,
+          appointmentId: appt.id,
+          membershipId: appt.membershipId,
+          invoiceNumber: invNum,
+          subtotal: total,
+          taxAmount: "0",
+          total,
+          status: "draft",
+          dueAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+          notes: `Grooming invoice — ${appt.petName ?? "Pet"} — ${new Date(appt.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}`,
+        });
+        const invoiceId = Number((result as any).insertId);
+        await db.insert(invoiceLineItems).values({
+          invoiceId,
+          description,
+          quantity: "1",
+          unitPrice: total,
+          lineTotal: total,
+        });
+        created.push({ invoiceId, invoiceNumber: invNum, petName: appt.petName ?? "Pet", total });
+      }
+      return { success: true, created };
+    }),
 });
 
 // ─── Workflow Board ───────────────────────────────────────────────────────────
