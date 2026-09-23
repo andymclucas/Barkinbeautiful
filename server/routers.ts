@@ -984,6 +984,7 @@ const workflowRouter = router({
           petAlertLevel: pets.alertLevel,
           petWarnings: pets.warnings,
           petFamilyGroupId: pets.familyGroupId,
+          petMoeGoPetCodes: pets.moeGoPetCodes,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           staffName: staff.name,
@@ -4929,6 +4930,18 @@ const onlineBookingRouter = router({
     const [result] = await db.insert(appointments).values({ tenantId: input.tenantId, clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, status: "pending", workflowState: "scheduled" });
     return { success: true, appointmentId: (result as any).insertId as number, preview: true };
   }),
+  // Returns all MoeGo pet IDs stored in Groomigo — used by the pet-code extraction script.
+  listAllMoegoIds: operationalProcedure
+    .query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      await requireApprovedStaffTenant(db, ctx.user);
+      const rows = await db
+        .select({ moegoClientId: pets.moegoClientId })
+        .from(pets)
+        .where(and(eq(pets.tenantId, 1), isNotNull(pets.moegoClientId)));
+      return rows.map(r => r.moegoClientId).filter(Boolean) as string[];
+    }),
 });
 
 const migrationRouter = router({
