@@ -3,7 +3,6 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerUploadRoutes } from "../uploadRoutes";
 import { paymentRetryHandler, appointmentReminderHandler } from "../scheduledHandlers";
@@ -119,7 +118,6 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
-  registerOAuthRoutes(app);
   // Raw body parser for image uploads (must come before tRPC)
   app.use("/api/upload", express.raw({ type: "image/*", limit: "20mb" }));
   registerUploadRoutes(app as any);
