@@ -319,6 +319,14 @@
   color: var(--color-sidebar-foreground);
 }
 
+/* ── Inactive nav items: text + icons readable against any sidebar colour ─── */
+[data-sidebar="sidebar"] [data-sidebar="menu-button"]:not([data-active="true"]) {
+  color: var(--color-sidebar-foreground);
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-button"]:not([data-active="true"]) svg {
+  color: color-mix(in srgb, var(--color-sidebar-foreground) 72%, transparent) !important;
+}
+
 /* ── Cards ────────────────────────────────────────────────────────────────── */
 [data-slot="card"] {
   border-color: var(--color-border);
