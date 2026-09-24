@@ -1,4 +1,5 @@
 import twilio from "twilio";
+import { getAppBaseUrl } from "./appUrl";
 
 let _client: ReturnType<typeof twilio> | null = null;
 
@@ -23,7 +24,13 @@ export async function sendSms(to: string, body: string): Promise<{ success: bool
   if (toNorm.startsWith("04")) toNorm = "+61" + toNorm.slice(1);
   if (!toNorm.startsWith("+")) toNorm = "+" + toNorm;
   try {
-    const statusCallback = process.env.VITE_APP_URL ? `${process.env.VITE_APP_URL}/api/twilio/status` : undefined;
+    // The gate stays on the raw env var on purpose: when VITE_APP_URL is not
+    // configured we send NO statusCallback at all, so an unconfigured dev
+    // machine never asks Twilio to POST delivery receipts at production.
+    // When it IS configured, build the URL via getAppBaseUrl() so a trailing
+    // slash can't produce "//api/twilio/status", which Express would not match
+    // — silently breaking delivery-status tracking.
+    const statusCallback = process.env.VITE_APP_URL ? `${getAppBaseUrl()}/api/twilio/status` : undefined;
     const msg = await client.messages.create({ from, to: toNorm, body, ...(statusCallback ? { statusCallback } : {}) });
     return { success: true, sid: msg.sid };
   } catch (err: any) {
