@@ -21,12 +21,12 @@ export default function ClientPortalSetup() {
     completeSetup.mutate({ token: token ?? "", password });
   };
 
-  if (isLoading) return <main className="grid min-h-screen place-items-center bg-gradient-to-br from-pink-50 via-background to-teal-50 p-6"><Card className="w-full max-w-md"><CardContent className="p-6 text-sm text-muted-foreground">Checking your setup link…</CardContent></Card></main>;
-  if (error || !data) return <main className="grid min-h-screen place-items-center bg-gradient-to-br from-pink-50 via-background to-teal-50 p-6"><Card className="w-full max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>Setup link unavailable</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{error?.message ?? "Please ask the salon for a new client portal setup link."}</p></CardContent></Card></main>;
+  if (isLoading) return <main className="grid min-h-screen place-items-center bg-gradient-to-br from-pink-50 via-background to-violet-50 p-6"><Card className="w-full max-w-md"><CardContent className="p-6 text-sm text-muted-foreground">Checking your setup link…</CardContent></Card></main>;
+  if (error || !data) return <main className="grid min-h-screen place-items-center bg-gradient-to-br from-pink-50 via-background to-violet-50 p-6"><Card className="w-full max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>Setup link unavailable</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{error?.message ?? "Please ask the salon for a new client portal setup link."}</p></CardContent></Card></main>;
 
   const passwordsMatch = password === confirmPassword;
 
-  return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-teal-50 px-4 py-10">
+  return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-violet-50 px-4 py-10">
     <Card className="mx-auto w-full max-w-lg border-primary/10 shadow-lg">
       <CardHeader>
         <CardTitle className="text-2xl">Create your client portal password</CardTitle>

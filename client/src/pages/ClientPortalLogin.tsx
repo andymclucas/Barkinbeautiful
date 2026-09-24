@@ -20,7 +20,7 @@ export default function ClientPortalLogin() {
     login.mutate({ email, password });
   };
 
-  return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-teal-50 px-4 py-10">
+  return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-violet-50 px-4 py-10">
     <section className="mx-auto grid max-w-5xl gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-center">
       <div className="space-y-5 rounded-3xl bg-primary p-8 text-primary-foreground shadow-sm">
         <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15"><PawPrint className="h-6 w-6" /></div>

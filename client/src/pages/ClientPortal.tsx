@@ -76,8 +76,8 @@ export default function ClientPortal() {
     onError: (e) => toast.error(e.message),
   });
 
-  if (isLoading) return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-teal-50 p-6"><div className="mx-auto max-w-4xl animate-pulse space-y-5"><div className="h-24 rounded-2xl bg-muted" /><div className="grid gap-4 sm:grid-cols-3">{[1, 2, 3].map(item => <div key={item} className="h-32 rounded-xl bg-muted" />)}</div></div></main>;
-  if (error || !data) return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-teal-50 grid place-items-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>{token ? "Portal link unavailable" : "Client sign in required"}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{error?.message ?? (token ? "Please ask the salon for a new secure portal link." : "Please sign in to view your client portal.")}</p>{!token && <Button onClick={() => navigate("/portal/login")}>Go to client sign in</Button>}</CardContent></Card></main>;
+  if (isLoading) return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-violet-50 p-6"><div className="mx-auto max-w-4xl animate-pulse space-y-5"><div className="h-24 rounded-2xl bg-muted" /><div className="grid gap-4 sm:grid-cols-3">{[1, 2, 3].map(item => <div key={item} className="h-32 rounded-xl bg-muted" />)}</div></div></main>;
+  if (error || !data) return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-violet-50 grid place-items-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>{token ? "Portal link unavailable" : "Client sign in required"}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{error?.message ?? (token ? "Please ask the salon for a new secure portal link." : "Please sign in to view your client portal.")}</p>{!token && <Button onClick={() => navigate("/portal/login")}>Go to client sign in</Button>}</CardContent></Card></main>;
 
   const upcoming = data.appointments.filter(appointment => new Date(appointment.scheduledStart).getTime() >= Date.now() && !["cancelled", "no_show"].includes(appointment.status));
   const past = data.appointments.filter(appointment => !upcoming.includes(appointment));
@@ -86,7 +86,7 @@ export default function ClientPortal() {
   const canReschedule = (appt: PortalAppointment) => canManage(appt) && new Date(appt.scheduledStart).getTime() - Date.now() >= 24 * 3600000;
   const creditBalance = Number(data.storeCreditBalance ?? 0);
 
-  return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-teal-50 py-8 px-4"><div className="mx-auto max-w-4xl space-y-6">
+  return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-violet-50 py-8 px-4"><div className="mx-auto max-w-4xl space-y-6">
     <header className="rounded-2xl bg-primary p-6 text-primary-foreground"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm opacity-85">Welcome to</p><h1 className="font-display text-3xl font-bold">{data.salon.name}</h1><p className="mt-2 text-sm opacity-90">Hi {data.client.firstName}, here is a secure summary of your pets and grooming care.</p></div>{!token && <Button variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20" disabled={logout.isPending} onClick={() => logout.mutate()}>{logout.isPending ? "Signing out…" : "Sign out"}</Button>}</div></header>
 
     <section className="grid gap-4 sm:grid-cols-4">
