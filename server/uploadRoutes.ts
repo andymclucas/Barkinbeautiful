@@ -306,8 +306,17 @@ export function registerUploadRoutes(app: Router) {
           .jpeg({ quality: 86, mozjpeg: true })
           .toBuffer();
       } catch (err) {
-        console.error("[upload/staff-photo] resize failed, storing original:", err);
-        out = buffer;
+        // Do NOT fall back to storing the original bytes. They would be saved
+        // under a .jpg key with photoContentType "image/jpeg" while actually
+        // being whatever sharp could not read. The browser would then get those
+        // bytes labelled as JPEG, fail to decode them, and StaffAvatar would
+        // silently fall back to initials — the upload reporting success while
+        // the photo never appears. Fail loudly instead.
+        console.error("[upload/staff-photo] could not process image:", err);
+        res.status(415).json({
+          error: "That image could not be processed. Please try a JPEG, PNG or WebP.",
+        });
+        return;
       }
 
       const key = `staff-photos/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;

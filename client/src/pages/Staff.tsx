@@ -140,7 +140,11 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Upload failed");
       setForm(prev => ({ ...prev, onlineProfilePhotoUrl: data.url }));
-      toast.success("Photo uploaded — save to apply");
+      // Persist straight away. Previously this only set form state and relied on
+      // the operator also pressing Save — easy to miss, and the photo was lost
+      // if the panel was closed. The sidebar's own-photo control already saved
+      // immediately; these two now behave the same.
+      photoMutation.mutate({ staffId, onlineProfilePhotoUrl: data.url });
     } catch (err: any) {
       toast.error(err?.message ?? "Could not upload the photo");
     } finally {
@@ -155,6 +159,19 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
   const [activitySort, setActivitySort] = useState<"newest" | "oldest">("newest");
   const { data: invitations = [] } = trpc.staff.listPortalInvitations.useQuery({ tenantId: 1 });
   const { data: accessHistory = [] } = trpc.staff.getAccessHistory.useQuery({ staffId });
+
+  // Separate from updateMutation because that one closes the edit panel on
+  // success, which would be wrong for an inline photo change.
+  const photoMutation = trpc.staff.update.useMutation({
+    onSuccess: () => {
+      toast.success("Profile photo updated");
+      utils.staff.list.invalidate();
+      utils.staff.getProfile.invalidate({ staffId });
+      utils.staff.listOperational.invalidate();
+      utils.workflow.getStaff.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const updateMutation = trpc.staff.update.useMutation({
     onSuccess: () => {
@@ -449,7 +466,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
                     </span>
                   </label>
                   {form.onlineProfilePhotoUrl && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, onlineProfilePhotoUrl: "" }))}>Remove</Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => { setForm(p => ({ ...p, onlineProfilePhotoUrl: "" })); photoMutation.mutate({ staffId, onlineProfilePhotoUrl: null }); }}>Remove</Button>
                   )}
                 </div>
               </div>
