@@ -3,109 +3,174 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ─── GSOS Design Tokens ─────────────────────────────────────────────────── */
-/* Palette: Deep navy + teal accent + warm amber highlight + clean white */
+/* ═══════════════════════════════════════════════════════════════════════════
+   GROOMIGO DESIGN SYSTEM
+   ───────────────────────────────────────────────────────────────────────────
+   Presentation layer only. Every custom-property NAME defined here previously
+   is preserved so no component markup or logic needs to change — only the
+   values, plus additive utilities below.
+
+   Direction: soft violet primary, pastel accent tints, a light sidebar,
+   generous radii, layered low-contrast shadows and restrained motion.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 @theme inline {
-  --color-background:    oklch(0.98 0.004 240);
-  --color-foreground:    oklch(0.15 0.02 240);
+  /* ── Surfaces ───────────────────────────────────────────────────────────── */
+  --color-background:    oklch(0.985 0.006 295);
+  --color-foreground:    oklch(0.24 0.035 285);
   --color-card:          oklch(1 0 0);
-  --color-card-foreground: oklch(0.15 0.02 240);
+  --color-card-foreground: oklch(0.24 0.035 285);
   --color-popover:       oklch(1 0 0);
-  --color-popover-foreground: oklch(0.15 0.02 240);
+  --color-popover-foreground: oklch(0.24 0.035 285);
 
-  /* Primary: Deep teal */
-  --color-primary:       oklch(0.42 0.12 200);
-  --color-primary-foreground: oklch(0.98 0 0);
+  /* ── Primary: violet ────────────────────────────────────────────────────── */
+  --color-primary:       oklch(0.585 0.212 292);
+  --color-primary-foreground: oklch(0.99 0 0);
 
-  /* Secondary: Soft slate */
-  --color-secondary:     oklch(0.94 0.01 240);
-  --color-secondary-foreground: oklch(0.25 0.02 240);
+  /* ── Secondary: soft lavender ───────────────────────────────────────────── */
+  --color-secondary:     oklch(0.955 0.018 292);
+  --color-secondary-foreground: oklch(0.36 0.11 292);
 
-  /* Accent: Warm amber */
-  --color-accent:        oklch(0.78 0.14 75);
-  --color-accent-foreground: oklch(0.15 0.02 240);
+  /* ── Accent: light violet wash ──────────────────────────────────────────── */
+  --color-accent:        oklch(0.945 0.028 292);
+  --color-accent-foreground: oklch(0.40 0.14 292);
 
-  /* Muted */
-  --color-muted:         oklch(0.95 0.005 240);
-  --color-muted-foreground: oklch(0.52 0.02 240);
+  /* ── Muted ──────────────────────────────────────────────────────────────── */
+  --color-muted:         oklch(0.967 0.010 292);
+  --color-muted-foreground: oklch(0.556 0.028 288);
 
-  /* Destructive */
-  --color-destructive:   oklch(0.55 0.22 25);
-  --color-destructive-foreground: oklch(0.98 0 0);
+  /* ── Destructive ────────────────────────────────────────────────────────── */
+  --color-destructive:   oklch(0.596 0.208 18);
+  --color-destructive-foreground: oklch(0.99 0 0);
 
-  /* Border / Input / Ring */
-  --color-border:        oklch(0.88 0.01 240);
-  --color-input:         oklch(0.88 0.01 240);
-  --color-ring:          oklch(0.42 0.12 200);
+  /* ── Border / Input / Ring ──────────────────────────────────────────────── */
+  --color-border:        oklch(0.925 0.014 292);
+  --color-input:         oklch(0.925 0.014 292);
+  --color-ring:          oklch(0.585 0.212 292);
 
-  /* Sidebar */
-  --color-sidebar:       oklch(0.14 0.03 240);
-  --color-sidebar-foreground: oklch(0.90 0.01 240);
-  --color-sidebar-primary: oklch(0.55 0.14 200);
-  --color-sidebar-primary-foreground: oklch(0.98 0 0);
-  --color-sidebar-accent: oklch(0.30 0.10 195);
-  --color-sidebar-accent-foreground: oklch(0.97 0.02 195);
-  --color-sidebar-border: oklch(0.22 0.04 240);
-  --color-sidebar-ring:  oklch(0.55 0.14 200);
+  /* ── Sidebar: light, to match the app surface ───────────────────────────── */
+  --color-sidebar:       oklch(1 0 0);
+  --color-sidebar-foreground: oklch(0.36 0.04 288);
+  --color-sidebar-primary: oklch(0.585 0.212 292);
+  --color-sidebar-primary-foreground: oklch(0.99 0 0);
+  --color-sidebar-accent: oklch(0.955 0.022 292);
+  --color-sidebar-accent-foreground: oklch(0.42 0.16 292);
+  --color-sidebar-border: oklch(0.935 0.012 292);
+  --color-sidebar-ring:  oklch(0.585 0.212 292);
 
-  /* Chart colours */
-  --color-chart-1: oklch(0.42 0.12 200);
-  --color-chart-2: oklch(0.78 0.14 75);
-  --color-chart-3: oklch(0.60 0.15 155);
-  --color-chart-4: oklch(0.65 0.18 280);
-  --color-chart-5: oklch(0.55 0.20 25);
+  /* ── Chart palette: violet-led, friendly, colour-blind tolerant ─────────── */
+  --color-chart-1: oklch(0.585 0.212 292);  /* violet  */
+  --color-chart-2: oklch(0.706 0.148 163);  /* mint    */
+  --color-chart-3: oklch(0.686 0.146 237);  /* sky     */
+  --color-chart-4: oklch(0.795 0.148 78);   /* amber   */
+  --color-chart-5: oklch(0.675 0.178 348);  /* rose    */
 
-  /* Typography */
-  --font-sans: "Inter", system-ui, sans-serif;
+  /* ── Typography ─────────────────────────────────────────────────────────── */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-display: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
 
-  /* Radius */
-  --radius: 0.625rem;
+  /* ── Radius ─────────────────────────────────────────────────────────────── */
+  --radius: 0.875rem;
 }
 
-/* ─── Staff colour palette (for calendar) ───────────────────────────────── */
 :root {
-  /* White-label defaults for Barkin' Beautiful. Other tenants override only these values. */
-  --brand-primary: oklch(0.58 0.24 355);
-  --brand-primary-strong: oklch(0.49 0.24 350);
-  --brand-accent: oklch(0.91 0.10 345);
-  --brand-page: oklch(0.975 0.012 340);
-  --brand-ink: oklch(0.20 0.03 310);
-  --brand-sidebar: oklch(0.18 0.035 310);
-  --staff-1: oklch(0.55 0.20 280);   /* Purple */
-  --staff-2: oklch(0.55 0.18 155);   /* Green */
-  --staff-3: oklch(0.55 0.20 25);    /* Red-orange */
-  --staff-4: oklch(0.55 0.18 200);   /* Teal */
-  --staff-5: oklch(0.65 0.18 75);    /* Amber */
-  --staff-6: oklch(0.55 0.18 320);   /* Pink */
-  --staff-7: oklch(0.55 0.18 240);   /* Blue */
+  /* ── White-label brand tokens ───────────────────────────────────────────────
+     Tenants override only these. Retuned to the violet family; the structure
+     and names are unchanged, so tenant overrides keep working exactly as before. */
+  --brand-primary: oklch(0.585 0.212 292);
+  --brand-primary-strong: oklch(0.487 0.216 290);
+  --brand-accent: oklch(0.905 0.058 295);
+  --brand-page: oklch(0.985 0.006 295);
+  --brand-ink: oklch(0.24 0.035 285);
+  --brand-sidebar: oklch(1 0 0);
 
-  /* Workflow stage colours */
-  --stage-scheduled:   oklch(0.88 0.01 240);
-  --stage-checked-in:  oklch(0.85 0.12 200);
-  --stage-bathing:     oklch(0.80 0.14 240);
-  --stage-grooming:    oklch(0.82 0.14 280);
-  --stage-ready:       oklch(0.82 0.14 155);
-  --stage-complete:    oklch(0.75 0.10 155);
+  /* Soft tint ramp used for stat tiles, icon chips and empty states. */
+  --tint-violet: oklch(0.955 0.030 292);
+  --tint-mint:   oklch(0.955 0.038 163);
+  --tint-sky:    oklch(0.955 0.032 237);
+  --tint-amber:  oklch(0.960 0.044 82);
+  --tint-rose:   oklch(0.955 0.030 350);
+
+  --tint-violet-ink: oklch(0.505 0.196 292);
+  --tint-mint-ink:   oklch(0.505 0.128 163);
+  --tint-sky-ink:    oklch(0.515 0.146 237);
+  --tint-amber-ink:  oklch(0.545 0.142 66);
+  --tint-rose-ink:   oklch(0.545 0.176 350);
+
+  /* ── Staff colours (calendar) — retuned to sit beside the violet primary ── */
+  --staff-1: oklch(0.585 0.212 292);   /* Violet */
+  --staff-2: oklch(0.600 0.148 163);   /* Green  */
+  --staff-3: oklch(0.630 0.180 40);    /* Coral  */
+  --staff-4: oklch(0.600 0.140 225);   /* Blue   */
+  --staff-5: oklch(0.720 0.148 78);    /* Amber  */
+  --staff-6: oklch(0.620 0.170 350);   /* Pink   */
+  --staff-7: oklch(0.600 0.130 196);   /* Teal   */
+
+  /* ── Workflow stage colours ─────────────────────────────────────────────── */
+  --stage-scheduled:   oklch(0.945 0.012 292);
+  --stage-checked-in:  oklch(0.905 0.056 237);
+  --stage-bathing:     oklch(0.895 0.062 225);
+  --stage-grooming:    oklch(0.900 0.062 292);
+  --stage-ready:       oklch(0.895 0.070 163);
+  --stage-complete:    oklch(0.640 0.130 163);
+
+  /* ── Elevation: layered, low-contrast, violet-tinted ────────────────────── */
+  --shadow-xs:  0 1px 2px oklch(0.34 0.09 292 / 0.05);
+  --shadow-sm:  0 1px 2px oklch(0.34 0.09 292 / 0.05), 0 2px 6px -2px oklch(0.34 0.09 292 / 0.06);
+  --shadow-md:  0 2px 4px oklch(0.34 0.09 292 / 0.04), 0 8px 18px -6px oklch(0.34 0.09 292 / 0.10);
+  --shadow-lg:  0 4px 8px oklch(0.34 0.09 292 / 0.04), 0 18px 34px -12px oklch(0.34 0.09 292 / 0.14);
+  --shadow-ring: 0 0 0 1px oklch(0.34 0.09 292 / 0.06);
+
+  /* ── Motion ─────────────────────────────────────────────────────────────── */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring:   cubic-bezier(0.34, 1.32, 0.64, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 380ms;
 }
 
-/* ─── Base layer ─────────────────────────────────────────────────────────── */
+/* ═══ Base ═══════════════════════════════════════════════════════════════ */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    background-image: radial-gradient(circle at 86% -8%, color-mix(in oklch, var(--brand-accent) 48%, transparent), transparent 31rem), radial-gradient(circle at 18% 108%, color-mix(in oklch, var(--brand-primary) 9%, transparent), transparent 28rem);
+    /* Soft lavender wash, deliberately low-contrast so data stays dominant. */
+    background-image:
+      radial-gradient(circle at 88% -10%, color-mix(in oklch, var(--brand-accent) 42%, transparent), transparent 34rem),
+      radial-gradient(circle at 12% 104%, color-mix(in oklch, var(--brand-primary) 7%, transparent), transparent 30rem);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+
+  /* Tabular figures keep dashboard numbers from jittering as they update. */
+  .tabular-nums, table td, table th {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--brand-primary) 22%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid color-mix(in oklch, var(--brand-primary) 70%, transparent);
+    outline-offset: 2px;
   }
 }
 
-/* ─── Utilities ──────────────────────────────────────────────────────────── */
+/* ═══ Utilities ══════════════════════════════════════════════════════════ */
 @layer utilities {
   .container {
     @apply mx-auto px-4 sm:px-6 lg:px-8;
@@ -117,114 +182,269 @@
     min-height: 0;
   }
 
-  /* Scrollbar styling */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.80 0.01 240) transparent;
+    scrollbar-color: oklch(0.86 0.02 292) transparent;
   }
 
-  /* Stage badge colours */
-  .stage-scheduled  { background: var(--stage-scheduled);  color: oklch(0.30 0.02 240); }
-  .stage-checked-in { background: var(--stage-checked-in); color: oklch(0.20 0.08 200); }
-  .stage-bathing    { background: var(--stage-bathing);    color: oklch(0.20 0.08 240); }
-  .stage-grooming   { background: var(--stage-grooming);   color: oklch(0.20 0.08 280); }
-  .stage-ready      { background: var(--stage-ready);      color: oklch(0.20 0.08 155); }
-  .stage-complete   { background: var(--stage-complete);   color: oklch(0.98 0 0); }
+  /* ── Stage badges ─────────────────────────────────────────────────────── */
+  .stage-scheduled  { background: var(--stage-scheduled);  color: oklch(0.38 0.05 292); }
+  .stage-checked-in { background: var(--stage-checked-in); color: oklch(0.34 0.12 237); }
+  .stage-bathing    { background: var(--stage-bathing);    color: oklch(0.34 0.12 225); }
+  .stage-grooming   { background: var(--stage-grooming);   color: oklch(0.36 0.14 292); }
+  .stage-ready      { background: var(--stage-ready);      color: oklch(0.34 0.11 163); }
+  .stage-complete   { background: var(--stage-complete);   color: oklch(0.99 0 0); }
 
-  /* Button press micro-interaction */
-  button:active:not(:disabled) {
-    transform: scale(0.97);
-    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  /* ── Soft tint chips ──────────────────────────────────────────────────────
+     For stat-tile icon squares and category pills:
+       <div class="gm-tint-violet"><Icon/></div>                             */
+  .gm-tint-violet { background: var(--tint-violet); color: var(--tint-violet-ink); }
+  .gm-tint-mint   { background: var(--tint-mint);   color: var(--tint-mint-ink); }
+  .gm-tint-sky    { background: var(--tint-sky);    color: var(--tint-sky-ink); }
+  .gm-tint-amber  { background: var(--tint-amber);  color: var(--tint-amber-ink); }
+  .gm-tint-rose   { background: var(--tint-rose);   color: var(--tint-rose-ink); }
+
+  /* ── Surface helpers ──────────────────────────────────────────────────── */
+  .gm-surface {
+    background: var(--color-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
   }
 
+  .gm-elevated { box-shadow: var(--shadow-md); }
+
+  /* Existing hover-lift utility, retuned. */
   .brand-lift {
-    transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms ease;
+    transition:
+      transform var(--dur-base) var(--ease-out-soft),
+      box-shadow var(--dur-base) var(--ease-out-soft),
+      border-color var(--dur-base) ease;
+    will-change: transform;
   }
   .brand-lift:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 16px 30px -24px var(--brand-primary-strong), 0 0 0 1px color-mix(in oklch, var(--brand-primary) 26%, white);
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+    border-color: color-mix(in oklch, var(--brand-primary) 26%, var(--color-border));
+  }
+
+  /* ── Entrance animations ──────────────────────────────────────────────── */
+  .gm-rise    { animation: gm-rise var(--dur-slow) var(--ease-out-soft) both; }
+  .gm-fade    { animation: gm-fade var(--dur-base) ease both; }
+  .gm-pop     { animation: gm-pop var(--dur-base) var(--ease-spring) both; }
+
+  /* Stagger helpers for lists and grids. */
+  .gm-stagger > *             { animation: gm-rise var(--dur-slow) var(--ease-out-soft) both; }
+  .gm-stagger > *:nth-child(1)  { animation-delay: 0ms; }
+  .gm-stagger > *:nth-child(2)  { animation-delay: 45ms; }
+  .gm-stagger > *:nth-child(3)  { animation-delay: 90ms; }
+  .gm-stagger > *:nth-child(4)  { animation-delay: 135ms; }
+  .gm-stagger > *:nth-child(5)  { animation-delay: 180ms; }
+  .gm-stagger > *:nth-child(6)  { animation-delay: 210ms; }
+  .gm-stagger > *:nth-child(7)  { animation-delay: 235ms; }
+  .gm-stagger > *:nth-child(n+8) { animation-delay: 255ms; }
+
+  /* Shimmer for loading placeholders. */
+  .gm-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--color-muted) 25%,
+      color-mix(in oklch, var(--color-muted) 55%, white) 37%,
+      var(--color-muted) 63%
+    );
+    background-size: 400% 100%;
+    animation: gm-shimmer 1.4s ease-in-out infinite;
   }
 }
 
-/* White-label shared polish. */
-[data-sidebar="sidebar"] { background: linear-gradient(165deg, var(--brand-sidebar) 0%, oklch(0.13 0.03 285) 100%) !important; }
-[data-sidebar="sidebar"] [data-sidebar="menu-button"] { border-radius: 0.75rem; transition: transform 180ms cubic-bezier(0.23,1,0.32,1), background 180ms ease, color 180ms ease; }
-[data-sidebar="sidebar"] [data-sidebar="menu-button"]:hover { transform: translateX(3px); background: color-mix(in oklch, var(--brand-primary) 18%, transparent); }
-[data-slot="card"] { border-color: color-mix(in oklch, var(--brand-primary) 12%, white); box-shadow: 0 12px 30px -26px oklch(0.28 0.06 315 / 0.5); }
-[data-slot="card"].cursor-pointer, [data-slot="card"]:has(a) { transition: transform 180ms cubic-bezier(0.23,1,0.32,1), box-shadow 180ms cubic-bezier(0.23,1,0.32,1), border-color 180ms ease; }
-[data-slot="card"].cursor-pointer:hover, [data-slot="card"]:has(a):hover { transform: translateY(-2px); border-color: color-mix(in oklch, var(--brand-primary) 34%, white); box-shadow: 0 20px 32px -24px oklch(0.42 0.12 335 / 0.65); }
-button:not([data-sidebar="menu-button"]), [role="button"] { transition: transform 160ms cubic-bezier(0.23,1,0.32,1), box-shadow 160ms ease, filter 160ms ease; }
-button:not(:disabled):hover { filter: saturate(1.08); }
-
-@media (prefers-reduced-motion: reduce) {
-  .brand-lift, [data-sidebar="sidebar"] [data-sidebar="menu-button"], [data-slot="card"], button, [role="button"] { transition: none !important; }
-  .brand-lift:hover, [data-sidebar="sidebar"] [data-sidebar="menu-button"]:hover, [data-slot="card"]:hover { transform: none !important; }
+/* ═══ Keyframes ══════════════════════════════════════════════════════════ */
+@keyframes gm-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes gm-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes gm-pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes gm-shimmer {
+  from { background-position: 100% 50%; }
+  to   { background-position: 0 50%; }
 }
 
-/* ─── Active nav link teal glow ─────────────────────────────────────────── */
-[data-active=true].peer\/menu-button,
-[data-sidebar=menu-button][data-active=true] {
-  box-shadow: 0 0 0 1px oklch(0.55 0.14 200 / 0.35), inset 0 0 12px oklch(0.55 0.14 200 / 0.12);
+/* ═══ Component polish ═══════════════════════════════════════════════════
+   Attribute-selector based, so it applies to existing shadcn markup without
+   touching any component source.                                           */
+
+/* ── Sidebar: light surface, violet active pill ───────────────────────────── */
+[data-sidebar="sidebar"] {
+  background: var(--color-sidebar) !important;
+  border-right: 1px solid var(--color-sidebar-border);
 }
 
-/* ─── Mobile sidebar slide-in animation ─────────────────────────────────── */
+[data-sidebar="sidebar"] [data-sidebar="menu-button"] {
+  border-radius: 0.75rem;
+  font-weight: 500;
+  transition:
+    background var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    transform var(--dur-base) var(--ease-out-soft);
+}
+
+[data-sidebar="sidebar"] [data-sidebar="menu-button"]:hover {
+  background: var(--color-sidebar-accent);
+  color: var(--color-sidebar-accent-foreground);
+  transform: translateX(2px);
+}
+
+[data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"] {
+  background: var(--brand-primary);
+  color: var(--color-sidebar-primary-foreground);
+  font-weight: 600;
+  box-shadow: 0 8px 18px -8px color-mix(in oklch, var(--brand-primary) 70%, transparent);
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"]:hover {
+  background: var(--brand-primary-strong);
+  transform: translateX(2px);
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"] svg {
+  color: var(--color-sidebar-primary-foreground);
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+[data-slot="card"] {
+  border-color: var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--dur-base) var(--ease-out-soft),
+    box-shadow var(--dur-base) var(--ease-out-soft),
+    border-color var(--dur-base) ease;
+}
+
+/* Only interactive cards lift, so static content doesn't feel twitchy. */
+[data-slot="card"].cursor-pointer:hover,
+[data-slot="card"]:has(a):hover,
+[data-slot="card"][role="button"]:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in oklch, var(--brand-primary) 24%, var(--color-border));
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+button, [role="button"] {
+  transition:
+    background-color var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    box-shadow var(--dur-fast) ease,
+    transform var(--dur-fast) var(--ease-out-soft),
+    filter var(--dur-fast) ease;
+}
+button:active:not(:disabled) {
+  transform: scale(0.975);
+}
+button[data-slot="button"]:not(:disabled):hover {
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Inputs ───────────────────────────────────────────────────────────────── */
+input, textarea, select, [data-slot="select-trigger"] {
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+input:focus-visible, textarea:focus-visible, [data-slot="select-trigger"]:focus-visible {
+  border-color: color-mix(in oklch, var(--brand-primary) 50%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand-primary) 14%, transparent);
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+table tbody tr {
+  transition: background-color var(--dur-fast) ease;
+}
+table tbody tr:hover {
+  background: color-mix(in oklch, var(--brand-primary) 4%, transparent);
+}
+
+/* ── Badges: slightly rounder to match the softer language ────────────────── */
+[data-slot="badge"] {
+  border-radius: 9999px;
+  padding-inline: 0.55rem;
+}
+
+/* ── Dialogs / popovers / dropdowns ───────────────────────────────────────── */
+[data-slot="dialog-content"],
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="sheet-content"] {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: oklch(0.88 0.018 292);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: oklch(0.80 0.035 292); background-clip: content-box; }
+
+/* ═══ Mobile sidebar slide-in ════════════════════════════════════════════ */
 @keyframes sidebar-slide-in {
-  from {
-    transform: translateX(-100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
+  from { transform: translateX(-100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
 }
-
 @keyframes sidebar-slide-out {
-  from {
-    transform: translateX(0);
-    opacity: 1;
-  }
-  to {
-    transform: translateX(-100%);
-    opacity: 0;
-  }
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(-100%); opacity: 0; }
 }
 
-/* Apply slide-in to the shadcn sidebar on mobile */
 @media (max-width: 768px) {
   [data-sidebar=sidebar] {
-    transition: transform 280ms cubic-bezier(0.23, 1, 0.32, 1), opacity 280ms ease !important;
+    transition: transform 280ms var(--ease-out-soft), opacity 280ms ease !important;
   }
   [data-state=expanded][data-sidebar=sidebar] {
-    animation: sidebar-slide-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation: sidebar-slide-in 280ms var(--ease-out-soft) both;
   }
   [data-state=collapsed][data-sidebar=sidebar] {
     animation: sidebar-slide-out 220ms cubic-bezier(0.77, 0, 0.175, 1) both;
   }
 }
 
-@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
-  [data-sidebar=sidebar] {
-    transition: opacity 150ms ease !important;
-    animation: none !important;
-  }
-}
-
-/* ─── Groomigo logo animations ───────────────────────────────────────────── */
+/* ═══ Groomigo logo animation ════════════════════════════════════════════ */
 @keyframes groomigo-fadein {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.95);
-  }
-  to {
-    opacity: 0.95;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(6px) scale(0.95); }
+  to   { opacity: 0.95; transform: translateY(0) scale(1); }
 }
 
+/* ═══ Reduced motion ═════════════════════════════════════════════════════
+   One consolidated block. Anything that moves is neutralised here.        */
 @media (prefers-reduced-motion: reduce) {
-  @keyframes groomigo-fadein {
-    from { opacity: 0; }
-    to   { opacity: 0.95; }
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+
+  .gm-rise, .gm-fade, .gm-pop, .gm-stagger > * {
+    animation: gm-fade 0.01ms both !important;
+  }
+
+  .brand-lift:hover,
+  [data-slot="card"]:hover,
+  [data-sidebar="sidebar"] [data-sidebar="menu-button"]:hover,
+  button:active:not(:disabled) {
+    transform: none !important;
+  }
+
+  .gm-shimmer { animation: none !important; }
 }

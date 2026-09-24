@@ -172,11 +172,11 @@ function DashboardLayoutContent({
       <div className="relative" ref={sidebarRef}>
         <Sidebar collapsible="icon" className="border-r-0" disableTransition={isResizing}>
           {/* ── Header ── */}
-          <SidebarHeader className="h-[4.5rem] justify-center border-b border-white/10">
+          <SidebarHeader className="h-[4.5rem] justify-center border-b border-sidebar-border">
             <div className="flex items-center gap-3 px-2 w-full">
               <button
                 onClick={toggleSidebar}
-                className="h-9 w-9 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/12 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                className="h-9 w-9 flex items-center justify-center rounded-xl bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
                 aria-label="Toggle navigation"
               >
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
@@ -211,20 +211,11 @@ function DashboardLayoutContent({
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}
                       tooltip={item.label}
-                      className={[
-                        "h-10 transition-all font-medium text-sm group/navitem",
-                        "hover:[filter:drop-shadow(0_0_7px_color-mix(in_oklch,var(--brand-primary)_55%,transparent))]",
-                        "hover:text-primary",
-                        isActive
-                          ? "bg-[var(--brand-primary)] text-white shadow-[0_8px_20px_-10px_var(--brand-primary-strong)] font-semibold"
-                          : "",
-                      ].join(" ")}
+                      className="h-10 font-medium text-sm group/navitem"
                     >
                       <item.icon
                         className={`h-4 w-4 shrink-0 transition-colors ${
-                          isActive
-                            ? "text-white"
-                            : "text-muted-foreground group-hover/navitem:text-primary"
+                          isActive ? "text-white" : "text-muted-foreground group-hover/navitem:text-primary"
                         }`}
                       />
                       <span className={isActive ? "font-semibold" : ""}>{item.label}</span>
@@ -255,7 +246,7 @@ function DashboardLayoutContent({
                 onMouseEnter={e => {
                   const el = e.currentTarget;
                   el.style.transform = "scale(1.08)";
-                  el.style.filter = "brightness(1.15) drop-shadow(0 0 10px rgba(0,200,200,0.45))";
+                  el.style.filter = "brightness(1.08) drop-shadow(0 0 10px rgba(124,58,237,0.42))";
                 }}
                 onMouseLeave={e => {
                   const el = e.currentTarget;
@@ -267,7 +258,7 @@ function DashboardLayoutContent({
           )}
 
           {/* ── Footer / user ── */}
-          <SidebarFooter className="p-3 border-t border-white/10">
+          <SidebarFooter className="p-3 border-t border-sidebar-border">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -310,7 +301,7 @@ function DashboardLayoutContent({
           <div className="flex border-b h-14 items-center justify-between bg-background/90 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40 shadow-sm">
             <div className="flex items-center gap-2">
               <SidebarTrigger
-                className="h-9 w-9 rounded-lg bg-background hover:[filter:drop-shadow(0_0_6px_rgba(0,200,200,0.4))] transition-all"
+                className="h-9 w-9 rounded-lg bg-background hover:bg-accent transition-colors"
                 aria-label="Toggle menu"
               />
               <span className="tracking-tight text-foreground text-sm font-medium">
@@ -327,7 +318,7 @@ function DashboardLayoutContent({
               onClick={() => setLocation("/")}
               onKeyDown={e => e.key === "Enter" && setLocation("/")}
               onMouseEnter={e => {
-                e.currentTarget.style.filter = "drop-shadow(0 0 8px rgba(0,200,200,0.5))";
+                e.currentTarget.style.filter = "drop-shadow(0 0 8px rgba(124,58,237,0.45))";
                 e.currentTarget.style.transform = "scale(1.06)";
               }}
               onMouseLeave={e => {
@@ -337,7 +328,7 @@ function DashboardLayoutContent({
             />
           </div>
         )}
-        <main className="flex-1 p-4">{children}</main>
+        <main className="flex-1 p-4 md:p-6 gm-fade">{children}</main>
       </SidebarInset>
     </>
   );
