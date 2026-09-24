@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
 import { getDb } from "./db"
 import { z } from "zod";
-import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
@@ -3801,6 +3801,7 @@ const analyticsRouter = router({
         .where(and(
           eq(appointments.tenantId, input.tenantId),
           eq(appointments.workflowState, "complete"),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
           sql`${appointments.petId} IS NOT NULL`
         ));
 
@@ -3818,6 +3819,7 @@ const analyticsRouter = router({
         .where(and(
           eq(appointments.tenantId, input.tenantId),
           eq(appointments.workflowState, "complete"),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ));
@@ -3837,11 +3839,26 @@ const analyticsRouter = router({
         .select({ count: sql<number>`COUNT(*)` })
         .from(clients)
         .where(and(eq(clients.tenantId, input.tenantId), eq(clients.status, "active")));
+      // Completed appointments with no price contribute 0 to the revenue sum.
+      // COALESCE hides that, so the total looks precise while silently
+      // understating. Return the count so the UI can say so out loud.
+      const [unpricedRow] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.workflowState, "complete"),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
+          isNull(appointments.price),
+          gte(appointments.scheduledStart, new Date(input.dateFrom)),
+          lte(appointments.scheduledStart, new Date(input.dateTo))
+        ));
       return {
         revenue: parseFloat(revenueRow?.total ?? "0"),
         appointments: apptCount?.count ?? 0,
         activeMemberships: membershipCount?.count ?? 0,
         activeClients: clientCount?.count ?? 0,
+        appointmentsMissingPrice: unpricedRow?.count ?? 0,
       };
     }),
 
@@ -3853,6 +3870,7 @@ const analyticsRouter = router({
       const range = [
         eq(appointments.tenantId, input.tenantId),
         eq(appointments.workflowState, "complete"),
+        notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
         lte(appointments.scheduledStart, new Date(input.dateTo)),
       ];
@@ -3902,6 +3920,7 @@ const analyticsRouter = router({
       }).from(appointments).where(and(
         eq(appointments.tenantId, input.tenantId),
         eq(appointments.workflowState, "complete"),
+        notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
         lte(appointments.scheduledStart, new Date(input.dateTo)),
         isNotNull(appointments.checkedInAt),
@@ -4036,6 +4055,7 @@ const analyticsRouter = router({
         .where(and(
           eq(appointments.tenantId, input.tenantId),
           eq(appointments.workflowState, "complete"),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
           lte(appointments.scheduledStart, dateTo),
           sql`${appointments.price} > 0`
@@ -4054,6 +4074,7 @@ const analyticsRouter = router({
         .where(and(
           eq(appointments.tenantId, input.tenantId),
           eq(appointments.workflowState, "complete"),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
           lte(appointments.scheduledStart, dateTo)
         ));
@@ -4104,6 +4125,7 @@ const analyticsRouterExtended = router({
         .where(and(
           eq(appointments.tenantId, input.tenantId),
           eq(appointments.workflowState, "complete"),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
           lte(appointments.scheduledStart, dateTo),
           sql`${appointments.price} > 0`

@@ -46,3 +46,43 @@ export function parseBrisbaneLocalDateTime(value: string): Date {
     )
   );
 }
+
+/**
+ * The Brisbane calendar date for an instant, as "YYYY-MM-DD".
+ *
+ * Reporting ranges must be anchored to the salon's own day boundaries, not the
+ * viewer's. Without this, a staff member in another timezone — or simply a
+ * machine whose clock is not set to Brisbane — sees a different set of
+ * appointments for "the last 30 days", and appointments near midnight fall into
+ * the wrong period.
+ */
+export function brisbaneDateKey(instant: Date = new Date()): string {
+  // en-CA formats as YYYY-MM-DD, which is what parseBrisbaneLocalDateTime wants.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Brisbane",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+
+/**
+ * Inclusive Brisbane-local day range covering the last `days` days up to and
+ * including today, returned as UTC instants ready to compare against stored
+ * timestamps.
+ *
+ * `brisbaneRangeForDays(30)` means "from 00:00:00 Brisbane 30 days ago through
+ * 23:59:59 Brisbane today", regardless of where the browser is.
+ */
+export function brisbaneRangeForDays(days: number, now: Date = new Date()): { from: Date; to: Date } {
+  const todayKey = brisbaneDateKey(now);
+  const to = parseBrisbaneLocalDateTime(`${todayKey}T23:59:59`);
+
+  // Step back `days` whole days from Brisbane midnight today, so the window is
+  // not skewed by the current time of day.
+  const startOfToday = parseBrisbaneLocalDateTime(`${todayKey}T00:00:00`);
+  const fromKey = brisbaneDateKey(new Date(startOfToday.getTime() - days * 24 * 60 * 60 * 1000));
+  const from = parseBrisbaneLocalDateTime(`${fromKey}T00:00:00`);
+
+  return { from, to };
+}

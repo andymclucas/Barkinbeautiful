@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { TrendingUp, Users, CreditCard, CalendarDays, Scissors, Heart, Download } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { brisbaneRangeForDays } from "@shared/localDateTime";
 
 const RANGES = [
   { label: "This Week", days: 7 },
@@ -17,18 +18,14 @@ const RANGES = [
 export default function Analytics() {
   const [rangeDays, setRangeDays] = useState(30);
 
-  const dateFrom = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - rangeDays);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, [rangeDays]);
-
-  const dateTo = useMemo(() => {
-    const d = new Date();
-    d.setHours(23, 59, 59, 999);
-    return d;
-  }, []);
+  // Anchored to the salon's own day boundaries, not the viewer's. setHours()
+  // uses the browser's timezone, so the previous version produced a different
+  // window depending on where it was opened from — and appointments near
+  // midnight fell into the wrong period. Queensland is UTC+10 year-round.
+  const { from: dateFrom, to: dateTo } = useMemo(
+    () => brisbaneRangeForDays(rangeDays),
+    [rangeDays],
+  );
 
   const { data: summary } = trpc.analytics.summary.useQuery({
     tenantId: 1,
@@ -165,7 +162,7 @@ export default function Analytics() {
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Total Revenue", value: `$${(revenueStreams?.totalRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}`, icon: TrendingUp, colour: "text-emerald-600" },
+            { label: "Total Revenue", value: `$${(revenueStreams?.totalRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}`, icon: TrendingUp, colour: "text-emerald-600" , detail: summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} completed appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : undefined },
             { label: "Appointments", value: String(summary?.appointments ?? 0), icon: CalendarDays, colour: "text-blue-600" },
             { label: "Active Clients", value: String(summary?.activeClients ?? 0), icon: Users, colour: "text-violet-600" },
             { label: "Active Memberships", value: String(summary?.activeMemberships ?? 0), icon: CreditCard, colour: "text-amber-600" },
