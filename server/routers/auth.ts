@@ -10,6 +10,7 @@ import { getSessionCookieOptions } from "../_core/cookies";
 import { TRPCError } from "@trpc/server";
 import crypto from "crypto";
 import { sendEmail } from "../email";
+import { getAppBaseUrl } from "../appUrl";
 export const authRouter = router({
   // ── Who am I? ─────────────────────────────────────────────────────────────
   me: publicProcedure.query((opts) => opts.ctx.user ?? null),
@@ -155,7 +156,7 @@ export const authRouter = router({
         .set({ passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt })
         .where(eq(users.id, user.id));
 
-      const resetLink = `${process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space"}/login?reset=${token}&email=${encodeURIComponent(input.email)}`;
+      const resetLink = `${getAppBaseUrl()}/login?reset=${token}&email=${encodeURIComponent(input.email)}`;
 
       await sendEmail({
         to: input.email,

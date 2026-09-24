@@ -36,3 +36,15 @@ export const decodeOAuthState = (state: string): OAuthState => {
   }
   return { redirectUri: decoded };
 };
+
+// Canonical public origin of the live staff app. Used as the LAST-RESORT base
+// for client-facing links when VITE_APP_URL is not configured.
+//
+// It exists because the previous fallback was the decommissioned Manus host
+// `https://groomingsos-mqzfsvzv.manus.space`, which silently produced dead
+// links in password-reset emails, Pet Tracker SMS, staff invitations and
+// campaign unsubscribe links (see commit a238972, and CLAUDE.md §8).
+//
+// Always prefer the configured VITE_APP_URL. Read it via `getAppBaseUrl()` in
+// server/appUrl.ts, which logs loudly whenever it has to fall back to this.
+export const PRODUCTION_APP_URL = "https://staff.barkinbeautiful.com.au";

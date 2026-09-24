@@ -42,6 +42,7 @@ import { getMembershipPackageById, getMembershipPackagesForWeight, getMembership
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
+import { getAppBaseUrl } from "./appUrl";
 
 async function requireApprovedStaffTenant(db: any, user: { id: number; role: string }) {
   if (user.role === "admin") return null;
@@ -656,7 +657,7 @@ const calendarRouter = router({
           .where(eq(appointments.id, input.appointmentId))
           .limit(1);
         if (trackerRecipient?.phone) {
-          const trackerUrl = `${process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space"}/track/${appt.trackerToken}`;
+          const trackerUrl = `${getAppBaseUrl()}/track/${appt.trackerToken}`;
           const body = buildPetTrackerSms({
             clientFirstName: trackerRecipient.firstName ?? "there",
             petName: trackerRecipient.petName ?? "your dog",
@@ -2466,7 +2467,7 @@ const staffRouter = router({
         note: `Invitation prepared for ${email}`,
       });
 
-      const invitationLink = `${process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space"}/staff-invite/${invitation.token}`;
+      const invitationLink = `${getAppBaseUrl()}/staff-invite/${invitation.token}`;
       const { sendEmail } = await import("./email");
       const emailSent = await sendEmail({
         to: email,
@@ -4640,7 +4641,7 @@ const stripeBillingRouter = router({
       }).from(invoices).innerJoin(clients, eq(invoices.clientId, clients.id)).where(and(eq(invoices.id, input.invoiceId), eq(invoices.tenantId, input.tenantId))).limit(1);
       if (!invoice) throw new Error("Invoice not found");
       if (invoice.status === "paid" || invoice.status === "cancelled") throw new Error("This invoice is no longer available for payment");
-      const origin = typeof ctx.req.headers.origin === "string" ? ctx.req.headers.origin : (process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space");
+      const origin = typeof ctx.req.headers.origin === "string" ? ctx.req.headers.origin : getAppBaseUrl();
       return createInvoiceCheckout({
         invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, totalCents: Math.round(Number(invoice.total) * 100),
         clientId: invoice.clientId, clientName: `${invoice.clientFirstName} ${invoice.clientLastName}`.trim(), clientEmail: invoice.clientEmail,
@@ -5298,7 +5299,7 @@ const emailCampaignsRouter = router({
       const { sendEmail } = await import("./email.js");
 
       let sent = 0;
-      const unsubscribeBaseUrl = process.env.VITE_APP_URL ?? "https://groomingsos-mqzfsvzv.manus.space";
+      const unsubscribeBaseUrl = getAppBaseUrl();
 
       for (const recipient of eligible) {
         if (!recipient.email) continue;
@@ -6114,7 +6115,7 @@ const clientPortalRouter = router({
       const forwardedProto = ctx.req.headers["x-forwarded-proto"];
       const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(",")[0]?.trim() || ctx.req.protocol || "https";
       const host = ctx.req.get("host");
-      const baseUrl = host ? `${protocol}://${host}` : "https://groomingsos-mqzfsvzv.manus.space";
+      const baseUrl = host ? `${protocol}://${host}` : getAppBaseUrl();
       return {
         portalUrl: `${baseUrl}/portal/${access.token}`,
         expiresAt: access.expiresAt,
@@ -6163,7 +6164,7 @@ const clientPortalRouter = router({
       const forwardedProto = ctx.req.headers["x-forwarded-proto"];
       const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(",")[0]?.trim() || ctx.req.protocol || "https";
       const host = ctx.req.get("host");
-      const baseUrl = host ? `${protocol}://${host}` : "https://groomingsos-mqzfsvzv.manus.space";
+      const baseUrl = host ? `${protocol}://${host}` : getAppBaseUrl();
       const setupUrl = `${baseUrl}/portal/setup/${setup.token}`;
 
       const { sendEmail } = await import("./email");

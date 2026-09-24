@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerUploadRoutes } from "../uploadRoutes";
+import { logAppUrlConfiguration } from "../appUrl";
 import { paymentRetryHandler, appointmentReminderHandler } from "../scheduledHandlers";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -668,6 +669,11 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Surface the base URL used for every client-facing link (password resets,
+    // Pet Tracker SMS, staff invites, unsubscribe). Logs an error if
+    // VITE_APP_URL is unset, so a misconfiguration is visible in the deploy log
+    // instead of being discovered via a customer's dead link.
+    logAppUrlConfiguration();
   });
 }
 
