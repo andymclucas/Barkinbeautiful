@@ -85,11 +85,19 @@ export default function Messages() {
 
   // Recent exchange for the hover preview. Derived from the sms.getLogs data
   // already on the page, so hovering costs no extra request.
+  // A log row's timestamp. Inbound messages may not carry sentAt, and an
+  // unparseable date must not sort to the epoch — that pushed the newest
+  // message to the front, where slice(-4) could drop it.
+  const msgTime = (m: any) => {
+    const t = Date.parse(m?.sentAt ?? m?.receivedAt ?? m?.createdAt ?? "");
+    return Number.isNaN(t) ? 0 : t;
+  };
+
   const threadPreview = (thread: { clientId: number | null; toNumber: string }) => {
     if (!logs) return [];
     return (logs as any[])
       .filter(l => (thread.clientId ? l.clientId === thread.clientId : l.toNumber === thread.toNumber))
-      .sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime())
+      .sort((a, b) => msgTime(a) - msgTime(b))
       .slice(-4);
   };
 
@@ -369,15 +377,15 @@ export default function Messages() {
                         </div>
                         {thread.clientName?.trim() && <p className="text-xs text-muted-foreground">{thread.toNumber}</p>}
                       </div>
-                      <div className="max-h-64 space-y-2 overflow-y-auto p-3">
+                      <div className="flex max-h-64 flex-col-reverse gap-2 overflow-y-auto p-3">
                         {threadPreview(thread).length === 0 ? (
                           <p className="text-xs text-muted-foreground">{thread.lastMessage}</p>
-                        ) : threadPreview(thread).map((m: any) => (
+                        ) : threadPreview(thread).slice().reverse().map((m: any) => (
                           <div key={m.id} className={`flex ${m.direction === "outbound" ? "justify-end" : "justify-start"}`}>
                             <div className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-xs leading-snug ${m.direction === "outbound" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
                               <p className="whitespace-pre-wrap break-words">{m.body}</p>
                               <p className={`mt-1 text-[10px] ${m.direction === "outbound" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                                {m.sentAt ? new Date(m.sentAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : ""}
+                                {msgTime(m) ? new Date(msgTime(m)).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : ""}
                               </p>
                             </div>
                           </div>
