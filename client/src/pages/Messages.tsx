@@ -359,7 +359,7 @@ export default function Messages() {
                       </span>
                     </button>
                     </HoverCardTrigger>
-                    <HoverCardContent side="right" align="start" className="w-80 p-0 overflow-hidden">
+                    <HoverCardContent side="top" align="center" sideOffset={6} collisionPadding={12} className="w-80 p-0 overflow-hidden">
                       <div className="border-b bg-muted/40 px-3 py-2">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm font-semibold truncate">{thread.clientName?.trim() || thread.toNumber}</p>
