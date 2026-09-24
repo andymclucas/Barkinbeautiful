@@ -19,6 +19,7 @@ import { RefreshCw, Tv2, AlertTriangle, CheckCircle2, Clock, Dog, X, FileText, F
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { StaffAvatar } from "@/components/StaffAvatar";
 
 function formatDuration(minutes: number | null) {
   if (minutes === null || minutes < 0 || !Number.isFinite(minutes)) return "—";
@@ -154,7 +155,7 @@ function EditableNumber({ value, onSave, placeholder, min, max, label, tone }: {
 // ─── Staff picker cell ────────────────────────────────────────────────────────
 function StaffCell({ value, staffList, onSave, placeholder }: {
   value: number | null | undefined;
-  staffList: { id: number; name: string; role: string }[];
+  staffList: { id: number; name: string; role: string; photoUrl?: string | null; colourHex?: string | null }[];
   onSave: (v: number | null) => void;
   placeholder?: string;
 }) {
@@ -163,13 +164,23 @@ function StaffCell({ value, staffList, onSave, placeholder }: {
     <Select value={value ? String(value) : "__none__"} onValueChange={v => onSave(v === "__none__" ? null : Number(v))}>
       <SelectTrigger className="h-8 text-xs border-0 bg-transparent focus:ring-0 focus:ring-offset-0 px-1 font-semibold">
         <SelectValue placeholder={placeholder ?? "—"}>
-          {selected ? selected.name.split(" ")[0] : <span className="text-white/40">{placeholder ?? "—"}</span>}
+          {selected ? (
+            <span className="flex items-center gap-1.5 min-w-0">
+              <StaffAvatar photoUrl={selected.photoUrl} name={selected.name} colourHex={selected.colourHex} className="h-5 w-5" ring={false} />
+              <span className="truncate">{selected.name.split(" ")[0]}</span>
+            </span>
+          ) : <span className="text-white/40">{placeholder ?? "—"}</span>}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="__none__">— None —</SelectItem>
         {staffList.map(s => (
-          <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+          <SelectItem key={s.id} value={String(s.id)}>
+            <span className="flex items-center gap-2">
+              <StaffAvatar photoUrl={s.photoUrl} name={s.name} colourHex={s.colourHex} className="h-6 w-6" ring={false} />
+              {s.name}
+            </span>
+          </SelectItem>
         ))}
       </SelectContent>
     </Select>
@@ -187,7 +198,7 @@ function BathPriorityCell({ value, coordinated, onSave, onManageGroup, disabled 
   return (
     <div className="space-y-0.5">
       <Select value={value ? String(value) : "__none__"} onValueChange={(next) => onSave(next === "__none__" ? null : Number(next) as typeof BATH_PRIORITY_VALUES[number])} disabled={disabled}>
-        <SelectTrigger className="h-8 min-w-[86px] px-1.5 text-xs font-bold focus:ring-violet-300" style={{ borderColor: meta?.colour ?? "#ddd6fe", background: meta?.softColour ?? "#f0fdfa", color: meta?.colour ?? "#115e59" }}>
+        <SelectTrigger className="h-8 min-w-[86px] px-1.5 text-xs font-bold focus:ring-violet-300" style={{ borderColor: meta?.colour ?? "#ddd6fe", background: meta?.softColour ?? "#f5f3ff", color: meta?.colour ?? "#5b21b6" }}>
           <SelectValue placeholder="Queue" />
         </SelectTrigger>
         <SelectContent>

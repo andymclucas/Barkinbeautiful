@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
+import { StaffAvatar } from "@/components/StaffAvatar";
 import {
   Phone, Mail, MapPin, User, UserCog, Plus, Pencil, X,
   CalendarDays, TrendingUp, AlertCircle, AlertTriangle, ShieldCheck, Smartphone, Send, CheckCircle2, Ban, Globe2, Download, ArrowLeft, ArrowUpRight
@@ -122,6 +123,30 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
   const { data, isLoading } = trpc.staff.getProfile.useQuery({ staffId, tenantId: 1, dateFrom: timingRange.start, dateTo: timingRange.end });
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [photoUploading, setPhotoUploading] = useState(false);
+
+  // Uploads the chosen image and puts the returned URL into the form. It is not
+  // persisted until the panel is saved, so cancelling leaves the record as-is.
+  async function handlePhotoUpload(file: File) {
+    if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
+    if (file.size > 8 * 1024 * 1024) { toast.error("Image too large (max 8 MB)"); return; }
+    setPhotoUploading(true);
+    try {
+      const res = await fetch("/api/upload/staff-photo", {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Upload failed");
+      setForm(prev => ({ ...prev, onlineProfilePhotoUrl: data.url }));
+      toast.success("Photo uploaded — save to apply");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not upload the photo");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
   const [portalOpen, setPortalOpen] = useState(false);
   const [portalEmail, setPortalEmail] = useState("");
   const [activitySearch, setActivitySearch] = useState("");
@@ -405,7 +430,31 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             <div className="col-span-2 mt-2 border-t pt-3"><p className="text-sm font-semibold text-violet-800">Online booking profile</p><p className="text-xs text-muted-foreground mt-0.5">Keep this disabled until this groomer is approved for customer-selected online bookings.</p></div>
             <label className="col-span-2 flex items-center gap-2 rounded-lg border bg-violet-50/50 px-3 py-2 text-sm cursor-pointer"><input type="checkbox" checked={form.onlineBookable === "true"} onChange={e => setForm(p => ({ ...p, onlineBookable: String(e.target.checked) }))} className="h-4 w-4 accent-violet-600" /><span className="font-medium">Available for online booking</span></label>
             <div className="col-span-2"><Label>Customer-facing bio</Label><textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none h-16 focus:outline-none focus:ring-2 focus:ring-ring" value={form.onlineBio} onChange={e => setForm(p => ({ ...p, onlineBio: e.target.value }))} placeholder="A short introduction that customers can read when choosing a groomer." /></div>
-            <div className="col-span-2"><Label>Profile photo URL</Label><Input className="mt-1" value={form.onlineProfilePhotoUrl} onChange={e => setForm(p => ({ ...p, onlineProfilePhotoUrl: e.target.value }))} placeholder="Optional photo URL" /></div>
+            <div className="col-span-2">
+              <Label>Profile photo</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Shown beside this person's name on the Appointments calendar and the Workflow board, and on the online booking page.</p>
+              <div className="mt-2 flex items-center gap-3">
+                <StaffAvatar photoUrl={form.onlineProfilePhotoUrl} name={form.name} colourHex={form.colourHex} className="h-14 w-14" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="inline-flex">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      disabled={photoUploading}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); e.currentTarget.value = ""; }}
+                    />
+                    <span className={`inline-flex h-9 cursor-pointer items-center rounded-md border bg-card px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground ${photoUploading ? "pointer-events-none opacity-60" : ""}`}>
+                      {photoUploading ? "Uploading…" : form.onlineProfilePhotoUrl ? "Change photo" : "Upload photo"}
+                    </span>
+                  </label>
+                  {form.onlineProfilePhotoUrl && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, onlineProfilePhotoUrl: "" }))}>Remove</Button>
+                  )}
+                </div>
+              </div>
+              <Input className="mt-2" value={form.onlineProfilePhotoUrl} onChange={e => setForm(p => ({ ...p, onlineProfilePhotoUrl: e.target.value }))} placeholder="…or paste an image URL" />
+            </div>
             <div className="col-span-2"><Label>Online services</Label><Input className="mt-1" value={form.onlineServices} onChange={e => setForm(p => ({ ...p, onlineServices: e.target.value }))} placeholder="classic_groom, styled_groom, bath_only" /><p className="mt-1 text-xs text-muted-foreground">Leave blank to allow every service. Use service names separated by commas.</p></div>
             <div><Label>Dogs per time slot</Label><Input className="mt-1" type="number" min="1" max="10" value={form.onlineMaxDogsPerSlot} onChange={e => setForm(p => ({ ...p, onlineMaxDogsPerSlot: e.target.value }))} /></div>
             <div><Label>Online dogs per day</Label><Input className="mt-1" type="number" min="0" max="50" value={form.onlineMaxDogsPerDay} onChange={e => setForm(p => ({ ...p, onlineMaxDogsPerDay: e.target.value }))} /><p className="mt-1 text-xs text-muted-foreground">0 = no daily cap</p></div>

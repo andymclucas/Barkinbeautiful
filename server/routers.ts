@@ -1421,7 +1421,7 @@ const workflowRouter = router({
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This staff directory is not available to your salon staff profile");
-      return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex })
+      return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl })
         .from(staff)
         .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true)))
         .orderBy(asc(staff.name));
@@ -2180,6 +2180,7 @@ const staffRouter = router({
         name: staff.name,
         role: staff.role,
         colourHex: staff.colourHex,
+        photoUrl: staff.onlineProfilePhotoUrl,
         isActive: staff.isActive,
       }).from(staff).where(eq(staff.tenantId, input.tenantId)).orderBy(asc(staff.name));
     }),

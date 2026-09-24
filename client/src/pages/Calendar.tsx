@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { StaffAvatar } from "@/components/StaffAvatar";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7am–7pm (13 rows)
@@ -1485,7 +1486,7 @@ export default function Calendar() {
                   {cols.map((s, i) => (
                     <div key={i} className="p-2.5 border-r last:border-r-0 text-center transition-colors hover:bg-slate-50/80" style={{ borderTop: `3px solid ${s.colourHex ?? "#6366f1"}` }}>
                       <div className="flex items-center justify-center gap-1.5">
-                        <div className="h-2.5 w-2.5 rounded-full shrink-0 shadow-sm" style={{ background: s.colourHex ?? "#6366f1", boxShadow: `0 0 0 3px ${s.colourHex ?? "#6366f1"}20` }} />
+                        <StaffAvatar photoUrl={(s as { photoUrl?: string | null }).photoUrl} name={s.name} colourHex={s.colourHex} className="h-7 w-7" />
                         <span className="text-xs font-semibold truncate">{s.name.split(" ")[0]}</span>
                       </div>
                       <div className="mt-1 inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
@@ -2651,7 +2652,7 @@ export default function Calendar() {
                   {activeStaff.map(s => (
                     <SelectItem key={s.id} value={String(s.id)}>
                       <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full inline-block" style={{ background: s.colourHex ?? "#6366f1" }} />
+                        <StaffAvatar photoUrl={(s as { photoUrl?: string | null }).photoUrl} name={s.name} colourHex={s.colourHex} className="h-5 w-5" ring={false} />
                         {s.name}
                       </span>
                     </SelectItem>

@@ -280,6 +280,73 @@ export function registerUploadRoutes(app: Router) {
   );
 
   // POST /api/upload/salon-logo — authenticated branding asset, max 5 MB.
+  // ── Staff profile photo ────────────────────────────────────────────────────
+  // Stored like the salon logo (base64 in uploaded_images) rather than external
+  // storage, so it works without Forge credentials. Cropped square and small,
+  // because it is only ever shown as a little circular avatar on the calendar
+  // and workflow board.
+  app.post("/api/upload/staff-photo", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const contentType = req.headers["content-type"] ?? "image/jpeg";
+      if (!contentType.startsWith("image/")) { res.status(400).json({ error: "Only image uploads are allowed" }); return; }
+      const buffer: Buffer = req.body;
+      if (!buffer?.length) { res.status(400).json({ error: "Empty file" }); return; }
+      if (buffer.length > 8 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 8 MB)" }); return; }
+
+      // Square cover-crop at 256px: the avatar is never displayed larger, and it
+      // keeps the stored row tiny regardless of what came off the phone.
+      let out: Buffer;
+      try {
+        out = await sharp(buffer, { failOn: "none" })
+          .rotate() // honour EXIF orientation before it is discarded
+          .resize({ width: 256, height: 256, fit: "cover", position: "attention" })
+          .jpeg({ quality: 86, mozjpeg: true })
+          .toBuffer();
+      } catch (err) {
+        console.error("[upload/staff-photo] resize failed, storing original:", err);
+        out = buffer;
+      }
+
+      const key = `staff-photos/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      await db.insert(uploadedImages).values({
+        storageKey: key,
+        photoData: out.toString("base64"),
+        photoContentType: "image/jpeg",
+      });
+      res.json({ url: `/api/staff-photo?key=${encodeURIComponent(key)}`, key });
+    } catch (err: any) {
+      console.error("[upload/staff-photo]", err);
+      res.status(500).json({ error: err.message ?? "Upload failed" });
+    }
+  });
+
+  // Serves a staff profile photo by key. Requires a signed-in user: unlike the
+  // salon logo this is a photograph of an employee, so it is not public.
+  app.get("/api/staff-photo", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const key = typeof req.query.key === "string" ? req.query.key : "";
+      if (!key.startsWith("staff-photos/")) { res.status(400).json({ error: "Invalid photo" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const [image] = await db.select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!image) { res.status(404).json({ error: "Photo unavailable" }); return; }
+      res.set({ "Content-Type": image.photoContentType, "Cache-Control": "private, max-age=86400" });
+      res.send(Buffer.from(image.photoData, "base64"));
+    } catch (err: any) {
+      console.error("[staff-photo]", err);
+      res.status(404).json({ error: "Photo unavailable" });
+    }
+  });
+
   app.post("/api/upload/salon-logo", async (req, res) => {
     try {
       let user;
