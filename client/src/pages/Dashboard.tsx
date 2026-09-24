@@ -87,55 +87,61 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Link href="/calendar"><Button title="Open the day calendar" variant="outline" className="brand-lift border-primary/25 bg-white/80 hover:bg-primary/10">Calendar</Button></Link>
-            <Link href="/workflow"><Button title="View live grooming workflow" variant="outline" className="brand-lift border-primary/25 bg-white/80 hover:bg-primary/10">Workflow</Button></Link>
+            <Link href="/calendar"><Button title="Open the day calendar" variant="outline" className="brand-lift bg-card hover:bg-accent hover:text-accent-foreground">Calendar</Button></Link>
+            <Link href="/workflow"><Button title="View live grooming workflow" variant="outline" className="brand-lift bg-card hover:bg-accent hover:text-accent-foreground">Workflow</Button></Link>
             <Link href="/calendar"><Button title="Book a new appointment" className="gap-2 shadow-[0_10px_22px_-12px_var(--brand-primary-strong)] hover:shadow-[0_14px_26px_-12px_var(--brand-primary-strong)]"><CalendarDays className="h-4 w-4" /> New Appointment</Button></Link>
           </div>
         </div>
 
         {/* KPI cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="brand-lift overflow-hidden border-primary/20 bg-gradient-to-br from-white via-white to-primary/10">
-            <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Today's Appointments</CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold font-display">{todayCount}</span>
-                <span className="text-sm text-muted-foreground mb-1">{inProgress} in progress</span>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 gm-stagger">
+          <Card className="brand-lift py-5">
+            <CardContent className="flex items-center gap-4 px-5">
+              <div className="gm-tint-violet flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl">
+                <CalendarDays className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-muted-foreground leading-snug">Today's Appointments</p>
+                <p className="text-2xl font-bold font-display leading-tight tabular-nums">{todayCount}</p>
+                <p className="text-xs text-muted-foreground leading-snug">{inProgress} in progress</p>
               </div>
             </CardContent>
           </Card>
-          <Card className="brand-lift overflow-hidden border-emerald-200 bg-gradient-to-br from-white via-white to-emerald-50">
-            <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ready for Pickup</CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold font-display text-emerald-600">{readyCount}</span>
-                <span className="text-sm text-muted-foreground mb-1">dogs waiting</span>
+          <Card className="brand-lift py-5">
+            <CardContent className="flex items-center gap-4 px-5">
+              <div className="gm-tint-mint flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl">
+                <Dog className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-muted-foreground leading-snug">Ready for Pickup</p>
+                <p className="text-2xl font-bold font-display leading-tight tabular-nums">{readyCount}</p>
+                <p className="text-xs text-muted-foreground leading-snug">dogs waiting</p>
               </div>
             </CardContent>
           </Card>
-          <Card className="brand-lift overflow-hidden border-violet-200 bg-gradient-to-br from-white via-white to-violet-50">
-            <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Monthly Revenue</CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold font-display">
+          <Card className="brand-lift py-5">
+            <CardContent className="flex items-center gap-4 px-5">
+              <div className="gm-tint-amber flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-muted-foreground leading-snug">Monthly Revenue</p>
+                <p className="text-2xl font-bold font-display leading-tight tabular-nums">
                   ${(analytics?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}
-                </span>
+                </p>
+                <p className="text-xs text-muted-foreground leading-snug">this month</p>
               </div>
             </CardContent>
           </Card>
-          <Card className="brand-lift overflow-hidden border-pink-200 bg-gradient-to-br from-white via-white to-pink-50">
-            <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Active Memberships</CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold font-display">{analytics?.activeMemberships ?? 0}</span>
+          <Card className="brand-lift py-5">
+            <CardContent className="flex items-center gap-4 px-5">
+              <div className="gm-tint-sky flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-muted-foreground leading-snug">Active Memberships</p>
+                <p className="text-2xl font-bold font-display leading-tight tabular-nums">{analytics?.activeMemberships ?? 0}</p>
+                <p className="text-xs text-muted-foreground leading-snug">currently active</p>
               </div>
             </CardContent>
           </Card>
@@ -235,7 +241,7 @@ export default function Dashboard() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{item.label}</p>
-                    <p className="text-xs text-muted-foreground truncate">{item.sub}</p>
+                    <p className="text-xs text-muted-foreground leading-snug">{item.sub}</p>
                   </div>
                 </CardContent>
               </Card>

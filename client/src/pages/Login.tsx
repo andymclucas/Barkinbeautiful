@@ -121,21 +121,21 @@ export default function Login() {
     <div
       className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden"
       style={{
-        background: "linear-gradient(135deg, #0a0f1e 0%, #0d1f2d 40%, #0a1a1a 70%, #061212 100%)",
+        background: "linear-gradient(160deg, #faf8ff 0%, #f4f0fe 45%, #f7f4ff 75%, #fdfcff 100%)",
       }}
     >
       {/* Animated background grid */}
       <div
-        className="absolute inset-0 opacity-[0.04]"
+        className="absolute inset-0 opacity-[0.055]"
         style={{
-          backgroundImage: `linear-gradient(rgba(0,255,200,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,200,0.5) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(rgba(124,58,237,0.30) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.30) 1px, transparent 1px)`,
           backgroundSize: "60px 60px",
         }}
       />
 
       {/* Ambient glow blobs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full opacity-10 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #00ffcc 0%, transparent 70%)" }} />
-      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full opacity-[0.08] blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #00ccff 0%, transparent 70%)" }} />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full opacity-10 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #a78bfa 0%, transparent 70%)" }} />
+      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full opacity-[0.08] blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #f0abfc 0%, transparent 70%)" }} />
 
       <div className="relative w-full max-w-md z-10">
 
@@ -149,13 +149,13 @@ export default function Login() {
               transition: "transform 0.35s cubic-bezier(0.23,1,0.32,1), filter 0.35s ease",
               transform: logoHovered ? "scale(1.12)" : "scale(1)",
               filter: logoHovered
-                ? "drop-shadow(0 0 12px #00ffcc) drop-shadow(0 0 30px #00ffcc88) drop-shadow(0 0 60px #00ffcc44) brightness(1.15)"
-                : "drop-shadow(0 2px 8px rgba(0,255,200,0.15)) brightness(1)",
+                ? "drop-shadow(0 0 12px #7c3aed) drop-shadow(0 0 30px #7c3aedaa) drop-shadow(0 0 60px #7c3aed44) brightness(1.15)"
+                : "drop-shadow(0 2px 8px rgba(124,58,237,0.14)) brightness(1)",
             }}
           >
             <img src="/groomigo_logo.png" alt="Groomigo" style={{ height: "80px", width: "auto" }} />
           </div>
-          <p className="mt-3 text-sm font-medium tracking-widest uppercase" style={{ color: "#00ffcc88", letterSpacing: "0.2em" }}>
+          <p className="mt-3 text-sm font-medium tracking-widest uppercase" style={{ color: "#7c3aedaa", letterSpacing: "0.2em" }}>
             Grooming Salon Operating System
           </p>
         </div>
@@ -164,10 +164,10 @@ export default function Login() {
         <div
           style={{
             ...slideStyle(150),
-            background: "rgba(255,255,255,0.04)",
+            background: "#ffffff",
             backdropFilter: "blur(24px)",
-            border: "1px solid rgba(0,255,200,0.12)",
-            boxShadow: "0 25px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)",
+            border: "1px solid rgba(124,58,237,0.12)",
+            boxShadow: "0 24px 48px -20px rgba(76,29,149,0.18), inset 0 1px 0 rgba(124,58,237,0.06)",
             borderRadius: "1rem",
             padding: "2rem",
           }}
@@ -176,27 +176,27 @@ export default function Login() {
             resetCompleted ? (
               <div className="text-center py-4">
                 <div className="text-4xl mb-3">✅</div>
-                <h3 className="text-lg font-semibold text-white mb-2">Password updated</h3>
-                <p className="text-sm mb-5" style={{ color: "#94a3b8" }}>
+                <h3 className="text-lg font-semibold text-foreground mb-2">Password updated</h3>
+                <p className="text-sm mb-5" style={{ color: "#6b7280" }}>
                   Your password has been changed. You can sign in with it now.
                 </p>
                 <Button
                   onClick={finishResetAndSignIn}
                   className="w-full font-semibold text-white rounded-xl"
-                  style={{ background: "linear-gradient(135deg, #00c9a7 0%, #008f7a 100%)", boxShadow: "0 4px 16px rgba(0,201,167,0.3)" }}
+                  style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)", boxShadow: "0 4px 16px rgba(124,58,237,0.26)" }}
                 >
                   Continue to sign in
                 </Button>
               </div>
             ) : (
               <>
-                <h2 className="text-xl font-semibold text-white mb-1">Set a new password</h2>
-                <p className="text-sm mb-6" style={{ color: "#94a3b8" }}>
-                  Choose a new password for <strong className="text-white">{resetParams.email}</strong>
+                <h2 className="text-xl font-semibold text-foreground mb-1">Set a new password</h2>
+                <p className="text-sm mb-6" style={{ color: "#6b7280" }}>
+                  Choose a new password for <strong className="text-foreground">{resetParams.email}</strong>
                 </p>
                 <form onSubmit={handleCompleteReset} className="space-y-5">
                   <div className="space-y-1.5">
-                    <Label htmlFor="reset-password" className="text-sm" style={{ color: "#cbd5e1" }}>New password</Label>
+                    <Label htmlFor="reset-password" className="text-sm" style={{ color: "#4b5563" }}>New password</Label>
                     <div className="relative">
                       <Input
                         id="reset-password"
@@ -205,22 +205,22 @@ export default function Login() {
                         onChange={(e) => setResetPasswordValue(e.target.value)}
                         placeholder="At least 8 characters"
                         autoComplete="new-password"
-                        className="text-white placeholder:text-slate-500 pr-10"
-                        style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,200,0.18)" }}
+                        className="text-foreground placeholder:text-muted-foreground pr-10"
+                        style={{ background: "#ffffff", border: "1px solid rgba(124,58,237,0.16)" }}
                         disabled={completeResetMutation.isPending}
                       />
                       <button
                         type="button"
                         onClick={() => setShowResetPassword(!showResetPassword)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                        style={{ color: "#64748b" }}
+                        style={{ color: "#9ca3af" }}
                       >
                         {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="reset-password-confirm" className="text-sm" style={{ color: "#cbd5e1" }}>Confirm new password</Label>
+                    <Label htmlFor="reset-password-confirm" className="text-sm" style={{ color: "#4b5563" }}>Confirm new password</Label>
                     <Input
                       id="reset-password-confirm"
                       type={showResetPassword ? "text" : "password"}
@@ -228,15 +228,15 @@ export default function Login() {
                       onChange={(e) => setResetPasswordConfirm(e.target.value)}
                       placeholder="Re-enter your new password"
                       autoComplete="new-password"
-                      className="text-white placeholder:text-slate-500"
-                      style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,200,0.18)" }}
+                      className="text-foreground placeholder:text-muted-foreground"
+                      style={{ background: "#ffffff", border: "1px solid rgba(124,58,237,0.16)" }}
                       disabled={completeResetMutation.isPending}
                     />
                   </div>
                   <Button
                     type="submit"
                     className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
-                    style={{ background: "linear-gradient(135deg, #00c9a7 0%, #00a896 50%, #008f7a 100%)", boxShadow: "0 4px 20px rgba(0,201,167,0.35)" }}
+                    style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%)", boxShadow: "0 4px 20px rgba(124,58,237,0.30)" }}
                     disabled={completeResetMutation.isPending}
                   >
                     {completeResetMutation.isPending ? (
@@ -251,12 +251,12 @@ export default function Login() {
             )
           ) : (
           <>
-          <h2 className="text-xl font-semibold text-white mb-1">Sign in</h2>
-          <p className="text-sm mb-6" style={{ color: "#94a3b8" }}>Enter your credentials to access the dashboard</p>
+          <h2 className="text-xl font-semibold text-foreground mb-1">Sign in</h2>
+          <p className="text-sm mb-6" style={{ color: "#6b7280" }}>Enter your credentials to access the dashboard</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm" style={{ color: "#cbd5e1" }}>Email address</Label>
+              <Label htmlFor="email" className="text-sm" style={{ color: "#4b5563" }}>Email address</Label>
               <Input
                 id="email"
                 type="email"
@@ -264,13 +264,13 @@ export default function Login() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="text-white placeholder:text-slate-500"
+                className="text-foreground placeholder:text-muted-foreground"
                 onFocus={() => setEmailFocused(true)}
                 onBlur={() => setEmailFocused(false)}
                 style={{
-                  background: "rgba(255,255,255,0.07)",
-                  border: emailFocused ? "1px solid rgba(0,255,200,0.7)" : "1px solid rgba(0,255,200,0.18)",
-                  boxShadow: emailFocused ? "0 0 0 3px rgba(0,255,200,0.12), 0 0 16px rgba(0,255,200,0.08)" : "none",
+                  background: "#ffffff",
+                  border: emailFocused ? "1px solid rgba(124,58,237,0.55)" : "1px solid rgba(124,58,237,0.16)",
+                  boxShadow: emailFocused ? "0 0 0 3px rgba(124,58,237,0.12), 0 0 16px rgba(124,58,237,0.07)" : "none",
                   transition: "border-color 0.2s ease, box-shadow 0.2s ease",
                   outline: "none",
                 }}
@@ -279,7 +279,7 @@ export default function Login() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-sm" style={{ color: "#cbd5e1" }}>Password</Label>
+              <Label htmlFor="password" className="text-sm" style={{ color: "#4b5563" }}>Password</Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -288,13 +288,13 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
-                  className="text-white placeholder:text-slate-500 pr-10"
+                  className="text-foreground placeholder:text-muted-foreground pr-10"
                   onFocus={() => setPasswordFocused(true)}
                   onBlur={() => setPasswordFocused(false)}
                   style={{
-                    background: "rgba(255,255,255,0.07)",
-                    border: passwordFocused ? "1px solid rgba(0,255,200,0.7)" : "1px solid rgba(0,255,200,0.18)",
-                    boxShadow: passwordFocused ? "0 0 0 3px rgba(0,255,200,0.12), 0 0 16px rgba(0,255,200,0.08)" : "none",
+                    background: "#ffffff",
+                    border: passwordFocused ? "1px solid rgba(124,58,237,0.55)" : "1px solid rgba(124,58,237,0.16)",
+                    boxShadow: passwordFocused ? "0 0 0 3px rgba(124,58,237,0.12), 0 0 16px rgba(124,58,237,0.07)" : "none",
                     transition: "border-color 0.2s ease, box-shadow 0.2s ease",
                     outline: "none",
                   }}
@@ -304,7 +304,7 @@ export default function Login() {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                  style={{ color: "#64748b" }}
+                  style={{ color: "#9ca3af" }}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -314,7 +314,7 @@ export default function Login() {
             <Button
               type="submit"
               className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
-              style={{ background: "linear-gradient(135deg, #00c9a7 0%, #00a896 50%, #008f7a 100%)", boxShadow: "0 4px 20px rgba(0,201,167,0.35)" }}
+              style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%)", boxShadow: "0 4px 20px rgba(124,58,237,0.30)" }}
               disabled={loginMutation.isPending}
             >
               {loginMutation.isPending ? (
@@ -334,9 +334,9 @@ export default function Login() {
                 <div
                   className="w-4 h-4 rounded border transition-all"
                   style={{
-                    background: rememberMe ? "#00c9a7" : "rgba(255,255,255,0.07)",
-                    border: rememberMe ? "1px solid #00c9a7" : "1px solid rgba(0,255,200,0.3)",
-                    boxShadow: rememberMe ? "0 0 8px rgba(0,201,167,0.4)" : "none",
+                    background: rememberMe ? "#7c3aed" : "#ffffff",
+                    border: rememberMe ? "1px solid #7c3aed" : "1px solid rgba(124,58,237,0.28)",
+                    boxShadow: rememberMe ? "0 0 8px rgba(124,58,237,0.34)" : "none",
                   }}
                 >
                   {rememberMe && (
@@ -348,7 +348,7 @@ export default function Login() {
               </div>
               <span
                 className="text-xs transition-colors"
-                style={{ color: rememberMe ? "#94a3b8" : "#64748b" }}
+                style={{ color: rememberMe ? "#6b7280" : "#9ca3af" }}
                 onClick={() => setRememberMe(v => !v)}
               >
                 Remember me for 30 days
@@ -362,15 +362,15 @@ export default function Login() {
               type="button"
               onClick={() => { setForgotOpen(true); setForgotEmail(email); setForgotSent(false); }}
               className="text-xs transition-colors hover:underline"
-              style={{ color: "#00ffcc66" }}
-              onMouseEnter={e => (e.currentTarget.style.color = "#00ffcc")}
-              onMouseLeave={e => (e.currentTarget.style.color = "#00ffcc66")}
+              style={{ color: "#7c3aed80" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#7c3aed")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#7c3aed80")}
             >
               Forgot password?
             </button>
           </div>
 
-          <p className="text-center text-xs mt-4" style={{ color: "#475569" }}>
+          <p className="text-center text-xs mt-4" style={{ color: "#6b7280" }}>
             Barkin Beautiful Grooming Studio &amp; Playgroup
           </p>
           </>
@@ -380,10 +380,10 @@ export default function Login() {
 
         {/* Slogan footer — fade+slide-up with 300ms delay */}
         <div className="text-center mt-10 space-y-1" style={slideStyle(300)}>
-          <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: "#00ffcc55", letterSpacing: "0.25em" }}>
+          <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: "#7c3aed66", letterSpacing: "0.25em" }}>
             Powered by Groomigo
           </p>
-          <p className="text-sm italic" style={{ color: "#64748b" }}>
+          <p className="text-sm italic" style={{ color: "#9ca3af" }}>
             'Your grooming salon's best mate...well, amigo.'
           </p>
         </div>
@@ -393,24 +393,24 @@ export default function Login() {
       {forgotOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}
+          style={{ background: "rgba(76,29,149,0.16)", backdropFilter: "blur(4px)" }}
           onClick={e => { if (e.target === e.currentTarget) setForgotOpen(false); }}
         >
           <div
             className="w-full max-w-sm rounded-2xl p-6 relative"
             style={{
-              background: "rgba(13,31,45,0.97)",
-              border: "1px solid rgba(0,255,200,0.18)",
-              boxShadow: "0 25px 50px rgba(0,0,0,0.6)",
+              background: "#ffffff",
+              border: "1px solid rgba(124,58,237,0.16)",
+              boxShadow: "0 25px 50px rgba(76,29,149,0.14)",
               animation: "slideUp 0.3s cubic-bezier(0.23,1,0.32,1)",
             }}
           >
             <button
               onClick={() => setForgotOpen(false)}
               className="absolute top-4 right-4 transition-colors"
-              style={{ color: "#64748b" }}
+              style={{ color: "#9ca3af" }}
               onMouseEnter={e => (e.currentTarget.style.color = "#fff")}
-              onMouseLeave={e => (e.currentTarget.style.color = "#64748b")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#9ca3af")}
             >
               <X className="w-4 h-4" />
             </button>
@@ -418,42 +418,42 @@ export default function Login() {
             {forgotSent ? (
               <div className="text-center py-4">
                 <div className="text-4xl mb-3">📬</div>
-                <h3 className="text-lg font-semibold text-white mb-2">Check your inbox</h3>
-                <p className="text-sm" style={{ color: "#94a3b8" }}>
-                  If an account exists for <strong className="text-white">{forgotEmail}</strong>, a password reset link has been sent.
+                <h3 className="text-lg font-semibold text-foreground mb-2">Check your inbox</h3>
+                <p className="text-sm" style={{ color: "#6b7280" }}>
+                  If an account exists for <strong className="text-foreground">{forgotEmail}</strong>, a password reset link has been sent.
                 </p>
                 <button
                   onClick={() => setForgotOpen(false)}
                   className="mt-5 text-sm font-medium transition-colors"
-                  style={{ color: "#00c9a7" }}
+                  style={{ color: "#7c3aed" }}
                 >
                   Back to sign in
                 </button>
               </div>
             ) : (
               <>
-                <h3 className="text-lg font-semibold text-white mb-1">Reset your password</h3>
-                <p className="text-sm mb-5" style={{ color: "#94a3b8" }}>
+                <h3 className="text-lg font-semibold text-foreground mb-1">Reset your password</h3>
+                <p className="text-sm mb-5" style={{ color: "#6b7280" }}>
                   Enter your email address and we'll send you a reset link.
                 </p>
                 <form onSubmit={handleForgot} className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="forgot-email" className="text-sm" style={{ color: "#cbd5e1" }}>Email address</Label>
+                    <Label htmlFor="forgot-email" className="text-sm" style={{ color: "#4b5563" }}>Email address</Label>
                     <Input
                       id="forgot-email"
                       type="email"
                       value={forgotEmail}
                       onChange={e => setForgotEmail(e.target.value)}
                       placeholder="you@example.com"
-                      className="text-white placeholder:text-slate-500"
-                      style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,200,0.18)" }}
+                      className="text-foreground placeholder:text-muted-foreground"
+                      style={{ background: "#ffffff", border: "1px solid rgba(124,58,237,0.16)" }}
                       disabled={resetMutation.isPending}
                     />
                   </div>
                   <Button
                     type="submit"
                     className="w-full font-semibold text-white rounded-xl"
-                    style={{ background: "linear-gradient(135deg, #00c9a7 0%, #008f7a 100%)", boxShadow: "0 4px 16px rgba(0,201,167,0.3)" }}
+                    style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)", boxShadow: "0 4px 16px rgba(124,58,237,0.26)" }}
                     disabled={resetMutation.isPending}
                   >
                     {resetMutation.isPending ? (
