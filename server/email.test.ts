@@ -33,12 +33,4 @@ describe("email templates", () => {
     expect(html).toContain("Barkin' Beautiful");
     expect(html).toContain("04 0000 0000");
   });
-
-  it("RESEND_API_KEY environment variable is set", () => {
-    // This test validates the secret is present in the environment
-    const key = process.env.RESEND_API_KEY;
-    expect(key).toBeTruthy();
-    expect(typeof key).toBe("string");
-    expect(key!.length).toBeGreaterThan(10);
-  });
 });

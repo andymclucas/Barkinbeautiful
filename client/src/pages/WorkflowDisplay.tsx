@@ -6,6 +6,7 @@ import { CheckCircle2, Clock3, Dog, RefreshCw, Sparkles, Wifi, WifiOff, Star } f
 import { QRCodeSVG } from "qrcode.react";
 import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
 import { isTerminalWorkflowState } from "@/lib/workflowTerminalStates";
+import { PRODUCTION_APP_URL } from "@shared/const";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { BATH_PRIORITY_META, buildBathPriorityQueue } from "@shared/bathPriorityQueue";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -47,7 +48,7 @@ function formatDuration(minutes: number | null) {
 export default function WorkflowDisplay() {
   const { loading, user } = useAuth();
   const displayUrl = typeof window === "undefined"
-    ? "https://groomingsos-mqzfsvzv.manus.space/workflow/display"
+    ? `${PRODUCTION_APP_URL}/workflow/display`
     : `${window.location.origin}/workflow/display`;
   const [now, setNow] = useState(Date.now());
   const [scrollSpeedIndex, setScrollSpeedIndex] = useState(2);

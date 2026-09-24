@@ -112,3 +112,10 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# This is a pnpm project — npm install fails here (see CLAUDE.md §1).
+# A stray package-lock.json must never be committed.
+package-lock.json
+
+# Manus dev-time browser log collector output (vite.config.ts)
+.manus-logs/
