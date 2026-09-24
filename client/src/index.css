@@ -82,7 +82,7 @@
   --brand-accent: oklch(0.905 0.058 295);
   --brand-page: oklch(0.985 0.006 295);
   --brand-ink: oklch(0.24 0.035 285);
-  --brand-sidebar: oklch(1 0 0);
+  --brand-sidebar: #1e1229;  /* deep sidebar — tenants override via Settings */
 
   /* Soft tint ramp used for stat tiles, icon chips and empty states. */
   --tint-violet: oklch(0.955 0.030 292);
@@ -281,7 +281,7 @@
 
 /* ── Sidebar: light surface, violet active pill ───────────────────────────── */
 [data-sidebar="sidebar"] {
-  background: var(--color-sidebar) !important;
+  background: var(--brand-sidebar, var(--color-sidebar)) !important;
   border-right: 1px solid var(--color-sidebar-border);
 }
 
@@ -312,6 +312,11 @@
 }
 [data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"] svg {
   color: var(--color-sidebar-primary-foreground);
+}
+
+/* ── Sidebar footer: text inherits the runtime sidebar foreground ─────────── */
+[data-sidebar="sidebar"] [data-sidebar="footer"] button p {
+  color: var(--color-sidebar-foreground);
 }
 
 /* ── Cards ────────────────────────────────────────────────────────────────── */

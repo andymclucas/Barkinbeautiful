@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import NotificationBell from "@/components/NotificationBell";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
@@ -5,8 +6,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -37,6 +46,8 @@ import {
   Scissors,
   ImagePlus,
   ImageOff,
+  Palette,
+  Settings,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -59,6 +70,110 @@ const menuItems = [
 ];
 
 const staffOperationMenuItems = menuItems.filter((item) => ["/calendar", "/workflow", "/memberships"].includes(item.path));
+
+
+/** Perceived luminance 0–1 for a #rrggbb hex colour. */
+function luma(hex: string): number {
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return 0.5;
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Set sidebar CSS custom properties so foreground colours are always readable. */
+function applySidebarColor(hex: string, root: HTMLElement) {
+  root.style.setProperty("--brand-sidebar", hex);
+  root.style.setProperty("--color-sidebar", hex);
+  const dark = luma(hex) < 0.45;
+  if (dark) {
+    root.style.setProperty("--color-sidebar-foreground",        "rgba(255,255,255,0.90)");
+    root.style.setProperty("--color-sidebar-accent",            "rgba(255,255,255,0.09)");
+    root.style.setProperty("--color-sidebar-accent-foreground", "rgba(255,255,255,0.92)");
+    root.style.setProperty("--color-sidebar-border",            "rgba(255,255,255,0.10)");
+  } else {
+    root.style.setProperty("--color-sidebar-foreground",        "oklch(0.30 0.04 288)");
+    root.style.setProperty("--color-sidebar-accent",            "oklch(0.955 0.022 292)");
+    root.style.setProperty("--color-sidebar-accent-foreground", "oklch(0.42 0.16 292)");
+    root.style.setProperty("--color-sidebar-border",            "oklch(0.935 0.012 292)");
+  }
+}
+
+/** Quick brand-colour editor rendered in a Dialog. */
+function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const utils = trpc.useUtils();
+  const { data: tenant } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 });
+  const [colors, setColors] = useState({ primary: "#d61572", sidebar: "#1e1229", accent: "#f9d4e7" });
+
+  useEffect(() => {
+    if (tenant) setColors({
+      primary: tenant.brandPrimary  ?? "#d61572",
+      sidebar: tenant.brandSidebar  ?? "#1e1229",
+      accent:  tenant.brandAccent   ?? "#f9d4e7",
+    });
+  }, [tenant]);
+
+  const save = trpc.settings.updateTenantInfo.useMutation({
+    onSuccess: () => {
+      utils.settings.getTenantInfo.invalidate({ tenantId: 1 });
+      toast.success("Brand colours saved");
+      onOpenChange(false);
+    },
+    onError: () => toast.error("Could not save colours"),
+  });
+
+  const preview = (next: typeof colors) => {
+    const root = document.documentElement;
+    root.style.setProperty("--brand-primary",        next.primary);
+    root.style.setProperty("--brand-primary-strong", next.primary);
+    applySidebarColor(next.sidebar, root);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Palette className="h-4 w-4 text-primary" /> Brand colours
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">Changes preview live — save to keep them.</p>
+        <div className="space-y-3 py-1">
+          {([
+            { k: "primary", l: "Primary colour",  d: "Buttons & key actions" },
+            { k: "sidebar", l: "Sidebar colour",   d: "Navigation background" },
+            { k: "accent",  l: "Accent colour",    d: "Surfaces & highlights" },
+          ] as const).map(({ k, l, d }) => (
+            <div key={k} className="flex items-center gap-3 rounded-xl border p-2.5">
+              <input
+                type="color"
+                value={colors[k]}
+                onChange={e => { const n = { ...colors, [k]: e.target.value }; setColors(n); preview(n); }}
+                className="h-9 w-11 rounded-md border cursor-pointer p-0.5 bg-transparent"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium leading-none">{l}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{d}</p>
+              </div>
+              <span className="text-[11px] font-mono text-muted-foreground">{colors[k]}</span>
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            size="sm"
+            disabled={save.isPending}
+            onClick={() => save.mutate({ tenantId: 1, brandPrimary: colors.primary, brandAccent: colors.accent, brandSidebar: colors.sidebar })}
+          >
+            {save.isPending ? "Saving…" : "Save colours"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 240;
@@ -121,6 +236,7 @@ function DashboardLayoutContent({
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
+  const [brandDialogOpen, setBrandDialogOpen] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const { data: tenantBranding } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 });
@@ -152,16 +268,21 @@ function DashboardLayoutContent({
   }
 
   useEffect(() => {
-    if (!tenantBranding || typeof document === "undefined") return;
+    if (typeof document === "undefined") return;
     const root = document.documentElement;
     const apply = (name: string, value: string | null | undefined) => { if (value) root.style.setProperty(name, value); };
-    apply("--brand-primary", tenantBranding.brandPrimary);
-    apply("--brand-accent", tenantBranding.brandAccent);
-    apply("--brand-sidebar", tenantBranding.brandSidebar);
+    apply("--brand-primary", tenantBranding?.brandPrimary);
+    apply("--brand-accent",  tenantBranding?.brandAccent);
+    applySidebarColor(tenantBranding?.brandSidebar ?? "#1e1229", root);
     return () => {
       root.style.removeProperty("--brand-primary");
       root.style.removeProperty("--brand-accent");
       root.style.removeProperty("--brand-sidebar");
+      root.style.removeProperty("--color-sidebar");
+      root.style.removeProperty("--color-sidebar-foreground");
+      root.style.removeProperty("--color-sidebar-accent");
+      root.style.removeProperty("--color-sidebar-accent-foreground");
+      root.style.removeProperty("--color-sidebar-border");
     };
   }, [tenantBranding]);
 
@@ -299,8 +420,8 @@ function DashboardLayoutContent({
                   />
                   {!isCollapsed && (
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate leading-none">{user?.name || "-"}</p>
-                      <p className="text-xs text-muted-foreground truncate mt-1">{user?.email || "-"}</p>
+                      <p className="text-sm font-medium truncate leading-none" style={{ color: "var(--color-sidebar-foreground)" }}>{user?.name || "-"}</p>
+                      <p className="text-xs truncate mt-1" style={{ color: "color-mix(in srgb, var(--color-sidebar-foreground) 65%, transparent)" }}>{user?.email || "-"}</p>
                     </div>
                   )}
                 </button>
@@ -327,6 +448,21 @@ function DashboardLayoutContent({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
+                  className="cursor-pointer"
+                  onSelect={() => setBrandDialogOpen(true)}
+                >
+                  <Palette className="mr-2 h-4 w-4" />
+                  <span>Brand colours</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="cursor-pointer"
+                  onClick={() => setLocation("/settings")}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"
                 >
@@ -342,6 +478,7 @@ function DashboardLayoutContent({
               className="sr-only"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMyPhoto(f); e.currentTarget.value = ""; }}
             />
+            <BrandColoursDialog open={brandDialogOpen} onOpenChange={setBrandDialogOpen} />
           </SidebarFooter>
         </Sidebar>
 
