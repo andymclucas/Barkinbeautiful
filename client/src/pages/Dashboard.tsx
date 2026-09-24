@@ -15,7 +15,7 @@ const STAGE_LABELS: Record<string, string> = {
 };
 const STAGE_COLOURS: Record<string, string> = {
   scheduled: "bg-slate-100 text-slate-700",
-  checked_in: "bg-cyan-100 text-cyan-800",
+  checked_in: "bg-violet-100 text-violet-800",
   bathing: "bg-blue-100 text-blue-800",
   grooming: "bg-violet-100 text-violet-800",
   ready: "bg-emerald-100 text-emerald-800",
@@ -80,8 +80,8 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold tracking-[0.16em] uppercase text-primary mb-1">Salon control centre</p>
-            <h1 className="text-3xl font-bold font-display tracking-tight">Good morning{user?.name ? `, ${user.name.split(" ")[0]}` : ""} 👋</h1>
+            <p className="text-xs font-semibold tracking-wide text-muted-foreground mb-1">Salon control centre</p>
+            <h1 className="text-3xl font-bold font-display tracking-tight">Good morning{user?.name ? `, ${user.name.split(" ")[0]}` : ""}</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
               {new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long", year: "numeric" })}
             </p>

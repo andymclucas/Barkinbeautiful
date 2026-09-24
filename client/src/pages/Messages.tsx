@@ -22,13 +22,13 @@ const SMS_TEMPLATES = [
 
 const TYPE_COLOURS: Record<string, string> = {
   reminder: "bg-blue-100 text-blue-700",
-  confirmation: "bg-green-100 text-green-700",
+  confirmation: "bg-emerald-100 text-emerald-700",
   ready_pickup: "bg-emerald-100 text-emerald-700",
   payment_failed: "bg-red-100 text-red-700",
-  tracker: "bg-indigo-100 text-indigo-700",
-  custom: "bg-gray-100 text-gray-700",
+  tracker: "bg-blue-100 text-blue-700",
+  custom: "bg-slate-100 text-slate-700",
   campaign: "bg-violet-100 text-violet-700",
-  inbound: "bg-cyan-100 text-cyan-700",
+  inbound: "bg-violet-100 text-violet-700",
 };
 
 export default function Messages() {
@@ -531,11 +531,11 @@ export default function Messages() {
                         {log.sentAt ? new Date(log.sentAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—"}
                       </td>
                       <td className="py-2.5 text-xs">
-                        <div>{log.clientName || log.toNumber}{log.direction === "inbound" && <span className="ml-1 text-cyan-700">(reply)</span>}</div>
+                        <div>{log.clientName || log.toNumber}{log.direction === "inbound" && <span className="ml-1 text-violet-700">(reply)</span>}</div>
                         {log.clientName && <div className="text-muted-foreground">{log.toNumber}</div>}
                       </td>
                       <td className="py-2.5">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLOURS[log.type] ?? "bg-gray-100 text-gray-700"}`}>{log.type.replace(/_/g, " ")}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLOURS[log.type] ?? "bg-slate-100 text-slate-700"}`}>{log.type.replace(/_/g, " ")}</span>
                         {log.direction === "inbound" && log.replyIntent && log.replyIntent !== "unknown" && !log.processedAt && (
                           <div className="mt-1 text-[10px] font-medium text-amber-700">Review required: {log.replyIntent}</div>
                         )}
@@ -561,7 +561,7 @@ export default function Messages() {
                         ) : log.status === "sent" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Sent</span>
                         ) : log.status === "received" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-cyan-600"><MessageSquare className="h-3.5 w-3.5" /> Received</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-violet-600"><MessageSquare className="h-3.5 w-3.5" /> Received</span>
                         ) : log.status === "failed" ? (
                           <span className="inline-flex items-center gap-1 text-xs text-red-600"><XCircle className="h-3.5 w-3.5" /> Failed</span>
                         ) : (

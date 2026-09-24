@@ -22,18 +22,18 @@ const ROLE_LABELS: Record<string, string> = {
   receptionist: "Receptionist", manager: "Manager",
 };
 const ROLE_COLOURS: Record<string, string> = {
-  owner: "bg-purple-100 text-purple-800 border-purple-200",
-  groomer: "bg-teal-100 text-teal-800 border-teal-200",
+  owner: "bg-violet-100 text-violet-800 border-violet-200",
+  groomer: "bg-violet-100 text-violet-800 border-violet-200",
   bather: "bg-blue-100 text-blue-800 border-blue-200",
   receptionist: "bg-amber-100 text-amber-800 border-amber-200",
-  manager: "bg-rose-100 text-rose-800 border-rose-200",
+  manager: "bg-red-100 text-red-800 border-red-200",
 };
 const PORTAL_STATUS_META: Record<string, { label: string; className: string }> = {
   not_invited: { label: "Uninvited", className: "bg-slate-100 text-slate-700 border-slate-200" },
-  invited: { label: "Invited", className: "bg-sky-50 text-sky-700 border-sky-200" },
+  invited: { label: "Invited", className: "bg-blue-50 text-blue-700 border-blue-200" },
   awaiting_approval: { label: "Awaiting approval", className: "bg-amber-50 text-amber-800 border-amber-200" },
   approved: { label: "Mobile access", className: "bg-emerald-50 text-emerald-800 border-emerald-200" },
-  revoked: { label: "Access revoked", className: "bg-rose-50 text-rose-700 border-rose-200" },
+  revoked: { label: "Access revoked", className: "bg-red-50 text-red-700 border-red-200" },
 };
 const portalStatusMeta = (status?: string) => PORTAL_STATUS_META[status ?? "not_invited"] ?? PORTAL_STATUS_META.not_invited;
 
@@ -102,10 +102,10 @@ function OnlineBookingControls() {
     onSuccess: () => { toast.success("Online booking controls saved"); utils.onlineBooking.getSettings.invalidate({ tenantId: 1 }); },
     onError: e => toast.error(e.message),
   });
-  return <section className="rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-cyan-50/40 p-4 sm:p-5">
-    <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><div className="rounded-xl bg-teal-600 text-white p-2"><Globe2 className="h-5 w-5" /></div><div><h2 className="font-bold">Online booking controls</h2><p className="text-sm text-muted-foreground mt-0.5">Keep public booking disabled while Groomigo remains in prototype. Internal bookings are unaffected by these limits.</p></div></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${form.enabled ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>{form.enabled ? "Live" : "Prototype off"}</span></div>
+  return <section className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-violet-50/40 p-4 sm:p-5">
+    <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><div className="rounded-xl bg-violet-600 text-white p-2"><Globe2 className="h-5 w-5" /></div><div><h2 className="font-bold">Online booking controls</h2><p className="text-sm text-muted-foreground mt-0.5">Keep public booking disabled while Groomigo remains in prototype. Internal bookings are unaffected by these limits.</p></div></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${form.enabled ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>{form.enabled ? "Live" : "Prototype off"}</span></div>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
-      <label className="flex items-center gap-2 rounded-lg border bg-white/80 px-3 py-2 text-sm font-medium cursor-pointer"><input type="checkbox" checked={form.enabled} onChange={e => setForm(p => ({ ...p, enabled: e.target.checked }))} className="h-4 w-4 accent-teal-600" /> Enable public booking</label>
+      <label className="flex items-center gap-2 rounded-lg border bg-white/80 px-3 py-2 text-sm font-medium cursor-pointer"><input type="checkbox" checked={form.enabled} onChange={e => setForm(p => ({ ...p, enabled: e.target.checked }))} className="h-4 w-4 accent-violet-600" /> Enable public booking</label>
       <div><Label>Bath-only online cap/day</Label><Input className="mt-1 bg-white" type="number" min="0" max="30" value={form.bathLimit} onChange={e => setForm(p => ({ ...p, bathLimit: e.target.value }))} /></div>
       <div><Label>Bath stations per slot</Label><Input className="mt-1 bg-white" type="number" min="1" max="20" value={form.bathCapacity} onChange={e => setForm(p => ({ ...p, bathCapacity: e.target.value }))} /></div>
       <div><Label>Slot interval (minutes)</Label><Input className="mt-1 bg-white" type="number" min="15" step="15" value={form.slotMinutes} onChange={e => setForm(p => ({ ...p, slotMinutes: e.target.value }))} /></div>
@@ -317,7 +317,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${ROLE_COLOURS[data.role] ?? ROLE_COLOURS.groomer}`}>
                 {ROLE_LABELS[data.role] ?? data.role}
               </span>
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${data.isActive ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-100 text-gray-500 border-gray-200"}`}>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${data.isActive ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200"}`}>
                 {data.isActive ? "Active" : "Inactive"}
               </span>
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${portalStatusMeta((data as any).portalStatus).className}`}>
@@ -345,18 +345,18 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
         ))}
       </div>
 
-      <section className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 to-white p-4">
+      <section className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/70 to-white p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="flex items-center gap-1.5 text-sm font-bold text-indigo-950"><TrendingUp className="h-4 w-4 text-indigo-600" /> Timing performance</h3>
-            <p className="mt-0.5 text-xs text-indigo-800">Completed workflow stages for the selected dates. Waiting time between stages is excluded from stage averages.</p>
+            <h3 className="flex items-center gap-1.5 text-sm font-bold text-blue-950"><TrendingUp className="h-4 w-4 text-blue-600" /> Timing performance</h3>
+            <p className="mt-0.5 text-xs text-blue-800">Completed workflow stages for the selected dates. Waiting time between stages is excluded from stage averages.</p>
           </div>
-          <Button type="button" size="sm" variant="outline" className="shrink-0 gap-1 border-indigo-200 bg-white text-indigo-800 hover:bg-indigo-50" onClick={exportTimingCsv} disabled={!(data as any)?.timingAnalytics} title="Download the selected timing analytics as a CSV file"><Download className="h-3.5 w-3.5" /> Export CSV</Button>
+          <Button type="button" size="sm" variant="outline" className="shrink-0 gap-1 border-blue-200 bg-white text-blue-800 hover:bg-blue-50" onClick={exportTimingCsv} disabled={!(data as any)?.timingAnalytics} title="Download the selected timing analytics as a CSV file"><Download className="h-3.5 w-3.5" /> Export CSV</Button>
         </div>
-        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-indigo-100 bg-white/70 p-2.5">
+        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-blue-100 bg-white/70 p-2.5">
           <div><Label htmlFor={`timing-start-${staffId}`} className="text-[11px] text-slate-600">From</Label><Input id={`timing-start-${staffId}`} type="date" className="mt-1 h-8 w-[142px] bg-white text-xs" value={timingRange.start} max={timingRange.end} onChange={event => setTimingRange(range => ({ ...range, start: event.target.value }))} /></div>
           <div><Label htmlFor={`timing-end-${staffId}`} className="text-[11px] text-slate-600">To</Label><Input id={`timing-end-${staffId}`} type="date" className="mt-1 h-8 w-[142px] bg-white text-xs" value={timingRange.end} min={timingRange.start} max={dateInputValue(new Date())} onChange={event => setTimingRange(range => ({ ...range, end: event.target.value }))} /></div>
-          <div className="flex flex-wrap gap-1 pb-0.5"><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-indigo-800 hover:bg-indigo-100" onClick={() => setTimingRange(makeTimingRange(7))}>Last 7 days</Button><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-indigo-800 hover:bg-indigo-100" onClick={() => setTimingRange(makeTimingRange(28))}>Last 4 weeks</Button></div>
+          <div className="flex flex-wrap gap-1 pb-0.5"><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-blue-800 hover:bg-blue-100" onClick={() => setTimingRange(makeTimingRange(7))}>Last 7 days</Button><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-blue-800 hover:bg-blue-100" onClick={() => setTimingRange(makeTimingRange(28))}>Last 4 weeks</Button></div>
           <p className="ml-auto pb-1 text-[11px] text-slate-500">{(data as any).timingAnalytics?.range?.days ?? 0} days selected</p>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -364,14 +364,14 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             { label: "Bath", metric: (data as any).timingAnalytics?.bath, colour: "text-blue-700" },
             { label: "Dry", metric: (data as any).timingAnalytics?.dry, colour: "text-violet-700" },
             { label: "Groom", metric: (data as any).timingAnalytics?.groom, colour: "text-amber-700" },
-            { label: "Total", metric: (data as any).timingAnalytics?.total, colour: "text-indigo-700" },
+            { label: "Total", metric: (data as any).timingAnalytics?.total, colour: "text-blue-700" },
           ].map(item => <div key={item.label} className="rounded-lg border border-white bg-white/85 p-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{item.label} average</p>
             <p className={`mt-1 font-mono text-lg font-bold ${item.colour}`}>{formatTimingMinutes(item.metric?.averageMinutes)}</p>
             <p className="mt-0.5 text-[11px] text-slate-500">{item.metric?.completedCount ?? 0} completed record{item.metric?.completedCount === 1 ? "" : "s"}</p>
           </div>)}
         </div>
-        <div className="mt-4 rounded-lg border border-indigo-100 bg-white p-3">
+        <div className="mt-4 rounded-lg border border-blue-100 bg-white p-3">
           <div className="mb-2 flex items-baseline justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">Daily average timing trend</p><p className="text-[11px] text-slate-500">Average completed minutes by workflow stage. Days without recorded completed work are omitted.</p></div><span className="text-[11px] text-slate-500">Minutes</span></div>
           {(data as any).timingAnalytics?.dailyTrend?.length ? <div className="h-[260px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={(data as any).timingAnalytics.dailyTrend} margin={{ top: 8, right: 6, left: -18, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" /><XAxis dataKey="date" tickFormatter={formatTrendDate} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} allowDecimals={false} /><Tooltip labelFormatter={(label) => formatTrendDate(String(label))} formatter={value => value === null || value === undefined ? "—" : `${String(value)} min`} contentStyle={{ borderRadius: 8, borderColor: "#c7d2fe", fontSize: 12 }} /><Legend wrapperStyle={{ fontSize: 11 }} /><Bar dataKey="bathAverageMinutes" name="Bath avg" fill="#3b82f6" radius={[3, 3, 0, 0]} /><Bar dataKey="dryAverageMinutes" name="Dry avg" fill="#8b5cf6" radius={[3, 3, 0, 0]} /><Bar dataKey="groomAverageMinutes" name="Groom avg" fill="#f59e0b" radius={[3, 3, 0, 0]} /><Bar dataKey="totalAverageMinutes" name="Total avg" fill="#4f46e5" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div> : <div className="py-8 text-center"><p className="text-sm font-medium text-slate-700">No completed workflow timings were recorded in this period.</p><p className="mt-1 text-xs text-slate-500">Choose Last 7 days or Last 4 weeks to include prior completed appointments. A booking contributes only after staff record its stage timings and mark it complete.</p></div>}
         </div>
@@ -402,8 +402,8 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             <div><Label>Emergency Phone</Label><Input className="mt-1" value={form.emergencyPhone} onChange={e => setForm(p => ({ ...p, emergencyPhone: e.target.value }))} /></div>
             <div><Label>Xero Employee ID</Label><Input className="mt-1" value={form.xeroEmployeeId} onChange={e => setForm(p => ({ ...p, xeroEmployeeId: e.target.value }))} /></div>
             <div><Label>Colour</Label><div className="flex items-center gap-2 mt-1"><input type="color" value={form.colourHex} onChange={e => setForm(p => ({ ...p, colourHex: e.target.value }))} className="h-9 w-16 rounded border cursor-pointer" /></div></div>
-            <div className="col-span-2 mt-2 border-t pt-3"><p className="text-sm font-semibold text-teal-800">Online booking profile</p><p className="text-xs text-muted-foreground mt-0.5">Keep this disabled until this groomer is approved for customer-selected online bookings.</p></div>
-            <label className="col-span-2 flex items-center gap-2 rounded-lg border bg-teal-50/50 px-3 py-2 text-sm cursor-pointer"><input type="checkbox" checked={form.onlineBookable === "true"} onChange={e => setForm(p => ({ ...p, onlineBookable: String(e.target.checked) }))} className="h-4 w-4 accent-teal-600" /><span className="font-medium">Available for online booking</span></label>
+            <div className="col-span-2 mt-2 border-t pt-3"><p className="text-sm font-semibold text-violet-800">Online booking profile</p><p className="text-xs text-muted-foreground mt-0.5">Keep this disabled until this groomer is approved for customer-selected online bookings.</p></div>
+            <label className="col-span-2 flex items-center gap-2 rounded-lg border bg-violet-50/50 px-3 py-2 text-sm cursor-pointer"><input type="checkbox" checked={form.onlineBookable === "true"} onChange={e => setForm(p => ({ ...p, onlineBookable: String(e.target.checked) }))} className="h-4 w-4 accent-violet-600" /><span className="font-medium">Available for online booking</span></label>
             <div className="col-span-2"><Label>Customer-facing bio</Label><textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none h-16 focus:outline-none focus:ring-2 focus:ring-ring" value={form.onlineBio} onChange={e => setForm(p => ({ ...p, onlineBio: e.target.value }))} placeholder="A short introduction that customers can read when choosing a groomer." /></div>
             <div className="col-span-2"><Label>Profile photo URL</Label><Input className="mt-1" value={form.onlineProfilePhotoUrl} onChange={e => setForm(p => ({ ...p, onlineProfilePhotoUrl: e.target.value }))} placeholder="Optional photo URL" /></div>
             <div className="col-span-2"><Label>Online services</Label><Input className="mt-1" value={form.onlineServices} onChange={e => setForm(p => ({ ...p, onlineServices: e.target.value }))} placeholder="classic_groom, styled_groom, bath_only" /><p className="mt-1 text-xs text-muted-foreground">Leave blank to allow every service. Use service names separated by commas.</p></div>
@@ -426,15 +426,15 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             {(data as any).emergencyContact && <div className="flex items-start gap-3"><AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Emergency Contact</p><p className="text-sm font-medium">{(data as any).emergencyContact}</p>{(data as any).emergencyPhone && <p className="text-sm text-muted-foreground">{(data as any).emergencyPhone}</p>}</div></div>}
             {data.xeroEmployeeId && <div className="flex items-start gap-3"><ShieldCheck className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Xero Employee ID</p><p className="text-sm font-medium font-mono">{data.xeroEmployeeId}</p></div></div>}
           </div>
-          <div className="rounded-xl border border-teal-100 bg-teal-50/50 p-3 flex items-center justify-between gap-3">
+          <div className="rounded-xl border border-violet-100 bg-violet-50/50 p-3 flex items-center justify-between gap-3">
             <div className="flex items-start gap-2 min-w-0">
-              <Smartphone className="h-4 w-4 text-teal-700 mt-0.5 flex-shrink-0" />
+              <Smartphone className="h-4 w-4 text-violet-700 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-teal-950">Groomigo mobile access</p>
-                <p className="text-xs text-teal-800">{portalStatus === "approved" ? "Approved: this staff member can view assigned appointments and update workflow stages." : portalStatus === "awaiting_approval" ? "Account setup is complete and waiting for administrator approval." : portalStatus === "invited" ? "Invitation sent; waiting for the staff member to set up their account." : portalStatus === "revoked" ? "Portal access is currently revoked." : "Send a secure invitation for phone or iPad access."}</p>
+                <p className="text-sm font-semibold text-violet-950">Groomigo mobile access</p>
+                <p className="text-xs text-violet-800">{portalStatus === "approved" ? "Approved: this staff member can view assigned appointments and update workflow stages." : portalStatus === "awaiting_approval" ? "Account setup is complete and waiting for administrator approval." : portalStatus === "invited" ? "Invitation sent; waiting for the staff member to set up their account." : portalStatus === "revoked" ? "Portal access is currently revoked." : "Send a secure invitation for phone or iPad access."}</p>
               </div>
             </div>
-            {portalStatus === "approved" ? <Button size="sm" variant="outline" className="gap-1.5 border-rose-200 bg-white text-rose-700 flex-shrink-0" disabled={revokePortalMutation.isPending} onClick={() => revokePortalMutation.mutate({ staffId })}><Ban className="h-3.5 w-3.5" /> Revoke</Button> : portalStatus === "revoked" && data.userId ? <Button size="sm" className="gap-1.5 flex-shrink-0" disabled={restorePortalMutation.isPending} onClick={() => restorePortalMutation.mutate({ staffId })}><CheckCircle2 className="h-3.5 w-3.5" /> Restore</Button> : portalStatus === "awaiting_approval" && latestInvitation ? <Button size="sm" className="gap-1.5 flex-shrink-0" disabled={approvePortalMutation.isPending} onClick={() => approvePortalMutation.mutate({ invitationId: latestInvitation.id })}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button> : <Button size="sm" variant="outline" className="gap-1.5 border-teal-200 bg-white flex-shrink-0" onClick={() => { setPortalEmail(data.email ?? ""); setPortalOpen(true); }}><Send className="h-3.5 w-3.5" /> Invite</Button>}
+            {portalStatus === "approved" ? <Button size="sm" variant="outline" className="gap-1.5 border-red-200 bg-white text-red-700 flex-shrink-0" disabled={revokePortalMutation.isPending} onClick={() => revokePortalMutation.mutate({ staffId })}><Ban className="h-3.5 w-3.5" /> Revoke</Button> : portalStatus === "revoked" && data.userId ? <Button size="sm" className="gap-1.5 flex-shrink-0" disabled={restorePortalMutation.isPending} onClick={() => restorePortalMutation.mutate({ staffId })}><CheckCircle2 className="h-3.5 w-3.5" /> Restore</Button> : portalStatus === "awaiting_approval" && latestInvitation ? <Button size="sm" className="gap-1.5 flex-shrink-0" disabled={approvePortalMutation.isPending} onClick={() => approvePortalMutation.mutate({ invitationId: latestInvitation.id })}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button> : <Button size="sm" variant="outline" className="gap-1.5 border-violet-200 bg-white flex-shrink-0" onClick={() => { setPortalEmail(data.email ?? ""); setPortalOpen(true); }}><Send className="h-3.5 w-3.5" /> Invite</Button>}
           </div>
           {portalOpen && (
             <div className="rounded-xl border p-4 space-y-3 bg-card">

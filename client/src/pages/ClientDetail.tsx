@@ -38,11 +38,11 @@ const SERVICE_COLOUR: Record<string, string> = {
 };
 
 const TIER_COLOURS: Record<string, { bg: string; text: string; border: string }> = {
-  diamond: { bg: "bg-cyan-50", text: "text-cyan-800", border: "border-cyan-200" },
+  diamond: { bg: "bg-violet-50", text: "text-violet-800", border: "border-violet-200" },
   platinum: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300" },
   gold:     { bg: "bg-amber-50", text: "text-amber-800", border: "border-amber-200" },
-  silver:   { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-300" },
-  bronze:   { bg: "bg-orange-50", text: "text-orange-800", border: "border-orange-200" },
+  silver:   { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300" },
+  bronze:   { bg: "bg-amber-50", text: "text-amber-800", border: "border-amber-200" },
 };
 
 const TIER_ICONS: Record<string, string> = {
@@ -70,7 +70,7 @@ function FamilyLinkedPets({ petId }: { petId: number }) {
     <div className="mt-1 flex flex-wrap gap-1">
       {others.map(p => (
         <Link key={p.id} href={`/clients/${p.clientId}`}>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 cursor-pointer transition-colors">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 cursor-pointer transition-colors">
             <Link2 className="h-2.5 w-2.5" />
             {p.name}
           </span>
@@ -826,7 +826,7 @@ export default function ClientDetail() {
                 const pMemberships = petMemberships[pet.id] ?? [];
                 const activePetMembership = pMemberships.find(m => m.status === "active");
                 return (
-                  <Card key={pet.id} className={`relative overflow-hidden ${pet.status === "departed" ? "border-amber-300 bg-gradient-to-br from-amber-50/80 via-card to-rose-50/50 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]" : ""}`}>
+                  <Card key={pet.id} className={`relative overflow-hidden ${pet.status === "departed" ? "border-amber-300 bg-gradient-to-br from-amber-50/80 via-card to-red-50/50 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]" : ""}`}>
                     {/* Colour strip */}
                     <div className="h-1.5 w-full" style={{ background: pet.status === "departed" ? "#d97706" : activePetMembership ? (TIER_COLOURS[activePetMembership.tier]?.text.replace("text-", "var(--") ?? "#6366f1") : "#6366f1" }} />
                     {pet.status === "departed" && (
@@ -1256,7 +1256,7 @@ export default function ClientDetail() {
                         ? `${membership ?? "Membership"} moved from ${sourcePet} to ${replacementPet ?? "replacement pet"}`
                         : `${membership ?? "Membership"} was removed for ${sourcePet}`;
                     return <div key={event.id} className="flex gap-3 px-5 py-4">
-                      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${event.eventType === "pet_marked_departed" ? "bg-amber-100 text-amber-800" : isTransfer ? "bg-teal-100 text-teal-800" : "bg-red-100 text-red-800"}`}><History className="h-4 w-4" /></div>
+                      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${event.eventType === "pet_marked_departed" ? "bg-amber-100 text-amber-800" : isTransfer ? "bg-violet-100 text-violet-800" : "bg-red-100 text-red-800"}`}><History className="h-4 w-4" /></div>
                       <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-sm">{description}</p><Badge variant="outline" className="text-[10px]">{event.eventType === "pet_marked_departed" ? "Pet status" : isTransfer ? "Membership transfer" : "Membership removed"}</Badge></div>{event.note && <p className="mt-1 text-sm text-muted-foreground italic">{event.note}</p>}<p className="mt-1 text-xs text-muted-foreground">{new Date(event.changedAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", dateStyle: "medium", timeStyle: "short" })} · {event.changedByName ?? "Administrator"}</p></div>
                     </div>;
                   })}

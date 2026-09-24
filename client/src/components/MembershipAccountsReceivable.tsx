@@ -52,7 +52,7 @@ export function MembershipAccountsReceivable() {
         <tbody>
           {(accounts ?? []).length === 0 && <tr><td colSpan={7} className="p-10 text-center text-muted-foreground">No memberships to reconcile.</td></tr>}
           {(accounts ?? []).map(account => {
-            const statusClass = account.accountStatus === "declined" || account.accountStatus === "cancelled" ? "bg-red-100 text-red-800" : account.accountStatus === "grace_period" ? "bg-amber-100 text-amber-800" : account.accountStatus === "arrears_review" ? "bg-orange-100 text-orange-800" : "bg-emerald-100 text-emerald-800";
+            const statusClass = account.accountStatus === "declined" || account.accountStatus === "cancelled" ? "bg-red-100 text-red-800" : account.accountStatus === "grace_period" ? "bg-amber-100 text-amber-800" : account.accountStatus === "arrears_review" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800";
             const label = account.accountStatus === "up_to_date" ? "Up to date" : account.accountStatus.replace("_", " ");
             const firstUnvalued = account.unvaluedGrooms[0];
             return <tr key={account.id} className="border-b last:border-0 align-top hover:bg-muted/20">

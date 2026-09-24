@@ -64,14 +64,14 @@ const SERVICE_COLOURS: Record<string, { bg: string; border: string; text: string
 
 const WORKFLOW_COLOURS: Record<string, string> = {
   scheduled:  "bg-blue-100 text-blue-800",
-  checked_in: "bg-yellow-100 text-yellow-800",
-  bathing:    "bg-cyan-100 text-cyan-800",
+  checked_in: "bg-amber-100 text-amber-800",
+  bathing:    "bg-violet-100 text-violet-800",
   drying:     "bg-violet-100 text-violet-800",
-  grooming:   "bg-purple-100 text-purple-800",
-  ready:      "bg-green-100 text-green-800",
-  complete:   "bg-gray-100 text-gray-600",
+  grooming:   "bg-violet-100 text-violet-800",
+  ready:      "bg-emerald-100 text-emerald-800",
+  complete:   "bg-slate-100 text-slate-600",
   cancelled:  "bg-red-100 text-red-700",
-  no_show:    "bg-orange-100 text-orange-700",
+  no_show:    "bg-amber-100 text-amber-700",
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -284,13 +284,13 @@ function ApptBlock({
               <div className="leading-tight" title={sharedAppointmentLabel}>{sharedAppointmentLabel}</div>
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600" />}
             </div>
-            {!compact && <div className="mt-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
+            {!compact && <div className="mt-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
             {!compact && (
               <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                 {fmtTime(new Date(appt.scheduledStart))} – {fmtTime(new Date(appt.scheduledEnd))}
               </div>
             )}
-            {showService && <div className="mt-1 inline-flex max-w-full rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
+            {showService && <div className="mt-1 inline-flex max-w-full rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
           </>
         ) : (
           <>
@@ -303,7 +303,7 @@ function ApptBlock({
                 <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                   {fmtTime(new Date(appt.scheduledStart))} – {fmtTime(new Date(appt.scheduledEnd))}
                 </div>
-                {showService && <div className="mt-1 inline-flex max-w-full rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
+                {showService && <div className="mt-1 inline-flex max-w-full rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
                 {appt.nextAppointmentDate && (
                   <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: svc.border, opacity: 0.9 }}>
                     Next: {new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short" })}
@@ -555,7 +555,7 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
       </div>` : "";
     const serviceLabel = SERVICE_LABELS[appt.serviceType] ?? appt.serviceType.replace(/_/g, " ");
     return `<div style="font-family:Arial,sans-serif;color:#172033;max-width:600px;margin:0 auto">
-      <div style="background:linear-gradient(135deg,#0f766e,#14b8a6);padding:24px 28px;border-radius:18px;color:#fff">
+      <div style="background:linear-gradient(135deg,#6d28d9,#8b5cf6);padding:24px 28px;border-radius:18px;color:#fff">
         <div style="font-size:11px;letter-spacing:.12em;font-weight:700;opacity:.82">BARKIN BEAUTIFUL</div>
         <div style="font-size:27px;font-weight:800;margin-top:8px">${escapeHtml(appt.petName ?? "Your pet")}'s Grooming Card</div>
         <div style="font-size:13px;opacity:.9;margin-top:5px">${escapeHtml(new Date(appt.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long", year: "numeric" }))} · Groomed by ${escapeHtml(appt.staffName ?? "your Groomigo groomer")}</div>
@@ -565,11 +565,11 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
         <div style="font-size:17px;font-weight:800;color:#172033">${escapeHtml(serviceLabel)}</div>
         ${photoSection}
         <div style="font-size:11px;letter-spacing:.1em;color:#64748b;font-weight:700;margin:20px 0 6px">OVERALL</div>
-        <div style="font-size:18px;font-weight:800;color:#0f766e">${escapeHtml(RATING_LABELS[rating] ?? rating)}</div>
-        ${moods.length ? `<div style="font-size:11px;letter-spacing:.1em;color:#64748b;font-weight:700;margin:20px 0 6px">MOOD</div><div>${moods.map(m => `<span style="display:inline-block;background:#ecfdf5;border-radius:999px;padding:5px 10px;font-size:12px;margin:0 5px 5px 0;color:#115e59">${escapeHtml(m)}</span>`).join("")}</div>` : ""}
+        <div style="font-size:18px;font-weight:800;color:#6d28d9">${escapeHtml(RATING_LABELS[rating] ?? rating)}</div>
+        ${moods.length ? `<div style="font-size:11px;letter-spacing:.1em;color:#64748b;font-weight:700;margin:20px 0 6px">MOOD</div><div>${moods.map(m => `<span style="display:inline-block;background:#f5f3ff;border-radius:999px;padding:5px 10px;font-size:12px;margin:0 5px 5px 0;color:#5b21b6">${escapeHtml(m)}</span>`).join("")}</div>` : ""}
         ${note ? `<div style="font-size:11px;letter-spacing:.1em;color:#64748b;font-weight:700;margin:20px 0 6px">A NOTE FROM YOUR GROOMER</div><div style="background:#f8fafc;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.5;white-space:pre-wrap">${escapeHtml(note)}</div>` : ""}
         ${conditionRows ? `<div style="font-size:11px;letter-spacing:.1em;color:#64748b;font-weight:700;margin:20px 0 6px">WE CHECKED</div><table style="width:100%;border-collapse:collapse">${conditionRows}</table>` : ""}
-        ${freqWeeks ? `<div style="background:#ecfdf5;border-radius:12px;padding:13px 14px;margin-top:20px"><div style="font-size:10px;letter-spacing:.1em;color:#0f766e;font-weight:700">RECOMMENDED FREQUENCY</div><div style="font-size:16px;color:#115e59;font-weight:800;margin-top:3px">Every ${escapeHtml(freqWeeks)} weeks</div></div>` : ""}
+        ${freqWeeks ? `<div style="background:#f5f3ff;border-radius:12px;padding:13px 14px;margin-top:20px"><div style="font-size:10px;letter-spacing:.1em;color:#6d28d9;font-weight:700">RECOMMENDED FREQUENCY</div><div style="font-size:16px;color:#5b21b6;font-weight:800;margin-top:3px">Every ${escapeHtml(freqWeeks)} weeks</div></div>` : ""}
         ${groomerNotes ? `<div style="font-size:11px;letter-spacing:.1em;color:#64748b;font-weight:700;margin:20px 0 6px">GROOMER NOTES</div><div style="font-size:13px;line-height:1.5;white-space:pre-wrap">${escapeHtml(groomerNotes)}</div>` : ""}
         <div style="border-top:1px solid #e2e8f0;margin-top:28px;padding-top:14px;font-size:10px;color:#94a3b8">This grooming card does not constitute veterinary advice. Please contact a veterinarian for professional health guidance.</div>
       </div>
@@ -1434,7 +1434,7 @@ export default function Calendar() {
                           {fmtTime(new Date(appt.scheduledStart))}
                           {appt.staffName ? ` · ${appt.staffName.split(" ")[0]}` : ""}
                         </div>
-                        <span className="mt-1 inline-flex rounded-full bg-white/70 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</span>
+                        <span className="mt-1 inline-flex rounded-full bg-white/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</span>
                       </div>
                     );
                   })
@@ -1470,8 +1470,8 @@ export default function Calendar() {
                 {(groomerCount > 0 || batherCount > 0) && (
                   <div className="grid border-b bg-slate-50/80" style={{ gridTemplateColumns: colTemplate }}>
                     <div className="border-r" />
-                    {groomerCount > 0 && <div className="px-3 py-2 border-r text-[10px] font-black uppercase tracking-[0.16em] text-teal-800 bg-gradient-to-r from-teal-100/90 to-teal-50/50" style={{ gridColumn: `span ${groomerCount}` }}>Groomers</div>}
-                    {batherCount > 0 && <div className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-indigo-800 bg-gradient-to-r from-indigo-100/90 to-indigo-50/50" style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
+                    {groomerCount > 0 && <div className="px-3 py-2 border-r text-[10px] font-bold uppercase tracking-[0.16em] text-violet-800 bg-gradient-to-r from-violet-100/90 to-violet-50/50" style={{ gridColumn: `span ${groomerCount}` }}>Groomers</div>}
+                    {batherCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800 bg-gradient-to-r from-blue-100/90 to-blue-50/50" style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
                   </div>
                 )}
                 {/* Sticky header */}
@@ -1790,7 +1790,7 @@ export default function Calendar() {
                   <span className={`flex h-4 w-4 items-center justify-center rounded border ${visibleStaffIds === null ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{visibleStaffIds === null && <Check className="h-3 w-3" />}</span>
                   All staff
                 </button>
-                {calendarGroomers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-teal-700">Groomers</p>}
+                {calendarGroomers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-violet-700">Groomers</p>}
                 {calendarGroomers.map((member) => {
                   const checked = visibleStaffIds === null || visibleStaffIds.includes(member.id);
                   return <button key={member.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setVisibleStaffIds(toggleCalendarStaffSelection(visibleStaffIds, activeStaff.map((staffMember) => staffMember.id), member.id))}>
@@ -1798,7 +1798,7 @@ export default function Calendar() {
                     <span className="h-2 w-2 rounded-full" style={{ background: member.colourHex ?? "#6366f1" }} />{member.name.split(" ")[0]}
                   </button>;
                 })}
-                {calendarBathers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-indigo-700">Bathing team</p>}
+                {calendarBathers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-blue-700">Bathing team</p>}
                 {calendarBathers.map((member) => {
                   const checked = visibleStaffIds === null || visibleStaffIds.includes(member.id);
                   return <button key={member.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setVisibleStaffIds(toggleCalendarStaffSelection(visibleStaffIds, activeStaff.map((staffMember) => staffMember.id), member.id))}>
@@ -2471,7 +2471,7 @@ export default function Calendar() {
                       <div className="flex flex-col gap-1">
                         {(["none","caution","danger"] as const).map(lvl => (
                           <button key={lvl} type="button" onClick={() => setStyleNoteForm(f => ({ ...f, alertLevel: f.alertLevel === lvl ? "" : lvl }))}
-                            className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${styleNoteForm.alertLevel === lvl ? lvl === "danger" ? "bg-red-500 text-white border-red-500" : lvl === "caution" ? "bg-amber-400 text-white border-amber-400" : "bg-green-500 text-white border-green-500" : "bg-transparent text-muted-foreground border-muted"}`}>
+                            className={`px-2 py-1 rounded text-[10px] font-semibold border transition-colors ${styleNoteForm.alertLevel === lvl ? lvl === "danger" ? "bg-red-500 text-white border-red-500" : lvl === "caution" ? "bg-amber-400 text-white border-amber-400" : "bg-emerald-500 text-white border-emerald-500" : "bg-transparent text-muted-foreground border-muted"}`}>
                             {lvl === "none" ? "✓ OK" : lvl === "caution" ? "⚠ Caution" : "🔴 Danger"}
                           </button>
                         ))}

@@ -79,11 +79,11 @@ export default function IncomingCallAlert() {
                   <Phone className="h-5 w-5 animate-pulse text-emerald-600" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">Incoming call{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
-                  <p className="text-xs text-gray-500">{payload.fromNumber}</p>
+                  <p className="text-sm font-semibold text-slate-900">Incoming call{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
+                  <p className="text-xs text-slate-500">{payload.fromNumber}</p>
                 </div>
                 <button
-                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                   onClick={() => toast.dismiss(t)}
                   aria-label="Dismiss"
                 >
@@ -108,14 +108,14 @@ export default function IncomingCallAlert() {
                   <PhoneMissed className="h-5 w-5 text-amber-600" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">Missed call{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
-                  <p className="text-xs text-gray-500">{payload.fromNumber}</p>
+                  <p className="text-sm font-semibold text-slate-900">Missed call{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
+                  <p className="text-xs text-slate-500">{payload.fromNumber}</p>
                   {payload.transcriptText && (
-                    <p className="mt-1 max-w-xs truncate text-xs italic text-gray-600">"{payload.transcriptText}"</p>
+                    <p className="mt-1 max-w-xs truncate text-xs italic text-slate-600">"{payload.transcriptText}"</p>
                   )}
                 </div>
                 <button
-                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                   onClick={() => toast.dismiss(t)}
                   aria-label="Dismiss"
                 >
@@ -131,21 +131,21 @@ export default function IncomingCallAlert() {
           toast.custom(
             (t) => (
               <div
-                className="relative flex cursor-pointer items-start gap-3 rounded-xl border border-sky-200 bg-white px-4 py-3 pr-8 shadow-lg"
+                className="relative flex cursor-pointer items-start gap-3 rounded-xl border border-blue-200 bg-white px-4 py-3 pr-8 shadow-lg"
                 onClick={() => { toast.dismiss(t); setLocation("/messages"); }}
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100">
-                  <MessageSquare className="h-5 w-5 text-sky-600" />
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                  <MessageSquare className="h-5 w-5 text-blue-600" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">New message{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
-                  <p className="text-xs text-gray-500">{payload.fromNumber}</p>
+                  <p className="text-sm font-semibold text-slate-900">New message{formatCallerLabel(payload.clientName, payload.petNames) ? ` — ${formatCallerLabel(payload.clientName, payload.petNames)}` : ""}</p>
+                  <p className="text-xs text-slate-500">{payload.fromNumber}</p>
                   {payload.body && (
-                    <p className="mt-1 max-w-xs truncate text-xs italic text-gray-600">"{payload.body}"</p>
+                    <p className="mt-1 max-w-xs truncate text-xs italic text-slate-600">"{payload.body}"</p>
                   )}
                 </div>
                 <button
-                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                   onClick={(e) => { e.stopPropagation(); toast.dismiss(t); }}
                   aria-label="Dismiss"
                 >

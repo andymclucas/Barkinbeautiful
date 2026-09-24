@@ -54,9 +54,9 @@ const STATUS_COLOURS: Record<string, string> = {
 const TIER_COLOURS: Record<string, string> = {
   diamond: "bg-violet-100 text-violet-800",
   platinum: "bg-slate-200 text-slate-700",
-  gold: "bg-yellow-100 text-yellow-800",
+  gold: "bg-amber-100 text-amber-800",
   silver: "bg-slate-100 text-slate-600",
-  bronze: "bg-orange-100 text-orange-800",
+  bronze: "bg-amber-100 text-amber-800",
 };
 
 const TIER_OPTIONS = [
@@ -742,11 +742,11 @@ export default function Memberships() {
                       <p className="text-xs text-red-500 mt-0.5">across {debtItems.length} membership{debtItems.length !== 1 ? "s" : ""}</p>
                     </CardContent>
                   </Card>
-                  <Card className="border-orange-200 bg-orange-50">
+                  <Card className="border-amber-200 bg-amber-50">
                     <CardContent className="p-4">
-                      <p className="text-xs text-orange-600 font-semibold uppercase tracking-wide">Estimated Value</p>
-                      <p className="text-3xl font-bold text-orange-700 mt-1">${totalDebtAmount.toFixed(2)}</p>
-                      <p className="text-xs text-orange-500 mt-0.5">at current membership rates</p>
+                      <p className="text-xs text-amber-600 font-semibold uppercase tracking-wide">Estimated Value</p>
+                      <p className="text-3xl font-bold text-amber-700 mt-1">${totalDebtAmount.toFixed(2)}</p>
+                      <p className="text-xs text-amber-500 mt-0.5">at current membership rates</p>
                     </CardContent>
                   </Card>
                 </div>

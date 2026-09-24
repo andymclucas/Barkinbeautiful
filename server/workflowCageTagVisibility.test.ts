@@ -8,10 +8,13 @@ const workflowBoard = readFileSync(
 
 describe("Workflow Board Cage and Tag entry visibility", () => {
   it("uses separate high-contrast Cage and Tag entry tones in both headers and editable cells", () => {
-    expect(workflowBoard).toContain('bg-cyan-900 text-cyan-50');
+    expect(workflowBoard).toContain('bg-blue-900 text-blue-50');
     expect(workflowBoard).toContain('bg-violet-900 text-violet-50');
-    expect(workflowBoard).toContain('bg-cyan-50/90 border-x border-cyan-200/80');
+    expect(workflowBoard).toContain('bg-blue-50/90 border-x border-blue-200/80');
     expect(workflowBoard).toContain('bg-violet-50/90 border-r border-violet-200/80');
+    // Cage and Tag must stay visually distinct — the palette consolidation
+    // collapsed both to violet once, which this test caught.
+    expect(workflowBoard).not.toContain('bg-violet-900 text-violet-50 border-x');
     expect(workflowBoard).toContain('tone="cage"');
     expect(workflowBoard).toContain('tone="tag"');
   });

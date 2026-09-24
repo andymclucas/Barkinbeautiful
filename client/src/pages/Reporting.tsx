@@ -282,7 +282,7 @@ export default function Reporting() {
                         </div>
                       </div>
                       <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${isTotal ? "bg-primary" : "bg-teal-500"}`} style={{ width: `${pct}%` }} />
+                        <div className={`h-full rounded-full transition-all ${isTotal ? "bg-primary" : "bg-violet-500"}`} style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                   );
@@ -312,7 +312,7 @@ export default function Reporting() {
                     <p className="text-sm font-medium">{r.name}</p>
                     <p className="text-xs text-muted-foreground">{r.desc}</p>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${r.ready ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${r.ready ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
                     {r.ready ? "Available" : "Coming soon"}
                   </span>
                 </div>

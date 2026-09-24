@@ -165,10 +165,10 @@ export default function WorkflowDisplay() {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-center text-white">
         <div>
-          <Dog className="h-12 w-12 text-teal-400 mx-auto mb-4" />
+          <Dog className="h-12 w-12 text-violet-400 mx-auto mb-4" />
           <h1 className="text-2xl font-bold">Workflow display</h1>
           <p className="mt-2 text-slate-300">Sign in on this screen to view the live grooming-room board.</p>
-          <Link href="/login" className="inline-flex mt-5 px-4 py-2 rounded-lg bg-teal-500 text-slate-950 font-semibold">Sign in</Link>
+          <Link href="/login" className="inline-flex mt-5 px-4 py-2 rounded-lg bg-violet-500 text-slate-950 font-semibold">Sign in</Link>
         </div>
       </div>
     );
@@ -178,7 +178,7 @@ export default function WorkflowDisplay() {
     return (
       <main className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-center text-white">
         <div>
-          <Dog className="h-12 w-12 text-teal-400 mx-auto mb-4 animate-pulse" />
+          <Dog className="h-12 w-12 text-violet-400 mx-auto mb-4 animate-pulse" />
           <h1 className="text-2xl font-bold">Connecting to the workflow display</h1>
           <p className="mt-2 text-slate-300">Loading the live salon board…</p>
         </div>
@@ -213,7 +213,7 @@ export default function WorkflowDisplay() {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <div className="flex items-center justify-end gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400"><Clock3 className="h-4 w-4 text-teal-300" /> Salon time</div>
+            <div className="flex items-center justify-end gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400"><Clock3 className="h-4 w-4 text-violet-300" /> Salon time</div>
             <time className="font-mono text-3xl font-bold tabular-nums text-white md:text-4xl" dateTime={new Date(now).toISOString()}>{new Date(now).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}</time>
           </div>
           <div className="hidden items-center gap-3 text-sm text-slate-400 sm:flex">
@@ -224,10 +224,10 @@ export default function WorkflowDisplay() {
         </div>
       </header>
 
-      <aside className="mb-5 flex items-center gap-3 rounded-xl border border-teal-300/20 bg-teal-400/5 px-3 py-2.5" aria-label="TV display QR access">
+      <aside className="mb-5 flex items-center gap-3 rounded-xl border border-violet-300/20 bg-violet-400/5 px-3 py-2.5" aria-label="TV display QR access">
         <div className="rounded-lg bg-white p-1.5"><QRCodeSVG value={displayUrl} size={78} level="M" includeMargin={false} /></div>
         <div>
-          <p className="text-sm font-bold text-teal-100">Scan to open TV display</p>
+          <p className="text-sm font-bold text-violet-100">Scan to open TV display</p>
           <p className="mt-0.5 text-xs text-slate-400">Open this display on a phone or tablet. Sign-in is still required.</p>
         </div>
       </aside>
@@ -237,9 +237,9 @@ export default function WorkflowDisplay() {
           <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-300">Waiting</div>
           <div className="mt-1 text-3xl font-black tabular-nums text-white">{waitingRows.length}</div>
         </div>
-        <div className="bg-cyan-500/15 px-4 py-3 ring-1 ring-inset ring-cyan-400/30">
-          <div className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-200">In progress</div>
-          <div className="mt-1 text-3xl font-black tabular-nums text-cyan-100">{inProgressCount}</div>
+        <div className="bg-violet-500/15 px-4 py-3 ring-1 ring-inset ring-violet-400/30">
+          <div className="text-xs font-bold uppercase tracking-[0.16em] text-violet-200">In progress</div>
+          <div className="mt-1 text-3xl font-black tabular-nums text-violet-100">{inProgressCount}</div>
         </div>
         <div className="bg-emerald-500/15 px-4 py-3 ring-1 ring-inset ring-emerald-400/30">
           <div className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-200">Completed</div>
@@ -253,11 +253,11 @@ export default function WorkflowDisplay() {
           <span className="text-emerald-200">{completedRows.length} of {dayRows.length} dogs complete · {dailyCompletionPercent}%</span>
         </div>
         <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-800" role="progressbar" aria-label="Dogs completed today" aria-valuemin={0} aria-valuemax={dayRows.length} aria-valuenow={completedRows.length}>
-          <div className="h-full rounded-full bg-gradient-to-r from-teal-400 to-emerald-400 transition-[width] duration-700 ease-out motion-reduce:transition-none" style={{ width: `${dailyCompletionPercent}%` }} />
+          <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-emerald-400 transition-[width] duration-700 ease-out motion-reduce:transition-none" style={{ width: `${dailyCompletionPercent}%` }} />
         </div>
       </section>
 
-      {bathQueue.length > 0 && <section className="mb-5 rounded-xl border border-cyan-300/20 bg-cyan-400/5 px-4 py-3" aria-label="Bathing priority queue"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold text-cyan-100">Bath queue</h2><p className="mt-0.5 text-xs text-slate-400">Priority guides bathing order without changing the scheduled workflow.</p></div><span className="rounded-full bg-cyan-400 px-2 py-0.5 text-[10px] font-black text-slate-950">1 = NEXT</span></div><div className="mt-2 flex flex-wrap gap-2">{bathQueue.map((item) => { const meta = BATH_PRIORITY_META[item.priority]; return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} className="flex items-center gap-1.5 rounded-lg border bg-slate-950/50 px-2.5 py-1.5 text-xs" style={{ borderColor: meta.colour }}><span className="flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-black text-white" style={{ background: meta.colour }}>{item.priority}</span><span className="font-semibold text-white">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-cyan-200">together</span>}</div>; })}</div></section>}
+      {bathQueue.length > 0 && <section className="mb-5 rounded-xl border border-violet-300/20 bg-violet-400/5 px-4 py-3" aria-label="Bathing priority queue"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold text-violet-100">Bath queue</h2><p className="mt-0.5 text-xs text-slate-400">Priority guides bathing order without changing the scheduled workflow.</p></div><span className="rounded-full bg-violet-400 px-2 py-0.5 text-[10px] font-black text-slate-950">1 = NEXT</span></div><div className="mt-2 flex flex-wrap gap-2">{bathQueue.map((item) => { const meta = BATH_PRIORITY_META[item.priority]; return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} className="flex items-center gap-1.5 rounded-lg border bg-slate-950/50 px-2.5 py-1.5 text-xs" style={{ borderColor: meta.colour }}><span className="flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-black text-white" style={{ background: meta.colour }}>{item.priority}</span><span className="font-semibold text-white">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-200">together</span>}</div>; })}</div></section>}
 
       <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         {STAGES.map(stage => (
@@ -284,7 +284,7 @@ export default function WorkflowDisplay() {
                 <p className="mt-3 max-w-xl text-lg text-slate-300">A great day’s work from the Barkin Beautiful team.</p>
                 <div className="mt-7 flex flex-wrap justify-center gap-3">
                   <button type="button" onClick={() => setShowCompleted(true)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20">Review completed dogs</button>
-                  <button type="button" onClick={resetForTomorrow} className="rounded-lg border border-teal-300/30 bg-teal-400/10 px-4 py-2 text-sm font-semibold text-teal-100 hover:bg-teal-400/20">Reset for tomorrow</button>
+                  <button type="button" onClick={resetForTomorrow} className="rounded-lg border border-violet-300/30 bg-violet-400/10 px-4 py-2 text-sm font-semibold text-violet-100 hover:bg-violet-400/20">Reset for tomorrow</button>
                 </div>
               </div>
             ) : <div className="p-16 text-center text-slate-400">No dogs are currently on the workflow board.</div>
@@ -304,13 +304,13 @@ export default function WorkflowDisplay() {
                     <div className="font-bold text-white flex items-center gap-1.5">
                       {appt.petName}
                       {(appt as any).isVipMember && (
-                        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-950 shadow-sm">
+                        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-950 shadow-sm">
                           <Star className="h-2.5 w-2.5 fill-amber-950" /> VIP
                         </span>
                       )}
                     </div>
                     <div className={`${rowDetailClass} text-slate-400`}>{appt.clientLastName}{isPastScheduledTime ? " · Past scheduled time" : ""}</div>
-                    {appt.groomStyleNote && <div className={`${rowDetailClass} mt-0.5 truncate text-teal-300`} title={appt.groomStyleNote}>📝 {appt.groomStyleNote}</div>}
+                    {appt.groomStyleNote && <div className={`${rowDetailClass} mt-0.5 truncate text-violet-300`} title={appt.groomStyleNote}>📝 {appt.groomStyleNote}</div>}
                   </div>
                 </div>
                 <div className="font-black" style={{ color: appt.bathPriority ? BATH_PRIORITY_META[appt.bathPriority as keyof typeof BATH_PRIORITY_META]?.colour : "#94a3b8" }}>{appt.bathPriority ? `#${appt.bathPriority}` : "—"}</div>

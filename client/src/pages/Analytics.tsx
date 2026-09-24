@@ -169,7 +169,7 @@ export default function Analytics() {
             { label: "Appointments", value: String(summary?.appointments ?? 0), icon: CalendarDays, colour: "text-blue-600" },
             { label: "Active Clients", value: String(summary?.activeClients ?? 0), icon: Users, colour: "text-violet-600" },
             { label: "Active Memberships", value: String(summary?.activeMemberships ?? 0), icon: CreditCard, colour: "text-amber-600" },
-            { label: "Avg Groom Cycle", value: groomInterval?.averageWeeks != null ? `${groomInterval.averageWeeks} wks` : "—", detail: groomInterval?.returningPetCount ? `${groomInterval.returningPetCount} repeat pets` : "completed visits only", icon: Scissors, colour: "text-rose-600" },
+            { label: "Avg Groom Cycle", value: groomInterval?.averageWeeks != null ? `${groomInterval.averageWeeks} wks` : "—", detail: groomInterval?.returningPetCount ? `${groomInterval.returningPetCount} repeat pets` : "completed visits only", icon: Scissors, colour: "text-red-600" },
           ].map(kpi => (
             <Card key={kpi.label}>
               <CardContent className="p-4">
