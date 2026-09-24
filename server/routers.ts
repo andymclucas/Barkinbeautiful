@@ -2636,6 +2636,45 @@ const staffRouter = router({
         .where(eq(staffAccessEvents.staffId, input.staffId)).orderBy(desc(staffAccessEvents.createdAt));
     }),
 
+  // The caller's own staff record, if they have one. Returns null rather than
+  // throwing for users with no staff row (e.g. an owner/admin account), so the
+  // sidebar can just not offer the photo control instead of erroring.
+  getMyProfile: operationalProcedure
+    .query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const [member] = await db.select({
+        id: staff.id,
+        name: staff.name,
+        colourHex: staff.colourHex,
+        photoUrl: staff.onlineProfilePhotoUrl,
+        portalStatus: staff.portalStatus,
+      }).from(staff).where(eq(staff.userId, ctx.user.id)).limit(1);
+      return member ?? null;
+    }),
+
+  // Lets an approved staff member set their OWN profile photo. Deliberately
+  // separate from staff.update (protectedProcedure, which excludes staff
+  // accounts): this is operationalProcedure so staff can reach it, and it
+  // resolves the target row from ctx.user.id rather than accepting a staffId,
+  // so a staff member cannot alter anyone else's record. Only the photo column
+  // is written — no role, status, pay or access fields.
+  updateMyPhoto: operationalProcedure
+    .input(z.object({ photoUrl: z.string().max(2048).nullable() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [member] = await db.select({ id: staff.id, portalStatus: staff.portalStatus })
+        .from(staff).where(eq(staff.userId, ctx.user.id)).limit(1);
+      if (!member || member.portalStatus !== "approved") {
+        throw new Error("Your staff access is awaiting administrator approval");
+      }
+      await db.update(staff)
+        .set({ onlineProfilePhotoUrl: input.photoUrl || null, updatedAt: new Date() })
+        .where(eq(staff.id, member.id));
+      return { success: true as const, photoUrl: input.photoUrl || null };
+    }),
+
   getMyPortal: operationalProcedure
     .query(async ({ ctx }) => {
       const db = await getDb();

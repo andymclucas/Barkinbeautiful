@@ -1,7 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import NotificationBell from "@/components/NotificationBell";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,11 +35,15 @@ import {
   LogOut,
   PanelLeft,
   Scissors,
+  ImagePlus,
+  ImageOff,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { trpc } from "@/lib/trpc";
+import { StaffAvatar } from "@/components/StaffAvatar";
+import { toast } from "sonner";
 
 const menuItems = [
   { icon: CalendarDays,   label: "Appointments",     path: "/calendar" },
@@ -121,6 +124,32 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const { data: tenantBranding } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 });
+  // The signed-in user's own staff record, so they can set their own profile
+  // photo from here. Returns null for accounts with no staff row, in which case
+  // the control is simply not offered.
+  const { data: myStaff, refetch: refetchMyStaff } = trpc.staff.getMyProfile.useQuery();
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const updateMyPhoto = trpc.staff.updateMyPhoto.useMutation({
+    onSuccess: () => { toast.success("Profile photo updated"); refetchMyStaff(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  async function uploadMyPhoto(file: File) {
+    if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
+    if (file.size > 8 * 1024 * 1024) { toast.error("Image too large (max 8 MB)"); return; }
+    setPhotoUploading(true);
+    try {
+      const res = await fetch("/api/upload/staff-photo", { method: "POST", headers: { "Content-Type": file.type }, body: file });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Upload failed");
+      updateMyPhoto.mutate({ photoUrl: data.url });
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not upload the photo");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
 
   useEffect(() => {
     if (!tenantBranding || typeof document === "undefined") return;
@@ -262,11 +291,12 @@ function DashboardLayoutContent({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <Avatar className="h-8 w-8 border shrink-0">
-                    <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
-                      {user?.name?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <StaffAvatar
+                    photoUrl={myStaff?.photoUrl}
+                    name={myStaff?.name ?? user?.name}
+                    colourHex={myStaff?.colourHex}
+                    className="h-8 w-8"
+                  />
                   {!isCollapsed && (
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate leading-none">{user?.name || "-"}</p>
@@ -275,7 +305,27 @@ function DashboardLayoutContent({
                   )}
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end" className="w-52">
+                {myStaff && (
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    disabled={photoUploading || updateMyPhoto.isPending}
+                    onSelect={(e) => { e.preventDefault(); photoInputRef.current?.click(); }}
+                  >
+                    <ImagePlus className="mr-2 h-4 w-4" />
+                    <span>{photoUploading ? "Uploading…" : myStaff.photoUrl ? "Change my photo" : "Add my photo"}</span>
+                  </DropdownMenuItem>
+                )}
+                {myStaff?.photoUrl && (
+                  <DropdownMenuItem
+                    className="cursor-pointer"
+                    disabled={updateMyPhoto.isPending}
+                    onSelect={(e) => { e.preventDefault(); updateMyPhoto.mutate({ photoUrl: null }); }}
+                  >
+                    <ImageOff className="mr-2 h-4 w-4" />
+                    <span>Remove my photo</span>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"
@@ -285,6 +335,13 @@ function DashboardLayoutContent({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMyPhoto(f); e.currentTarget.value = ""; }}
+            />
           </SidebarFooter>
         </Sidebar>
 
