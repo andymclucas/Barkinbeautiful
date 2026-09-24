@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X } from "lucide-react";
 
 const SMS_TEMPLATES = [
@@ -81,6 +82,16 @@ export default function Messages() {
     onSuccess: () => { toast.success("Failed messages cleared"); refetch(); refetchThreads(); },
     onError: (e) => toast.error(e.message),
   });
+
+  // Recent exchange for the hover preview. Derived from the sms.getLogs data
+  // already on the page, so hovering costs no extra request.
+  const threadPreview = (thread: { clientId: number | null; toNumber: string }) => {
+    if (!logs) return [];
+    return (logs as any[])
+      .filter(l => (thread.clientId ? l.clientId === thread.clientId : l.toNumber === thread.toNumber))
+      .sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime())
+      .slice(-4);
+  };
 
   const openThreadDialog = (thread: { clientId: number | null; toNumber: string; clientName: string | null }) => {
     setOpenThread(thread);
@@ -324,6 +335,8 @@ export default function Messages() {
                     key={thread.threadKey}
                     className="w-full flex items-center gap-2 py-1 hover:bg-accent/50 transition-colors px-2 -mx-2 rounded-md group"
                   >
+                    <HoverCard openDelay={220} closeDelay={80}>
+                    <HoverCardTrigger asChild>
                     <button
                       className="flex-1 min-w-0 text-left py-2 flex items-center justify-between gap-3"
                       onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
@@ -345,6 +358,34 @@ export default function Messages() {
                         {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "2-digit", month: "short" })}
                       </span>
                     </button>
+                    </HoverCardTrigger>
+                    <HoverCardContent side="right" align="start" className="w-80 p-0 overflow-hidden">
+                      <div className="border-b bg-muted/40 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold truncate">{thread.clientName?.trim() || thread.toNumber}</p>
+                          {thread.unreadCount > 0 && (
+                            <span className="shrink-0 rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">{thread.unreadCount} unread</span>
+                          )}
+                        </div>
+                        {thread.clientName?.trim() && <p className="text-xs text-muted-foreground">{thread.toNumber}</p>}
+                      </div>
+                      <div className="max-h-64 space-y-2 overflow-y-auto p-3">
+                        {threadPreview(thread).length === 0 ? (
+                          <p className="text-xs text-muted-foreground">{thread.lastMessage}</p>
+                        ) : threadPreview(thread).map((m: any) => (
+                          <div key={m.id} className={`flex ${m.direction === "outbound" ? "justify-end" : "justify-start"}`}>
+                            <div className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-xs leading-snug ${m.direction === "outbound" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
+                              <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                              <p className={`mt-1 text-[10px] ${m.direction === "outbound" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                                {m.sentAt ? new Date(m.sentAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : ""}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">Click to open the full conversation</div>
+                    </HoverCardContent>
+                    </HoverCard>
                     <Button
                       variant="ghost"
                       size="icon"
