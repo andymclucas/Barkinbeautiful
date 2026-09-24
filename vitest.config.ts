@@ -15,5 +15,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["server/**/*.test.ts", "server/**/*.spec.ts"],
+    // Integration tests need real production secrets and make real outbound
+    // network calls, so they are kept out of the default `pnpm test` run to keep
+    // it hermetic. Run them deliberately with `pnpm run test:integration`.
+    exclude: ["**/node_modules/**", "**/dist/**", "server/**/*.integration.test.ts"],
   },
 });
