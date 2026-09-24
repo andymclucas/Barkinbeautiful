@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="groomigo-logo-title" fill="none">
+  <title id="groomigo-logo-title">Groomigo</title>
+  <g stroke="#00BEBC" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- One continuous line: crown, brow, muzzle, nose, throat, front leg, paw -->
+    <path d="M32 11
+             C 40 3, 52 1, 61 5
+             C 67 8, 70 14, 74 18
+             C 78 21, 85 20, 90 22
+             C 95 24, 96 28, 94 32
+             C 91 37, 86 41, 80 43
+             C 73 45, 66 46, 62 51
+             C 61 61, 62 75, 62 89" />
+
+    <!-- The long pendant ear: down the outside, back up the inside -->
+    <path d="M32 11
+             C 23 16, 15 27, 11 39
+             C  8 47, 10 53, 16 53
+             C 22 53, 27 47, 30 40
+             C 32 34, 33 25, 33 18" />
+
+    <!-- Back: from the crown, down the nape then away to the seated rump -->
+    <path d="M48 19
+             C 49 29, 50 39, 49 48
+             C 44 56, 34 61, 26 67
+             C 19 72, 15 80, 16 89" />
+
+    <!-- Closed, smiling eye -->
+    <path d="M55 20 C 57 17, 61 17, 63 20" />
+
+    <!-- Tail flicking out low to the left -->
+    <path d="M16 85
+             C 12 82,  6 80,  3 84
+             C  1 88,  5 90, 11 90" />
+
+    <!-- Folded back leg -->
+    <path d="M35 78 C 42 78, 46 82, 47 89" />
+
+    <!-- The seated base line -->
+    <path d="M11 91 L 64 91" />
+  </g>
+</svg>
