@@ -33,9 +33,24 @@ function nextBusinessDay(from: Date): Date {
 
 export async function paymentRetryHandler(req: Request, res: Response) {
   try {
-    const user = await sdk.authenticateRequest(req);
-    if (!user.isCron) {
-      return res.status(403).json({ error: "cron-only" });
+    // Authorised either by the CRON_SECRET bearer token (how an external
+    // scheduler such as a Render Cron Job calls this) or, historically, by a
+    // Manus cron session.
+    //
+    // The Manus path cannot succeed on this deployment: verifying a cron
+    // session calls getUserInfoWithJwt, which POSTs to the Manus OAuth server,
+    // and OAUTH_SERVER_URL is not configured here. Before this check existed,
+    // that meant payment retries could never run at all — failed membership
+    // payments were never retried. appointmentReminderHandler below already had
+    // the CRON_SECRET path; this brings the two into line.
+    const authHeader = req.headers.authorization;
+    const hasValidCronSecret =
+      !!process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`;
+    if (!hasValidCronSecret) {
+      const user = await sdk.authenticateRequest(req);
+      if (!user.isCron) {
+        return res.status(403).json({ error: "cron-only" });
+      }
     }
 
     const db = await getDb();
