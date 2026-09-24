@@ -348,7 +348,44 @@ branch for anything non-trivial.
 
 ---
 
-## 12. Working here with Claude Code
+## 12. TWO AI SESSIONS WORK ON THIS REPO — READ FIRST
+
+**Claude in the browser and Claude Code both commit here, often at the same
+time.** Assume the other one is running right now.
+
+They have already collided: stale `.git` locks blocking commits, a half-switched
+working tree, `main` moving mid-task, and one session reverting a light sidebar
+the user had approved from a mockup hours after the other shipped it.
+
+Four rules. They are cheap; a collision is not.
+
+1. **Record `git rev-parse HEAD` and `git rev-parse origin/main` before you edit
+   anything.** They are the only reliable way to notice the other session moving
+   underneath you. Commit *author* is not a discriminator — both sessions commit
+   as "Andy McLucas", under two different emails, interchangeably.
+2. **Work on a branch and push it as soon as it has one commit.** An unpushed
+   branch is invisible to the other session; a pushed branch is a claim it can
+   see via `git ls-remote --heads origin`. Never commit straight to `main` —
+   Render deploys it, and merging is the user's call.
+3. **`git fetch` before every push.** If `origin/main` moved while you worked,
+   read what arrived. No overlap with your files → rebase and re-run the gate.
+   Overlap → stop and tell the user; you cannot see the other session's
+   instructions and must not resolve its work on your own judgement.
+4. **Never clear a `.git` lock without checking.** `ps aux | grep "[g]it "` first.
+   A live process means wait. Only a lock with no process behind it, older than
+   about a minute, may be removed — and say so in your reply.
+
+If you find the other session changed something you built: **do not revert it**,
+say what changed and which commit did it, and ask the user which direction they
+want. One of the two intentions is stale, and only they can see both
+conversations.
+
+Full procedure, including recovering a half-switched working tree:
+`.claude/skills/concurrent-sessions/SKILL.md`.
+
+---
+
+## 13. Working here with Claude Code
 
 Custom agents in `.claude/agents/` and skills in `.claude/skills/`:
 
@@ -358,6 +395,8 @@ Custom agents in `.claude/agents/` and skills in `.claude/skills/`:
 | Safe Drizzle schema change + migration                   | `/db-migration`            |
 | Guardrails before touching client SMS/email/billing      | `/client-messaging-safety` |
 | Add a tRPC endpoint following project conventions        | `/new-endpoint`            |
+| Avoid colliding with the other AI session                 | `/concurrent-sessions`     |
+| Push a branch to GitHub / diagnose a failed push          | `/github-push`             |
 | Find things inside the `routers.ts` monolith             | `router-navigator` agent   |
 | Review business logic against grooming domain rules      | `domain-reviewer` agent    |
 | Review a schema/migration change for safety              | `schema-guardian` agent    |
