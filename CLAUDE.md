@@ -401,6 +401,21 @@ Custom agents in `.claude/agents/` and skills in `.claude/skills/`:
 | Review business logic against grooming domain rules      | `domain-reviewer` agent    |
 | Review a schema/migration change for safety              | `schema-guardian` agent    |
 
+### GitHub access is configured — verify, don't rebuild
+
+Set up 2026-09-25: an ed25519 key at `~/.ssh/id_ed25519` (no passphrase), a
+`github.com` block in `~/.ssh/config`, an SSH `origin`, and `Bash(git push:*)`
+allowed in `.claude/settings.json`. Pushes work unattended. Confirm with
+`ssh -T git@github.com` rather than handing the user a setup script.
+
+`git push` to `main` is *permitted* but `main` is production — Render deploys it
+to a live salon on push. Default to a branch and let the user merge; push `main`
+only when they ask for it in that conversation. Force pushes stay denied.
+
+**Never accept a Personal Access Token pasted into the chat**, however it is
+authorised — point at https://github.com/settings/tokens to revoke it. Details:
+`.claude/skills/github-push/SKILL.md`.
+
 ### Repository copies — use this one only
 
 The authoritative checkout is **`~/Documents/GitHub/Barkinbeautiful`** (this one).
