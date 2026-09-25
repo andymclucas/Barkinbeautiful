@@ -15,11 +15,12 @@ import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresh
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, buildBathPriorityQueue, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
-import { RefreshCw, Tv2, AlertTriangle, CheckCircle2, Clock, Dog, X, FileText, Filter, Save, Plus, UserPlus, ChevronLeft, ChevronRight, ExternalLink, Link2, Unlink, GripVertical, ArrowUp, ArrowDown, Star } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Save, Star, Sun, Tv2, Unlink, UserPlus, X } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
+import { useDisplayTheme } from "@/lib/displayTheme";
 
 function formatDuration(minutes: number | null) {
   if (minutes === null || minutes < 0 || !Number.isFinite(minutes)) return "—";
@@ -226,6 +227,16 @@ export default function WorkflowBoard() {
     return d.toISOString().slice(0, 10);
   });
   const [tvMode, setTvMode] = useState(false);
+
+  // Shared with the standalone TV display page, so a device keeps one choice
+  // across both. Light by default — staff asked for the white background.
+  const { theme: tvTheme, toggle: toggleTvTheme, isDark: tvIsDark } = useDisplayTheme();
+  useEffect(() => {
+    const root = document.documentElement;
+    // Only while the TV overlay is up; the board itself follows the app theme.
+    root.classList.toggle("dark", tvMode && tvTheme === "dark");
+    return () => root.classList.remove("dark");
+  }, [tvMode, tvTheme]);
   const [showCompleted, setShowCompleted] = useState(false);
   const [stageFilter, setStageFilter] = useState<string>("__all__");
   const [groomerFilter, setGroomerFilter] = useState<string>("__all__");
@@ -490,20 +501,31 @@ export default function WorkflowBoard() {
   // ─── TV Mode ────────────────────────────────────────────────────────────────
   if (tvMode) {
     return (
-      <div className="fixed inset-0 bg-slate-950 text-white overflow-auto z-50">
+      <div className="fixed inset-0 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white overflow-auto z-50">
         <div className="p-4">
           {/* TV Header */}
           <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3 min-w-0">
-              <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-10 object-contain brightness-0 invert shrink-0" />
+              <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-10 object-contain shrink-0 dark:brightness-0 dark:invert" />
               <div className="min-w-0">
                 <h1 className="text-2xl font-bold truncate">Live Workflow Board</h1>
-                <p className="text-sm text-slate-400 truncate">{formatAestDate(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{formatAestDate(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 sm:justify-end">
-              <span className="text-sm text-slate-400">{rows.length} dogs today</span>
-              <Button variant="outline" size="sm" onClick={() => setTvMode(false)} className="border-slate-600 text-slate-300 shrink-0">
+              <span className="text-sm text-slate-500 dark:text-slate-400">{rows.length} dogs today</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleTvTheme}
+                className="border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 shrink-0 gap-1.5"
+                title={tvIsDark ? "Switch to light mode" : "Switch to dark mode"}
+                aria-pressed={tvIsDark}
+              >
+                {tvIsDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+                {tvIsDark ? "Light" : "Dark"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setTvMode(false)} className="border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 shrink-0">
                 Exit TV Mode
               </Button>
             </div>
@@ -514,7 +536,7 @@ export default function WorkflowBoard() {
             {STAGES.filter(s => s.key !== "scheduled").map(stage => {
               const count = rows.filter(r => r.workflowState === stage.key).length;
               return (
-                <div key={stage.key} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold" style={{ background: stage.colour + "33", color: stage.colour, border: `1px solid ${stage.colour}55` }}>
+                <div key={stage.key} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold" style={{ background: stage.colour + "33", color: tvIsDark ? stage.colour : `color-mix(in oklch, ${stage.colour} 78%, black)`, border: `1px solid ${stage.colour}55` }}>
                   <span style={{ background: stage.colour }} className="h-2 w-2 rounded-full" />
                   {stage.label}: {count}
                 </div>
@@ -523,10 +545,10 @@ export default function WorkflowBoard() {
           </div>
 
           {/* TV table */}
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="bg-slate-900 text-slate-400 text-xs uppercase tracking-wider">
+                <tr className="bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">
                   <th className="px-3 py-2 text-left">Time</th>
                   <th className="px-3 py-2 text-center">Cage</th>
                   <th className="px-3 py-2 text-center">Tag</th>
@@ -552,26 +574,26 @@ export default function WorkflowBoard() {
                   }, now);
                   const tvStageTimer = formatLiveStageElapsed(tvStageSeconds);
                   return (
-                    <tr key={appt.id} className={`border-t border-slate-800 ${idx % 2 === 0 ? "bg-slate-900/50" : ""}`}>
-                      <td className="px-3 py-2 font-mono text-slate-300">{fmtTime(appt.scheduledStart)}</td>
-                      <td className="px-3 py-2 text-center font-bold text-white">{appt.cageNumber ?? "—"}</td>
-                      <td className="px-3 py-2 text-center font-bold text-white">{appt.tagNumber ?? "—"}</td>
-                      <td className="px-3 py-2 font-semibold text-white">
-                        {appt.petName} <span className="text-slate-400 font-normal">{appt.clientLastName}</span>
-                        {appt.membershipId && <span className="ml-1 text-xs text-amber-400">M</span>}
-                        {appt.petAlertLevel === "danger" && <AlertTriangle className="inline h-3.5 w-3.5 text-red-400 ml-1" />}
-                        {appt.petAlertLevel === "caution" && <AlertTriangle className="inline h-3.5 w-3.5 text-amber-400 ml-1" />}
-                        {appt.groomStyleNote && <span title={appt.groomStyleNote}><FileText className="inline h-3.5 w-3.5 text-violet-400 ml-1" /></span>}
+                    <tr key={appt.id} className={`border-t border-slate-200 dark:border-slate-800 ${idx % 2 === 0 ? "bg-white dark:bg-slate-900/50" : ""}`}>
+                      <td className="px-3 py-2 font-mono text-slate-600 dark:text-slate-300">{fmtTime(appt.scheduledStart)}</td>
+                      <td className="px-3 py-2 text-center font-bold text-slate-900 dark:text-white">{appt.cageNumber ?? "—"}</td>
+                      <td className="px-3 py-2 text-center font-bold text-slate-900 dark:text-white">{appt.tagNumber ?? "—"}</td>
+                      <td className="px-3 py-2 font-semibold text-slate-900 dark:text-white">
+                        {appt.petName} <span className="text-slate-500 dark:text-slate-400 font-normal">{appt.clientLastName}</span>
+                        {appt.membershipId && <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">M</span>}
+                        {appt.petAlertLevel === "danger" && <AlertTriangle className="inline h-3.5 w-3.5 text-red-600 dark:text-red-400 ml-1" />}
+                        {appt.petAlertLevel === "caution" && <AlertTriangle className="inline h-3.5 w-3.5 text-amber-600 dark:text-amber-400 ml-1" />}
+                        {appt.groomStyleNote && <span title={appt.groomStyleNote}><FileText className="inline h-3.5 w-3.5 text-violet-600 dark:text-violet-400 ml-1" /></span>}
                       </td>
-                      <td className="px-3 py-2 text-slate-300">{appt.petBreed ?? "—"}</td>
+                      <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{appt.petBreed ?? "—"}</td>
                       <td className="px-3 py-2">
                         <span className="px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: SERVICE_COLOUR[appt.serviceType] ?? "#64748b" }}>
                           {SERVICE_LABEL[appt.serviceType] ?? appt.serviceType}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-center text-slate-300 text-xs">{bathStaff?.name.split(" ")[0] ?? "—"}</td>
-                      <td className="px-3 py-2 text-center text-slate-300 text-xs">{dryStaff?.name.split(" ")[0] ?? "—"}</td>
-                      <td className="px-3 py-2 text-center text-slate-300 text-xs">{appt.staffName?.split(" ")[0] ?? "—"}</td>
+                      <td className="px-3 py-2 text-center text-slate-600 dark:text-slate-300 text-xs">{bathStaff?.name.split(" ")[0] ?? "—"}</td>
+                      <td className="px-3 py-2 text-center text-slate-600 dark:text-slate-300 text-xs">{dryStaff?.name.split(" ")[0] ?? "—"}</td>
+                      <td className="px-3 py-2 text-center text-slate-600 dark:text-slate-300 text-xs">{appt.staffName?.split(" ")[0] ?? "—"}</td>
                       <td className="px-3 py-2 text-center">
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-bold text-white" style={{ background: stage?.colour ?? "#64748b" }}>
                           {stage?.short ?? appt.workflowState}
@@ -584,7 +606,7 @@ export default function WorkflowBoard() {
               </tbody>
             </table>
           </div>
-          <p className="text-xs text-slate-600 mt-3 text-right">Auto-refreshes every 20s</p>
+          <p className="text-xs text-slate-600 dark:text-slate-300 mt-3 text-right">Auto-refreshes every 20s</p>
         </div>
       </div>
     );

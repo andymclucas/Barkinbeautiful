@@ -116,7 +116,40 @@ describe("canStaffUpdateAppointment", () => {
     expect(displaySource).toContain("Salon time");
     expect(displaySource).toContain("Clock3");
     expect(displaySource).toContain('borderLeftColor: isCompletedReviewRow ? "#34d399" : isPastScheduledTime ? "#fbbf24" : stage.colour');
-    expect(displaySource).toContain('index % 2 ? "bg-slate-800/55" : "bg-slate-950/95"');
+    // Alternating row striping is what keeps a long list readable across a room.
+    // It must survive in BOTH themes: the display defaults to light (staff asked
+    // for the white background) with dark available via the toggle.
+    expect(displaySource).toContain('index % 2 ? "bg-slate-50 dark:bg-slate-800/55" : "bg-white dark:bg-slate-950/95"');
+    expect(displaySource).toContain("useDisplayTheme");
+  });
+
+  it("keeps the TV board readable on a white background", () => {
+    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+    const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
+
+    // Service and stage chips paint their OWN saturated background, so their
+    // text must not follow the page theme — white on colour in both, exactly as
+    // the normal workflow board renders them. Switching these to a dark text
+    // colour alongside the light theme is the regression this guards.
+    expect(boardSource).toContain('text-xs font-semibold text-white" style={{ background: SERVICE_COLOUR[appt.serviceType]');
+    expect(boardSource).toContain('text-xs font-bold text-white" style={{ background: stage?.colour');
+    expect(boardSource).toContain('border-l border-white/35 pl-1.5 font-mono');
+
+    // These sit on the PAGE background, so a 400-weight accent disappears on
+    // white and each one needs a darker light-mode value.
+    expect(boardSource).toContain("text-amber-600 dark:text-amber-400");
+    expect(boardSource).toContain("text-red-600 dark:text-red-400");
+    expect(boardSource).toContain("text-violet-600 dark:text-violet-400");
+
+    // The stage palette is tuned for a near-black backdrop; used as text over a
+    // pale tint on white, slate and amber fall below a readable contrast.
+    expect(boardSource).toContain("color-mix(in oklch, ${stage.colour} 78%, black)");
+    expect(displaySource).toContain("color-mix(in oklch, ${stage.colour} 78%, black)");
+
+    // Both footers were left without a dark value when the pages were flipped
+    // to a light default, which made them unreadable once the toggle was used.
+    expect(boardSource).toContain('text-xs text-slate-600 dark:text-slate-300 mt-3 text-right');
+    expect(displaySource).toContain('gap-2 text-xs text-slate-600 dark:text-slate-300"');
   });
 
   it("summarises salon workload, flags past scheduled appointments and exposes controlled TV scrolling", () => {
