@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 describe("Workflow bathing priority contract", () => {
   const schemaSource = readFileSync(new URL("../drizzle/schema.ts", import.meta.url), "utf8");
   const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-  const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+  const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
   const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
 
   it("persists only the controlled 1–5 priorities and audits staff changes", () => {

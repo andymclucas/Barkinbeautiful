@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 const workflowBoard = readFileSync(
   new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url),
   "utf8",
+) + readFileSync(
+  new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url),
+  "utf8",
 );
 
 describe("Workflow Board Cage and Tag entry visibility", () => {

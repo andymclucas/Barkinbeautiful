@@ -2,16 +2,16 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { CheckCircle2, Clock3, Dog, Moon, RefreshCw, Sparkles, Sun, Wifi, WifiOff, Star } from "lucide-react";
+import { CheckCircle2, Clock3, Dog, Moon, RefreshCw, Sparkles, Sun, Wifi, WifiOff } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
 import { isTerminalWorkflowState } from "@/lib/workflowTerminalStates";
 import { PRODUCTION_APP_URL } from "@shared/const";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { BATH_PRIORITY_META, buildBathPriorityQueue } from "@shared/bathPriorityQueue";
-import { PetAvatar } from "@/components/PetAvatar";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { useDisplayTheme } from "@/lib/displayTheme";
+import { WorkflowBoardTable } from "@/components/WorkflowBoardTable";
 
 const STAGES = [
   { key: "scheduled", label: "Waiting", colour: "#94a3b8" },
@@ -65,19 +65,27 @@ export default function WorkflowDisplay() {
     root.classList.toggle("dark", theme === "dark");
     return () => root.classList.remove("dark");
   }, [theme]);
-  const [leavingAppointmentIds, setLeavingAppointmentIds] = useState<number[]>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const knownActiveIdsRef = useRef<number[] | null>(null);
   const [boardDate, setBoardDate] = useState(() => new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10));
   const { data: boardData, refetch, isFetching, isLoading: isBoardLoading, isError } = trpc.workflow.getBoard.useQuery(
     { tenantId: 1, date: boardDate },
     { ...workflowBoardRefreshOptions, enabled: !!user },
   );
+  // The board shows each stage's staff member with their photo. The wall
+  // display now renders the same table, so it needs the same staff list.
+  const { data: staffList } = trpc.workflow.getStaff.useQuery({ tenantId: 1 }, { enabled: !!user });
+  const groomers = staffList?.filter(s => s.role !== "bather") ?? [];
+  const bathers = staffList?.filter(s => s.role === "bather" || s.role === "groomer") ?? [];
   const restoreCompletedMutation = trpc.calendar.updateWorkflowState.useMutation({
     onSuccess: () => { void refetch(); },
   });
   const dayRows = groupFamilyWorkflowRows(boardData ?? []);
   const bathQueue = useMemo(() => buildBathPriorityQueue(dayRows), [dayRows]);
+  const bathQueueByAppointmentId = useMemo(() => {
+    const queueItems = new Map<number, (typeof bathQueue)[number]>();
+    for (const item of bathQueue) for (const itemRow of item.rows) queueItems.set(itemRow.id, item);
+    return queueItems;
+  }, [bathQueue]);
   const completedRows = dayRows.filter(row => row.workflowState === "complete");
   const waitingRows = dayRows.filter(row => row.workflowState === "scheduled" || isInterStageWaitState(row.workflowState));
   // The register intentionally contains only dogs still moving through the salon.
@@ -86,11 +94,12 @@ export default function WorkflowDisplay() {
   const registerRows = showCompleted ? [...activeRows, ...completedRows] : activeRows;
   const inProgressCount = dayRows.filter(row => !isTerminalWorkflowState(row.workflowState) && row.workflowState !== "scheduled" && !isInterStageWaitState(row.workflowState)).length;
   const scrollSpeed = SCROLL_SPEEDS[scrollSpeedIndex];
+  // Focus register: with only a few dogs left, scale the board up so it still
+  // reads from across the salon. The board table has fixed cell sizing, so this
+  // zooms the whole table rather than restyling every cell — same intent, and
+  // it cannot drift away from the table it is scaling.
   const isFocusRegister = activeRows.length > 0 && activeRows.length <= 4;
-  const rowTextClass = isFocusRegister ? "text-xl md:text-2xl" : "text-sm";
-  const rowDetailClass = isFocusRegister ? "text-base md:text-lg" : "text-xs";
-  const rowPaddingClass = isFocusRegister ? "py-7" : "py-4";
-  const stageBadgeClass = isFocusRegister ? "px-3.5 py-2 text-sm md:text-base" : "px-2.5 py-1 text-xs";
+  const focusRegisterZoom = isFocusRegister ? 1.35 : 1;
   const dailyCompletionPercent = dayRows.length === 0 ? 0 : Math.round((completedRows.length / dayRows.length) * 100);
 
   const restoreCompletedDog = (appointmentId: number) => {
@@ -98,8 +107,6 @@ export default function WorkflowDisplay() {
   };
 
   const resetForTomorrow = () => {
-    knownActiveIdsRef.current = null;
-    setLeavingAppointmentIds([]);
     setShowCompleted(false);
     setBoardDate(currentDate => {
       const nextDate = new Date(`${currentDate}T00:00:00`);
@@ -112,21 +119,6 @@ export default function WorkflowDisplay() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    const currentActiveIds = activeRows.map(row => row.id);
-    const priorActiveIds = knownActiveIdsRef.current;
-    knownActiveIdsRef.current = currentActiveIds;
-    if (!priorActiveIds) return;
-
-    const justCompletedIds = priorActiveIds.filter(id => !currentActiveIds.includes(id));
-    if (justCompletedIds.length === 0) return;
-    setLeavingAppointmentIds(current => Array.from(new Set([...current, ...justCompletedIds])));
-    const clearTimer = window.setTimeout(() => {
-      setLeavingAppointmentIds(current => current.filter(id => !justCompletedIds.includes(id)));
-    }, 760);
-    return () => window.clearTimeout(clearTimer);
-  }, [activeRows]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -290,10 +282,7 @@ export default function WorkflowDisplay() {
         ))}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/60">
-        <div className={`grid grid-cols-[0.9fr_1.5fr_0.8fr_1.1fr_1.1fr_1.1fr_1.1fr] bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 uppercase font-semibold tracking-wide px-4 py-3 ${isFocusRegister ? "text-sm" : "text-xs"}`}>
-          <span>Time</span><span>Dog / owner</span><span>Priority</span><span>Bath</span><span>Dry</span><span>Groomer</span><span>Stage</span>
-        </div>
+      <section className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/60 overflow-hidden">
         <div ref={scrollContainerRef} className="max-h-[calc(100vh-330px)] overflow-y-auto scroll-smooth" aria-label="Auto-scrolling live appointment list">
           {registerRows.length === 0 ? (
             completedRows.length > 0 ? (
@@ -310,42 +299,24 @@ export default function WorkflowDisplay() {
                 </div>
               </div>
             ) : <div className="p-16 text-center text-slate-500 dark:text-slate-400">No dogs are currently on the workflow board.</div>
-          ) : registerRows.map((appt, index) => {
-            const stage = STAGES.find(item => item.key === appt.workflowState) ?? STAGES[0];
-            const stageMinutes = !isInterStageWaitState(appt.workflowState) && appt.stageStartedAt ? Math.floor((now - appt.stageStartedAt) / 60000) : null;
-            const alternateRow = index % 2 ? "bg-slate-50 dark:bg-slate-800/55" : "bg-white dark:bg-slate-950/95";
-            const isPastScheduledTime = new Date(appt.scheduledStart).getTime() < now;
-            const isCompletedReviewRow = appt.workflowState === "complete";
-            const isLeavingRow = leavingAppointmentIds.includes(appt.id);
-            return (
-              <div key={appt.id} className={`grid grid-cols-[0.9fr_1.5fr_0.8fr_1.1fr_1.1fr_1.1fr_1.1fr] items-center border-b border-slate-200 dark:border-white/5 border-l-4 px-4 transition-[opacity,transform] duration-700 ease-out motion-reduce:transition-none ${rowPaddingClass} ${rowTextClass} ${alternateRow} ${isCompletedReviewRow ? "opacity-65" : ""} ${isLeavingRow ? "translate-y-2 opacity-0" : "translate-y-0 opacity-100"} ${isPastScheduledTime && !isCompletedReviewRow ? "animate-[pulse_2.8s_ease-in-out_infinite] ring-1 ring-inset ring-amber-300/40" : ""}`} style={{ borderLeftColor: isCompletedReviewRow ? "#34d399" : isPastScheduledTime ? "#fbbf24" : stage.colour }}>
-                <div className="font-mono text-slate-600 dark:text-slate-300">{new Date(appt.scheduledStart).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "numeric", minute: "2-digit", hour12: true })}</div>
-                <div className="min-w-0 flex items-center gap-2.5">
-                  <PetAvatar petId={appt.petId} petName={appt.petName} className={isFocusRegister ? "h-11 w-11" : "h-9 w-9"} />
-                  <div className="min-w-0">
-                    <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      {appt.petName}
-                      {(appt as any).isVipMember && (
-                        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-950 shadow-sm">
-                          <Star className="h-2.5 w-2.5 fill-amber-950" /> VIP
-                        </span>
-                      )}
-                    </div>
-                    <div className={`${rowDetailClass} text-slate-500 dark:text-slate-400`}>{appt.clientLastName}{isPastScheduledTime ? " · Past scheduled time" : ""}</div>
-                    {appt.groomStyleNote && <div className={`${rowDetailClass} mt-0.5 truncate text-violet-700 dark:text-violet-300`} title={appt.groomStyleNote}>📝 {appt.groomStyleNote}</div>}
-                  </div>
-                </div>
-                <div className="font-black" style={{ color: appt.bathPriority ? BATH_PRIORITY_META[appt.bathPriority as keyof typeof BATH_PRIORITY_META]?.colour : "#94a3b8" }}>{appt.bathPriority ? `#${appt.bathPriority}` : "—"}</div>
-                <div className="text-slate-600 dark:text-slate-300">{appt.bathStaffId ? "Assigned" : "—"}</div>
-                <div className="text-slate-600 dark:text-slate-300">{appt.dryStaffId ? "Assigned" : "—"}</div>
-                <div className="font-medium text-slate-700 dark:text-slate-200">{appt.staffName?.split(" ")[0] ?? "—"}</div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex rounded-full font-bold ${stageBadgeClass}`} style={{ background: `${stage.colour}33`, color: isDark ? stage.colour : `color-mix(in oklch, ${stage.colour} 78%, black)` }}>{stage.label}{stageMinutes !== null ? ` · ${formatDuration(stageMinutes)}` : ""}</span>
-                  {isCompletedReviewRow && <button type="button" onClick={() => restoreCompletedDog(appt.id)} disabled={restoreCompletedMutation.isPending} className="rounded border border-amber-300/35 px-2 py-1 text-xs font-bold text-amber-800 dark:text-amber-100 hover:bg-amber-300/10 disabled:opacity-50" title="Return this dog to Ready so staff can correct its workflow status">{restoreCompletedMutation.isPending ? "Restoring…" : "Undo"}</button>}
-                </div>
-              </div>
-            );
-          })}
+          ) : (
+            // The same table the salon floor works from — dog photos, cage and
+            // tag, family links, membership, bath priority and staff photos —
+            // rendered read-only. Auto-scroll wraps it, so a long day still
+            // cycles past on its own.
+            <div style={{ zoom: focusRegisterZoom }}>
+            <WorkflowBoardTable
+              readOnly
+              rows={registerRows}
+              now={now}
+              bathers={bathers}
+              groomers={groomers}
+              bathQueueByAppointmentId={bathQueueByAppointmentId}
+              onRestoreCompleted={restoreCompletedDog}
+              restorePending={restoreCompletedMutation.isPending}
+            />
+            </div>
+          )}
         </div>
       </section>
       <footer className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300">

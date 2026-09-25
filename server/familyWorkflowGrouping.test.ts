@@ -41,7 +41,8 @@ describe("family Workflow grouping", () => {
 
   it("uses the same family ordering on the controller and independent Workflow display", () => {
     const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
     const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
     expect(routerSource).toContain("sessionId: appointments.sessionId");
     expect(boardSource).toContain("groupFamilyWorkflowRows((boardData ?? []).filter");
@@ -73,7 +74,8 @@ describe("family Workflow grouping", () => {
 
   it("returns all family dog names and makes the Workflow family control explicit and accessible", () => {
     const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
     expect(routerSource).toContain("familyPetNames: row.petFamilyGroupId");
     expect(routerSource).toContain("familyPetNamesByGroup");
     expect(boardSource).toContain("<Link2 className=");
@@ -84,7 +86,8 @@ describe("family Workflow grouping", () => {
 
   it("allows approved staff to unlink only the selected dog from its family without altering booking or workflow history", () => {
     const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
     expect(routerSource).toContain("unlinkPet: operationalProcedure");
     expect(routerSource).toContain("requireApprovedStaffPetAccess(db, ctx.user, input.petId)");
     expect(routerSource).toContain("set({ familyGroupId: null })");
@@ -94,7 +97,8 @@ describe("family Workflow grouping", () => {
   });
 
   it("draws an explicit connector only between consecutive Workflow rows in the same family group", () => {
-    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
     expect(boardSource).toContain("const linkedAbove = familyGroupId != null");
     expect(boardSource).toContain("const linkedBelow = familyGroupId != null");
     expect(boardSource).toContain("isolate overflow-visible");

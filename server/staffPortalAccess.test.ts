@@ -101,7 +101,8 @@ describe("canStaffUpdateAppointment", () => {
 
   it("keeps the TV workflow display on a separate route and opens it independently of the controller board", () => {
     const appSource = readFileSync(new URL("../client/src/App.tsx", import.meta.url), "utf8");
-    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
     const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
     expect(appSource).toContain('<Route path="/workflow/display" component={WorkflowDisplay} />');
     expect(boardSource).toContain('href="/workflow/display" target="_blank"');
@@ -115,53 +116,65 @@ describe("canStaffUpdateAppointment", () => {
     expect(displaySource).toContain("beginScrollCycle");
     expect(displaySource).toContain("Salon time");
     expect(displaySource).toContain("Clock3");
-    expect(displaySource).toContain('borderLeftColor: isCompletedReviewRow ? "#34d399" : isPastScheduledTime ? "#fbbf24" : stage.colour');
+    // Stage colour and the running-late signal now come from the shared table:
+    // a coloured stage chip, plus amber/red row tinting past the thresholds.
+    const sharedTable = readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
+    expect(sharedTable).toContain("style={{ background: stage.colour }}");
+    expect(sharedTable).toContain('timerAlert ? "bg-red-50/40"');
+    expect(sharedTable).toContain('timerWarn ? "bg-amber-50/30"');
     // Alternating row striping is what keeps a long list readable across a room.
-    // It must survive in BOTH themes: the display defaults to light (staff asked
-    // for the white background) with dark available via the toggle.
-    expect(displaySource).toContain('index % 2 ? "bg-slate-50 dark:bg-slate-800/55" : "bg-white dark:bg-slate-950/95"');
+    // It now comes from the shared table, so the wall display stripes exactly as
+    // the staff board does.
+    expect(readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8"))
+      .toContain('idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"');
     expect(displaySource).toContain("useDisplayTheme");
   });
 
-  it("renders the TV board from the same table staff use, read-only", () => {
+  it("renders all three board surfaces from one shared table", () => {
+    const tableSource = readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
     const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+    const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
 
-    // The point of this test. TV mode used to be a separate, thinner table, and
-    // the two drifted until the wall display was missing pet photos, bath
-    // priority, family links and the membership column the board beside it had.
-    // There is now exactly ONE board table, rendered by both.
-    expect(boardSource).toContain("const renderBoardTable = (readOnly: boolean) =>");
-    expect(boardSource.match(/const renderBoardTable/g)).toHaveLength(1);
-    expect(boardSource).toContain("renderBoardTable(true)");   // TV mode
-    expect(boardSource).toContain("renderBoardTable(false)");  // staff board
-    // A second <table> with the board's column widths would mean a copy is back.
-    expect(boardSource.match(/min-w-\[980px\]/g)).toHaveLength(1);
-
-    // The TV is a wall display with nobody to click it: every control the board
-    // uses to MUTATE an appointment must have a static branch.
-    for (const control of [
-      'tone="cage"\n                        readOnly={readOnly}',
-      'tone="tag"\n                        readOnly={readOnly}',
-      'placeholder="Bath"\n                        readOnly={readOnly}',
-      'placeholder="Dry"\n                        readOnly={readOnly}',
-      'placeholder="Groomer"\n                        readOnly={readOnly}',
-    ]) {
-      expect(boardSource).toContain(control);
+    // The point of this test. There were three board tables — the staff board,
+    // the TV overlay and the wall display — written separately and drifting.
+    // The wall display ended up with seven columns against the board's fifteen,
+    // missing the dog photos, family links, cage and tag, bath priority and
+    // membership. One component now renders all three.
+    expect(tableSource).toContain("export function WorkflowBoardTable(");
+    for (const source of [boardSource, displaySource]) {
+      expect(source).toContain('from "@/components/WorkflowBoardTable"');
+      expect(source).toContain("<WorkflowBoardTable");
     }
-    expect(boardSource).toContain("draggable={!readOnly}");
-    expect(boardSource).toContain("onClick={readOnly ? undefined : () => {");
-    expect(boardSource).toContain("{!readOnly && (<>");          // stage select + advance/revert
-    expect(boardSource).toContain('<span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded border border-emerald-300">READY</span>');
+    // Two read-only surfaces (TV overlay, wall display) and one interactive.
+    expect(boardSource.match(/<WorkflowBoardTable/g)).toHaveLength(2);
+    expect(displaySource.match(/<WorkflowBoardTable/g)).toHaveLength(1);
+    expect(boardSource).toContain("actions={{");
+    expect(displaySource).toContain("readOnly");
+    // A second table would mean a copy is back.
+    expect(tableSource.match(/min-w-\[980px\]/g)).toHaveLength(1);
+    expect(boardSource).not.toContain("min-w-[980px]");
+    expect(displaySource).not.toContain("min-w-[980px]");
 
-    // What staff actually asked for: the dog photos.
-    expect(boardSource).toContain("<PetAvatar petId={appt.petId} petName={appt.petName}");
-    // Staff photos come through the shared cell, so they appear on the TV too.
-    expect(boardSource).toContain("<StaffAvatar photoUrl={selected.photoUrl}");
+    // Read-only keeps every cell's appearance and drops only the ability to
+    // change anything — a wall display has nobody to click it.
+    expect(tableSource).toContain("draggable={!readOnly}");
+    expect(tableSource).toContain("{!readOnly && (<>");
+    expect(tableSource).toContain('<span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded border border-emerald-300">READY</span>');
+    for (const prop of ['tone="cage"', 'tone="tag"', 'placeholder="Bath"', 'placeholder="Dry"', 'placeholder="Groomer"']) {
+      expect(tableSource).toContain(`${prop}\n                        readOnly={readOnly}`);
+    }
 
-    // The stage palette is tuned for a dark backdrop; as text over a pale tint
-    // on white, slate and amber fall below a readable contrast.
-    expect(boardSource).toContain("color-mix(in oklch, ${stage.colour} 78%, black)");
-    expect(boardSource).toContain("text-xs text-slate-600 dark:text-slate-300 mt-3 text-right");
+    // What staff actually asked for, on every surface: the photos and the
+    // family linkage the wall display never had.
+    expect(tableSource).toContain("<PetAvatar petId={appt.petId} petName={appt.petName}");
+    expect(tableSource).toContain("<StaffAvatar photoUrl={selected.photoUrl}");
+    expect(tableSource).toContain("petFamilyGroupId");
+    // The display needs its own staff query to resolve those staff photos.
+    expect(displaySource).toContain("trpc.workflow.getStaff.useQuery");
+
+    // The wall display keeps what makes it a wall display.
+    expect(displaySource).toContain('aria-label="Auto-scrolling live appointment list"');
+    expect(displaySource).toContain("focusRegisterZoom");
   });
 
   it("summarises salon workload, flags past scheduled appointments and exposes controlled TV scrolling", () => {
@@ -169,7 +182,7 @@ describe("canStaffUpdateAppointment", () => {
     expect(displaySource).toContain("const waitingRows");
     expect(displaySource).toContain("const inProgressCount");
     expect(displaySource).toContain("const completedRows");
-    expect(displaySource).toContain("Past scheduled time");
+    expect(displaySource).toContain("dailyCompletionPercent");
     expect(displaySource).toContain("Auto-scroll:");
     expect(displaySource).toContain('{ label: "Off", tickMs: null }');
     expect(displaySource).toContain('if (scrollIntervalMs === null) return;');
@@ -180,16 +193,20 @@ describe("canStaffUpdateAppointment", () => {
   it("keeps completed dogs out of the active TV register and enlarges the remaining small workload", () => {
     const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
     expect(displaySource).toContain("!isTerminalWorkflowState(row.workflowState)");
+    // Few dogs left: the display scales the whole board up rather than
+    // restyling each cell, so it cannot drift from the table it is scaling.
     expect(displaySource).toContain("const isFocusRegister = activeRows.length > 0 && activeRows.length <= 4");
-    expect(displaySource).toContain('"text-xl md:text-2xl"');
-    expect(displaySource).toContain('"py-7"');
+    expect(displaySource).toContain("const focusRegisterZoom = isFocusRegister ? 1.35 : 1;");
+    expect(displaySource).toContain("style={{ zoom: focusRegisterZoom }}");
     expect(displaySource).toContain("All dogs are complete");
   });
 
   it("provides a graceful completed-dog exit, review toggle and celebratory all-complete screen", () => {
     const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
-    expect(displaySource).toContain("leavingAppointmentIds");
-    expect(displaySource).toContain("transition-[opacity,transform] duration-700");
+    // Completed dogs are dimmed by the shared table rather than faded out by a
+    // bespoke animation the display used to own.
+    expect(readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8"))
+      .toContain('isComplete ? "bg-slate-50 opacity-60"');
     expect(displaySource).toContain("Review completed dogs");
     expect(displaySource).toContain("Hide completed dogs");
     expect(displaySource).toContain("All dogs are complete");
@@ -204,7 +221,11 @@ describe("canStaffUpdateAppointment", () => {
     expect(displaySource).toContain("Reset for tomorrow");
     expect(displaySource).toContain("setBoardDate");
     expect(displaySource).toContain('newState: "ready"');
-    expect(displaySource).toContain('"Undo"');
+    // Undoing a mis-tapped OUT is the display's one permitted mutation, so it
+    // survives the move into the shared table.
+    expect(displaySource).toContain("onRestoreCompleted={restoreCompletedDog}");
+    expect(readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8"))
+      .toContain('{restorePending ? "…" : "Undo"}');
     expect(routerSource).toContain('actualEnd: input.newState === "complete" ? new Date(now) : appt.workflowState === "complete" ? null : appt.actualEnd');
   });
 

@@ -4,7 +4,8 @@ import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 
 describe("workflow pet-alert presentation", () => {
   it("shows only actionable alert levels and supplies accessible warning context", () => {
-    const workflowSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
+    const workflowSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
+      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
 
     expect(normalizePetAlertLevel("ok")).toBeNull();
     expect(normalizePetAlertLevel("caution")).toBe("caution");

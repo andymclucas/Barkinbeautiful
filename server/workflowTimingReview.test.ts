@@ -5,7 +5,8 @@ import type { TrpcContext } from "./_core/context";
 import { appRouter } from "./routers";
 
 const routerSource = readFileSync(resolve(process.cwd(), "server/routers.ts"), "utf8");
-const workflowSource = readFileSync(resolve(process.cwd(), "client/src/pages/WorkflowBoard.tsx"), "utf8");
+const workflowSource = readFileSync(resolve(process.cwd(), "client/src/pages/WorkflowBoard.tsx"), "utf8")
+  + readFileSync(resolve(process.cwd(), "client/src/components/WorkflowBoardTable.tsx"), "utf8");
 const staffSource = readFileSync(resolve(process.cwd(), "client/src/pages/Staff.tsx"), "utf8");
 const appSource = readFileSync(resolve(process.cwd(), "client/src/App.tsx"), "utf8");
 const dashboardSource = readFileSync(resolve(process.cwd(), "client/src/pages/Dashboard.tsx"), "utf8");
