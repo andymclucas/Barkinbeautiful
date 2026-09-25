@@ -123,33 +123,45 @@ describe("canStaffUpdateAppointment", () => {
     expect(displaySource).toContain("useDisplayTheme");
   });
 
-  it("keeps the TV board readable on a white background", () => {
+  it("renders the TV board from the same table staff use, read-only", () => {
     const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8");
-    const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
 
-    // Service and stage chips paint their OWN saturated background, so their
-    // text must not follow the page theme — white on colour in both, exactly as
-    // the normal workflow board renders them. Switching these to a dark text
-    // colour alongside the light theme is the regression this guards.
-    expect(boardSource).toContain('text-xs font-semibold text-white" style={{ background: SERVICE_COLOUR[appt.serviceType]');
-    expect(boardSource).toContain('text-xs font-bold text-white" style={{ background: stage?.colour');
-    expect(boardSource).toContain('border-l border-white/35 pl-1.5 font-mono');
+    // The point of this test. TV mode used to be a separate, thinner table, and
+    // the two drifted until the wall display was missing pet photos, bath
+    // priority, family links and the membership column the board beside it had.
+    // There is now exactly ONE board table, rendered by both.
+    expect(boardSource).toContain("const renderBoardTable = (readOnly: boolean) =>");
+    expect(boardSource.match(/const renderBoardTable/g)).toHaveLength(1);
+    expect(boardSource).toContain("renderBoardTable(true)");   // TV mode
+    expect(boardSource).toContain("renderBoardTable(false)");  // staff board
+    // A second <table> with the board's column widths would mean a copy is back.
+    expect(boardSource.match(/min-w-\[980px\]/g)).toHaveLength(1);
 
-    // These sit on the PAGE background, so a 400-weight accent disappears on
-    // white and each one needs a darker light-mode value.
-    expect(boardSource).toContain("text-amber-600 dark:text-amber-400");
-    expect(boardSource).toContain("text-red-600 dark:text-red-400");
-    expect(boardSource).toContain("text-violet-600 dark:text-violet-400");
+    // The TV is a wall display with nobody to click it: every control the board
+    // uses to MUTATE an appointment must have a static branch.
+    for (const control of [
+      'tone="cage"\n                        readOnly={readOnly}',
+      'tone="tag"\n                        readOnly={readOnly}',
+      'placeholder="Bath"\n                        readOnly={readOnly}',
+      'placeholder="Dry"\n                        readOnly={readOnly}',
+      'placeholder="Groomer"\n                        readOnly={readOnly}',
+    ]) {
+      expect(boardSource).toContain(control);
+    }
+    expect(boardSource).toContain("draggable={!readOnly}");
+    expect(boardSource).toContain("onClick={readOnly ? undefined : () => {");
+    expect(boardSource).toContain("{!readOnly && (<>");          // stage select + advance/revert
+    expect(boardSource).toContain('<span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded border border-emerald-300">READY</span>');
 
-    // The stage palette is tuned for a near-black backdrop; used as text over a
-    // pale tint on white, slate and amber fall below a readable contrast.
+    // What staff actually asked for: the dog photos.
+    expect(boardSource).toContain("<PetAvatar petId={appt.petId} petName={appt.petName}");
+    // Staff photos come through the shared cell, so they appear on the TV too.
+    expect(boardSource).toContain("<StaffAvatar photoUrl={selected.photoUrl}");
+
+    // The stage palette is tuned for a dark backdrop; as text over a pale tint
+    // on white, slate and amber fall below a readable contrast.
     expect(boardSource).toContain("color-mix(in oklch, ${stage.colour} 78%, black)");
-    expect(displaySource).toContain("color-mix(in oklch, ${stage.colour} 78%, black)");
-
-    // Both footers were left without a dark value when the pages were flipped
-    // to a light default, which made them unreadable once the toggle was used.
-    expect(boardSource).toContain('text-xs text-slate-600 dark:text-slate-300 mt-3 text-right');
-    expect(displaySource).toContain('gap-2 text-xs text-slate-600 dark:text-slate-300"');
+    expect(boardSource).toContain("text-xs text-slate-600 dark:text-slate-300 mt-3 text-right");
   });
 
   it("summarises salon workload, flags past scheduled appointments and exposes controlled TV scrolling", () => {
