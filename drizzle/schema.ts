@@ -55,6 +55,10 @@ export const users = mysqlTable("users", {
   passwordResetTokenHash: varchar("passwordResetTokenHash", { length: 255 }),
   passwordResetExpiresAt: timestamp("passwordResetExpiresAt"),
   role: mysqlEnum("role", ["user", "admin", "staff"]).default("user").notNull(),
+  // IANA zone the user picked when they set up their account, e.g.
+  // "Australia/Perth". Nullable: existing accounts predate the column, and a
+  // null falls back to the salon's own tenants.timezone.
+  timezone: varchar("timezone", { length: 64 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

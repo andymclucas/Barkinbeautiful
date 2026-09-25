@@ -1,4 +1,4 @@
-import { router, publicProcedure, protectedProcedure } from "../_core/trpc";
+import { router, publicProcedure, protectedProcedure, operationalProcedure } from "../_core/trpc";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { getDb } from "../db";
@@ -10,6 +10,7 @@ import { getSessionCookieOptions } from "../_core/cookies";
 import { TRPCError } from "@trpc/server";
 import crypto from "crypto";
 import { sendEmail } from "../email";
+import { isValidTimeZone } from "@shared/auditTimestamp";
 import { getAppBaseUrl } from "../appUrl";
 export const authRouter = router({
   // ── Who am I? ─────────────────────────────────────────────────────────────
@@ -209,5 +210,26 @@ export const authRouter = router({
         .where(eq(users.id, user.id));
 
       return { success: true };
+    }),
+
+  /**
+   * Change the timezone every time on screen is rendered in.
+   *
+   * `operationalProcedure` rather than `protectedProcedure`: restricted `staff`
+   * accounts are exactly the people most likely to be working from another
+   * state, and they must be able to set their own clock.
+   *
+   * Passing null clears it, which falls the account back to the salon's zone.
+   */
+  setTimezone: operationalProcedure
+    .input(z.object({ timezone: z.string().max(64).nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.timezone !== null && !isValidTimeZone(input.timezone)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That is not a timezone this system recognises." });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await db.update(users).set({ timezone: input.timezone }).where(eq(users.id, ctx.user.id));
+      return { success: true, timezone: input.timezone };
     }),
 });

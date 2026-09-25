@@ -12,6 +12,7 @@ import { BATH_PRIORITY_META, buildBathPriorityQueue } from "@shared/bathPriority
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { useDisplayTheme } from "@/lib/displayTheme";
 import { WorkflowBoardTable } from "@/components/WorkflowBoardTable";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 const STAGES = [
   { key: "scheduled", label: "Waiting", colour: "#94a3b8" },
@@ -213,13 +214,13 @@ export default function WorkflowDisplay() {
           <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-12 w-12 object-contain rounded bg-white p-1" />
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Live Workflow Board</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{new Date(`${boardDate}T00:00:00`).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long" })} · Independent read-only display</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{new Date(`${boardDate}T00:00:00`).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long" })} · Independent read-only display</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="flex items-center justify-end gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400"><Clock3 className="h-4 w-4 text-violet-700 dark:text-violet-300" /> Salon time</div>
-            <time className="font-mono text-3xl font-bold tabular-nums text-slate-900 dark:text-white md:text-4xl" dateTime={new Date(now).toISOString()}>{new Date(now).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}</time>
+            <time className="font-mono text-3xl font-bold tabular-nums text-slate-900 dark:text-white md:text-4xl" dateTime={new Date(now).toISOString()}>{new Date(now).toLocaleTimeString("en-AU", { timeZone: getActiveTimeZone(), hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true })}</time>
           </div>
           <div className="hidden items-center gap-3 text-sm text-slate-500 dark:text-slate-400 sm:flex">
             {isFetching ? <WifiOff className="h-4 w-4 text-amber-400" /> : <Wifi className="h-4 w-4 text-emerald-400" />}

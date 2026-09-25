@@ -91,7 +91,6 @@ export default function Settings() {
                   <div className="space-y-1.5"><Label>Phone</Label><Input defaultValue="07 3823 4567" /></div>
                   <div className="space-y-1.5"><Label>Email</Label><Input defaultValue="barkinbeautiful@gmail.com" /></div>
                   <div className="col-span-2 space-y-1.5"><Label>Address</Label><Input defaultValue="Brisbane, QLD" /></div>
-                  <div className="space-y-1.5"><Label>Timezone</Label><Input defaultValue="Australia/Brisbane" /></div>
                   <div className="space-y-1.5"><Label>Currency</Label><Input defaultValue="AUD" /></div>
                 </div>
                 <Button onClick={() => toast.success("Settings saved")}>Save Changes</Button>

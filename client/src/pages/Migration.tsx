@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, Database, CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 const STATUS_COLOURS: Record<string, string> = {
   pending: "bg-slate-100 text-slate-600",
@@ -170,7 +171,7 @@ export default function Migration() {
                         <Badge className={`text-xs ${STATUS_COLOURS[j.status]}`}>{j.status}</Badge>
                       </td>
                       <td className="p-3 text-xs text-muted-foreground">
-                        {new Date(j.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}
+                        {new Date(j.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}
                       </td>
                     </tr>
                   ))}

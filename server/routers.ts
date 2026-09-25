@@ -1,3 +1,4 @@
+import { isValidTimeZone } from "@shared/auditTimestamp";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
@@ -2497,7 +2498,13 @@ const staffRouter = router({
     }),
 
   acceptInvitation: publicProcedure
-    .input(z.object({ token: z.string().length(64), password: z.string().min(8) }))
+    .input(z.object({
+      token: z.string().length(64),
+      password: z.string().min(8),
+      // Chosen during setup. Validated as a real IANA zone rather than trusted,
+      // because it is rendered into every time this account ever sees.
+      timezone: z.string().max(64).optional(),
+    }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -2520,6 +2527,10 @@ const staffRouter = router({
       // staff-portal view. Bathers and other roles keep the standard
       // restricted staff experience.
       const accountRole = member.role === "groomer" ? "admin" : "staff";
+      // A zone the client made up must never reach the formatters, so reject
+      // anything Intl does not recognise and leave the column null — which
+      // falls back to the salon's own timezone.
+      const resolvedTimezone = isValidTimeZone(input.timezone) ? input.timezone! : null;
       let accountId: number;
       if (reusingInvitedAccount && existing) {
         await db.update(users).set({
@@ -2528,6 +2539,7 @@ const staffRouter = router({
           loginMethod: "password",
           passwordHash,
           role: accountRole,
+          timezone: resolvedTimezone,
         }).where(eq(users.id, existing.id));
         accountId = existing.id;
       } else {
@@ -2539,6 +2551,7 @@ const staffRouter = router({
           loginMethod: "password",
           passwordHash,
           role: accountRole,
+          timezone: resolvedTimezone,
         });
         const [account] = await db.select({ id: users.id }).from(users).where(eq(users.email, invitation.email)).limit(1);
         if (!account) throw new Error("Could not create staff account");
@@ -4615,6 +4628,9 @@ const settingsRouter = router({
           brandPrimary: tenants.brandPrimary,
           brandAccent: tenants.brandAccent,
           brandSidebar: tenants.brandSidebar,
+          // The salon's own zone. A user who has not chosen one falls back to
+          // it, so a salon outside Brisbane behaves correctly out of the box.
+          timezone: tenants.timezone,
           stripeBillingMode: tenants.stripeBillingMode,
           stripeConnectedAt: tenants.stripeConnectedAt,
         })

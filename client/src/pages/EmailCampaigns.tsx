@@ -22,6 +22,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 const AUDIENCE_OPTIONS = [
   { value: "all_active",         label: "All Active Clients" },
@@ -464,10 +465,10 @@ export default function EmailCampaigns() {
                       <p className="text-xs text-muted-foreground mt-0.5 truncate">{c.subject}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {c.status === "sent"
-                          ? `Sent ${c.sentAt ? new Date(c.sentAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" }) : "—"} · ${c.totalSent ?? 0} sent · ${openRate(c.totalOpened, c.totalSent)} open rate`
+                          ? `Sent ${c.sentAt ? new Date(c.sentAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }) : "—"} · ${c.totalSent ?? 0} sent · ${openRate(c.totalOpened, c.totalSent)} open rate`
                           : c.status === "scheduled"
-                          ? `Scheduled ${c.scheduledAt ? new Date(c.scheduledAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane" }) : "—"}`
-                          : `Created ${new Date(c.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}`}
+                          ? `Scheduled ${c.scheduledAt ? new Date(c.scheduledAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone() }) : "—"}`
+                          : `Created ${new Date(c.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 ml-3 shrink-0">

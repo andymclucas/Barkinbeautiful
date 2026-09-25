@@ -17,6 +17,7 @@ import {
   Phone, Mail, MapPin, User, UserCog, Plus, Pencil, X,
   CalendarDays, TrendingUp, AlertCircle, AlertTriangle, ShieldCheck, Smartphone, Send, CheckCircle2, Ban, Globe2, Download, ArrowLeft, ArrowUpRight
 } from "lucide-react";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner", groomer: "Groomer", bather: "Bather",
@@ -57,7 +58,7 @@ function makeTimingRange(days: number, endDateInput?: string) {
 }
 
 function formatTrendDate(date: string) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short" });
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" });
 }
 
 function csvCell(value: string | number | null | undefined) {
@@ -81,7 +82,7 @@ function australianDateKey(timestamp: number | string | Date | null | undefined)
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "";
   const parts = new Intl.DateTimeFormat("en-AU", {
-    timeZone: "Australia/Brisbane",
+    timeZone: getActiveTimeZone(),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -488,7 +489,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             {data.phone && <div className="flex items-start gap-3"><Phone className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Phone</p><p className="text-sm font-medium">{data.phone}</p></div></div>}
             {data.email && <div className="flex items-start gap-3"><Mail className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Email</p><p className="text-sm font-medium break-all">{data.email}</p></div></div>}
             {(data as any).address && <div className="flex items-start gap-3 sm:col-span-2"><MapPin className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Address</p><p className="text-sm font-medium">{(data as any).address}</p></div></div>}
-            {(data as any).dateOfBirth && <div className="flex items-start gap-3"><User className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Date of Birth</p><p className="text-sm font-medium">{new Date((data as any).dateOfBirth).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "long", year: "numeric" })}</p></div></div>}
+            {(data as any).dateOfBirth && <div className="flex items-start gap-3"><User className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Date of Birth</p><p className="text-sm font-medium">{new Date((data as any).dateOfBirth).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" })}</p></div></div>}
             {(data as any).emergencyContact && <div className="flex items-start gap-3"><AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Emergency Contact</p><p className="text-sm font-medium">{(data as any).emergencyContact}</p>{(data as any).emergencyPhone && <p className="text-sm text-muted-foreground">{(data as any).emergencyPhone}</p>}</div></div>}
             {data.xeroEmployeeId && <div className="flex items-start gap-3"><ShieldCheck className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" /><div><p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Xero Employee ID</p><p className="text-sm font-medium font-mono">{data.xeroEmployeeId}</p></div></div>}
           </div>

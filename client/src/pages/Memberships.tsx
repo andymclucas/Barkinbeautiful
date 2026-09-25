@@ -15,6 +15,7 @@ import { MembershipAccountsReceivable } from "@/components/MembershipAccountsRec
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 type MembershipItem = {
   id: number;
@@ -431,7 +432,7 @@ function MembershipRow({ m }: { m: MembershipItem }) {
         ${m.pricePerCycle}<span className="text-xs text-muted-foreground font-normal">/wk</span>
       </td>
       <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">
-        {m.nextBillingDate ? new Date(m.nextBillingDate).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" }) : "—"}
+        {m.nextBillingDate ? new Date(m.nextBillingDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }) : "—"}
       </td>
       <td className="p-3">
         <div className="space-y-1">
@@ -917,7 +918,7 @@ export default function Memberships() {
                           </Badge>
                         </td>
                         <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">
-                          {fp.lastFailedAt ? new Date(fp.lastFailedAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" }) : "—"}
+                          {fp.lastFailedAt ? new Date(fp.lastFailedAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }) : "—"}
                         </td>
                         <td className="p-3">
                           {fp.suspended ? (

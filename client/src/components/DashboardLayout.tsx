@@ -1,3 +1,4 @@
+import { useTimezoneSync } from "@/lib/timezone";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import NotificationBell from "@/components/NotificationBell";
@@ -104,6 +105,9 @@ function applySidebarColor(hex: string, root: HTMLElement) {
 function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const utils = trpc.useUtils();
   const { data: tenant } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 });
+  // Publish the signed-in user's zone to module scope so the plain formatting
+  // helpers — the ones that are not components — render in it too.
+  useTimezoneSync();
   const [colors, setColors] = useState({ primary: "#d61572", sidebar: "#1e1229", accent: "#f9d4e7" });
 
   useEffect(() => {

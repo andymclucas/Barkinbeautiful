@@ -1,13 +1,14 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
-import { formatAestTime } from "@shared/auditTimestamp";
+import { useTimezone } from "@/lib/timezone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CalendarDays, Users, CreditCard, TrendingUp, AlertTriangle, Dog, Clock, ArrowRight, MessageSquare, Phone } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 const STAGES = ["scheduled", "checked_in", "bathing", "grooming", "ready", "complete"] as const;
 const STAGE_LABELS: Record<string, string> = {
@@ -32,7 +33,7 @@ function staffInitials(name: string | null) {
 function formatTime(dt: Date | string | null) {
   if (!dt) return "—";
   return new Date(dt).toLocaleTimeString("en-AU", {
-    timeZone: "Australia/Brisbane",
+    timeZone: getActiveTimeZone(),
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -58,22 +59,21 @@ function timeAgo(dt: Date | string | null) {
 export default function Dashboard() {
   const { user, isAuthenticated, loading } = useAuth();
 
-  // Salon time, not browser time. Staff cover this salon from other timezones
-  // and the whole system books in Brisbane, so the header states which clock
-  // every time on the page is measured against. Brisbane has no DST, so the
-  // AEST label is stable year-round — but it is derived rather than hardcoded.
+  // The header names the clock every time on this page is measured against —
+  // the signed-in user's own timezone, which every other time now follows too.
+  // The abbreviation is derived through Intl, so it stays correct for any zone
+  // and across DST for the ones that observe it.
   //
   // The formatted string is what lives in state: setting it to an equal string
   // is a no-op in React, so this checks every second but only re-renders on the
   // minute, and can never display a stale minute.
-  const [salonTime, setSalonTime] = useState(() => formatAestTime(Date.now(), { timeZoneName: "short" }));
+  const tz = useTimezone();
+  const [salonTime, setSalonTime] = useState(() => tz.timeWithZone(Date.now()));
   useEffect(() => {
-    const timer = window.setInterval(
-      () => setSalonTime(formatAestTime(Date.now(), { timeZoneName: "short" })),
-      1000,
-    );
+    setSalonTime(tz.timeWithZone(Date.now()));
+    const timer = window.setInterval(() => setSalonTime(tz.timeWithZone(Date.now())), 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [tz]);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const tomorrow = useMemo(() => { const d = new Date(today); d.setDate(d.getDate() + 1); return d; }, [today]);
@@ -122,11 +122,11 @@ export default function Dashboard() {
               Good morning{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
             </h1>
             <p className="text-[13.5px] text-muted-foreground mt-0.5">
-              {new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+              {tz.longDate(Date.now())}
             </p>
             <p className="mt-1 flex items-center gap-1.5 text-[13.5px] text-muted-foreground">
               <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>Salon time</span>
+              <span>{tz.differsFromSalon ? "Your time" : "Salon time"}</span>
               <time className="font-semibold tabular-nums text-foreground" dateTime={new Date().toISOString()}>{salonTime}</time>
             </p>
           </div>

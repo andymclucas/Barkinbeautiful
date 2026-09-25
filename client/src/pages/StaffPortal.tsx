@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { Dog, LogOut, RefreshCw, ChevronRight, CalendarDays, Camera, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 const NEXT_STAGE: Record<string, { state: "checked_in" | "bathing" | "drying" | "grooming" | "ready" | "complete"; label: string }> = {
   scheduled: { state: "checked_in", label: "Check in" },
@@ -22,7 +23,7 @@ const STAGE_COLOURS: Record<string, string> = {
 };
 
 function formatTime(value: Date | string | number) {
-  return new Date(value).toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "numeric", minute: "2-digit", hour12: true });
+  return new Date(value).toLocaleTimeString("en-AU", { timeZone: getActiveTimeZone(), hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 function GroomingCardPhotoUpload({ appointmentId, petId }: { appointmentId: number; petId: number | null }) {
@@ -70,7 +71,7 @@ export default function StaffPortal() {
     onSuccess: () => { toast.success("Workflow updated"); refetch(); utils.workflow.getBoard.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
-  const dateLabel = useMemo(() => new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", day: "numeric", month: "long" }), []);
+  const dateLabel = useMemo(() => new Date().toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long" }), []);
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Loading Groomigo…</div>;
   if (!user) { window.location.href = "/login"; return null; }

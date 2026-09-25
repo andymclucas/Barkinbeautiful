@@ -21,6 +21,7 @@ import { useState, useCallback } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getClientPreviewSide } from "../lib/clientPreviewPosition";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 const STATUS_COLOURS: Record<string, string> = {
   active: "bg-emerald-100 text-emerald-800",
@@ -159,7 +160,7 @@ function ClientHoverCard({
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-xs text-muted-foreground">
-                          {new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", year: "2-digit" })}
+                          {new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "2-digit" })}
                         </p>
                         <Badge className={`text-[10px] px-1 py-0 ${a.workflowState === "complete" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                           {a.workflowState}
@@ -251,7 +252,7 @@ export default function Clients() {
         `"${(r.address ?? "").replace(/"/g, '""')}"`,
         r.status,
         `"${(r.referralSource ?? "").replace(/"/g, '""')}"`,
-        new Date(r.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" }),
+        new Date(r.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }),
       ].join(","));
       const csv = [header.join(","), ...csvRows].join("\n");
       const label = statusFilter !== "all" ? `_${statusFilter}` : "";
@@ -451,7 +452,7 @@ export default function Clients() {
                   </td>
                   {/* Since */}
                   <td className="p-3 hidden lg:table-cell text-xs text-muted-foreground">
-                    {new Date(c.createdAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}
+                    {new Date(c.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}
                   </td>
                 </tr>
               ))}

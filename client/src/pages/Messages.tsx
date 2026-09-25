@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X } from "lucide-react";
+import { getActiveTimeZone } from "@/lib/timezone";
 
 const SMS_TEMPLATES = [
   { key: "reminder", label: "Appointment Reminder", preview: "Hi {name}! Just a reminder that {pet} has a grooming appointment at Barkin' Beautiful tomorrow. See you then! 🐾" },
@@ -197,7 +198,7 @@ export default function Messages() {
 
   const appointmentContext = (log: any) => {
     if (!log.appointmentId || !log.appointmentStart) return "No future appointment linked";
-    const when = new Date(log.appointmentStart).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+    const when = new Date(log.appointmentStart).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
     return `${log.petName ?? "Pet"} · ${when}`;
   };
 
@@ -280,7 +281,7 @@ export default function Messages() {
                             {(call.petNames as string[] | undefined)?.length ? ` (${(call.petNames as string[]).join(" & ")})` : ""}
                           </span>
                           <span className="text-[11px] text-muted-foreground shrink-0">
-                            {new Date(call.receivedAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                            {new Date(call.receivedAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
                           </span>
                         </div>
                         {(call.clientName as string | null)?.trim() && <p className="text-xs text-muted-foreground">{call.fromNumber}</p>}
@@ -363,7 +364,7 @@ export default function Messages() {
                         </p>
                       </div>
                       <span className="text-[11px] text-muted-foreground shrink-0">
-                        {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", day: "2-digit", month: "short" })}
+                        {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "2-digit", month: "short" })}
                       </span>
                     </button>
                     </HoverCardTrigger>
@@ -385,7 +386,7 @@ export default function Messages() {
                             <div className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-xs leading-snug ${m.direction === "outbound" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
                               <p className="whitespace-pre-wrap break-words">{m.body}</p>
                               <p className={`mt-1 text-[10px] ${m.direction === "outbound" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                                {msgTime(m) ? new Date(msgTime(m)).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : ""}
+                                {msgTime(m) ? new Date(msgTime(m)).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : ""}
                               </p>
                             </div>
                           </div>
@@ -577,7 +578,7 @@ export default function Messages() {
                   {filteredLogs.map((log: any) => (
                     <tr key={log.id} className="border-b last:border-0">
                       <td className="py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                        {log.sentAt ? new Date(log.sentAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—"}
+                        {log.sentAt ? new Date(log.sentAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—"}
                       </td>
                       <td className="py-2.5 text-xs">
                         <div>{log.clientName || log.toNumber}{log.direction === "inbound" && <span className="ml-1 text-violet-700">(reply)</span>}</div>
@@ -712,7 +713,7 @@ export default function Messages() {
                     <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
                       <p className="whitespace-pre-wrap break-words">{msg.body}</p>
                       <div className={`mt-1 text-[10px] ${isOutbound ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                        {new Date(msg.sentAt).toLocaleString("en-AU", { timeZone: "Australia/Brisbane", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}
+                        {new Date(msg.sentAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}
                         {isOutbound && ` · ${msg.status}`}
                       </div>
                     </div>
