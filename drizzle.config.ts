@@ -16,5 +16,11 @@ export default defineConfig({
   dialect: "mysql",
   dbCredentials: {
     url: connectionString,
+    // TiDB Cloud's public endpoint requires TLS, and mysql2's URI parsing does
+    // not reliably turn SSL on from the connection string alone — server/db.ts
+    // has carried an explicit ssl block for exactly this reason since it was
+    // written. drizzle-kit builds its own connection from this config, so it
+    // needs the same treatment or every migration fails on the handshake.
+    ssl: { minVersion: "TLSv1.2", rejectUnauthorized: true },
   },
 });
