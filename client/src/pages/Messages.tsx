@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
-import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X } from "lucide-react";
+import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 
 const SMS_TEMPLATES = [
@@ -38,6 +38,7 @@ export default function Messages() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [composeOpen, setComposeOpen] = useState(false);
+  const [showArchivedCalls, setShowArchivedCalls] = useState(false);
   const [toNumber, setToNumber] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
@@ -266,65 +267,96 @@ export default function Messages() {
             <p className="text-xs text-muted-foreground">Voicemail transcripts from missed landline calls, routed via Twilio</p>
           </CardHeader>
           <CardContent className="pt-0">
-            {missedCallsList && missedCallsList.length > 0 ? (
-              <div className="space-y-2">
-                  {missedCallsList.map(call => (
-                    <div
-                      key={call.id}
-                      className={`flex items-start gap-3 rounded-lg border p-3 ${call.readAt ? "bg-background" : "bg-amber-50/60 border-amber-200"}`}
-                    >
-                      <Phone className={`h-4 w-4 mt-0.5 shrink-0 ${call.readAt ? "text-muted-foreground" : "text-amber-600"}`} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold truncate">
-                            {(call.clientName as string | null)?.trim() || call.fromNumber}
-                            {(call.petNames as string[] | undefined)?.length ? ` (${(call.petNames as string[]).join(" & ")})` : ""}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground shrink-0">
-                            {new Date(call.receivedAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
-                          </span>
-                        </div>
-                        {(call.clientName as string | null)?.trim() && <p className="text-xs text-muted-foreground">{call.fromNumber}</p>}
-                        <p className="text-sm mt-1">
-                          {call.transcriptionStatus === "completed"
-                            ? `"${call.transcriptText}"`
-                            : <span className="italic text-muted-foreground">No transcript available</span>}
-                        </p>
+            {missedCallsList && missedCallsList.length > 0 ? (() => {
+              const unread = missedCallsList.filter(c => !c.readAt);
+              const archived = missedCallsList.filter(c => !!c.readAt);
+              const renderCall = (call: typeof missedCallsList[0]) => (
+                <div
+                  key={call.id}
+                  className={`flex items-start gap-3 rounded-lg border p-3 ${call.readAt ? "bg-background" : "bg-amber-50/60 border-amber-200"}`}
+                >
+                  <Phone className={`h-4 w-4 mt-0.5 shrink-0 ${call.readAt ? "text-muted-foreground" : "text-amber-600"}`} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-semibold truncate">
+                          {(call.clientName as string | null)?.trim() || call.fromNumber}
+                          {(call.petNames as string[] | undefined)?.length ? ` (${(call.petNames as string[]).join(" & ")})` : ""}
+                        </span>
                         {call.recordingUrl && (
-                          <audio
-                            className="mt-2 h-8 w-full max-w-sm"
-                            controls
-                            preload="none"
-                            src={`/api/twilio/voicemail-audio/${call.id}`}
-                          />
+                          <span className="inline-flex items-center gap-0.5 shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                            <Mic className="h-2.5 w-2.5" /> Voicemail
+                          </span>
                         )}
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {!call.readAt && (
-                          <button
-                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"
-                            title="Mark as read"
-                            onClick={() => clearMissedCall.mutate({ id: call.id })}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                        <button
-                          className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
-                          title="Delete this missed call"
-                          onClick={() => {
-                            if (confirm("Delete this missed call? This can't be undone.")) {
-                              deleteMissedCall.mutate({ id: call.id });
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      <span className="text-[11px] text-muted-foreground shrink-0">
+                        {new Date(call.receivedAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                      </span>
                     </div>
-                  ))}
-              </div>
-            ) : (
+                    {(call.clientName as string | null)?.trim() && <p className="text-xs text-muted-foreground">{call.fromNumber}</p>}
+                    <p className="text-sm mt-1">
+                      {call.transcriptionStatus === "completed"
+                        ? `"${call.transcriptText}"`
+                        : <span className="italic text-muted-foreground">No transcript available</span>}
+                    </p>
+                    {call.recordingUrl && (
+                      <audio
+                        className="mt-2 h-8 w-full max-w-sm"
+                        controls
+                        preload="none"
+                        src={`/api/twilio/voicemail-audio/${call.id}`}
+                      />
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!call.readAt && (
+                      <button
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"
+                        title="Mark as read / archive"
+                        onClick={() => clearMissedCall.mutate({ id: call.id })}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {/* Only allow deletion when there is no voicemail recording */}
+                    {!call.recordingUrl && (
+                      <button
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
+                        title="Delete this missed call"
+                        onClick={() => {
+                          if (confirm("Delete this missed call? This can't be undone.")) {
+                            deleteMissedCall.mutate({ id: call.id });
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+              return (
+                <div className="space-y-2">
+                  {unread.length === 0 && archived.length > 0 && (
+                    <p className="text-xs text-muted-foreground pb-1">All caught up — no unread missed calls.</p>
+                  )}
+                  {unread.map(renderCall)}
+                  {archived.length > 0 && (
+                    <>
+                      <button
+                        className="flex w-full items-center gap-1.5 pt-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => setShowArchivedCalls(v => !v)}
+                      >
+                        {showArchivedCalls ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        {archived.length} archived {archived.length === 1 ? "call" : "calls"}
+                        {archived.some(c => c.recordingUrl) && <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700"><Mic className="h-2.5 w-2.5" /> with voicemails</span>}
+                      </button>
+                      {showArchivedCalls && <div className="space-y-2 pt-1">{archived.map(renderCall)}</div>}
+                    </>
+                  )}
+                </div>
+              );
+            })() : (
               <p className="text-sm text-muted-foreground text-center py-6">No missed calls recorded yet</p>
             )}
           </CardContent>
