@@ -8,11 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { MessageThread, contactColour, contactInitials } from "@/components/MessageThread";
 
 const SMS_TEMPLATES = [
   { key: "reminder", label: "Appointment Reminder", preview: "Hi {name}! Just a reminder that {pet} has a grooming appointment at Barkin' Beautiful tomorrow. See you then! 🐾" },
@@ -85,22 +85,14 @@ export default function Messages() {
     onError: (e) => toast.error(e.message),
   });
 
-  // Recent exchange for the hover preview. Derived from the sms.getLogs data
-  // already on the page, so hovering costs no extra request.
-  // A log row's timestamp. Inbound messages may not carry sentAt, and an
-  // unparseable date must not sort to the epoch — that pushed the newest
-  // message to the front, where slice(-4) could drop it.
-  const msgTime = (m: any) => {
-    const t = Date.parse(m?.sentAt ?? m?.receivedAt ?? m?.createdAt ?? "");
-    return Number.isNaN(t) ? 0 : t;
-  };
-
+  // Rows for the hover preview, taken from the sms.getLogs data already on the
+  // page so hovering costs no extra request. Ordering, the newest-first slice
+  // and the timestamp fallbacks now live in shared/messageThreadGrouping,
+  // which is unit-tested — this used to be a hand-rolled sort here and it
+  // twice showed stale messages.
   const threadPreview = (thread: { clientId: number | null; toNumber: string }) => {
     if (!logs) return [];
-    return (logs as any[])
-      .filter(l => (thread.clientId ? l.clientId === thread.clientId : l.toNumber === thread.toNumber))
-      .sort((a, b) => msgTime(a) - msgTime(b))
-      .slice(-4);
+    return (logs as any[]).filter(l => (thread.clientId ? l.clientId === thread.clientId : l.toNumber === thread.toNumber));
   };
 
   const openThreadDialog = (thread: { clientId: number | null; toNumber: string; clientName: string | null }) => {
@@ -371,58 +363,65 @@ export default function Messages() {
               <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
             ) : (
               <div className="divide-y">
-                {threads.map((thread: any) => (
+                {threads.map((thread: any) => {
+                  const displayName = thread.clientName?.trim() || thread.toNumber;
+                  return (
                   <div
                     key={thread.threadKey}
-                    className="w-full flex items-center gap-2 py-1 hover:bg-accent/50 transition-colors px-2 -mx-2 rounded-md group"
+                    className="group -mx-2 flex w-full items-center gap-2 rounded-xl px-2 transition-colors hover:bg-accent/50"
                   >
                     <HoverCard openDelay={220} closeDelay={80}>
                     <HoverCardTrigger asChild>
                     <button
-                      className="flex-1 min-w-0 text-left py-2 flex items-center justify-between gap-3"
+                      className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
                       onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
                     >
+                      <span
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
+                        style={{ background: contactColour(thread.threadKey ?? displayName) }}
+                        aria-hidden="true"
+                      >
+                        {contactInitials(thread.clientName, thread.toNumber)}
+                      </span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{thread.clientName?.trim() || thread.toNumber}</span>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className={`truncate text-[15px] ${thread.unreadCount > 0 ? "font-semibold" : "font-medium"}`}>{displayName}</span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <p className={`min-w-0 flex-1 truncate text-[13px] ${thread.unreadCount > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                            {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
+                          </p>
                           {thread.unreadCount > 0 && (
-                            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center shrink-0">
+                            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
                               {thread.unreadCount}
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
-                        </p>
                       </div>
-                      <span className="text-[11px] text-muted-foreground shrink-0">
-                        {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "2-digit", month: "short" })}
-                      </span>
                     </button>
                     </HoverCardTrigger>
-                    <HoverCardContent side="top" align="center" sideOffset={6} collisionPadding={12} className="w-80 p-0 overflow-hidden">
-                      <div className="border-b bg-muted/40 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold truncate">{thread.clientName?.trim() || thread.toNumber}</p>
-                          {thread.unreadCount > 0 && (
-                            <span className="shrink-0 rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">{thread.unreadCount} unread</span>
-                          )}
+                    <HoverCardContent side="right" align="start" sideOffset={10} collisionPadding={16} className="w-80 overflow-hidden p-0">
+                      <div className="flex items-center gap-2.5 border-b bg-muted/40 px-3 py-2.5">
+                        <span
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                          style={{ background: contactColour(thread.threadKey ?? displayName) }}
+                          aria-hidden="true"
+                        >
+                          {contactInitials(thread.clientName, thread.toNumber)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{displayName}</p>
+                          {thread.clientName?.trim() && <p className="truncate text-[11px] text-muted-foreground">{thread.toNumber}</p>}
                         </div>
-                        {thread.clientName?.trim() && <p className="text-xs text-muted-foreground">{thread.toNumber}</p>}
+                        {thread.unreadCount > 0 && (
+                          <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">{thread.unreadCount} new</span>
+                        )}
                       </div>
-                      <div className="flex max-h-64 flex-col-reverse gap-2 overflow-y-auto p-3">
-                        {threadPreview(thread).length === 0 ? (
-                          <p className="text-xs text-muted-foreground">{thread.lastMessage}</p>
-                        ) : threadPreview(thread).slice().reverse().map((m: any) => (
-                          <div key={m.id} className={`flex ${m.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-                            <div className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-xs leading-snug ${m.direction === "outbound" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
-                              <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                              <p className={`mt-1 text-[10px] ${m.direction === "outbound" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                                {msgTime(m) ? new Date(msgTime(m)).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : ""}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
+                      <div className="max-h-72 overflow-y-auto px-3 py-2">
+                        <MessageThread messages={threadPreview(thread)} limit={4} compact emptyText={thread.lastMessage ?? "No messages yet."} />
                       </div>
                       <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">Click to open the full conversation</div>
                     </HoverCardContent>
@@ -443,7 +442,8 @@ export default function Messages() {
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>
@@ -728,38 +728,51 @@ export default function Messages() {
 
       {/* ── Thread conversation dialog ── */}
       <Dialog open={!!openThread} onOpenChange={(open) => !open && setOpenThread(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{openThread?.clientName?.trim() || openThread?.toNumber}</DialogTitle>
-            {openThread?.clientName && <p className="text-xs text-muted-foreground -mt-1">{openThread.toNumber}</p>}
-          </DialogHeader>
-          <ScrollArea className="max-h-[60vh] pr-3">
-            <div className="flex flex-col gap-2 py-2">
-              {threadMessages.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-6">No messages in this conversation yet.</p>
-              )}
-              {threadMessages.map((msg: any) => {
-                const isOutbound = msg.direction === "outbound";
-                return (
-                  <div key={msg.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${isOutbound ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>
-                      <p className="whitespace-pre-wrap break-words">{msg.body}</p>
-                      <div className={`mt-1 text-[10px] ${isOutbound ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                        {new Date(msg.sentAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}
-                        {isOutbound && ` · ${msg.status}`}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+        {/* Sized and shaped like a phone screen: a tall, narrow, rounded panel
+            with its own header and footer bars and a scrolling message area
+            between them. The whole panel is the conversation — no page chrome
+            bleeding in, which is what made the old dialog feel like a table. */}
+        <DialogContent className="max-w-[420px] gap-0 overflow-hidden rounded-[26px] p-0 sm:max-w-[420px]">
+          <DialogHeader className="space-y-0 border-b bg-background/95 px-4 py-3 backdrop-blur">
+            <div className="flex items-center gap-3">
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                style={{ background: contactColour(openThread?.toNumber ?? "") }}
+                aria-hidden="true"
+              >
+                {contactInitials(openThread?.clientName, openThread?.toNumber ?? "")}
+              </span>
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="truncate text-[15px] font-semibold leading-tight">
+                  {openThread?.clientName?.trim() || openThread?.toNumber}
+                </DialogTitle>
+                {openThread?.clientName && (
+                  <p className="truncate text-[11px] font-normal text-muted-foreground">{openThread.toNumber}</p>
+                )}
+              </div>
             </div>
-          </ScrollArea>
-          <div className="flex justify-between items-center pt-2 border-t">
+          </DialogHeader>
+
+          <div className="h-[58vh] min-h-[320px] overflow-y-auto bg-muted/20 px-3 py-2">
+            <MessageThread
+              messages={threadMessages}
+              showStatus
+              autoScroll={!!openThread}
+              emptyText="No messages in this conversation yet."
+            />
+          </div>
+
+          {/* The bar an iPhone puts at the bottom of a thread. Replying still
+              opens the compose dialog, which carries the template picker and
+              the send-safety checks — this is the entry point, not a second
+              send path. */}
+          <div className="flex items-center gap-2 border-t bg-background px-3 py-2.5">
             <Button
-              size="sm"
               variant="ghost"
-              className="gap-1.5 text-muted-foreground hover:text-red-600"
+              size="icon"
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600"
               disabled={deleteThreadMutation.isPending}
+              aria-label="Delete conversation"
               onClick={() => {
                 if (!openThread) return;
                 if (confirm(`Delete this entire conversation with ${openThread.clientName?.trim() || openThread.toNumber}? This can't be undone.`)) {
@@ -767,12 +780,11 @@ export default function Messages() {
                 }
               }}
             >
-              <Trash2 className="h-3.5 w-3.5" /> Delete conversation
+              <Trash2 className="h-4 w-4" />
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
+            <button
+              type="button"
+              className="flex h-10 min-w-0 flex-1 items-center rounded-full border bg-muted/40 px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
               onClick={() => {
                 if (!openThread) return;
                 setOpenThread(null);
@@ -782,7 +794,22 @@ export default function Messages() {
                 setComposeOpen(true);
               }}
             >
-              <Send className="h-3.5 w-3.5" /> Reply
+              Message…
+            </button>
+            <Button
+              size="icon"
+              className="h-10 w-10 shrink-0 rounded-full"
+              aria-label="Reply"
+              onClick={() => {
+                if (!openThread) return;
+                setOpenThread(null);
+                setToNumber(openThread.toNumber);
+                setSelectedClientId(openThread.clientId);
+                setClientSearch(openThread.clientId ? (openThread.clientName?.trim() || "") : "");
+                setComposeOpen(true);
+              }}
+            >
+              <Send className="h-4 w-4" />
             </Button>
           </div>
         </DialogContent>
