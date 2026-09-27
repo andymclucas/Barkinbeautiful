@@ -184,6 +184,29 @@ push` against production; a schema change and the code that depends on it must
 ship together. Commit `b848737` ("HOTFIX: remove reference to not-yet-migrated
 `moego_pet_codes` column") is what happens when they don't.
 
+### `drizzle-kit generate` is currently BROKEN here — do not run it
+
+Migrations `0044`–`0053` were hand-written as `.sql` with **no snapshots**, so
+`drizzle/meta/` stops at `0043_snapshot.json`. `generate` diffs `schema.ts`
+against that stale snapshot and emits ten migrations' worth of DDL that has
+**already been applied to production** — `CREATE TABLE missed_calls`,
+`uploaded_images`, `store_credit_transactions`, `client_error_logs`, plus a
+dozen `ADD COLUMN`s. Running it against the live database fails part-way
+through on the first `CREATE TABLE` of a table that already exists.
+
+This makes **`pnpm run db:push` unsafe**, because it is `generate && migrate`.
+
+- To ADD a migration: write the `.sql` by hand and add its `_journal.json`
+  entry, as `0044`–`0054` all do.
+- To APPLY migrations: `corepack pnpm exec drizzle-kit migrate` — it reads the
+  journal and the `.sql` files and does **not** need snapshots, so it is safe.
+- If `generate` is ever run by accident it leaves a stray `00NN_*.sql`, a
+  `00NN_snapshot.json` and a journal entry. Delete all three.
+
+Repairing the snapshot chain needs the live database to diff against and is a
+deliberate job of its own; a first attempt hit a parent-snapshot collision.
+Until then, treat `generate` as unavailable.
+
 ---
 
 ## 7. Testing
