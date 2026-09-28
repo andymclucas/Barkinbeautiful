@@ -41,7 +41,9 @@
       "Bash(git push:*)",
       "Bash(git commit:*)",
       "Bash(git fetch:*)",
-      "Bash(git ls-remote:*)"
+      "Bash(git ls-remote:*)",
+      "Bash(corepack pnpm exec drizzle-kit migrate:*)",
+      "Bash(npx drizzle-kit migrate:*)"
     ],
     "deny": [
       "Bash(npm install:*)",
@@ -52,9 +54,7 @@
       "Bash(corepack pnpm run db:push)",
       "Bash(corepack pnpm run db:push:*)",
       "Bash(pnpm run db:push)",
-      "Bash(corepack pnpm exec drizzle-kit migrate:*)",
       "Bash(corepack pnpm exec drizzle-kit push:*)",
-      "Bash(npx drizzle-kit migrate:*)",
       "Bash(npx drizzle-kit push:*)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",

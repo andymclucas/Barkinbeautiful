@@ -19,6 +19,7 @@ Usage:  python3 scripts/set-database-url.py
 
 from __future__ import annotations
 
+import getpass
 import pathlib
 import re
 import shlex
@@ -113,10 +114,29 @@ def write(url: str) -> None:
     ENV_PATH.write_text("\n".join(out))
 
 
+def prompt() -> str:
+    """Ask for the value directly. Hidden input, so it never appears on screen
+    and never reaches shell history — unlike typing it as an argument."""
+    print("Paste the connection string (or just the password) and press Enter.")
+    print("Nothing will appear as you paste — that is deliberate.")
+    return getpass.getpass("> ").strip()
+
+
+def _recognisable(text: str) -> bool:
+    return text.startswith("mysql://") or from_cli_command(text) is not None or (
+        re.fullmatch(r"\S+", text) is not None and len(text) < 200
+    )
+
+
 def main() -> None:
+    # The clipboard is a guess; a prompt is not. Try the clipboard, but fall
+    # back to asking rather than failing, because "could not recognise the
+    # clipboard contents" leaves someone with nowhere to go.
     text = clipboard()
+    if not text or not _recognisable(text):
+        text = prompt()
     if not text:
-        sys.exit("Clipboard is empty. Copy the connection string or password from TiDB Cloud first.")
+        sys.exit("Nothing entered.")
 
     known = existing_parts()
 
@@ -135,14 +155,14 @@ def main() -> None:
         url, shape = build({**known, "password": text}), "a bare password"
     else:
         sys.exit(
-            "Could not recognise the clipboard contents.\n"
-            "Copy one of: the mysql:// URI, TiDB's `mysql -u ... -p'...'` command, or the password."
+            "Could not recognise that.\n"
+            "Paste one of: the mysql:// URI, TiDB's `mysql -u ... -p'...'` command, or the password."
         )
 
     write(url)
 
     shown = urlsplit(url)
-    print(f"Read {shape} from the clipboard.")
+    print(f"Read {shape}.")
     print("Wrote DATABASE_URL to .env — the value itself was not displayed.")
     print(f"  host:     {shown.hostname}")
     print(f"  port:     {shown.port}")
