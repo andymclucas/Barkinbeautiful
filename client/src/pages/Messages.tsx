@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { MessageThread, contactColour, contactInitials } from "@/components/MessageThread";
@@ -42,6 +42,68 @@ export default function Messages() {
   const [toNumber, setToNumber] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+
+  // Conversation preview, anchored to the cursor.
+  //
+  // This used to be a Radix HoverCard with side="right". The list rows are full
+  // width, so "right of the trigger" had no room, Radix flipped it, and the card
+  // landed at the far left of the window over the sidebar - nowhere near the
+  // pointer. Anchoring to the cursor is the only placement that reads correctly
+  // for a full-width row.
+  //
+  // Position is written straight to the node rather than held in state: the
+  // conversation list re-rendering on every mousemove was not worth it.
+  const [previewThread, setPreviewThread] = useState<any | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointer = useRef({ x: 0, y: 0 });
+
+  const positionPreview = useCallback(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const gap = 18;
+    const { x, y } = pointer.current;
+    const w = el.offsetWidth || 320;
+    const h = el.offsetHeight || 360;
+    // Flip to the left of the cursor when the card would run off the right edge.
+    const left = x + gap + w > window.innerWidth - 8 ? Math.max(8, x - gap - w) : x + gap;
+    // Sit slightly above the cursor, clamped so the card is always fully visible.
+    const top = Math.min(Math.max(8, y - 24), Math.max(8, window.innerHeight - h - 8));
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  }, []);
+
+  const trackPointer = useCallback((e: { clientX: number; clientY: number }) => {
+    pointer.current = { x: e.clientX, y: e.clientY };
+    positionPreview();
+  }, [positionPreview]);
+
+  const openPreview = useCallback((thread: any, e: { clientX: number; clientY: number }) => {
+    pointer.current = { x: e.clientX, y: e.clientY };
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    previewTimer.current = setTimeout(() => setPreviewThread(thread), 220);
+  }, []);
+
+  const closePreview = useCallback(() => {
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    previewTimer.current = null;
+    setPreviewThread(null);
+  }, []);
+
+  // Place the card as soon as it mounts, before the browser paints, so it never
+  // flashes at the top-left corner on the first frame.
+  useEffect(() => { if (previewThread) positionPreview(); }, [previewThread, positionPreview]);
+  useEffect(() => () => { if (previewTimer.current) clearTimeout(previewTimer.current); }, []);
+  // A scroll or a resize invalidates the anchor point entirely.
+  useEffect(() => {
+    if (!previewThread) return;
+    window.addEventListener("scroll", closePreview, true);
+    window.addEventListener("resize", closePreview);
+    return () => {
+      window.removeEventListener("scroll", closePreview, true);
+      window.removeEventListener("resize", closePreview);
+    };
+  }, [previewThread, closePreview]);
   const [selectedTemplate, setSelectedTemplate] = useState("custom");
   const [customBody, setCustomBody] = useState("");
   const [sending, setSending] = useState(false);
@@ -369,9 +431,10 @@ export default function Messages() {
                   <div
                     key={thread.threadKey}
                     className="group -mx-2 flex w-full items-center gap-2 rounded-xl px-2 transition-colors hover:bg-accent/50"
+                    onMouseEnter={(e) => openPreview(thread, e)}
+                    onMouseMove={trackPointer}
+                    onMouseLeave={closePreview}
                   >
-                    <HoverCard openDelay={220} closeDelay={80}>
-                    <HoverCardTrigger asChild>
                     <button
                       className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
                       onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
@@ -402,30 +465,6 @@ export default function Messages() {
                         </div>
                       </div>
                     </button>
-                    </HoverCardTrigger>
-                    <HoverCardContent side="right" align="start" sideOffset={10} collisionPadding={16} className="w-80 overflow-hidden p-0">
-                      <div className="flex items-center gap-2.5 border-b bg-muted/40 px-3 py-2.5">
-                        <span
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-                          style={{ background: contactColour(thread.threadKey ?? displayName) }}
-                          aria-hidden="true"
-                        >
-                          {contactInitials(thread.clientName, thread.toNumber)}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold">{displayName}</p>
-                          {thread.clientName?.trim() && <p className="truncate text-[11px] text-muted-foreground">{thread.toNumber}</p>}
-                        </div>
-                        {thread.unreadCount > 0 && (
-                          <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">{thread.unreadCount} new</span>
-                        )}
-                      </div>
-                      <div className="max-h-72 overflow-y-auto px-3 py-2">
-                        <MessageThread messages={threadPreview(thread)} limit={4} compact emptyText={thread.lastMessage ?? "No messages yet."} />
-                      </div>
-                      <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">Click to open the full conversation</div>
-                    </HoverCardContent>
-                    </HoverCard>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -814,6 +853,41 @@ export default function Messages() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Conversation preview, positioned at the cursor by positionPreview().
+          Portalled to the body so no ancestor's transform or overflow can clip
+          it, and pointer-events-none so it never swallows the click on the row
+          underneath. */}
+      {previewThread && createPortal(
+        <div
+          ref={previewRef}
+          role="tooltip"
+          className="pointer-events-none fixed z-50 w-80 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
+          style={{ left: 0, top: 0 }}
+        >
+          <div className="flex items-center gap-2.5 border-b bg-muted/40 px-3 py-2.5">
+            <span
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+              style={{ background: contactColour(previewThread.threadKey ?? (previewThread.clientName?.trim() || previewThread.toNumber)) }}
+              aria-hidden="true"
+            >
+              {contactInitials(previewThread.clientName, previewThread.toNumber)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{previewThread.clientName?.trim() || previewThread.toNumber}</p>
+              {previewThread.clientName?.trim() && <p className="truncate text-[11px] text-muted-foreground">{previewThread.toNumber}</p>}
+            </div>
+            {previewThread.unreadCount > 0 && (
+              <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">{previewThread.unreadCount} new</span>
+            )}
+          </div>
+          <div className="max-h-72 overflow-y-auto px-3 py-2">
+            <MessageThread messages={threadPreview(previewThread)} limit={4} compact emptyText={previewThread.lastMessage ?? "No messages yet."} />
+          </div>
+          <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">Click to open the full conversation</div>
+        </div>,
+        document.body,
+      )}
     </DashboardLayout>
   );
 }
