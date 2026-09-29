@@ -13,16 +13,35 @@ This runs each Monday, over a **two-week forward window**. That window is
 deliberate: small enough for a human to review row by row, wide enough to catch
 the forward bookings that matter.
 
-## Status: reporting only
+## Status: report by default, apply only with a human present
 
-**There is no appointment importer yet.** `migration.importClients` handles
-clients from a CSV and nothing else; `moego_appointment_id` exists on the
-`appointments` table but no code reads or writes it. Until the importer is
-built, this skill **produces the divergence report and stops**. Do not attempt
-to write appointment changes by hand-rolled SQL — see the traps below for why.
+**There is still no appointment importer.** `migration.importClients` handles
+clients from a CSV and nothing else; `moego_appointment_id` sits on the
+`appointments` table but no application code reads or writes it.
 
-The report on its own is worth running: it tells the salon which dogs are on
-the Groomigo board that are not coming.
+**An unattended run reports and stops.** It has no MoeGo session at 6am and no
+one to approve a write, so it produces the divergence report and says what it
+would have done.
+
+**An attended run may apply changes, through a reviewed script.** This was done
+for the first time on 29/09/2026 and it worked, but only because every write
+was guarded. Any apply step must:
+
+- run in a **transaction** and roll back whole on any surprise;
+- guard every write with `AND workflow_state = "scheduled"` and **abort when the
+  affected-row count is not exactly what was expected**;
+- check for an existing appointment for that pet on that date **before creating
+  anything** — see Trap 5, which is how two dogs got double-booked;
+- **print what it will do and be read by a person first**;
+- re-verify against MoeGo immediately beforehand — see Trap 6.
+
+Note that the write is likely to be refused when the session's permission
+settings treat the production database as a shared resource. That refusal is
+correct. Hand the script to the operator to run rather than looking for another
+route to the same write.
+
+The report alone is worth running weekly: it tells the salon which dogs are on
+the board and are not coming.
 
 ## 1. Pull the MoeGo export
 
@@ -71,17 +90,56 @@ comma cannot be split reliably. Count the split parts against each other; if
 pets, services and staff do not agree, flag the row for a human instead of
 guessing.
 
-**Trap 4 — workflow state must never be imported.** Groomigo's workflow state
-is the live floor state, and `workflow_logs` is the audit trail the timing
-analytics run on. A dog mid-bath cannot be reset by an import. MoeGo wins on
-scheduling facts (date, service, staff, cancellation); **Groomigo always wins
-on workflow state.**
+**Trap 4 — workflow state: cancel yes, anything else no.** An earlier version of
+this file said workflow state must *never* be imported. That was too blunt, and
+on 29/09/2026 it cost the salon a morning: the Monday run parked all 12
+cancellations as "needs decision", and four cancelled dogs were still on the
+board when the doors opened.
 
-**Trap 5 — absence is not deletion.** A Groomigo appointment missing from the
+`cancelled` **is** one of the 12 workflow states, and `scheduled → cancelled` is
+exactly the transition this sync exists to make. The real rule:
+
+- **Only ever act on a row still at `scheduled`.** Guard every write with
+  `AND workflow_state = "scheduled"` and abort when the affected-row count does
+  not match. A dog past `scheduled` is on the floor and is untouchable.
+- **Set both columns.** `appointments` carries `workflow_state` (the 12-state
+  machine) *and* `status` (`confirmed|pending|cancelled|no_show`). Setting one
+  and not the other leaves the row inconsistent.
+- **Write the audit row.** Insert into `workflow_logs` (`from_state`,
+  `to_state`, and a note naming the sync). That trail drives the Pet Tracker and
+  the timing analytics.
+- Everything else stands: MoeGo wins on scheduling facts, Groomigo wins on any
+  state past `scheduled`.
+
+A direct SQL write runs no application code, so it enqueues no reminders — the
+safe path for a cancellation. Confirm `SMS_AUTOMATION_ENABLED` first regardless.
+
+**Trap 5 — match on (pet, date), never on the booking id alone.** On 29/09/2026
+a dedupe guard of `WHERE pet_id = ? AND moego_appointment_id = ?` failed twice in
+one run, because `moego_appointment_id` is neither reliably present nor the whole
+key:
+
+- Rows created in Groomigo carry a **NULL** booking id, so the guard could not
+  see them and **duplicated two dogs onto a live board**.
+- The guard did not filter on state, so it matched a **cancelled** row, reported
+  "already exists", and skipped a dog who was in fact arriving that morning.
+
+Before creating anything, look for an existing appointment for that pet on that
+date **whatever its booking id or workflow state**, and decide from what you
+find. Duplicating a dog is the single worst outcome of this sync — staff work
+from that board.
+
+**Trap 6 — a Monday-only sync is stale before it runs.** On 29/09 a booking was
+cancelled in MoeGo at 19:17 the night before and was invisible to that morning's
+export; another was cancelled while the reconciliation was still running. Re-pull
+MoeGo immediately before applying anything, and never apply from a file pulled
+earlier in the session.
+
+**Trap 7 — absence is not deletion.** A Groomigo appointment missing from the
 MoeGo export has not been cancelled — it may have been booked in Groomigo.
 Never delete on absence. Flag it.
 
-**Trap 6 — no client messages.** Imported appointments must not enqueue
+**Trap 8 — no client messages.** Imported appointments must not enqueue
 reminders. Confirm `SMS_AUTOMATION_ENABLED` is off before any write step, and
 that the import path does not touch the reminder columns. Real clients, real
 phones, and a reminder storm cannot be recalled.
@@ -121,21 +179,34 @@ The four buckets to report:
 Give counts first, then the rows. For a fortnight this is a few hundred rows,
 which a person can actually read.
 
-## 4. Applying (once the importer exists)
+## 4. Applying
 
-Not yet built. When it is:
+Until an importer exists this is a reviewed script, written fresh each time and
+run by the operator. Shape it like the one that worked on 29/09/2026:
 
-- Dry run first, always. Print the four buckets and stop until approved.
-- Match on (`moego_appointment_id`, `pet_id`). Update in place. Never
-  blind-insert.
-- Put the reconciliation rules in `shared/` as pure functions with unit tests,
-  per the project convention — not inline in a router.
-- Record what was applied, so a bad run can be reasoned about afterwards.
+- **Dry run first, always.** Print the buckets and stop until approved.
+- **Match on (`pet_id`, date)**, not on `moego_appointment_id` — it is NULL on
+  anything booked in Groomigo, and a cancelled row is still a row. See Trap 5.
+- **Transaction, with count assertions.** Expect exactly N updates; abort and
+  roll back on anything else.
+- **Guard on `workflow_state = "scheduled"`** on every write, and report what
+  was skipped rather than forcing it.
+- **Write `workflow_logs`** for every state change.
+- **Re-verify against MoeGo immediately before running.** See Trap 6.
+- **Leave `price` NULL on a created sibling dog.** The booking's fee already
+  sits on the first dog's row; copying it inflates revenue.
+- **Never invent a pet.** If MoeGo names a dog Groomigo has no record of, report
+  it and stop. On 29/09 that was Cookie (Trish Armstrong).
+
+When the importer is finally built, put the reconciliation rules in `shared/` as
+pure functions with unit tests, per the project convention — not inline in a
+router.
 
 ## 5. Report back
 
-State plainly: the window covered, the four bucket counts, anything flagged for
-a human, and — while this is reporting-only — that nothing was written.
+State plainly: the window covered, the bucket counts, anything skipped or
+flagged for a human, and whether anything was written. If nothing was written,
+say so in as many words.
 
 Andy reads this on a Monday morning before the salon opens. Lead with the
 number of dogs on the board that are not coming.
