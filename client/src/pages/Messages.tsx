@@ -53,6 +53,10 @@ export default function Messages() {
   //
   // Position is written straight to the node rather than held in state: the
   // conversation list re-rendering on every mousemove was not worth it.
+  // How many messages the hover card shows before it gives up and points at the
+  // full conversation. Chosen so a compact thread still fits inside max-h-[80vh]
+  // on a laptop screen.
+  const PREVIEW_MESSAGE_LIMIT = 12;
   const [previewThread, setPreviewThread] = useState<any | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,7 +67,7 @@ export default function Messages() {
     if (!el) return;
     const gap = 18;
     const { x, y } = pointer.current;
-    const w = el.offsetWidth || 320;
+    const w = el.offsetWidth || 384; // w-96
     const h = el.offsetHeight || 360;
     // Flip to the left of the cursor when the card would run off the right edge.
     const left = x + gap + w > window.innerWidth - 8 ? Math.max(8, x - gap - w) : x + gap;
@@ -73,10 +77,13 @@ export default function Messages() {
     el.style.top = `${top}px`;
   }, []);
 
+  // Track the cursor so the card opens exactly where the pointer is, but do NOT
+  // reposition once it is open: the card is tall enough to read, and a panel of
+  // text that slides around under the pointer is unreadable. It settles where it
+  // opened and only moves when you hover a different conversation.
   const trackPointer = useCallback((e: { clientX: number; clientY: number }) => {
     pointer.current = { x: e.clientX, y: e.clientY };
-    positionPreview();
-  }, [positionPreview]);
+  }, []);
 
   const openPreview = useCallback((thread: any, e: { clientX: number; clientY: number }) => {
     pointer.current = { x: e.clientX, y: e.clientY };
@@ -862,7 +869,7 @@ export default function Messages() {
         <div
           ref={previewRef}
           role="tooltip"
-          className="pointer-events-none fixed z-50 w-80 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
+          className="pointer-events-none fixed z-50 flex max-h-[80vh] w-96 flex-col overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg"
           style={{ left: 0, top: 0 }}
         >
           <div className="flex items-center gap-2.5 border-b bg-muted/40 px-3 py-2.5">
@@ -881,10 +888,34 @@ export default function Messages() {
               <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">{previewThread.unreadCount} new</span>
             )}
           </div>
-          <div className="max-h-72 overflow-y-auto px-3 py-2">
-            <MessageThread messages={threadPreview(previewThread)} limit={4} compact emptyText={previewThread.lastMessage ?? "No messages yet."} />
-          </div>
-          <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">Click to open the full conversation</div>
+          {(() => {
+            // Show the whole conversation where it fits. The card cannot be
+            // scrolled - it is pointer-events-none so it never steals the click
+            // on the row underneath - so anything we cannot show in full has to
+            // be announced rather than silently cut off.
+            const all = threadPreview(previewThread);
+            const hidden = Math.max(0, all.length - PREVIEW_MESSAGE_LIMIT);
+            return (
+              <>
+                {hidden > 0 && (
+                  <div className="border-b bg-muted/20 px-3 py-1.5 text-center text-[11px] text-muted-foreground">
+                    {hidden} earlier {hidden === 1 ? "message" : "messages"} not shown
+                  </div>
+                )}
+                <div className="min-h-0 flex-1 overflow-hidden px-3 py-2">
+                  <MessageThread
+                    messages={all}
+                    limit={hidden > 0 ? PREVIEW_MESSAGE_LIMIT : undefined}
+                    compact
+                    emptyText={previewThread.lastMessage ?? "No messages yet."}
+                  />
+                </div>
+                <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
+                  {hidden > 0 ? "Click to open the full conversation" : "Click to reply"}
+                </div>
+              </>
+            );
+          })()}
         </div>,
         document.body,
       )}
