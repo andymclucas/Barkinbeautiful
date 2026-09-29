@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
+import { parseBrisbaneLocalDateTime, brisbaneDateKey } from "../shared/localDateTime";
 
 describe("parseBrisbaneLocalDateTime", () => {
   it("interprets a naive datetime-local string as Brisbane (UTC+10) time", () => {
@@ -32,5 +32,45 @@ describe("parseBrisbaneLocalDateTime", () => {
 
   it("throws a clear error for unparseable input", () => {
     expect(() => parseBrisbaneLocalDateTime("not-a-date")).toThrow();
+  });
+});
+
+describe("the salon day boundary (regression, 30/09/2026)", () => {
+  // The dashboard asked the server for "today" with `new Date().setHours(0,0,0,0)`.
+  // Render runs UTC, so between 10:00 and 23:59 Brisbane that window covered the
+  // WRONG DAY: at 08:51 Brisbane on 30 Sept the board listed 29 Sept's dogs from
+  // 10am alongside 30 Sept's up to 10am, and disagreed with both the calendar and
+  // the workflow board.
+  const brisbaneMidnightUtc = (key: string) => {
+    const [y, m, d] = key.split("-").map(Number);
+    return {
+      start: new Date(Date.UTC(y, m - 1, d - 1, 14, 0, 0, 0)),
+      endExclusive: new Date(Date.UTC(y, m - 1, d, 14, 0, 0, 0)),
+    };
+  };
+
+  it("treats 22:51 UTC as the NEXT Brisbane day", () => {
+    // The exact moment the bug was reported: 08:51 Brisbane on 30 Sept.
+    expect(brisbaneDateKey(new Date("2026-09-29T22:51:00Z"))).toBe("2026-09-30");
+  });
+
+  it("does not roll over until 14:00 UTC", () => {
+    expect(brisbaneDateKey(new Date("2026-09-29T13:59:59Z"))).toBe("2026-09-29");
+    expect(brisbaneDateKey(new Date("2026-09-29T14:00:00Z"))).toBe("2026-09-30");
+  });
+
+  it("spans exactly one Brisbane day from midnight to midnight", () => {
+    const { start, endExclusive } = brisbaneMidnightUtc("2026-09-30");
+    expect(start.toISOString()).toBe("2026-09-29T14:00:00.000Z");
+    expect(endExclusive.toISOString()).toBe("2026-09-30T14:00:00.000Z");
+    expect(endExclusive.getTime() - start.getTime()).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("includes an 07:30 Brisbane appointment on its own day, not the day before", () => {
+    const { start, endExclusive } = brisbaneMidnightUtc("2026-09-30");
+    const appt = new Date("2026-09-29T21:30:00Z"); // 07:30 Brisbane, 30 Sept
+    expect(appt >= start && appt < endExclusive).toBe(true);
+    const yesterday = brisbaneMidnightUtc("2026-09-29");
+    expect(appt >= yesterday.start && appt < yesterday.endExclusive).toBe(false);
   });
 });

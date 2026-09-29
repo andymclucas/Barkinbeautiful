@@ -897,10 +897,12 @@ const workflowRouter = router({
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This workflow is not available to your salon staff profile");
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
+      // The salon's day, not the server's. Render runs UTC, so a naive local
+      // midnight here put the window at 10:00-10:00 Brisbane: the dashboard
+      // listed yesterday's dogs from 10am alongside today's up to 10am, and
+      // disagreed with both the calendar and the workflow board, which use the
+      // Brisbane day. brisbaneDayRange() is the same boundary getBoard uses.
+      const { start: today, endExclusive: tomorrow } = brisbaneDayRange();
       return db
         .select({
           id: appointments.id,

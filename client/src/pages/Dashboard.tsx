@@ -2,6 +2,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { useTimezone } from "@/lib/timezone";
+import { brisbaneDateKey } from "@shared/localDateTime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,16 +76,36 @@ export default function Dashboard() {
     return () => window.clearInterval(timer);
   }, [tz]);
 
-  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
-  const tomorrow = useMemo(() => { const d = new Date(today); d.setDate(d.getDate() + 1); return d; }, [today]);
-  const monthStart = useMemo(() => { const d = new Date(today); d.setDate(1); return d; }, [today]);
-  const dashboardDate = useMemo(() => new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10), []);
+  // The salon's day, and it has to keep up with the clock.
+  //
+  // This used to be `new Date(); d.setHours(0,0,0,0)` in a useMemo with no
+  // dependencies: the browser's midnight, worked out once when the page
+  // mounted. A dashboard left open overnight - which is how it is actually
+  // used, on the salon screen - kept showing the previous day indefinitely.
+  // dashboardDate additionally hand-rolled Brisbane as `Date.now() + 10h`.
+  const [dashboardDate, setDashboardDate] = useState(() => brisbaneDateKey());
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const key = brisbaneDateKey();
+      setDashboardDate((current) => (current === key ? current : key));
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
-  const { data: boardData } = trpc.workflow.getTodayBoard.useQuery({ tenantId: 1 });
-  const { data: analytics } = trpc.analytics.summary.useQuery({ tenantId: 1, dateFrom: monthStart.toISOString(), dateTo: tomorrow.toISOString() });
+  // Brisbane midnight expressed as an instant: 14:00 UTC the previous day.
+  const [year, month, day] = dashboardDate.split("-").map(Number);
+  const tomorrow = useMemo(() => new Date(Date.UTC(year, month - 1, day, 14, 0, 0, 0)), [year, month, day]);
+  const monthStart = useMemo(() => new Date(Date.UTC(year, month - 1, 0, 14, 0, 0, 0)), [year, month]);
+
+  // The board and the unread count are what the salon reads off the wall, so
+  // they poll rather than sitting on whatever was true at page load.
+  const live = { refetchInterval: 60_000, refetchOnWindowFocus: true } as const;
+
+  const { data: boardData } = trpc.workflow.getTodayBoard.useQuery({ tenantId: 1 }, live);
+  const { data: analytics } = trpc.analytics.summary.useQuery({ tenantId: 1, dateFrom: monthStart.toISOString(), dateTo: tomorrow.toISOString() }, live);
   const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({ tenantId: 1 });
-  const { data: timingReviewAlerts } = trpc.workflowReview.getAlerts.useQuery({ tenantId: 1, date: dashboardDate }, { enabled: user?.role === "admin" });
-  const { data: messagePreview } = trpc.sms.getUnreadPreview.useQuery({ tenantId: 1, limit: 5 });
+  const { data: timingReviewAlerts } = trpc.workflowReview.getAlerts.useQuery({ tenantId: 1, date: dashboardDate }, { ...live, enabled: user?.role === "admin" });
+  const { data: messagePreview } = trpc.sms.getUnreadPreview.useQuery({ tenantId: 1, limit: 5 }, live);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-background">
