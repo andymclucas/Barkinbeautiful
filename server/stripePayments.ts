@@ -167,20 +167,42 @@ export async function processStripeEvent(event: Stripe.Event) {
     });
     if (!membership) return { duplicate: false, handled: "invoice_paid_unmatched" };
 
+    // Book the money against the INVOICE, not the event.
+    //
+    // Stripe sends both `invoice.paid` and `invoice.payment_succeeded` for a
+    // single successful subscription charge, and they carry different event
+    // ids - so the dedupe above does not catch the pair, and whoever
+    // configures the webhook endpoint decides whether every membership
+    // payment gets counted once or twice. A payment row already existing for
+    // this invoice is the reliable signal, and it holds against Stripe's
+    // delivery retries and a manual replay from the dashboard too.
     const amount = fromStripeCents(invoice.amount_paid);
-    await db.insert(membershipPayments).values({
-      membershipId: membership.id,
-      amount: String(amount),
-      status: "paid",
-      stripeInvoiceId: invoice.id ?? null,
-      paidAt: new Date(),
-    });
-    await db.insert(membershipLedgerEntries).values({
-      tenantId: membership.tenantId ?? 1, membershipId: membership.id, invoiceId: null,
-      entryType: "payment", amount: String(amount), source: "stripe",
-      note: "Stripe subscription payment",
-      externalReference: invoice.id ?? null,
-    });
+    const [alreadyBooked] = invoice.id
+      ? await db
+          .select({ id: membershipPayments.id })
+          .from(membershipPayments)
+          .where(and(
+            eq(membershipPayments.stripeInvoiceId, invoice.id),
+            eq(membershipPayments.status, "paid"),
+          ))
+          .limit(1)
+      : [];
+
+    if (!alreadyBooked) {
+      await db.insert(membershipPayments).values({
+        membershipId: membership.id,
+        amount: String(amount),
+        status: "paid",
+        stripeInvoiceId: invoice.id ?? null,
+        paidAt: new Date(),
+      });
+      await db.insert(membershipLedgerEntries).values({
+        tenantId: membership.tenantId ?? 1, membershipId: membership.id, invoiceId: null,
+        entryType: "payment", amount: String(amount), source: "stripe",
+        note: "Stripe subscription payment",
+        externalReference: invoice.id ?? null,
+      });
+    }
     // A successful charge clears the whole failure state, including a retry
     // that had been scheduled and any booking suspension it caused.
     await db.update(memberships).set({
@@ -190,7 +212,8 @@ export async function processStripeEvent(event: Stripe.Event) {
       bookingSuspended: false,
       status: "active",
     }).where(eq(memberships.id, membership.id));
-    return { duplicate: false, handled: "subscription_paid" };
+    // Clearing the failure state is idempotent, so it runs either way.
+    return { duplicate: false, handled: alreadyBooked ? "subscription_paid_already_booked" : "subscription_paid" };
   }
 
   if (event.type === "invoice.payment_failed") {
