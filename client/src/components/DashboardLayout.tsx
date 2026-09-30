@@ -1,6 +1,7 @@
 import { useTimezoneSync } from "@/lib/timezone";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useTheme, type ThemeChoice } from "@/contexts/ThemeContext";
 import NotificationBell from "@/components/NotificationBell";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import {
@@ -8,6 +9,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -45,6 +49,9 @@ import {
   LogOut,
   PanelLeft,
   ChevronDown,
+  Sun,
+  Moon,
+  MonitorSmartphone,
   Scissors,
   ImagePlus,
   ImageOff,
@@ -237,6 +244,7 @@ function DashboardLayoutContent({
   setSidebarWidth: (w: number) => void;
 }) {
   const { user, logout } = useAuth();
+  const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -337,6 +345,17 @@ function DashboardLayoutContent({
 
   const accountControls = (
     <div className="flex items-center gap-1.5">
+      {/* One tap for the common case. The three-way choice, including
+          "follow my device", lives in the menu below. */}
+      <button
+        type="button"
+        onClick={toggleTheme}
+        aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        title={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      </button>
       <NotificationBell />
       <IncomingCallAlert />
       <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
@@ -382,6 +401,24 @@ function DashboardLayoutContent({
                 <span>Remove my photo</span>
               </DropdownMenuItem>
             )}
+            {/* Appearance. "System" is offered explicitly because a device
+                that switches at sunset should take the app with it, and that
+                is not something a two-state toggle can express. */}
+            <DropdownMenuLabel className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+              Appearance
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as ThemeChoice)}>
+              <DropdownMenuRadioItem value="light" className="cursor-pointer">
+                <Sun className="mr-2 h-4 w-4" /> Light
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="dark" className="cursor-pointer">
+                <Moon className="mr-2 h-4 w-4" /> Dark
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="system" className="cursor-pointer">
+                <MonitorSmartphone className="mr-2 h-4 w-4" /> Match my device
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               className="cursor-pointer"
               onSelect={() => setBrandDialogOpen(true)}

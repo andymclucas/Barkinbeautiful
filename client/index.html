@@ -3,6 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <script>
+      // Paint the right theme before anything else loads.
+      //
+      // React decides the theme in ThemeContext, but it mounts long after the
+      // first paint - so without this the app flashes white before going
+      // dark. That flash is precisely what someone turns dark mode on to
+      // avoid, and at 7am in a dim salon it is genuinely unpleasant.
+      //
+      // Kept deliberately tiny and dependency-free: it runs before the
+      // stylesheet, and anything that throws here would block the page. The
+      // storage key must match STORAGE_KEY in contexts/ThemeContext.tsx.
+      (function () {
+        try {
+          var stored = localStorage.getItem("gsos-theme");
+          var dark =
+            stored === "dark" ||
+            ((!stored || stored === "system") &&
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) {
+            document.documentElement.classList.add("dark");
+            document.documentElement.style.colorScheme = "dark";
+          }
+        } catch (e) {
+          // Storage blocked or unavailable - fall through to light, which the
+          // stylesheet gives us anyway.
+        }
+      })();
+    </script>
+    <script>
       // Self-healing for stale deploys: if the page somehow ends up trying to
       // load a JS/CSS file that no longer exists on the server (removed by a
       // newer deploy since this tab last loaded — e.g. a phone browser

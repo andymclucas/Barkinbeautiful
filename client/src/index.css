@@ -119,6 +119,15 @@
   /* ── White-label brand tokens ───────────────────────────────────────────────
      Tenants override only these. Retuned to the violet family; the structure
      and names are unchanged, so tenant overrides keep working exactly as before. */
+  /* Sign-in page. Its backdrop and card are set with inline styles, so they
+     need variables rather than utility classes to follow the theme. */
+  --auth-page-gradient: linear-gradient(160deg, #faf8ff 0%, #f4f0fe 45%, #f7f4ff 75%, #fdfcff 100%);
+  --auth-card-bg: #ffffff;
+  --auth-card-border: rgba(124, 58, 237, 0.12);
+  --auth-card-shadow: 0 24px 48px -20px rgba(76, 29, 149, 0.18), inset 0 1px 0 rgba(124, 58, 237, 0.06);
+  --auth-grid-line: rgba(124, 58, 237, 0.30);
+  --auth-field-border: rgba(124, 58, 237, 0.16);
+  --auth-field-border-focus: rgba(124, 58, 237, 0.55);
   --brand-primary: oklch(0.585 0.212 292);
   --brand-primary-strong: oklch(0.487 0.216 290);
   --brand-accent: oklch(0.905 0.058 295);
@@ -272,6 +281,18 @@
   --shadow-md:   0 2px 4px oklch(0 0 0 / 0.34), 0 8px 18px -6px oklch(0 0 0 / 0.36);
   --shadow-lg:   0 4px 8px oklch(0 0 0 / 0.36), 0 18px 34px -12px oklch(0 0 0 / 0.42);
   --shadow-ring: 0 0 0 1px oklch(1 0 0 / 0.07);
+
+  /* Sign-in page, dark. The glow blobs and grid stay violet - they read as
+     brand at night - but the backdrop and card have to invert or the first
+     screen anyone sees is a white slab. */
+  --auth-page-gradient: linear-gradient(160deg, oklch(0.168 0.016 292) 0%, oklch(0.196 0.022 292) 45%, oklch(0.178 0.018 292) 75%, oklch(0.205 0.020 292) 100%);
+  --auth-card-bg: oklch(0.232 0.018 292);
+  --auth-card-border: oklch(0.706 0.168 292 / 0.22);
+  --auth-card-shadow: 0 24px 48px -20px oklch(0 0 0 / 0.55), inset 0 1px 0 oklch(1 0 0 / 0.05);
+  --auth-grid-line: oklch(0.706 0.168 292 / 0.22);
+  /* Lifted: a 0.16-alpha violet edge is invisible on a dark card. */
+  --auth-field-border: oklch(0.706 0.168 292 / 0.34);
+  --auth-field-border-focus: oklch(0.760 0.150 292 / 0.85);
 }
 
 /* The browser's own widgets - scrollbars, form controls, the caret - follow

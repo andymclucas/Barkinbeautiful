@@ -121,14 +121,14 @@ export default function Login() {
     <div
       className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden"
       style={{
-        background: "linear-gradient(160deg, #faf8ff 0%, #f4f0fe 45%, #f7f4ff 75%, #fdfcff 100%)",
+        background: "var(--auth-page-gradient)",
       }}
     >
       {/* Animated background grid */}
       <div
         className="absolute inset-0 opacity-[0.055]"
         style={{
-          backgroundImage: `linear-gradient(rgba(124,58,237,0.30) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.30) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(var(--auth-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--auth-grid-line) 1px, transparent 1px)`,
           backgroundSize: "60px 60px",
         }}
       />
@@ -164,9 +164,9 @@ export default function Login() {
         <div
           style={{
             ...slideStyle(150),
-            background: "#ffffff",
+            background: "var(--auth-card-bg)",
             backdropFilter: "blur(24px)",
-            border: "1px solid rgba(124,58,237,0.12)",
+            border: "1px solid var(--auth-card-border)",
             boxShadow: "0 24px 48px -20px rgba(76,29,149,0.18), inset 0 1px 0 rgba(124,58,237,0.06)",
             borderRadius: "1rem",
             padding: "2rem",
@@ -206,7 +206,7 @@ export default function Login() {
                         placeholder="At least 8 characters"
                         autoComplete="new-password"
                         className="text-foreground placeholder:text-muted-foreground pr-10"
-                        style={{ background: "#ffffff", border: "1px solid rgba(124,58,237,0.16)" }}
+                        style={{ background: "var(--auth-card-bg)", border: "1px solid var(--auth-card-border)" }}
                         disabled={completeResetMutation.isPending}
                       />
                       <button
@@ -229,7 +229,7 @@ export default function Login() {
                       placeholder="Re-enter your new password"
                       autoComplete="new-password"
                       className="text-foreground placeholder:text-muted-foreground"
-                      style={{ background: "#ffffff", border: "1px solid rgba(124,58,237,0.16)" }}
+                      style={{ background: "var(--auth-card-bg)", border: "1px solid var(--auth-card-border)" }}
                       disabled={completeResetMutation.isPending}
                     />
                   </div>
@@ -268,8 +268,8 @@ export default function Login() {
                 onFocus={() => setEmailFocused(true)}
                 onBlur={() => setEmailFocused(false)}
                 style={{
-                  background: "#ffffff",
-                  border: emailFocused ? "1px solid rgba(124,58,237,0.55)" : "1px solid rgba(124,58,237,0.16)",
+                  background: "var(--auth-card-bg)",
+                  border: emailFocused ? "1px solid var(--auth-field-border-focus)" : "1px solid var(--auth-field-border)",
                   boxShadow: emailFocused ? "0 0 0 3px rgba(124,58,237,0.12), 0 0 16px rgba(124,58,237,0.07)" : "none",
                   transition: "border-color 0.2s ease, box-shadow 0.2s ease",
                   outline: "none",
@@ -292,8 +292,8 @@ export default function Login() {
                   onFocus={() => setPasswordFocused(true)}
                   onBlur={() => setPasswordFocused(false)}
                   style={{
-                    background: "#ffffff",
-                    border: passwordFocused ? "1px solid rgba(124,58,237,0.55)" : "1px solid rgba(124,58,237,0.16)",
+                    background: "var(--auth-card-bg)",
+                    border: passwordFocused ? "1px solid var(--auth-field-border-focus)" : "1px solid var(--auth-field-border)",
                     boxShadow: passwordFocused ? "0 0 0 3px rgba(124,58,237,0.12), 0 0 16px rgba(124,58,237,0.07)" : "none",
                     transition: "border-color 0.2s ease, box-shadow 0.2s ease",
                     outline: "none",
@@ -335,7 +335,7 @@ export default function Login() {
                   className="w-4 h-4 rounded border transition-all"
                   style={{
                     background: rememberMe ? "#7c3aed" : "#ffffff",
-                    border: rememberMe ? "1px solid #7c3aed" : "1px solid rgba(124,58,237,0.28)",
+                    border: rememberMe ? "1px solid var(--brand-primary)" : "1px solid var(--auth-field-border)",
                     boxShadow: rememberMe ? "0 0 8px rgba(124,58,237,0.34)" : "none",
                   }}
                 >
@@ -399,9 +399,9 @@ export default function Login() {
           <div
             className="w-full max-w-sm rounded-2xl p-6 relative"
             style={{
-              background: "#ffffff",
-              border: "1px solid rgba(124,58,237,0.16)",
-              boxShadow: "0 25px 50px rgba(76,29,149,0.14)",
+              background: "var(--auth-card-bg)",
+              border: "1px solid var(--auth-field-border)",
+              boxShadow: "var(--auth-card-shadow)",
               animation: "slideUp 0.3s cubic-bezier(0.23,1,0.32,1)",
             }}
           >
@@ -446,7 +446,7 @@ export default function Login() {
                       onChange={e => setForgotEmail(e.target.value)}
                       placeholder="you@example.com"
                       className="text-foreground placeholder:text-muted-foreground"
-                      style={{ background: "#ffffff", border: "1px solid rgba(124,58,237,0.16)" }}
+                      style={{ background: "var(--auth-card-bg)", border: "1px solid var(--auth-card-border)" }}
                       disabled={resetMutation.isPending}
                     />
                   </div>

@@ -1,64 +1,108 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-type Theme = "light" | "dark";
+/**
+ * Light / dark / follow-the-system, for the whole platform.
+ *
+ * Three states, not two. "system" is the default because a groomer who has
+ * their iPad on night mode expects the salon app to be dark too, and because
+ * the one thing worse than no dark mode is one that ignores the device. An
+ * explicit light or dark choice overrides it and is remembered per device.
+ *
+ * The class goes on <html> rather than a wrapper div so that portalled UI -
+ * dialogs, popovers, dropdowns, toasts - is inside it. Radix renders those at
+ * the end of <body>, so a wrapper would leave every dialog stubbornly light.
+ *
+ * The first paint is handled by an inline script in index.html, not here:
+ * React mounts too late, and the flash of a white screen at 7am in a dim
+ * salon is exactly what someone turns dark mode on to avoid.
+ */
+
+export type ThemeChoice = "light" | "dark" | "system";
+export type ResolvedTheme = "light" | "dark";
+
+const STORAGE_KEY = "gsos-theme";
 
 interface ThemeContextType {
-  theme: Theme;
-  toggleTheme?: () => void;
-  switchable: boolean;
+  /** What the user chose, which may be "system". */
+  theme: ThemeChoice;
+  /** What is actually on screen right now. Never "system". */
+  resolvedTheme: ResolvedTheme;
+  setTheme: (theme: ThemeChoice) => void;
+  /** Flips between light and dark, settling "system" to its opposite. */
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-interface ThemeProviderProps {
-  children: React.ReactNode;
-  defaultTheme?: Theme;
-  switchable?: boolean;
+const systemTheme = (): ResolvedTheme =>
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+
+function readStored(): ThemeChoice {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  } catch {
+    // Private browsing, or storage blocked. Following the system is a fine
+    // default and beats refusing to render.
+  }
+  return "system";
 }
 
 export function ThemeProvider({
   children,
-  defaultTheme = "light",
-  switchable = false,
-}: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (switchable) {
-      const stored = localStorage.getItem("theme");
-      return (stored as Theme) || defaultTheme;
-    }
-    return defaultTheme;
-  });
+  defaultTheme = "system",
+}: {
+  children: React.ReactNode;
+  defaultTheme?: ThemeChoice;
+}) {
+  const [theme, setThemeState] = useState<ThemeChoice>(() => readStored() ?? defaultTheme);
+  const [systemPref, setSystemPref] = useState<ResolvedTheme>(systemTheme);
+
+  // Follow the device while the choice is "system" - someone whose phone
+  // switches at sunset should see the app switch with it, not on next load.
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!media) return;
+    const onChange = (e: MediaQueryListEvent) => setSystemPref(e.matches ? "dark" : "light");
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  const resolvedTheme: ResolvedTheme = theme === "system" ? systemPref : theme;
 
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("dark");
+    root.classList.toggle("dark", resolvedTheme === "dark");
+    // Tells the browser to darken its own furniture too: scrollbars, form
+    // controls, the text caret.
+    root.style.colorScheme = resolvedTheme;
+  }, [resolvedTheme]);
+
+  const setTheme = useCallback((next: ThemeChoice) => {
+    setThemeState(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Not worth failing the click over; the theme still applies this session.
     }
+  }, []);
 
-    if (switchable) {
-      localStorage.setItem("theme", theme);
-    }
-  }, [theme, switchable]);
+  const toggleTheme = useCallback(() => {
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
+  }, [resolvedTheme, setTheme]);
 
-  const toggleTheme = switchable
-    ? () => {
-        setTheme(prev => (prev === "light" ? "dark" : "light"));
-      }
-    : undefined;
-
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, switchable }}>
-      {children}
-    </ThemeContext.Provider>
+  const value = useMemo(
+    () => ({ theme, resolvedTheme, setTheme, toggleTheme }),
+    [theme, resolvedTheme, setTheme, toggleTheme],
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
-export function useTheme() {
+export function useTheme(): ThemeContextType {
   const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error("useTheme must be used within ThemeProvider");
-  }
+  if (!context) throw new Error("useTheme must be used within a ThemeProvider");
   return context;
 }
