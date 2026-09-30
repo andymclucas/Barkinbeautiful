@@ -3869,8 +3869,20 @@ const analyticsRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
+      // Earned is what came in; expected is what was charged. They used to
+      // share one column, so a completed dog that had not paid looked exactly
+      // like a free one. `notFullyPaid` counts unpaid AND partial, because a
+      // half-paid groom is part of the same shortfall.
+      //
+      // expected falls back to price where gross_price is null, so a native
+      // Groomigo booking - which MoeGo has never seen - still contributes its
+      // own figure rather than vanishing from expected revenue.
       const [revenueRow] = await db
-        .select({ total: sql<string>`COALESCE(SUM(${appointments.price}), 0)` })
+        .select({
+          total: sql<string>`COALESCE(SUM(${appointments.price}), 0)`,
+          expected: sql<string>`COALESCE(SUM(COALESCE(${appointments.grossPrice}, ${appointments.price})), 0)`,
+          notFullyPaidCount: sql<number>`SUM(CASE WHEN ${appointments.paymentStatus} IN ('unpaid','partial') THEN 1 ELSE 0 END)`,
+        })
         .from(appointments)
         .where(and(
           eq(appointments.tenantId, input.tenantId),
@@ -3911,6 +3923,11 @@ const analyticsRouter = router({
         ));
       return {
         revenue: parseFloat(revenueRow?.total ?? "0"),
+        expectedRevenue: parseFloat(revenueRow?.expected ?? "0"),
+        // Zero here means "nothing recorded yet", not "everybody paid" - until
+        // the MoeGo backfill runs, payment_status is null on every row. Do not
+        // surface this in the UI before then.
+        notFullyPaidCompleted: Number(revenueRow?.notFullyPaidCount ?? 0),
         appointments: apptCount?.count ?? 0,
         activeMemberships: membershipCount?.count ?? 0,
         activeClients: clientCount?.count ?? 0,

@@ -269,7 +269,16 @@ export const appointments = mysqlTable("appointments", {
   estimatedPickupAt: timestamp("estimated_pickup_at"),
   notes: text("notes"),
   membershipId: int("membership_id").references(() => memberships.id),
+  /**
+   * Amount COLLECTED, from MoeGo's net sales. Not what was charged - see
+   * grossPrice. Null means no figure was ever recorded, which is not the same
+   * as zero; paymentStatus says which.
+   */
   price: decimal("price", { precision: 10, scale: 2 }),
+  /** Amount CHARGED, before discounts and non-payment (MoeGo gross sales). */
+  grossPrice: decimal("gross_price", { precision: 10, scale: 2 }),
+  /** Whether the money arrived, per MoeGo. Null where MoeGo has no view. */
+  paymentStatus: mysqlEnum("payment_status", ["unpaid", "partial", "paid"]),
   status: mysqlEnum("status", ["confirmed", "pending", "cancelled", "no_show"]).default("confirmed").notNull(),
   moegoAppointmentId: varchar("moego_appointment_id", { length: 100 }),
   sessionId: varchar("session_id", { length: 64 }),

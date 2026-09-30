@@ -386,6 +386,13 @@
       "when": 1790306736609,
       "tag": "0054_user_timezone",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "5",
+      "when": 1790730463038,
+      "tag": "0055_appointment_charged_vs_collected",
+      "breakpoints": true
     }
   ]
 }
