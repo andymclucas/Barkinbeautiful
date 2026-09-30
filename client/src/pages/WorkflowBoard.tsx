@@ -475,21 +475,66 @@ export default function WorkflowBoard() {
           </div>
         )}
 
-        {/* Stage progress bar */}
-        <div className="flex gap-1 h-8 rounded-lg overflow-hidden border">
+        {/* Stage progress bar.
+            Was a row of coloured segments containing a bare number, with the
+            stage name hidden in a native title attribute - so it told you
+            eleven dogs were somewhere, but not where unless you already knew
+            the colours by heart. Each segment now carries its own label when
+            there is room, there is a legend beneath for the ones too narrow to
+            fit, and hovering a segment names the stage and lists the dogs in
+            it. */}
+        <div className="flex gap-1 h-9 rounded-lg overflow-hidden border">
           {STAGES.map(stage => {
-            const count = rows.filter(r => r.workflowState === stage.key).length;
+            const inStage = rows.filter(r => r.workflowState === stage.key);
+            const count = inStage.length;
             const total = rows.length || 1;
             const pct = Math.round((count / total) * 100);
+            if (count === 0) return null;
+            const names = inStage
+              .map(r => r.petName ?? "Unnamed")
+              .slice(0, 12)
+              .join(", ");
             return (
               <div
                 key={stage.key}
-                className="flex items-center justify-center text-white text-[10px] font-bold transition-all duration-500 overflow-hidden"
-                style={{ background: stage.colour, width: `${Math.max(pct, count > 0 ? 4 : 0)}%`, minWidth: count > 0 ? "32px" : "0" }}
-                title={`${stage.label}: ${count}`}
+                className="group relative flex items-center justify-center gap-1.5 overflow-hidden text-white transition-all duration-500"
+                style={{ background: stage.colour, width: `${Math.max(pct, 6)}%`, minWidth: "44px" }}
               >
-                {count > 0 && count}
+                <span className="text-[11px] font-bold tabular-nums">{count}</span>
+                {/* Only when the segment is genuinely wide enough to read;
+                    narrower ones are named by the legend underneath. A
+                    container query was wrong here - the parent has no
+                    container-type, so the class silently did nothing. */}
+                {pct >= 15 && (
+                  <span className="truncate text-[10px] font-semibold uppercase tracking-wide opacity-90">
+                    {stage.label}
+                  </span>
+                )}
+                <div
+                  role="tooltip"
+                  className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-md border bg-popover px-2.5 py-1.5 text-left text-popover-foreground shadow-md group-hover:block"
+                >
+                  <p className="text-[11px] font-semibold">{stage.label} &middot; {count} {count === 1 ? "dog" : "dogs"}</p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                    {names}{inStage.length > 12 ? ` +${inStage.length - 12} more` : ""}
+                  </p>
+                </div>
               </div>
+            );
+          })}
+        </div>
+        {/* Legend: every stage that has dogs, named, for narrow segments and
+            for anyone reading the board from across the room. */}
+        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+          {STAGES.map(stage => {
+            const count = rows.filter(r => r.workflowState === stage.key).length;
+            if (count === 0) return null;
+            return (
+              <span key={stage.key} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: stage.colour }} />
+                <span className="font-medium text-foreground">{stage.label}</span>
+                <span className="tabular-nums">{count}</span>
+              </span>
             );
           })}
         </div>
