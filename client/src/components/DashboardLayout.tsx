@@ -49,6 +49,7 @@ import {
   LogOut,
   PanelLeft,
   ChevronDown,
+  UserRound,
   Sun,
   Moon,
   MonitorSmartphone,
@@ -63,6 +64,8 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { trpc } from "@/lib/trpc";
 import { StaffAvatar } from "@/components/StaffAvatar";
+import { MyProfileDialog } from "@/components/MyProfileDialog";
+import { canAdministerStaff } from "@shared/staffAdministrators";
 import { toast } from "sonner";
 
 const menuItems = [
@@ -245,6 +248,7 @@ function DashboardLayoutContent({
 }) {
   const { user, logout } = useAuth();
   const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
+  const [profileOpen, setProfileOpen] = useState(false);
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -257,28 +261,7 @@ function DashboardLayoutContent({
   // photo from here. Returns null for accounts with no staff row, in which case
   // the control is simply not offered.
   const { data: myStaff, refetch: refetchMyStaff } = trpc.staff.getMyProfile.useQuery();
-  const photoInputRef = useRef<HTMLInputElement>(null);
-  const [photoUploading, setPhotoUploading] = useState(false);
-  const updateMyPhoto = trpc.staff.updateMyPhoto.useMutation({
-    onSuccess: () => { toast.success("Profile photo updated"); refetchMyStaff(); },
-    onError: (e) => toast.error(e.message),
-  });
 
-  async function uploadMyPhoto(file: File) {
-    if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
-    if (file.size > 8 * 1024 * 1024) { toast.error("Image too large (max 8 MB)"); return; }
-    setPhotoUploading(true);
-    try {
-      const res = await fetch("/api/upload/staff-photo", { method: "POST", headers: { "Content-Type": file.type }, body: file });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Upload failed");
-      updateMyPhoto.mutate({ photoUrl: data.url });
-    } catch (err: any) {
-      toast.error(err?.message ?? "Could not upload the photo");
-    } finally {
-      setPhotoUploading(false);
-    }
-  }
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -381,26 +364,14 @@ function DashboardLayoutContent({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
-            {myStaff && (
-              <DropdownMenuItem
-                className="cursor-pointer"
-                disabled={photoUploading || updateMyPhoto.isPending}
-                onSelect={(e) => { e.preventDefault(); photoInputRef.current?.click(); }}
-              >
-                <ImagePlus className="mr-2 h-4 w-4" />
-                <span>{photoUploading ? "Uploading…" : myStaff.photoUrl ? "Change my photo" : "Add my photo"}</span>
-              </DropdownMenuItem>
-            )}
-            {myStaff?.photoUrl && (
-              <DropdownMenuItem
-                className="cursor-pointer"
-                disabled={updateMyPhoto.isPending}
-                onSelect={(e) => { e.preventDefault(); updateMyPhoto.mutate({ photoUrl: null }); }}
-              >
-                <ImageOff className="mr-2 h-4 w-4" />
-                <span>Remove my photo</span>
-              </DropdownMenuItem>
-            )}
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={(e) => { e.preventDefault(); setProfileOpen(true); }}
+            >
+              <UserRound className="mr-2 h-4 w-4" />
+              <span>My profile</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             {/* Appearance. "System" is offered explicitly because a device
                 that switches at sunset should take the app with it, and that
                 is not something a two-state toggle can express. */}
@@ -419,13 +390,17 @@ function DashboardLayoutContent({
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="cursor-pointer"
-              onSelect={() => setBrandDialogOpen(true)}
-            >
-              <Palette className="mr-2 h-4 w-4" />
-              <span>Brand colours</span>
-            </DropdownMenuItem>
+            {/* Salon-wide, so only the owner sees it. The server enforces
+                this too - hiding a menu item is not access control. */}
+            {canAdministerStaff(user) && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onSelect={() => setBrandDialogOpen(true)}
+              >
+                <Palette className="mr-2 h-4 w-4" />
+                <span>Brand colours</span>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="cursor-pointer"
               onClick={() => setLocation("/settings")}
@@ -443,13 +418,6 @@ function DashboardLayoutContent({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <input
-          ref={photoInputRef}
-          type="file"
-          accept="image/*"
-          className="sr-only"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMyPhoto(f); e.currentTarget.value = ""; }}
-        />
         <BrandColoursDialog open={brandDialogOpen} onOpenChange={setBrandDialogOpen} />
     </div>
   );

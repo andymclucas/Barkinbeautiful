@@ -77,6 +77,9 @@ export const staff = mysqlTable("staff", {
   dateOfBirth: date("date_of_birth"),
   emergencyContact: varchar("emergency_contact", { length: 255 }),
   emergencyPhone: varchar("emergency_phone", { length: 30 }),
+  emergencyEmail: varchar("emergency_email", { length: 320 }),
+  /** Asked for by the owner. A roster is a reasonable place for one human detail. */
+  favouriteIceCream: varchar("favourite_ice_cream", { length: 100 }),
   role: mysqlEnum("role", ["owner", "groomer", "bather", "receptionist", "manager"]).default("groomer").notNull(),
   colourHex: varchar("colour_hex", { length: 7 }).default("#6366f1").notNull(),
   isActive: boolean("is_active").default(true).notNull(),

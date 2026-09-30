@@ -45,6 +45,7 @@ import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPri
 import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl } from "./appUrl";
+import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
 import { paymentsRouter } from "./routers/payments";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
@@ -56,6 +57,18 @@ import {
 
 // The four staff-access guards moved to ./staffAccess so the payments router
 // can use the same ones rather than a second copy.
+
+/**
+ * Changing SOMEONE ELSE'S staff record - details, role, portal access.
+ *
+ * protectedProcedure only means "signed in and not a restricted staff
+ * account", and four of the salon's groomers hold users.role = "admin"
+ * because that is how they were given the floor. This narrows personnel
+ * changes to the owner. Editing your own profile is unaffected.
+ */
+function requireStaffAdministrator(user: { id: number; role: string; email?: string | null }) {
+  if (!canAdministerStaff(user)) throw new Error(STAFF_ADMIN_DENIED_MESSAGE);
+}
 async function recordStaffAccessEvent(db: any, event: Omit<typeof staffAccessEvents.$inferInsert, "occurredAtMs" | "createdAt">) {
   const occurredAtMs = Date.now();
   await db.insert(staffAccessEvents).values({ ...event, occurredAtMs, createdAt: new Date(occurredAtMs) });
@@ -1773,7 +1786,8 @@ const clientsRouter = router({
       notes: z.string().optional(),
       referralSource: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      requireStaffAdministrator(ctx.user);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [result] = await db.insert(clients).values(input);
@@ -2172,7 +2186,12 @@ const staffRouter = router({
         colourHex: staff.colourHex,
         photoUrl: staff.onlineProfilePhotoUrl,
         isActive: staff.isActive,
-      }).from(staff).where(eq(staff.tenantId, input.tenantId)).orderBy(asc(staff.name));
+        // Inactive staff are off the roster, so they get no calendar column
+        // and cannot be assigned work. Christie and Nathan are on the
+        // platform to watch it, not to groom.
+      }).from(staff)
+        .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true)))
+        .orderBy(asc(staff.name));
     }),
 
   list: protectedProcedure
@@ -2391,7 +2410,10 @@ const staffRouter = router({
       onlineMaxDogsPerSlot: z.number().int().min(1).max(10).optional(),
       onlineMaxDogsPerDay: z.number().int().min(0).max(50).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // Editing ANOTHER person's record. Your own goes through
+      // updateMyProfile, which every staff member can reach.
+      requireStaffAdministrator(ctx.user);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const { staffId, ...fields } = input;
@@ -2424,6 +2446,7 @@ const staffRouter = router({
       email: z.string().email(),
     }))
     .mutation(async ({ input, ctx }) => {
+      requireStaffAdministrator(ctx.user);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [member] = await db.select().from(staff).where(eq(staff.id, input.staffId)).limit(1);
@@ -2657,8 +2680,59 @@ const staffRouter = router({
         colourHex: staff.colourHex,
         photoUrl: staff.onlineProfilePhotoUrl,
         portalStatus: staff.portalStatus,
+        email: staff.email,
+        phone: staff.phone,
+        emergencyContact: staff.emergencyContact,
+        emergencyPhone: staff.emergencyPhone,
+        emergencyEmail: staff.emergencyEmail,
+        favouriteIceCream: staff.favouriteIceCream,
       }).from(staff).where(eq(staff.userId, ctx.user.id)).limit(1);
       return member ?? null;
+    }),
+
+  /**
+   * A staff member editing their OWN details.
+   *
+   * operationalProcedure so restricted staff can reach it, and scoped by
+   * `staff.userId = ctx.user.id` in the WHERE clause rather than by an id
+   * from the client - there is deliberately no staffId input, so this cannot
+   * be pointed at a colleague. Changing anyone else's record goes through
+   * staff.update, which only the owner may call.
+   *
+   * Role, portal status, tenant, colour and the online-booking settings are
+   * NOT editable here: those are personnel and scheduling decisions, not
+   * personal details, and a groomer granting themselves a different role
+   * would be a privilege escalation.
+   */
+  updateMyProfile: operationalProcedure
+    .input(z.object({
+      name: z.string().trim().min(1).max(255),
+      email: z.string().trim().email().max(320).optional().or(z.literal("")),
+      phone: z.string().trim().max(30).optional().or(z.literal("")),
+      emergencyContact: z.string().trim().max(255).optional().or(z.literal("")),
+      emergencyPhone: z.string().trim().max(30).optional().or(z.literal("")),
+      emergencyEmail: z.string().trim().email().max(320).optional().or(z.literal("")),
+      favouriteIceCream: z.string().trim().max(100).optional().or(z.literal("")),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [member] = await db.select({ id: staff.id })
+        .from(staff).where(eq(staff.userId, ctx.user.id)).limit(1);
+      if (!member) throw new Error("You do not have a staff profile on this salon yet");
+
+      // Empty string means "cleared", which is a null in the column, not "".
+      const blank = (v: string | undefined) => (v === undefined ? undefined : v === "" ? null : v);
+      await db.update(staff).set({
+        name: input.name,
+        email: blank(input.email),
+        phone: blank(input.phone),
+        emergencyContact: blank(input.emergencyContact),
+        emergencyPhone: blank(input.emergencyPhone),
+        emergencyEmail: blank(input.emergencyEmail),
+        favouriteIceCream: blank(input.favouriteIceCream),
+      }).where(eq(staff.id, member.id));
+      return { success: true };
     }),
 
   // Lets an approved staff member set their OWN profile photo. Deliberately
@@ -4690,7 +4764,9 @@ const settingsRouter = router({
       brandAccent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       brandSidebar: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // Salon-wide branding, so the same restriction as personnel changes.
+      requireStaffAdministrator(ctx.user);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await db.update(tenants).set({

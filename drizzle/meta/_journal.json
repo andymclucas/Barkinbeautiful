@@ -407,6 +407,13 @@
       "when": 1790751115721,
       "tag": "0057_client_card_on_file",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1790810853012,
+      "tag": "0058_staff_profile_fields",
+      "breakpoints": true
     }
   ]
 }
