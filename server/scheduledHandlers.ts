@@ -17,19 +17,15 @@ import {
   buildClientFailedPaymentEmail,
 } from "./email";
 import { notifyOwner } from "./ownerNotification";
+// Brisbane-correct, and tested in both timezones. The local version used
+// getDay(), which on Render (UTC) read the wrong weekday for anything after
+// 10:00 Brisbane and pushed retries a day late.
+import { nextBrisbaneBusinessDay } from "../shared/businessDays";
 import { sendSms, buildAppointmentReminderSms } from "./sms";
 import { appointments, staff } from "../drizzle/schema";
 import { gte, isNotNull, lt } from "drizzle-orm";
 
-function nextBusinessDay(from: Date): Date {
-  const d = new Date(from);
-  d.setDate(d.getDate() + 1);
-  // Skip Saturday (6) and Sunday (0)
-  while (d.getDay() === 0 || d.getDay() === 6) {
-    d.setDate(d.getDate() + 1);
-  }
-  return d;
-}
+
 
 export async function paymentRetryHandler(req: Request, res: Response) {
   try {
@@ -114,7 +110,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
       const membershipName = m.membershipName ?? "Membership";
       const priceStr = m.pricePerCycle ? String(m.pricePerCycle) : "0.00";
       const newFailCount = (m.failedCount ?? 0) + 1;
-      const retryDate = nextBusinessDay(now).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" });
+      const retryDate = nextBrisbaneBusinessDay(now).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" });
 
       if (newFailCount >= 2) {
         // Strike 2 — suspend and email client
@@ -153,7 +149,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         });
       } else {
         // Strike 1 retry — increment count, schedule another retry
-        const nextRetry = nextBusinessDay(now);
+        const nextRetry = nextBrisbaneBusinessDay(now);
         await db
           .update(memberships)
           .set({
