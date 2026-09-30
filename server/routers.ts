@@ -1178,6 +1178,21 @@ const workflowRouter = router({
           notes: `Workflow changed from ${currentAppointment.workflowState} to ${fields.workflowState}`,
         });
         if (portalStaff) {
+          // The activity feed used to read "Appointment 150029 moved to
+          // bathing". An internal id is unusable when someone is trying to
+          // work out what happened to a particular dog, so name the dog and
+          // the day instead - "Cleo - 30 Sep moved to bathing".
+          const [petRow] = currentAppointment.petId
+            ? await db.select({ name: pets.name }).from(pets).where(eq(pets.id, currentAppointment.petId)).limit(1)
+            : [undefined];
+          const day = currentAppointment.scheduledStart
+            ? new Date(currentAppointment.scheduledStart).toLocaleDateString("en-AU", {
+                timeZone: "Australia/Brisbane", day: "numeric", month: "short",
+              })
+            : null;
+          const subject = petRow?.name
+            ? `${petRow.name}${day ? ` - ${day}` : ""}`
+            : `Appointment ${appointmentId}`;
           await recordStaffAccessEvent(db, {
             tenantId: portalStaff.tenantId,
             staffId: portalStaff.id,
@@ -1186,7 +1201,7 @@ const workflowRouter = router({
             appointmentId,
             workflowFromState: currentAppointment.workflowState,
             workflowToState: fields.workflowState,
-            note: `Appointment ${appointmentId} moved to ${fields.workflowState}`,
+            note: `${subject} moved to ${fields.workflowState}`,
           });
         }
         if (linkedCompleteIds.length > 0) {

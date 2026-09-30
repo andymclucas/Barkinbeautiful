@@ -625,10 +625,15 @@ export default function Staff() {
                 return <div key={s.id} role="button" tabIndex={0} onClick={() => setSelectedId(s.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(s.id); } }}
                   className="text-left bg-card border rounded-2xl p-4 hover:border-primary/40 hover:shadow-md transition-all group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
                   <div className="flex items-start gap-3">
-                    <div className="h-12 w-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0 transition-transform group-hover:scale-105"
-                      style={{ background: s.colourHex }}>
-                      {s.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
-                    </div>
+                    {/* Was a hand-rolled initials circle, so an uploaded photo
+                        never appeared here - only inside the edit dialog, which
+                        is the one place StaffAvatar was already used. */}
+                    <StaffAvatar
+                      photoUrl={(s as { photoUrl?: string | null }).photoUrl}
+                      name={s.name}
+                      colourHex={s.colourHex}
+                      className="h-12 w-12 text-lg flex-shrink-0 transition-transform group-hover:scale-105"
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold truncate">{s.name}</p>
                       <div className="mt-0.5 flex flex-wrap gap-1">
