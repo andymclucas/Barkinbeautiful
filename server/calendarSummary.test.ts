@@ -38,6 +38,9 @@ describe("summariseCalendar", () => {
     expect(s.totalAppointments).toBe(1);
     expect(s.totalPets).toBe(1);
     expect(s.expectedRevenue).toBe(100);
+    // Counted separately so the sidebar reconciles with the toolbar, which
+    // counts every row on the day.
+    expect(s.cancelledCount).toBe(2);
   });
 
   it("treats a cancellation recorded on either column as cancelled", () => {
@@ -65,7 +68,7 @@ describe("summariseCalendar", () => {
 
   it("returns zeroes for an empty day rather than throwing", () => {
     expect(summariseCalendar([])).toEqual({
-      totalAppointments: 0, totalPets: 0, earnedRevenue: 0, expectedRevenue: 0,
+      totalAppointments: 0, totalPets: 0, earnedRevenue: 0, expectedRevenue: 0, cancelledCount: 0,
     });
   });
 

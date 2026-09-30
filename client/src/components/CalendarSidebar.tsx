@@ -18,6 +18,8 @@ export interface CalendarSummary {
   earnedRevenue: number;
   /** Money booked in, whether or not it has been collected yet. */
   expectedRevenue: number;
+  /** Cancelled and no-show bookings, excluded from every figure above. */
+  cancelledCount: number;
 }
 
 const money = (n: number) =>
@@ -54,12 +56,15 @@ export function CalendarSidebar({
   return (
     <aside
       className={cn(
-        "hidden w-[248px] shrink-0 flex-col gap-3 overflow-y-auto lg:flex",
+        // The rail sits in a fixed-height flex column, so without shrink-0 on
+        // each card the month grid gets squashed and its last week draws
+        // outside the card, on top of the panel below.
+        "hidden w-[248px] shrink-0 flex-col gap-3 overflow-y-auto pr-0.5 lg:flex",
         className,
       )}
       aria-label="Calendar navigation and day summary"
     >
-      <div className="rounded-2xl border border-white/90 bg-white/70 p-2 shadow-lg shadow-slate-200/40">
+      <div className="shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm shadow-slate-200/60">
         <CalendarPicker
           mode="single"
           selected={selected}
@@ -69,11 +74,11 @@ export function CalendarSidebar({
             next.setHours(0, 0, 0, 0);
             onSelectDate(next);
           }}
-          className="w-full"
+          className="w-full p-1 [--cell-size:--spacing(7)]"
         />
       </div>
 
-      <div className="rounded-2xl border border-white/90 bg-white/70 p-3 shadow-lg shadow-slate-200/40">
+      <div className="shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm shadow-slate-200/60">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Quick jump
         </p>
@@ -95,7 +100,7 @@ export function CalendarSidebar({
         </p>
       </div>
 
-      <div className="rounded-2xl border border-white/90 bg-white/70 p-3 shadow-lg shadow-slate-200/40">
+      <div className="shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm shadow-slate-200/60">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {summaryLabel}
         </p>
@@ -104,6 +109,16 @@ export function CalendarSidebar({
           <Row label="Total pets" value={String(summary.totalPets)} />
           <Row label="Earned rev" value={money(summary.earnedRevenue)} tone="text-emerald-700" />
           <Row label="Expected rev" value={money(summary.expectedRevenue)} />
+          {summary.cancelledCount > 0 && (
+            // The toolbar counts every booking on the day, these figures count
+            // only the live ones. Showing the difference stops a correct pair
+            // of numbers looking like a bug.
+            <Row
+              label="Cancelled"
+              value={String(summary.cancelledCount)}
+              tone="text-muted-foreground"
+            />
+          )}
         </dl>
       </div>
     </aside>

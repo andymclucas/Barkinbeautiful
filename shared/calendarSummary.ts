@@ -12,7 +12,9 @@
  *    which is what the analytics page used to do, makes the pair meaningless.
  *  - Cancellations and no-shows count towards neither. They are still on the
  *    board, so they would otherwise inflate expected revenue with dogs nobody
- *    is expecting.
+ *    is expecting. They ARE counted separately, because the toolbar counts
+ *    every row on the day and two figures that differ with no explanation is
+ *    how a correct number gets reported as a bug.
  */
 
 export interface SummarisableAppointment {
@@ -27,6 +29,8 @@ export interface CalendarSummaryFigures {
   totalPets: number;
   earnedRevenue: number;
   expectedRevenue: number;
+  /** Cancelled and no-show rows, excluded from every figure above. */
+  cancelledCount: number;
 }
 
 const DEAD_STATES = new Set(["cancelled", "no_show"]);
@@ -61,5 +65,6 @@ export function summariseCalendar(appointments: SummarisableAppointment[]): Cale
     totalPets: pets.size,
     earnedRevenue: Math.round(earned * 100) / 100,
     expectedRevenue: Math.round(expected * 100) / 100,
+    cancelledCount: appointments.length - live.length,
   };
 }
