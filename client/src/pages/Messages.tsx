@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { toast } from "sonner";
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { EmojiPicker } from "@/components/EmojiPicker";
+import { calculateSmsCost } from "@shared/smsSegments";
 import { MessageThread, contactColour, contactInitials } from "@/components/MessageThread";
 
 const SMS_TEMPLATES = [
@@ -42,6 +44,28 @@ export default function Messages() {
   const [toNumber, setToNumber] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+
+  // Emoji insert at the caret, not appended, so it can go mid-sentence. Works
+  // the same on a phone, where the textarea keeps its selection while the
+  // popover is open.
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const insertAtCursor = useCallback((emoji: string) => {
+    const el = composerRef.current;
+    setCustomBody((body) => {
+      if (!el) return body + emoji;
+      const start = el.selectionStart ?? body.length;
+      const end = el.selectionEnd ?? start;
+      const next = body.slice(0, start) + emoji + body.slice(end);
+      // Restore the caret after React has re-rendered with the new value.
+      requestAnimationFrame(() => {
+        el.focus();
+        const pos = start + emoji.length;
+        try { el.setSelectionRange(pos, pos); } catch { /* detached */ }
+      });
+      return next;
+    });
+  }, []);
+
 
   // Conversation preview, anchored to the cursor.
   //
@@ -113,6 +137,9 @@ export default function Messages() {
   }, [previewThread, closePreview]);
   const [selectedTemplate, setSelectedTemplate] = useState("custom");
   const [customBody, setCustomBody] = useState("");
+  // Twilio bills per segment. One emoji forces the whole message to UCS-2,
+  // where a segment is 70 characters instead of 160, so the composer shows it.
+  const smsCost = useMemo(() => calculateSmsCost(customBody), [customBody]);
   const [sending, setSending] = useState(false);
 
   const { data: logs, refetch } = trpc.sms.getLogs.useQuery({ tenantId: 1, limit: 100 });
@@ -753,8 +780,24 @@ export default function Messages() {
             {selectedTemplate === "custom" ? (
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Message</label>
-                <Textarea placeholder="Type your message... Use {name} for client name, {pet} for pet name" value={customBody} onChange={e => setCustomBody(e.target.value)} className="mt-1 min-h-[100px]" />
-                <div className="text-xs text-muted-foreground mt-1 text-right">{customBody.length}/1600</div>
+                <Textarea
+                  ref={composerRef}
+                  placeholder="Type your message... Use {name} for client name, {pet} for pet name"
+                  value={customBody}
+                  onChange={e => setCustomBody(e.target.value)}
+                  className="mt-1 min-h-[100px]"
+                />
+                <div className="mt-1 flex items-center gap-2">
+                  <EmojiPicker onSelect={insertAtCursor} />
+                  <div className="flex-1 text-right text-xs text-muted-foreground">
+                    {smsCost.forcedUnicode && (
+                      <span className="mr-2 text-amber-600 dark:text-amber-500">
+                        emoji → {smsCost.encoding}, {70} per segment
+                      </span>
+                    )}
+                    {customBody.length}/1600 · {smsCost.segments} segment{smsCost.segments === 1 ? "" : "s"}
+                  </div>
+                </div>
               </div>
             ) : (
               <div>
