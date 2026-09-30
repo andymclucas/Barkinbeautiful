@@ -40,6 +40,23 @@ describe("Appointments day viewport layout", () => {
     expect(src).toContain("overflow-x-auto overscroll-x-contain flex-1 flex flex-col");
   });
 
+  it("sizes the sidebar month from an exact grid, not from its fluid width", () => {
+    // The day cells take their height from `aspect-square`, so height follows
+    // width. Left fluid in a 248px rail the cells are ~31.7px wide while the
+    // row reserves --cell-size, and over six weeks the grid ends up about a
+    // row taller than its own card. Chromium absorbs that by growing the
+    // card; Safari does not, and the last week draws over the panel below -
+    // reported three times before the cause was found.
+    //
+    // 7 columns x 30px = 210px exactly, so width and height agree in every
+    // browser. --cell-size is set in `style` because an arbitrary-property
+    // utility and the component's own default have equal specificity and the
+    // winner depends on stylesheet order.
+    const src = readFileSync(new URL("../client/src/components/CalendarSidebar.tsx", import.meta.url), "utf8");
+    expect(src).toContain('w-[210px]');
+    expect(src).toMatch(/style=\{\{\s*"--cell-size":\s*"30px"/);
+  });
+
   it("puts the persistent sidebar beside the grid, not above it", () => {
     // The month used to exist only inside a popover. The rail carries the
     // month, Quick Jump and the day's figures, and must sit alongside the
