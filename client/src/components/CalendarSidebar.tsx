@@ -65,7 +65,7 @@ export function CalendarSidebar({
       )}
       aria-label="Calendar navigation and day summary"
     >
-      <div className="shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm shadow-slate-200/60">
+      <div className="shrink-0 rounded-2xl border border-border bg-card/80 p-2 shadow-sm shadow-slate-200/60">
         <CalendarPicker
           mode="single"
           selected={selected}
@@ -88,7 +88,7 @@ export function CalendarSidebar({
         />
       </div>
 
-      <div className="shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm shadow-slate-200/60">
+      <div className="shrink-0 rounded-2xl border border-border bg-card/80 p-3 shadow-sm shadow-slate-200/60">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Quick jump
         </p>
@@ -99,7 +99,7 @@ export function CalendarSidebar({
               type="button"
               onClick={() => jumpWeeks(weeks)}
               title={`${weeks} week${weeks === 1 ? "" : "s"} from the selected day`}
-              className="rounded-md border border-transparent bg-slate-100 py-1.5 text-[11px] font-semibold tabular-nums text-slate-700 transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+              className="rounded-md border border-transparent bg-muted py-1.5 text-[11px] font-semibold tabular-nums text-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
             >
               {weeks}
             </button>
@@ -110,7 +110,7 @@ export function CalendarSidebar({
         </p>
       </div>
 
-      <div className="shrink-0 rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm shadow-slate-200/60">
+      <div className="shrink-0 rounded-2xl border border-border bg-card/80 p-3 shadow-sm shadow-slate-200/60">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {summaryLabel}
         </p>

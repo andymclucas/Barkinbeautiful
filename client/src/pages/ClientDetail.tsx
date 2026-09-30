@@ -42,9 +42,9 @@ const SERVICE_COLOUR: Record<string, string> = {
 
 const TIER_COLOURS: Record<string, { bg: string; text: string; border: string }> = {
   diamond: { bg: "bg-violet-50", text: "text-violet-800", border: "border-violet-200" },
-  platinum: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300" },
+  platinum: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
   gold:     { bg: "bg-amber-50", text: "text-amber-800", border: "border-amber-200" },
-  silver:   { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300" },
+  silver:   { bg: "bg-muted", text: "text-foreground", border: "border-border" },
   bronze:   { bg: "bg-amber-50", text: "text-amber-800", border: "border-amber-200" },
 };
 
@@ -597,7 +597,7 @@ export default function ClientDetail() {
                 <Badge className={
                   client.status === "active" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
                   client.status === "blocked" ? "bg-red-100 text-red-800 border-red-200" :
-                  "bg-slate-100 text-slate-600"
+                  "bg-muted text-muted-foreground"
                 }>
                   {client.status}
                 </Badge>
@@ -1018,7 +1018,7 @@ export default function ClientDetail() {
                               </Button>
                             </div>
                             {familySearchResults && familySearchResults.length > 0 && (
-                              <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+                              <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
                                 {familySearchResults.map(r => (
                                   <button
                                     key={r.id}
@@ -1125,7 +1125,7 @@ export default function ClientDetail() {
                             a.workflowState === "complete" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
                             a.status === "cancelled" ? "bg-red-100 text-red-800 border-red-200" :
                             isFuture ? "bg-primary/10 text-primary border-primary/20" :
-                            "bg-slate-100 text-slate-600"
+                            "bg-muted text-muted-foreground"
                           } variant="outline">
                             {isFuture ? "Upcoming" : a.workflowState === "complete" ? "Complete" : a.status}
                           </Badge>
@@ -1166,7 +1166,7 @@ export default function ClientDetail() {
                           m.status === "active" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
                           m.status === "pending_payment" ? "bg-amber-100 text-amber-800 border-amber-200" :
                           m.status === "cancelled" ? "bg-red-100 text-red-800 border-red-200" :
-                          "bg-slate-100 text-slate-600"
+                          "bg-muted text-muted-foreground"
                         }>
                           {m.status === "active" ? "✓ Active" : m.status === "pending_payment" ? "⚠ Payment Due" : m.status}
                         </Badge>
@@ -1300,7 +1300,7 @@ export default function ClientDetail() {
                   ))}
                 </SelectContent>
               </Select>
-              {bookingFamilyCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 p-3"><p className="text-sm font-semibold text-violet-950">Family-linked dogs</p><p className="mt-0.5 text-xs text-violet-800">Add family companions to this shared appointment?</p><div className="mt-2 flex flex-wrap gap-2">{bookingFamilyCompanions.map(pet => { const included = bookFamilyPetIds.includes(String(pet.id)); return <Button key={pet.id} type="button" size="sm" variant={included ? "default" : "outline"} className={included ? "bg-violet-700 hover:bg-violet-800" : "border-violet-300 bg-white text-violet-900 hover:bg-violet-100"} onClick={() => setBookFamilyPetIds(current => included ? current.filter(id => id !== String(pet.id)) : [...current, String(pet.id)])}>{included ? "✓ " : "+ "}{pet.name}</Button>; })}</div></div>}
+              {bookingFamilyCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 p-3"><p className="text-sm font-semibold text-violet-950">Family-linked dogs</p><p className="mt-0.5 text-xs text-violet-800">Add family companions to this shared appointment?</p><div className="mt-2 flex flex-wrap gap-2">{bookingFamilyCompanions.map(pet => { const included = bookFamilyPetIds.includes(String(pet.id)); return <Button key={pet.id} type="button" size="sm" variant={included ? "default" : "outline"} className={included ? "bg-violet-700 hover:bg-violet-800" : "border-violet-300 bg-card text-violet-900 hover:bg-violet-100"} onClick={() => setBookFamilyPetIds(current => included ? current.filter(id => id !== String(pet.id)) : [...current, String(pet.id)])}>{included ? "✓ " : "+ "}{pet.name}</Button>; })}</div></div>}
               {bookingPetIds.length > 0 && bookingMembershipCoverage.fullyCovered && <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-950"><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{Object.values(bookingMembershipCoverage.membershipByPetId).map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800">Every selected dog is covered for this service. This appointment is recorded as $0.00 because payment is managed through the weekly membership.</p></div>}
               {bookingPetIds.length > 0 && !bookingMembershipCoverage.fullyCovered && bookingMembershipCoverage.coveredPetIds.length > 0 && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Some selected dogs have an active membership, but not every selected dog is covered for this service. Review the appointment price before saving.</div>}
             </div>

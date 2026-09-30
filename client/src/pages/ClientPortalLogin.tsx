@@ -23,7 +23,7 @@ export default function ClientPortalLogin() {
   return <main className="min-h-screen bg-gradient-to-br from-pink-50 via-background to-violet-50 px-4 py-10">
     <section className="mx-auto grid max-w-5xl gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-center">
       <div className="space-y-5 rounded-3xl bg-primary p-8 text-primary-foreground shadow-sm">
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15"><PawPrint className="h-6 w-6" /></div>
+        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-card/15"><PawPrint className="h-6 w-6" /></div>
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.28em] opacity-80">Client portal</p>
           <h1 className="mt-3 font-display text-4xl font-bold leading-tight">Your pet care details, in one secure place.</h1>

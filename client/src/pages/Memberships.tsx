@@ -47,17 +47,17 @@ const TIER_ORDER: Record<string, number> = { diamond: 0, platinum: 1, gold: 2, s
 
 const STATUS_COLOURS: Record<string, string> = {
   active: "bg-emerald-100 text-emerald-800",
-  paused: "bg-slate-100 text-slate-600",
+  paused: "bg-muted text-muted-foreground",
   cancelled: "bg-red-100 text-red-800",
   pending_payment: "bg-amber-100 text-amber-800",
-  expired: "bg-slate-100 text-slate-500",
+  expired: "bg-muted text-muted-foreground",
 };
 
 const TIER_COLOURS: Record<string, string> = {
   diamond: "bg-violet-100 text-violet-800",
-  platinum: "bg-slate-200 text-slate-700",
+  platinum: "bg-accent text-foreground",
   gold: "bg-amber-100 text-amber-800",
-  silver: "bg-slate-100 text-slate-600",
+  silver: "bg-muted text-muted-foreground",
   bronze: "bg-amber-100 text-amber-800",
 };
 
@@ -424,7 +424,7 @@ function MembershipRow({ m }: { m: MembershipItem }) {
       </td>
       <td className="p-3 hidden lg:table-cell">
         {m.tier && (
-          <Badge className={`text-xs capitalize ${TIER_COLOURS[m.tier] ?? "bg-slate-100 text-slate-600"}`}>
+          <Badge className={`text-xs capitalize ${TIER_COLOURS[m.tier] ?? "bg-muted text-muted-foreground"}`}>
             {m.tier}
           </Badge>
         )}

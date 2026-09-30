@@ -29,13 +29,13 @@ export default function StaffInvitationAccept() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#fff7fb] via-white to-violet-50 px-4 py-10 sm:py-16">
-      <section className="mx-auto w-full max-w-md rounded-3xl border border-red-100 bg-white p-6 shadow-xl shadow-red-100/50 sm:p-8">
+      <section className="mx-auto w-full max-w-md rounded-3xl border border-red-100 bg-card p-6 shadow-xl shadow-red-100/50 sm:p-8">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-700 text-white"><ShieldCheck className="h-6 w-6" /></div>
-          <div><p className="text-sm font-semibold text-violet-700">Groomigo staff access</p><h1 className="text-xl font-bold text-slate-900">Set up your account</h1></div>
+          <div><p className="text-sm font-semibold text-violet-700">Groomigo staff access</p><h1 className="text-xl font-bold text-foreground">Set up your account</h1></div>
         </div>
 
-        {invitation.isLoading ? <div className="space-y-3 animate-pulse"><div className="h-5 w-2/3 rounded bg-slate-100" /><div className="h-10 rounded-lg bg-slate-100" /><div className="h-10 rounded-lg bg-slate-100" /></div> : complete ? (
+        {invitation.isLoading ? <div className="space-y-3 animate-pulse"><div className="h-5 w-2/3 rounded bg-muted" /><div className="h-10 rounded-lg bg-muted" /><div className="h-10 rounded-lg bg-muted" /></div> : complete ? (
           <div className="space-y-4 text-center py-4"><CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" /><h2 className="text-lg font-bold">Account setup complete</h2><p className="text-sm text-muted-foreground">Your administrator must approve your access before you can sign in. They will be able to see that your profile is ready.</p></div>
         ) : unavailable ? (
           <div className="space-y-3 rounded-2xl bg-red-50 p-4"><Clock3 className="h-6 w-6 text-red-600" /><h2 className="font-bold text-red-950">This invitation is unavailable</h2><p className="text-sm text-red-800">It may have expired, been replaced or already been used. Please ask your salon administrator to send a new invitation.</p></div>

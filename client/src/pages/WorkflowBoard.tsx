@@ -322,7 +322,7 @@ export default function WorkflowBoard() {
 
   if (tvMode) {
     return (
-      <div className="fixed inset-0 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white overflow-auto z-50">
+      <div className="fixed inset-0 bg-muted dark:bg-slate-950 text-foreground dark:text-white overflow-auto z-50">
         <div className="p-4">
           {/* TV Header */}
           <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -330,23 +330,23 @@ export default function WorkflowBoard() {
               <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-10 object-contain shrink-0 dark:brightness-0 dark:invert" />
               <div className="min-w-0">
                 <h1 className="text-2xl font-bold truncate">Live Workflow Board</h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 truncate">{formatAestDate(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
+                <p className="text-sm text-muted-foreground dark:text-muted-foreground truncate">{formatAestDate(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 sm:justify-end">
-              <span className="text-sm text-slate-500 dark:text-slate-400">{rows.length} dogs today</span>
+              <span className="text-sm text-muted-foreground dark:text-muted-foreground">{rows.length} dogs today</span>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={toggleTvTheme}
-                className="border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 shrink-0 gap-1.5"
+                className="border-border dark:border-slate-600 text-muted-foreground dark:text-slate-300 shrink-0 gap-1.5"
                 title={tvIsDark ? "Switch to light mode" : "Switch to dark mode"}
                 aria-pressed={tvIsDark}
               >
                 {tvIsDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
                 {tvIsDark ? "Light" : "Dark"}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setTvMode(false)} className="border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 shrink-0">
+              <Button variant="outline" size="sm" onClick={() => setTvMode(false)} className="border-border dark:border-slate-600 text-muted-foreground dark:text-slate-300 shrink-0">
                 Exit TV Mode
               </Button>
             </div>
@@ -373,7 +373,7 @@ export default function WorkflowBoard() {
             bathQueueByAppointmentId={bathQueueByAppointmentId}
             readOnly
           />
-          <p className="text-xs text-slate-600 dark:text-slate-300 mt-3 text-right">Auto-refreshes every 20s</p>
+          <p className="text-xs text-muted-foreground dark:text-slate-300 mt-3 text-right">Auto-refreshes every 20s</p>
         </div>
       </div>
     );
@@ -547,7 +547,7 @@ export default function WorkflowBoard() {
                 const representativeId = item.rows[0]!.id;
                 const meta = BATH_PRIORITY_META[item.priority];
                 const isDragging = bathQueueDragId === representativeId;
-                return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} data-bath-queue-item={representativeId} role="listitem" tabIndex={0} draggable={!reorderBathQueue.isPending} aria-grabbed={isDragging} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; setBathQueueDragId(representativeId); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (bathQueueDragId) reorderBathQueueByRepresentative(bathQueueDragId, representativeId); }} onDragEnd={() => setBathQueueDragId(null)} onTouchStart={() => setBathQueueDragId(representativeId)} onTouchEnd={(event) => { const touch = event.changedTouches[0]; const target = touch ? document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-bath-queue-item]") as HTMLElement | null : null; const targetId = Number(target?.dataset.bathQueueItem); if (bathQueueDragId && Number.isFinite(targetId)) reorderBathQueueByRepresentative(bathQueueDragId, targetId); else setBathQueueDragId(null); }} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); moveBathQueueItem(representativeId, -1); } if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); moveBathQueueItem(representativeId, 1); } }} className={`touch-none group flex items-center gap-1.5 rounded-lg border bg-white px-2 py-1.5 text-xs text-violet-950 outline-none transition-[transform,opacity] duration-150 focus:ring-2 focus:ring-violet-500 ${isDragging ? "scale-95 opacity-50" : "cursor-grab active:cursor-grabbing"}`} style={{ borderColor: meta.colour, background: meta.softColour }} title="Drag to reorder. Use arrow keys when focused for a keyboard alternative."><GripVertical className="h-4 w-4 shrink-0 text-violet-700" aria-hidden="true" /><span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: meta.colour }}>{item.priority}</span><span className="font-semibold">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-700">together</span>}<span className="sr-only">Bath priority {item.priority}, {meta.label}. Position {index + 1} of {bathQueue.length}.</span><div className="ml-0.5 hidden gap-0.5 group-focus-within:flex group-hover:flex"><button type="button" className="rounded p-0.5 text-violet-800 hover:bg-white" disabled={index === 0 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, -1)} aria-label={`Move ${item.petNames.join(" and ")} earlier in bath queue`}><ArrowUp className="h-3 w-3" /></button><button type="button" className="rounded p-0.5 text-violet-800 hover:bg-white" disabled={index === bathQueue.length - 1 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, 1)} aria-label={`Move ${item.petNames.join(" and ")} later in bath queue`}><ArrowDown className="h-3 w-3" /></button></div></div>;
+                return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} data-bath-queue-item={representativeId} role="listitem" tabIndex={0} draggable={!reorderBathQueue.isPending} aria-grabbed={isDragging} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; setBathQueueDragId(representativeId); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (bathQueueDragId) reorderBathQueueByRepresentative(bathQueueDragId, representativeId); }} onDragEnd={() => setBathQueueDragId(null)} onTouchStart={() => setBathQueueDragId(representativeId)} onTouchEnd={(event) => { const touch = event.changedTouches[0]; const target = touch ? document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-bath-queue-item]") as HTMLElement | null : null; const targetId = Number(target?.dataset.bathQueueItem); if (bathQueueDragId && Number.isFinite(targetId)) reorderBathQueueByRepresentative(bathQueueDragId, targetId); else setBathQueueDragId(null); }} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); moveBathQueueItem(representativeId, -1); } if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); moveBathQueueItem(representativeId, 1); } }} className={`touch-none group flex items-center gap-1.5 rounded-lg border bg-card px-2 py-1.5 text-xs text-violet-950 outline-none transition-[transform,opacity] duration-150 focus:ring-2 focus:ring-violet-500 ${isDragging ? "scale-95 opacity-50" : "cursor-grab active:cursor-grabbing"}`} style={{ borderColor: meta.colour, background: meta.softColour }} title="Drag to reorder. Use arrow keys when focused for a keyboard alternative."><GripVertical className="h-4 w-4 shrink-0 text-violet-700" aria-hidden="true" /><span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: meta.colour }}>{item.priority}</span><span className="font-semibold">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-700">together</span>}<span className="sr-only">Bath priority {item.priority}, {meta.label}. Position {index + 1} of {bathQueue.length}.</span><div className="ml-0.5 hidden gap-0.5 group-focus-within:flex group-hover:flex"><button type="button" className="rounded p-0.5 text-violet-800 hover:bg-card" disabled={index === 0 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, -1)} aria-label={`Move ${item.petNames.join(" and ")} earlier in bath queue`}><ArrowUp className="h-3 w-3" /></button><button type="button" className="rounded p-0.5 text-violet-800 hover:bg-card" disabled={index === bathQueue.length - 1 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, 1)} aria-label={`Move ${item.petNames.join(" and ")} later in bath queue`}><ArrowDown className="h-3 w-3" /></button></div></div>;
               })}
             </div>
           </section>
@@ -588,7 +588,7 @@ export default function WorkflowBoard() {
 
         {/* Daily production snapshot — useful for delay and pricing review */}
         {performanceSnapshot.length > 0 && (
-          <section className="rounded-xl border bg-white overflow-hidden">
+          <section className="rounded-xl border bg-card overflow-hidden">
             <div className="px-4 py-3 border-b flex items-center justify-between gap-3">
               <div>
                 <h2 className="font-semibold text-sm">Daily workflow timing</h2>
@@ -598,7 +598,7 @@ export default function WorkflowBoard() {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[640px]">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-muted text-xs uppercase tracking-wide text-muted-foreground">
                   <tr><th className="text-left px-4 py-2">Team member</th><th className="text-center px-3 py-2">Bath avg</th><th className="text-center px-3 py-2">Dry avg</th><th className="text-center px-3 py-2">Groom avg</th><th className="text-center px-3 py-2">Total avg</th><th className="text-center px-3 py-2">Review</th></tr>
                 </thead>
                 <tbody>
@@ -611,7 +611,7 @@ export default function WorkflowBoard() {
                         {[person.bath, person.dry, person.groom, person.total].map((metric, index) => {
                           const avg = average(metric);
                           const review = metric.reviews > 0;
-                          return <td key={index} className={`px-3 py-2.5 text-center font-mono ${review ? "text-amber-700 font-bold" : "text-slate-700"}`}>{formatDuration(avg)}{review ? " ⚠" : ""}</td>;
+                          return <td key={index} className={`px-3 py-2.5 text-center font-mono ${review ? "text-amber-700 font-bold" : "text-foreground"}`}>{formatDuration(avg)}{review ? " ⚠" : ""}</td>;
                         })}
                         <td className="px-3 py-2.5 text-center">
                           <Button
@@ -645,7 +645,7 @@ export default function WorkflowBoard() {
           ))}
           <span className="flex items-center gap-1 ml-4"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-amber-200" /> 30-60 min in stage</span>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-red-200" /> 60+ min in stage</span>
-          <span className="ml-auto text-slate-400">Auto-refreshes every 20s</span>
+          <span className="ml-auto text-muted-foreground">Auto-refreshes every 20s</span>
         </div>
       </div>
 
@@ -653,7 +653,7 @@ export default function WorkflowBoard() {
       {outConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setOutConfirm(null)}>
           <div className="absolute inset-0 bg-black/50" />
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-xs w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-2xl shadow-2xl max-w-xs w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="text-center">
               <div className="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
                 <AlertTriangle className="h-6 w-6 text-amber-600" />
@@ -662,7 +662,7 @@ export default function WorkflowBoard() {
               <p className="text-sm text-muted-foreground mt-1">Please confirm that payment has been collected before marking this dog as picked up.</p>
             </div>
             {/* Mark as Paid toggle */}
-            <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-slate-50 transition-colors">
+            <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted transition-colors">
               <input
                 type="checkbox"
                 checked={outMarkPaid}
@@ -676,7 +676,7 @@ export default function WorkflowBoard() {
             </label>
             <div className="flex gap-2">
               <button
-                className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-slate-50 transition-colors"
+                className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors"
                 onClick={() => { setOutConfirm(null); setOutMarkPaid(false); }}
               >
                 Cancel
@@ -716,7 +716,7 @@ export default function WorkflowBoard() {
       {walkInOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setWalkInOpen(false)}>
           <div className="absolute inset-0 bg-black/50" />
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold flex items-center gap-2">
                 <UserPlus className="h-5 w-5 text-violet-600" /> Add Walk-in
@@ -744,7 +744,7 @@ export default function WorkflowBoard() {
                   )}
                 </div>
                 {walkInClientResults && walkInClientResults.length > 0 && !walkInClientId && (
-                  <div className="border rounded-lg mt-1 overflow-hidden bg-white shadow-sm max-h-32 overflow-y-auto">
+                  <div className="border rounded-lg mt-1 overflow-hidden bg-card shadow-sm max-h-32 overflow-y-auto">
                     {walkInClientResults.map((r: any) => (
                       <button
                         key={r.clientId}
@@ -804,7 +804,7 @@ export default function WorkflowBoard() {
             </div>
             <div className="flex gap-2 pt-1">
               <button
-                className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-slate-50 transition-colors"
+                className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors"
                 onClick={() => setWalkInOpen(false)}
               >
                 Cancel
@@ -832,7 +832,7 @@ export default function WorkflowBoard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setPetPopup(null)}>
           <div className="absolute inset-0 bg-black/40" />
           <div
-            className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-3"
+            className="relative bg-card rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-3"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-2">
@@ -865,7 +865,7 @@ export default function WorkflowBoard() {
                 {STAGES.find(s => s.key === petPopup.workflowState)?.label ?? petPopup.workflowState}
               </span>
               {popupStageTimer && (
-                <span className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-xs font-bold text-slate-700">
+                <span className="inline-flex items-center gap-1 rounded border border-border bg-muted px-2 py-0.5 font-mono text-xs font-bold text-foreground">
                   <Clock className="h-3 w-3" /> {popupStageTimer} in stage
                 </span>
               )}
@@ -875,10 +875,10 @@ export default function WorkflowBoard() {
             </div>
 
             {/* Workflow timing */}
-            <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
+            <div className="rounded-lg border bg-muted p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Workflow timing</p>
-                <span className="text-xs font-bold text-slate-700">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Workflow timing</p>
+                <span className="text-xs font-bold text-foreground">
                   Total in salon: {petPopup.checkedInAt
                     ? formatDuration(Math.floor(((petPopup.completedAt ?? Date.now()) - petPopup.checkedInAt) / 60000))
                     : "Not checked in"}
@@ -940,7 +940,7 @@ export default function WorkflowBoard() {
             <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-violet-100 bg-violet-50/40 p-2">
               {bathGroupCandidates.map((candidate) => {
                 const selected = bathGroupSelectedIds.includes(candidate.id);
-                return <label key={candidate.id} className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${selected ? "border-violet-500 bg-white" : "border-transparent hover:border-violet-200 hover:bg-white/70"}`}><input type="checkbox" checked={selected} onChange={() => setBathGroupSelectedIds((current) => selected ? current.filter((id) => id !== candidate.id) : [...current, candidate.id])} className="h-4 w-4 accent-violet-700" /><span className="min-w-0 flex-1"><span className="font-semibold">{candidate.petName}</span><span className="ml-2 text-xs text-muted-foreground">{fmtTime(candidate.scheduledStart)} · {candidate.clientLastName}</span></span>{candidate.bathPriority && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[candidate.bathPriority as typeof BATH_PRIORITY_VALUES[number]]?.colour ?? "#0f766e" }}>{candidate.bathPriority}</span>}</label>;
+                return <label key={candidate.id} className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${selected ? "border-violet-500 bg-card" : "border-transparent hover:border-violet-200 hover:bg-card/70"}`}><input type="checkbox" checked={selected} onChange={() => setBathGroupSelectedIds((current) => selected ? current.filter((id) => id !== candidate.id) : [...current, candidate.id])} className="h-4 w-4 accent-violet-700" /><span className="min-w-0 flex-1"><span className="font-semibold">{candidate.petName}</span><span className="ml-2 text-xs text-muted-foreground">{fmtTime(candidate.scheduledStart)} · {candidate.clientLastName}</span></span>{candidate.bathPriority && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[candidate.bathPriority as typeof BATH_PRIORITY_VALUES[number]]?.colour ?? "#0f766e" }}>{candidate.bathPriority}</span>}</label>;
               })}
             </div>
             <div className="space-y-1.5"><label className="text-sm font-semibold">Shared bath priority</label><Select value={bathGroupPriority} onValueChange={setBathGroupPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__keep__">Keep current priority</SelectItem><SelectItem value="__none__">No priority</SelectItem>{BATH_PRIORITY_VALUES.map((priority) => <SelectItem key={priority} value={String(priority)}><span className="inline-flex items-center gap-2"><span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[priority].colour }}>{priority}</span>{BATH_PRIORITY_META[priority].label}</span></SelectItem>)}</SelectContent></Select></div>
@@ -951,10 +951,10 @@ export default function WorkflowBoard() {
       {/* ── Family Link Popup ── */}
       {familyLinkPopup && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setFamilyLinkPopup(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl p-5 max-w-sm w-full space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl shadow-2xl p-5 max-w-sm w-full space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base">🔗 Family Link — {familyLinkPopup.petName}</h3>
-              <button onClick={() => setFamilyLinkPopup(null)} className="text-slate-400 hover:text-slate-600 p-1 rounded"><X className="h-4 w-4" /></button>
+              <button onClick={() => setFamilyLinkPopup(null)} className="text-muted-foreground hover:text-muted-foreground p-1 rounded"><X className="h-4 w-4" /></button>
             </div>
 
             {/* Current family members */}
@@ -966,7 +966,7 @@ export default function WorkflowBoard() {
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                   <p className="text-xs text-red-900">Need separate processing? Remove {familyLinkPopup.petName} from this family group. Appointments and workflow history are not changed.</p>
-                  <Button size="sm" variant="outline" className="shrink-0 border-red-300 bg-white text-red-700 hover:bg-red-100" disabled={unlinkPetMutation.isPending} onClick={() => unlinkPetMutation.mutate({ petId: familyLinkPopup.petId })}>{unlinkPetMutation.isPending ? "Unlinking…" : "Unlink dog"}</Button>
+                  <Button size="sm" variant="outline" className="shrink-0 border-red-300 bg-card text-red-700 hover:bg-red-100" disabled={unlinkPetMutation.isPending} onClick={() => unlinkPetMutation.mutate({ petId: familyLinkPopup.petId })}>{unlinkPetMutation.isPending ? "Unlinking…" : "Unlink dog"}</Button>
                 </div>
               </div>
             )}
@@ -1008,7 +1008,7 @@ export default function WorkflowBoard() {
                     >
                       <span className="font-medium">{p.name}</span>
                       <span className="text-muted-foreground ml-1">({(p as any).clientName ?? ""}) — {p.breed ?? "Unknown breed"}</span>
-                      <span className="text-xs text-slate-400 ml-1">(not on board today)</span>
+                      <span className="text-xs text-muted-foreground ml-1">(not on board today)</span>
                     </button>
                   ))}
                   {rows.filter(r =>

@@ -52,7 +52,7 @@ export default function PetTracker() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       {/* Header */}
-      <div className="bg-white border-b px-4 py-4 flex items-center justify-between max-w-lg mx-auto">
+      <div className="bg-card border-b px-4 py-4 flex items-center justify-between max-w-lg mx-auto">
         <div className="flex items-center gap-2">
           <Dog className="h-5 w-5 text-primary" />
           <span className="font-bold font-display text-primary">{data.tenantName}</span>

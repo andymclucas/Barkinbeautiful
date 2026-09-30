@@ -30,7 +30,7 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 const STATUS_STYLE: Record<string, string> = {
   paid: "bg-emerald-100 text-emerald-800",
   partial: "bg-amber-100 text-amber-800",
-  unpaid: "bg-slate-100 text-slate-600",
+  unpaid: "bg-muted text-muted-foreground",
 };
 
 export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) {

@@ -177,7 +177,7 @@ function EditableNumber({ value, onSave, placeholder, min, max, label, tone, rea
   if (readOnly) {
     return (
       <div className={`w-full text-center font-mono text-sm font-bold min-h-[34px] rounded-md border shadow-sm px-1 flex items-center justify-center ${toneClasses}`}>
-        {value ?? <span className="text-slate-500 font-semibold text-xs">{placeholder}</span>}
+        {value ?? <span className="text-muted-foreground font-semibold text-xs">{placeholder}</span>}
       </div>
     );
   }
@@ -190,7 +190,7 @@ function EditableNumber({ value, onSave, placeholder, min, max, label, tone, rea
         className={`w-full text-center font-mono text-sm font-bold min-h-[34px] rounded-md border shadow-sm transition-colors px-1 ${toneClasses}`}
         onClick={() => { setDraft(String(value ?? "")); setEditing(true); }}
       >
-        {value ?? <span className="text-slate-500 font-semibold text-xs">{placeholder}</span>}
+        {value ?? <span className="text-muted-foreground font-semibold text-xs">{placeholder}</span>}
       </button>
     );
   }
@@ -227,7 +227,7 @@ function StaffCell({ value, staffList, onSave, placeholder, readOnly }: {
             <StaffAvatar photoUrl={selected.photoUrl} name={selected.name} colourHex={selected.colourHex} className="h-5 w-5" ring={false} />
             <span className="truncate">{selected.name.split(" ")[0]}</span>
           </>
-        ) : <span className="text-slate-400">{placeholder ?? "—"}</span>}
+        ) : <span className="text-muted-foreground">{placeholder ?? "—"}</span>}
       </div>
     );
   }
@@ -274,7 +274,7 @@ function BathPriorityCell({ value, coordinated, onSave, onManageGroup, disabled,
           {value ?? "Queue"}
         </div>
         {coordinated && (
-          <div className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 bg-white px-1 py-0.5 text-[9px] font-semibold text-violet-800">
+          <div className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800">
             <Link2 className="h-2.5 w-2.5" /> Together
           </div>
         )}
@@ -292,7 +292,7 @@ function BathPriorityCell({ value, coordinated, onSave, onManageGroup, disabled,
           {BATH_PRIORITY_VALUES.map((priority) => <SelectItem key={priority} value={String(priority)}><span className="inline-flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white" style={{ background: BATH_PRIORITY_META[priority].colour }}>{priority}</span>{BATH_PRIORITY_META[priority].label}</span></SelectItem>)}
         </SelectContent>
       </Select>
-      <button type="button" onClick={onManageGroup} disabled={disabled} className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 bg-white px-1 py-0.5 text-[9px] font-semibold text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60" title="Coordinate one bathing priority across selected dogs">
+      <button type="button" onClick={onManageGroup} disabled={disabled} className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60" title="Coordinate one bathing priority across selected dogs">
         <Link2 className="h-2.5 w-2.5" /> {coordinated ? "Together" : "Group dogs"}
       </button>
     </div>
@@ -370,7 +370,7 @@ export function WorkflowBoardTable({
               {!readOnly && (
               <tr className="bg-slate-800/60">
                 <td colSpan={15} className="px-2 py-1">
-                  <div className="flex items-center gap-2 flex-wrap text-[10px] text-slate-400 italic">
+                  <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground italic">
                     <span>Drag a row onto a stage chip:</span>
                     {STAGES.map(s => (
                       <span
@@ -440,10 +440,10 @@ export function WorkflowBoardTable({
                 const timerAlert = stageMinutes !== null && stageMinutes >= 60;
                 const timerWarn = stageMinutes !== null && stageMinutes >= 30 && stageMinutes < 60;
                 const isReviewFocused = hasReviewAppointmentFocus && appt.id === reviewAppointmentId;
-                const rowBg = isComplete ? "bg-slate-50 opacity-60"
+                const rowBg = isComplete ? "bg-muted opacity-60"
                   : timerAlert ? "bg-red-50/40"
                   : timerWarn ? "bg-amber-50/30"
-                  : idx % 2 === 0 ? "bg-white" : "bg-slate-50/50";
+                  : idx % 2 === 0 ? "bg-card" : "bg-muted/50";
 
                 return (
                   <tr
@@ -457,14 +457,14 @@ export function WorkflowBoardTable({
                   >
                     {/* Time */}
                     <td className="px-2 py-1.5 text-center">
-                      <span className="font-mono text-xs font-semibold text-slate-600">
+                      <span className="font-mono text-xs font-semibold text-muted-foreground">
                         {fmtTime(appt.scheduledStart)}
                       </span>
                       {appt.checkedInAt && (
                         <div className="text-[10px] text-violet-600 font-mono">In {fmtTime(appt.checkedInAt)}</div>
                       )}
                       {totalMinutes !== null && (
-                        <div className="text-[10px] font-mono text-slate-500" title="Total time in salon">
+                        <div className="text-[10px] font-mono text-muted-foreground" title="Total time in salon">
                           Total {formatDuration(totalMinutes)}
                         </div>
                       )}
@@ -619,7 +619,7 @@ export function WorkflowBoardTable({
                                 title="Link to family"
                                 onClick={() => { setFamilyLinkPopup({ apptId: appt.id, petId: appt.petId, petName: appt.petName ?? "", petFamilyGroupId: null }); setFamilySearch(""); }}
                               >
-                                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full border-2 border-dashed border-slate-400 text-slate-400 text-[10px] font-bold hover:border-violet-400 hover:text-violet-500 transition-colors">+</span>
+                                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full border-2 border-dashed border-slate-400 text-muted-foreground text-[10px] font-bold hover:border-violet-400 hover:text-violet-500 transition-colors">+</span>
                               </button>
                             )}
                           </div>
@@ -627,7 +627,7 @@ export function WorkflowBoardTable({
                       })()}
                     </td>
 
-                    <td className="px-2 py-1.5 text-xs text-slate-600 truncate max-w-[112px]">
+                    <td className="px-2 py-1.5 text-xs text-muted-foreground truncate max-w-[112px]">
                       {appt.petBreed ?? "—"}
                     </td>
 
@@ -642,7 +642,7 @@ export function WorkflowBoardTable({
 
                     {/* Paid */}
                     <td className="px-2 py-1.5 text-center">
-                      <span className="text-xs text-slate-400">—</span>
+                      <span className="text-xs text-muted-foreground">—</span>
                     </td>
 
                     {/* Service */}
@@ -739,7 +739,7 @@ export function WorkflowBoardTable({
                           disabled={updateStage.isPending}
                         >
                           <SelectTrigger
-                            className="h-7 w-[116px] border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-700 shadow-sm hover:border-primary/50"
+                            className="h-7 w-[116px] border-border bg-card px-2 text-[10px] font-semibold text-foreground shadow-sm hover:border-primary/50"
                             aria-label={`Manually change ${appt.petName ?? "pet"} workflow stage`}
                             title="Change stage, pause between stages, or record a cancelled or no-show outcome. Timing is updated automatically."
                           >
@@ -768,7 +768,7 @@ export function WorkflowBoardTable({
                         {/* Revert button */}
                         {prevStage && (
                           <button
-                            className="text-[10px] text-slate-400 hover:text-slate-600 px-1 py-1 rounded hover:bg-slate-100 transition-colors"
+                            className="text-[10px] text-muted-foreground hover:text-muted-foreground px-1 py-1 rounded hover:bg-muted transition-colors"
                             onClick={() => revertStage(appt)}
                             disabled={updateStage.isPending}
                             title="Go back one stage"
@@ -786,7 +786,7 @@ export function WorkflowBoardTable({
                         <div className="flex flex-col items-center gap-0.5">
                           <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                           {appt.pickedUpAt && (
-                            <span className="text-[10px] text-slate-400 font-mono">{fmtTime(appt.pickedUpAt)}</span>
+                            <span className="text-[10px] text-muted-foreground font-mono">{fmtTime(appt.pickedUpAt)}</span>
                           )}
                           {onRestoreCompleted && (
                             <button

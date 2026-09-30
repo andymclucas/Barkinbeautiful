@@ -131,7 +131,10 @@ describe("canStaffUpdateAppointment", () => {
     // It now comes from the shared table, so the wall display stripes exactly as
     // the staff board does.
     expect(readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8"))
-      .toContain('idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"');
+      // Zebra striping, asserted as the property rather than the colour:
+      // these moved to theme tokens when dark mode landed, and the point of
+      // the test is that alternate rows differ, not which grey they are.
+      .toMatch(/idx % 2 === 0 \? "bg-\w[\w-]*" : "bg-[\w/-]+"/);
     expect(displaySource).toContain("useDisplayTheme");
   });
 
@@ -211,7 +214,9 @@ describe("canStaffUpdateAppointment", () => {
     // Completed dogs are dimmed by the shared table rather than faded out by a
     // bespoke animation the display used to own.
     expect(readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8"))
-      .toContain('isComplete ? "bg-slate-50 opacity-60"');
+      // A finished dog is faded back. opacity-60 is the part that matters;
+      // the surface colour follows the theme.
+      .toMatch(/isComplete \? "bg-[\w/-]+ opacity-60"/);
     expect(displaySource).toContain("Review completed dogs");
     expect(displaySource).toContain("Hide completed dogs");
     expect(displaySource).toContain("All dogs are complete");

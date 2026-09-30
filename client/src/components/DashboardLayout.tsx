@@ -358,7 +358,7 @@ function DashboardLayoutContent({
       </button>
       <NotificationBell />
       <IncomingCallAlert />
-      <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+      <div className="mx-1 hidden h-6 w-px bg-accent sm:block" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex max-w-[15rem] items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-accent/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -568,7 +568,7 @@ function DashboardLayoutContent({
           </div>
         )}
         {!isMobile && (
-          <div className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-end gap-2 border-b border-slate-200/80 bg-white/75 px-4 backdrop-blur">
+          <div className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-end gap-2 border-b border-border/80 bg-card/75 px-4 backdrop-blur">
             {accountControls}
           </div>
         )}

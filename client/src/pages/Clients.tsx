@@ -25,7 +25,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 
 const STATUS_COLOURS: Record<string, string> = {
   active: "bg-emerald-100 text-emerald-800",
-  inactive: "bg-slate-100 text-slate-600",
+  inactive: "bg-muted text-muted-foreground",
   lapsed: "bg-amber-100 text-amber-800",
   blocked: "bg-red-100 text-red-800",
 };
@@ -162,7 +162,7 @@ function ClientHoverCard({
                         <p className="text-xs text-muted-foreground">
                           {new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "2-digit" })}
                         </p>
-                        <Badge className={`text-[10px] px-1 py-0 ${a.workflowState === "complete" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                        <Badge className={`text-[10px] px-1 py-0 ${a.workflowState === "complete" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
                           {a.workflowState}
                         </Badge>
                       </div>

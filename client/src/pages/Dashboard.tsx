@@ -17,7 +17,7 @@ const STAGE_LABELS: Record<string, string> = {
   grooming: "Grooming", ready: "Ready", complete: "Complete",
 };
 const STAGE_COLOURS: Record<string, { bg: string; fg: string }> = {
-  scheduled:  { bg: "bg-slate-100",    fg: "text-slate-600" },
+  scheduled:  { bg: "bg-muted",    fg: "text-muted-foreground" },
   checked_in: { bg: "bg-violet-100",   fg: "text-violet-700" },
   bathing:    { bg: "bg-blue-100",     fg: "text-blue-700" },
   grooming:   { bg: "bg-violet-100",   fg: "text-violet-700" },

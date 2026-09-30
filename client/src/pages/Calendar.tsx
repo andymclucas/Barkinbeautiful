@@ -74,7 +74,7 @@ const WORKFLOW_COLOURS: Record<string, string> = {
   drying:     "bg-violet-100 text-violet-800",
   grooming:   "bg-violet-100 text-violet-800",
   ready:      "bg-emerald-100 text-emerald-800",
-  complete:   "bg-slate-100 text-slate-600",
+  complete:   "bg-muted text-muted-foreground",
   cancelled:  "bg-red-100 text-red-700",
   no_show:    "bg-amber-100 text-amber-700",
 };
@@ -288,7 +288,7 @@ function ApptBlock({
       aria-label={`${isCancelled ? "Cancelled " : ""}appointment for ${sharedAppointmentLabel || "pet"}`}
     >
       <div className="px-2 py-1 h-full overflow-hidden leading-tight">
-        {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-slate-300 bg-white/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Cancelled</div>}
+        {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
         {siblings && siblings.length > 0 ? (
           <>
             <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
@@ -325,7 +325,7 @@ function ApptBlock({
           </>
         )}
       </div>
-      <div className="absolute top-1 right-1 rounded-full bg-white/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute top-1 right-1 rounded-full bg-card/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <Pencil className="h-2.5 w-2.5" style={{ color: svc.border }} />
       </div>
     </div>
@@ -751,7 +751,7 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
       {/* PDF Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowPreview(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-[680px] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="bg-card rounded-xl shadow-2xl w-[680px] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <span className="font-semibold text-sm">Preview — {appt.petName}'s Grooming Report</span>
               <div className="flex gap-2">
@@ -1436,7 +1436,7 @@ export default function Calendar() {
                         style={{ opacity: isCancelled ? 0.45 : 1, background: isCancelled ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`, borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`, boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}` }}
                         onClick={(e) => { e.stopPropagation(); openEdit(appt as Appt); }}
                       >
-                        {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-slate-300 bg-white/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Cancelled</div>}
+                        {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
                         <div className={`font-bold truncate ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
                           {sharedAppointmentLabel}
                           {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600" />}
@@ -1445,7 +1445,7 @@ export default function Calendar() {
                           {fmtTime(new Date(appt.scheduledStart))}
                           {appt.staffName ? ` · ${appt.staffName.split(" ")[0]}` : ""}
                         </div>
-                        <span className="mt-1 inline-flex rounded-full bg-white/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</span>
+                        <span className="mt-1 inline-flex rounded-full bg-card/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</span>
                       </div>
                     );
                   })
@@ -1488,7 +1488,7 @@ export default function Calendar() {
             return (
               <div className="flex min-h-0 flex-1 flex-col" style={{ width: totalWidth, minWidth: totalWidth }}>
                 {(groomerCount > 0 || batherCount > 0) && (
-                  <div className="grid border-b bg-slate-50/80 shrink-0" style={{ gridTemplateColumns: colTemplate }}>
+                  <div className="grid border-b bg-muted/80 shrink-0" style={{ gridTemplateColumns: colTemplate }}>
                     <div className="border-r" />
                     {groomerCount > 0 && <div className="px-3 py-2 border-r text-[10px] font-bold uppercase tracking-[0.16em] text-violet-800 bg-gradient-to-r from-violet-100/90 to-violet-50/50" style={{ gridColumn: `span ${groomerCount}` }}>Groomers</div>}
                     {batherCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800 bg-gradient-to-r from-blue-100/90 to-blue-50/50" style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
@@ -1503,12 +1503,12 @@ export default function Calendar() {
                     {dayDate.toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
                   </div>
                   {cols.map((s, i) => (
-                    <div key={i} className="p-2.5 border-r last:border-r-0 text-center transition-colors hover:bg-slate-50/80" style={{ borderTop: `3px solid ${s.colourHex ?? "#6366f1"}` }}>
+                    <div key={i} className="p-2.5 border-r last:border-r-0 text-center transition-colors hover:bg-muted/80" style={{ borderTop: `3px solid ${s.colourHex ?? "#6366f1"}` }}>
                       <div className="flex items-center justify-center gap-1.5">
                         <StaffAvatar photoUrl={(s as { photoUrl?: string | null }).photoUrl} name={s.name} colourHex={s.colourHex} className="h-7 w-7" />
                         <span className="text-xs font-semibold truncate">{s.name.split(" ")[0]}</span>
                       </div>
-                      <div className="mt-1 inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                      <div className="mt-1 inline-flex rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
                         {filteredAppts.filter(a => a.staffId === s.id && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate)).length} appts
                       </div>
                     </div>
@@ -1543,7 +1543,7 @@ export default function Calendar() {
               return (
                 <div
                   key={ci}
-                  className="relative border-r last:border-r-0 transition-colors hover:bg-slate-50/35"
+                  className="relative border-r last:border-r-0 transition-colors hover:bg-muted/35"
                   style={{ height: GRID_HEIGHT, backgroundImage: "linear-gradient(to bottom, rgba(255,255,255,0.52), rgba(255,255,255,0.18))" }}
                   onDragOver={(e) => handleDragOverColumn(e, s.id)}
                   onDrop={(e) => handleDropOnColumn(e, s.id)}
@@ -1704,13 +1704,13 @@ export default function Calendar() {
     <DashboardLayout>
       <div className="flex min-h-0 flex-col gap-4 lg:h-[calc(100dvh-6.5rem)]">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/90 bg-white/70 px-3 py-3 shadow-lg shadow-[color-mix(in_oklch,var(--brand-primary)_8%,transparent)] backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/90 bg-card/70 px-3 py-3 shadow-lg shadow-[color-mix(in_oklch,var(--brand-primary)_8%,transparent)] backdrop-blur">
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" className="brand-lift bg-white/80" onClick={() => viewMode === "week" ? navigateWeek(-1) : navigateDay(-1)}>
+            <Button variant="outline" size="icon" className="brand-lift bg-card/80" onClick={() => viewMode === "week" ? navigateWeek(-1) : navigateDay(-1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" className="brand-lift bg-white/80 font-semibold" onClick={goToToday}>Today</Button>
-            <Button variant="outline" size="icon" className="brand-lift bg-white/80" onClick={() => viewMode === "week" ? navigateWeek(1) : navigateDay(1)}>
+            <Button variant="outline" size="sm" className="brand-lift bg-card/80 font-semibold" onClick={goToToday}>Today</Button>
+            <Button variant="outline" size="icon" className="brand-lift bg-card/80" onClick={() => viewMode === "week" ? navigateWeek(1) : navigateDay(1)}>
               <ChevronRight className="h-4 w-4" />
             </Button>
             <Popover open={showDatePicker} onOpenChange={setShowDatePicker}>
@@ -1749,7 +1749,7 @@ export default function Calendar() {
           <div className="flex items-center gap-2 flex-wrap">
             <Popover open={apptSearchOpen} onOpenChange={(open) => { setApptSearchOpen(open); if (!open) setApptSearchTerm(""); }}>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="brand-lift h-9 gap-1.5 bg-white/80 text-xs shadow-sm" title="Find any appointment by dog or client name">
+                <Button variant="outline" size="sm" className="brand-lift h-9 gap-1.5 bg-card/80 text-xs shadow-sm" title="Find any appointment by dog or client name">
                   <Search className="h-3.5 w-3.5 text-muted-foreground" />
                   Find appointment
                 </Button>
@@ -1815,7 +1815,7 @@ export default function Calendar() {
             </Popover>
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="brand-lift h-9 min-w-40 justify-start gap-1.5 bg-white/80 text-xs shadow-sm" title="Choose the staff columns shown on this calendar">
+                <Button variant="outline" size="sm" className="brand-lift h-9 min-w-40 justify-start gap-1.5 bg-card/80 text-xs shadow-sm" title="Choose the staff columns shown on this calendar">
                   <Filter className="h-3.5 w-3.5 text-muted-foreground" />
                   {visibleStaffIds === null ? "All staff" : `${visibleStaffIds.length} staff selected`}
                 </Button>
@@ -1845,7 +1845,7 @@ export default function Calendar() {
               </PopoverContent>
             </Popover>
             {/* View toggle */}
-            <div className="flex rounded-xl border border-primary/15 bg-white/80 p-1 shadow-sm">
+            <div className="flex rounded-xl border border-primary/15 bg-card/80 p-1 shadow-sm">
               <button
                 className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${viewMode === "week" ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-primary/10 hover:text-primary"}`}
                 onClick={() => setViewMode("week")}
@@ -1862,7 +1862,7 @@ export default function Calendar() {
                 setBlockoutForm(f => ({ ...f, blockoutDate: defaultDate }));
                 setShowBlockoutDialog(true);
               }}
-              size="sm" className="brand-lift gap-1.5 bg-white/80 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
+              size="sm" className="brand-lift gap-1.5 bg-card/80 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
               <Ban className="h-4 w-4" /> Block Out
             </Button>
             <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
@@ -2065,8 +2065,8 @@ export default function Calendar() {
                       );
                     })}
                   </div>
-                  {familyBookingCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 p-3"><p className="text-sm font-semibold text-violet-950">Include linked family dogs?</p><p className="mt-0.5 text-xs text-violet-800">These dogs are remembered as family-linked. Select any that should share this appointment.</p><div className="mt-2 flex flex-wrap gap-2">{familyBookingCompanions.map(pet => <Button key={pet.id} type="button" size="sm" variant="outline" className="border-violet-300 bg-white text-violet-900 hover:bg-violet-100" onClick={() => setNewAppt(prev => ({ ...prev, petIds: [...prev.petIds, String(pet.id)] }))}>+ {pet.name}</Button>)}</div></div>}
-                  {membershipCoverage.isFetching ? <p className="mt-3 text-xs text-muted-foreground">Checking membership coverage…</p> : membershipCoverage.data?.fullyCovered ? <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-950"><div><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{membershipCoverage.data.memberships.map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800">Every selected dog is covered for this service. Appointment price is $0.00 because payment is managed through the weekly membership.</p></div></div> : membershipCoverage.data && membershipCoverage.data.coveredPetIds.length > 0 ? <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-950"><Badge variant="outline" className="border-amber-300 bg-white text-amber-800">Partial membership coverage</Badge><p className="mt-1 text-xs text-amber-800">Only some selected dogs are covered for this service, so the appointment price remains available for review.</p></div> : null}
+                  {familyBookingCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 p-3"><p className="text-sm font-semibold text-violet-950">Include linked family dogs?</p><p className="mt-0.5 text-xs text-violet-800">These dogs are remembered as family-linked. Select any that should share this appointment.</p><div className="mt-2 flex flex-wrap gap-2">{familyBookingCompanions.map(pet => <Button key={pet.id} type="button" size="sm" variant="outline" className="border-violet-300 bg-card text-violet-900 hover:bg-violet-100" onClick={() => setNewAppt(prev => ({ ...prev, petIds: [...prev.petIds, String(pet.id)] }))}>+ {pet.name}</Button>)}</div></div>}
+                  {membershipCoverage.isFetching ? <p className="mt-3 text-xs text-muted-foreground">Checking membership coverage…</p> : membershipCoverage.data?.fullyCovered ? <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-950"><div><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{membershipCoverage.data.memberships.map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800">Every selected dog is covered for this service. Appointment price is $0.00 because payment is managed through the weekly membership.</p></div></div> : membershipCoverage.data && membershipCoverage.data.coveredPetIds.length > 0 ? <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-950"><Badge variant="outline" className="border-amber-300 bg-card text-amber-800">Partial membership coverage</Badge><p className="mt-1 text-xs text-amber-800">Only some selected dogs are covered for this service, so the appointment price remains available for review.</p></div> : null}
                   </>
                 )}
               </div>

@@ -18,7 +18,7 @@ const NEXT_STAGE: Record<string, { state: "checked_in" | "bathing" | "drying" | 
 };
 
 const STAGE_COLOURS: Record<string, string> = {
-  scheduled: "bg-slate-100 text-slate-700", checked_in: "bg-violet-100 text-violet-800", bathing: "bg-blue-100 text-blue-800",
+  scheduled: "bg-muted text-foreground", checked_in: "bg-violet-100 text-violet-800", bathing: "bg-blue-100 text-blue-800",
   drying: "bg-violet-100 text-violet-800", grooming: "bg-amber-100 text-amber-800", ready: "bg-emerald-100 text-emerald-800", complete: "bg-emerald-700 text-white",
 };
 
@@ -54,7 +54,7 @@ function GroomingCardPhotoUpload({ appointmentId, petId }: { appointmentId: numb
     <p className="text-xs font-semibold text-violet-950">Grooming card photos</p>
     <p className="mt-0.5 text-[11px] text-violet-800">Use your phone camera to add before and after photos for this assigned pet.</p>
     <div className="mt-2 grid grid-cols-2 gap-2">
-      {(["before", "after"] as const).map(position => <label key={position} className="flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-white px-2 text-xs font-semibold text-violet-800 active:scale-[0.98]">
+      {(["before", "after"] as const).map(position => <label key={position} className="flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-card px-2 text-xs font-semibold text-violet-800 active:scale-[0.98]">
         {position === "before" ? <Camera className="h-3.5 w-3.5" /> : <ImagePlus className="h-3.5 w-3.5" />}
         <span>{uploading === position ? "Uploading…" : `${position === "before" ? "Before" : "After"} photo`}</span>
         <Input className="sr-only" type="file" accept="image/*" capture="environment" disabled={uploading !== null || attachPhoto.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(position, file); event.currentTarget.value = ""; }} />
@@ -79,7 +79,7 @@ export default function StaffPortal() {
   if (user.role === "staff") { window.location.href = "/calendar"; return null; }
 
   return (
-    <main className="min-h-screen bg-slate-50 pb-10">
+    <main className="min-h-screen bg-muted pb-10">
       <IncomingCallAlert />
       <header className="bg-slate-950 text-white px-5 pt-6 pb-5 rounded-b-3xl shadow-lg">
         <div className="flex items-center justify-between gap-3">
@@ -90,17 +90,17 @@ export default function StaffPortal() {
       </header>
 
       <div className="max-w-xl mx-auto px-4 pt-5">
-        <div className="flex items-center justify-between mb-4"><div><p className="text-sm font-semibold text-slate-700">My appointments</p><p className="text-xs text-slate-500">View-only bookings · update workflow below</p></div><Button size="sm" variant="ghost" className="gap-1.5" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5" /> Refresh</Button></div>
-        {isLoading && <div className="py-16 text-center text-slate-500">Loading appointments…</div>}
+        <div className="flex items-center justify-between mb-4"><div><p className="text-sm font-semibold text-foreground">My appointments</p><p className="text-xs text-muted-foreground">View-only bookings · update workflow below</p></div><Button size="sm" variant="ghost" className="gap-1.5" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5" /> Refresh</Button></div>
+        {isLoading && <div className="py-16 text-center text-muted-foreground">Loading appointments…</div>}
         {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error.message}</div>}
-        {!isLoading && !error && (data?.appointments.length ?? 0) === 0 && <div className="rounded-2xl bg-white border p-10 text-center"><Dog className="h-9 w-9 text-violet-500 mx-auto mb-3" /><p className="font-semibold">No pets assigned today</p><p className="text-sm text-slate-500 mt-1">Your appointments will appear here when they are assigned to you.</p></div>}
+        {!isLoading && !error && (data?.appointments.length ?? 0) === 0 && <div className="rounded-2xl bg-card border p-10 text-center"><Dog className="h-9 w-9 text-violet-500 mx-auto mb-3" /><p className="font-semibold">No pets assigned today</p><p className="text-sm text-muted-foreground mt-1">Your appointments will appear here when they are assigned to you.</p></div>}
         <div className="space-y-3">
           {data?.appointments.map(appt => {
             const next = NEXT_STAGE[appt.workflowState ?? "scheduled"];
             const owner = `${appt.clientFirstName ?? ""} ${appt.clientLastName ?? ""}`.trim();
-            return <article key={appt.id} className="rounded-2xl border bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3"><div><p className="font-bold text-lg leading-tight">{appt.petName}</p><p className="text-sm text-slate-500">{owner}{appt.petBreed ? ` · ${appt.petBreed}` : ""}</p></div><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STAGE_COLOURS[appt.workflowState ?? "scheduled"]}`}>{(appt.workflowState ?? "scheduled").replace("_", " ")}</span></div>
-              <div className="mt-3 flex items-center gap-2 text-sm"><CalendarDays className="h-4 w-4 text-slate-400" /><span>{formatTime(appt.scheduledStart)}{appt.serviceType ? ` · ${appt.serviceType}` : ""}</span></div>
+            return <article key={appt.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3"><div><p className="font-bold text-lg leading-tight">{appt.petName}</p><p className="text-sm text-muted-foreground">{owner}{appt.petBreed ? ` · ${appt.petBreed}` : ""}</p></div><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STAGE_COLOURS[appt.workflowState ?? "scheduled"]}`}>{(appt.workflowState ?? "scheduled").replace("_", " ")}</span></div>
+              <div className="mt-3 flex items-center gap-2 text-sm"><CalendarDays className="h-4 w-4 text-muted-foreground" /><span>{formatTime(appt.scheduledStart)}{appt.serviceType ? ` · ${appt.serviceType}` : ""}</span></div>
               {appt.notes && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{appt.notes}</p>}
               <div className="mt-4">{next ? <Button className="w-full gap-1" disabled={updateStage.isPending} onClick={() => updateStage.mutate({ appointmentId: appt.id, workflowState: next.state })}>{next.label}<ChevronRight className="h-4 w-4" /></Button> : <Button className="w-full" disabled variant="secondary">Completed</Button>}</div>
               <GroomingCardPhotoUpload appointmentId={appt.id} petId={appt.petId} />
