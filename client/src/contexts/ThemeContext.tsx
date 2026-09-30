@@ -3,10 +3,12 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 /**
  * Light / dark / follow-the-system, for the whole platform.
  *
- * Three states, not two. "system" is the default because a groomer who has
- * their iPad on night mode expects the salon app to be dark too, and because
- * the one thing worse than no dark mode is one that ignores the device. An
- * explicit light or dark choice overrides it and is remembered per device.
+ * Three states, not two, but the DEFAULT IS LIGHT and dark is opted into.
+ * Following the device sounds better than it is here: the salon's staff have
+ * always seen a light board, and half of them would have arrived to a dark
+ * one purely because of a phone setting they made months ago for something
+ * else. "Match my device" is offered in the menu for anyone who wants it,
+ * and whatever is chosen is remembered per device.
  *
  * The class goes on <html> rather than a wrapper div so that portalled UI -
  * dialogs, popovers, dropdowns, toasts - is inside it. Radix renders those at
@@ -39,20 +41,21 @@ const systemTheme = (): ResolvedTheme =>
     ? "dark"
     : "light";
 
-function readStored(): ThemeChoice {
+/** The saved choice, or null when the person has never picked one. */
+function readStored(): ThemeChoice | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") return stored;
   } catch {
-    // Private browsing, or storage blocked. Following the system is a fine
-    // default and beats refusing to render.
+    // Private browsing, or storage blocked. Fall back to the default rather
+    // than refusing to render.
   }
-  return "system";
+  return null;
 }
 
 export function ThemeProvider({
   children,
-  defaultTheme = "system",
+  defaultTheme = "light",
 }: {
   children: React.ReactNode;
   defaultTheme?: ThemeChoice;

@@ -16,9 +16,12 @@
       (function () {
         try {
           var stored = localStorage.getItem("gsos-theme");
+          // No stored choice means light, matching ThemeProvider's default.
+          // If this said "follow the device" the page would paint dark and
+          // then snap to light a moment later, which is worse than either.
           var dark =
             stored === "dark" ||
-            ((!stored || stored === "system") &&
+            (stored === "system" &&
               window.matchMedia &&
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (dark) {
