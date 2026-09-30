@@ -49,15 +49,16 @@ describe("staff activity audit timestamps", () => {
     expect(routerSource).toContain("appointmentId: staffAccessEvents.appointmentId");
   });
 
-  it("provides administrator audit filters, chronological sort, review highlighting and a filtered CSV export", () => {
+  it("provides administrator audit filters, chronological sort and a filtered CSV export", () => {
     expect(staffSource).toContain('const [activitySearch, setActivitySearch] = useState("")');
     expect(staffSource).toContain('const [activityType, setActivityType] = useState("all")');
     expect(staffSource).toContain('const [activityScope, setActivityScope] = useState<"selected_dates" | "all_time">("selected_dates")');
     expect(staffSource).toContain('const [activitySort, setActivitySort] = useState<"newest" | "oldest">("newest")');
     expect(staffSource).toContain("const filteredActivity = accessHistory");
-    expect(staffSource).toContain("const reviewFindingsForActivity");
-    expect(staffSource).toContain("Timing review trigger");
-    expect(staffSource).toContain("Triggered review details");
+    // The timing-review highlighting was removed from this feed on request:
+    // the thresholds produced noise, and an amber row read as a fault against
+    // the staff member rather than a question about the day. The audit trail
+    // itself - filters, sort, CSV - is unchanged and still asserted below.
     expect(staffSource).toContain("exportActivityCsv");
     expect(staffSource).toContain("groomigo-${staffNameForFile}-activity-audit.csv");
     expect(staffSource).toContain("No staff activity matches these filters.");

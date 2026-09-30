@@ -223,39 +223,12 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {timingReviewAlerts && timingReviewAlerts.length > 0 && (
-          <Card className="border-amber-300 bg-gradient-to-r from-amber-50 via-white to-white">
-            <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold text-amber-900">
-                <Clock className="h-4 w-4" />
-                {timingReviewAlerts.length} Workflow Timing Review{timingReviewAlerts.length === 1 ? "" : "s"} Open
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <p className="mb-3 text-xs text-amber-900">Completed workflow stages that exceeded the configured review trigger.</p>
-              <div className="space-y-2">
-                {timingReviewAlerts.slice(0, 3).map((alert) => (
-                  <div key={`${alert.appointmentId}-${alert.key}-${alert.staffId}`} className="flex flex-col justify-between gap-2 rounded-lg border border-amber-200 bg-white/85 p-2.5 sm:flex-row sm:items-center">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900">{alert.staffName} · {alert.petName} <span className="font-normal text-slate-500">· {alert.clientName}</span></p>
-                      <p className="text-xs text-amber-900">{alert.stage}: {alert.durationMinutes} min, above the {alert.thresholdMinutes}-minute trigger <span className="text-slate-500">({alert.thresholdSource})</span></p>
-                    </div>
-                    <Link href={`/staff/review/${alert.staffId}?date=${alert.date}`}>
-                      <Button size="sm" variant="outline" className="shrink-0 gap-1 border-amber-300 text-amber-900 hover:bg-amber-100">
-                        Review <ArrowRight className="h-3.5 w-3.5" />
-                      </Button>
-                    </Link>
-                  </div>
-                ))}
-              </div>
-              {timingReviewAlerts.length > 3 && (
-                <Link href="/workflow">
-                  <Button variant="ghost" size="sm" className="mt-3 gap-1 text-amber-900">View all <ArrowRight className="h-3 w-3" /></Button>
-                </Link>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        {/* The timing-review alert card sat here. Removed with the rest
+            of the review feature: threshold alerts were noise, and naming a
+            staff member beside an amber warning read as a fault rather than
+            a question. The per-stage timing is still recorded, and
+            shared/stageDurations.ts now derives the WAIT between stages too,
+            which is the number that tells capacity apart from training. */}
 
         {/* Schedule + Workflow two-column */}
         <div className="grid grid-cols-1 lg:grid-cols-[1.85fr_1fr] gap-3.5">

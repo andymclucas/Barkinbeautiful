@@ -114,15 +114,15 @@ describe("workflow timing review and staff analytics", () => {
     expect(staffSource).toContain("No completed workflow timings were recorded in this period.");
     expect(staffSource).toContain("<BarChart");
     expect(staffSource).toContain('dataKey="totalAverageMinutes"');
-    expect(staffSource).toContain("Timing exceptions requiring review");
-    expect(staffSource).toContain("Recommended action:");
-    expect(staffSource).toContain("Review booking");
-    expect(staffSource).toContain("reviewAppointment=${finding.appointmentId}");
-    expect(workflowSource).toContain("workflow-appointment-${reviewAppointmentId}");
-    expect(workflowSource).toContain("data-review-focused");
-    expect(dashboardSource).toContain("trpc.workflowReview.getAlerts.useQuery");
-    expect(dashboardSource).toContain("Workflow Timing Review");
-    expect(dashboardSource).toContain("/staff/review/${alert.staffId}?date=${alert.date}");
+    // The review feature - threshold alerts, "recommended action", the amber
+    // dashboard card - was removed on request. The TIMING it was built on is
+    // untouched and still asserted above: per-stage averages, the daily trend
+    // chart and the CSV export all remain. shared/stageDurations.ts now also
+    // derives the WAIT between stages, which is the measure that was missing.
+    expect(staffSource).not.toContain("Timing exceptions requiring review");
+    expect(staffSource).not.toContain("Triggered review details");
+    expect(dashboardSource).not.toContain("Workflow Timing Review");
+    expect(dashboardSource).not.toContain("/staff/review/${alert.staffId}");
     expect(settingsSource).toContain("Workflow timing review triggers");
     expect(settingsSource).toContain("Pet-size preset");
     expect(settingsSource).toContain("Breed override");
