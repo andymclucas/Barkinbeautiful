@@ -11,6 +11,7 @@ import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { BATH_PRIORITY_META, buildBathPriorityQueue } from "@shared/bathPriorityQueue";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { useDisplayTheme } from "@/lib/displayTheme";
+import { useTheme } from "@/contexts/ThemeContext";
 import { WorkflowBoardTable } from "@/components/WorkflowBoardTable";
 import { getActiveTimeZone } from "@/lib/timezone";
 
@@ -61,11 +62,12 @@ export default function WorkflowDisplay() {
   // (loading, signed out, no board) that all need the theme, and index.css
   // defines the variant as `&:is(.dark *)` — a descendant selector.
   const { theme, toggle: toggleTheme, isDark } = useDisplayTheme();
+  const { setDarkSurface } = useTheme();
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-    return () => root.classList.remove("dark");
-  }, [theme]);
+    if (theme !== "dark") return;
+    setDarkSurface(true);
+    return () => setDarkSurface(false);
+  }, [theme, setDarkSurface]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [boardDate, setBoardDate] = useState(() => new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10));
   const { data: boardData, refetch, isFetching, isLoading: isBoardLoading, isError } = trpc.workflow.getBoard.useQuery(
@@ -239,7 +241,7 @@ export default function WorkflowDisplay() {
         </div>
       </header>
 
-      <aside className="mb-5 flex items-center gap-3 rounded-xl border border-violet-200 dark:border-violet-300/20 bg-violet-50 dark:bg-violet-400/5 px-3 py-2.5" aria-label="TV display QR access">
+      <aside className="mb-5 flex items-center gap-3 rounded-xl border border-violet-200 dark:border-violet-300/20 dark:border-violet-800/20 bg-violet-50 dark:bg-violet-400/5 px-3 py-2.5" aria-label="TV display QR access">
         <div className="rounded-lg bg-white p-1.5"><QRCodeSVG value={displayUrl} size={78} level="M" includeMargin={false} /></div>
         <div>
           <p className="text-sm font-bold text-violet-800 dark:text-violet-100">Scan to open TV display</p>
@@ -272,7 +274,7 @@ export default function WorkflowDisplay() {
         </div>
       </section>
 
-      {bathQueue.length > 0 && <section className="mb-5 rounded-xl border border-violet-200 dark:border-violet-300/20 bg-violet-50 dark:bg-violet-400/5 px-4 py-3" aria-label="Bathing priority queue"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold text-violet-800 dark:text-violet-100">Bath queue</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Priority guides bathing order without changing the scheduled workflow.</p></div><span className="rounded-full bg-violet-400 px-2 py-0.5 text-[10px] font-black text-slate-950">1 = NEXT</span></div><div className="mt-2 flex flex-wrap gap-2">{bathQueue.map((item) => { const meta = BATH_PRIORITY_META[item.priority]; return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} className="flex items-center gap-1.5 rounded-lg border bg-white dark:bg-slate-950/50 px-2.5 py-1.5 text-xs" style={{ borderColor: meta.colour }}><span className="flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-black text-slate-900 dark:text-white" style={{ background: meta.colour }}>{item.priority}</span><span className="font-semibold text-slate-900 dark:text-white">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-200">together</span>}</div>; })}</div></section>}
+      {bathQueue.length > 0 && <section className="mb-5 rounded-xl border border-violet-200 dark:border-violet-300/20 dark:border-violet-800/20 bg-violet-50 dark:bg-violet-400/5 px-4 py-3" aria-label="Bathing priority queue"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold text-violet-800 dark:text-violet-100">Bath queue</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Priority guides bathing order without changing the scheduled workflow.</p></div><span className="rounded-full bg-violet-400 px-2 py-0.5 text-[10px] font-black text-slate-950">1 = NEXT</span></div><div className="mt-2 flex flex-wrap gap-2">{bathQueue.map((item) => { const meta = BATH_PRIORITY_META[item.priority]; return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} className="flex items-center gap-1.5 rounded-lg border bg-white dark:bg-slate-950/50 px-2.5 py-1.5 text-xs" style={{ borderColor: meta.colour }}><span className="flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-black text-slate-900 dark:text-white" style={{ background: meta.colour }}>{item.priority}</span><span className="font-semibold text-slate-900 dark:text-white">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-200">together</span>}</div>; })}</div></section>}
 
       <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         {STAGES.map(stage => (
@@ -295,8 +297,8 @@ export default function WorkflowDisplay() {
                 <h2 className="mt-3 text-4xl font-black text-slate-900 dark:text-white md:text-5xl">All dogs are complete</h2>
                 <p className="mt-3 max-w-xl text-lg text-slate-600 dark:text-slate-300">A great day’s work from the Barkin Beautiful team.</p>
                 <div className="mt-7 flex flex-wrap justify-center gap-3">
-                  <button type="button" onClick={() => setShowCompleted(true)} className="rounded-lg border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-800 dark:text-emerald-100 hover:bg-emerald-400/20">Review completed dogs</button>
-                  <button type="button" onClick={resetForTomorrow} className="rounded-lg border border-violet-300/30 bg-violet-400/10 px-4 py-2 text-sm font-semibold text-violet-800 dark:text-violet-100 hover:bg-violet-400/20">Reset for tomorrow</button>
+                  <button type="button" onClick={() => setShowCompleted(true)} className="rounded-lg border border-emerald-300/30 dark:border-emerald-800/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-800 dark:text-emerald-100 hover:bg-emerald-400/20">Review completed dogs</button>
+                  <button type="button" onClick={resetForTomorrow} className="rounded-lg border border-violet-300/30 dark:border-violet-800/30 bg-violet-400/10 px-4 py-2 text-sm font-semibold text-violet-800 dark:text-violet-100 hover:bg-violet-400/20">Reset for tomorrow</button>
                 </div>
               </div>
             ) : <div className="p-16 text-center text-slate-500 dark:text-slate-400">No dogs are currently on the workflow board.</div>

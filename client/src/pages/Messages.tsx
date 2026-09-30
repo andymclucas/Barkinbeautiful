@@ -25,14 +25,14 @@ const SMS_TEMPLATES = [
 ];
 
 const TYPE_COLOURS: Record<string, string> = {
-  reminder: "bg-blue-100 text-blue-700",
-  confirmation: "bg-emerald-100 text-emerald-700",
-  ready_pickup: "bg-emerald-100 text-emerald-700",
-  payment_failed: "bg-red-100 text-red-700",
-  tracker: "bg-blue-100 text-blue-700",
+  reminder: "bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300",
+  confirmation: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300",
+  ready_pickup: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300",
+  payment_failed: "bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300",
+  tracker: "bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300",
   custom: "bg-muted text-foreground",
-  campaign: "bg-violet-100 text-violet-700",
-  inbound: "bg-violet-100 text-violet-700",
+  campaign: "bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300",
+  inbound: "bg-violet-100 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300",
 };
 
 export default function Messages() {
@@ -326,9 +326,9 @@ export default function Messages() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { label: "Total Sent", value: stats.total, icon: MessageSquare, colour: "text-blue-600" },
-            { label: "Delivered", value: stats.sent, icon: CheckCircle2, colour: "text-emerald-600" },
-            { label: "Failed", value: stats.failed, icon: XCircle, colour: "text-red-600" },
+            { label: "Total Sent", value: stats.total, icon: MessageSquare, colour: "text-blue-600 dark:text-blue-400" },
+            { label: "Delivered", value: stats.sent, icon: CheckCircle2, colour: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Failed", value: stats.failed, icon: XCircle, colour: "text-red-600 dark:text-red-400" },
           ].map(s => (
             <Card key={s.label}>
               <CardContent className="p-4 flex items-center gap-3">
@@ -345,9 +345,9 @@ export default function Messages() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <PhoneMissed className="h-4 w-4 text-amber-600" /> Missed Calls
+              <PhoneMissed className="h-4 w-4 text-amber-600 dark:text-amber-400" /> Missed Calls
               {missedCallsList && missedCallsList.filter(c => !c.readAt).length > 0 && (
-                <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                <Badge className="bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:bg-amber-950/50">
                   {missedCallsList.filter(c => !c.readAt).length} unread
                 </Badge>
               )}
@@ -361,9 +361,9 @@ export default function Messages() {
               const renderCall = (call: typeof missedCallsList[0]) => (
                 <div
                   key={call.id}
-                  className={`flex items-start gap-3 rounded-lg border p-3 ${call.readAt ? "bg-background" : "bg-amber-50/60 border-amber-200"}`}
+                  className={`flex items-start gap-3 rounded-lg border p-3 ${call.readAt ? "bg-background" : "bg-amber-50/60 dark:bg-amber-950/60 border-amber-200 dark:border-amber-900/50"}`}
                 >
-                  <Phone className={`h-4 w-4 mt-0.5 shrink-0 ${call.readAt ? "text-muted-foreground" : "text-amber-600"}`} />
+                  <Phone className={`h-4 w-4 mt-0.5 shrink-0 ${call.readAt ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400"}`} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
@@ -372,7 +372,7 @@ export default function Messages() {
                           {(call.petNames as string[] | undefined)?.length ? ` (${(call.petNames as string[]).join(" & ")})` : ""}
                         </span>
                         {call.recordingUrl && (
-                          <span className="inline-flex items-center gap-0.5 shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                          <span className="inline-flex items-center gap-0.5 shrink-0 rounded-full bg-violet-100 dark:bg-violet-950/50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300">
                             <Mic className="h-2.5 w-2.5" /> Voicemail
                           </span>
                         )}
@@ -409,7 +409,7 @@ export default function Messages() {
                     {/* Only allow deletion when there is no voicemail recording */}
                     {!call.recordingUrl && (
                       <button
-                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-muted-foreground hover:text-red-600"
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 dark:bg-red-950/50 text-muted-foreground hover:text-red-600 dark:text-red-400"
                         title="Delete this missed call"
                         onClick={() => {
                           if (confirm("Delete this missed call? This can't be undone.")) {
@@ -437,7 +437,7 @@ export default function Messages() {
                       >
                         {showArchivedCalls ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         {archived.length} archived {archived.length === 1 ? "call" : "calls"}
-                        {archived.some(c => c.recordingUrl) && <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700"><Mic className="h-2.5 w-2.5" /> with voicemails</span>}
+                        {archived.some(c => c.recordingUrl) && <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 dark:bg-violet-950/50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:text-violet-300"><Mic className="h-2.5 w-2.5" /> with voicemails</span>}
                       </button>
                       {showArchivedCalls && <div className="space-y-2 pt-1">{archived.map(renderCall)}</div>}
                     </>
@@ -502,7 +502,7 @@ export default function Messages() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 dark:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                       disabled={deleteThreadMutation.isPending}
                       aria-label="Delete conversation"
                       onClick={(e) => {
@@ -536,18 +536,18 @@ export default function Messages() {
           </CardContent>
         </Card>
 
-        <Card className="border-blue-200 bg-blue-50/50">
+        <Card className="border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/50">
           <CardContent className="p-4 flex items-start gap-3">
-            <Clock className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+            <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
             <div>
-              <div className="font-medium text-sm text-blue-900">Automated Appointment Reminders</div>
-              <p className="text-xs text-blue-700 mt-1">
+              <div className="font-medium text-sm text-blue-900 dark:text-blue-200">Automated Appointment Reminders</div>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
                 Three-stage reminders are ready: 4 days before, 2 days before, and the morning of each appointment.
                 Each stage sends once per appointment and will only send after the salon explicitly enables live SMS automation.
               </p>
               <div className="mt-2 flex items-center gap-2">
-                <Badge className="bg-blue-100 text-blue-700 text-xs">SMS_AUTOMATION_ENABLED</Badge>
-                <span className="text-xs text-blue-600">Set this environment variable to "true" in Render when you're ready to turn on automated reminders</span>
+                <Badge className="bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-xs">SMS_AUTOMATION_ENABLED</Badge>
+                <span className="text-xs text-blue-600 dark:text-blue-400">Set this environment variable to "true" in Render when you're ready to turn on automated reminders</span>
               </div>
             </div>
           </CardContent>
@@ -574,14 +574,14 @@ export default function Messages() {
           </CardContent>
         </Card>
 
-        <Card className="border-amber-200 bg-amber-50/40">
+        <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/40">
           <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle className="text-sm font-semibold">Inbound Reply Review Queue</CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">Replies never alter a booking until a staff member reviews and explicitly applies the recognised intent.</p>
               </div>
-              <Badge className="bg-amber-100 text-amber-800 text-xs">{pendingInboundReplies.length} awaiting review</Badge>
+              <Badge className="bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 text-xs">{pendingInboundReplies.length} awaiting review</Badge>
             </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
@@ -590,16 +590,16 @@ export default function Messages() {
             ) : (
               <div className="space-y-2">
                 {pendingInboundReplies.map((log: any) => (
-                  <div key={log.id} className="flex flex-col gap-3 border-b border-amber-100 pb-3 last:border-0 last:pb-0 md:flex-row md:items-center md:justify-between">
+                  <div key={log.id} className="flex flex-col gap-3 border-b border-amber-100 dark:border-amber-950/50 pb-3 last:border-0 last:pb-0 md:flex-row md:items-center md:justify-between">
                     <div className="min-w-0">
                       <div className="text-sm font-medium">{log.clientName || log.toNumber} <span className="font-normal text-muted-foreground">replied “{log.body}”</span></div>
                       <div className="mt-1 text-xs text-muted-foreground">Booking: {appointmentContext(log)}</div>
-                      <div className="mt-1 text-xs font-medium text-amber-800">Recognised intent: {log.replyIntent}</div>
+                      <div className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-300">Recognised intent: {log.replyIntent}</div>
                     </div>
                     <Button
                       variant="outline"
                       size="sm"
-                      className={log.replyIntent === "cancel" ? "text-red-700" : "text-emerald-700"}
+                      className={log.replyIntent === "cancel" ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}
                       disabled={reviewInboundMutation.isPending}
                       onClick={() => reviewInboundMutation.mutate({ tenantId: 1, smsLogId: log.id, action: log.replyIntent })}
                     >
@@ -650,7 +650,7 @@ export default function Messages() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs text-red-600 hover:text-red-700"
+                    className="h-8 text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:text-red-300"
                     disabled={clearFailedMutation.isPending}
                     onClick={() => {
                       if (confirm("Delete all failed messages? This can't be undone.")) {
@@ -687,16 +687,16 @@ export default function Messages() {
                         {log.sentAt ? new Date(log.sentAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—"}
                       </td>
                       <td className="py-2.5 text-xs">
-                        <div>{log.clientName || log.toNumber}{log.direction === "inbound" && <span className="ml-1 text-violet-700">(reply)</span>}</div>
+                        <div>{log.clientName || log.toNumber}{log.direction === "inbound" && <span className="ml-1 text-violet-700 dark:text-violet-300">(reply)</span>}</div>
                         {log.clientName && <div className="text-muted-foreground">{log.toNumber}</div>}
                       </td>
                       <td className="py-2.5">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLOURS[log.type] ?? "bg-muted text-foreground"}`}>{log.type.replace(/_/g, " ")}</span>
                         {log.direction === "inbound" && log.replyIntent && log.replyIntent !== "unknown" && !log.processedAt && (
-                          <div className="mt-1 text-[10px] font-medium text-amber-700">Review required: {log.replyIntent}</div>
+                          <div className="mt-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">Review required: {log.replyIntent}</div>
                         )}
                         {log.direction === "inbound" && log.appointmentId && <div className="mt-1 text-[10px] text-muted-foreground">{appointmentContext(log)}</div>}
-                        {log.direction === "inbound" && log.processedAt && <div className="mt-1 text-[10px] text-emerald-700">Reviewed: {log.reviewAction}{log.reviewerName ? ` by ${log.reviewerName}` : ""}</div>}
+                        {log.direction === "inbound" && log.processedAt && <div className="mt-1 text-[10px] text-emerald-700 dark:text-emerald-300">Reviewed: {log.reviewAction}{log.reviewerName ? ` by ${log.reviewerName}` : ""}</div>}
                       </td>
                       <td className="py-2.5 text-xs max-w-xs">
                         <div className="truncate text-muted-foreground" title={log.body}>{log.body}</div>
@@ -706,29 +706,29 @@ export default function Messages() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className={`h-7 text-xs ${log.replyIntent === "cancel" ? "text-red-700" : "text-emerald-700"}`}
+                            className={`h-7 text-xs ${log.replyIntent === "cancel" ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`}
                             disabled={reviewInboundMutation.isPending || !log.appointmentId}
                             onClick={() => reviewInboundMutation.mutate({ tenantId: 1, smsLogId: log.id, action: log.replyIntent })}
                           >
                             {log.replyIntent === "confirm" ? "Confirm appointment" : "Cancel booking"}
                           </Button>
                         ) : log.status === "delivered" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Delivered</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> Delivered</span>
                         ) : log.status === "sent" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Sent</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" /> Sent</span>
                         ) : log.status === "received" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-violet-600"><MessageSquare className="h-3.5 w-3.5" /> Received</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400"><MessageSquare className="h-3.5 w-3.5" /> Received</span>
                         ) : log.status === "failed" ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-red-600"><XCircle className="h-3.5 w-3.5" /> Failed</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400"><XCircle className="h-3.5 w-3.5" /> Failed</span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs text-amber-600"><Clock className="h-3.5 w-3.5" /> Pending</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><Clock className="h-3.5 w-3.5" /> Pending</span>
                         )}
                       </td>
                       <td className="py-2.5 text-right">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-red-600"
+                          className="h-7 w-7 text-muted-foreground hover:text-red-600 dark:text-red-400"
                           disabled={deleteMessageMutation.isPending}
                           onClick={() => deleteMessageMutation.mutate({ id: log.id, tenantId: 1 })}
                           aria-label="Delete message"
@@ -861,7 +861,7 @@ export default function Messages() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600"
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600 dark:text-red-400"
               disabled={deleteThreadMutation.isPending}
               aria-label="Delete conversation"
               onClick={() => {

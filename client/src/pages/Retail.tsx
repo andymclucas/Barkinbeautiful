@@ -34,11 +34,11 @@ export default function Retail() {
         </div>
 
         {lowStock.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-xl p-4 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-amber-800">Low Stock Alert</p>
-              <p className="text-xs text-amber-700 mt-0.5">{lowStock.map(p => p.name).join(", ")} need reordering.</p>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Low Stock Alert</p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">{lowStock.map(p => p.name).join(", ")} need reordering.</p>
             </div>
           </div>
         )}
@@ -79,13 +79,13 @@ export default function Retail() {
                   <td className="p-3 hidden md:table-cell text-muted-foreground">{p.category ?? "—"}</td>
                   <td className="p-3 text-right font-medium">${p.priceAud}</td>
                   <td className="p-3 text-right">
-                    <span className={p.stockQty <= p.reorderThreshold ? "text-amber-600 font-semibold" : "font-medium"}>{p.stockQty}</span>
+                    <span className={p.stockQty <= p.reorderThreshold ? "text-amber-600 dark:text-amber-400 font-semibold" : "font-medium"}>{p.stockQty}</span>
                   </td>
                   <td className="p-3 hidden lg:table-cell">
                     {p.stockQty <= p.reorderThreshold ? (
-                      <Badge className="bg-amber-100 text-amber-800 text-xs">Low Stock</Badge>
+                      <Badge className="bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 text-xs">Low Stock</Badge>
                     ) : (
-                      <Badge className="bg-emerald-100 text-emerald-800 text-xs">In Stock</Badge>
+                      <Badge className="bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 text-xs">In Stock</Badge>
                     )}
                   </td>
                 </tr>

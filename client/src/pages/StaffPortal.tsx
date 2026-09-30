@@ -18,8 +18,8 @@ const NEXT_STAGE: Record<string, { state: "checked_in" | "bathing" | "drying" | 
 };
 
 const STAGE_COLOURS: Record<string, string> = {
-  scheduled: "bg-muted text-foreground", checked_in: "bg-violet-100 text-violet-800", bathing: "bg-blue-100 text-blue-800",
-  drying: "bg-violet-100 text-violet-800", grooming: "bg-amber-100 text-amber-800", ready: "bg-emerald-100 text-emerald-800", complete: "bg-emerald-700 text-white",
+  scheduled: "bg-muted text-foreground", checked_in: "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300", bathing: "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300",
+  drying: "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300", grooming: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300", ready: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300", complete: "bg-emerald-700 text-white",
 };
 
 function formatTime(value: Date | string | number) {
@@ -50,11 +50,11 @@ function GroomingCardPhotoUpload({ appointmentId, petId }: { appointmentId: numb
       setUploading(null);
     }
   };
-  return <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/40 p-3">
+  return <div className="mt-3 rounded-xl border border-violet-100 dark:border-violet-950/50 bg-violet-50/40 dark:bg-violet-950/40 p-3">
     <p className="text-xs font-semibold text-violet-950">Grooming card photos</p>
-    <p className="mt-0.5 text-[11px] text-violet-800">Use your phone camera to add before and after photos for this assigned pet.</p>
+    <p className="mt-0.5 text-[11px] text-violet-800 dark:text-violet-300">Use your phone camera to add before and after photos for this assigned pet.</p>
     <div className="mt-2 grid grid-cols-2 gap-2">
-      {(["before", "after"] as const).map(position => <label key={position} className="flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-card px-2 text-xs font-semibold text-violet-800 active:scale-[0.98]">
+      {(["before", "after"] as const).map(position => <label key={position} className="flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-card px-2 text-xs font-semibold text-violet-800 dark:text-violet-300 active:scale-[0.98]">
         {position === "before" ? <Camera className="h-3.5 w-3.5" /> : <ImagePlus className="h-3.5 w-3.5" />}
         <span>{uploading === position ? "Uploading…" : `${position === "before" ? "Before" : "After"} photo`}</span>
         <Input className="sr-only" type="file" accept="image/*" capture="environment" disabled={uploading !== null || attachPhoto.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(position, file); event.currentTarget.value = ""; }} />
@@ -92,7 +92,7 @@ export default function StaffPortal() {
       <div className="max-w-xl mx-auto px-4 pt-5">
         <div className="flex items-center justify-between mb-4"><div><p className="text-sm font-semibold text-foreground">My appointments</p><p className="text-xs text-muted-foreground">View-only bookings · update workflow below</p></div><Button size="sm" variant="ghost" className="gap-1.5" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5" /> Refresh</Button></div>
         {isLoading && <div className="py-16 text-center text-muted-foreground">Loading appointments…</div>}
-        {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error.message}</div>}
+        {error && <div className="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-800 dark:text-red-300">{error.message}</div>}
         {!isLoading && !error && (data?.appointments.length ?? 0) === 0 && <div className="rounded-2xl bg-card border p-10 text-center"><Dog className="h-9 w-9 text-violet-500 mx-auto mb-3" /><p className="font-semibold">No pets assigned today</p><p className="text-sm text-muted-foreground mt-1">Your appointments will appear here when they are assigned to you.</p></div>}
         <div className="space-y-3">
           {data?.appointments.map(appt => {
@@ -101,7 +101,7 @@ export default function StaffPortal() {
             return <article key={appt.id} className="rounded-2xl border bg-card p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3"><div><p className="font-bold text-lg leading-tight">{appt.petName}</p><p className="text-sm text-muted-foreground">{owner}{appt.petBreed ? ` · ${appt.petBreed}` : ""}</p></div><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STAGE_COLOURS[appt.workflowState ?? "scheduled"]}`}>{(appt.workflowState ?? "scheduled").replace("_", " ")}</span></div>
               <div className="mt-3 flex items-center gap-2 text-sm"><CalendarDays className="h-4 w-4 text-muted-foreground" /><span>{formatTime(appt.scheduledStart)}{appt.serviceType ? ` · ${appt.serviceType}` : ""}</span></div>
-              {appt.notes && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{appt.notes}</p>}
+              {appt.notes && <p className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">{appt.notes}</p>}
               <div className="mt-4">{next ? <Button className="w-full gap-1" disabled={updateStage.isPending} onClick={() => updateStage.mutate({ appointmentId: appt.id, workflowState: next.state })}>{next.label}<ChevronRight className="h-4 w-4" /></Button> : <Button className="w-full" disabled variant="secondary">Completed</Button>}</div>
               <GroomingCardPhotoUpload appointmentId={appt.id} petId={appt.petId} />
             </article>;

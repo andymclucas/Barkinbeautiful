@@ -162,11 +162,11 @@ export default function Analytics() {
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Revenue", value: `$${(revenueStreams?.appointmentRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: TrendingUp, colour: "text-emerald-600" , detail: summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} completed appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : undefined },
-            { label: "Appointments", value: String(summary?.appointments ?? 0), icon: CalendarDays, colour: "text-blue-600" },
-            { label: "Active Clients", value: String(summary?.activeClients ?? 0), icon: Users, colour: "text-violet-600" },
-            { label: "Active Memberships", value: String(summary?.activeMemberships ?? 0), icon: CreditCard, colour: "text-amber-600" },
-            { label: "Avg Groom Cycle", value: groomInterval?.averageWeeks != null ? `${groomInterval.averageWeeks} wks` : "—", detail: groomInterval?.returningPetCount ? `${groomInterval.returningPetCount} repeat pets` : "completed visits only", icon: Scissors, colour: "text-red-600" },
+            { label: "Revenue", value: `$${(revenueStreams?.appointmentRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: TrendingUp, colour: "text-emerald-600 dark:text-emerald-400" , detail: summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} completed appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : undefined },
+            { label: "Appointments", value: String(summary?.appointments ?? 0), icon: CalendarDays, colour: "text-blue-600 dark:text-blue-400" },
+            { label: "Active Clients", value: String(summary?.activeClients ?? 0), icon: Users, colour: "text-violet-600 dark:text-violet-400" },
+            { label: "Active Memberships", value: String(summary?.activeMemberships ?? 0), icon: CreditCard, colour: "text-amber-600 dark:text-amber-400" },
+            { label: "Avg Groom Cycle", value: groomInterval?.averageWeeks != null ? `${groomInterval.averageWeeks} wks` : "—", detail: groomInterval?.returningPetCount ? `${groomInterval.returningPetCount} repeat pets` : "completed visits only", icon: Scissors, colour: "text-red-600 dark:text-red-400" },
           ].map(kpi => (
             <Card key={kpi.label}>
               <CardContent className="p-4">
@@ -184,13 +184,13 @@ export default function Analytics() {
         {/* Revenue Streams */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Appointment Revenue */}
-          <Card className="border-blue-200/50">
+          <Card className="border-blue-200/50 dark:border-blue-900/50">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Appointment Revenue</p>
                 <Scissors className="h-4 w-4 text-blue-500" />
               </div>
-              <p className="text-3xl font-bold text-blue-600">
+              <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">
                 ${(revenueStreams?.appointmentRevenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
@@ -201,13 +201,13 @@ export default function Analytics() {
           </Card>
 
           {/* Membership Revenue */}
-          <Card className="border-amber-200/50">
+          <Card className="border-amber-200/50 dark:border-amber-900/50">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Membership Run Rate</p>
                 <Heart className="h-4 w-4 text-amber-500" />
               </div>
-              <p className="text-3xl font-bold text-amber-600">
+              <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">
                 ${(revenueStreams?.membershipRunRateWeekly ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<span className="text-base font-medium text-muted-foreground">/wk</span>
               </p>
               <p className="text-xs text-muted-foreground mt-1">
@@ -218,13 +218,13 @@ export default function Analytics() {
           </Card>
 
           {/* Combined + Avg Ticket */}
-          <Card className="border-emerald-200/50">
+          <Card className="border-emerald-200/50 dark:border-emerald-900/50">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg Ticket</p>
                 <TrendingUp className="h-4 w-4 text-emerald-500" />
               </div>
-              <p className="text-3xl font-bold text-emerald-600">
+              <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
                 ${(revenueStreams?.avgTicket ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
@@ -263,15 +263,15 @@ export default function Analytics() {
               <div className="border-t pt-3 flex flex-wrap gap-6">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Total Weekly</p>
-                  <p className="text-xl font-bold text-emerald-600">${membershipBreakdown.totalWeeklyRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">${membershipBreakdown.totalWeeklyRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Monthly Estimate</p>
-                  <p className="text-xl font-bold text-emerald-600">${membershipBreakdown.totalMonthlyRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">${membershipBreakdown.totalMonthlyRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Annual Estimate</p>
-                  <p className="text-xl font-bold text-emerald-600">${(membershipBreakdown.totalWeeklyRevenue * 52).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">${(membershipBreakdown.totalWeeklyRevenue * 52).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
               </div>
             </CardContent>

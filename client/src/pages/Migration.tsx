@@ -11,9 +11,9 @@ import { getActiveTimeZone } from "@/lib/timezone";
 
 const STATUS_COLOURS: Record<string, string> = {
   pending: "bg-muted text-muted-foreground",
-  running: "bg-blue-100 text-blue-800",
-  completed: "bg-emerald-100 text-emerald-800",
-  failed: "bg-red-100 text-red-800",
+  running: "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300",
+  completed: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
+  failed: "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300",
 };
 
 export default function Migration() {
@@ -89,10 +89,10 @@ export default function Migration() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-2">
+                <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 rounded-lg p-4 text-sm text-blue-800 dark:text-blue-300 space-y-2">
                   <p className="font-semibold">CSV Format Requirements</p>
                   <p>Your CSV must include these column headers (case-insensitive):</p>
-                  <code className="block bg-blue-100 rounded p-2 text-xs font-mono">firstName, lastName, email, phone, moegoClientId</code>
+                  <code className="block bg-blue-100 dark:bg-blue-950/50 rounded p-2 text-xs font-mono">firstName, lastName, email, phone, moegoClientId</code>
                   <p className="text-xs">To export from MoeGo: Customer Centre → Export → Download CSV</p>
                 </div>
                 <div
@@ -105,7 +105,7 @@ export default function Migration() {
                 </div>
                 <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
                 {importing && (
-                  <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 rounded-lg p-3">
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
                     Processing import... this may take a moment for large files.
                   </div>
@@ -122,7 +122,7 @@ export default function Migration() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-4">
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+                <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg p-4 text-sm text-amber-800 dark:text-amber-300">
                   <p className="font-semibold flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> MoeGo API Access Required</p>
                   <p className="mt-1">MoeGo does not have a public API. Automated extraction requires your MoeGo login credentials and uses browser automation to export all data. This process typically takes 15–30 minutes for large accounts.</p>
                 </div>
@@ -166,7 +166,7 @@ export default function Migration() {
                       <td className="p-3 font-medium">#{j.id}</td>
                       <td className="p-3 text-muted-foreground">{j.type.replace("_", " ")}</td>
                       <td className="p-3 text-right">{j.processedRecords ?? "—"}</td>
-                      <td className="p-3 text-right">{j.errorCount ? <span className="text-red-600">{j.errorCount}</span> : "0"}</td>
+                      <td className="p-3 text-right">{j.errorCount ? <span className="text-red-600 dark:text-red-400">{j.errorCount}</span> : "0"}</td>
                       <td className="p-3">
                         <Badge className={`text-xs ${STATUS_COLOURS[j.status]}`}>{j.status}</Badge>
                       </td>

@@ -80,8 +80,8 @@ export default function PetTracker() {
         </div>
 
         {/* Current stage highlight */}
-        <div className={`rounded-2xl p-5 text-center ${isReady ? "bg-emerald-50 border-2 border-emerald-300" : "bg-primary/5 border-2 border-primary/20"}`}>
-          <p className={`text-lg font-bold font-display ${isReady ? "text-emerald-700" : "text-primary"}`}>
+        <div className={`rounded-2xl p-5 text-center ${isReady ? "bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-300 dark:border-emerald-800" : "bg-primary/5 border-2 border-primary/20"}`}>
+          <p className={`text-lg font-bold font-display ${isReady ? "text-emerald-700 dark:text-emerald-300" : "text-primary"}`}>
             {currentStage?.label}
           </p>
           <p className="text-sm text-muted-foreground mt-1">{currentStage?.desc}</p>

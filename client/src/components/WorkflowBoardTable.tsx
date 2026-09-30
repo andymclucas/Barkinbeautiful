@@ -170,8 +170,8 @@ function EditableNumber({ value, onSave, placeholder, min, max, label, tone, rea
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value ?? ""));
   const toneClasses = tone === "cage"
-    ? "border-blue-300 bg-blue-100/90 text-blue-950 hover:bg-blue-200 focus:border-blue-600 focus:ring-blue-300"
-    : "border-violet-300 bg-violet-100/90 text-violet-950 hover:bg-violet-200 focus:border-violet-600 focus:ring-violet-300";
+    ? "border-blue-300 dark:border-blue-800 bg-blue-100/90 dark:bg-blue-950/90 text-blue-950 hover:bg-blue-200 dark:bg-blue-900/50 focus:border-blue-600 focus:ring-blue-300"
+    : "border-violet-300 dark:border-violet-800 bg-violet-100/90 dark:bg-violet-950/90 text-violet-950 hover:bg-violet-200 dark:bg-violet-900/50 focus:border-violet-600 focus:ring-violet-300";
   // The TV board shows the same cage and tag numbers in the same coloured pill,
   // just without the click target — a wall display has nobody to click it.
   if (readOnly) {
@@ -274,7 +274,7 @@ function BathPriorityCell({ value, coordinated, onSave, onManageGroup, disabled,
           {value ?? "Queue"}
         </div>
         {coordinated && (
-          <div className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800">
+          <div className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 dark:border-violet-900/50 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800 dark:text-violet-300">
             <Link2 className="h-2.5 w-2.5" /> Together
           </div>
         )}
@@ -292,7 +292,7 @@ function BathPriorityCell({ value, coordinated, onSave, onManageGroup, disabled,
           {BATH_PRIORITY_VALUES.map((priority) => <SelectItem key={priority} value={String(priority)}><span className="inline-flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white" style={{ background: BATH_PRIORITY_META[priority].colour }}>{priority}</span>{BATH_PRIORITY_META[priority].label}</span></SelectItem>)}
         </SelectContent>
       </Select>
-      <button type="button" onClick={onManageGroup} disabled={disabled} className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60" title="Coordinate one bathing priority across selected dogs">
+      <button type="button" onClick={onManageGroup} disabled={disabled} className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 dark:border-violet-900/50 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:bg-violet-950/50 disabled:cursor-not-allowed disabled:opacity-60" title="Coordinate one bathing priority across selected dogs">
         <Link2 className="h-2.5 w-2.5" /> {coordinated ? "Together" : "Group dogs"}
       </button>
     </div>
@@ -441,8 +441,8 @@ export function WorkflowBoardTable({
                 const timerWarn = stageMinutes !== null && stageMinutes >= 30 && stageMinutes < 60;
                 const isReviewFocused = hasReviewAppointmentFocus && appt.id === reviewAppointmentId;
                 const rowBg = isComplete ? "bg-muted opacity-60"
-                  : timerAlert ? "bg-red-50/40"
-                  : timerWarn ? "bg-amber-50/30"
+                  : timerAlert ? "bg-red-50/40 dark:bg-red-950/40"
+                  : timerWarn ? "bg-amber-50/30 dark:bg-amber-950/30"
                   : idx % 2 === 0 ? "bg-card" : "bg-muted/50";
 
                 return (
@@ -450,7 +450,7 @@ export function WorkflowBoardTable({
                     key={appt.id}
                     id={`workflow-appointment-${appt.id}`}
                     data-review-focused={isReviewFocused ? "true" : undefined}
-                    className={`${rowBg} ${isReviewFocused ? "bg-amber-100/80 shadow-[inset_0_0_0_2px_rgb(245_158_11)]" : ""} border-t transition-colors ${readOnly ? "" : "hover:bg-primary/5 cursor-grab active:cursor-grabbing"}`}
+                    className={`${rowBg} ${isReviewFocused ? "bg-amber-100/80 dark:bg-amber-950/80 shadow-[inset_0_0_0_2px_rgb(245_158_11)]" : ""} border-t transition-colors ${readOnly ? "" : "hover:bg-primary/5 cursor-grab active:cursor-grabbing"}`}
                     draggable={!readOnly}
                     onDragStart={readOnly ? undefined : () => { dragApptId.current = appt.id; }}
                     onDragEnd={readOnly ? undefined : () => { dragApptId.current = null; }}
@@ -461,7 +461,7 @@ export function WorkflowBoardTable({
                         {fmtTime(appt.scheduledStart)}
                       </span>
                       {appt.checkedInAt && (
-                        <div className="text-[10px] text-violet-600 font-mono">In {fmtTime(appt.checkedInAt)}</div>
+                        <div className="text-[10px] text-violet-600 dark:text-violet-400 font-mono">In {fmtTime(appt.checkedInAt)}</div>
                       )}
                       {totalMinutes !== null && (
                         <div className="text-[10px] font-mono text-muted-foreground" title="Total time in salon">
@@ -471,7 +471,7 @@ export function WorkflowBoardTable({
                     </td>
 
                     {/* Cage # */}
-                    <td className="px-1 py-1.5 bg-blue-50/90 border-x border-blue-200/80">
+                    <td className="px-1 py-1.5 bg-blue-50/90 dark:bg-blue-950/90 border-x border-blue-200/80 dark:border-blue-900/80">
                       <EditableNumber
                         value={appt.cageNumber}
                         onSave={v => update(appt.id, { cageNumber: v })}
@@ -485,7 +485,7 @@ export function WorkflowBoardTable({
                     </td>
 
                     {/* Tag # */}
-                    <td className="px-1 py-1.5 bg-violet-50/90 border-r border-violet-200/80">
+                    <td className="px-1 py-1.5 bg-violet-50/90 dark:bg-violet-950/90 border-r border-violet-200/80 dark:border-violet-900/80">
                       <EditableNumber
                         value={appt.tagNumber}
                         onSave={v => update(appt.id, { tagNumber: v })}
@@ -604,7 +604,7 @@ export function WorkflowBoardTable({
                                   <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors ${familyFilter === familyGroupId ? "bg-violet-800 text-white ring-2 ring-violet-400" : "bg-violet-600 text-white group-hover:bg-violet-700"}`}><Link2 className="h-3.5 w-3.5" /></span>
                                 </button>
                                 {!readOnly && <button
-                                  className="inline-flex h-5 w-5 items-center justify-center rounded text-violet-500 hover:bg-violet-100 hover:text-violet-700 transition-colors"
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded text-violet-500 hover:bg-violet-100 dark:bg-violet-950/50 hover:text-violet-700 dark:text-violet-300 transition-colors"
                                   title={`${familyTooltip}. Manage or unlink this dog`}
                                   aria-label={`Manage or unlink ${appt.petName} from family: ${linkedPetNames.join(", ")}`}
                                   onClick={() => { setFamilyLinkPopup({ apptId: appt.id, petId: appt.petId, petName: appt.petName ?? "", petFamilyGroupId: familyGroupId ?? null }); setFamilySearch(""); }}
@@ -634,7 +634,7 @@ export function WorkflowBoardTable({
                     {/* Membership */}
                     <td className="px-2 py-1.5 text-center">
                       {appt.membershipId ? (
-                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold border border-amber-300" title="Member">M</span>
+                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-[10px] font-bold border border-amber-300 dark:border-amber-800" title="Member">M</span>
                       ) : (
                         <span className="text-slate-300 text-xs">—</span>
                       )}
@@ -659,7 +659,7 @@ export function WorkflowBoardTable({
                     </td>
 
                     {/* Bath */}
-                    <td className="px-1 py-1.5 bg-blue-50/50">
+                    <td className="px-1 py-1.5 bg-blue-50/50 dark:bg-blue-950/50">
                       <StaffCell
                         value={appt.bathStaffId}
                         staffList={bathers}
@@ -670,7 +670,7 @@ export function WorkflowBoardTable({
                     </td>
 
                     {/* Bath priority */}
-                    <td className="px-1 py-1.5 bg-violet-50/80 border-x border-violet-100">
+                    <td className="px-1 py-1.5 bg-violet-50/80 dark:bg-violet-950/80 border-x border-violet-100 dark:border-violet-950/50">
                       <BathPriorityCell
                         value={appt.bathPriority}
                         coordinated={Boolean(bathQueueItem?.isCoordinatedBooking)}
@@ -687,7 +687,7 @@ export function WorkflowBoardTable({
                     </td>
 
                     {/* Dry */}
-                    <td className="px-1 py-1.5 bg-violet-50/50">
+                    <td className="px-1 py-1.5 bg-violet-50/50 dark:bg-violet-950/50">
                       <StaffCell
                         value={appt.dryStaffId}
                         staffList={bathers}
@@ -698,7 +698,7 @@ export function WorkflowBoardTable({
                     </td>
 
                     {/* Groomer */}
-                    <td className="px-1 py-1.5 bg-amber-50/50">
+                    <td className="px-1 py-1.5 bg-amber-50/50 dark:bg-amber-950/50">
                       <StaffCell
                         value={appt.staffId}
                         staffList={groomers}
@@ -793,7 +793,7 @@ export function WorkflowBoardTable({
                               type="button"
                               onClick={() => onRestoreCompleted(appt.id)}
                               disabled={restorePending}
-                              className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                              className="rounded border border-amber-300 dark:border-amber-800 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:bg-amber-950/40 disabled:opacity-50"
                               title="Return this dog to Ready so staff can correct its workflow status"
                             >
                               {restorePending ? "…" : "Undo"}
@@ -802,10 +802,10 @@ export function WorkflowBoardTable({
                         </div>
                       ) : isReady ? (
                         readOnly ? (
-                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded border border-emerald-300">READY</span>
+                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/50 px-2 py-1 rounded border border-emerald-300 dark:border-emerald-800">READY</span>
                         ) : (
                         <button
-                          className="text-[11px] font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2 py-1 rounded border border-emerald-300 transition-colors"
+                          className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/50 hover:bg-emerald-200 dark:bg-emerald-900/50 px-2 py-1 rounded border border-emerald-300 dark:border-emerald-800 transition-colors"
                           onClick={() => setOutConfirm({ id: appt.id, petName: appt.petName ?? "this dog" })}
                         >
                           OUT

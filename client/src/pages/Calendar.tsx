@@ -68,15 +68,15 @@ const SERVICE_COLOURS: Record<string, { bg: string; border: string; text: string
 };
 
 const WORKFLOW_COLOURS: Record<string, string> = {
-  scheduled:  "bg-blue-100 text-blue-800",
-  checked_in: "bg-amber-100 text-amber-800",
-  bathing:    "bg-violet-100 text-violet-800",
-  drying:     "bg-violet-100 text-violet-800",
-  grooming:   "bg-violet-100 text-violet-800",
-  ready:      "bg-emerald-100 text-emerald-800",
+  scheduled:  "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300",
+  checked_in: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
+  bathing:    "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300",
+  drying:     "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300",
+  grooming:   "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300",
+  ready:      "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
   complete:   "bg-muted text-muted-foreground",
-  cancelled:  "bg-red-100 text-red-700",
-  no_show:    "bg-amber-100 text-amber-700",
+  cancelled:  "bg-red-100 dark:bg-red-950/50 text-red-700 dark:text-red-300",
+  no_show:    "bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300",
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -293,7 +293,7 @@ function ApptBlock({
           <>
             <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
               <div className="leading-tight" title={sharedAppointmentLabel}>{sharedAppointmentLabel}</div>
-              {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600" />}
+              {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
             </div>
             {!compact && <div className="mt-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
             {!compact && (
@@ -307,7 +307,7 @@ function ApptBlock({
           <>
             <div className={`font-bold text-[12px] truncate tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
               {appt.petName}{appt.clientLastName ? ` ${appt.clientLastName}` : ""}
-              {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600" />}
+              {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
             </div>
             {!compact && (
               <>
@@ -347,14 +347,14 @@ function ApptBlock({
           {sharedPriceBreakdown.length > 0 ? (
             <div className="border-t pt-1 mt-1 space-y-0.5">
               <div className="text-muted-foreground font-medium">Shared appointment pricing</div>
-              {sharedPriceBreakdown.map((entry, index) => <div key={`${entry.petName}-${index}`} className="flex justify-between gap-4"><span>{entry.petName}</span><span className={entry.formattedAmount ? "font-medium" : retainedBookingTotal ? "text-emerald-700" : "text-amber-700"}>{entry.formattedAmount ?? (retainedBookingTotal ? "Included in booking total" : "Price to confirm")}</span></div>)}
+              {sharedPriceBreakdown.map((entry, index) => <div key={`${entry.petName}-${index}`} className="flex justify-between gap-4"><span>{entry.petName}</span><span className={entry.formattedAmount ? "font-medium" : retainedBookingTotal ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}>{entry.formattedAmount ?? (retainedBookingTotal ? "Included in booking total" : "Price to confirm")}</span></div>)}
               <div className="flex justify-between gap-4 border-t pt-1 mt-1 font-semibold"><span>Booking total</span><span>{retainedBookingTotal ?? "Confirm each price"}</span></div>
             </div>
           ) : appt.price && <div><span className="text-muted-foreground">Price: </span>${Number(appt.price).toFixed(2)}</div>}
           {appt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appt: </span>{new Date(appt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>}
           {appt.nextAppointmentDate && <div><span className="text-muted-foreground">Next appt: </span>{new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric" })}</div>}
-          {appt.reminderStatus === "delivered" && <div className="text-emerald-700"><span className="text-muted-foreground">Reminder: </span>Delivered</div>}
-          {appt.reminderStatus === "sent" && <div className="text-amber-700"><span className="text-muted-foreground">Reminder: </span>Sent; awaiting delivery update</div>}
+          {appt.reminderStatus === "delivered" && <div className="text-emerald-700 dark:text-emerald-300"><span className="text-muted-foreground">Reminder: </span>Delivered</div>}
+          {appt.reminderStatus === "sent" && <div className="text-amber-700 dark:text-amber-300"><span className="text-muted-foreground">Reminder: </span>Sent; awaiting delivery update</div>}
         </div>
         <div className="text-muted-foreground text-[10px] pt-0.5">
           {fmtTime(new Date(appt.scheduledStart))} – {fmtTime(new Date(appt.scheduledEnd))}
@@ -622,8 +622,8 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
             <div className="text-xs text-muted-foreground truncate">Groomed by <span className="font-medium text-foreground">{appt.staffName ?? "Groomer to confirm"}</span></div>
           </div>
           <div className="ml-auto flex items-center gap-1 shrink-0">
-            {existing?.status === "sent" && <span className="text-xs bg-emerald-100 text-emerald-700 rounded-full px-2 py-0.5 whitespace-nowrap">Sent</span>}
-            {existing?.status === "draft" && <span className="text-xs bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 whitespace-nowrap">Draft</span>}
+            {existing?.status === "sent" && <span className="text-xs bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 rounded-full px-2 py-0.5 whitespace-nowrap">Sent</span>}
+            {existing?.status === "draft" && <span className="text-xs bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded-full px-2 py-0.5 whitespace-nowrap">Draft</span>}
           </div>
         </div>
         <div className="flex flex-wrap gap-1">
@@ -1432,14 +1432,14 @@ export default function Calendar() {
                     return (
                       <div
                         key={appt.id}
-                        className={`brand-lift rounded-md border border-white/80 px-2 py-1.5 cursor-pointer text-[11px] leading-tight ${isCancelled ? "bg-red-50" : ""}`}
+                        className={`brand-lift rounded-md border border-white/80 px-2 py-1.5 cursor-pointer text-[11px] leading-tight ${isCancelled ? "bg-red-50 dark:bg-red-950/40" : ""}`}
                         style={{ opacity: isCancelled ? 0.45 : 1, background: isCancelled ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`, borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`, boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}` }}
                         onClick={(e) => { e.stopPropagation(); openEdit(appt as Appt); }}
                       >
                         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
                         <div className={`font-bold truncate ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
                           {sharedAppointmentLabel}
-                          {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600" />}
+                          {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
                         </div>
                         <div className="truncate mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                           {fmtTime(new Date(appt.scheduledStart))}
@@ -1490,8 +1490,8 @@ export default function Calendar() {
                 {(groomerCount > 0 || batherCount > 0) && (
                   <div className="grid border-b bg-muted/80 shrink-0" style={{ gridTemplateColumns: colTemplate }}>
                     <div className="border-r" />
-                    {groomerCount > 0 && <div className="px-3 py-2 border-r text-[10px] font-bold uppercase tracking-[0.16em] text-violet-800 bg-gradient-to-r from-violet-100/90 to-violet-50/50" style={{ gridColumn: `span ${groomerCount}` }}>Groomers</div>}
-                    {batherCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800 bg-gradient-to-r from-blue-100/90 to-blue-50/50" style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
+                    {groomerCount > 0 && <div className="px-3 py-2 border-r text-[10px] font-bold uppercase tracking-[0.16em] text-violet-800 dark:text-violet-300 bg-gradient-to-r from-violet-100/90 dark:from-violet-950/90 to-violet-50/50 dark:to-violet-950/50" style={{ gridColumn: `span ${groomerCount}` }}>Groomers</div>}
+                    {batherCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800 dark:text-blue-300 bg-gradient-to-r from-blue-100/90 dark:from-blue-950/90 to-blue-50/50 dark:to-blue-950/50" style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
                   </div>
                 )}
                 {/* Sticky header */}
@@ -1610,10 +1610,10 @@ export default function Calendar() {
                       return (
                         <div key={b.id} className="absolute inset-0 z-10 pointer-events-none" style={{ background: "repeating-linear-gradient(45deg, rgba(239,68,68,0.07), rgba(239,68,68,0.07) 6px, transparent 6px, transparent 12px)" }}>
                           <div className="absolute top-2 left-1 right-1 flex items-center justify-between">
-                            <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 flex items-center gap-1">
+                            <span className="text-[10px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded px-1.5 py-0.5 flex items-center gap-1">
                               <Ban className="h-2.5 w-2.5" /> {b.reason || "Day Off"}
                             </span>
-                            <button className="pointer-events-auto text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: b.reason || "Day Off" }); }}>
+                            <button className="pointer-events-auto text-red-400 hover:text-red-600 dark:text-red-400" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: b.reason || "Day Off" }); }}>
                               <Trash2 className="h-3 w-3" />
                             </button>
                           </div>
@@ -1628,10 +1628,10 @@ export default function Calendar() {
                     return (
                       <div key={b.id} className="absolute left-0 right-0 z-10 pointer-events-none" style={{ top: topPx, height: Math.max(heightPx, 24), background: "repeating-linear-gradient(45deg, rgba(239,68,68,0.1), rgba(239,68,68,0.1) 6px, transparent 6px, transparent 12px)" }}>
                         <div className="absolute top-1 left-1 right-1 flex items-center justify-between">
-                          <span className="text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 flex items-center gap-1">
+                          <span className="text-[10px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded px-1.5 py-0.5 flex items-center gap-1">
                             <Ban className="h-2.5 w-2.5" /> {b.startTime}–{b.endTime} {b.reason || "Blocked"}
                           </span>
-                          <button className="pointer-events-auto text-red-400 hover:text-red-600" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: `${b.startTime}–${b.endTime} ${b.reason || "Blocked"}` }); }}>
+                          <button className="pointer-events-auto text-red-400 hover:text-red-600 dark:text-red-400" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: `${b.startTime}–${b.endTime} ${b.reason || "Blocked"}` }); }}>
                             <Trash2 className="h-3 w-3" />
                           </button>
                         </div>
@@ -1826,7 +1826,7 @@ export default function Calendar() {
                   <span className={`flex h-4 w-4 items-center justify-center rounded border ${visibleStaffIds === null ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{visibleStaffIds === null && <Check className="h-3 w-3" />}</span>
                   All staff
                 </button>
-                {calendarGroomers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-violet-700">Groomers</p>}
+                {calendarGroomers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">Groomers</p>}
                 {calendarGroomers.map((member) => {
                   const checked = visibleStaffIds === null || visibleStaffIds.includes(member.id);
                   return <button key={member.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setVisibleStaffIds(toggleCalendarStaffSelection(visibleStaffIds, activeStaff.map((staffMember) => staffMember.id), member.id))}>
@@ -1834,7 +1834,7 @@ export default function Calendar() {
                     <span className="h-2 w-2 rounded-full" style={{ background: member.colourHex ?? "#6366f1" }} />{member.name.split(" ")[0]}
                   </button>;
                 })}
-                {calendarBathers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-blue-700">Bathing team</p>}
+                {calendarBathers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">Bathing team</p>}
                 {calendarBathers.map((member) => {
                   const checked = visibleStaffIds === null || visibleStaffIds.includes(member.id);
                   return <button key={member.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setVisibleStaffIds(toggleCalendarStaffSelection(visibleStaffIds, activeStaff.map((staffMember) => staffMember.id), member.id))}>
@@ -1862,7 +1862,7 @@ export default function Calendar() {
                 setBlockoutForm(f => ({ ...f, blockoutDate: defaultDate }));
                 setShowBlockoutDialog(true);
               }}
-              size="sm" className="brand-lift gap-1.5 bg-card/80 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700">
+              size="sm" className="brand-lift gap-1.5 bg-card/80 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:bg-red-950/40 hover:text-red-700 dark:text-red-300">
               <Ban className="h-4 w-4" /> Block Out
             </Button>
             <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
@@ -2029,7 +2029,7 @@ export default function Calendar() {
               <div className="space-y-1.5 col-span-2">
                 <Label>Pets * <span className="text-xs text-muted-foreground font-normal">(select one or more)</span></Label>
                 {newAppt.clientId && clientMembershipSummary.data && clientMembershipSummary.data.suspendedPetIds.length > 0 && (
-                  <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">A membership needs attention before it can cover a booking.</p>
+                  <p className="text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg p-2">A membership needs attention before it can cover a booking.</p>
                 )}
                 {!newAppt.clientId ? (
                   <p className="text-xs text-muted-foreground py-2">Select a client first</p>
@@ -2065,8 +2065,8 @@ export default function Calendar() {
                       );
                     })}
                   </div>
-                  {familyBookingCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 p-3"><p className="text-sm font-semibold text-violet-950">Include linked family dogs?</p><p className="mt-0.5 text-xs text-violet-800">These dogs are remembered as family-linked. Select any that should share this appointment.</p><div className="mt-2 flex flex-wrap gap-2">{familyBookingCompanions.map(pet => <Button key={pet.id} type="button" size="sm" variant="outline" className="border-violet-300 bg-card text-violet-900 hover:bg-violet-100" onClick={() => setNewAppt(prev => ({ ...prev, petIds: [...prev.petIds, String(pet.id)] }))}>+ {pet.name}</Button>)}</div></div>}
-                  {membershipCoverage.isFetching ? <p className="mt-3 text-xs text-muted-foreground">Checking membership coverage…</p> : membershipCoverage.data?.fullyCovered ? <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-950"><div><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{membershipCoverage.data.memberships.map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800">Every selected dog is covered for this service. Appointment price is $0.00 because payment is managed through the weekly membership.</p></div></div> : membershipCoverage.data && membershipCoverage.data.coveredPetIds.length > 0 ? <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-950"><Badge variant="outline" className="border-amber-300 bg-card text-amber-800">Partial membership coverage</Badge><p className="mt-1 text-xs text-amber-800">Only some selected dogs are covered for this service, so the appointment price remains available for review.</p></div> : null}
+                  {familyBookingCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50/70 dark:bg-violet-950/70 p-3"><p className="text-sm font-semibold text-violet-950">Include linked family dogs?</p><p className="mt-0.5 text-xs text-violet-800 dark:text-violet-300">These dogs are remembered as family-linked. Select any that should share this appointment.</p><div className="mt-2 flex flex-wrap gap-2">{familyBookingCompanions.map(pet => <Button key={pet.id} type="button" size="sm" variant="outline" className="border-violet-300 dark:border-violet-800 bg-card text-violet-900 dark:text-violet-200 hover:bg-violet-100 dark:bg-violet-950/50" onClick={() => setNewAppt(prev => ({ ...prev, petIds: [...prev.petIds, String(pet.id)] }))}>+ {pet.name}</Button>)}</div></div>}
+                  {membershipCoverage.isFetching ? <p className="mt-3 text-xs text-muted-foreground">Checking membership coverage…</p> : membershipCoverage.data?.fullyCovered ? <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950"><div><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{membershipCoverage.data.memberships.map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800 dark:text-emerald-300">Every selected dog is covered for this service. Appointment price is $0.00 because payment is managed through the weekly membership.</p></div></div> : membershipCoverage.data && membershipCoverage.data.coveredPetIds.length > 0 ? <div className="mt-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-amber-950"><Badge variant="outline" className="border-amber-300 dark:border-amber-800 bg-card text-amber-800 dark:text-amber-300">Partial membership coverage</Badge><p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Only some selected dogs are covered for this service, so the appointment price remains available for review.</p></div> : null}
                   </>
                 )}
               </div>
@@ -2110,11 +2110,11 @@ export default function Calendar() {
               if (dow === 0 || dow === 1 || dow === 6) {
                 const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dow];
                 return (
-                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
                     <div>
-                      <p className="text-sm font-semibold text-amber-900">This date falls on a {dayName}</p>
-                      <p className="mt-0.5 text-xs text-amber-800">The salon is closed Saturday, Sunday &amp; Monday. Please confirm this date is correct before saving.</p>
+                      <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">This date falls on a {dayName}</p>
+                      <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">The salon is closed Saturday, Sunday &amp; Monday. Please confirm this date is correct before saving.</p>
                     </div>
                   </div>
                 );
@@ -2125,7 +2125,7 @@ export default function Calendar() {
               <div className="space-y-1.5">
                 <Label>Price ($)</Label>
                 <Input aria-describedby={membershipCoverage.data?.fullyCovered ? "membership-covered-price-note" : undefined} placeholder="0.00" value={newAppt.price} disabled={membershipCoverage.data?.fullyCovered} onChange={e => setNewAppt(p => ({ ...p, price: e.target.value }))} />
-                {membershipCoverage.data?.fullyCovered && <p id="membership-covered-price-note" className="text-xs text-emerald-700">Set to $0.00 because the selected dogs are covered by active weekly memberships.</p>}
+                {membershipCoverage.data?.fullyCovered && <p id="membership-covered-price-note" className="text-xs text-emerald-700 dark:text-emerald-300">Set to $0.00 because the selected dogs are covered by active weekly memberships.</p>}
               </div>
             </div>
             {newAppt.petIds.length >= 1 && (
@@ -2232,7 +2232,7 @@ export default function Calendar() {
                             <strong>{p.petName}</strong>{p.petBreed ? ` · ${p.petBreed}` : ""}
                             {p.lastAppointmentDate && <span className="text-xs text-muted-foreground">· Last: {new Date(p.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</span>}
                             {rStatus === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 inline" />}
-                            {rStatus === "draft" && <span className="text-[10px] bg-amber-100 text-amber-700 rounded px-1">Draft</span>}
+                            {rStatus === "draft" && <span className="text-[10px] bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1">Draft</span>}
                           </span>
                         );
                       })}
@@ -2242,7 +2242,7 @@ export default function Calendar() {
                       <span className="text-muted-foreground">Pet:</span>
                       <strong>{editAppt.petName}</strong>{editAppt.petBreed ? ` · ${editAppt.petBreed}` : ""}
                       {reportStatusMap[editAppt.id] === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
-                      {reportStatusMap[editAppt.id] === "draft" && <span className="text-[10px] bg-amber-100 text-amber-700 rounded px-1">Draft</span>}
+                      {reportStatusMap[editAppt.id] === "draft" && <span className="text-[10px] bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1">Draft</span>}
                     </div>
                   )}
                   <div><span className="text-muted-foreground">Client:</span> {editAppt.clientFirstName} {editAppt.clientLastName}{editAppt.clientPhone ? ` · ${editAppt.clientPhone}` : ""}</div>
@@ -2323,7 +2323,7 @@ export default function Calendar() {
                   </div>
                 </div>
                 {preservesCancelledSchedule && (
-                  <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-800">Cancelled appointments stay at their original booked time for historical tracking. Create a new appointment if the client needs to be rebooked.</p>
+                  <p className="rounded-md border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs font-medium text-red-800 dark:text-red-300">Cancelled appointments stay at their original booked time for historical tracking. Create a new appointment if the client needs to be rebooked.</p>
                 )}
                 {(() => {
                   if (!editForm.scheduledStart) return null;
@@ -2333,11 +2333,11 @@ export default function Calendar() {
                   if (dow === 0 || dow === 1 || dow === 6) {
                     const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dow];
                     return (
-                      <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
                         <div>
-                          <p className="text-sm font-semibold text-amber-900">This date falls on a {dayName}</p>
-                          <p className="mt-0.5 text-xs text-amber-800">The salon is closed Saturday, Sunday &amp; Monday. Please confirm this date is correct before saving.</p>
+                          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">This date falls on a {dayName}</p>
+                          <p className="mt-0.5 text-xs text-amber-800 dark:text-amber-300">The salon is closed Saturday, Sunday &amp; Monday. Please confirm this date is correct before saving.</p>
                         </div>
                       </div>
                     );
@@ -2388,7 +2388,7 @@ export default function Calendar() {
                 <DialogFooter className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <Button
                     variant="outline"
-                    className="mr-auto shrink-0 gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    className="mr-auto shrink-0 gap-1.5 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:bg-red-950/40 hover:text-red-700 dark:text-red-300"
                     onClick={() => setConfirmDelete({
                       type: "appointment",
                       id: editAppt.id,
@@ -2408,7 +2408,7 @@ export default function Calendar() {
                     return (
                       <Button
                         variant="outline"
-                        className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                        className="gap-1.5 border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:bg-emerald-950/40 hover:text-emerald-800 dark:text-emerald-300"
                         disabled={!allHavePrices || createSessionBillsMutation.isPending}
                         title={!allHavePrices ? "Set a price for each dog before generating bills" : "Create a separate draft invoice for each dog"}
                         onClick={() => createSessionBillsMutation.mutate({
@@ -2597,15 +2597,15 @@ export default function Calendar() {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-muted-foreground">{new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}{n.staffName ? ` · ${n.staffName}` : ""}</span>
                           {(n as any).serviceType && <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 capitalize">{(n as any).serviceType.replace("_"," ")}</span>}
-                          {(n as any).alertLevel === "danger" && <span className="bg-red-100 text-red-600 rounded px-1.5 py-0.5 font-semibold">🔴 Danger</span>}
-                          {(n as any).alertLevel === "caution" && <span className="bg-amber-100 text-amber-700 rounded px-1.5 py-0.5 font-semibold">⚠ Caution</span>}
+                          {(n as any).alertLevel === "danger" && <span className="bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 rounded px-1.5 py-0.5 font-semibold">🔴 Danger</span>}
+                          {(n as any).alertLevel === "caution" && <span className="bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1.5 py-0.5 font-semibold">⚠ Caution</span>}
                         </div>
                         <div className="flex items-center gap-1">
                           <button className="text-xs text-primary hover:underline" onClick={() => { setStyleNoteForm({ note: n.note ?? "", serviceType: (n as any).serviceType ?? "", bladeSize: n.bladeSize ?? "", combSize: (n as any).combSize ?? "", bodyLength: n.bodyLength ?? "", headStyle: (n as any).headStyle ?? "", faceStyle: n.faceStyle ?? "", earStyle: n.earStyle ?? "", legStyle: (n as any).legStyle ?? "", tailStyle: n.tailStyle ?? "", warnings: (n as any).warnings ?? "", alertLevel: (n as any).alertLevel ?? "", photoUrl: n.photoUrl ?? "", photoKey: "" }); toast.success("Style loaded — edit and save as new"); }}>↩ Use</button>
                           <button className="text-muted-foreground hover:text-red-500 ml-1" onClick={() => setConfirmDelete({ type: "styleNote", id: n.id, label: new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" }) })}><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                       </div>
-                      {(n as any).warnings && <div className={`rounded px-2 py-1 text-xs ${(n as any).alertLevel === "danger" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}><span className="font-semibold">⚠ </span>{(n as any).warnings}</div>}
+                      {(n as any).warnings && <div className={`rounded px-2 py-1 text-xs ${(n as any).alertLevel === "danger" ? "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300" : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300"}`}><span className="font-semibold">⚠ </span>{(n as any).warnings}</div>}
                       <div className="flex flex-wrap gap-1">
                         {n.bladeSize && <span className="bg-muted rounded px-1.5 py-0.5">Blade: {n.bladeSize}</span>}
                         {(n as any).combSize && <span className="bg-muted rounded px-1.5 py-0.5">Comb: {(n as any).combSize}</span>}
@@ -2665,7 +2665,7 @@ export default function Calendar() {
                             <span className="h-5 w-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">{(pet.petName ?? "?")[0]}</span>
                             {pet.petName}
                             {reportStatusMap[pet.id] === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
-                            {reportStatusMap[pet.id] === "draft" && <span className="text-[9px] bg-amber-100 text-amber-700 rounded px-1">Draft</span>}
+                            {reportStatusMap[pet.id] === "draft" && <span className="text-[9px] bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1">Draft</span>}
                           </TabsTrigger>
                         ))}
                       </TabsList>
@@ -2774,7 +2774,7 @@ export default function Calendar() {
       <Dialog open={!!confirmDelete} onOpenChange={open => { if (!open) setConfirmDelete(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
+            <DialogTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
               <AlertTriangle className="h-4 w-4" />
               Confirm Deletion
             </DialogTitle>

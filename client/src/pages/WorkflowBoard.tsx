@@ -21,6 +21,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { useDisplayTheme } from "@/lib/displayTheme";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   WorkflowBoardTable, formatDuration, fmtTime, stageColour,
   STAGES, TERMINAL_STAGES, ALL_STAGE_OPTIONS, NEXT_STAGE, PREV_STAGE,
@@ -45,12 +46,17 @@ export default function WorkflowBoard() {
   // Shared with the standalone TV display page, so a device keeps one choice
   // across both. Light by default — staff asked for the white background.
   const { theme: tvTheme, toggle: toggleTvTheme, isDark: tvIsDark } = useDisplayTheme();
+  const { setDarkSurface } = useTheme();
+  // Only while the TV overlay is up; the board itself follows the app theme.
+  // Claimed through the theme context rather than written here: this used to
+  // set the class on <html> directly and remove it on unmount, which turned
+  // the whole app light the moment anyone opened the board.
+  const tvWantsDark = tvMode && tvTheme === "dark";
   useEffect(() => {
-    const root = document.documentElement;
-    // Only while the TV overlay is up; the board itself follows the app theme.
-    root.classList.toggle("dark", tvMode && tvTheme === "dark");
-    return () => root.classList.remove("dark");
-  }, [tvMode, tvTheme]);
+    if (!tvWantsDark) return;
+    setDarkSurface(true);
+    return () => setDarkSurface(false);
+  }, [tvWantsDark, setDarkSurface]);
   const [showCompleted, setShowCompleted] = useState(false);
   const [stageFilter, setStageFilter] = useState<string>("__all__");
   const [groomerFilter, setGroomerFilter] = useState<string>("__all__");
@@ -463,11 +469,11 @@ export default function WorkflowBoard() {
 
         {/* Family filter active banner */}
         {familyFilter !== null && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg text-sm text-violet-800">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-900/50 rounded-lg text-sm text-violet-800 dark:text-violet-300">
             <span>🐾</span>
             <span className="font-medium">Showing family group only</span>
             <button
-              className="ml-auto text-xs text-violet-600 hover:text-violet-800 font-medium underline"
+              className="ml-auto text-xs text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:text-violet-300 font-medium underline"
               onClick={() => setFamilyFilter(null)}
             >
               Clear filter
@@ -540,14 +546,14 @@ export default function WorkflowBoard() {
         </div>
 
         {bathQueue.length > 0 && (
-          <section className="rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 via-white to-violet-50 px-3 py-2.5" aria-label="Bathing priority queue">
-            <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold text-violet-950">Bath queue</h2><p className="text-xs text-violet-800">Drag a group to reorder it. Priority changes do not move the appointment or change its workflow stage.</p></div><span className="rounded-full bg-violet-700 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">1 = next</span></div>
+          <section className="rounded-xl border border-violet-200 dark:border-violet-900/50 bg-gradient-to-r from-violet-50 dark:from-violet-950/40 via-white to-violet-50 dark:to-violet-950/40 px-3 py-2.5" aria-label="Bathing priority queue">
+            <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-sm font-bold text-violet-950">Bath queue</h2><p className="text-xs text-violet-800 dark:text-violet-300">Drag a group to reorder it. Priority changes do not move the appointment or change its workflow stage.</p></div><span className="rounded-full bg-violet-700 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">1 = next</span></div>
             <div className="mt-2 flex flex-wrap gap-2" role="list" aria-label="Draggable bath queue">
               {bathQueue.map((item, index) => {
                 const representativeId = item.rows[0]!.id;
                 const meta = BATH_PRIORITY_META[item.priority];
                 const isDragging = bathQueueDragId === representativeId;
-                return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} data-bath-queue-item={representativeId} role="listitem" tabIndex={0} draggable={!reorderBathQueue.isPending} aria-grabbed={isDragging} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; setBathQueueDragId(representativeId); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (bathQueueDragId) reorderBathQueueByRepresentative(bathQueueDragId, representativeId); }} onDragEnd={() => setBathQueueDragId(null)} onTouchStart={() => setBathQueueDragId(representativeId)} onTouchEnd={(event) => { const touch = event.changedTouches[0]; const target = touch ? document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-bath-queue-item]") as HTMLElement | null : null; const targetId = Number(target?.dataset.bathQueueItem); if (bathQueueDragId && Number.isFinite(targetId)) reorderBathQueueByRepresentative(bathQueueDragId, targetId); else setBathQueueDragId(null); }} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); moveBathQueueItem(representativeId, -1); } if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); moveBathQueueItem(representativeId, 1); } }} className={`touch-none group flex items-center gap-1.5 rounded-lg border bg-card px-2 py-1.5 text-xs text-violet-950 outline-none transition-[transform,opacity] duration-150 focus:ring-2 focus:ring-violet-500 ${isDragging ? "scale-95 opacity-50" : "cursor-grab active:cursor-grabbing"}`} style={{ borderColor: meta.colour, background: meta.softColour }} title="Drag to reorder. Use arrow keys when focused for a keyboard alternative."><GripVertical className="h-4 w-4 shrink-0 text-violet-700" aria-hidden="true" /><span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: meta.colour }}>{item.priority}</span><span className="font-semibold">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-700">together</span>}<span className="sr-only">Bath priority {item.priority}, {meta.label}. Position {index + 1} of {bathQueue.length}.</span><div className="ml-0.5 hidden gap-0.5 group-focus-within:flex group-hover:flex"><button type="button" className="rounded p-0.5 text-violet-800 hover:bg-card" disabled={index === 0 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, -1)} aria-label={`Move ${item.petNames.join(" and ")} earlier in bath queue`}><ArrowUp className="h-3 w-3" /></button><button type="button" className="rounded p-0.5 text-violet-800 hover:bg-card" disabled={index === bathQueue.length - 1 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, 1)} aria-label={`Move ${item.petNames.join(" and ")} later in bath queue`}><ArrowDown className="h-3 w-3" /></button></div></div>;
+                return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} data-bath-queue-item={representativeId} role="listitem" tabIndex={0} draggable={!reorderBathQueue.isPending} aria-grabbed={isDragging} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; setBathQueueDragId(representativeId); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (bathQueueDragId) reorderBathQueueByRepresentative(bathQueueDragId, representativeId); }} onDragEnd={() => setBathQueueDragId(null)} onTouchStart={() => setBathQueueDragId(representativeId)} onTouchEnd={(event) => { const touch = event.changedTouches[0]; const target = touch ? document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-bath-queue-item]") as HTMLElement | null : null; const targetId = Number(target?.dataset.bathQueueItem); if (bathQueueDragId && Number.isFinite(targetId)) reorderBathQueueByRepresentative(bathQueueDragId, targetId); else setBathQueueDragId(null); }} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); moveBathQueueItem(representativeId, -1); } if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); moveBathQueueItem(representativeId, 1); } }} className={`touch-none group flex items-center gap-1.5 rounded-lg border bg-card px-2 py-1.5 text-xs text-violet-950 outline-none transition-[transform,opacity] duration-150 focus:ring-2 focus:ring-violet-500 ${isDragging ? "scale-95 opacity-50" : "cursor-grab active:cursor-grabbing"}`} style={{ borderColor: meta.colour, background: meta.softColour }} title="Drag to reorder. Use arrow keys when focused for a keyboard alternative."><GripVertical className="h-4 w-4 shrink-0 text-violet-700 dark:text-violet-300" aria-hidden="true" /><span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: meta.colour }}>{item.priority}</span><span className="font-semibold">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300">together</span>}<span className="sr-only">Bath priority {item.priority}, {meta.label}. Position {index + 1} of {bathQueue.length}.</span><div className="ml-0.5 hidden gap-0.5 group-focus-within:flex group-hover:flex"><button type="button" className="rounded p-0.5 text-violet-800 dark:text-violet-300 hover:bg-card" disabled={index === 0 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, -1)} aria-label={`Move ${item.petNames.join(" and ")} earlier in bath queue`}><ArrowUp className="h-3 w-3" /></button><button type="button" className="rounded p-0.5 text-violet-800 dark:text-violet-300 hover:bg-card" disabled={index === bathQueue.length - 1 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, 1)} aria-label={`Move ${item.petNames.join(" and ")} later in bath queue`}><ArrowDown className="h-3 w-3" /></button></div></div>;
               })}
             </div>
           </section>
@@ -611,14 +617,14 @@ export default function WorkflowBoard() {
                         {[person.bath, person.dry, person.groom, person.total].map((metric, index) => {
                           const avg = average(metric);
                           const review = metric.reviews > 0;
-                          return <td key={index} className={`px-3 py-2.5 text-center font-mono ${review ? "text-amber-700 font-bold" : "text-foreground"}`}>{formatDuration(avg)}{review ? " ⚠" : ""}</td>;
+                          return <td key={index} className={`px-3 py-2.5 text-center font-mono ${review ? "text-amber-700 dark:text-amber-300 font-bold" : "text-foreground"}`}>{formatDuration(avg)}{review ? " ⚠" : ""}</td>;
                         })}
                         <td className="px-3 py-2.5 text-center">
                           <Button
                             type="button"
                             size="sm"
                             variant={reviews > 0 ? "outline" : "ghost"}
-                            className={reviews > 0 ? "h-7 border-amber-300 bg-amber-50 px-2 text-xs font-semibold text-amber-800 hover:bg-amber-100" : "h-7 px-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50"}
+                            className={reviews > 0 ? "h-7 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:bg-amber-950/50" : "h-7 px-2 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:bg-emerald-950/40"}
                             onClick={() => navigate(`/staff/review/${person.staffId}?date=${boardDate}`)}
                             title={`Review ${person.name}'s timing exceptions and recommended actions`}
                           >
@@ -643,8 +649,8 @@ export default function WorkflowBoard() {
               {SERVICE_LABEL[key] ?? key}
             </span>
           ))}
-          <span className="flex items-center gap-1 ml-4"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-amber-200" /> 30-60 min in stage</span>
-          <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-red-200" /> 60+ min in stage</span>
+          <span className="flex items-center gap-1 ml-4"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-amber-200 dark:bg-amber-900/50" /> 30-60 min in stage</span>
+          <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-red-200 dark:bg-red-900/50" /> 60+ min in stage</span>
           <span className="ml-auto text-muted-foreground">Auto-refreshes every 20s</span>
         </div>
       </div>
@@ -655,8 +661,8 @@ export default function WorkflowBoard() {
           <div className="absolute inset-0 bg-black/50" />
           <div className="relative bg-card rounded-2xl shadow-2xl max-w-xs w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="text-center">
-              <div className="h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
-                <AlertTriangle className="h-6 w-6 text-amber-600" />
+              <div className="h-12 w-12 rounded-full bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
               </div>
               <h3 className="text-lg font-bold">Mark {outConfirm.petName} as Out?</h3>
               <p className="text-sm text-muted-foreground mt-1">Please confirm that payment has been collected before marking this dog as picked up.</p>
@@ -719,7 +725,7 @@ export default function WorkflowBoard() {
           <div className="relative bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold flex items-center gap-2">
-                <UserPlus className="h-5 w-5 text-violet-600" /> Add Walk-in
+                <UserPlus className="h-5 w-5 text-violet-600 dark:text-violet-400" /> Add Walk-in
               </h3>
               <button onClick={() => setWalkInOpen(false)} className="text-muted-foreground hover:text-foreground p-1 rounded">
                 <X className="h-4 w-4" />
@@ -740,7 +746,7 @@ export default function WorkflowBoard() {
                     className="pr-8"
                   />
                   {walkInClientId && (
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-600 text-xs font-bold">✓</span>
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-600 dark:text-emerald-400 text-xs font-bold">✓</span>
                   )}
                 </div>
                 {walkInClientResults && walkInClientResults.length > 0 && !walkInClientId && (
@@ -850,7 +856,7 @@ export default function WorkflowBoard() {
 
             {/* Alert */}
             {(petPopup.petAlertLevel === "danger" || petPopup.petAlertLevel === "caution") && (
-              <div className={`flex items-start gap-2 p-3 rounded-lg border ${petPopup.petAlertLevel === "danger" ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
+              <div className={`flex items-start gap-2 p-3 rounded-lg border ${petPopup.petAlertLevel === "danger" ? "bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-900/50 text-red-800 dark:text-red-300" : "bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-300"}`}>
                 <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="font-semibold text-sm capitalize">{petPopup.petAlertLevel} Alert</p>
@@ -934,17 +940,17 @@ export default function WorkflowBoard() {
       )}
       <Dialog open={Boolean(bathGroupPopup)} onOpenChange={(open) => { if (!open && !setBathGroup.isPending) { setBathGroupPopup(null); setBathGroupSelectedIds([]); } }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Link2 className="h-5 w-5 text-violet-700" /> Coordinate bathing</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Link2 className="h-5 w-5 text-violet-700 dark:text-violet-300" /> Coordinate bathing</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">Select the dogs that need to be bathed together with <strong>{bathGroupPopup?.petName}</strong>. They share one bath priority for this day only. This does not change family links, appointment times or workflow stages.</p>
-            <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-violet-100 bg-violet-50/40 p-2">
+            <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-violet-100 dark:border-violet-950/50 bg-violet-50/40 dark:bg-violet-950/40 p-2">
               {bathGroupCandidates.map((candidate) => {
                 const selected = bathGroupSelectedIds.includes(candidate.id);
-                return <label key={candidate.id} className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${selected ? "border-violet-500 bg-card" : "border-transparent hover:border-violet-200 hover:bg-card/70"}`}><input type="checkbox" checked={selected} onChange={() => setBathGroupSelectedIds((current) => selected ? current.filter((id) => id !== candidate.id) : [...current, candidate.id])} className="h-4 w-4 accent-violet-700" /><span className="min-w-0 flex-1"><span className="font-semibold">{candidate.petName}</span><span className="ml-2 text-xs text-muted-foreground">{fmtTime(candidate.scheduledStart)} · {candidate.clientLastName}</span></span>{candidate.bathPriority && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[candidate.bathPriority as typeof BATH_PRIORITY_VALUES[number]]?.colour ?? "#0f766e" }}>{candidate.bathPriority}</span>}</label>;
+                return <label key={candidate.id} className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${selected ? "border-violet-500 bg-card" : "border-transparent hover:border-violet-200 dark:border-violet-900/50 hover:bg-card/70"}`}><input type="checkbox" checked={selected} onChange={() => setBathGroupSelectedIds((current) => selected ? current.filter((id) => id !== candidate.id) : [...current, candidate.id])} className="h-4 w-4 accent-violet-700" /><span className="min-w-0 flex-1"><span className="font-semibold">{candidate.petName}</span><span className="ml-2 text-xs text-muted-foreground">{fmtTime(candidate.scheduledStart)} · {candidate.clientLastName}</span></span>{candidate.bathPriority && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[candidate.bathPriority as typeof BATH_PRIORITY_VALUES[number]]?.colour ?? "#0f766e" }}>{candidate.bathPriority}</span>}</label>;
               })}
             </div>
             <div className="space-y-1.5"><label className="text-sm font-semibold">Shared bath priority</label><Select value={bathGroupPriority} onValueChange={setBathGroupPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__keep__">Keep current priority</SelectItem><SelectItem value="__none__">No priority</SelectItem>{BATH_PRIORITY_VALUES.map((priority) => <SelectItem key={priority} value={String(priority)}><span className="inline-flex items-center gap-2"><span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[priority].colour }}>{priority}</span>{BATH_PRIORITY_META[priority].label}</span></SelectItem>)}</SelectContent></Select></div>
-            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-between"><Button variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" disabled={setBathGroup.isPending} onClick={() => { if (!bathGroupPopup) return; setBathGroup.mutate({ appointmentId: bathGroupPopup.appointmentId, date: boardDate, linkedAppointmentIds: [], bathPriority: undefined }); }}>Remove coordination</Button><div className="flex gap-2"><Button variant="outline" disabled={setBathGroup.isPending} onClick={() => { setBathGroupPopup(null); setBathGroupSelectedIds([]); }}>Cancel</Button><Button disabled={!bathGroupPopup || bathGroupSelectedIds.length < 2 || setBathGroup.isPending} className="bg-violet-700 text-white hover:bg-violet-800" onClick={() => { if (!bathGroupPopup) return; setBathGroup.mutate({ appointmentId: bathGroupPopup.appointmentId, date: boardDate, linkedAppointmentIds: bathGroupSelectedIds.filter((id) => id !== bathGroupPopup.appointmentId), bathPriority: bathGroupPriority === "__keep__" ? undefined : bathGroupPriority === "__none__" ? null : Number(bathGroupPriority) as typeof BATH_PRIORITY_VALUES[number] }); }}>{setBathGroup.isPending ? "Saving…" : `Coordinate ${bathGroupSelectedIds.length} dogs`}</Button></div></div>
+            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-between"><Button variant="outline" className="border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-50 dark:bg-red-950/40" disabled={setBathGroup.isPending} onClick={() => { if (!bathGroupPopup) return; setBathGroup.mutate({ appointmentId: bathGroupPopup.appointmentId, date: boardDate, linkedAppointmentIds: [], bathPriority: undefined }); }}>Remove coordination</Button><div className="flex gap-2"><Button variant="outline" disabled={setBathGroup.isPending} onClick={() => { setBathGroupPopup(null); setBathGroupSelectedIds([]); }}>Cancel</Button><Button disabled={!bathGroupPopup || bathGroupSelectedIds.length < 2 || setBathGroup.isPending} className="bg-violet-700 text-white hover:bg-violet-800" onClick={() => { if (!bathGroupPopup) return; setBathGroup.mutate({ appointmentId: bathGroupPopup.appointmentId, date: boardDate, linkedAppointmentIds: bathGroupSelectedIds.filter((id) => id !== bathGroupPopup.appointmentId), bathPriority: bathGroupPriority === "__keep__" ? undefined : bathGroupPriority === "__none__" ? null : Number(bathGroupPriority) as typeof BATH_PRIORITY_VALUES[number] }); }}>{setBathGroup.isPending ? "Saving…" : `Coordinate ${bathGroupSelectedIds.length} dogs`}</Button></div></div>
           </div>
         </DialogContent>
       </Dialog>
@@ -961,12 +967,12 @@ export default function WorkflowBoard() {
             {familyLinkPopup.petFamilyGroupId && (
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Currently linked with</p>
-                <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm text-violet-800">
+                <div className="rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50 dark:bg-violet-950/40 px-3 py-2 text-sm text-violet-800 dark:text-violet-300">
                   {Array.from(new Set((boardData?.find(row => row.id === familyLinkPopup.apptId) as any)?.familyPetNames ?? rows.filter(row => (row as any).petFamilyGroupId === familyLinkPopup.petFamilyGroupId).map(row => row.petName))).join(", ")}
                 </div>
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                  <p className="text-xs text-red-900">Need separate processing? Remove {familyLinkPopup.petName} from this family group. Appointments and workflow history are not changed.</p>
-                  <Button size="sm" variant="outline" className="shrink-0 border-red-300 bg-card text-red-700 hover:bg-red-100" disabled={unlinkPetMutation.isPending} onClick={() => unlinkPetMutation.mutate({ petId: familyLinkPopup.petId })}>{unlinkPetMutation.isPending ? "Unlinking…" : "Unlink dog"}</Button>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-3 py-2">
+                  <p className="text-xs text-red-900 dark:text-red-200">Need separate processing? Remove {familyLinkPopup.petName} from this family group. Appointments and workflow history are not changed.</p>
+                  <Button size="sm" variant="outline" className="shrink-0 border-red-300 dark:border-red-800 bg-card text-red-700 dark:text-red-300 hover:bg-red-100 dark:bg-red-950/50" disabled={unlinkPetMutation.isPending} onClick={() => unlinkPetMutation.mutate({ petId: familyLinkPopup.petId })}>{unlinkPetMutation.isPending ? "Unlinking…" : "Unlink dog"}</Button>
                 </div>
               </div>
             )}
@@ -992,7 +998,7 @@ export default function WorkflowBoard() {
                   ).map(r => (
                     <button
                       key={r.id}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-violet-50 border border-transparent hover:border-violet-200 transition-colors text-sm"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-violet-50 dark:bg-violet-950/40 border border-transparent hover:border-violet-200 dark:border-violet-900/50 transition-colors text-sm"
                       onClick={() => linkPetsMutation.mutate({ petIds: [familyLinkPopup.petId, r.petId] })}
                     >
                       <span className="font-medium">{r.petName}</span>
@@ -1003,7 +1009,7 @@ export default function WorkflowBoard() {
                   {familySearchResults?.filter(p => !rows.some(r => r.petId === p.id)).map(p => (
                     <button
                       key={p.id}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-violet-50 border border-transparent hover:border-violet-200 transition-colors text-sm opacity-70"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-violet-50 dark:bg-violet-950/40 border border-transparent hover:border-violet-200 dark:border-violet-900/50 transition-colors text-sm opacity-70"
                       onClick={() => linkPetsMutation.mutate({ petIds: [familyLinkPopup.petId, p.id] })}
                     >
                       <span className="font-medium">{p.name}</span>

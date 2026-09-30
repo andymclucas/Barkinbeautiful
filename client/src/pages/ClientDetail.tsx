@@ -41,11 +41,11 @@ const SERVICE_COLOUR: Record<string, string> = {
 };
 
 const TIER_COLOURS: Record<string, { bg: string; text: string; border: string }> = {
-  diamond: { bg: "bg-violet-50", text: "text-violet-800", border: "border-violet-200" },
+  diamond: { bg: "bg-violet-50 dark:bg-violet-950/40", text: "text-violet-800 dark:text-violet-300", border: "border-violet-200 dark:border-violet-900/50" },
   platinum: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
-  gold:     { bg: "bg-amber-50", text: "text-amber-800", border: "border-amber-200" },
+  gold:     { bg: "bg-amber-50 dark:bg-amber-950/40", text: "text-amber-800 dark:text-amber-300", border: "border-amber-200 dark:border-amber-900/50" },
   silver:   { bg: "bg-muted", text: "text-foreground", border: "border-border" },
-  bronze:   { bg: "bg-amber-50", text: "text-amber-800", border: "border-amber-200" },
+  bronze:   { bg: "bg-amber-50 dark:bg-amber-950/40", text: "text-amber-800 dark:text-amber-300", border: "border-amber-200 dark:border-amber-900/50" },
 };
 
 const TIER_ICONS: Record<string, string> = {
@@ -73,7 +73,7 @@ function FamilyLinkedPets({ petId }: { petId: number }) {
     <div className="mt-1 flex flex-wrap gap-1">
       {others.map(p => (
         <Link key={p.id} href={`/clients/${p.clientId}`}>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 cursor-pointer transition-colors">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-900/50 hover:bg-violet-100 dark:bg-violet-950/50 cursor-pointer transition-colors">
             <Link2 className="h-2.5 w-2.5" />
             {p.name}
           </span>
@@ -85,12 +85,12 @@ function FamilyLinkedPets({ petId }: { petId: number }) {
 
 function AlertBadge({ level, warnings }: { level: string; warnings?: string | null }) {
   if (level === "danger") return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200" title={warnings ?? ""}>
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-900/50" title={warnings ?? ""}>
       <AlertTriangle className="h-3 w-3" /> DANGER {warnings ? `— ${warnings}` : ""}
     </span>
   );
   if (level === "caution") return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200" title={warnings ?? ""}>
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50" title={warnings ?? ""}>
       <AlertTriangle className="h-3 w-3" /> CAUTION {warnings ? `— ${warnings}` : ""}
     </span>
   );
@@ -188,7 +188,7 @@ function StoreCreditCard({ clientId, externalOpenSignal }: { clientId: number; e
                       {tx.note ? ` · ${tx.note}` : ""}
                     </div>
                   </div>
-                  <span className={`font-semibold ${Number(tx.amount) >= 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                  <span className={`font-semibold ${Number(tx.amount) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
                     {Number(tx.amount) >= 0 ? "+" : ""}{Number(tx.amount).toFixed(2)}
                   </span>
                 </div>
@@ -595,8 +595,8 @@ export default function ClientDetail() {
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl font-bold font-display">{client.firstName} {client.lastName}</h1>
                 <Badge className={
-                  client.status === "active" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
-                  client.status === "blocked" ? "bg-red-100 text-red-800 border-red-200" :
+                  client.status === "active" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
+                  client.status === "blocked" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/50" :
                   "bg-muted text-muted-foreground"
                 }>
                   {client.status}
@@ -747,8 +747,8 @@ export default function ClientDetail() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <CalendarDays className="h-4.5 w-4.5 text-blue-600" />
+              <div className="h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-950/50 flex items-center justify-center flex-shrink-0">
+                <CalendarDays className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
                 <p className="text-xl font-bold font-display">{appointments.length}</p>
@@ -758,8 +758,8 @@ export default function ClientDetail() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
-                <Award className="h-4.5 w-4.5 text-amber-600" />
+              <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center flex-shrink-0">
+                <Award className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400" />
               </div>
               <div>
                 <p className="text-xl font-bold font-display">{activeMemberships.length}</p>
@@ -769,8 +769,8 @@ export default function ClientDetail() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                <DollarSign className="h-4.5 w-4.5 text-emerald-600" />
+              <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center flex-shrink-0">
+                <DollarSign className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div>
                 <p className="text-xl font-bold font-display">${totalSpend.toFixed(0)}</p>
@@ -829,11 +829,11 @@ export default function ClientDetail() {
                 const pMemberships = petMemberships[pet.id] ?? [];
                 const activePetMembership = pMemberships.find(m => m.status === "active");
                 return (
-                  <Card key={pet.id} className={`relative overflow-hidden ${pet.status === "departed" ? "border-amber-300 bg-gradient-to-br from-amber-50/80 via-card to-red-50/50 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]" : ""}`}>
+                  <Card key={pet.id} className={`relative overflow-hidden ${pet.status === "departed" ? "border-amber-300 dark:border-amber-800 bg-gradient-to-br from-amber-50/80 dark:from-amber-950/80 via-card to-red-50/50 dark:to-red-950/50 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]" : ""}`}>
                     {/* Colour strip */}
                     <div className="h-1.5 w-full" style={{ background: pet.status === "departed" ? "#d97706" : activePetMembership ? (TIER_COLOURS[activePetMembership.tier]?.text.replace("text-", "var(--") ?? "#6366f1") : "#6366f1" }} />
                     {pet.status === "departed" && (
-                      <div className="absolute right-3 top-4 flex h-9 w-9 items-center justify-center rounded-full border-2 border-amber-300 bg-amber-100 text-amber-800 shadow-sm" title="Memorial — passed away">
+                      <div className="absolute right-3 top-4 flex h-9 w-9 items-center justify-center rounded-full border-2 border-amber-300 dark:border-amber-800 bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 shadow-sm" title="Memorial — passed away">
                         <HeartCrack className="h-4 w-4" aria-hidden="true" />
                       </div>
                     )}
@@ -848,7 +848,7 @@ export default function ClientDetail() {
                           {pet.name}
                         </span>
                         {pet.status === "departed" && (
-                          <Badge variant="outline" className="border-amber-400 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                          <Badge variant="outline" className="border-amber-400 bg-amber-100 dark:bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
                             <HeartCrack className="mr-1 h-3 w-3" /> Memorial · Passed away
                           </Badge>
                         )}
@@ -950,12 +950,12 @@ export default function ClientDetail() {
                         </div>
                       )}
                       {pet.behaviourNotes && (
-                        <div className="mt-2 p-2 bg-amber-50 rounded text-xs text-amber-800 border border-amber-100">
+                        <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-950/40 rounded text-xs text-amber-800 dark:text-amber-300 border border-amber-100 dark:border-amber-950/50">
                           <span className="font-semibold">Behaviour:</span> {pet.behaviourNotes}
                         </div>
                       )}
                       {pet.groomingNotes && (
-                        <div className="mt-1 p-2 bg-blue-50 rounded text-xs text-blue-800 border border-blue-100">
+                        <div className="mt-1 p-2 bg-blue-50 dark:bg-blue-950/40 rounded text-xs text-blue-800 dark:text-blue-300 border border-blue-100 dark:border-blue-950/50">
                           <span className="font-semibold">Grooming:</span> {pet.groomingNotes}
                         </div>
                       )}
@@ -993,7 +993,7 @@ export default function ClientDetail() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="mt-2 h-8 w-full border-amber-300 text-amber-800 hover:bg-amber-50 hover:text-amber-900"
+                          className="mt-2 h-8 w-full border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:bg-amber-950/40 hover:text-amber-900 dark:text-amber-200"
                           onClick={() => setDepartedPet({ id: pet.id, name: pet.name })}
                         >
                           <HeartCrack className="mr-1.5 h-3.5 w-3.5" /> Record passing
@@ -1122,8 +1122,8 @@ export default function ClientDetail() {
                         <td className="p-3 hidden lg:table-cell text-muted-foreground text-xs">{a.staffName ?? "—"}</td>
                         <td className="p-3">
                           <Badge className={
-                            a.workflowState === "complete" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
-                            a.status === "cancelled" ? "bg-red-100 text-red-800 border-red-200" :
+                            a.workflowState === "complete" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
+                            a.status === "cancelled" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/50" :
                             isFuture ? "bg-primary/10 text-primary border-primary/20" :
                             "bg-muted text-muted-foreground"
                           } variant="outline">
@@ -1163,9 +1163,9 @@ export default function ClientDetail() {
                           </div>
                         </div>
                         <Badge className={
-                          m.status === "active" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
-                          m.status === "pending_payment" ? "bg-amber-100 text-amber-800 border-amber-200" :
-                          m.status === "cancelled" ? "bg-red-100 text-red-800 border-red-200" :
+                          m.status === "active" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
+                          m.status === "pending_payment" ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900/50" :
+                          m.status === "cancelled" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/50" :
                           "bg-muted text-muted-foreground"
                         }>
                           {m.status === "active" ? "✓ Active" : m.status === "pending_payment" ? "⚠ Payment Due" : m.status}
@@ -1185,7 +1185,7 @@ export default function ClientDetail() {
                         {m.cancelledAt && (
                           <div>
                             <p className="text-xs text-muted-foreground">Cancelled</p>
-                            <p className="font-medium text-red-600">{new Date(m.cancelledAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</p>
+                            <p className="font-medium text-red-600 dark:text-red-400">{new Date(m.cancelledAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</p>
                           </div>
                         )}
                         <div>
@@ -1227,10 +1227,10 @@ export default function ClientDetail() {
                       <td className="p-3 text-muted-foreground">{p.membershipName ?? "—"}</td>
                       <td className="p-3">
                         <Badge className={
-                          p.status === "paid" ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
-                          p.status === "failed" ? "bg-red-100 text-red-800 border-red-200" :
-                          p.status === "refunded" ? "bg-blue-100 text-blue-800 border-blue-200" :
-                          "bg-amber-100 text-amber-800 border-amber-200"
+                          p.status === "paid" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
+                          p.status === "failed" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/50" :
+                          p.status === "refunded" ? "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-900/50" :
+                          "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900/50"
                         } variant="outline">
                           {p.status === "paid" ? "✓ Paid" : p.status === "failed" ? "✗ Failed" : p.status}
                         </Badge>
@@ -1264,7 +1264,7 @@ export default function ClientDetail() {
                         ? `${membership ?? "Membership"} moved from ${sourcePet} to ${replacementPet ?? "replacement pet"}`
                         : `${membership ?? "Membership"} was removed for ${sourcePet}`;
                     return <div key={event.id} className="flex gap-3 px-5 py-4">
-                      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${event.eventType === "pet_marked_departed" ? "bg-amber-100 text-amber-800" : isTransfer ? "bg-violet-100 text-violet-800" : "bg-red-100 text-red-800"}`}><History className="h-4 w-4" /></div>
+                      <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${event.eventType === "pet_marked_departed" ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300" : isTransfer ? "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300" : "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300"}`}><History className="h-4 w-4" /></div>
                       <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="font-medium text-sm">{description}</p><Badge variant="outline" className="text-[10px]">{event.eventType === "pet_marked_departed" ? "Pet status" : isTransfer ? "Membership transfer" : "Membership removed"}</Badge></div>{event.note && <p className="mt-1 text-sm text-muted-foreground italic">{event.note}</p>}<p className="mt-1 text-xs text-muted-foreground">{new Date(event.changedAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), dateStyle: "medium", timeStyle: "short" })} · {event.changedByName ?? "Administrator"}</p></div>
                     </div>;
                   })}
@@ -1300,9 +1300,9 @@ export default function ClientDetail() {
                   ))}
                 </SelectContent>
               </Select>
-              {bookingFamilyCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/70 p-3"><p className="text-sm font-semibold text-violet-950">Family-linked dogs</p><p className="mt-0.5 text-xs text-violet-800">Add family companions to this shared appointment?</p><div className="mt-2 flex flex-wrap gap-2">{bookingFamilyCompanions.map(pet => { const included = bookFamilyPetIds.includes(String(pet.id)); return <Button key={pet.id} type="button" size="sm" variant={included ? "default" : "outline"} className={included ? "bg-violet-700 hover:bg-violet-800" : "border-violet-300 bg-card text-violet-900 hover:bg-violet-100"} onClick={() => setBookFamilyPetIds(current => included ? current.filter(id => id !== String(pet.id)) : [...current, String(pet.id)])}>{included ? "✓ " : "+ "}{pet.name}</Button>; })}</div></div>}
-              {bookingPetIds.length > 0 && bookingMembershipCoverage.fullyCovered && <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-950"><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{Object.values(bookingMembershipCoverage.membershipByPetId).map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800">Every selected dog is covered for this service. This appointment is recorded as $0.00 because payment is managed through the weekly membership.</p></div>}
-              {bookingPetIds.length > 0 && !bookingMembershipCoverage.fullyCovered && bookingMembershipCoverage.coveredPetIds.length > 0 && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">Some selected dogs have an active membership, but not every selected dog is covered for this service. Review the appointment price before saving.</div>}
+              {bookingFamilyCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50/70 dark:bg-violet-950/70 p-3"><p className="text-sm font-semibold text-violet-950">Family-linked dogs</p><p className="mt-0.5 text-xs text-violet-800 dark:text-violet-300">Add family companions to this shared appointment?</p><div className="mt-2 flex flex-wrap gap-2">{bookingFamilyCompanions.map(pet => { const included = bookFamilyPetIds.includes(String(pet.id)); return <Button key={pet.id} type="button" size="sm" variant={included ? "default" : "outline"} className={included ? "bg-violet-700 hover:bg-violet-800" : "border-violet-300 dark:border-violet-800 bg-card text-violet-900 dark:text-violet-200 hover:bg-violet-100 dark:bg-violet-950/50"} onClick={() => setBookFamilyPetIds(current => included ? current.filter(id => id !== String(pet.id)) : [...current, String(pet.id)])}>{included ? "✓ " : "+ "}{pet.name}</Button>; })}</div></div>}
+              {bookingPetIds.length > 0 && bookingMembershipCoverage.fullyCovered && <div className="mt-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950"><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{Object.values(bookingMembershipCoverage.membershipByPetId).map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800 dark:text-emerald-300">Every selected dog is covered for this service. This appointment is recorded as $0.00 because payment is managed through the weekly membership.</p></div>}
+              {bookingPetIds.length > 0 && !bookingMembershipCoverage.fullyCovered && bookingMembershipCoverage.coveredPetIds.length > 0 && <div className="mt-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300">Some selected dogs have an active membership, but not every selected dog is covered for this service. Review the appointment price before saving.</div>}
             </div>
             {/* Service */}
             <div className="space-y-1.5">
@@ -1357,11 +1357,11 @@ export default function ClientDetail() {
       <Dialog open={Boolean(departedPet)} onOpenChange={(open) => { if (!open && !markDeparted.isPending) setDepartedPet(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-900"><HeartCrack className="h-5 w-5" /> Record a pet’s passing</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-amber-900 dark:text-amber-200"><HeartCrack className="h-5 w-5" /> Record a pet’s passing</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1 text-sm">
             <p>This keeps <strong>{departedPet?.name}</strong> in the client’s history. It will not delete past appointments, grooming reports or payment records.</p>
-            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">If there is an active membership, use its <strong>Manage</strong> button after saving to either transfer it to an eligible same-size replacement pet or remove it and stop future billing.</p>
+            <p className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-900 dark:text-amber-200">If there is an active membership, use its <strong>Manage</strong> button after saving to either transfer it to an eligible same-size replacement pet or remove it and stop future billing.</p>
             <div className="space-y-1.5">
               <Label htmlFor="departure-note">Private care note (optional)</Label>
               <Input id="departure-note" value={departureNote} onChange={event => setDepartureNote(event.target.value)} placeholder="For example: client advised us today" />
@@ -1457,7 +1457,7 @@ export default function ClientDetail() {
                 <p className="text-xs text-muted-foreground">Transfers are limited to an active pet on this client’s account in the same configured weight band.</p>
               </div>
             ) : (
-              <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">This cancels the membership record for future billing and preserves its payments and care history.</p>
+              <p className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 p-3 text-xs text-red-800 dark:text-red-300">This cancels the membership record for future billing and preserves its payments and care history.</p>
             )}
             <div className="space-y-1.5">
               <Label htmlFor="membership-care-note">Private care note (optional)</Label>
@@ -1486,9 +1486,9 @@ export default function ClientDetail() {
                 </DialogHeader>
                 <div className="space-y-4 py-2 text-sm">
                   <p>Review the outcome below. Nothing has been changed yet.</p>
-                  <div className={`rounded-xl border p-4 ${departureMembershipAction === "remove" ? "border-red-200 bg-red-50" : "border-primary/20 bg-primary/5"}`}>
+                  <div className={`rounded-xl border p-4 ${departureMembershipAction === "remove" ? "border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40" : "border-primary/20 bg-primary/5"}`}>
                     <div className="flex items-start gap-3">
-                      {departureMembershipAction === "transfer" ? <Replace className="mt-0.5 h-5 w-5 text-primary" /> : <Unlink className="mt-0.5 h-5 w-5 text-red-700" />}
+                      {departureMembershipAction === "transfer" ? <Replace className="mt-0.5 h-5 w-5 text-primary" /> : <Unlink className="mt-0.5 h-5 w-5 text-red-700 dark:text-red-300" />}
                       <div className="space-y-2">
                         <p className="font-semibold">{selectedMembership?.name ?? membershipAction?.membershipName}</p>
                         <p><span className="text-muted-foreground">Current pet:</span> <strong>{membershipAction?.petName}</strong></p>
@@ -1500,7 +1500,7 @@ export default function ClientDetail() {
                           </>
                         ) : (
                           <>
-                            <p><span className="text-muted-foreground">Future billing:</span> <strong className="text-red-800">{billingImpact}</strong></p>
+                            <p><span className="text-muted-foreground">Future billing:</span> <strong className="text-red-800 dark:text-red-300">{billingImpact}</strong></p>
                             <p className="text-xs text-muted-foreground">Past payments, invoices, appointments and grooming history remain preserved on this client record.</p>
                           </>
                         )}

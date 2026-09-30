@@ -312,7 +312,7 @@ export default function Reporting() {
                     <p className="text-sm font-medium">{r.name}</p>
                     <p className="text-xs text-muted-foreground">{r.desc}</p>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${r.ready ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${r.ready ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
                     {r.ready ? "Available" : "Coming soon"}
                   </span>
                 </div>

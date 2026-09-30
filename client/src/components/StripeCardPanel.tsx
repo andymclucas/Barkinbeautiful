@@ -62,12 +62,12 @@ export function StripeCardPanel({ clientId }: { clientId: number }) {
             ) : card?.description ? (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 {card.chargeable ? (
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                 ) : (
-                  <TriangleAlert className="h-3.5 w-3.5 text-amber-600" />
+                  <TriangleAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                 )}
                 {card.description}
-                {card.expired && <span className="font-semibold text-amber-700">· expired</span>}
+                {card.expired && <span className="font-semibold text-amber-700 dark:text-amber-300">· expired</span>}
               </p>
             ) : (
               <p className="text-xs text-muted-foreground">
@@ -93,7 +93,7 @@ export function StripeCardPanel({ clientId }: { clientId: number }) {
             <Button
               size="sm"
               variant="outline"
-              className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+              className="gap-1.5 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:bg-red-950/40 hover:text-red-700 dark:text-red-300"
               disabled={removeCard.isPending}
               onClick={() => removeCard.mutate({ clientId })}
             >
@@ -104,7 +104,7 @@ export function StripeCardPanel({ clientId }: { clientId: number }) {
       </div>
 
       {config && !config.configured && (
-        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
           Stripe has no live key on this deployment, so cards cannot be saved or charged yet.
         </p>
       )}

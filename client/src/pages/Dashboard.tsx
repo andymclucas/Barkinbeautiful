@@ -18,10 +18,10 @@ const STAGE_LABELS: Record<string, string> = {
 };
 const STAGE_COLOURS: Record<string, { bg: string; fg: string }> = {
   scheduled:  { bg: "bg-muted",    fg: "text-muted-foreground" },
-  checked_in: { bg: "bg-violet-100",   fg: "text-violet-700" },
-  bathing:    { bg: "bg-blue-100",     fg: "text-blue-700" },
-  grooming:   { bg: "bg-violet-100",   fg: "text-violet-700" },
-  ready:      { bg: "bg-emerald-100",  fg: "text-emerald-700" },
+  checked_in: { bg: "bg-violet-100 dark:bg-violet-950/50",   fg: "text-violet-700 dark:text-violet-300" },
+  bathing:    { bg: "bg-blue-100 dark:bg-blue-950/50",     fg: "text-blue-700 dark:text-blue-300" },
+  grooming:   { bg: "bg-violet-100 dark:bg-violet-950/50",   fg: "text-violet-700 dark:text-violet-300" },
+  ready:      { bg: "bg-emerald-100 dark:bg-emerald-950/50",  fg: "text-emerald-700 dark:text-emerald-300" },
   complete:   { bg: "bg-emerald-600",  fg: "text-white" },
 };
 
@@ -196,9 +196,9 @@ export default function Dashboard() {
 
         {/* Alerts */}
         {failedPayments && failedPayments.length > 0 && (
-          <Card className="border-amber-200 bg-amber-50">
+          <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40">
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-800">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2 text-amber-800 dark:text-amber-300">
                 <AlertTriangle className="h-4 w-4" />
                 {failedPayments.length} Failed Membership Payment{failedPayments.length > 1 ? "s" : ""}
               </CardTitle>
@@ -207,15 +207,15 @@ export default function Dashboard() {
               <div className="space-y-2">
                 {failedPayments.slice(0, 3).map((fp) => (
                   <div key={fp.membershipId} className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-amber-900">{fp.clientFirstName} {fp.clientLastName} — {fp.petName}</span>
-                    <Badge variant="outline" className="border-amber-400 text-amber-800 text-xs">
+                    <span className="font-medium text-amber-900 dark:text-amber-200">{fp.clientFirstName} {fp.clientLastName} — {fp.petName}</span>
+                    <Badge variant="outline" className="border-amber-400 text-amber-800 dark:text-amber-300 text-xs">
                       {fp.failedCount} failed attempt{fp.failedCount !== 1 ? "s" : ""}
                     </Badge>
                   </div>
                 ))}
               </div>
               <Link href="/memberships">
-                <Button variant="outline" size="sm" className="mt-3 gap-1 border-amber-400 text-amber-800 hover:bg-amber-100">
+                <Button variant="outline" size="sm" className="mt-3 gap-1 border-amber-400 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:bg-amber-950/50">
                   View all <ArrowRight className="h-3 w-3" />
                 </Button>
               </Link>
@@ -317,7 +317,7 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="pb-2 pt-4 px-4 flex-row items-center justify-between space-y-0">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-violet-600" />
+                <MessageSquare className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                 {unreadMsgs} Unread Message{unreadMsgs !== 1 ? "s" : ""}
               </CardTitle>
               <Link href="/messages">
@@ -330,7 +330,7 @@ export default function Dashboard() {
               {messagePreview.recent.map((item) => (
                 <Link key={item.id} href="/messages">
                   <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5 hover:bg-muted/60 transition-colors cursor-pointer">
-                    <div className={`mt-0.5 shrink-0 flex h-8 w-8 items-center justify-center rounded-full ${item.kind === "missed_call" ? "bg-red-100 text-red-600" : "bg-violet-100 text-violet-600"}`}>
+                    <div className={`mt-0.5 shrink-0 flex h-8 w-8 items-center justify-center rounded-full ${item.kind === "missed_call" ? "bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400" : "bg-violet-100 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400"}`}>
                       {item.kind === "missed_call" ? <Phone className="h-3.5 w-3.5" /> : <MessageSquare className="h-3.5 w-3.5" />}
                     </div>
                     <div className="min-w-0 flex-1">

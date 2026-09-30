@@ -101,7 +101,7 @@ export default function NotificationBell() {
                 <button className="min-w-0 flex-1 text-left" onClick={() => openItem(item)}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium truncate flex items-center gap-1.5">
-                      {item.kind === "missed_call" && <Phone className="h-3 w-3 text-amber-600 shrink-0" />}
+                      {item.kind === "missed_call" && <Phone className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />}
                       {item.clientName?.trim() || item.toNumber}
                     </span>
                     <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(item.at)}</span>

@@ -28,8 +28,8 @@ import {
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 const STATUS_STYLE: Record<string, string> = {
-  paid: "bg-emerald-100 text-emerald-800",
-  partial: "bg-amber-100 text-amber-800",
+  paid: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
+  partial: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
   unpaid: "bg-muted text-muted-foreground",
 };
 
@@ -106,7 +106,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
                   </span>
                 )}
                 {entry.overpaid && (
-                  <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                  <span className="rounded-full bg-red-100 dark:bg-red-950/50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:text-red-300">
                     overpaid
                   </span>
                 )}
@@ -129,13 +129,13 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
                       {line.note && <> · {line.note}</>}
                     </span>
                     <span className="flex items-center gap-1.5 shrink-0">
-                      <span className={`tabular-nums font-semibold ${Number(line.amount) < 0 ? "text-red-600" : ""}`}>
+                      <span className={`tabular-nums font-semibold ${Number(line.amount) < 0 ? "text-red-600 dark:text-red-400" : ""}`}>
                         {money(Number(line.amount))}
                       </span>
                       <button
                         type="button"
                         aria-label="Remove this payment"
-                        className="text-muted-foreground hover:text-red-600 disabled:opacity-50"
+                        className="text-muted-foreground hover:text-red-600 dark:text-red-400 disabled:opacity-50"
                         disabled={remove.isPending}
                         onClick={() => remove.mutate({ paymentId: line.id })}
                       >
@@ -207,7 +207,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
               <QuickAmount label={`Third ${money(splitEvenly(selected.outstanding, 3)[0])}`} onClick={() => setAmount(splitEvenly(selected.outstanding!, 3)[0].toFixed(2))} />
             </>
           )}
-          {check && !check.ok && <span className="text-[11px] text-red-600">{check.error}</span>}
+          {check && !check.ok && <span className="text-[11px] text-red-600 dark:text-red-400">{check.error}</span>}
         </div>
       </div>
     </div>

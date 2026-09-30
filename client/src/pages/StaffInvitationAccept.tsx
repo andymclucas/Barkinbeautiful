@@ -28,17 +28,17 @@ export default function StaffInvitationAccept() {
   const unavailable = !token || invitation.data === null || invitation.data?.expired || invitation.data?.status !== "pending";
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-[#fff7fb] via-white to-violet-50 px-4 py-10 sm:py-16">
-      <section className="mx-auto w-full max-w-md rounded-3xl border border-red-100 bg-card p-6 shadow-xl shadow-red-100/50 sm:p-8">
+    <main className="min-h-screen bg-gradient-to-br from-[#fff7fb] via-white to-violet-50 dark:to-violet-950/40 px-4 py-10 sm:py-16">
+      <section className="mx-auto w-full max-w-md rounded-3xl border border-red-100 dark:border-red-950/50 bg-card p-6 shadow-xl shadow-red-100/50 sm:p-8">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-700 text-white"><ShieldCheck className="h-6 w-6" /></div>
-          <div><p className="text-sm font-semibold text-violet-700">Groomigo staff access</p><h1 className="text-xl font-bold text-foreground">Set up your account</h1></div>
+          <div><p className="text-sm font-semibold text-violet-700 dark:text-violet-300">Groomigo staff access</p><h1 className="text-xl font-bold text-foreground">Set up your account</h1></div>
         </div>
 
         {invitation.isLoading ? <div className="space-y-3 animate-pulse"><div className="h-5 w-2/3 rounded bg-muted" /><div className="h-10 rounded-lg bg-muted" /><div className="h-10 rounded-lg bg-muted" /></div> : complete ? (
-          <div className="space-y-4 text-center py-4"><CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" /><h2 className="text-lg font-bold">Account setup complete</h2><p className="text-sm text-muted-foreground">Your administrator must approve your access before you can sign in. They will be able to see that your profile is ready.</p></div>
+          <div className="space-y-4 text-center py-4"><CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600 dark:text-emerald-400" /><h2 className="text-lg font-bold">Account setup complete</h2><p className="text-sm text-muted-foreground">Your administrator must approve your access before you can sign in. They will be able to see that your profile is ready.</p></div>
         ) : unavailable ? (
-          <div className="space-y-3 rounded-2xl bg-red-50 p-4"><Clock3 className="h-6 w-6 text-red-600" /><h2 className="font-bold text-red-950">This invitation is unavailable</h2><p className="text-sm text-red-800">It may have expired, been replaced or already been used. Please ask your salon administrator to send a new invitation.</p></div>
+          <div className="space-y-3 rounded-2xl bg-red-50 dark:bg-red-950/40 p-4"><Clock3 className="h-6 w-6 text-red-600 dark:text-red-400" /><h2 className="font-bold text-red-950">This invitation is unavailable</h2><p className="text-sm text-red-800 dark:text-red-300">It may have expired, been replaced or already been used. Please ask your salon administrator to send a new invitation.</p></div>
         ) : (
           <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); if (password.length < 8) return toast.error("Choose a password with at least 8 characters"); if (password !== confirmPassword) return toast.error("Passwords do not match"); accept.mutate({ token, password, timezone }); }}>
             <p className="text-sm text-muted-foreground">You are accepting an invitation for <strong className="text-foreground">{invitation.data?.staffName}</strong> at <strong className="text-foreground">{invitation.data?.email}</strong>. You will be able to view your assigned appointments, update workflow stages, and upload grooming-card photos after approval.</p>
@@ -61,7 +61,7 @@ export default function StaffInvitationAccept() {
               </Select>
               <p className="mt-1 text-xs text-muted-foreground">All times in the app will be shown in this timezone. You can change it later in Settings.</p>
             </div>
-            <div className="rounded-xl bg-violet-50 p-3 text-xs text-violet-900">Your account remains inactive until the salon administrator approves it. Appointment editing and administrative areas are not included in staff access.</div>
+            <div className="rounded-xl bg-violet-50 dark:bg-violet-950/40 p-3 text-xs text-violet-900 dark:text-violet-200">Your account remains inactive until the salon administrator approves it. Appointment editing and administrative areas are not included in staff access.</div>
             <Button type="submit" className="w-full" disabled={accept.isPending}>{accept.isPending ? "Setting up…" : "Complete setup"}</Button>
           </form>
         )}

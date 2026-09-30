@@ -24,10 +24,10 @@ import { getClientPreviewSide } from "../lib/clientPreviewPosition";
 import { getActiveTimeZone } from "@/lib/timezone";
 
 const STATUS_COLOURS: Record<string, string> = {
-  active: "bg-emerald-100 text-emerald-800",
+  active: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
   inactive: "bg-muted text-muted-foreground",
-  lapsed: "bg-amber-100 text-amber-800",
-  blocked: "bg-red-100 text-red-800",
+  lapsed: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
+  blocked: "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300",
 };
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -129,8 +129,8 @@ function ClientHoverCard({
                 <div className="space-y-1">
                   {data?.pets.map(p => (
                     <div key={p.id} className="flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                        <Dog className="h-3 w-3 text-amber-600" />
+                      <div className="h-6 w-6 rounded-full bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center flex-shrink-0">
+                        <Dog className="h-3 w-3 text-amber-600 dark:text-amber-400" />
                       </div>
                       <div>
                         <span className="text-xs font-medium">{p.name}</span>
@@ -162,7 +162,7 @@ function ClientHoverCard({
                         <p className="text-xs text-muted-foreground">
                           {new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "2-digit" })}
                         </p>
-                        <Badge className={`text-[10px] px-1 py-0 ${a.workflowState === "complete" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+                        <Badge className={`text-[10px] px-1 py-0 ${a.workflowState === "complete" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
                           {a.workflowState}
                         </Badge>
                       </div>

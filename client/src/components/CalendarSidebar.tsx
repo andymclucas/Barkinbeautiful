@@ -117,7 +117,7 @@ export function CalendarSidebar({
         <dl className="space-y-1.5">
           <Row label="Total appts" value={String(summary.totalAppointments)} />
           <Row label="Total pets" value={String(summary.totalPets)} />
-          <Row label="Earned rev" value={money(summary.earnedRevenue)} tone="text-emerald-700" />
+          <Row label="Earned rev" value={money(summary.earnedRevenue)} tone="text-emerald-700 dark:text-emerald-300" />
           <Row label="Expected rev" value={money(summary.expectedRevenue)} />
           {summary.cancelledCount > 0 && (
             // The toolbar counts every booking on the day, these figures count

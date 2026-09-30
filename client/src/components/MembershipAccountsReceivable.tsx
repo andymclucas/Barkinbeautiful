@@ -52,22 +52,22 @@ export function MembershipAccountsReceivable() {
         <tbody>
           {(accounts ?? []).length === 0 && <tr><td colSpan={7} className="p-10 text-center text-muted-foreground">No memberships to reconcile.</td></tr>}
           {(accounts ?? []).map(account => {
-            const statusClass = account.accountStatus === "declined" || account.accountStatus === "cancelled" ? "bg-red-100 text-red-800" : account.accountStatus === "grace_period" ? "bg-amber-100 text-amber-800" : account.accountStatus === "arrears_review" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800";
+            const statusClass = account.accountStatus === "declined" || account.accountStatus === "cancelled" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300" : account.accountStatus === "grace_period" ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300" : account.accountStatus === "arrears_review" ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300" : "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300";
             const label = account.accountStatus === "up_to_date" ? "Up to date" : account.accountStatus.replace("_", " ");
             const firstUnvalued = account.unvaluedGrooms[0];
             return <tr key={account.id} className="border-b last:border-0 align-top hover:bg-muted/20">
               <td className="p-3"><p className="font-medium">{account.clientFirstName} {account.clientLastName}</p><p className="text-xs text-muted-foreground">{account.petName}</p></td>
               <td className="p-3"><p>{account.name}</p><p className="text-xs text-muted-foreground">{account.completedGrooms} completed groom{account.completedGrooms !== 1 ? "s" : ""} · {account.paidPaymentRows + account.ledgerPaymentRows} payment record{account.paidPaymentRows + account.ledgerPaymentRows !== 1 ? "s" : ""}</p></td>
-              <td className="p-3 text-right font-semibold text-emerald-700">${account.paidToDate.toFixed(2)}</td>
-              <td className="p-3 text-right font-semibold">${account.groomValueDelivered.toFixed(2)}{account.unvaluedCompletedGrooms > 0 && <p className="text-[11px] font-normal text-amber-700">+ {account.unvaluedCompletedGrooms} value pending</p>}</td>
-              <td className="p-3 text-right font-bold text-red-700">${account.arrearsAmount.toFixed(2)}</td>
-              <td className="p-3"><Badge className={`capitalize ${statusClass}`}>{label}</Badge>{account.requiresBookingReview && <p className="mt-1 text-[11px] text-red-700">Booking review required</p>}</td>
+              <td className="p-3 text-right font-semibold text-emerald-700 dark:text-emerald-300">${account.paidToDate.toFixed(2)}</td>
+              <td className="p-3 text-right font-semibold">${account.groomValueDelivered.toFixed(2)}{account.unvaluedCompletedGrooms > 0 && <p className="text-[11px] font-normal text-amber-700 dark:text-amber-300">+ {account.unvaluedCompletedGrooms} value pending</p>}</td>
+              <td className="p-3 text-right font-bold text-red-700 dark:text-red-300">${account.arrearsAmount.toFixed(2)}</td>
+              <td className="p-3"><Badge className={`capitalize ${statusClass}`}>{label}</Badge>{account.requiresBookingReview && <p className="mt-1 text-[11px] text-red-700 dark:text-red-300">Booking review required</p>}</td>
               <td className="p-3"><div className="flex flex-wrap gap-1.5">
                 {firstUnvalued && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setValueTarget({ membershipId: account.id, appointmentId: firstUnvalued.id, clientName: `${account.clientFirstName} ${account.clientLastName}`, petName: account.petName }); setGroomValue(""); }}>Value groom</Button>}
                 <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPaymentTarget({ membershipId: account.id, clientName: `${account.clientFirstName} ${account.clientLastName}`, petName: account.petName }); setPaymentAmount(""); setPaymentNote(""); }}>Record payment</Button>
                 {account.invoiceReady && account.arrearsAmount > 0 && !account.openInvoice && <Button size="sm" className="h-7 text-xs" disabled={createInvoice.isPending} onClick={() => createInvoice.mutate({ membershipId: account.id })}><FileText className="mr-1 h-3 w-3" />Draft invoice</Button>}
                 {account.openInvoice && <><Badge variant="outline" className="h-7 px-2 text-xs">{account.openInvoice.invoiceNumber} · {account.openInvoice.status}</Badge><Button size="sm" variant="outline" className="h-7 text-xs" disabled={createStripeCheckout.isPending || account.openInvoice.status === "paid"} onClick={() => createStripeCheckout.mutate({ invoiceId: account.openInvoice!.id })}><CreditCard className="mr-1 h-3 w-3" />Stripe checkout</Button></>}
-                {account.requiresBookingReview && <Button size="sm" variant="outline" className={`h-7 text-xs ${account.bookingSuspended ? "border-red-300 text-red-700" : ""}`} disabled={setHold.isPending} onClick={() => setHold.mutate({ membershipId: account.id, hold: !account.bookingSuspended })}><LockKeyhole className="mr-1 h-3 w-3" />{account.bookingSuspended ? "Release hold" : "Place hold"}</Button>}
+                {account.requiresBookingReview && <Button size="sm" variant="outline" className={`h-7 text-xs ${account.bookingSuspended ? "border-red-300 dark:border-red-800 text-red-700 dark:text-red-300" : ""}`} disabled={setHold.isPending} onClick={() => setHold.mutate({ membershipId: account.id, hold: !account.bookingSuspended })}><LockKeyhole className="mr-1 h-3 w-3" />{account.bookingSuspended ? "Release hold" : "Place hold"}</Button>}
               </div></td>
             </tr>;
           })}

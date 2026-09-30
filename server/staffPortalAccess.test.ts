@@ -125,8 +125,10 @@ describe("canStaffUpdateAppointment", () => {
     // a coloured stage chip, plus amber/red row tinting past the thresholds.
     const sharedTable = readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
     expect(sharedTable).toContain("style={{ background: stage.colour }}");
-    expect(sharedTable).toContain('timerAlert ? "bg-red-50/40"');
-    expect(sharedTable).toContain('timerWarn ? "bg-amber-50/30"');
+    // The dark counterpart was appended when dark mode landed, so match the
+    // alert tint rather than the exact class string.
+    expect(sharedTable).toMatch(/timerAlert \? "bg-red-50\/40( dark:bg-red-950\/40)?"/);
+    expect(sharedTable).toMatch(/timerWarn \? "bg-amber-50\/30( dark:bg-amber-950\/30)?"/);
     // Alternating row striping is what keeps a long list readable across a room.
     // It now comes from the shared table, so the wall display stripes exactly as
     // the staff board does.
@@ -167,7 +169,9 @@ describe("canStaffUpdateAppointment", () => {
     // change anything — a wall display has nobody to click it.
     expect(tableSource).toContain("draggable={!readOnly}");
     expect(tableSource).toContain("{!readOnly && (<>");
-    expect(tableSource).toContain('<span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-1 rounded border border-emerald-300">READY</span>');
+    // The READY pill, asserted by its parts. Pinning the whole class string
+    // meant every dark: variant added beside those colours broke it.
+    expect(tableSource).toMatch(/text-emerald-700[^"]*bg-emerald-100[^"]*border-emerald-300[^"]*">READY<\/span>/);
     for (const prop of ['tone="cage"', 'tone="tag"', 'placeholder="Bath"', 'placeholder="Dry"', 'placeholder="Groomer"']) {
       expect(tableSource).toContain(`${prop}\n                        readOnly={readOnly}`);
     }

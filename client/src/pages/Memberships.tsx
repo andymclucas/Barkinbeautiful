@@ -46,19 +46,19 @@ type MembershipWeightClass = "small" | "small_medium" | "medium" | "large" | "ex
 const TIER_ORDER: Record<string, number> = { diamond: 0, platinum: 1, gold: 2, silver: 3, bronze: 4 };
 
 const STATUS_COLOURS: Record<string, string> = {
-  active: "bg-emerald-100 text-emerald-800",
+  active: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
   paused: "bg-muted text-muted-foreground",
-  cancelled: "bg-red-100 text-red-800",
-  pending_payment: "bg-amber-100 text-amber-800",
+  cancelled: "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300",
+  pending_payment: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
   expired: "bg-muted text-muted-foreground",
 };
 
 const TIER_COLOURS: Record<string, string> = {
-  diamond: "bg-violet-100 text-violet-800",
+  diamond: "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300",
   platinum: "bg-accent text-foreground",
-  gold: "bg-amber-100 text-amber-800",
+  gold: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
   silver: "bg-muted text-muted-foreground",
-  bronze: "bg-amber-100 text-amber-800",
+  bronze: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
 };
 
 const TIER_OPTIONS = [
@@ -128,7 +128,7 @@ function MembershipClientPreview({ m, children }: { m: MembershipItem; children:
                 <div className="space-y-1.5">
                   {data.pets.map((pet) => (
                     <div key={pet.id} className="flex items-center gap-2 text-xs">
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100"><Dog className="h-3 w-3 text-amber-600" /></div>
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/50"><Dog className="h-3 w-3 text-amber-600 dark:text-amber-400" /></div>
                       <span className="font-medium">{pet.name}</span>
                       {pet.breed && <span className="text-muted-foreground">· {pet.breed}</span>}
                     </div>
@@ -138,7 +138,7 @@ function MembershipClientPreview({ m, children }: { m: MembershipItem; children:
             </div>
             <div className="flex items-center justify-between px-3 py-2 text-xs text-muted-foreground">
               <span>{m.petName}{m.petBreed ? ` · ${m.petBreed}` : ""}</span>
-              {m.failedPaymentCount && m.failedPaymentCount > 0 && <span className="font-semibold text-red-600">{m.failedPaymentCount} failed payment{m.failedPaymentCount === 1 ? "" : "s"}</span>}
+              {m.failedPaymentCount && m.failedPaymentCount > 0 && <span className="font-semibold text-red-600 dark:text-red-400">{m.failedPaymentCount} failed payment{m.failedPaymentCount === 1 ? "" : "s"}</span>}
             </div>
           </div>
         )}
@@ -274,9 +274,9 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
               <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">Checking the dog’s recorded weight…</p>
             ) : requiresManualWeightSelection ? (
               <div className="space-y-3">
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                <div className="rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-950">
                   <p className="font-medium">A verified recorded weight is not available for this dog.</p>
-                  <p className="mt-1 text-xs text-amber-900">Choose the membership tier first, then an approved weight band. This fallback only sets the membership package and does not change the dog’s recorded weight.</p>
+                  <p className="mt-1 text-xs text-amber-900 dark:text-amber-200">Choose the membership tier first, then an approved weight band. This fallback only sets the membership package and does not change the dog’s recorded weight.</p>
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="membership-tier">VIP tier <span className="text-red-500">*</span></Label>
@@ -341,22 +341,22 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
                 </SelectContent>
               </Select>
             ) : (
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">No verified VIP packages are available for this dog.</p>
+              <p className="rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">No verified VIP packages are available for this dog.</p>
             )}
           </div>
 
           {selectedPackage && (
-            <div className="grid grid-cols-2 gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-950">
+            <div className="grid grid-cols-2 gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Weekly price</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">Weekly price</p>
                 <p className="mt-1 text-lg font-bold">${selectedPackage.weeklyPrice.toFixed(2)} / week</p>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Appointment schedule</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">Appointment schedule</p>
                 <p className="mt-1 text-sm font-semibold">Every {selectedPackage.appointmentIntervalWeeks} weeks</p>
-                <p className="text-xs text-emerald-800">{selectedPackage.visitsPerYear}</p>
+                <p className="text-xs text-emerald-800 dark:text-emerald-300">{selectedPackage.visitsPerYear}</p>
               </div>
-              <p className="col-span-2 text-xs text-emerald-800">Billed weekly. Package name, weekly price and appointment frequency come from the approved VIP schedule.</p>
+              <p className="col-span-2 text-xs text-emerald-800 dark:text-emerald-300">Billed weekly. Package name, weekly price and appointment frequency come from the approved VIP schedule.</p>
             </div>
           )}
 
@@ -419,7 +419,7 @@ function MembershipRow({ m }: { m: MembershipItem }) {
         <div className="flex items-center gap-1.5">
           <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-sm">{m.name}</span>
-          {m.isTest && <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700">TEST</Badge>}
+          {m.isTest && <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700 dark:text-amber-300">TEST</Badge>}
         </div>
       </td>
       <td className="p-3 hidden lg:table-cell">
@@ -441,7 +441,7 @@ function MembershipRow({ m }: { m: MembershipItem }) {
             {m.status.replace("_", " ")}
           </Badge>
           {m.bookingSuspended && (
-            <Badge className="text-xs bg-red-100 text-red-800 block">Suspended</Badge>
+            <Badge className="text-xs bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 block">Suspended</Badge>
           )}
           <MembershipBillingControl m={m} />
         </div>
@@ -482,7 +482,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   if (m.stripeSubscriptionId) {
     return (
       <div className="flex items-center gap-1">
-        <Badge className="block bg-emerald-100 text-[10px] text-emerald-800">Stripe weekly</Badge>
+        <Badge className="block bg-emerald-100 dark:bg-emerald-950/50 text-[10px] text-emerald-800 dark:text-emerald-300">Stripe weekly</Badge>
         <button
           type="button"
           className="text-[10px] font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50"
@@ -672,17 +672,17 @@ export default function Memberships() {
         </div>
 
         {failedPayments && failedPayments.length > 0 && (
-          <Card className="border-amber-200 bg-amber-50">
+          <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40">
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-amber-800">
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
                     {failedPayments.length} Failed Payment{failedPayments.length > 1 ? "s" : ""} Require Attention
                   </p>
                   <div className="mt-2 space-y-1">
                     {failedPayments.map(fp => (
-                      <div key={fp.membershipId} className="flex items-center justify-between text-xs text-amber-700">
+                      <div key={fp.membershipId} className="flex items-center justify-between text-xs text-amber-700 dark:text-amber-300">
                         <span>{fp.clientFirstName} {fp.clientLastName} — {fp.petName} ({fp.membershipName})</span>
                         <div className="flex items-center gap-2">
                           {fp.clientPhone && (
@@ -690,7 +690,7 @@ export default function Memberships() {
                               <Phone className="h-3 w-3" />{fp.clientPhone}
                             </a>
                           )}
-                          <Badge className="bg-amber-200 text-amber-900 text-[10px]">{fp.failedCount}x failed</Badge>
+                          <Badge className="bg-amber-200 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 text-[10px]">{fp.failedCount}x failed</Badge>
                         </div>
                       </div>
                     ))}
@@ -797,17 +797,17 @@ export default function Memberships() {
             ) : (
               <>
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  <Card className="border-red-200 bg-red-50">
+                  <Card className="border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40">
                     <CardContent className="p-4">
-                      <p className="text-xs text-red-600 font-semibold uppercase tracking-wide">Grooms Owed</p>
-                      <p className="text-3xl font-bold text-red-700 mt-1">{totalDebtGrooms}</p>
+                      <p className="text-xs text-red-600 dark:text-red-400 font-semibold uppercase tracking-wide">Grooms Owed</p>
+                      <p className="text-3xl font-bold text-red-700 dark:text-red-300 mt-1">{totalDebtGrooms}</p>
                       <p className="text-xs text-red-500 mt-0.5">across {debtItems.length} membership{debtItems.length !== 1 ? "s" : ""}</p>
                     </CardContent>
                   </Card>
-                  <Card className="border-amber-200 bg-amber-50">
+                  <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40">
                     <CardContent className="p-4">
-                      <p className="text-xs text-amber-600 font-semibold uppercase tracking-wide">Estimated Value</p>
-                      <p className="text-3xl font-bold text-amber-700 mt-1">${totalDebtAmount.toFixed(2)}</p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wide">Estimated Value</p>
+                      <p className="text-3xl font-bold text-amber-700 dark:text-amber-300 mt-1">${totalDebtAmount.toFixed(2)}</p>
                       <p className="text-xs text-amber-500 mt-0.5">at current membership rates</p>
                     </CardContent>
                   </Card>
@@ -864,8 +864,8 @@ export default function Memberships() {
                         <tr key={d.id} className="border-b last:border-0 hover:bg-muted/20">
                           <td className="p-3">
                             <div className="flex items-center gap-2">
-                              <div className="h-7 w-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                                <Dog className="h-3.5 w-3.5 text-red-600" />
+                              <div className="h-7 w-7 rounded-full bg-red-100 dark:bg-red-950/50 flex items-center justify-center flex-shrink-0">
+                                <Dog className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
                               </div>
                               <div>
                                 <p className="font-medium text-sm">{d.clientFirstName} {d.clientLastName}</p>
@@ -881,12 +881,12 @@ export default function Memberships() {
                             <span className="font-semibold">{d.paidCycles}</span>
                           </td>
                           <td className="p-3 text-center">
-                            <span className="font-semibold text-emerald-700">{d.groomsDelivered}</span>
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-300">{d.groomsDelivered}</span>
                           </td>
                           <td className="p-3 text-center">
-                            <Badge className="bg-red-100 text-red-800 font-bold">{d.debtGrooms} groom{d.debtGrooms !== 1 ? "s" : ""}</Badge>
+                            <Badge className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 font-bold">{d.debtGrooms} groom{d.debtGrooms !== 1 ? "s" : ""}</Badge>
                           </td>
-                          <td className="p-3 font-semibold text-red-700">
+                          <td className="p-3 font-semibold text-red-700 dark:text-red-300">
                             ${d.debtAmount.toFixed(2)}
                           </td>
                           <td className="p-3">
@@ -959,8 +959,8 @@ export default function Memberships() {
                       <tr key={fp.membershipId} className="border-b last:border-0 hover:bg-muted/20">
                         <td className="p-3">
                           <div className="flex items-center gap-2">
-                            <div className="h-7 w-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                              <Dog className="h-3.5 w-3.5 text-amber-600" />
+                            <div className="h-7 w-7 rounded-full bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center flex-shrink-0">
+                              <Dog className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
                             </div>
                             <div>
                               <p className="font-medium text-sm">{fp.clientFirstName} {fp.clientLastName}</p>
@@ -973,7 +973,7 @@ export default function Memberships() {
                         </td>
                         <td className="p-3">
                           <Badge className={`text-xs font-bold ${
-                            fp.failedCount >= 2 ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
+                            fp.failedCount >= 2 ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300" : "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
                           }`}>
                             {fp.failedCount}x
                           </Badge>
@@ -983,9 +983,9 @@ export default function Memberships() {
                         </td>
                         <td className="p-3">
                           {fp.suspended ? (
-                            <Badge className="text-xs bg-red-100 text-red-800">Suspended</Badge>
+                            <Badge className="text-xs bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300">Suspended</Badge>
                           ) : (
-                            <Badge className="text-xs bg-amber-100 text-amber-800">Pending Retry</Badge>
+                            <Badge className="text-xs bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300">Pending Retry</Badge>
                           )}
                         </td>
                         <td className="p-3">
@@ -993,7 +993,7 @@ export default function Memberships() {
                             <Button
                               size="sm"
                               variant="outline"
-                              className="gap-1.5 text-xs h-7 border-red-200 text-red-700 hover:bg-red-50"
+                              className="gap-1.5 text-xs h-7 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-50 dark:bg-red-950/40"
                               onClick={() => setConfirmRecordFailure({
                                 id: fp.membershipId,
                                 clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),
@@ -1051,7 +1051,7 @@ export default function Memberships() {
       <Dialog open={!!confirmRecordFailure} onOpenChange={open => { if (!open) { setConfirmRecordFailure(null); setFailureReason(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-700">
+            <DialogTitle className="flex items-center gap-2 text-red-700 dark:text-red-300">
               <XCircle className="h-4 w-4" />
               Record Payment Failure
             </DialogTitle>
@@ -1063,7 +1063,7 @@ export default function Memberships() {
                   Recording a failure for <strong className="text-foreground">{confirmRecordFailure.clientName}</strong>
                   {confirmRecordFailure.petName ? ` (${confirmRecordFailure.petName})` : ""}.
                   {confirmRecordFailure.failedCount >= 1 ? (
-                    <span className="block mt-1 text-red-600 font-medium">⚠ This is Strike 2 — bookings will be suspended and the client will be notified by email.</span>
+                    <span className="block mt-1 text-red-600 dark:text-red-400 font-medium">⚠ This is Strike 2 — bookings will be suspended and the client will be notified by email.</span>
                   ) : (
                     <span className="block mt-1">This is Strike 1 — a retry will be scheduled for the next business day.</span>
                   )}
@@ -1103,7 +1103,7 @@ export default function Memberships() {
       <Dialog open={!!confirmResolve} onOpenChange={open => { if (!open) setConfirmResolve(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-emerald-700">
+            <DialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
               <RefreshCw className="h-4 w-4" />
               Resolve Payment Failure
             </DialogTitle>
@@ -1134,7 +1134,7 @@ export default function Memberships() {
       <Dialog open={!!confirmMarkPaid} onOpenChange={open => { if (!open) setConfirmMarkPaid(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-emerald-700">
+            <DialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
               <CheckCircle className="h-4 w-4" />
               Mark Debt as Paid
             </DialogTitle>
