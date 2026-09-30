@@ -22,7 +22,11 @@ describe("Appointments day viewport layout", () => {
   it("uses the available large-screen viewport below the dashboard padding", () => {
     const src = source();
     expect(src).toContain("flex min-h-0 flex-col gap-4 lg:h-[calc(100dvh-2rem)]");
-    expect(src).toContain('viewMode === "day" ? "flex min-h-0 flex-1 flex-col" : "min-h-0"');
+    // The day view must fill the viewport rather than sizing to content. The
+    // exact string moved when the sidebar was added beside the grid, so this
+    // asserts the property: in day mode the view container is a shrinkable
+    // flex column that grows.
+    expect(src).toContain('viewMode === "day" ? "flex min-h-0 flex-1 flex-col"');
   });
 
   it("keeps the day card flexible and confines overflow to the staff calendar grid", () => {
@@ -30,6 +34,16 @@ describe("Appointments day viewport layout", () => {
     expect(src).toContain("min-h-[500px] flex-1");
     expect(src).toContain("lg:min-h-0");
     expect(src).toContain("overflow-x-auto overscroll-x-contain flex-1 flex flex-col");
+  });
+
+  it("puts the persistent sidebar beside the grid, not above it", () => {
+    // The month used to exist only inside a popover. The rail carries the
+    // month, Quick Jump and the day's figures, and must sit alongside the
+    // calendar rather than stacking above it and stealing vertical space.
+    const src = source();
+    expect(src).toContain("<CalendarSidebar");
+    expect(src).toContain("summary={sidebarSummary}");
+    expect(src).toContain('viewMode === "day" ? "flex min-h-0 flex-1 gap-4" : "flex min-h-0 gap-4"');
   });
 
   it("gives the grid body a bounded height so it scrolls itself", () => {

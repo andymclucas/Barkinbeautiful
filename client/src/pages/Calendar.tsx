@@ -28,6 +28,8 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { CalendarSidebar } from "@/components/CalendarSidebar";
+import { summariseCalendar } from "@shared/calendarSummary";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
   FileDown, Check, CheckCircle2, ImagePlus, Mail,
@@ -1685,6 +1687,14 @@ export default function Calendar() {
   }, [viewMode, filteredAppts, dayDate]);
 
   const totalThisView = viewMode === "day" ? dayViewAppts.length : filteredAppts.length;
+  // Figures for the sidebar, over whichever period is on screen. The maths
+  // lives in shared/ because the distinctions - appointments vs dogs, earned
+  // vs expected, and excluding cancellations from both - are easy to fudge
+  // into a number that looks right and is not.
+  const sidebarSummary = useMemo(
+    () => summariseCalendar(viewMode === "day" ? dayViewAppts : filteredAppts),
+    [viewMode, dayViewAppts, filteredAppts],
+  );
   const weekLabel = viewMode === "week"
     ? `${weekDays[0].toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}`
     : fmtDateShort(dayDate);
@@ -1853,9 +1863,24 @@ export default function Calendar() {
           </div>
         </div>
 
-        {/* Calendar */}
-        <div className={viewMode === "day" ? "flex min-h-0 flex-1 flex-col" : "min-h-0"}>
-          {viewMode === "week" ? renderWeekView() : renderDayView()}
+        {/* Calendar, with the persistent left rail beside it.
+            The month only existed inside a popover, so picking a date meant
+            open-choose-close, and there was no way to see next week's shape
+            while looking at today. The rail is lg-and-up; on a phone the
+            toolbar's date picker stays the way in. */}
+        <div className={viewMode === "day" ? "flex min-h-0 flex-1 gap-4" : "flex min-h-0 gap-4"}>
+          <CalendarSidebar
+            selected={viewMode === "day" ? dayDate : weekStart}
+            onSelectDate={(d) => {
+              if (viewMode === "day") setDayDate(d);
+              else setWeekStart(getWeekStart(d));
+            }}
+            summary={sidebarSummary}
+            summaryLabel={viewMode === "day" ? fmtDateShort(dayDate) : `Week of ${weekLabel}`}
+          />
+          <div className={viewMode === "day" ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1"}>
+            {viewMode === "week" ? renderWeekView() : renderDayView()}
+          </div>
         </div>
 
         {/* Unassigned row */}
