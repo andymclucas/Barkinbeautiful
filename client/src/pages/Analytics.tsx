@@ -61,9 +61,9 @@ export default function Analytics() {
       [],
       ["Revenue Streams", ""],
       ["Appointment Revenue", `$${(revenueStreams?.appointmentRevenue ?? 0).toFixed(2)}`],
-      ["Membership Revenue", `$${(revenueStreams?.membershipRevenue ?? 0).toFixed(2)}`],
-      ["Total Revenue", `$${(revenueStreams?.totalRevenue ?? 0).toFixed(2)}`],
-      ["Avg Ticket (All)", `$${(revenueStreams?.avgTicketAll ?? 0).toFixed(2)}`],
+      ["  of which member-attributed", `$${(revenueStreams?.memberAttributedRevenue ?? 0).toFixed(2)}`],
+      ["Membership run rate (per week)", `$${(revenueStreams?.membershipRunRateWeekly ?? 0).toFixed(2)}`],
+      ["Avg Ticket", `$${(revenueStreams?.avgTicket ?? 0).toFixed(2)}`],
       ["Avg Weeks Between Completed Grooms", groomInterval?.averageWeeks != null ? `${groomInterval.averageWeeks} weeks` : "Not enough repeat-groom history"],
       ["Repeat Pets Included", groomInterval?.returningPetCount ?? 0],
       [],
@@ -162,7 +162,7 @@ export default function Analytics() {
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Total Revenue", value: `$${(revenueStreams?.totalRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}`, icon: TrendingUp, colour: "text-emerald-600" , detail: summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} completed appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : undefined },
+            { label: "Revenue", value: `$${(revenueStreams?.appointmentRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}`, icon: TrendingUp, colour: "text-emerald-600" , detail: summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} completed appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : undefined },
             { label: "Appointments", value: String(summary?.appointments ?? 0), icon: CalendarDays, colour: "text-blue-600" },
             { label: "Active Clients", value: String(summary?.activeClients ?? 0), icon: Users, colour: "text-violet-600" },
             { label: "Active Memberships", value: String(summary?.activeMemberships ?? 0), icon: CreditCard, colour: "text-amber-600" },
@@ -195,7 +195,7 @@ export default function Analytics() {
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 {revenueStreams?.completedAppts ?? 0} completed appts
-                {(revenueStreams?.avgTicketNonMember ?? 0) > 0 && ` · avg $${revenueStreams?.avgTicketNonMember}`}
+                {(revenueStreams?.memberAttributedRevenue ?? 0) > 0 && ` · $${(revenueStreams?.memberAttributedRevenue ?? 0).toLocaleString("en-AU", { maximumFractionDigits: 0 })} from members`}
               </p>
             </CardContent>
           </Card>
@@ -204,11 +204,11 @@ export default function Analytics() {
           <Card className="border-amber-200/50">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Membership Revenue</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Membership Run Rate</p>
                 <Heart className="h-4 w-4 text-amber-500" />
               </div>
               <p className="text-3xl font-bold text-amber-600">
-                ${(revenueStreams?.membershipRevenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}
+                ${(revenueStreams?.membershipRunRateWeekly ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}<span className="text-base font-medium text-muted-foreground">/wk</span>
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 {summary?.activeMemberships ?? 0} active members
@@ -221,14 +221,14 @@ export default function Analytics() {
           <Card className="border-emerald-200/50">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg Ticket (All Clients)</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg Ticket</p>
                 <TrendingUp className="h-4 w-4 text-emerald-500" />
               </div>
               <p className="text-3xl font-bold text-emerald-600">
-                ${(revenueStreams?.avgTicketAll ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
+                ${(revenueStreams?.avgTicket ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2 })}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {(revenueStreams?.membershipAppts ?? 0)} member visits included
+                {(revenueStreams?.completedAppts ?? 0)} completed · {(revenueStreams?.membershipAppts ?? 0)} by members
               </p>
             </CardContent>
           </Card>

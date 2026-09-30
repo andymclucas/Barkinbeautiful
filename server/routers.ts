@@ -4115,11 +4115,10 @@ const analyticsRouter = router({
     .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
     .query(async ({ input }) => {
       const db = await getDb();
-      if (!db) return { appointmentRevenue: 0, membershipRevenue: 0, totalRevenue: 0, completedAppts: 0, membershipAppts: 0, avgTicketAll: 0, avgTicketNonMember: 0 };
+      if (!db) return { appointmentRevenue: 0, memberAttributedRevenue: 0, membershipRunRateWeekly: 0, activeMembers: 0, completedAppts: 0, membershipAppts: 0, avgTicket: 0 };
 
       const dateFrom = new Date(input.dateFrom);
       const dateTo = new Date(input.dateTo);
-      const periodWeeks = Math.max(1, (dateTo.getTime() - dateFrom.getTime()) / (7 * 24 * 60 * 60 * 1000));
 
       // Appointment revenue (non-membership, completed, with price)
       const [apptRevRow] = await db
@@ -4134,9 +4133,14 @@ const analyticsRouter = router({
           sql`${appointments.price} > 0`
         ));
 
-      // Count completed appointments for membership clients in period
+      // Completed appointments belonging to members. These are a SUBSET of
+      // apptRevRow above, not something to add to it - the groom is what the
+      // membership pays for.
       const memberAppts = await db
-        .select({ count: sql<number>`COUNT(DISTINCT ${appointments.id})` })
+        .select({
+          count: sql<number>`COUNT(DISTINCT ${appointments.id})`,
+          revenue: sql<string>`COALESCE(SUM(DISTINCT ${appointments.price}), 0)`,
+        })
         .from(appointments)
         .innerJoin(memberships, and(
           eq(memberships.clientId, appointments.clientId),
@@ -4165,19 +4169,40 @@ const analyticsRouter = router({
         totalWeeklyMemberRevenue += weeks > 0 ? price / weeks : price;
       }
 
-      const membershipRevenue = Math.round(totalWeeklyMemberRevenue * periodWeeks * 100) / 100;
+      // The weekly run rate of the CURRENT roster. Deliberately not multiplied
+      // out over the selected period, and deliberately not added to revenue.
+      //
+      // It used to be `weeklyTotal * periodWeeks`, summed with appointment
+      // revenue into a "Total Revenue" figure. That was wrong twice over. It
+      // billed today's 153 members for every week of the period - all 153
+      // joined within the last year, the earliest on 3 August - so "This Year"
+      // invented about $214,000 nobody had paid. And their grooms were already
+      // counted in appointmentRevenue, so $142,000 of real money was counted a
+      // second time. The card read $976,469 where the salon had taken $758,000.
+      //
+      // A run rate is a useful number. It is just not revenue, and the two
+      // must never be summed.
+      const membershipRunRateWeekly = Math.round(totalWeeklyMemberRevenue * 100) / 100;
       const appointmentRevenue = parseFloat(apptRevRow?.total ?? "0");
-      const totalRevenue = appointmentRevenue + membershipRevenue;
       const completedAppts = apptRevRow?.count ?? 0;
       const membershipApptCount = (memberAppts[0]?.count as number) ?? 0;
-      const avgTicketAll = completedAppts + membershipApptCount > 0
-        ? Math.round(totalRevenue / (completedAppts + membershipApptCount) * 100) / 100
-        : 0;
-      const avgTicketNonMember = completedAppts > 0
+      const memberAttributedRevenue = Math.round(parseFloat(memberAppts[0]?.revenue ?? "0") * 100) / 100;
+      // Money actually taken, over the grooms it was taken for. The old
+      // avgTicketAll divided an inflated total by a denominator that counted
+      // member grooms twice.
+      const avgTicket = completedAppts > 0
         ? Math.round(appointmentRevenue / completedAppts * 100) / 100
         : 0;
 
-      return { appointmentRevenue, membershipRevenue, totalRevenue, completedAppts, membershipAppts: membershipApptCount, avgTicketAll, avgTicketNonMember };
+      return {
+        appointmentRevenue,
+        memberAttributedRevenue,
+        membershipRunRateWeekly,
+        activeMembers: memberRows.length,
+        completedAppts,
+        membershipAppts: membershipApptCount,
+        avgTicket,
+      };
     }),
 });
 
