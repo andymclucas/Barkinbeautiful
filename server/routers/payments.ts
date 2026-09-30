@@ -32,6 +32,38 @@ import {
   derivePaymentStatus,
 } from "@shared/splitPayments";
 
+
+/**
+ * The shape the payment panel gets. Spelled out rather than inferred: the
+ * drizzle helpers here take `db: any`, so without these the client sees
+ * `any[]` and every field on it is unchecked.
+ */
+export interface BookingPaymentLine {
+  id: number;
+  appointmentId: number;
+  clientId: number;
+  amount: string;
+  method: string;
+  reference: string | null;
+  note: string | null;
+  createdAt: Date;
+  payerFirstName: string | null;
+  payerLastName: string | null;
+}
+
+export interface BookingAppointmentPayments {
+  appointmentId: number;
+  petId: number | null;
+  petName: string;
+  clientId: number;
+  total: number | null;
+  paid: number;
+  outstanding: number | null;
+  status: "unpaid" | "partial" | "paid" | null;
+  overpaid: boolean;
+  lines: BookingPaymentLine[];
+}
+
 /** Every appointment in the booking: the one asked for, plus its session. */
 async function loadBookingAppointments(db: any, appointmentId: number) {
   const [appointment] = await db
@@ -140,7 +172,7 @@ export const paymentsRouter = router({
         : [];
       const petNames = new Map<number, string>(petRows.map((p: any) => [p.id, p.name]));
 
-      const perAppointment = rows.map((row: any) => {
+      const perAppointment: BookingAppointmentPayments[] = rows.map((row: any) => {
         const own = lines.filter((line: any) => line.appointmentId === row.id);
         return {
           appointmentId: row.id,
@@ -155,13 +187,13 @@ export const paymentsRouter = router({
       // The booking total ignores dogs with no price rather than counting them
       // as free: a missing price is unknown, and adding it as zero would show
       // a balance of nothing owing on a booking nobody has priced yet.
-      const priced = perAppointment.filter((a: any) => a.total !== null);
+      const priced = perAppointment.filter((a) => a.total !== null);
       return {
         appointments: perAppointment,
         anyUnpriced: priced.length !== perAppointment.length,
-        bookingTotal: priced.reduce((sum: number, a: any) => sum + (a.total ?? 0), 0),
-        bookingPaid: perAppointment.reduce((sum: number, a: any) => sum + a.paid, 0),
-        bookingOutstanding: priced.reduce((sum: number, a: any) => sum + (a.outstanding ?? 0), 0),
+        bookingTotal: priced.reduce((sum, a) => sum + (a.total ?? 0), 0),
+        bookingPaid: perAppointment.reduce((sum, a) => sum + a.paid, 0),
+        bookingOutstanding: priced.reduce((sum, a) => sum + (a.outstanding ?? 0), 0),
       };
     }),
 

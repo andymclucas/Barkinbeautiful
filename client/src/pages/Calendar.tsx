@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { CalendarSidebar } from "@/components/CalendarSidebar";
+import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
 import { summariseCalendar } from "@shared/calendarSummary";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
@@ -2380,6 +2381,10 @@ export default function Calendar() {
                   <Label>Notes</Label>
                   <Textarea rows={2} value={editForm.notes} onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))} />
                 </div>
+
+                {/* Money taken, as many transactions as it takes: part cash
+                    part card, a deposit and a balance, or one dog each. */}
+                <SplitPaymentPanel appointmentId={editAppt.id} />
                 <DialogFooter className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <Button
                     variant="outline"
