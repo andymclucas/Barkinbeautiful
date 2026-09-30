@@ -393,6 +393,13 @@
       "when": 1790730463038,
       "tag": "0055_appointment_charged_vs_collected",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "5",
+      "when": 1790749899450,
+      "tag": "0056_appointment_payments",
+      "breakpoints": true
     }
   ]
 }

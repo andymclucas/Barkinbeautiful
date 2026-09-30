@@ -45,47 +45,16 @@ import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPri
 import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl } from "./appUrl";
+import { paymentsRouter } from "./routers/payments";
+import {
+  requireApprovedStaffTenant,
+  requireApprovedFamilyLinkStaff,
+  requireApprovedStaffAppointmentAccess,
+  requireApprovedStaffPetAccess,
+} from "./staffAccess";
 
-async function requireApprovedStaffTenant(db: any, user: { id: number; role: string }) {
-  if (user.role === "admin") return null;
-  if (user.role !== "staff") throw new Error("Only approved staff can access salon operations");
-  const [portalStaff] = await db.select({ id: staff.id, tenantId: staff.tenantId, role: staff.role, portalStatus: staff.portalStatus })
-    .from(staff).where(eq(staff.userId, user.id)).limit(1);
-  if (!portalStaff || portalStaff.portalStatus !== "approved") {
-    throw new Error("Your staff access is awaiting administrator approval");
-  }
-  return portalStaff;
-}
-
-async function requireApprovedFamilyLinkStaff(db: any, user: { id: number; role: string }) {
-  const portalStaff = await requireApprovedStaffTenant(db, user);
-  if (!portalStaff) return null;
-  if (portalStaff.role !== "groomer" && portalStaff.role !== "bather") {
-    throw new Error("Only approved Groomers and Bathers can create family links from Workflow");
-  }
-  return portalStaff;
-}
-
-async function requireApprovedStaffAppointmentAccess(db: any, user: { id: number; role: string }, appointmentId: number, expectedPetId?: number) {
-  const portalStaff = await requireApprovedStaffTenant(db, user);
-  if (!portalStaff) return null;
-  const [appointment] = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
-  if (!appointment || appointment.tenantId !== portalStaff.tenantId || (expectedPetId !== undefined && appointment.petId !== expectedPetId)) {
-    throw new Error("This appointment is not available to your salon staff profile");
-  }
-  return portalStaff;
-}
-
-async function requireApprovedStaffPetAccess(db: any, user: { id: number; role: string }, petId: number) {
-  const portalStaff = await requireApprovedStaffTenant(db, user);
-  if (!portalStaff) return null;
-  const [pet] = await db.select({ id: pets.id, tenantId: pets.tenantId }).from(pets).where(eq(pets.id, petId)).limit(1);
-  if (!pet || pet.tenantId !== portalStaff.tenantId) {
-    throw new Error("This pet is not available to your salon staff profile");
-  }
-  return portalStaff;
-}
-
+// The four staff-access guards moved to ./staffAccess so the payments router
+// can use the same ones rather than a second copy.
 async function recordStaffAccessEvent(db: any, event: Omit<typeof staffAccessEvents.$inferInsert, "occurredAtMs" | "createdAt">) {
   const occurredAtMs = Date.now();
   await db.insert(staffAccessEvents).values({ ...event, occurredAtMs, createdAt: new Date(occurredAtMs) });
@@ -6719,6 +6688,7 @@ export const appRouter = router({
   sms: smsRouter,
   clientPortal: clientPortalRouter,
   workflowReview: workflowReviewRouter,
+  payments: paymentsRouter,
 });
 
 export type AppRouter = typeof appRouter;

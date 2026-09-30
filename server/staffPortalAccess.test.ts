@@ -37,7 +37,11 @@ describe("canStaffUpdateAppointment", () => {
   });
 
   it("permits approved staff across their salon operations and controlled membership setup while preserving administrator-only financial and email controls", () => {
-    const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
+    // The guards themselves live in staffAccess.ts now, so both files are the
+    // router surface as far as these assertions are concerned. Their actual
+    // behaviour is exercised in staffAccess.test.ts.
+    const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8")
+      + readFileSync(new URL("./staffAccess.ts", import.meta.url), "utf8");
     const dashboardSource = readFileSync(new URL("../client/src/components/DashboardLayout.tsx", import.meta.url), "utf8");
     expect(routerSource).toContain("requireApprovedStaffAppointmentAccess");
     expect(routerSource).toContain("deleteAppointment: operationalProcedure");
@@ -61,7 +65,8 @@ describe("canStaffUpdateAppointment", () => {
   });
 
   it("allows approved Groomers and Bathers to create tenant-scoped family links from Workflow", () => {
-    const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
+    const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8")
+      + readFileSync(new URL("./staffAccess.ts", import.meta.url), "utf8");
     expect(routerSource).toContain("linkPets: operationalProcedure");
     expect(routerSource).toContain("searchPets: operationalProcedure");
     expect(routerSource).toContain("requireApprovedFamilyLinkStaff(db, ctx.user)");

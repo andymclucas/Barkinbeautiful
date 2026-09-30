@@ -814,6 +814,39 @@ export const storeCreditTransactions = mysqlTable("store_credit_transactions", {
 
 export type StoreCreditTransaction = typeof storeCreditTransactions.$inferSelect;
 
+// ─── Appointment payments (split payments) ────────────────────────────────────
+// One row per transaction, so a booking can be settled in more than one go:
+// part cash part card, a deposit then the balance, or the two owners of a
+// two-dog booking each paying for their own dog. A multi-dog booking is
+// several `appointments` rows sharing a sessionId, each with its own price, so
+// paying per dog needs no extra structure here.
+//
+// `clientId` is the PAYER, normally the appointment's client but not always.
+// `amount` may be negative: that is a refund, kept as its own row rather than
+// by editing the original, so the counter's history survives.
+//
+// appointments.paymentStatus is DERIVED from the sum of these rows - see
+// shared/splitPayments.ts. Never set it by hand.
+export const appointmentPayments = mysqlTable("appointment_payments", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  appointmentId: int("appointment_id").notNull().references(() => appointments.id),
+  clientId: int("client_id").notNull().references(() => clients.id),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  method: mysqlEnum("method", ["cash", "eftpos", "card", "stripe", "bank_transfer", "store_credit", "other"]).notNull(),
+  /** Stripe payment intent, receipt number, or whatever ties it to the till. */
+  reference: varchar("reference", { length: 255 }),
+  note: varchar("note", { length: 255 }),
+  recordedByUserId: int("recorded_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_appointment_payments_appointment").on(t.appointmentId),
+  index("idx_appointment_payments_tenant_created").on(t.tenantId, t.createdAt),
+  index("idx_appointment_payments_client").on(t.clientId),
+]);
+
+export type AppointmentPayment = typeof appointmentPayments.$inferSelect;
+
 // ─── Client-side error/failure diagnostics ────────────────────────────────────
 // Captures the kinds of failure that are otherwise invisible: a blank page
 // (bundle failed to load/parse before React ever ran, so no in-app error is
