@@ -2,7 +2,7 @@ import { Router } from "express";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
 import { appointments, staff, pets, petPhotos, uploadedImages } from "../drizzle/schema";
-import { and, eq, or } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import sharp from "sharp";
 
 // TiDB rejects a single row/entry over ~6 MB (a TiKV-level limit, not
@@ -402,10 +402,21 @@ export function registerUploadRoutes(app: Router) {
     }
   });
 
-  // GET /api/pets/:id/photo — serves a pet's photo straight from the
-  // database (stored as base64 via the MoeGo migration import), rather than
-  // the external Forge storage the routes above depend on. Cached for a
-  // while client-side since a pet's photo rarely changes.
+  // GET /api/pets/:id/photo — a dog's profile photo, straight from the
+  // database (base64, from the MoeGo migration) rather than external storage.
+  //
+  // Served RESIZED by default. The stored photos are full-size camera images -
+  // up to about a megabyte each - and the Workflow board draws them as 28px
+  // circles. A full board is 38 dogs, so the untouched originals meant tens of
+  // megabytes to render one screen, and on the salon's iPad the photos simply
+  // never arrived. `?size=full` returns the original for the profile page.
+  //
+  // Falls back to the dog's most recent gallery photo when no profile photo
+  // has been set, so a picture taken at grooming shows up on the board without
+  // anyone having to set it as the profile.
+  const PET_THUMB_PX = 96;
+  const petThumbCache = new Map<string, Buffer>();
+
   app.get("/api/pets/:id/photo", async (req, res) => {
     try {
       let user;
@@ -413,17 +424,59 @@ export function registerUploadRoutes(app: Router) {
       if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
       const petId = Number(req.params.id);
       if (!Number.isInteger(petId) || petId <= 0) { res.status(400).json({ error: "Invalid pet id" }); return; }
+      const wantsFull = req.query.size === "full";
+
+      if (!wantsFull) {
+        const cached = petThumbCache.get(String(petId));
+        if (cached) {
+          res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
+          res.send(cached);
+          return;
+        }
+      }
+
       const db = await getDb();
       if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
       const [pet] = await db.select({ photoData: pets.photoData, photoContentType: pets.photoContentType })
         .from(pets).where(eq(pets.id, petId)).limit(1);
-      if (!pet?.photoData) { res.status(404).json({ error: "No photo" }); return; }
-      const buffer = Buffer.from(pet.photoData, "base64");
-      res.set({
-        "Content-Type": pet.photoContentType || "image/jpeg",
-        "Cache-Control": "private, max-age=86400",
-      });
-      res.send(buffer);
+
+      let data = pet?.photoData ?? null;
+      let contentType = pet?.photoContentType ?? null;
+      if (!data) {
+        // No profile photo - use the newest grooming photo of this dog.
+        const [gallery] = await db.select({ photoData: petPhotos.photoData, photoContentType: petPhotos.photoContentType })
+          .from(petPhotos)
+          .where(eq(petPhotos.petId, petId))
+          .orderBy(desc(petPhotos.takenAt))
+          .limit(1);
+        data = gallery?.photoData ?? null;
+        contentType = gallery?.photoContentType ?? null;
+      }
+      if (!data) { res.status(404).json({ error: "No photo" }); return; }
+
+      const original = Buffer.from(data, "base64");
+      if (wantsFull) {
+        res.set({ "Content-Type": contentType || "image/jpeg", "Cache-Control": "private, max-age=86400" });
+        res.send(original);
+        return;
+      }
+
+      // A failed resize must not blank the board: fall back to the original.
+      let thumb = original;
+      try {
+        thumb = await sharp(original, { failOn: "none" })
+          .rotate()
+          .resize({ width: PET_THUMB_PX, height: PET_THUMB_PX, fit: "cover", position: "attention" })
+          .jpeg({ quality: 72, mozjpeg: true })
+          .toBuffer();
+        // Bounded so a large client list cannot grow this without limit.
+        if (petThumbCache.size > 500) petThumbCache.clear();
+        petThumbCache.set(String(petId), thumb);
+      } catch (err) {
+        console.error("[pets/:id/photo] resize failed, serving original", err);
+      }
+      res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
+      res.send(thumb);
     } catch (err: any) {
       console.error("[pets/:id/photo]", err);
       res.status(500).json({ error: err.message ?? "Failed to load photo" });

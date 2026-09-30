@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { StripeCardPanel } from "@/components/StripeCardPanel";
+import { PetAvatar } from "@/components/PetAvatar";
 import { trpc } from "@/lib/trpc";
 import { useParams } from "wouter";
 import { useLocation } from "wouter";
@@ -839,7 +840,11 @@ export default function ClientDetail() {
                     <CardHeader className="pb-2 pt-4 px-4">
                       <CardTitle className="text-base flex items-center justify-between gap-2">
                         <span className="flex items-center gap-2">
-                          <Dog className="h-4 w-4 text-primary" />
+                          {/* Same photo the Workflow board shows, from the
+                              same endpoint, so the dog is recognisable in
+                              both places rather than a photo existing here
+                              and a letter appearing there. */}
+                          <PetAvatar petId={pet.id} petName={pet.name} className="h-8 w-8" />
                           {pet.name}
                         </span>
                         {pet.status === "departed" && (
