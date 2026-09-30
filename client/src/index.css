@@ -16,54 +16,54 @@
 
 @theme inline {
   /* ── Surfaces ───────────────────────────────────────────────────────────── */
-  --color-background:    oklch(0.985 0.006 295);
-  --color-foreground:    oklch(0.24 0.035 285);
-  --color-card:          oklch(1 0 0);
-  --color-card-foreground: oklch(0.24 0.035 285);
-  --color-popover:       oklch(1 0 0);
-  --color-popover-foreground: oklch(0.24 0.035 285);
+  --color-background:    var(--background);
+  --color-foreground:    var(--foreground);
+  --color-card:          var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover:       var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
 
   /* ── Primary: violet ────────────────────────────────────────────────────── */
-  --color-primary:       oklch(0.585 0.212 292);
-  --color-primary-foreground: oklch(0.99 0 0);
+  --color-primary:       var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
 
   /* ── Secondary: soft lavender ───────────────────────────────────────────── */
-  --color-secondary:     oklch(0.955 0.018 292);
-  --color-secondary-foreground: oklch(0.36 0.11 292);
+  --color-secondary:     var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
 
   /* ── Accent: light violet wash ──────────────────────────────────────────── */
-  --color-accent:        oklch(0.945 0.028 292);
-  --color-accent-foreground: oklch(0.40 0.14 292);
+  --color-accent:        var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
 
   /* ── Muted ──────────────────────────────────────────────────────────────── */
-  --color-muted:         oklch(0.967 0.010 292);
-  --color-muted-foreground: oklch(0.556 0.028 288);
+  --color-muted:         var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
 
   /* ── Destructive ────────────────────────────────────────────────────────── */
-  --color-destructive:   oklch(0.596 0.208 18);
-  --color-destructive-foreground: oklch(0.99 0 0);
+  --color-destructive:   var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
   /* ── Border / Input / Ring ──────────────────────────────────────────────── */
-  --color-border:        oklch(0.925 0.014 292);
-  --color-input:         oklch(0.925 0.014 292);
-  --color-ring:          oklch(0.585 0.212 292);
+  --color-border:        var(--border);
+  --color-input:         var(--input);
+  --color-ring:          var(--ring);
 
   /* ── Sidebar: light, to match the app surface ───────────────────────────── */
-  --color-sidebar:       oklch(1 0 0);
-  --color-sidebar-foreground: oklch(0.36 0.04 288);
-  --color-sidebar-primary: oklch(0.585 0.212 292);
-  --color-sidebar-primary-foreground: oklch(0.99 0 0);
-  --color-sidebar-accent: oklch(0.955 0.022 292);
-  --color-sidebar-accent-foreground: oklch(0.42 0.16 292);
-  --color-sidebar-border: oklch(0.935 0.012 292);
-  --color-sidebar-ring:  oklch(0.585 0.212 292);
+  --color-sidebar:       var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring:  var(--sidebar-ring);
 
   /* ── Chart palette: violet-led, friendly, colour-blind tolerant ─────────── */
-  --color-chart-1: oklch(0.585 0.212 292);  /* violet  */
-  --color-chart-2: oklch(0.706 0.148 163);  /* mint    */
-  --color-chart-3: oklch(0.686 0.146 237);  /* sky     */
-  --color-chart-4: oklch(0.795 0.148 78);   /* amber   */
-  --color-chart-5: oklch(0.675 0.178 348);  /* rose    */
+  --color-chart-1:       var(--chart-1);  /* violet  */
+  --color-chart-2:       var(--chart-2);  /* mint    */
+  --color-chart-3:       var(--chart-3);  /* sky     */
+  --color-chart-4:       var(--chart-4);   /* amber   */
+  --color-chart-5:       var(--chart-5);  /* rose    */
 
   /* ── Typography ─────────────────────────────────────────────────────────── */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
@@ -71,6 +71,48 @@
 
   /* ── Radius ─────────────────────────────────────────────────────────────── */
   --radius: 0.875rem;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Semantic colour tokens.
+ *
+ * These carry the actual values; @theme above only points at them. That
+ * indirection is the whole mechanism for dark mode: a class on <html> can
+ * redefine a variable, but it cannot redefine a @theme entry.
+ * ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --background:                oklch(0.985 0.006 295);
+  --foreground:                oklch(0.24 0.035 285);
+  --card:                      oklch(1 0 0);
+  --card-foreground:           oklch(0.24 0.035 285);
+  --popover:                   oklch(1 0 0);
+  --popover-foreground:        oklch(0.24 0.035 285);
+  --primary:                   oklch(0.585 0.212 292);
+  --primary-foreground:        oklch(0.99 0 0);
+  --secondary:                 oklch(0.955 0.018 292);
+  --secondary-foreground:      oklch(0.36 0.11 292);
+  --accent:                    oklch(0.945 0.028 292);
+  --accent-foreground:         oklch(0.40 0.14 292);
+  --muted:                     oklch(0.967 0.010 292);
+  --muted-foreground:          oklch(0.556 0.028 288);
+  --destructive:               oklch(0.596 0.208 18);
+  --destructive-foreground:    oklch(0.99 0 0);
+  --border:                    oklch(0.925 0.014 292);
+  --input:                     oklch(0.925 0.014 292);
+  --ring:                      oklch(0.585 0.212 292);
+  --sidebar:                   oklch(1 0 0);
+  --sidebar-foreground:        oklch(0.36 0.04 288);
+  --sidebar-primary:           oklch(0.585 0.212 292);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent:            oklch(0.955 0.022 292);
+  --sidebar-accent-foreground: oklch(0.42 0.16 292);
+  --sidebar-border:            oklch(0.935 0.012 292);
+  --sidebar-ring:              oklch(0.585 0.212 292);
+  --chart-1:                   oklch(0.585 0.212 292);
+  --chart-2:                   oklch(0.706 0.148 163);
+  --chart-3:                   oklch(0.686 0.146 237);
+  --chart-4:                   oklch(0.795 0.148 78);
+  --chart-5:                   oklch(0.675 0.178 348);
 }
 
 :root {
@@ -128,6 +170,116 @@
   --dur-base: 220ms;
   --dur-slow: 380ms;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Dark mode.
+ *
+ * Applied by a `dark` class on <html> (see contexts/ThemeContext). Only the
+ * semantic variables are redefined - the @theme entries point at these, so
+ * every bg-background, text-muted-foreground, border-border and the rest
+ * follow without touching a single component.
+ *
+ * Built around the same violet as the light theme rather than neutral grey,
+ * so the salon's brand still reads at night. Surfaces step up in lightness
+ * as they come forward (background < card < popover), which is what gives
+ * depth on a dark UI - shadows barely show.
+ *
+ * Primary is LIGHTER here than in light mode: a 0.585 violet on a 0.17
+ * background is close to unreadable, and every button uses it.
+ * ────────────────────────────────────────────────────────────────────────── */
+.dark {
+  /* Surfaces: each step forward is a step lighter. */
+  --background:              oklch(0.178 0.014 292);
+  --foreground:              oklch(0.958 0.006 292);
+  --card:                    oklch(0.222 0.017 292);
+  --card-foreground:         oklch(0.958 0.006 292);
+  --popover:                 oklch(0.246 0.019 292);
+  --popover-foreground:      oklch(0.958 0.006 292);
+
+  /* Primary: lifted so it carries on a dark surface. */
+  --primary:                 oklch(0.706 0.168 292);
+  --primary-foreground:      oklch(0.170 0.020 292);
+
+  --secondary:               oklch(0.281 0.030 292);
+  --secondary-foreground:    oklch(0.910 0.032 292);
+
+  --accent:                  oklch(0.312 0.045 292);
+  --accent-foreground:       oklch(0.930 0.045 292);
+
+  --muted:                   oklch(0.258 0.017 292);
+  --muted-foreground:        oklch(0.715 0.022 290);
+
+  /* Destructive stays hot enough to stop someone at the counter. */
+  --destructive:             oklch(0.655 0.195 20);
+  --destructive-foreground:  oklch(0.985 0.005 20);
+
+  --border:                  oklch(0.308 0.018 292);
+  --input:                   oklch(0.330 0.021 292);
+  --ring:                    oklch(0.706 0.168 292);
+
+  /* The sidebar is already dark in light mode, so it barely moves - but it
+     must sit BELOW the page surface here, or the rail glows. */
+  --sidebar:                 oklch(0.152 0.018 292);
+  --sidebar-foreground:      oklch(0.885 0.018 290);
+  --sidebar-primary:         oklch(0.706 0.168 292);
+  --sidebar-primary-foreground: oklch(0.170 0.020 292);
+  --sidebar-accent:          oklch(0.268 0.040 292);
+  --sidebar-accent-foreground: oklch(0.935 0.048 292);
+  --sidebar-border:          oklch(0.272 0.020 292);
+  --sidebar-ring:            oklch(0.706 0.168 292);
+
+  /* Charts: same hues, lifted for contrast against a dark plot area. */
+  --chart-1:                 oklch(0.706 0.168 292);
+  --chart-2:                 oklch(0.760 0.135 163);
+  --chart-3:                 oklch(0.745 0.132 237);
+  --chart-4:                 oklch(0.838 0.140 78);
+  --chart-5:                 oklch(0.735 0.160 348);
+
+  /* Brand tokens used directly by components. */
+  --brand-page:              oklch(0.178 0.014 292);
+  --brand-ink:               oklch(0.958 0.006 292);
+  --brand-accent:            oklch(0.312 0.048 295);
+  --brand-primary:           oklch(0.706 0.168 292);
+  --brand-primary-strong:    oklch(0.780 0.150 292);
+
+  /* Tints are pale washes in light mode; here they become dark washes and
+     the paired -ink colours become light, or the text vanishes. */
+  --tint-violet:             oklch(0.268 0.042 292);
+  --tint-mint:               oklch(0.262 0.046 163);
+  --tint-sky:                oklch(0.262 0.042 237);
+  --tint-amber:              oklch(0.272 0.050 82);
+  --tint-rose:               oklch(0.266 0.042 350);
+  --tint-violet-ink:         oklch(0.845 0.110 292);
+  --tint-mint-ink:           oklch(0.845 0.098 163);
+  --tint-sky-ink:            oklch(0.848 0.100 237);
+  --tint-amber-ink:          oklch(0.872 0.108 66);
+  --tint-rose-ink:           oklch(0.850 0.110 350);
+
+  /* Workflow stage colours: the board is the main screen in the salon, and
+     these are pale fills in light mode. Same hues, dark enough to sit on the
+     page, light enough to tell apart across the room. */
+  --stage-scheduled:         oklch(0.258 0.016 292);
+  --stage-checked-in:        oklch(0.300 0.055 237);
+  --stage-bathing:           oklch(0.305 0.060 225);
+  --stage-grooming:          oklch(0.308 0.062 292);
+  --stage-ready:             oklch(0.302 0.066 163);
+  --stage-complete:          oklch(0.560 0.120 163);
+
+  /* Shadows do almost nothing on dark surfaces; deepen them so cards still
+     lift, and lean on the lightness steps above for most of the separation. */
+  --shadow-xs:   0 1px 2px oklch(0 0 0 / 0.30);
+  --shadow-sm:   0 1px 2px oklch(0 0 0 / 0.34), 0 2px 6px -2px oklch(0 0 0 / 0.30);
+  --shadow-md:   0 2px 4px oklch(0 0 0 / 0.34), 0 8px 18px -6px oklch(0 0 0 / 0.36);
+  --shadow-lg:   0 4px 8px oklch(0 0 0 / 0.36), 0 18px 34px -12px oklch(0 0 0 / 0.42);
+  --shadow-ring: 0 0 0 1px oklch(1 0 0 / 0.07);
+}
+
+/* The browser's own widgets - scrollbars, form controls, the caret - follow
+   this rather than staying stubbornly light. */
+.dark {
+  color-scheme: dark;
+}
+
 
 /* ═══ Base ═══════════════════════════════════════════════════════════════ */
 @layer base {
