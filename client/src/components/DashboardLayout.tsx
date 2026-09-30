@@ -44,6 +44,7 @@ import {
   FileBarChart2,
   LogOut,
   PanelLeft,
+  ChevronDown,
   Scissors,
   ImagePlus,
   ImageOff,
@@ -321,6 +322,101 @@ function DashboardLayoutContent({
     };
   }, [isResizing, setSidebarWidth]);
 
+
+  /**
+   * Notifications and the signed-in user, top right.
+   *
+   * Both used to be in the sidebar: the bell wedged in beside the collapse
+   * toggle, the profile at the very bottom of the rail - where, collapsed,
+   * the owner's own photo was a 32px dot nobody ever saw. Top right is where
+   * MoeGo puts them, and where every app the salon uses puts them.
+   */
+  const myStaffRoleLabel = myStaff?.role
+    ? myStaff.role.charAt(0).toUpperCase() + myStaff.role.slice(1)
+    : null;
+
+  const accountControls = (
+    <div className="flex items-center gap-1.5">
+      <NotificationBell />
+      <IncomingCallAlert />
+      <div className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex max-w-[15rem] items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-accent/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <StaffAvatar
+                photoUrl={myStaff?.photoUrl}
+                name={myStaff?.name ?? user?.name}
+                colourHex={myStaff?.colourHex}
+                className="h-9 w-9 shrink-0"
+              />
+              {/* The name is worth the width on a desktop header and not
+                  on a phone, where the photo alone identifies the account. */}
+              <div className="hidden min-w-0 md:block">
+                <p className="truncate text-sm font-semibold leading-tight text-foreground">
+                  {user?.name || "-"}
+                  {myStaffRoleLabel && <span className="font-normal text-muted-foreground"> ({myStaffRoleLabel})</span>}
+                </p>
+                <p className="truncate text-xs leading-tight text-muted-foreground">{user?.email || "-"}</p>
+              </div>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            {myStaff && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={photoUploading || updateMyPhoto.isPending}
+                onSelect={(e) => { e.preventDefault(); photoInputRef.current?.click(); }}
+              >
+                <ImagePlus className="mr-2 h-4 w-4" />
+                <span>{photoUploading ? "Uploading…" : myStaff.photoUrl ? "Change my photo" : "Add my photo"}</span>
+              </DropdownMenuItem>
+            )}
+            {myStaff?.photoUrl && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={updateMyPhoto.isPending}
+                onSelect={(e) => { e.preventDefault(); updateMyPhoto.mutate({ photoUrl: null }); }}
+              >
+                <ImageOff className="mr-2 h-4 w-4" />
+                <span>Remove my photo</span>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => setBrandDialogOpen(true)}
+            >
+              <Palette className="mr-2 h-4 w-4" />
+              <span>Brand colours</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={() => setLocation("/settings")}
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              <span>Settings</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={logout}
+              className="cursor-pointer text-destructive focus:text-destructive"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Sign out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMyPhoto(f); e.currentTarget.value = ""; }}
+        />
+        <BrandColoursDialog open={brandDialogOpen} onOpenChange={setBrandDialogOpen} />
+    </div>
+  );
+
   return (
     <>
       <div className="relative" ref={sidebarRef}>
@@ -335,8 +431,6 @@ function DashboardLayoutContent({
               >
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
-              <NotificationBell />
-              <IncomingCallAlert />
               {!isCollapsed && (
                 <div
                   className="flex items-center cursor-pointer min-w-0 flex-1"
@@ -411,79 +505,6 @@ function DashboardLayoutContent({
             </div>
           )}
 
-          {/* ── Footer / user ── */}
-          <SidebarFooter className="p-3 border-t border-sidebar-border">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <StaffAvatar
-                    photoUrl={myStaff?.photoUrl}
-                    name={myStaff?.name ?? user?.name}
-                    colourHex={myStaff?.colourHex}
-                    className="h-8 w-8"
-                  />
-                  {!isCollapsed && (
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate leading-none" style={{ color: "var(--color-sidebar-foreground)" }}>{user?.name || "-"}</p>
-                      <p className="text-xs truncate mt-1" style={{ color: "color-mix(in srgb, var(--color-sidebar-foreground) 65%, transparent)" }}>{user?.email || "-"}</p>
-                    </div>
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                {myStaff && (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    disabled={photoUploading || updateMyPhoto.isPending}
-                    onSelect={(e) => { e.preventDefault(); photoInputRef.current?.click(); }}
-                  >
-                    <ImagePlus className="mr-2 h-4 w-4" />
-                    <span>{photoUploading ? "Uploading…" : myStaff.photoUrl ? "Change my photo" : "Add my photo"}</span>
-                  </DropdownMenuItem>
-                )}
-                {myStaff?.photoUrl && (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    disabled={updateMyPhoto.isPending}
-                    onSelect={(e) => { e.preventDefault(); updateMyPhoto.mutate({ photoUrl: null }); }}
-                  >
-                    <ImageOff className="mr-2 h-4 w-4" />
-                    <span>Remove my photo</span>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={() => setBrandDialogOpen(true)}
-                >
-                  <Palette className="mr-2 h-4 w-4" />
-                  <span>Brand colours</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onClick={() => setLocation("/settings")}
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  <span>Settings</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={logout}
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Sign out</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMyPhoto(f); e.currentTarget.value = ""; }}
-            />
-            <BrandColoursDialog open={brandDialogOpen} onOpenChange={setBrandDialogOpen} />
-          </SidebarFooter>
         </Sidebar>
 
         {/* Resize handle */}
@@ -506,24 +527,12 @@ function DashboardLayoutContent({
                 {activeMenuItem?.label ?? "Groomigo"}
               </span>
             </div>
-            <img
-              src="/groomigo_logo.png"
-              alt="Groomigo — go to dashboard"
-              role="button"
-              tabIndex={0}
-              className="h-7 w-auto object-contain cursor-pointer mr-2"
-              style={{ transition: "filter 200ms ease, transform 200ms ease" }}
-              onClick={() => setLocation("/")}
-              onKeyDown={e => e.key === "Enter" && setLocation("/")}
-              onMouseEnter={e => {
-                e.currentTarget.style.filter = "drop-shadow(0 0 8px rgba(124,58,237,0.45))";
-                e.currentTarget.style.transform = "scale(1.06)";
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.filter = "";
-                e.currentTarget.style.transform = "scale(1)";
-              }}
-            />
+            {accountControls}
+          </div>
+        )}
+        {!isMobile && (
+          <div className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-end gap-2 border-b border-slate-200/80 bg-white/75 px-4 backdrop-blur">
+            {accountControls}
           </div>
         )}
         <main className="flex-1 p-4 md:p-6 gm-fade">{children}</main>

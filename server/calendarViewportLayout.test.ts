@@ -21,7 +21,11 @@ const source = () => readFileSync(new URL("../client/src/pages/Calendar.tsx", im
 describe("Appointments day viewport layout", () => {
   it("uses the available large-screen viewport below the dashboard padding", () => {
     const src = source();
-    expect(src).toContain("flex min-h-0 flex-col gap-4 lg:h-[calc(100dvh-2rem)]");
+    // Not the exact constant: it has to change whenever the chrome above the
+    // page changes, and pinning it means adding a top bar turns the suite red
+    // for no reason. What matters is that the page is a shrinkable flex
+    // column sized to the viewport minus that chrome.
+    expect(src).toMatch(/flex min-h-0 flex-col gap-4 lg:h-\[calc\(100dvh-[\d.]+rem\)\]/);
     // The day view must fill the viewport rather than sizing to content. The
     // exact string moved when the sidebar was added beside the grid, so this
     // asserts the property: in day mode the view container is a shrinkable

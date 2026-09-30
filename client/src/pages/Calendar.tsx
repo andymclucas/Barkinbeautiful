@@ -1701,7 +1701,7 @@ export default function Calendar() {
 
   return (
     <DashboardLayout>
-      <div className="flex min-h-0 flex-col gap-4 lg:h-[calc(100dvh-2rem)]">
+      <div className="flex min-h-0 flex-col gap-4 lg:h-[calc(100dvh-6.5rem)]">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/90 bg-white/70 px-3 py-3 shadow-lg shadow-[color-mix(in_oklch,var(--brand-primary)_8%,transparent)] backdrop-blur">
           <div className="flex items-center gap-2">

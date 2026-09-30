@@ -2682,6 +2682,8 @@ const staffRouter = router({
       const [member] = await db.select({
         id: staff.id,
         name: staff.name,
+        // Shown beside the name in the top bar - "Andy McLucas (Owner)".
+        role: staff.role,
         colourHex: staff.colourHex,
         photoUrl: staff.onlineProfilePhotoUrl,
         portalStatus: staff.portalStatus,
