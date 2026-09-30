@@ -78,6 +78,12 @@ export alone cannot populate a start time.** Either pull times from the
 calendar view as well, or treat time as a field the import never touches on
 existing rows — and refuse to create new rows without one.
 
+**Use the parsers in `shared/moegoImport.ts`.** `parseMoegoCsv`,
+`parseMoegoPets` and `phoneMatchKey` exist because hand-rolled versions of all
+three corrupted an import on 30/09/2026. They are unit-tested in
+`server/moegoImport.test.ts` against the exact shapes that broke. Do not write
+a fresh CSV split or a pet regex — see Traps 2 and 3 for what happens.
+
 **Trap 2 — one MoeGo row can be several Groomigo appointments.** A two-pet
 booking is ONE MoeGo row with `Pet name` = `"Archie,George"`, and `Services`
 and `Staffs` comma-joined in the same order. Groomigo stores one appointment
