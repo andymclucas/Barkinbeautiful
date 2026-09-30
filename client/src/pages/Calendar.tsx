@@ -1467,10 +1467,19 @@ export default function Calendar() {
           {/* Computed total width: time gutter + fixed readable-width staff columns. */}
           {(() => {
             const { totalWidth, gridTemplateColumns: colTemplate } = getDayCalendarGridSizing(cols.length, TIME_COL_W);
+            // A flex COLUMN that may shrink vertically. This used to be a plain
+            // block with shrink-0, which broke the day view's vertical scroll two
+            // ways: a block gives no flex context, so flex-1 on the grid body
+            // below did nothing and it sized to its content (936px) rather than
+            // the 622px available; and shrink-0 stopped this wrapper shrinking
+            // inside its column parent. The horizontal scroller above then
+            // absorbed the overflow, so the whole grid moved together and the
+            // headers scrolled away. The explicit width still drives horizontal
+            // scrolling.
             return (
-              <div className="shrink-0" style={{ width: totalWidth, minWidth: totalWidth }}>
+              <div className="flex min-h-0 flex-1 flex-col" style={{ width: totalWidth, minWidth: totalWidth }}>
                 {(groomerCount > 0 || batherCount > 0) && (
-                  <div className="grid border-b bg-slate-50/80" style={{ gridTemplateColumns: colTemplate }}>
+                  <div className="grid border-b bg-slate-50/80 shrink-0" style={{ gridTemplateColumns: colTemplate }}>
                     <div className="border-r" />
                     {groomerCount > 0 && <div className="px-3 py-2 border-r text-[10px] font-bold uppercase tracking-[0.16em] text-violet-800 bg-gradient-to-r from-violet-100/90 to-violet-50/50" style={{ gridColumn: `span ${groomerCount}` }}>Groomers</div>}
                     {batherCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800 bg-gradient-to-r from-blue-100/90 to-blue-50/50" style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
@@ -1497,8 +1506,9 @@ export default function Calendar() {
                   ))}
                 </div>
 
-                {/* Scrollable grid body */}
-                <div className="overflow-y-auto flex-1" ref={scrollRef}>
+                {/* Scrollable grid body. min-h-0 is what lets a flex child
+                    shrink below its content and actually scroll. */}
+                <div className="overflow-y-auto min-h-0 flex-1" ref={scrollRef}>
                   <div
                     className="relative"
                     style={{
