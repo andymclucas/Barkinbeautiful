@@ -44,6 +44,7 @@ import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import { parseSharedStrings, parseSheet } from "../shared/xlsxReader.ts";
 import { brisbaneDate } from "../shared/businessDays.ts";
+import { planCancellations, isDeadStatus, isDeadAppointment, matchKey } from "../shared/moegoReconcile.ts";
 
 dotenv.config({ quiet: true });
 
@@ -99,7 +100,6 @@ const iso = (v: string) => {
 console.log(`Date format detected: ${dayFirst ? "DD/MM/YYYY" : "MM/DD/YYYY"}`);
 
 const norm = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-const isDead = (s: string) => /cancel|no.?show/i.test(s ?? "");
 
 type MoegoRow = {
   bookingId: string; date: string; client: string; pet: string;
@@ -143,8 +143,6 @@ const [gsos] = await db.query<any[]>(
 );
 console.log(`Groomigo appointments in window:  ${gsos.length}\n`);
 
-const gsosDead = (g: GsosRow) =>
-  ["cancelled", "no_show"].includes(g.ws) || ["cancelled", "no_show"].includes(g.st);
 /**
  * Match on pet AND client AND date, never pet and date alone.
  *
@@ -154,7 +152,7 @@ const gsosDead = (g: GsosRow) =>
  * owner is still expecting to come in. Where the client names do not line up,
  * the row is reported for a human rather than guessed at.
  */
-const key = (pet: string, client: string, date: string) => `${norm(pet)}|${norm(client)}|${date}`;
+const key = matchKey;
 const looseKey = (pet: string, date: string) => `${norm(pet)}|${date}`;
 
 const byKey = new Map<string, GsosRow[]>();
@@ -171,51 +169,42 @@ for (const m of moego) {
   moegoByKey.set(k, [...(moegoByKey.get(k) ?? []), m]);
 }
 
-// ── 1. Cancel: MoeGo says cancelled, Groomigo still has it live ────────────
-type Planned = { g: GsosRow; m: MoegoRow; skip?: string };
-const planned: Planned[] = [];
-const ambiguous: { m: MoegoRow; candidates: GsosRow[] }[] = [];
-for (const m of moego) {
-  if (!isDead(m.status)) continue;
-  const exact = (byKey.get(key(m.pet, m.client, m.date)) ?? []).filter((g) => !gsosDead(g));
-  if (exact.length === 0) {
-    // No client match. If a dog of that name is booked that day under some
-    // OTHER client, that is a name collision, not this cancellation.
-    const loose = (byLooseKey.get(looseKey(m.pet, m.date)) ?? []).filter((g) => !gsosDead(g));
-    if (loose.length) ambiguous.push({ m, candidates: loose });
-    continue;
-  }
-  for (const g of exact) {
-    // Only a dog that has not arrived may be cancelled.
-    planned.push({
-      g, m,
-      skip: g.ws === "scheduled" ? undefined
-        : `already ${g.ws} - the dog is at the salon, MoeGo's cancellation is stale`,
-    });
+// ── 1. Cancel: decided by shared/moegoReconcile, which is unit-tested ─────
+//
+// It was not, and an apply run cancelled 12 dogs off the live board because
+// their owners had cancelled and REBOOKED the same day: MoeGo keeps both
+// rows and only the cancelled one was read.
+const plan = planCancellations(
+  moego.map((m) => ({ bookingId: m.bookingId, date: m.date, client: m.client, pet: m.pet, status: m.status })),
+  (gsos as GsosRow[]).map((g) => ({
+    id: g.id, date: g.d, client: g.client ?? "", pet: g.pet ?? "",
+    workflowState: g.ws, status: g.st,
+  })),
+);
+const gsosById = new Map((gsos as GsosRow[]).map((g) => [g.id, g]));
+const toCancel = plan.cancel;
+
+console.log(`=== CANCEL (${plan.cancel.length}) ===`);
+for (const c of plan.cancel) {
+  const g = gsosById.get(c.appointment.id)!;
+  console.log(`  CANCEL  ${g.d} ${(g as any).t}  ${g.pet} (${g.client})  appt #${g.id}`);
+}
+if (plan.held.length) {
+  console.log(`\n=== HELD (${plan.held.length}) - NOT cancelled ===`);
+  for (const h of plan.held) {
+    const g = gsosById.get(h.appointment.id)!;
+    console.log(`  HOLD    ${g.d} ${(g as any).t}  ${g.pet} (${g.client})  appt #${g.id}`);
+    console.log(`            ${h.hold}`);
   }
 }
-const toCancel = planned.filter((p) => !p.skip);
-const blocked = planned.filter((p) => p.skip);
-
-console.log(`=== CANCEL: live in Groomigo, cancelled in MoeGo (${planned.length}) ===`);
-for (const p of planned) {
-  const mark = p.skip ? "SKIP " : "CANCEL";
-  console.log(`  ${mark}  ${p.g.d} ${(p.g as any).t}  ${p.g.pet} (${p.g.client})  appt #${p.g.id}${p.skip ? `  -- ${p.skip}` : ""}`);
-}
-
-if (ambiguous.length) {
-  console.log(`\n=== AMBIGUOUS (${ambiguous.length}) - same dog name, different owner. NOT cancelled, check by hand ===`);
-  for (const a of ambiguous) {
-    console.log(`  MoeGo says cancelled: ${a.m.date}  ${a.m.pet} (${a.m.client})  #${a.m.bookingId}`);
-    for (const g of a.candidates) {
-      console.log(`      Groomigo has:      ${g.d} ${(g as any).t}  ${g.pet} (${g.client})  appt #${g.id}`);
-    }
-  }
+if (plan.unmatched.length) {
+  console.log(`\n=== CANCELLED IN MOEGO, no such booking in Groomigo (${plan.unmatched.length}) - nothing to do ===`);
+  for (const u of plan.unmatched) console.log(`  ${u.date}  ${u.pet} (${u.client})  #${u.bookingId}`);
 }
 
 // ── 2. Report: in MoeGo, missing from Groomigo. Never created automatically ─
 const missing = moego.filter(
-  (m) => !isDead(m.status) && !(byKey.get(key(m.pet, m.client, m.date)) ?? []).some((g) => !gsosDead(g)),
+  (m) => !isDeadStatus(m.status) && !(byKey.get(key(m.pet, m.client, m.date)) ?? []).some((g) => !isDeadAppointment({ id: g.id, date: g.d, client: g.client ?? '', pet: g.pet ?? '', workflowState: g.ws, status: g.st })),
 );
 console.log(`\n=== MISSING from Groomigo (${missing.length}) - enter by hand, the export has no start time ===`);
 for (const m of missing) {
@@ -224,7 +213,7 @@ for (const m of missing) {
 
 // ── 3. Report: in Groomigo, not in MoeGo at all ────────────────────────────
 const extra = (gsos as GsosRow[]).filter(
-  (g) => !gsosDead(g) && !(moegoByKey.get(key(g.pet ?? "", g.client ?? "", g.d)) ?? []).some((m) => !isDead(m.status)),
+  (g) => !isDeadAppointment({ id: g.id, date: g.d, client: g.client ?? '', pet: g.pet ?? '', workflowState: g.ws, status: g.st }) && !(moegoByKey.get(key(g.pet ?? "", g.client ?? "", g.d)) ?? []).some((m) => !isDeadStatus(m.status)),
 );
 console.log(`\n=== IN GROOMIGO, not in this MoeGo export (${extra.length}) - booked here, or the export is stale ===`);
 for (const g of extra) console.log(`  ${g.d} ${(g as any).t}  ${g.pet} (${g.client})  ${g.ws}/${g.st}  appt #${g.id}`);
@@ -245,7 +234,8 @@ if (toCancel.length === 0) {
 console.log(`\nApplying ${toCancel.length} cancellation(s)...`);
 await db.beginTransaction();
 try {
-  for (const { g, m } of toCancel) {
+  for (const { appointment: ap, moego: m } of toCancel) {
+    const g = gsosById.get(ap.id)!;
     // Guarded on workflow_state so a dog checked in between the plan above
     // and this write is not cancelled out from under the salon floor.
     const [res] = await db.query<any>(
@@ -276,9 +266,9 @@ try {
   process.exit(1);
 }
 
-if (blocked.length) {
-  console.log(`\n${blocked.length} left alone because the dog has already arrived - check these by hand:`);
-  for (const p of blocked) console.log(`  ${p.g.d}  ${p.g.pet} (${p.g.client})  ${p.skip}`);
+if (plan.held.length) {
+  console.log(`\n${plan.held.length} left alone because the dog has already arrived - check these by hand:`);
+  for (const h of plan.held) console.log(`  ${gsosById.get(h.appointment.id)!.d}  ${h.appointment.pet} (${h.appointment.client})  ${h.hold}`);
 }
 console.log(`\n${missing.length} appointment(s) still need entering by hand - see the MISSING list above.`);
 await db.end();
