@@ -54,7 +54,8 @@ corepack pnpm run test:integration        # live-network tests, needs real secre
 corepack pnpm run build                   # vite build + esbuild server bundle
 corepack pnpm start                       # run the production bundle from dist/
 corepack pnpm run format                  # prettier --write .
-corepack pnpm run db:push                 # drizzle-kit generate && migrate — see §6
+corepack pnpm exec drizzle-kit migrate    # apply migrations — CHECK THE LEDGER FIRST, §6
+# NOT db:push, and NOT drizzle-kit generate. Both are broken here — see §6.
 ```
 
 `build` emits the client to `dist/public` and the bundled server to
@@ -173,16 +174,29 @@ scheduled → checked_in → waiting_for_bath → bathing → waiting_for_dry �
 `workflowLogs` records every `fromState`/`toState` transition — it powers the Pet
 Tracker and the workflow timing analytics. Preserve that audit trail.
 
-Migrations:
-
-```bash
-corepack pnpm run db:push   # drizzle-kit generate && drizzle-kit migrate
-```
+Migrations: **do not run `pnpm run db:push`.** It is `generate && migrate`, and
+`generate` is broken here — see below. Migration `.sql` files live in
+`drizzle/`, not `drizzle/migrations/` (which holds only a `.gitkeep`).
 
 Rules: never hand-edit a migration that has already run; never `drizzle-kit
 push` against production; a schema change and the code that depends on it must
 ship together. Commit `b848737` ("HOTFIX: remove reference to not-yet-migrated
 `moego_pet_codes` column") is what happens when they don't.
+
+### Adding a column is NOT deploy-order-safe, even when nullable
+
+Drizzle names **every column declared in `schema.ts`** in every bare `select()`
+and every `insert()`. The moment a column exists in the schema file the app
+asks the database for it, whether or not any code mentions it by name.
+
+So a new column must be **migrated before the code reaches `main`**. Shipping
+code first breaks `requireApprovedStaffAppointmentAccess` (used by 17
+procedures), `updateWorkflowState` and every appointment insert — no dog can be
+moved between stages and no booking can be created. That is wider than
+`b848737`, which only emptied one board query.
+
+Migration-first is always safe for an additive change: the old code never names
+the new column, and a nullable column with no default leaves old inserts valid.
 
 ### `drizzle-kit generate` is currently BROKEN here — do not run it
 
@@ -197,11 +211,39 @@ through on the first `CREATE TABLE` of a table that already exists.
 This makes **`pnpm run db:push` unsafe**, because it is `generate && migrate`.
 
 - To ADD a migration: write the `.sql` by hand and add its `_journal.json`
-  entry, as `0044`–`0054` all do.
-- To APPLY migrations: `corepack pnpm exec drizzle-kit migrate` — it reads the
-  journal and the `.sql` files and does **not** need snapshots, so it is safe.
+  entry, as `0044`–`0055` all do. Put several `ADD COLUMN`s in **one** `ALTER`:
+  MySQL/TiDB DDL is not transactional, so two statements can leave the first
+  applied, the migration unrecorded, and a re-run failing on "Duplicate column
+  name".
+- To APPLY migrations: `corepack pnpm exec drizzle-kit migrate`, but **check
+  the ledger first** (below).
 - If `generate` is ever run by accident it leaves a stray `00NN_*.sql`, a
   `00NN_snapshot.json` and a journal entry. Delete all three.
+
+### Always check `__drizzle_migrations` before running `migrate`
+
+`migrate` runs every journal entry whose `when` is newer than the newest
+`created_at` in `__drizzle_migrations`. It does not check whether the change is
+already present.
+
+On 30/09/2026 that table held **one row, from 2 August**, while the journal had
+56 entries — because `0001`–`0054` had been applied by hand and never recorded.
+`migrate` would have replayed 55 migrations against production, hit
+`CREATE TABLE missed_calls` on a table that already existed, and failed part
+way through with no rollback. The ledger was backfilled the same day, so it is
+correct now, but verify before trusting it:
+
+```bash
+# Should print 0. Anything else means migrate would re-run applied migrations.
+node -e 'require("dotenv").config({quiet:true});const m=require("mysql2/promise"),f=require("fs");
+(async()=>{const c=await m.createConnection({uri:process.env.DATABASE_URL,ssl:{minVersion:"TLSv1.2",rejectUnauthorized:true}});
+const [[r]]=await c.query("SELECT MAX(created_at) n FROM __drizzle_migrations");
+const j=JSON.parse(f.readFileSync("drizzle/meta/_journal.json","utf8"));
+console.log(j.entries.filter(e=>e.when>Number(r.n)).length,"outstanding");await c.end();})()'
+```
+
+A ledger row is `hash` = `sha256` of the `.sql` file's full contents, and
+`created_at` = the journal entry's `when`.
 
 Repairing the snapshot chain needs the live database to diff against and is a
 deliberate job of its own; a first attempt hit a parent-snapshot collision.
