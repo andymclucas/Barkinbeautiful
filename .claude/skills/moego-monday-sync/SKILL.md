@@ -15,6 +15,28 @@ the forward bookings that matter.
 
 ## Status: report by default, apply only with a human present
 
+**There is an apply script for cancellations: `scripts/moego-apply.ts`.**
+
+```bash
+node scripts/moego-apply.ts "<export.xlsx>"          # dry run, writes nothing
+node scripts/moego-apply.ts "<export.xlsx>" --apply  # cancels, in one transaction
+```
+
+It cancels dogs MoeGo has cancelled and Groomigo still shows as live, and
+reports everything else. It will **not** create missing appointments: the
+appointment-list export has `Appointment date` and no start time (only
+`Created time`, which is when the booking was made), so creating from it means
+inventing a slot on a real groomer's day. Those rows are printed for a human.
+
+It holds back two categories rather than guessing:
+
+- a dog already past `scheduled` — it is at the salon, so MoeGo's cancellation
+  is stale and applying it would take a dog off the board mid-groom;
+- a **name collision** — MoeGo cancels "Minnie (Janene Bosa)" and Groomigo has
+  "Minnie (Liz Thomas)" that day. Matching on pet and date alone cancelled the
+  wrong owner's dog in testing on 30/09/2026. Matching requires pet AND client
+  AND date; anything that only matches loosely is reported, never written.
+
 **There is still no appointment importer.** `migration.importClients` handles
 clients from a CSV and nothing else; `moego_appointment_id` sits on the
 `appointments` table but no application code reads or writes it.
