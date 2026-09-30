@@ -1914,7 +1914,10 @@ export default function Calendar() {
                       <Search className="h-3.5 w-3.5 text-muted-foreground ml-2 shrink-0" />
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-full max-w-[calc(100vw-2rem)] p-0" align="start" style={{ width: "var(--radix-popover-trigger-width, 360px)" }}>
+                  {/* portal={false}: this popover lives inside the New Appointment
+                      Dialog, whose scroll lock cancels wheel events outside its own
+                      subtree - a portalled list here cannot be scrolled with the mouse. */}
+                  <PopoverContent portal={false} className="w-full max-w-[calc(100vw-2rem)] p-0" align="start" style={{ width: "var(--radix-popover-trigger-width, 360px)" }}>
                     <div className="p-2 border-b">
                       <div className="relative">
                         <Input

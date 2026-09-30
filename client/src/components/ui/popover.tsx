@@ -19,10 +19,25 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  portal = true,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
-  return (
-    <PopoverPrimitive.Portal>
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  /**
+   * Render into a portal on document.body. Default true, as Radix intends.
+   *
+   * Set FALSE for a popover inside a Dialog. A Dialog installs a scroll lock
+   * (react-remove-scroll) that cancels wheel events outside its own subtree,
+   * and a portalled popover is outside it by definition - so a scrollable list
+   * in the popover shows a scrollbar, scrolls programmatically, and does
+   * nothing at all under the mouse wheel. That is how the client search in New
+   * Appointment stranded the user on the first six results.
+   *
+   * Keeping it inline costs the portal's escape from ancestor overflow and
+   * z-index, which is fine inside a dialog that has neither problem.
+   */
+  portal?: boolean;
+}) {
+  const content = (
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}
@@ -33,8 +48,8 @@ function PopoverContent({
         )}
         {...props}
       />
-    </PopoverPrimitive.Portal>
   );
+  return portal ? <PopoverPrimitive.Portal>{content}</PopoverPrimitive.Portal> : content;
 }
 
 function PopoverAnchor({
