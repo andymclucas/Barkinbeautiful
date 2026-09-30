@@ -1714,7 +1714,10 @@ export default function Calendar() {
             </Button>
             <Popover open={showDatePicker} onOpenChange={setShowDatePicker}>
               <PopoverTrigger asChild>
-                <button className="brand-lift flex items-center gap-2 rounded-lg px-2 py-1.5 text-base font-bold ml-1 hover:bg-primary/10 hover:text-primary transition-colors">
+                {/* Only below lg. At lg and up the sidebar carries a permanent
+                    month, and a second one floating on top of it overlaps the
+                    rail and reads as two calendars disagreeing. */}
+                <button className="brand-lift ml-1 flex items-center gap-2 rounded-lg px-2 py-1.5 text-base font-bold transition-colors hover:bg-primary/10 hover:text-primary lg:hidden">
                   <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
                   {weekLabel}
                 </button>
@@ -1736,6 +1739,10 @@ export default function Calendar() {
                 />
               </PopoverContent>
             </Popover>
+            <span className="ml-1 hidden items-center gap-2 px-2 py-1.5 text-base font-bold lg:flex">
+              <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
+              {weekLabel}
+            </span>
             <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">{totalThisView} appointments</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
