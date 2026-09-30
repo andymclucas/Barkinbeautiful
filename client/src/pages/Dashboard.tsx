@@ -136,8 +136,10 @@ export default function Dashboard() {
       <div className="space-y-5 brand-dashboard">
 
         {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        {/* Stacks on a phone. Three actions in a shrink-0 row ran off the
+            right edge - "New Appointment" was cut in half at 375px. */}
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0">
             <p className="text-[11.5px] font-semibold tracking-[0.04em] text-muted-foreground mb-1">Salon control centre</p>
             <h1 className="text-[30px] font-bold font-display tracking-tight leading-tight">
               Good morning{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
@@ -151,16 +153,19 @@ export default function Dashboard() {
               <time className="font-semibold tabular-nums text-foreground" dateTime={new Date().toISOString()}>{salonTime}</time>
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Link href="/calendar">
-              <Button variant="outline" className="h-10 rounded-[14px] brand-lift bg-card hover:bg-accent hover:text-accent-foreground">Calendar</Button>
+          <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
+            <Link href="/calendar" className="flex-1 sm:flex-none">
+              <Button variant="outline" className="h-10 w-full sm:w-auto rounded-[14px] brand-lift bg-card hover:bg-accent hover:text-accent-foreground">Calendar</Button>
             </Link>
-            <Link href="/workflow">
-              <Button variant="outline" className="h-10 rounded-[14px] brand-lift bg-card hover:bg-accent hover:text-accent-foreground">Workflow</Button>
+            <Link href="/workflow" className="flex-1 sm:flex-none">
+              <Button variant="outline" className="h-10 w-full sm:w-auto rounded-[14px] brand-lift bg-card hover:bg-accent hover:text-accent-foreground">Workflow</Button>
             </Link>
-            <Link href="/calendar">
-              <Button className="h-10 rounded-[14px] gap-2 shadow-[0_10px_22px_-12px_var(--brand-primary-strong)] hover:shadow-[0_14px_26px_-12px_var(--brand-primary-strong)]">
-                <CalendarDays className="h-4 w-4" /> New Appointment
+            <Link href="/calendar" className="flex-1 sm:flex-none">
+              <Button className="h-10 w-full sm:w-auto rounded-[14px] gap-2 whitespace-nowrap shadow-[0_10px_22px_-12px_var(--brand-primary-strong)] hover:shadow-[0_14px_26px_-12px_var(--brand-primary-strong)]">
+                <CalendarDays className="h-4 w-4 shrink-0" />
+                {/* "New Appointment" cannot fit a third of a 375px phone. */}
+                <span className="sm:hidden">New</span>
+                <span className="hidden sm:inline">New Appointment</span>
               </Button>
             </Link>
           </div>
@@ -175,13 +180,13 @@ export default function Dashboard() {
             { tint: "gm-tint-sky",    Icon: CreditCard,   label: "Active Memberships",    value: analytics?.activeMemberships ?? 0, sub: "currently active" },
           ].map(({ tint, Icon, label, value, sub }) => (
             <Card key={label} className="brand-lift py-[18px]">
-              <CardContent className="flex items-center gap-3.5 px-[18px]">
+              <CardContent className="flex flex-col items-start gap-2 px-[18px] sm:flex-row sm:items-center sm:gap-3.5">
                 <div className={`${tint} flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl`}>
                   <Icon className="h-[19px] w-[19px]" />
                 </div>
                 <div className="min-w-0">
                   <p className="text-[11.5px] font-medium text-muted-foreground leading-snug">{label}</p>
-                  <p className="text-[25px] font-bold font-display leading-[1.15] tabular-nums">{value}</p>
+                  <p className="text-[21px] font-bold font-display leading-[1.15] tabular-nums sm:text-[25px]">{value}</p>
                   <p className="text-[11.5px] text-muted-foreground leading-snug">{sub}</p>
                 </div>
               </CardContent>
