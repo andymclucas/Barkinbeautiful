@@ -11,12 +11,25 @@ describe("cancelled appointment calendar visibility", () => {
     expect(calendarSource).toContain("Cancelled appointments stay at their original booked time for historical tracking.");
   });
 
-  it("presents cancelled appointment cards with a solid label, a struck-through dog name and disabled drag movement", () => {
+  it("still marks a cancelled card clearly and refuses to let it be dragged", () => {
     expect(calendarSource).toContain('const isCancelled = appt.status === "cancelled" || appt.workflowState === "cancelled";');
     expect(calendarSource).toContain("const canDrag = Boolean(onDragStart) && !isCancelled;");
     expect(calendarSource).toContain("draggable={canDrag}");
-    expect(calendarSource).toContain('bg-red-700 px-1.5 py-0.5 text-[9px] font-black uppercase');
-    expect(calendarSource).toContain('isCancelled ? "line-through decoration-2 decoration-red-700" : ""');
-    expect(calendarSource).toContain('isCancelled ? "linear-gradient(135deg, #fee2e2 0%, #fff7f7 180%)"');
+    // Still labelled and struck through - it must remain identifiable.
+    expect(calendarSource).toMatch(/>Cancelled<\/div>/);
+    expect(calendarSource).toContain("line-through");
+  });
+
+  it("makes a cancelled card recede rather than dominate the board", () => {
+    // Cancelled bookings used to be the loudest thing on the calendar: a red
+    // wash, a red 4px spine, a red shadow and a white-on-red badge, so a dog
+    // who was NOT coming drew more attention than the ones who were. They are
+    // now faded and neutral. Asserted as the absence of the red treatment plus
+    // the presence of the fade, rather than one exact gradient string.
+    expect(calendarSource).toContain("opacity: isCancelled ? 0.45 : 1");
+    expect(calendarSource).toContain('isCancelled ? "dashed #cbd5e1"');
+    expect(calendarSource).not.toContain("bg-red-700 px-1.5 py-0.5 text-[9px] font-black uppercase");
+    expect(calendarSource).not.toContain("decoration-red-700");
+    expect(calendarSource).not.toContain('linear-gradient(135deg, #fee2e2 0%, #fff7f7 180%)');
   });
 });

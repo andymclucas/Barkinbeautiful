@@ -268,9 +268,15 @@ function ApptBlock({
         height,
         left:  `calc(${leftPct}% + 1px)`,
         width: `calc(${widthPct}% - 2px)`,
-        background: isCancelled ? "linear-gradient(135deg, #fee2e2 0%, #fff7f7 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`,
-        borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`,
-        boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}`,
+        // Cancelled blocks recede rather than shout. They used to be the
+        // loudest thing on the board - red wash, red 4px spine, red shadow,
+        // white-on-red badge - so a cancelled dog drew more attention than
+        // the ones actually coming in. Now they keep the service colour at
+        // low opacity so they read as "was here, gone" at a glance.
+        background: isCancelled ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`,
+        borderLeft: `4px ${isCancelled ? "dashed #cbd5e1" : `solid ${svc.border}`}`,
+        boxShadow: isCancelled ? "none" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}`,
+        opacity: isCancelled ? 0.45 : 1,
         zIndex: 2,
       }}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
@@ -279,10 +285,10 @@ function ApptBlock({
       aria-label={`${isCancelled ? "Cancelled " : ""}appointment for ${sharedAppointmentLabel || "pet"}`}
     >
       <div className="px-2 py-1 h-full overflow-hidden leading-tight">
-        {isCancelled && <div className="mb-1 inline-flex rounded-sm bg-red-700 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">Cancelled</div>}
+        {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-slate-300 bg-white/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Cancelled</div>}
         {siblings && siblings.length > 0 ? (
           <>
-            <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-2 decoration-red-700" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+            <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
               <div className="leading-tight" title={sharedAppointmentLabel}>{sharedAppointmentLabel}</div>
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600" />}
             </div>
@@ -296,7 +302,7 @@ function ApptBlock({
           </>
         ) : (
           <>
-            <div className={`font-bold text-[12px] truncate tracking-[-0.01em] ${isCancelled ? "line-through decoration-2 decoration-red-700" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+            <div className={`font-bold text-[12px] truncate tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
               {appt.petName}{appt.clientLastName ? ` ${appt.clientLastName}` : ""}
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600" />}
             </div>
@@ -1424,11 +1430,11 @@ export default function Calendar() {
                       <div
                         key={appt.id}
                         className={`brand-lift rounded-md border border-white/80 px-2 py-1.5 cursor-pointer text-[11px] leading-tight ${isCancelled ? "bg-red-50" : ""}`}
-                        style={{ background: isCancelled ? "linear-gradient(135deg, #fee2e2 0%, #fff7f7 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`, borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`, boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}` }}
+                        style={{ opacity: isCancelled ? 0.45 : 1, background: isCancelled ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`, borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`, boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}` }}
                         onClick={(e) => { e.stopPropagation(); openEdit(appt as Appt); }}
                       >
-                        {isCancelled && <div className="mb-1 inline-flex rounded-sm bg-red-700 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-white">Cancelled</div>}
-                        <div className={`font-bold truncate ${isCancelled ? "line-through decoration-2 decoration-red-700" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+                        {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-slate-300 bg-white/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Cancelled</div>}
+                        <div className={`font-bold truncate ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
                           {sharedAppointmentLabel}
                           {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600" />}
                         </div>

@@ -2219,6 +2219,10 @@ const staffRouter = router({
         phone: staff.phone,
         role: staff.role,
         colourHex: staff.colourHex,
+        // The Staff page reads this one. Without it StaffAvatar silently falls
+        // back to initials, which is why an uploaded photo appeared nowhere but
+        // the edit dialog. Two sibling list procedures already returned it.
+        photoUrl: staff.onlineProfilePhotoUrl,
         isActive: staff.isActive,
       }).from(staff).where(eq(staff.tenantId, input.tenantId)).orderBy(asc(staff.name));
     }),

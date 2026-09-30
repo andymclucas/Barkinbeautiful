@@ -158,6 +158,11 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
   const [activityType, setActivityType] = useState("all");
   const [activityScope, setActivityScope] = useState<"selected_dates" | "all_time">("selected_dates");
   const [activitySort, setActivitySort] = useState<"newest" | "oldest">("newest");
+  // Collapsed by default. The feed rendered every recorded event, so a
+  // staff member with months of history pushed the rest of the profile off
+  // the page and there was no way to shorten it.
+  const [activityExpanded, setActivityExpanded] = useState(false);
+  const ACTIVITY_PREVIEW_COUNT = 5;
   const { data: invitations = [] } = trpc.staff.listPortalInvitations.useQuery({ tenantId: 1 });
   const { data: accessHistory = [] } = trpc.staff.getAccessHistory.useQuery({ staffId });
 
@@ -519,9 +524,9 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
               <div><Label className="text-[11px] text-slate-600">Timeframe</Label><Select value={activityScope} onValueChange={(value: "selected_dates" | "all_time") => setActivityScope(value)}><SelectTrigger className="mt-1 h-8 bg-white text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="selected_dates">Selected dates above</SelectItem><SelectItem value="all_time">All recorded activity</SelectItem></SelectContent></Select></div>
               <div><Label className="text-[11px] text-slate-600">Sort</Label><Select value={activitySort} onValueChange={(value: "newest" | "oldest") => setActivitySort(value)}><SelectTrigger className="mt-1 h-8 bg-white text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="newest">Newest first</SelectItem><SelectItem value="oldest">Oldest first</SelectItem></SelectContent></Select></div>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3"><p className="text-[11px] text-slate-500">Showing {filteredActivity.length} of {accessHistory.length} recorded event{accessHistory.length === 1 ? "" : "s"}.</p>{activityScope === "selected_dates" && <p className="text-[11px] text-slate-500">Using {timingRange.start} to {timingRange.end}</p>}</div>
+            <div className="mt-3 flex items-center justify-between gap-3"><p className="text-[11px] text-slate-500">Showing {filteredActivity.length} of {accessHistory.length} recorded event{accessHistory.length === 1 ? "" : "s"}.{!activityExpanded && filteredActivity.length > ACTIVITY_PREVIEW_COUNT && <> Showing the latest {ACTIVITY_PREVIEW_COUNT}.</>}</p>{filteredActivity.length > ACTIVITY_PREVIEW_COUNT && <button type="button" onClick={() => setActivityExpanded(v => !v)} className="text-[11px] font-semibold text-primary underline-offset-2 hover:underline">{activityExpanded ? "Show fewer" : `See all ${filteredActivity.length}`}</button>}{activityScope === "selected_dates" && <p className="text-[11px] text-slate-500">Using {timingRange.start} to {timingRange.end}</p>}</div>
             {filteredActivity.length > 0 ? <div className="mt-2 space-y-2">
-              {filteredActivity.map((event: any) => {
+              {(activityExpanded ? filteredActivity : filteredActivity.slice(0, ACTIVITY_PREVIEW_COUNT)).map((event: any) => {
                 const timestamp = eventTimestamp(event);
                 const triggerFindings = reviewFindingsForActivity(event);
                 const reviewTriggered = triggerFindings.length > 0;
