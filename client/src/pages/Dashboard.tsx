@@ -176,7 +176,7 @@ export default function Dashboard() {
           {[
             { tint: "gm-tint-violet", Icon: CalendarDays, label: "Today's Appointments", value: todayCount,  sub: `${inProgress} in progress` },
             { tint: "gm-tint-mint",   Icon: Dog,          label: "Ready for Pickup",      value: readyCount,  sub: "dogs waiting" },
-            { tint: "gm-tint-amber",  Icon: TrendingUp,   label: "Monthly Revenue",       value: `$${(analytics?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}`, sub: "this month" },
+            { tint: "gm-tint-amber",  Icon: TrendingUp,   label: "Monthly Revenue",       value: `$${(analytics?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: "this month" },
             { tint: "gm-tint-sky",    Icon: CreditCard,   label: "Active Memberships",    value: analytics?.activeMemberships ?? 0, sub: "currently active" },
           ].map(({ tint, Icon, label, value, sub }) => (
             <Card key={label} className="brand-lift py-[18px]">

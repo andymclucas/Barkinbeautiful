@@ -69,7 +69,9 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="salon">
-          <TabsList>
+          {/* Tabs are an inline-flex row: on a phone they ran past the
+              right edge and took the page with them. Scroll instead. */}
+          <TabsList className="max-w-full justify-start overflow-x-auto">
             <TabsTrigger value="salon">Salon</TabsTrigger>
             <TabsTrigger value="branding">Branding</TabsTrigger>
             <TabsTrigger value="timing">Timing reviews</TabsTrigger>

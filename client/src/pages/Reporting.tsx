@@ -107,7 +107,7 @@ export default function Reporting() {
             {
               icon: DollarSign,
               label: "Revenue",
-              value: loadingSummary ? "…" : `$${(summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}`,
+              value: loadingSummary ? "…" : `$${(summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
               sub: periodLabels[period],
             },
             {
@@ -176,7 +176,7 @@ export default function Reporting() {
                         <div className="flex items-center gap-4 text-muted-foreground text-xs">
                           <span>{s.appointmentCount} appts</span>
                           <span className="font-medium text-foreground">
-                            ${parseFloat(s.revenue || "0").toLocaleString("en-AU", { minimumFractionDigits: 0 })}
+                            ${parseFloat(s.revenue || "0").toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                       </div>

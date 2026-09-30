@@ -114,7 +114,7 @@ export default function Analytics() {
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-muted-foreground">Revenue</span>
-          <span className="font-medium">${d.revenue.toLocaleString("en-AU", { minimumFractionDigits: 0 })}</span>
+          <span className="font-medium">${d.revenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
         <div className="flex justify-between gap-4">
           <span className="text-muted-foreground">Appointments</span>
@@ -162,7 +162,7 @@ export default function Analytics() {
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Revenue", value: `$${(revenueStreams?.appointmentRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}`, icon: TrendingUp, colour: "text-emerald-600" , detail: summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} completed appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : undefined },
+            { label: "Revenue", value: `$${(revenueStreams?.appointmentRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: TrendingUp, colour: "text-emerald-600" , detail: summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} completed appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : undefined },
             { label: "Appointments", value: String(summary?.appointments ?? 0), icon: CalendarDays, colour: "text-blue-600" },
             { label: "Active Clients", value: String(summary?.activeClients ?? 0), icon: Users, colour: "text-violet-600" },
             { label: "Active Memberships", value: String(summary?.activeMemberships ?? 0), icon: CreditCard, colour: "text-amber-600" },
@@ -191,7 +191,7 @@ export default function Analytics() {
                 <Scissors className="h-4 w-4 text-blue-500" />
               </div>
               <p className="text-3xl font-bold text-blue-600">
-                ${(revenueStreams?.appointmentRevenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}
+                ${(revenueStreams?.appointmentRevenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 {revenueStreams?.completedAppts ?? 0} completed appts
@@ -208,11 +208,11 @@ export default function Analytics() {
                 <Heart className="h-4 w-4 text-amber-500" />
               </div>
               <p className="text-3xl font-bold text-amber-600">
-                ${(revenueStreams?.membershipRunRateWeekly ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 0 })}<span className="text-base font-medium text-muted-foreground">/wk</span>
+                ${(revenueStreams?.membershipRunRateWeekly ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}<span className="text-base font-medium text-muted-foreground">/wk</span>
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 {summary?.activeMemberships ?? 0} active members
-                {(membershipBreakdown?.totalWeeklyRevenue ?? 0) > 0 && ` · $${membershipBreakdown?.totalWeeklyRevenue?.toLocaleString("en-AU", { minimumFractionDigits: 0 })}/wk`}
+                {(membershipBreakdown?.totalWeeklyRevenue ?? 0) > 0 && ` · $${membershipBreakdown?.totalWeeklyRevenue?.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/wk`}
               </p>
             </CardContent>
           </Card>
@@ -255,7 +255,7 @@ export default function Analytics() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Monthly est.</span>
-                      <span className="font-medium">${t.monthlyRevenue.toLocaleString("en-AU", { minimumFractionDigits: 0 })}</span>
+                      <span className="font-medium">${t.monthlyRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 ))}
@@ -267,11 +267,11 @@ export default function Analytics() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Monthly Estimate</p>
-                  <p className="text-xl font-bold text-emerald-600">${membershipBreakdown.totalMonthlyRevenue.toLocaleString("en-AU", { minimumFractionDigits: 0 })}</p>
+                  <p className="text-xl font-bold text-emerald-600">${membershipBreakdown.totalMonthlyRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Annual Estimate</p>
-                  <p className="text-xl font-bold text-emerald-600">${(membershipBreakdown.totalWeeklyRevenue * 52).toLocaleString("en-AU", { minimumFractionDigits: 0 })}</p>
+                  <p className="text-xl font-bold text-emerald-600">${(membershipBreakdown.totalWeeklyRevenue * 52).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
               </div>
             </CardContent>
@@ -331,7 +331,7 @@ export default function Analytics() {
                           <div className="h-2.5 w-2.5 rounded-full" style={{ background: s.colour }} />
                           <span>{s.name}</span>
                         </div>
-                        <span className="font-medium">${s.revenue.toLocaleString("en-AU", { minimumFractionDigits: 0 })}</span>
+                        <span className="font-medium">${s.revenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     ))}
                   </div>
@@ -353,7 +353,7 @@ export default function Analytics() {
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${v}`} />
-                  <Tooltip formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 0 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
+                  <Tooltip formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
                   <Legend formatter={(v: string) => v === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"} />
                   <Line type="monotone" dataKey="apptRevenue" stroke="#3b82f6" strokeWidth={2} dot={false} name="apptRevenue" />
                   <Line type="monotone" dataKey="memberRevenue" stroke="#f59e0b" strokeWidth={2} dot={false} name="memberRevenue" />
@@ -392,7 +392,7 @@ export default function Analytics() {
                       </div>
                     </td>
                     <td className="py-2.5 text-right font-medium">{s.appointments}</td>
-                    <td className="py-2.5 text-right font-medium">${s.revenue.toLocaleString("en-AU", { minimumFractionDigits: 0 })}</td>
+                    <td className="py-2.5 text-right font-medium">${s.revenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="py-2.5 text-right text-muted-foreground">
                       {s.appointments > 0 ? `$${(s.revenue / s.appointments).toFixed(0)}` : "—"}
                     </td>

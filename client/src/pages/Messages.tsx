@@ -668,7 +668,8 @@ export default function Messages() {
             {filteredLogs.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground text-sm">No SMS messages sent yet.</div>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b">
                       <th className="text-left py-2 font-medium text-muted-foreground text-xs">Time</th>
@@ -739,6 +740,7 @@ export default function Messages() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </CardContent>
         </Card>

@@ -665,7 +665,9 @@ export default function Memberships() {
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList>
+          {/* Tabs are an inline-flex row: on a phone they ran past the
+              right edge and took the page with them. Scroll instead. */}
+          <TabsList className="max-w-full justify-start overflow-x-auto">
             {STATUS_TABS.map(tab => (
               <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>
             ))}
