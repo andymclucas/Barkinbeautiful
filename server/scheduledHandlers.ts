@@ -1,10 +1,19 @@
 /**
  * Heartbeat scheduled handler: payment-retry
  *
- * Fires daily at 9:00 AM AEST (23:00 UTC previous day) on weekdays.
- * Finds all memberships with a payment_retry_scheduled_at in the past
- * and marks them as retry-attempted (increments failed count if still unresolved,
- * or sends the 2-strike email if this is the second failure).
+ * Fires daily at 9:00 AM AEST (23:00 UTC previous day) on weekdays. Finds
+ * every membership whose retry is due and ACTUALLY ATTEMPTS THE PAYMENT.
+ *
+ * It did not, until 30/09/2026. It read the memberships due for retry and
+ * escalated each one straight to another strike - so a client whose card was
+ * short on the Tuesday was marked failed again on the Wednesday and
+ * suspended on the Thursday, with Stripe never asked a second time. "Retry
+ * on the next business day" had been built as a diary entry with no payment
+ * behind it.
+ *
+ * Now: charge the saved card (or pay the open Stripe subscription invoice),
+ * and only escalate on a genuine decline. A missing Stripe key or a client
+ * with no card on file is NOT a decline and must never cost a strike.
  */
 import { Request, Response } from "express";
 import { sdk } from "./_core/sdk";
@@ -21,11 +30,101 @@ import { notifyOwner } from "./ownerNotification";
 // getDay(), which on Render (UTC) read the wrong weekday for anything after
 // 10:00 Brisbane and pushed retries a day late.
 import { nextBrisbaneBusinessDay } from "../shared/businessDays";
+import {
+  classifyFailure,
+  planAfterFailure,
+  canChargeOffSession,
+  isCardExpired,
+  describeCard,
+  describeStripeKey,
+} from "../shared/stripeBilling";
+import { chargeSavedCard, payOpenInvoice } from "./stripeCards";
+import { membershipPayments, membershipLedgerEntries } from "../drizzle/schema";
+import { desc } from "drizzle-orm";
 import { sendSms, buildAppointmentReminderSms } from "./sms";
 import { appointments, staff } from "../drizzle/schema";
 import { gte, isNotNull, lt } from "drizzle-orm";
 
 
+
+
+interface ChargeAttempt {
+  ok: boolean;
+  /** Nothing was tried, so nothing failed - do not count a strike. */
+  skipped: boolean;
+  reason: string | null;
+  declineCode: string | null;
+  /** True when Stripe settled a subscription invoice; the webhook books it. */
+  viaInvoice: boolean;
+}
+
+/**
+ * Try to take this week's money.
+ *
+ * Paying the open Stripe invoice is preferred over raising a fresh charge:
+ * the subscription then sees its own invoice settled rather than an unrelated
+ * payment sitting beside a still-unpaid one. That path deliberately does NOT
+ * write a payment row here - Stripe emits `invoice.paid`, and the webhook
+ * records it. Writing it in both places would double every retried payment.
+ */
+async function attemptMembershipCharge(
+  db: any,
+  membership: { id: number; clientId: number | null; pricePerCycle: string | null; name: string | null; tenantId: number | null },
+  now: Date,
+): Promise<ChargeAttempt> {
+  if (!membership.clientId) {
+    return { ok: false, skipped: true, reason: "Membership has no client attached", declineCode: null, viaInvoice: false };
+  }
+
+  const [client] = await db
+    .select({
+      stripeCustomerId: clients.stripeCustomerId,
+      stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId,
+      stripeCardBrand: clients.stripeCardBrand,
+      stripeCardLast4: clients.stripeCardLast4,
+      stripeCardExpMonth: clients.stripeCardExpMonth,
+      stripeCardExpYear: clients.stripeCardExpYear,
+    })
+    .from(clients)
+    .where(eq(clients.id, membership.clientId))
+    .limit(1);
+
+  if (!client || !canChargeOffSession(client)) {
+    return { ok: false, skipped: true, reason: "No card on file for this client", declineCode: null, viaInvoice: false };
+  }
+  if (isCardExpired(client, now)) {
+    // A real failure, but not one worth an attempt: Stripe would decline it
+    // and the client needs to be asked for a new card either way.
+    return { ok: false, skipped: false, reason: `${describeCard(client) ?? "The card"} has expired`, declineCode: "expired_card", viaInvoice: false };
+  }
+
+  const [lastFailure] = await db
+    .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
+    .from(membershipPayments)
+    .where(and(eq(membershipPayments.membershipId, membership.id), eq(membershipPayments.status, "failed")))
+    .orderBy(desc(membershipPayments.id))
+    .limit(1);
+
+  if (lastFailure?.stripeInvoiceId) {
+    const result = await payOpenInvoice(lastFailure.stripeInvoiceId);
+    return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true };
+  }
+
+  const result = await chargeSavedCard({
+    customerId: client.stripeCustomerId!,
+    paymentMethodId: client.stripeDefaultPaymentMethodId!,
+    amountDollars: membership.pricePerCycle ?? "0",
+    description: `${membership.name ?? "Membership"} - retry`,
+    metadata: {
+      groomigo_membership_id: String(membership.id),
+      membership_id: String(membership.id),
+      groomigo_client_id: String(membership.clientId),
+      tenant_id: String(membership.tenantId ?? 1),
+      payment_kind: "membership_retry",
+    },
+  });
+  return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: false };
+}
 
 export async function paymentRetryHandler(req: Request, res: Response) {
   try {
@@ -64,6 +163,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         membershipName: memberships.name,
         clientId: memberships.clientId,
         petId: memberships.petId,
+        name: memberships.name,
       })
       .from(memberships)
       .where(
@@ -72,6 +172,19 @@ export async function paymentRetryHandler(req: Request, res: Response) {
           gt(sql`${memberships.failedPaymentCount}`, 0)
         )
       );
+
+    // A deployment with no Stripe key cannot charge anything. Stop before the
+    // loop rather than per membership: every one of them would "fail", and a
+    // configuration problem must not cost a single client a strike or send
+    // the owner one email per membership.
+    const stripeKey = describeStripeKey(process.env.STRIPE_SECRET_KEY);
+    if (!stripeKey.configured && dueRetries.length > 0) {
+      await notifyOwner({
+        title: "⚠️ Membership payment retries did not run",
+        content: `${dueRetries.length} membership payment(s) were due for retry, but Stripe is not configured on this deployment. Nothing was charged and no client was suspended. The retries stay scheduled and will run once STRIPE_SECRET_KEY is set.`,
+      }).catch(() => undefined);
+      return res.json({ ok: true, processed: 0, skipped: "stripe-not-configured", due: dueRetries.length });
+    }
 
     let processed = 0;
 
@@ -109,10 +222,82 @@ export async function paymentRetryHandler(req: Request, res: Response) {
       const petName = petRow?.name ?? "your pet";
       const membershipName = m.membershipName ?? "Membership";
       const priceStr = m.pricePerCycle ? String(m.pricePerCycle) : "0.00";
-      const newFailCount = (m.failedCount ?? 0) + 1;
-      const retryDate = nextBrisbaneBusinessDay(now).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" });
+      // ── Attempt the payment ────────────────────────────────────────────
+      const attempt = await attemptMembershipCharge(db, m as any, now);
 
-      if (newFailCount >= 2) {
+      if (attempt.skipped) {
+        // Nothing was charged and nothing declined. Clear the due date so the
+        // job does not re-run this every morning, and tell the owner what is
+        // actually blocking it - a strike here would suspend a client over a
+        // configuration problem.
+        await db
+          .update(memberships)
+          .set({ paymentRetryScheduledAt: null })
+          .where(eq(memberships.id, m.id));
+        await notifyOwner({
+          title: "⚠️ Membership payment could not be attempted",
+          content: `${clientName} (${petName}) — ${membershipName}. ${attempt.reason ?? "Unknown reason"}.`,
+        }).catch(() => undefined);
+        processed++;
+        continue;
+      }
+
+      if (attempt.ok) {
+        // Clear the failure state either way; the payment row itself is
+        // written by the invoice.paid webhook when Stripe settled an invoice,
+        // and here when we raised the charge ourselves.
+        await db
+          .update(memberships)
+          .set({
+            failedPaymentCount: 0,
+            lastFailedPaymentAt: null,
+            paymentRetryScheduledAt: null,
+            bookingSuspended: false,
+            status: "active",
+          })
+          .where(eq(memberships.id, m.id));
+
+        if (!attempt.viaInvoice) {
+          await db.insert(membershipPayments).values({
+            membershipId: m.id,
+            amount: priceStr,
+            status: "paid",
+            paidAt: now,
+          });
+          await db.insert(membershipLedgerEntries).values({
+            tenantId: m.tenantId ?? 1,
+            membershipId: m.id,
+            entryType: "payment",
+            amount: priceStr,
+            source: "stripe",
+            note: "Retry payment on saved card",
+          });
+        }
+
+        await notifyOwner({
+          title: "✅ Membership payment recovered",
+          content: `${clientName} (${petName}) — ${membershipName} paid $${priceStr} on retry.`,
+        }).catch(() => undefined);
+        processed++;
+        continue;
+      }
+
+      // ── It genuinely declined ──────────────────────────────────────────
+      const action = classifyFailure(attempt.declineCode);
+      const newFailCount = (m.failedCount ?? 0) + 1;
+      const plan = planAfterFailure(newFailCount, action, now);
+      const retryDate = plan.retryAt
+        ? plan.retryAt.toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })
+        : "no further automatic attempt";
+
+      await db.insert(membershipPayments).values({
+        membershipId: m.id,
+        amount: priceStr,
+        status: "failed",
+        failureReason: attempt.reason ?? plan.reason,
+      });
+
+      if (plan.suspend) {
         // Strike 2 — suspend and email client
         await db
           .update(memberships)
@@ -144,26 +329,26 @@ export async function paymentRetryHandler(req: Request, res: Response) {
 
         // Notify admin
         await notifyOwner({
-          title: "⛔ Membership Suspended — Strike 2",
-          content: `${clientName} (${petName}) — ${membershipName} suspended after 2 failed payments.`,
+          title: "⛔ Membership suspended",
+          content: `${clientName} (${petName}) — ${membershipName}. ${plan.reason}`,
         });
       } else {
-        // Strike 1 retry — increment count, schedule another retry
-        const nextRetry = nextBrisbaneBusinessDay(now);
+        // Declined, but worth another go: schedule it for the next business
+        // day in Brisbane.
         await db
           .update(memberships)
           .set({
             failedPaymentCount: newFailCount,
             lastFailedPaymentAt: now,
-            paymentRetryScheduledAt: nextRetry,
+            paymentRetryScheduledAt: plan.retryAt,
             status: "pending_payment",
           })
           .where(eq(memberships.id, m.id));
 
         // Notify admin
         await notifyOwner({
-          title: "⚠️ Payment Retry Failed",
-          content: `${clientName} (${petName}) — ${membershipName}. Next retry: ${retryDate}.`,
+          title: "⚠️ Payment retry failed",
+          content: `${clientName} (${petName}) — ${membershipName}. ${attempt.reason ?? plan.reason} Next retry: ${retryDate}.`,
         });
 
         // Email admin

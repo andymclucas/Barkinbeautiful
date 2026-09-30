@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { StripeCardPanel } from "@/components/StripeCardPanel";
 import { trpc } from "@/lib/trpc";
 import { useParams } from "wouter";
 import { useLocation } from "wouter";
@@ -1196,6 +1197,7 @@ export default function ClientDetail() {
 
           {/* ── Payments tab ── */}
           <TabsContent value="payments" className="mt-4">
+            <StripeCardPanel clientId={client.id} />
             <StoreCreditCard clientId={client.id} externalOpenSignal={addCreditSignal} />
 
             <div className="bg-card rounded-xl border overflow-hidden shadow-sm">

@@ -46,6 +46,7 @@ import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl } from "./appUrl";
 import { paymentsRouter } from "./routers/payments";
+import { stripeCardsRouter } from "./routers/stripeCards";
 import {
   requireApprovedStaffTenant,
   requireApprovedFamilyLinkStaff,
@@ -2870,6 +2871,8 @@ const membershipsRouter = router({
           nextBillingDate: memberships.nextBillingDate,
           failedPaymentCount: memberships.failedPaymentCount,
           bookingSuspended: memberships.bookingSuspended,
+          // So the row can show whether weekly Stripe billing is live.
+          stripeSubscriptionId: memberships.stripeSubscriptionId,
           isTest: memberships.isTest,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
@@ -6689,6 +6692,7 @@ export const appRouter = router({
   clientPortal: clientPortalRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
+  stripeCards: stripeCardsRouter,
 });
 
 export type AppRouter = typeof appRouter;

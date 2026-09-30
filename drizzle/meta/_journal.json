@@ -400,6 +400,13 @@
       "when": 1790749899450,
       "tag": "0056_appointment_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "5",
+      "when": 1790751115721,
+      "tag": "0057_client_card_on_file",
+      "breakpoints": true
     }
   ]
 }

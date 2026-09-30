@@ -29,6 +29,7 @@ type MembershipItem = {
   nextBillingDate: number | Date | null;
   failedPaymentCount: number | null;
   bookingSuspended: boolean | null;
+  stripeSubscriptionId: string | null;
   isTest: boolean | null;
   clientFirstName: string | null;
   clientLastName: string | null;
@@ -442,9 +443,67 @@ function MembershipRow({ m }: { m: MembershipItem }) {
           {m.bookingSuspended && (
             <Badge className="text-xs bg-red-100 text-red-800 block">Suspended</Badge>
           )}
+          <MembershipBillingControl m={m} />
         </div>
       </td>
     </tr>
+  );
+}
+
+
+/**
+ * Whether this membership bills itself weekly through Stripe, and the one
+ * action that changes that.
+ *
+ * Deliberately small and in the row: the owner sets up a handful of pilot
+ * clients and needs to see at a glance which of 154 memberships are actually
+ * on automatic billing. "Bill weekly" fails with a clear message when the
+ * client has no card on file, which is the usual reason it cannot start.
+ */
+function MembershipBillingControl({ m }: { m: MembershipItem }) {
+  const utils = trpc.useUtils();
+  const start = trpc.stripeCards.startSubscription.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.alreadyExisted ? "Already billing weekly" : "Weekly billing started");
+      utils.memberships.list.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const chargeNow = trpc.stripeCards.chargeNow.useMutation({
+    onSuccess: (result) => {
+      if (result.ok) toast.success(result.message);
+      else toast.error(result.message ?? "The card was declined");
+      utils.memberships.list.invalidate();
+      utils.memberships.getFailedPayments.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  if (m.stripeSubscriptionId) {
+    return (
+      <div className="flex items-center gap-1">
+        <Badge className="block bg-emerald-100 text-[10px] text-emerald-800">Stripe weekly</Badge>
+        <button
+          type="button"
+          className="text-[10px] font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50"
+          disabled={chargeNow.isPending}
+          onClick={() => chargeNow.mutate({ membershipId: m.id })}
+        >
+          {chargeNow.isPending ? "Charging…" : "Charge now"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-primary hover:underline disabled:opacity-50"
+      disabled={start.isPending}
+      onClick={() => start.mutate({ membershipId: m.id, cycle: "weekly" })}
+    >
+      {start.isPending ? "Starting…" : "Bill weekly with Stripe"}
+    </button>
   );
 }
 

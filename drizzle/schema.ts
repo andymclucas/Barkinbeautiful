@@ -176,6 +176,17 @@ export const clients = mysqlTable("clients", {
   portalSessionVersion: int("portal_session_version").default(0).notNull(),
   moegoClientId: varchar("moego_client_id", { length: 100 }),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+  // A card the salon may charge off-session - weekly membership billing and
+  // the payment retry both need the payment method, not just the customer.
+  // Brand/last4/expiry mirror what Stripe holds so staff can talk about the
+  // card at the counter, and so an expired card is skipped rather than
+  // burning a retry. No card number or CVC is ever stored here.
+  stripeDefaultPaymentMethodId: varchar("stripe_default_payment_method_id", { length: 255 }),
+  stripeCardBrand: varchar("stripe_card_brand", { length: 40 }),
+  stripeCardLast4: varchar("stripe_card_last4", { length: 4 }),
+  stripeCardExpMonth: int("stripe_card_exp_month"),
+  stripeCardExpYear: int("stripe_card_exp_year"),
+  stripeCardSavedAt: timestamp("stripe_card_saved_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (t) => [
