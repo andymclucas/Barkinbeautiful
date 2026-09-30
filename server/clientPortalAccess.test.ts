@@ -18,7 +18,11 @@ describe("client portal access tokens", () => {
     const before = Date.now();
     const access = createClientPortalToken();
     expect(access.expiresAt.getTime()).toBeGreaterThanOrEqual(before + CLIENT_PORTAL_ACCESS_TTL_MS - 20);
-    expect(isClientPortalLinkExpired(new Date(Date.now() - 1))).toBe(true);
-    expect(isClientPortalLinkExpired(new Date(Date.now() + 1))).toBe(false);
+    // Seconds, not a millisecond. With a 1ms margin the clock moves between
+    // building the date and reading it inside the function, so this failed
+    // intermittently under a loaded full-suite run while passing every time
+    // on its own - the worst kind of red, because it trains you to re-run.
+    expect(isClientPortalLinkExpired(new Date(Date.now() - 5_000))).toBe(true);
+    expect(isClientPortalLinkExpired(new Date(Date.now() + 5_000))).toBe(false);
   });
 });

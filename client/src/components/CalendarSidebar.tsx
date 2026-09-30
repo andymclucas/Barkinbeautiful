@@ -75,19 +75,15 @@ export function CalendarSidebar({
             next.setHours(0, 0, 0, 0);
             onSelectDate(next);
           }}
-          // Fixed width, exact arithmetic: 7 columns x 30px = 210px.
-          //
-          // The day cells take their HEIGHT from `aspect-square`, so it comes
-          // from their width. Left fluid in a 248px rail each cell is ~31.7px
-          // wide while the row reserves --cell-size, and the grid ends up
-          // taller than its own container - by about one row over six weeks.
-          // Chromium grows the card to absorb that; Safari does not, and the
-          // last week draws on top of the panel below.
+          // 7 columns x 30px. The cells are explicitly sized in
+          // ui/calendar.tsx rather than derived from a ratio of their own
+          // width, which is what made this render differently in Safari and
+          // Chromium; the grid is now the same box in every browser.
           //
           // --cell-size goes in `style` rather than a class because an
           // arbitrary-property utility and the component's own default are
           // the same specificity, so which wins depends on stylesheet order.
-          className="mx-auto w-[210px] p-0"
+          className="mx-auto w-fit p-0"
           style={{ "--cell-size": "30px" } as CSSProperties}
         />
       </div>

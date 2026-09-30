@@ -1723,7 +1723,7 @@ export default function Calendar() {
                   {weekLabel}
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
+              <PopoverContent className="w-auto p-0" align="start" collisionPadding={8}>
                 <CalendarPicker
                   mode="single"
                   selected={viewMode === "day" ? dayDate : weekStart}

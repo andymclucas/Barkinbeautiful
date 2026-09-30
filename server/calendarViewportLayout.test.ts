@@ -40,21 +40,31 @@ describe("Appointments day viewport layout", () => {
     expect(src).toContain("overflow-x-auto overscroll-x-contain flex-1 flex flex-col");
   });
 
-  it("sizes the sidebar month from an exact grid, not from its fluid width", () => {
-    // The day cells take their height from `aspect-square`, so height follows
-    // width. Left fluid in a 248px rail the cells are ~31.7px wide while the
-    // row reserves --cell-size, and over six weeks the grid ends up about a
-    // row taller than its own card. Chromium absorbs that by growing the
-    // card; Safari does not, and the last week draws over the panel below -
-    // reported three times before the cause was found.
+  it("sizes calendar cells explicitly, never from a ratio of their own width", () => {
+    // The day cells used to take their height from `aspect-square` over a
+    // fluid `w-full`, plus `h-full` - a percentage of a parent with no
+    // definite height. Chromium absorbs that by growing the container;
+    // WebKit does not, so the last week of the month drew outside its card
+    // in Safari while looking perfect in Chrome. Reported four times before
+    // the cause was found, twice after I declared it fixed from Chromium
+    // alone.
     //
-    // 7 columns x 30px = 210px exactly, so width and height agree in every
-    // browser. --cell-size is set in `style` because an arbitrary-property
-    // utility and the component's own default have equal specificity and the
-    // winner depends on stylesheet order.
-    const src = readFileSync(new URL("../client/src/components/CalendarSidebar.tsx", import.meta.url), "utf8");
-    expect(src).toContain('w-[210px]');
-    expect(src).toMatch(/style=\{\{\s*"--cell-size":\s*"30px"/);
+    // Asserting the property, not the pixel count: every cell dimension is a
+    // straight multiple of --cell-size, so there is nothing for a layout
+    // engine to interpret differently.
+    const calendar = readFileSync(new URL("../client/src/components/ui/calendar.tsx", import.meta.url), "utf8");
+    const dayLine = /day: cn\(\s*\n?\s*"([^"]*)"/.exec(calendar.slice(calendar.indexOf("day: cn(")));
+    expect(dayLine, "the day cell class list should still be findable").not.toBeNull();
+    expect(dayLine![1]).toContain("size-(--cell-size)");
+    expect(dayLine![1]).not.toContain("aspect-square");
+    expect(dayLine![1]).not.toContain("h-full");
+    // The button inside the cell must not reintroduce the ratio either.
+    expect(calendar).toContain("size-(--cell-size) aspect-auto");
+    expect(calendar).not.toContain("aspect-square size-auto w-full");
+
+    // And the rail pins a cell size rather than leaving it to the default.
+    const sidebar = readFileSync(new URL("../client/src/components/CalendarSidebar.tsx", import.meta.url), "utf8");
+    expect(sidebar).toMatch(/style=\{\{\s*"--cell-size":\s*"\d+px"/);
   });
 
   it("puts the persistent sidebar beside the grid, not above it", () => {
