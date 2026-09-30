@@ -39,10 +39,22 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  const secure = isSecureRequest(req);
+
+  // SameSite=None is only legal on a Secure cookie - browsers drop the cookie
+  // outright otherwise. Over plain http://localhost that meant the session
+  // cookie was never stored: sign in succeeded, the next request arrived
+  // unauthenticated, and the app bounced back to /login forever. Local
+  // development was effectively impossible to log into, which is why UI work
+  // here has been so hard to verify in a real browser.
+  //
+  // Production is https, so it keeps SameSite=None exactly as before. Only the
+  // insecure case changes, and "lax" is both valid over http and the safer
+  // default.
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    sameSite: secure ? "none" : "lax",
+    secure,
   };
 }
