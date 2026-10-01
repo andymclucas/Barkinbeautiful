@@ -821,6 +821,19 @@ export const smsLogs = mysqlTable("sms_logs", {
 export type SmsLog = typeof smsLogs.$inferSelect;
 
 // ─── Missed Calls (landline voicemail-to-text, via Twilio) ────────────────────
+/**
+ * A starred conversation. Keyed by the thread key getThreads groups on:
+ * "client:<id>", or "number:<phone>" when the number is not a client.
+ * Starred is the presence of the row — unstarring deletes it.
+ */
+export const messageThreadStars = mysqlTable("message_thread_stars", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  threadKey: varchar("thread_key", { length: 80 }).notNull(),
+  starredByUserId: int("starred_by_user_id"),
+  starredAt: timestamp("starred_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("uq_message_thread_stars_tenant_key").on(t.tenantId, t.threadKey)]);
+
 export const missedCalls = mysqlTable("missed_calls", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull().default(1),

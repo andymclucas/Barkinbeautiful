@@ -456,6 +456,13 @@
       "when": 1790857971954,
       "tag": "0064_appointment_discount",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "5",
+      "when": 1790862872133,
+      "tag": "0065_message_thread_stars",
+      "breakpoints": true
     }
   ]
 }
