@@ -558,14 +558,22 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
 
   return (
     <>
-      <button
+      {/* A real button, not a 10px text link: this is the action that puts a
+          client onto automatic billing, and staff could not find it. */}
+      <Button
         type="button"
-        className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-primary hover:underline disabled:opacity-50"
+        size="sm"
+        className="h-7 w-full gap-1.5 whitespace-nowrap px-2.5 text-[11px] font-semibold"
         disabled={busy}
         onClick={() => setConfirming("start")}
       >
-        {start.isPending ? "Starting…" : `Bill ${cadence === "every week" ? "weekly" : "fortnightly"} with Stripe`}
-      </button>
+        <CreditCard className="h-3 w-3 shrink-0" />
+        {start.isPending
+          ? "Starting…"
+          : cadence === "every week"
+            ? "Set Weekly Billing"
+            : "Set Fortnightly Billing"}
+      </Button>
       {dialog}
     </>
   );
