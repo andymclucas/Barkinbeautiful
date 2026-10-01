@@ -141,21 +141,6 @@ const calendarRouter = router({
   /**
    * Apply or remove a staff discount on an appointment.
    *
-   * grossPrice keeps the original charge and price becomes what the client
-   * pays, so the family price breakdown, split bills and expected-revenue
-   * analytics all pick it up without changing — they already read price.
-   *
-   * applyToSession discounts every dog booked in the same session, which is
-   * what "20% off for the Jeffries family" actually means. Each dog keeps
-   * its own prices; the percentage is applied to each.
-   *
-   * operationalProcedure: this is counter work, done by whoever is serving
-   * the client. The reason field and the recorded user id are what make
-   * that safe — every discount says who gave it and why.
-   */
-  /**
-   * Apply or remove a staff discount on an appointment.
-   *
    * preDiscountPrice keeps what price was before, and price becomes what
    * the client pays — so the family price breakdown, split bills and the
    * payment panel all pick it up without changing, because they already
