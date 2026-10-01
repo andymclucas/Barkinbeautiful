@@ -135,7 +135,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
                       <button
                         type="button"
                         aria-label="Remove this payment"
-                        className="text-muted-foreground hover:text-red-600 dark:text-red-400 disabled:opacity-50"
+                        className="text-muted-foreground hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
                         disabled={remove.isPending}
                         onClick={() => remove.mutate({ paymentId: line.id })}
                       >

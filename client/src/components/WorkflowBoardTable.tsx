@@ -170,8 +170,8 @@ function EditableNumber({ value, onSave, placeholder, min, max, label, tone, rea
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value ?? ""));
   const toneClasses = tone === "cage"
-    ? "border-blue-300 dark:border-blue-800 bg-blue-100/90 dark:bg-blue-950/90 text-blue-950 hover:bg-blue-200 dark:bg-blue-900/50 focus:border-blue-600 focus:ring-blue-300"
-    : "border-violet-300 dark:border-violet-800 bg-violet-100/90 dark:bg-violet-950/90 text-violet-950 hover:bg-violet-200 dark:bg-violet-900/50 focus:border-violet-600 focus:ring-violet-300";
+    ? "border-blue-300 dark:border-blue-800 bg-blue-100/90 dark:bg-blue-950/90 text-blue-950 dark:text-blue-100 hover:bg-blue-200 dark:hover:bg-blue-900/50 focus:border-blue-600 focus:ring-blue-300"
+    : "border-violet-300 dark:border-violet-800 bg-violet-100/90 dark:bg-violet-950/90 text-violet-950 dark:text-violet-100 hover:bg-violet-200 dark:hover:bg-violet-900/50 focus:border-violet-600 focus:ring-violet-300";
   // The TV board shows the same cage and tag numbers in the same coloured pill,
   // just without the click target — a wall display has nobody to click it.
   if (readOnly) {
@@ -292,7 +292,7 @@ function BathPriorityCell({ value, coordinated, onSave, onManageGroup, disabled,
           {BATH_PRIORITY_VALUES.map((priority) => <SelectItem key={priority} value={String(priority)}><span className="inline-flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white" style={{ background: BATH_PRIORITY_META[priority].colour }}>{priority}</span>{BATH_PRIORITY_META[priority].label}</span></SelectItem>)}
         </SelectContent>
       </Select>
-      <button type="button" onClick={onManageGroup} disabled={disabled} className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 dark:border-violet-900/50 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:bg-violet-950/50 disabled:cursor-not-allowed disabled:opacity-60" title="Coordinate one bathing priority across selected dogs">
+      <button type="button" onClick={onManageGroup} disabled={disabled} className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 dark:border-violet-900/50 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-950/50 disabled:cursor-not-allowed disabled:opacity-60" title="Coordinate one bathing priority across selected dogs">
         <Link2 className="h-2.5 w-2.5" /> {coordinated ? "Together" : "Group dogs"}
       </button>
     </div>
@@ -604,7 +604,7 @@ export function WorkflowBoardTable({
                                   <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors ${familyFilter === familyGroupId ? "bg-violet-800 text-white ring-2 ring-violet-400" : "bg-violet-600 text-white group-hover:bg-violet-700"}`}><Link2 className="h-3.5 w-3.5" /></span>
                                 </button>
                                 {!readOnly && <button
-                                  className="inline-flex h-5 w-5 items-center justify-center rounded text-violet-500 hover:bg-violet-100 dark:bg-violet-950/50 hover:text-violet-700 dark:text-violet-300 transition-colors"
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded text-violet-500 hover:bg-violet-100 dark:hover:bg-violet-950/50 hover:text-violet-700 dark:hover:text-violet-300 transition-colors"
                                   title={`${familyTooltip}. Manage or unlink this dog`}
                                   aria-label={`Manage or unlink ${appt.petName} from family: ${linkedPetNames.join(", ")}`}
                                   onClick={() => { setFamilyLinkPopup({ apptId: appt.id, petId: appt.petId, petName: appt.petName ?? "", petFamilyGroupId: familyGroupId ?? null }); setFamilySearch(""); }}
@@ -793,7 +793,7 @@ export function WorkflowBoardTable({
                               type="button"
                               onClick={() => onRestoreCompleted(appt.id)}
                               disabled={restorePending}
-                              className="rounded border border-amber-300 dark:border-amber-800 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:bg-amber-950/40 disabled:opacity-50"
+                              className="rounded border border-amber-300 dark:border-amber-800 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 disabled:opacity-50"
                               title="Return this dog to Ready so staff can correct its workflow status"
                             >
                               {restorePending ? "…" : "Undo"}
@@ -805,7 +805,7 @@ export function WorkflowBoardTable({
                           <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/50 px-2 py-1 rounded border border-emerald-300 dark:border-emerald-800">READY</span>
                         ) : (
                         <button
-                          className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/50 hover:bg-emerald-200 dark:bg-emerald-900/50 px-2 py-1 rounded border border-emerald-300 dark:border-emerald-800 transition-colors"
+                          className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/50 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 px-2 py-1 rounded border border-emerald-300 dark:border-emerald-800 transition-colors"
                           onClick={() => setOutConfirm({ id: appt.id, petName: appt.petName ?? "this dog" })}
                         >
                           OUT

@@ -215,7 +215,7 @@ export default function Dashboard() {
                 ))}
               </div>
               <Link href="/memberships">
-                <Button variant="outline" size="sm" className="mt-3 gap-1 border-amber-400 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:bg-amber-950/50">
+                <Button variant="outline" size="sm" className="mt-3 gap-1 border-amber-400 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/50">
                   View all <ArrowRight className="h-3 w-3" />
                 </Button>
               </Link>

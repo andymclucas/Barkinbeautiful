@@ -51,7 +51,7 @@ function GroomingCardPhotoUpload({ appointmentId, petId }: { appointmentId: numb
     }
   };
   return <div className="mt-3 rounded-xl border border-violet-100 dark:border-violet-950/50 bg-violet-50/40 dark:bg-violet-950/40 p-3">
-    <p className="text-xs font-semibold text-violet-950">Grooming card photos</p>
+    <p className="text-xs font-semibold text-violet-950 dark:text-violet-100">Grooming card photos</p>
     <p className="mt-0.5 text-[11px] text-violet-800 dark:text-violet-300">Use your phone camera to add before and after photos for this assigned pet.</p>
     <div className="mt-2 grid grid-cols-2 gap-2">
       {(["before", "after"] as const).map(position => <label key={position} className="flex min-h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-card px-2 text-xs font-semibold text-violet-800 dark:text-violet-300 active:scale-[0.98]">
