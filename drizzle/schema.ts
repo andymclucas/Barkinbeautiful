@@ -373,6 +373,9 @@ export const memberships = mysqlTable("memberships", {
   stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   cancelledAt: timestamp("cancelled_at"),
+  /** A human has seen the failed-payment notification; it stays listed until resolved. */
+  noticeReadAt: timestamp("notice_read_at"),
+  noticeReadByUserId: int("notice_read_by_user_id"),
   isTest: boolean("is_test").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
@@ -789,6 +792,8 @@ export const smsLogs = mysqlTable("sms_logs", {
   replyIntent: mysqlEnum("reply_intent", ["confirm", "cancel", "unknown"]),
   processedAt: timestamp("processed_at"),
   readAt: timestamp("read_at"),
+  /** Who opened it. Distinct from processedByUserId, which is who actioned a review. */
+  readByUserId: int("read_by_user_id"),
   reviewAction: mysqlEnum("review_action", ["confirm", "cancel"]),
   processedByUserId: int("processed_by_user_id").references(() => users.id),
   errorMessage: text("error_message"),
@@ -814,6 +819,8 @@ export const missedCalls = mysqlTable("missed_calls", {
   transcriptionStatus: mysqlEnum("transcription_status", ["pending", "completed", "failed"]).default("pending").notNull(),
   twilioCallSid: varchar("twilio_call_sid", { length: 64 }),
   readAt: timestamp("read_at"),
+  /** Who opened it — accountability for a voicemail looked at but not returned. */
+  readByUserId: int("read_by_user_id"),
   receivedAt: timestamp("received_at").defaultNow().notNull(),
 }, (t) => [index("idx_missed_calls_tenant").on(t.tenantId), index("idx_missed_calls_client").on(t.clientId)]);
 

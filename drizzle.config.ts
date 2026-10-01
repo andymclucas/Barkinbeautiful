@@ -14,13 +14,23 @@ export default defineConfig({
   schema: "./drizzle/schema.ts",
   out: "./drizzle",
   dialect: "mysql",
-  dbCredentials: {
-    url: connectionString,
-    // TiDB Cloud's public endpoint requires TLS, and mysql2's URI parsing does
-    // not reliably turn SSL on from the connection string alone — server/db.ts
-    // has carried an explicit ssl block for exactly this reason since it was
-    // written. drizzle-kit builds its own connection from this config, so it
-    // needs the same treatment or every migration fails on the handshake.
-    ssl: { minVersion: "TLSv1.2", rejectUnauthorized: true },
-  },
+  // Discrete credentials, NOT `url`.
+  //
+  // TiDB Cloud's public endpoint refuses plaintext ("Connections using
+  // insecure transport are prohibited"). drizzle-kit 0.31.5 silently drops
+  // the ssl block when `url` is also set, so every migrate attempt failed on
+  // the handshake even though the ssl option was right there. Parsing the URL
+  // ourselves and passing the parts keeps ssl in play. server/db.ts carries
+  // the same explicit ssl block for the same reason.
+  dbCredentials: (() => {
+    const parsed = new URL(connectionString);
+    return {
+      host: parsed.hostname,
+      port: parsed.port ? Number(parsed.port) : 4000,
+      user: decodeURIComponent(parsed.username),
+      password: decodeURIComponent(parsed.password),
+      database: parsed.pathname.replace(/^\//, ""),
+      ssl: { minVersion: "TLSv1.2" as const, rejectUnauthorized: true },
+    };
+  })(),
 });

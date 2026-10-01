@@ -6058,9 +6058,13 @@ const smsRouter = router({
         id: smsLogs.id, body: smsLogs.body, sentAt: smsLogs.sentAt,
         clientId: smsLogs.clientId, toNumber: smsLogs.toNumber,
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
+        readAt: smsLogs.readAt,
+        readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${smsLogs.readByUserId} LIMIT 1)`,
       }).from(smsLogs)
         .leftJoin(clients, eq(smsLogs.clientId, clients.id))
-        .where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.direction, "inbound"), isNull(smsLogs.readAt)))
+        // Read items stay listed: a notification that vanishes on click is
+        // one nobody can be held to. The count below still counts unread.
+        .where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.direction, "inbound")))
         .orderBy(desc(smsLogs.sentAt))
         .limit(input.limit);
       const [{ count: messageCount }] = await db.select({ count: sql<number>`count(*)` }).from(smsLogs)
@@ -6071,20 +6075,64 @@ const smsRouter = router({
         clientId: missedCalls.clientId, fromNumber: missedCalls.fromNumber,
         callerName: missedCalls.callerName,
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
+        readAt: missedCalls.readAt,
+        readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${missedCalls.readByUserId} LIMIT 1)`,
       }).from(missedCalls)
         .leftJoin(clients, eq(missedCalls.clientId, clients.id))
-        .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)))
+        .where(eq(missedCalls.tenantId, input.tenantId))
         .orderBy(desc(missedCalls.receivedAt))
         .limit(input.limit);
       const [{ count: callCount }] = await db.select({ count: sql<number>`count(*)` }).from(missedCalls)
         .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)));
 
       const combined = [
-        ...unread.map(m => ({ kind: "message" as const, id: m.id, body: m.body, at: m.sentAt, clientId: m.clientId, toNumber: m.toNumber, clientName: m.clientName })),
-        ...unreadCalls.map(c => ({ kind: "missed_call" as const, id: c.id, body: c.transcriptText || "(no transcript available)", at: c.receivedAt, clientId: c.clientId, toNumber: c.fromNumber, clientName: c.callerName || c.clientName })),
+        ...unread.map(m => ({ kind: "message" as const, id: m.id, body: m.body, at: m.sentAt, clientId: m.clientId, toNumber: m.toNumber, clientName: m.clientName, readAt: m.readAt, readByName: m.readByName })),
+        ...unreadCalls.map(c => ({ kind: "missed_call" as const, id: c.id, body: c.transcriptText || "(no transcript available)", at: c.receivedAt, clientId: c.clientId, toNumber: c.fromNumber, clientName: c.callerName || c.clientName, readAt: c.readAt, readByName: c.readByName })),
       ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, input.limit);
 
       return { unreadCount: Number(messageCount) + Number(callCount), recent: combined };
+    }),
+
+  /**
+   * Record that a staff member opened a notification, and who.
+   *
+   * read_at alone only said someone had looked. Naming them is the point:
+   * a voicemail opened at 9am and never returned is now attributable, which
+   * is the whole reason for the column. The item stays in the list.
+   *
+   * First reader wins — a later opener does not overwrite the name, because
+   * the question being answered is "who picked this up?", not "who saw it
+   * last".
+   */
+  markNotificationRead: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      kind: z.enum(["message", "missed_call"]),
+      id: z.number().int().positive(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const now = new Date();
+
+      if (input.kind === "missed_call") {
+        await db.update(missedCalls)
+          .set({ readAt: now, readByUserId: ctx.user.id })
+          .where(and(
+            eq(missedCalls.id, input.id),
+            eq(missedCalls.tenantId, input.tenantId),
+            isNull(missedCalls.readAt),
+          ));
+      } else {
+        await db.update(smsLogs)
+          .set({ readAt: now, readByUserId: ctx.user.id })
+          .where(and(
+            eq(smsLogs.id, input.id),
+            eq(smsLogs.tenantId, input.tenantId),
+            isNull(smsLogs.readAt),
+          ));
+      }
+      return { marked: true };
     }),
 
   getMissedCalls: protectedProcedure
