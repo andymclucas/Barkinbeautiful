@@ -5,6 +5,7 @@ import {
   classifyFailure,
   planAfterFailure,
   stripeRecurring,
+  billingCycleFromWeeks,
   canChargeOffSession,
   describeCard,
   isCardExpired,
@@ -170,5 +171,22 @@ describe("describeStripeKey", () => {
     expect(describeStripeKey("sk_test_placeholder")).toMatchObject({ configured: false, placeholder: true });
     expect(describeStripeKey("")).toMatchObject({ configured: false, mode: "unknown" });
     expect(describeStripeKey(undefined)).toMatchObject({ configured: false });
+  });
+});
+
+describe("billingCycleFromWeeks", () => {
+  it("maps the cycles the salon actually sells", () => {
+    expect(billingCycleFromWeeks(1)).toBe("weekly");
+    expect(billingCycleFromWeeks(2)).toBe("fortnightly");
+  });
+
+  it("refuses to guess rather than billing at the wrong cadence", () => {
+    // 4 weeks is 13 charges a year, a month is 12. Guessing either way is a
+    // real overcharge or undercharge, so the caller must ask a human.
+    expect(billingCycleFromWeeks(4)).toBeNull();
+    expect(billingCycleFromWeeks(3)).toBeNull();
+    expect(billingCycleFromWeeks(0)).toBeNull();
+    expect(billingCycleFromWeeks(null)).toBeNull();
+    expect(billingCycleFromWeeks(undefined)).toBeNull();
   });
 });
