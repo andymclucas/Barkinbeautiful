@@ -256,19 +256,27 @@ function YourDetailsCard({ client, onSaved }: {
 }
 
 export default function ClientPortal() {
-  const { token } = useParams<{ token: string }>();
+  const { token, previewClientId } = useParams<{ token?: string; previewClientId?: string }>();
   const [, navigate] = useLocation();
+  // Admin preview: same payload, no session, nothing changed on the client's
+  // end. Client-only actions are hidden rather than offered and failing.
+  const previewId = previewClientId ? Number(previewClientId) : null;
+  const isPreview = Number.isFinite(previewId) && (previewId ?? 0) > 0;
+  const preview = trpc.clientPortal.previewPortal.useQuery(
+    { clientId: previewId ?? 0 },
+    { enabled: isPreview, retry: false },
+  );
   // retry: false matters here. A bad, expired or malformed token can never
   // succeed, but the default three retries with backoff left the client
   // staring at a loading skeleton for ~7 seconds before the error appeared —
   // which reads as the site hanging, right after they entered a card.
-  const tokenPortal = trpc.clientPortal.getPortal.useQuery({ token: token ?? "" }, { enabled: Boolean(token), retry: false });
-  const accountPortal = trpc.clientPortal.getMyPortal.useQuery(undefined, { enabled: !token, retry: false });
+  const tokenPortal = trpc.clientPortal.getPortal.useQuery({ token: token ?? "" }, { enabled: Boolean(token) && !isPreview, retry: false });
+  const accountPortal = trpc.clientPortal.getMyPortal.useQuery(undefined, { enabled: !token && !isPreview, retry: false });
   const logout = trpc.clientPortal.logout.useMutation({ onSuccess: () => navigate("/portal/login") });
-  const data = (token ? tokenPortal.data : accountPortal.data) as PortalData | undefined;
-  const isLoading = token ? tokenPortal.isLoading : accountPortal.isLoading;
-  const error = token ? tokenPortal.error : accountPortal.error;
-  const refetch = () => (token ? tokenPortal.refetch() : accountPortal.refetch());
+  const data = (isPreview ? preview.data : token ? tokenPortal.data : accountPortal.data) as PortalData | undefined;
+  const isLoading = isPreview ? preview.isLoading : token ? tokenPortal.isLoading : accountPortal.isLoading;
+  const error = isPreview ? preview.error : token ? tokenPortal.error : accountPortal.error;
+  const refetch = () => (isPreview ? preview.refetch() : token ? tokenPortal.refetch() : accountPortal.refetch());
 
   const [rescheduleTarget, setRescheduleTarget] = useState<PortalAppointment | null>(null);
   const [cancelTarget, setCancelTarget] = useState<PortalAppointment | null>(null);
@@ -312,7 +320,8 @@ export default function ClientPortal() {
   const upcoming = data.appointments.filter(appointment => new Date(appointment.scheduledStart).getTime() >= Date.now() && !["cancelled", "no_show"].includes(appointment.status));
   const past = data.appointments.filter(appointment => !upcoming.includes(appointment));
   const pastVisible = showAllHistory ? past : past.slice(0, 5);
-  const canManage = (appt: PortalAppointment) => appt.workflowState === "scheduled" && appt.status !== "cancelled";
+  // In preview there is no client session, so these would fail if offered.
+  const canManage = (appt: PortalAppointment) => !isPreview && appt.workflowState === "scheduled" && appt.status !== "cancelled";
   const canReschedule = (appt: PortalAppointment) => canManage(appt) && new Date(appt.scheduledStart).getTime() - Date.now() >= 24 * 3600000;
   const creditBalance = Number(data.storeCreditBalance ?? 0);
 
@@ -326,7 +335,28 @@ export default function ClientPortal() {
       <Card className="border-primary/20 bg-primary/5"><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5" /> Store credit</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">${creditBalance.toFixed(2)}</p><p className="mt-1 text-sm text-muted-foreground">{creditBalance > 0 ? "Automatically applied to your next visits" : "No credit currently on file"}</p></CardContent></Card>
     </section>
 
-    <YourDetailsCard client={data.client} onSaved={() => refetch()} />
+    {isPreview && (
+      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/30">
+        <p className="font-semibold text-amber-900 dark:text-amber-200">Staff preview</p>
+        <p className="text-amber-800 dark:text-amber-300">
+          This is exactly what {data.client.firstName} sees. Nothing here is live for them, their access links are
+          untouched, and the actions they would have are hidden.
+        </p>
+      </div>
+    )}
+
+    {!isPreview && <YourDetailsCard client={data.client} onSaved={() => refetch()} />}
+    {isPreview && (
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><PencilLine className="h-5 w-5 text-primary" /> Their details</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+          <div><p className="text-xs text-muted-foreground">Name</p><p className="font-medium">{[data.client.firstName, data.client.lastName].filter(Boolean).join(" ") || "Not provided"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Phone</p><p className="font-medium">{data.client.phone || "Not provided"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Email</p><p className="break-words font-medium">{data.client.email || "Not provided"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Address</p><p className="font-medium">{data.client.address || "Not provided"}</p></div>
+        </CardContent>
+      </Card>
+    )}
 
     <BillingSection invoices={data.invoices ?? []} payments={data.payments ?? []} />
 

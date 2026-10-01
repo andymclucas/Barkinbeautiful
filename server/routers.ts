@@ -6727,6 +6727,44 @@ const clientPortalRouter = router({
       };
     }),
 
+  /**
+   * Exactly what the client sees, for an administrator to look at.
+   *
+   * Issuing a replacement access link just to check the portal revokes the
+   * client's existing one — a destructive act for a read-only question. This
+   * builds the same payload from the client id instead, changes nothing, and
+   * is adminProcedure because the portal shows a client's full billing
+   * history.
+   *
+   * There is no session here, so the client-only actions (cancel,
+   * reschedule, edit details) have nothing to act on. The page hides them in
+   * preview rather than offering buttons that would fail.
+   */
+  previewPortal: adminProcedure
+    .input(z.object({ clientId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [access] = await db.select({
+        clientId: clients.id,
+        tenantId: clients.tenantId,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+        clientEmail: clients.email,
+        clientPhone: clients.phone,
+        clientAddress: clients.address,
+        salonName: tenants.name,
+        salonPhone: tenants.phone,
+        salonEmail: tenants.email,
+      })
+        .from(clients)
+        .innerJoin(tenants, eq(clients.tenantId, tenants.id))
+        .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, 1)))
+        .limit(1);
+      if (!access) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
+      return buildClientPortalPayload(db, access);
+    }),
+
   getSetup: publicProcedure
     .input(z.object({ token: z.string().min(32).max(128) }))
     .query(async ({ input }) => {

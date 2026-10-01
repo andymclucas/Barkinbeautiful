@@ -99,6 +99,9 @@ function Router() {
           "/portal/:token", which would otherwise match "card-saved" as a
           token and show the client an error right after they handed over
           their card. */}
+      {/* Admin preview of a client's portal. Two segments, so it cannot be
+          mistaken for a one-segment access token. */}
+      <Route path="/portal/preview/:previewClientId" component={ClientPortal} />
       <Route path="/portal/card-saved">{() => <ClientPortalCardResult saved />}</Route>
       <Route path="/portal/card-cancelled">{() => <ClientPortalCardResult saved={false} />}</Route>
       <Route path="/portal/:token" component={ClientPortal} />
