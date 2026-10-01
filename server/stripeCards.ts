@@ -385,10 +385,26 @@ export async function startMembershipSubscription(membershipId: number) {
       stripeSubscriptionId: subscription.id,
       gatewaySubscriptionId: subscription.id,
       paymentGateway: "stripe",
+      nextBillingDate: subscriptionPeriodEnd(subscription),
     })
     .where(eq(memberships.id, membership.id));
 
   return { subscriptionId: subscription.id, alreadyExisted: false };
+}
+
+/**
+ * When the subscription next bills.
+ *
+ * current_period_end sat on the subscription in older API versions and
+ * moved onto the subscription items in newer ones; this account is on
+ * 2026-08-26. Read both shapes rather than silently returning null and
+ * leaving the Next Billing column blank for every Stripe membership.
+ */
+function subscriptionPeriodEnd(subscription: Stripe.Subscription): Date | null {
+  const direct = (subscription as unknown as { current_period_end?: number }).current_period_end;
+  const fromItem = subscription.items?.data?.[0] as unknown as { current_period_end?: number } | undefined;
+  const seconds = direct ?? fromItem?.current_period_end;
+  return typeof seconds === "number" && Number.isFinite(seconds) ? new Date(seconds * 1000) : null;
 }
 
 export async function cancelMembershipSubscription(membershipId: number) {

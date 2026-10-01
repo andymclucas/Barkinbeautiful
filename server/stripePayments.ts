@@ -208,6 +208,18 @@ export async function processStripeEvent(event: Stripe.Event) {
           .limit(1)
       : [];
 
+    // Keep the Next Billing column honest as each cycle is paid. The field
+    // sat on the invoice in older API versions and on its lines in newer
+    // ones, so read both rather than leaving it blank.
+    const nextPeriodEnd =
+      (invoice as unknown as { period_end?: number }).period_end ??
+      (invoice.lines?.data?.[0] as unknown as { period?: { end?: number } } | undefined)?.period?.end;
+    if (typeof nextPeriodEnd === "number" && Number.isFinite(nextPeriodEnd)) {
+      await db.update(memberships)
+        .set({ nextBillingDate: new Date(nextPeriodEnd * 1000) })
+        .where(eq(memberships.id, membership.id));
+    }
+
     if (!alreadyBooked) {
       await db.insert(membershipPayments).values({
         membershipId: membership.id,
@@ -277,15 +289,47 @@ export async function processStripeEvent(event: Stripe.Event) {
 
   if (event.type === "customer.subscription.deleted") {
     const subscription = event.data.object as Stripe.Subscription;
-    const membership = await membershipForSubscription(db, subscription.id);
+    let membership = await membershipForSubscription(db, subscription.id);
+
+    // When WE cancelled, the subscription id was already cleared, so the
+    // lookup above misses and the audit row would say nothing about who it
+    // was. startMembershipSubscription stamps the membership id into the
+    // subscription metadata precisely so it stays identifiable.
+    if (!membership) {
+      const metaId = Number((subscription.metadata ?? {}).groomigo_membership_id || 0) || null;
+      if (metaId) {
+        const [row] = await db
+          .select({
+            id: memberships.id,
+            tenantId: memberships.tenantId,
+            clientId: memberships.clientId,
+            name: memberships.name,
+            failedPaymentCount: memberships.failedPaymentCount,
+          })
+          .from(memberships)
+          .where(eq(memberships.id, metaId))
+          .limit(1);
+        membership = row ?? null;
+      }
+    }
+
     await db.insert(stripeEvents).values({
       stripeEventId: event.id, eventType: event.type,
       tenantId: membership?.tenantId ?? 1, clientId: membership?.clientId ?? null,
       membershipId: membership?.id ?? null, invoiceId: null,
     });
+
     if (membership) {
       await db.update(memberships)
-        .set({ stripeSubscriptionId: null, gatewaySubscriptionId: null })
+        .set({
+          stripeSubscriptionId: null,
+          gatewaySubscriptionId: null,
+          // Stripe can end a subscription on its own, after a card finally
+          // gives up. Leaving the gateway as "stripe" with no subscription
+          // tells the salon this membership still bills itself, and nothing
+          // would ever charge it again.
+          paymentGateway: "other",
+        })
         .where(eq(memberships.id, membership.id));
     }
     return { duplicate: false, handled: "subscription_deleted" };
