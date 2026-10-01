@@ -1,4 +1,5 @@
 import { isValidTimeZone } from "@shared/auditTimestamp";
+import { searchTerms } from "@shared/clientSearchMatch";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
@@ -3047,8 +3048,15 @@ const membershipsRouter = router({
       if (input.status) conditions.push(eq(memberships.status, input.status));
       if (input.tier) conditions.push(eq(memberships.tier, input.tier));
       if (input.search) {
-        const s = `%${input.search}%`;
-        conditions.push(sql`(${clients.firstName} LIKE ${s} OR ${clients.lastName} LIKE ${s} OR ${pets.name} LIKE ${s})`);
+        // Every word must match something. Matching the whole input against
+        // single columns meant "Andy McLucas" found nothing, because first and
+        // last name are separate columns — see shared/clientSearchMatch.
+        for (const term of searchTerms(input.search)) {
+          const s = `%${term}%`;
+          conditions.push(
+            sql`(${clients.firstName} LIKE ${s} OR ${clients.lastName} LIKE ${s} OR ${pets.name} LIKE ${s} OR CONCAT(COALESCE(${clients.firstName}, ''), ' ', COALESCE(${clients.lastName}, '')) LIKE ${s})`,
+          );
+        }
       }
       const [countRow] = await db
         .select({ total: sql<number>`COUNT(*)` })
