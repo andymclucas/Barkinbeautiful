@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useHasHover } from "@/hooks/useMobile";
 import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,6 +82,7 @@ export default function Messages() {
   // full conversation. Chosen so a compact thread still fits inside max-h-[80vh]
   // on a laptop screen.
   const PREVIEW_MESSAGE_LIMIT = 12;
+  const hasHover = useHasHover();
   const [previewThread, setPreviewThread] = useState<any | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,10 +112,13 @@ export default function Messages() {
   }, []);
 
   const openPreview = useCallback((thread: any, e: { clientX: number; clientY: number }) => {
+    // Touch devices synthesise mouseenter on tap, which would open this
+    // preview on top of the thread dialog the same tap just opened.
+    if (!hasHover) return;
     pointer.current = { x: e.clientX, y: e.clientY };
     if (previewTimer.current) clearTimeout(previewTimer.current);
     previewTimer.current = setTimeout(() => setPreviewThread(thread), 220);
-  }, []);
+  }, [hasHover]);
 
   const closePreview = useCallback(() => {
     if (previewTimer.current) clearTimeout(previewTimer.current);
@@ -465,9 +470,9 @@ export default function Messages() {
                   <div
                     key={thread.threadKey}
                     className="group -mx-2 flex w-full items-center gap-2 rounded-xl px-2 transition-colors hover:bg-accent/50"
-                    onMouseEnter={(e) => openPreview(thread, e)}
-                    onMouseMove={trackPointer}
-                    onMouseLeave={closePreview}
+                    onMouseEnter={hasHover ? (e) => openPreview(thread, e) : undefined}
+                    onMouseMove={hasHover ? trackPointer : undefined}
+                    onMouseLeave={hasHover ? closePreview : undefined}
                   >
                     <button
                       className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
@@ -910,7 +915,7 @@ export default function Messages() {
           Portalled to the body so no ancestor's transform or overflow can clip
           it, and pointer-events-none so it never swallows the click on the row
           underneath. */}
-      {previewThread && createPortal(
+      {hasHover && previewThread && createPortal(
         <div
           ref={previewRef}
           role="tooltip"
