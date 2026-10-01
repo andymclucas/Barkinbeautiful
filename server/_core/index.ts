@@ -405,8 +405,16 @@ async function startServer() {
                   ),
                 );
               // Mirrored into sms_logs so it still shows in Messages history.
+              //
+              // Resolve the caller first. Without this the row carries no
+              // clientId, and because the Messages thread takes its name
+              // from the rows in it, a known client's whole conversation
+              // displayed as a bare +61 number — 61 of 79 outbound rows,
+              // 28 of them existing clients.
+              const autoTextCaller = await lookupCallerByPhone(claimedDb, phoneKey);
               await claimedDb.insert(smsLogs).values({
                 tenantId: 1,
+                clientId: autoTextCaller.clientId ?? null,
                 toNumber: phoneKey,
                 body: MISSED_CALL_AUTO_TEXT,
                 twilioSid: result.sid,
