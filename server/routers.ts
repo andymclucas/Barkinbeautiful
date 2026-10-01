@@ -2030,6 +2030,59 @@ const clientsRouter = router({
     }),
 
   // Quick hover-card preview: pets + last 3 appointments
+  /**
+   * The numbers that belong beside a conversation: how often they come,
+   * what they have paid, and whether anything is owing.
+   *
+   * One query per fact rather than a join soup, because the counts come
+   * from appointments and the money from invoices and appointment
+   * payments, and mixing them in one statement double-counts rows.
+   */
+  messageContext: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+
+      const [[counts]] = await db.execute(sql`
+        SELECT
+          COALESCE(SUM(CASE WHEN ${appointments.scheduledStart} >= UTC_TIMESTAMP()
+            AND ${appointments.status} NOT IN ('cancelled','no_show') THEN 1 ELSE 0 END), 0) AS upcoming,
+          COALESCE(SUM(CASE WHEN ${appointments.workflowState} = 'complete' THEN 1 ELSE 0 END), 0) AS finished,
+          COALESCE(SUM(CASE WHEN ${appointments.status} = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
+          COALESCE(SUM(CASE WHEN ${appointments.status} = 'no_show' THEN 1 ELSE 0 END), 0) AS noShow,
+          COUNT(*) AS total
+        FROM ${appointments}
+        WHERE ${appointments.tenantId} = ${input.tenantId}
+          AND ${appointments.clientId} = ${input.clientId}
+      `) as unknown as [[{ upcoming: number; finished: number; cancelled: number; noShow: number; total: number }]];
+
+      const [[money]] = await db.execute(sql`
+        SELECT
+          COALESCE((SELECT SUM(${invoices.total}) FROM ${invoices}
+            WHERE ${invoices.tenantId} = ${input.tenantId}
+              AND ${invoices.clientId} = ${input.clientId}
+              AND ${invoices.status} = 'paid'), 0) AS invoicesPaid,
+          COALESCE((SELECT SUM(${invoices.total}) FROM ${invoices}
+            WHERE ${invoices.tenantId} = ${input.tenantId}
+              AND ${invoices.clientId} = ${input.clientId}
+              AND ${invoices.status} <> 'paid'), 0) AS outstanding,
+          COALESCE((SELECT SUM(${appointmentPayments.amount}) FROM ${appointmentPayments}
+            WHERE ${appointmentPayments.tenantId} = ${input.tenantId}
+              AND ${appointmentPayments.clientId} = ${input.clientId}), 0) AS counterPaid
+      `) as unknown as [[{ invoicesPaid: string; outstanding: string; counterPaid: string }]];
+
+      return {
+        upcoming: Number(counts?.upcoming ?? 0),
+        finished: Number(counts?.finished ?? 0),
+        cancelled: Number(counts?.cancelled ?? 0),
+        noShow: Number(counts?.noShow ?? 0),
+        totalAppointments: Number(counts?.total ?? 0),
+        totalPaid: Number(money?.invoicesPaid ?? 0) + Number(money?.counterPaid ?? 0),
+        outstanding: Number(money?.outstanding ?? 0),
+      };
+    }),
+
   quickPreview: protectedProcedure
     .input(z.object({ clientId: z.number() }))
     .query(async ({ input }) => {
@@ -6239,6 +6292,33 @@ const smsRouter = router({
     }),
 
   // Lightweight, frequently-polled preview for the notification bell.
+  /**
+   * Clear the unread state across every thread at once.
+   *
+   * Records the reader on each, the same as opening one individually —
+   * "Lauren marked everything read at 6pm" is still the useful fact, and
+   * leaving readByUserId null here would put a hole in the accountability
+   * the single-item path provides.
+   */
+  markAllThreadsRead: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const now = new Date();
+      await db.update(smsLogs)
+        .set({ readAt: now, readByUserId: ctx.user.id })
+        .where(and(
+          eq(smsLogs.tenantId, input.tenantId),
+          eq(smsLogs.direction, "inbound"),
+          isNull(smsLogs.readAt),
+        ));
+      await db.update(missedCalls)
+        .set({ readAt: now, readByUserId: ctx.user.id })
+        .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)));
+      return { marked: true };
+    }),
+
   getUnreadPreview: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(5) }))
     .query(async ({ input, ctx }) => {

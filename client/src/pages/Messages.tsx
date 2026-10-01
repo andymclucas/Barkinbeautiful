@@ -150,6 +150,15 @@ export default function Messages() {
 
   const { data: logs, refetch } = trpc.sms.getLogs.useQuery({ tenantId: 1, limit: 100 });
   const { data: threads, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({ tenantId: 1, limit: 50 });
+  const markAllRead = trpc.sms.markAllThreadsRead.useMutation({
+    onSuccess: () => {
+      toast.success("All conversations marked as read");
+      refetchThreads();
+      refetchMissedCalls();
+      utils.sms.getUnreadPreview.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const { data: missedCallsList, refetch: refetchMissedCalls } = trpc.sms.getMissedCalls.useQuery({ tenantId: 1, limit: 100 });
   const clearMissedCall = trpc.sms.clearMissedCall.useMutation({ onSuccess: () => refetchMissedCalls() });
   const deleteMissedCall = trpc.sms.deleteMissedCall.useMutation({ onSuccess: () => { toast.success("Missed call removed"); refetchMissedCalls(); } });
@@ -159,6 +168,9 @@ export default function Messages() {
   );
 
   const utils = trpc.useUtils();
+  // Unread across both kinds, so "mark all" and the badge agree.
+  const unreadThreadCount = (threads ?? []).filter((t: any) => (t.unreadCount ?? 0) > 0).length
+    + (missedCallsList ?? []).filter((c: any) => !c.readAt).length;
   const [openThread, setOpenThread] = useState<{ clientId: number | null; toNumber: string; clientName: string | null } | null>(null);
 
   const markThreadReadMutation = trpc.sms.markThreadRead.useMutation({
@@ -458,7 +470,30 @@ export default function Messages() {
 
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-semibold">Conversations</CardTitle>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-sm font-semibold">
+                Conversations
+                {unreadThreadCount > 0 && (
+                  <span className="ml-2 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                    {unreadThreadCount} unread
+                  </span>
+                )}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {threads?.length ?? 0} open
+                </span>
+              </CardTitle>
+              {unreadThreadCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={markAllRead.isPending}
+                  onClick={() => markAllRead.mutate({ tenantId: 1 })}
+                >
+                  {markAllRead.isPending ? "Marking…" : "Mark all as read"}
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {!threads || threads.length === 0 ? (

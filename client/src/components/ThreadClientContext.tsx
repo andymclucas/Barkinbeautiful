@@ -15,8 +15,21 @@ import { getActiveTimeZone } from "@/lib/timezone";
  * belongs on the calendar, and a reschedule button here would be a second
  * path to the same thing with none of the conflict checks.
  */
+function Stat({ label, value, tone }: { label: string; value: string; tone?: "warn" }) {
+  return (
+    <div className={`rounded-lg border px-2 py-1.5 ${tone === "warn" ? "border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30" : "bg-card"}`}>
+      <p className="text-[10px] text-muted-foreground">{label}</p>
+      <p className={`text-sm font-semibold ${tone === "warn" ? "text-amber-800 dark:text-amber-300" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
 export function ThreadClientContext({ clientId }: { clientId: number | null }) {
   const { data, isLoading } = trpc.calendar.appointmentsForClient.useQuery(
+    { tenantId: 1, clientId: clientId ?? 0 },
+    { enabled: !!clientId },
+  );
+  const { data: stats } = trpc.clients.messageContext.useQuery(
     { tenantId: 1, clientId: clientId ?? 0 },
     { enabled: !!clientId },
   );
@@ -49,6 +62,21 @@ export function ThreadClientContext({ clientId }: { clientId: number | null }) {
 
   return (
     <div className="space-y-4 p-4 text-sm">
+      {stats && (
+        <section className="grid grid-cols-2 gap-2">
+          <Stat label="Upcoming" value={String(stats.upcoming)} />
+          <Stat label="Finished" value={String(stats.finished)} />
+          <Stat label="Cancelled" value={String(stats.cancelled)} />
+          <Stat label="No-show" value={String(stats.noShow)} />
+          <Stat label="Total paid" value={`$${stats.totalPaid.toFixed(2)}`} />
+          <Stat
+            label="Unpaid"
+            value={`$${stats.outstanding.toFixed(2)}`}
+            tone={stats.outstanding > 0 ? "warn" : undefined}
+          />
+        </section>
+      )}
+
       <section>
         <h4 className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           <CalendarDays className="h-3.5 w-3.5" /> Next visit
