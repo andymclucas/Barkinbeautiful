@@ -3242,6 +3242,73 @@ const membershipsRouter = router({
       return { id: (result as any).insertId };
     }),
 
+  /**
+   * End a membership because the client is leaving the salon.
+   *
+   * Distinct from manageDepartedPet, which is for a pet that has passed away
+   * and refuses to run otherwise — so until now there was no way to close a
+   * membership for a client who simply left, and theirs stayed active for
+   * ever. Also distinct from cancelling Stripe billing, which stops the
+   * charging but leaves the membership in place.
+   *
+   * Cancels any live Stripe subscription too: a cancelled membership that
+   * keeps debiting a card is the worst version of this bug.
+   */
+  cancelMembership: adminProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      membershipId: z.number().int().positive(),
+      note: z.string().max(500).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [membership] = await db
+        .select({
+          id: memberships.id,
+          tenantId: memberships.tenantId,
+          clientId: memberships.clientId,
+          petId: memberships.petId,
+          status: memberships.status,
+          stripeSubscriptionId: memberships.stripeSubscriptionId,
+        })
+        .from(memberships)
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId)))
+        .limit(1);
+      if (!membership) throw new TRPCError({ code: "NOT_FOUND", message: "Membership not found" });
+      if (membership.status === "cancelled" || membership.status === "expired") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This membership is already closed" });
+      }
+
+      // Stop the money before changing the status, so a failure here cannot
+      // leave a cancelled membership still billing.
+      if (membership.stripeSubscriptionId) {
+        const { cancelMembershipSubscription } = await import("./stripeCards");
+        await cancelMembershipSubscription(membership.id);
+      }
+
+      await db.update(memberships).set({
+        status: "cancelled",
+        cancelledAt: new Date(),
+        nextBillingDate: null,
+        paymentRetryScheduledAt: null,
+        bookingSuspended: true,
+      }).where(eq(memberships.id, membership.id));
+
+      await db.insert(petMembershipEvents).values({
+        tenantId: membership.tenantId,
+        clientId: membership.clientId,
+        petId: membership.petId,
+        membershipId: membership.id,
+        eventType: "membership_removed",
+        note: input.note?.trim() || "Membership cancelled",
+        changedByUserId: ctx.user.id,
+      });
+
+      return { cancelled: true };
+    }),
+
   manageDepartedPet: adminProcedure
     .input(z.object({
       tenantId: z.number().default(1),

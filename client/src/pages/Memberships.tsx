@@ -445,12 +445,75 @@ function MembershipRow({ m }: { m: MembershipItem }) {
             <Badge className="text-xs bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 block">Suspended</Badge>
           )}
           <MembershipBillingControl m={m} />
+          <MembershipCancelControl m={m} />
         </div>
       </td>
     </tr>
   );
 }
 
+
+/**
+ * Ending the membership itself, as opposed to its billing.
+ *
+ * Until now the only route to status "cancelled" was manageDepartedPet,
+ * which refuses to run unless the pet has been recorded as passed away — so
+ * a client who simply left the salon kept an active membership for ever, and
+ * never appeared under Cancelled.
+ */
+function MembershipCancelControl({ m }: { m: MembershipItem }) {
+  const utils = trpc.useUtils();
+  const [confirming, setConfirming] = useState(false);
+  const clientName = [m.clientFirstName, m.clientLastName].filter(Boolean).join(" ").trim() || "this client";
+
+  const cancelMembership = trpc.memberships.cancelMembership.useMutation({
+    onSuccess: () => {
+      toast.success("Membership cancelled");
+      utils.memberships.list.invalidate();
+      utils.memberships.getFailedPayments.invalidate();
+      setConfirming(false);
+    },
+    onError: (error) => { toast.error(error.message); setConfirming(false); },
+  });
+
+  if (m.status === "cancelled" || m.status === "expired") return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-red-600 hover:underline disabled:opacity-50 dark:hover:text-red-400"
+        disabled={cancelMembership.isPending}
+        onClick={() => setConfirming(true)}
+      >
+        {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
+      </button>
+      <Dialog open={confirming} onOpenChange={(open) => !open && !cancelMembership.isPending && setConfirming(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Cancel this membership?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This ends {clientName}&rsquo;s membership for good and moves it to Cancelled. Any automatic billing is
+            stopped at the same time, and they will not be able to book on the membership. Use <strong>Pause</strong>{" "}
+            instead if they are only away for a while.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" size="sm" disabled={cancelMembership.isPending} onClick={() => setConfirming(false)}>
+              Keep membership
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={cancelMembership.isPending}
+              onClick={() => cancelMembership.mutate({ tenantId: 1, membershipId: m.id })}
+            >
+              {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 /**
  * Whether this membership bills itself weekly through Stripe, and the one
@@ -515,7 +578,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
             confirming === "charge" ? "Retry this payment now?"
             : confirming === "pause" ? "Pause billing?"
             : confirming === "resume" ? "Resume billing?"
-            : confirming === "cancel" ? "Cancel automatic billing?"
+            : confirming === "cancel" ? "Stop automatic billing?"
             : "Start automatic billing?"
           }</DialogTitle>
         </DialogHeader>
@@ -527,7 +590,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
             : confirming === "resume"
             ? <>{clientName} will be charged <strong>{amount}</strong> {cadence} again from their next billing date. Nothing is charged right now for the paused period.</>
             : confirming === "cancel"
-            ? <>This ends automatic billing for {clientName} entirely. Their saved card stays on file, but nothing will be charged again unless someone sets up billing afresh. Use <strong>Pause</strong> instead if they are only away for a while.</>
+            ? <>This stops {clientName} being charged automatically. The membership itself stays active &mdash; this only ends the card billing. Use <strong>Pause</strong> if they are away for a while, or cancel the membership itself if they are leaving the salon.</>
             : <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, starting with a charge right now. It cannot be undone from here.</>}
         </p>
         <DialogFooter>
@@ -548,7 +611,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
               : confirming === "charge" ? "Retry the payment"
               : confirming === "pause" ? "Pause billing"
               : confirming === "resume" ? "Resume billing"
-              : confirming === "cancel" ? "Cancel billing"
+              : confirming === "cancel" ? "Stop billing"
               : `Bill ${amount} ${cadence}`}
           </Button>
         </DialogFooter>
@@ -626,7 +689,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
             onClick={() => setConfirming("cancel")}
           >
             <XCircle className="h-3 w-3 shrink-0" />
-            {cancelBilling.isPending ? "Cancelling…" : "Cancel"}
+            {cancelBilling.isPending ? "Stopping…" : "Stop billing"}
           </Button>
         </div>
         {dialog}
