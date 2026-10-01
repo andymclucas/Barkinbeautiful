@@ -21,6 +21,8 @@ import {
   detachClientCard,
   startMembershipSubscription,
   cancelMembershipSubscription,
+  pauseMembershipSubscription,
+  resumeMembershipSubscription,
   chargeSavedCard,
   payOpenInvoice,
 } from "../stripeCards";
@@ -101,6 +103,16 @@ export const stripeCardsRouter = router({
   cancelSubscription: adminProcedure
     .input(z.object({ membershipId: z.number() }))
     .mutation(async ({ input }) => cancelMembershipSubscription(input.membershipId)),
+
+  /** Stop charging without tearing the subscription down. */
+  pauseSubscription: adminProcedure
+    .input(z.object({ membershipId: z.number() }))
+    .mutation(async ({ input }) => pauseMembershipSubscription(input.membershipId)),
+
+  /** Start charging a paused membership again. */
+  resumeSubscription: adminProcedure
+    .input(z.object({ membershipId: z.number() }))
+    .mutation(async ({ input }) => resumeMembershipSubscription(input.membershipId)),
 
   /**
    * Charge a membership now, from the counter, instead of waiting for the

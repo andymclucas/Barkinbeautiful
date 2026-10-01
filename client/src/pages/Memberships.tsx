@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { billingCycleFromWeeks } from "@shared/stripeBilling";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, CreditCard, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, TrendingDown, FileText, CheckCircle, XCircle, RefreshCw, Landmark } from "lucide-react";
+import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, TrendingDown, FileText, CheckCircle, XCircle, RefreshCw, Landmark } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { MembershipAccountsReceivable } from "@/components/MembershipAccountsReceivable";
 import { useState } from "react";
@@ -466,7 +466,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   // Both actions below move real money off a real card, so each one is
   // confirmed first. These are 10px links in a 154-row table; a misclick
   // used to charge a client up to $104 with no way to undo it.
-  const [confirming, setConfirming] = useState<"start" | "charge" | null>(null);
+  const [confirming, setConfirming] = useState<"start" | "charge" | "pause" | "resume" | "cancel" | null>(null);
 
   const cycle = billingCycleFromWeeks(m.billingCycleWeeks);
   const clientName = [m.clientFirstName, m.clientLastName].filter(Boolean).join(" ").trim() || "this client";
@@ -492,17 +492,42 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
     onError: (error) => { toast.error(error.message); setConfirming(null); },
   });
 
-  const busy = start.isPending || chargeNow.isPending;
+  const pause = trpc.stripeCards.pauseSubscription.useMutation({
+    onSuccess: () => { toast.success("Billing paused — nothing will be charged until you resume"); utils.memberships.list.invalidate(); setConfirming(null); },
+    onError: (error) => { toast.error(error.message); setConfirming(null); },
+  });
+  const resume = trpc.stripeCards.resumeSubscription.useMutation({
+    onSuccess: () => { toast.success("Billing resumed"); utils.memberships.list.invalidate(); setConfirming(null); },
+    onError: (error) => { toast.error(error.message); setConfirming(null); },
+  });
+  const cancelBilling = trpc.stripeCards.cancelSubscription.useMutation({
+    onSuccess: () => { toast.success("Automatic billing cancelled"); utils.memberships.list.invalidate(); setConfirming(null); },
+    onError: (error) => { toast.error(error.message); setConfirming(null); },
+  });
+
+  const busy = start.isPending || chargeNow.isPending || pause.isPending || resume.isPending || cancelBilling.isPending;
 
   const dialog = (
     <Dialog open={confirming !== null} onOpenChange={(open) => !open && !busy && setConfirming(null)}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>{confirming === "charge" ? "Retry this payment now?" : "Start automatic billing?"}</DialogTitle>
+          <DialogTitle>{
+            confirming === "charge" ? "Retry this payment now?"
+            : confirming === "pause" ? "Pause billing?"
+            : confirming === "resume" ? "Resume billing?"
+            : confirming === "cancel" ? "Cancel automatic billing?"
+            : "Start automatic billing?"
+          }</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           {confirming === "charge"
             ? <>This retries {clientName}&rsquo;s outstanding membership payment against their saved card, now. The amount is whatever that failed invoice is for. It cannot be undone from here &mdash; a mistake has to be refunded in Stripe.</>
+            : confirming === "pause"
+            ? <>{clientName} will not be charged again until you resume. Their card and subscription stay in place, and nothing builds up while paused &mdash; they will not be billed for the missed weeks when they come back.</>
+            : confirming === "resume"
+            ? <>{clientName} will be charged <strong>{amount}</strong> {cadence} again from their next billing date. Nothing is charged right now for the paused period.</>
+            : confirming === "cancel"
+            ? <>This ends automatic billing for {clientName} entirely. Their saved card stays on file, but nothing will be charged again unless someone sets up billing afresh. Use <strong>Pause</strong> instead if they are only away for a while.</>
             : <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, starting with a charge right now. It cannot be undone from here.</>}
         </p>
         <DialogFooter>
@@ -510,12 +535,21 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
           <Button
             size="sm"
             disabled={busy}
+            variant={confirming === "cancel" ? "destructive" : "default"}
             onClick={() => {
               if (confirming === "charge") chargeNow.mutate({ membershipId: m.id });
+              else if (confirming === "pause") pause.mutate({ membershipId: m.id });
+              else if (confirming === "resume") resume.mutate({ membershipId: m.id });
+              else if (confirming === "cancel") cancelBilling.mutate({ membershipId: m.id });
               else start.mutate({ membershipId: m.id });
             }}
           >
-            {busy ? "Working…" : confirming === "charge" ? "Retry the payment" : `Bill ${amount} ${cadence}`}
+            {busy ? "Working…"
+              : confirming === "charge" ? "Retry the payment"
+              : confirming === "pause" ? "Pause billing"
+              : confirming === "resume" ? "Resume billing"
+              : confirming === "cancel" ? "Cancel billing"
+              : `Bill ${amount} ${cadence}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -523,21 +557,78 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   );
 
   if (m.stripeSubscriptionId) {
+    // A deliberate pause and a failed-payment suspension share the status
+    // "paused", so tell them apart by whether a payment actually failed.
+    const failing = (m.failedPaymentCount ?? 0) > 0;
+    const pausedByStaff = m.status === "paused" && !failing;
+
     return (
-      <div className="flex items-center gap-1">
-        <Badge className={`block text-[10px] ${cycle ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300" : "bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300"}`}>
-          {cycle === "fortnightly" ? "Stripe fortnightly" : cycle === "weekly" ? "Stripe weekly" : "Stripe — cycle unclear"}
+      <div className="flex flex-col items-stretch gap-1">
+        <Badge className={`block text-center text-[10px] ${
+          pausedByStaff
+            ? "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+            : cycle
+              ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300"
+              : "bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300"
+        }`}>
+          {pausedByStaff
+            ? "Billing paused"
+            : cycle === "fortnightly" ? "Stripe fortnightly"
+            : cycle === "weekly" ? "Stripe weekly"
+            : "Stripe — cycle unclear"}
         </Badge>
-        {(m.failedPaymentCount ?? 0) > 0 && (
-          <button
+
+        {failing && (
+          <Button
             type="button"
-            className="text-[10px] font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50"
+            size="sm"
+            variant="outline"
+            className="h-7 w-full gap-1.5 whitespace-nowrap px-2 text-[11px] font-semibold"
             disabled={busy}
             onClick={() => setConfirming("charge")}
           >
+            <RefreshCw className="h-3 w-3 shrink-0" />
             {chargeNow.isPending ? "Retrying…" : "Retry payment"}
-          </button>
+          </Button>
         )}
+
+        <div className="flex items-center gap-1">
+          {pausedByStaff ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 flex-1 gap-1.5 whitespace-nowrap px-2 text-[11px] font-semibold"
+              disabled={busy}
+              onClick={() => setConfirming("resume")}
+            >
+              <PlayCircle className="h-3 w-3 shrink-0" />
+              {resume.isPending ? "Resuming…" : "Resume"}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 flex-1 gap-1.5 whitespace-nowrap px-2 text-[11px] font-semibold"
+              disabled={busy}
+              onClick={() => setConfirming("pause")}
+            >
+              <PauseCircle className="h-3 w-3 shrink-0" />
+              {pause.isPending ? "Pausing…" : "Pause"}
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 flex-1 gap-1.5 whitespace-nowrap border-red-200 px-2 text-[11px] font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+            disabled={busy}
+            onClick={() => setConfirming("cancel")}
+          >
+            <XCircle className="h-3 w-3 shrink-0" />
+            {cancelBilling.isPending ? "Cancelling…" : "Cancel"}
+          </Button>
+        </div>
         {dialog}
       </div>
     );

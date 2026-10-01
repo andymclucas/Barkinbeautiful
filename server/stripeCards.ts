@@ -395,18 +395,86 @@ export async function cancelMembershipSubscription(membershipId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const [membership] = await db
-    .select({ id: memberships.id, stripeSubscriptionId: memberships.stripeSubscriptionId })
+    .select({
+      id: memberships.id,
+      tenantId: memberships.tenantId,
+      stripeSubscriptionId: memberships.stripeSubscriptionId,
+    })
     .from(memberships)
     .where(eq(memberships.id, membershipId))
     .limit(1);
-  if (!membership?.stripeSubscriptionId) return { cancelled: false };
+  if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+  if (!membership.stripeSubscriptionId) return { cancelled: false };
   const stripe = requireStripeClient();
   await stripe.subscriptions.cancel(membership.stripeSubscriptionId).catch(() => undefined);
   await db
     .update(memberships)
-    .set({ stripeSubscriptionId: null, gatewaySubscriptionId: null })
+    .set({
+      stripeSubscriptionId: null,
+      gatewaySubscriptionId: null,
+      // Without this the row still claims Stripe billing while holding no
+      // subscription, and nothing would ever charge it again.
+      paymentGateway: "other",
+    })
     .where(eq(memberships.id, membership.id));
   return { cancelled: true };
+}
+
+/**
+ * Stop charging a membership without tearing down its subscription.
+ *
+ * For a client who is away or between dogs: Stripe keeps the subscription
+ * and the saved card, but issues nothing while paused. "void" rather than
+ * "keep_as_draft" so no invoice quietly accrues and lands as a lump sum the
+ * day they come back.
+ *
+ * NOTE: membership status "paused" is also what the failed-payment
+ * escalation sets. A deliberate pause leaves failedPaymentCount at 0 and
+ * bookingSuspended false, which is how the two are told apart.
+ */
+export async function pauseMembershipSubscription(membershipId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [membership] = await db
+    .select({
+      id: memberships.id,
+      tenantId: memberships.tenantId,
+      stripeSubscriptionId: memberships.stripeSubscriptionId,
+    })
+    .from(memberships)
+    .where(eq(memberships.id, membershipId))
+    .limit(1);
+  if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+  if (!membership.stripeSubscriptionId) throw new Error("This membership is not on automatic billing");
+
+  const stripe = requireStripeClient();
+  await stripe.subscriptions.update(membership.stripeSubscriptionId, {
+    pause_collection: { behavior: "void" },
+  });
+  await db.update(memberships).set({ status: "paused" }).where(eq(memberships.id, membership.id));
+  return { paused: true };
+}
+
+/** Start charging a paused membership again from its next cycle. */
+export async function resumeMembershipSubscription(membershipId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [membership] = await db
+    .select({
+      id: memberships.id,
+      tenantId: memberships.tenantId,
+      stripeSubscriptionId: memberships.stripeSubscriptionId,
+    })
+    .from(memberships)
+    .where(eq(memberships.id, membershipId))
+    .limit(1);
+  if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+  if (!membership.stripeSubscriptionId) throw new Error("This membership is not on automatic billing");
+
+  const stripe = requireStripeClient();
+  await stripe.subscriptions.update(membership.stripeSubscriptionId, { pause_collection: null });
+  await db.update(memberships).set({ status: "active" }).where(eq(memberships.id, membership.id));
+  return { resumed: true };
 }
 
 /**
