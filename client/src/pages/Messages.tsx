@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { ThreadClientContext } from "@/components/ThreadClientContext";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useHasHover } from "@/hooks/useMobile";
 import { createPortal } from "react-dom";
@@ -828,7 +829,9 @@ export default function Messages() {
             with its own header and footer bars and a scrolling message area
             between them. The whole panel is the conversation — no page chrome
             bleeding in, which is what made the old dialog feel like a table. */}
-        <DialogContent className="max-w-[420px] gap-0 overflow-hidden rounded-[26px] p-0 sm:max-w-[420px]">
+        <DialogContent className="max-w-[420px] gap-0 overflow-hidden rounded-[26px] p-0 lg:max-w-[780px]">
+          <div className="flex min-h-0">
+          <div className="flex min-w-0 flex-1 flex-col">
           <DialogHeader className="space-y-0 border-b bg-background/95 px-4 py-3 backdrop-blur">
             <div className="flex items-center gap-3">
               <span
@@ -907,6 +910,14 @@ export default function Messages() {
             >
               <Send className="h-4 w-4" />
             </Button>
+          </div>
+          </div>
+          {/* Who is texting, beside what they said. Desktop only: on a
+              phone the conversation already fills the screen and this
+              would push the reply box off it. */}
+          <aside className="hidden w-[260px] shrink-0 overflow-y-auto border-l bg-muted/20 lg:block">
+            <ThreadClientContext clientId={openThread?.clientId ?? null} />
+          </aside>
           </div>
         </DialogContent>
       </Dialog>
