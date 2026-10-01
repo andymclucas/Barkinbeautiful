@@ -1,5 +1,6 @@
 import { isValidTimeZone } from "@shared/auditTimestamp";
 import { searchTerms } from "@shared/clientSearchMatch";
+import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
@@ -6207,6 +6208,7 @@ async function buildClientPortalPayload(db: any, access: {
   clientLastName: string;
   clientEmail: string | null;
   clientPhone: string | null;
+  clientAddress?: string | null;
   salonName: string;
   salonPhone: string | null;
   salonEmail: string | null;
@@ -6694,6 +6696,7 @@ const clientPortalRouter = router({
         clientLastName: clients.lastName,
         clientEmail: clients.email,
         clientPhone: clients.phone,
+        clientAddress: clients.address,
         salonName: tenants.name,
         salonPhone: tenants.phone,
         salonEmail: tenants.email,
@@ -6731,6 +6734,7 @@ const clientPortalRouter = router({
       clientLastName: clients.lastName,
       clientEmail: clients.email,
       clientPhone: clients.phone,
+      clientAddress: clients.address,
       portalSessionVersion: clients.portalSessionVersion,
       salonName: tenants.name,
       salonPhone: tenants.phone,
@@ -6747,6 +6751,64 @@ const clientPortalRouter = router({
       .limit(1);
     if (!access) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
     return buildClientPortalPayload(db, access);
+    }),
+
+  /**
+   * Let a signed-in client correct their own contact details.
+   *
+   * Same session guard as getMyPortal: active account, matching
+   * sessionVersion, and the row is located by the session's own clientId —
+   * never by anything the request supplies — so a client can only edit
+   * themselves. portalLoginEmail is deliberately untouched: changing the
+   * address you sign in with, from inside a session, is how people lock
+   * themselves out, and it carries a uniqueness constraint a self-service
+   * form should not be fighting.
+   */
+  updateMyProfile: publicProcedure
+    .input(z.object({
+      firstName: z.string().max(200),
+      lastName: z.string().max(200),
+      email: z.string().max(400).optional(),
+      phone: z.string().max(60).optional(),
+      address: z.string().max(1000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const session = await readClientPortalSession(ctx.req);
+      if (!session) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [existing] = await db.select({ id: clients.id })
+        .from(clients)
+        .where(and(
+          eq(clients.id, session.clientId),
+          eq(clients.tenantId, session.tenantId),
+          eq(clients.portalAccountStatus, "active"),
+          eq(clients.portalSessionVersion, session.sessionVersion),
+        ))
+        .limit(1);
+      if (!existing) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
+
+      const prepared = prepareClientProfile(input);
+      if (!prepared.ok) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: Object.values(prepared.errors)[0] ?? "Please check the details you entered.",
+        });
+      }
+
+      await db.update(clients)
+        .set({
+          firstName: prepared.value.firstName,
+          lastName: prepared.value.lastName,
+          email: prepared.value.email,
+          phone: prepared.value.phone,
+          address: prepared.value.address,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(clients.id, existing.id), eq(clients.tenantId, session.tenantId)));
+
+      return { saved: true, profile: prepared.value };
     }),
 
   cancelAppointment: publicProcedure

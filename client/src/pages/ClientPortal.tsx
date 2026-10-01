@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
@@ -16,7 +17,7 @@ type PortalPet = { id: number; name: string; breed: string | null; species: stri
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
 type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; sentAt: Date | string | null };
-type PortalData = { salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string };
+type PortalData = { salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string };
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -29,6 +30,120 @@ function portalDate(value: Date | string | null) {
 
 function portalDateTime(value: Date | string) {
   return new Date(value).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+/**
+ * The client's own contact details, and the form that changes them.
+ *
+ * Only the fields a client should own: name, email, phone, address. The
+ * email they sign in with is not touched here — see updateMyProfile.
+ */
+function YourDetailsCard({ client, onSaved }: {
+  client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null };
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    firstName: client.firstName ?? "",
+    lastName: client.lastName ?? "",
+    email: client.email ?? "",
+    phone: client.phone ?? "",
+    address: client.address ?? "",
+  });
+
+  const save = trpc.clientPortal.updateMyProfile.useMutation({
+    onSuccess: () => {
+      toast.success("Your details have been updated");
+      setOpen(false);
+      onSaved();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const openEditor = () => {
+    setForm({
+      firstName: client.firstName ?? "",
+      lastName: client.lastName ?? "",
+      email: client.email ?? "",
+      phone: client.phone ?? "",
+      address: client.address ?? "",
+    });
+    setOpen(true);
+  };
+
+  const field = (key: keyof typeof form) => ({
+    value: form[key],
+    onChange: (event: { target: { value: string } }) =>
+      setForm((previous) => ({ ...previous, [key]: event.target.value })),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle className="flex items-center gap-2">
+          <PencilLine className="h-5 w-5 text-primary" /> Your details
+        </CardTitle>
+        <Button variant="outline" size="sm" onClick={openEditor}>Edit</Button>
+      </CardHeader>
+      <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+          <p className="text-xs text-muted-foreground">Name</p>
+          <p className="font-medium">{[client.firstName, client.lastName].filter(Boolean).join(" ") || "Not provided"}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Phone</p>
+          <p className="font-medium">{client.phone || "Not provided"}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Email</p>
+          <p className="break-words font-medium">{client.email || "Not provided"}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Address</p>
+          <p className="font-medium">{client.address || "Not provided"}</p>
+        </div>
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={(next) => !save.isPending && setOpen(next)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Your details</DialogTitle></DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="portal-first-name">First name</Label>
+                <Input id="portal-first-name" autoComplete="given-name" {...field("firstName")} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="portal-last-name">Last name</Label>
+                <Input id="portal-last-name" autoComplete="family-name" {...field("lastName")} />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="portal-phone">Mobile number</Label>
+              <Input id="portal-phone" inputMode="tel" autoComplete="tel" placeholder="0412 345 678" {...field("phone")} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="portal-email">Email</Label>
+              <Input id="portal-email" type="email" autoComplete="email" {...field("email")} />
+              <p className="text-xs text-muted-foreground">
+                This is where we send reminders. It does not change the email you sign in with &mdash; ask the salon if you need that changed.
+              </p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="portal-address">Address</Label>
+              <Input id="portal-address" autoComplete="street-address" {...field("address")} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={save.isPending} onClick={() => setOpen(false)}>Cancel</Button>
+            <Button disabled={save.isPending} onClick={() => save.mutate(form)}>
+              {save.isPending ? "Saving…" : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
 }
 
 export default function ClientPortal() {
@@ -101,6 +216,8 @@ export default function ClientPortal() {
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Memberships</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{data.memberships.filter(membership => membership.status === "active").length}</p><p className="mt-1 text-sm text-muted-foreground">Active pet care memberships</p></CardContent></Card>
       <Card className="border-primary/20 bg-primary/5"><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5" /> Store credit</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">${creditBalance.toFixed(2)}</p><p className="mt-1 text-sm text-muted-foreground">{creditBalance > 0 ? "Automatically applied to your next visits" : "No credit currently on file"}</p></CardContent></Card>
     </section>
+
+    <YourDetailsCard client={data.client} onSaved={() => refetch()} />
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Dog className="h-5 w-5 text-primary" /> Your pets</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{data.pets.map(pet => <div key={pet.id} className="rounded-xl border bg-card p-4"><p className="font-semibold">{pet.name}</p><p className="text-sm text-muted-foreground">{pet.breed || pet.species}</p><Badge variant="outline" className="mt-2 capitalize">{pet.status}</Badge></div>)}</CardContent></Card>
 
