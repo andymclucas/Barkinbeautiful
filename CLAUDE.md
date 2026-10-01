@@ -462,6 +462,7 @@ Custom agents in `.claude/agents/` and skills in `.claude/skills/`:
 | Add a tRPC endpoint following project conventions        | `/new-endpoint`            |
 | Avoid colliding with the other AI session                 | `/concurrent-sessions`     |
 | Push a branch to GitHub / diagnose a failed push          | `/github-push`             |
+| Test a feature for real against the live system           | `/test-on-andys-account`   |
 | Find things inside the `routers.ts` monolith             | `router-navigator` agent   |
 | Review business logic against grooming domain rules      | `domain-reviewer` agent    |
 | Review a schema/migration change for safety              | `schema-guardian` agent    |
