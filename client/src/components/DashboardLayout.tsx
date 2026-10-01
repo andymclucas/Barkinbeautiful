@@ -66,6 +66,7 @@ import { trpc } from "@/lib/trpc";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { MyProfileDialog } from "@/components/MyProfileDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
+import { parseSections, STAFF_SECTIONS } from "@shared/staffPermissions";
 import { toast } from "sonner";
 
 const menuItems = [
@@ -80,6 +81,8 @@ const menuItems = [
   { icon: Mail,           label: "Email Campaigns",   path: "/email-campaigns" },
   { icon: FileBarChart2,  label: "Reporting",         path: "/reporting" },
 ];
+
+const sectionPath = (key: string): string => STAFF_SECTIONS.find((s) => s.key === key)?.path ?? "";
 
 const staffOperationMenuItems = menuItems.filter((item) => ["/calendar", "/workflow", "/memberships"].includes(item.path));
 
@@ -285,7 +288,24 @@ function DashboardLayoutContent({
   const activeMenuItem = menuItems.find(
     (item) => location === item.path || location.startsWith(item.path + "/")
   );
-  const visibleMenuItems = user?.role === "staff" ? staffOperationMenuItems : menuItems;
+  /**
+   * Which sections this person sees.
+   *
+   * A granted set is ADDITIVE: it widens a restricted staff account beyond
+   * the three operational screens to whatever the owner ticked. It never
+   * narrows an existing admin, because the four groomers who hold
+   * users.role = "admin" today would lose the floor the moment this shipped.
+   * Move someone onto a grant deliberately, then take the blanket admin away.
+   */
+  const grantedPaths: ReadonlySet<string> | null = myStaff?.isAdmin
+    ? new Set<string>(parseSections(myStaff.adminSections).map(sectionPath))
+    : null;
+  const visibleMenuItems =
+    user?.role === "staff"
+      ? menuItems.filter(
+          (item) => staffOperationMenuItems.includes(item) || grantedPaths?.has(item.path),
+        )
+      : menuItems;
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);

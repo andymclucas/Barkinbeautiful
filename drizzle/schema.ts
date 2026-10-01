@@ -91,6 +91,15 @@ export const staff = mysqlTable("staff", {
   onlineMaxDogsPerSlot: int("online_max_dogs_per_slot").default(1).notNull(),
   onlineMaxDogsPerDay: int("online_max_dogs_per_day").default(0).notNull(),
   portalStatus: mysqlEnum("portal_status", ["not_invited", "invited", "awaiting_approval", "approved", "revoked"]).default("not_invited").notNull(),
+  /**
+   * Admin rights, and the sections they cover.
+   *
+   * Separate on purpose: revoking rights must not require clearing the tick
+   * boxes, so restoring someone brings back what they had. Both are needed
+   * to edit anything - see shared/staffPermissions.ts.
+   */
+  isAdmin: boolean("is_admin").default(false).notNull(),
+  adminSections: json("admin_sections"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (t) => [index("idx_staff_tenant").on(t.tenantId)]);

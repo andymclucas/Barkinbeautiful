@@ -46,6 +46,7 @@ import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
+import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { paymentsRouter } from "./routers/payments";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
@@ -66,6 +67,29 @@ import {
  * because that is how they were given the floor. This narrows personnel
  * changes to the owner. Editing your own profile is unaffected.
  */
+/**
+ * May this signed-in person CHANGE things in this section?
+ *
+ * The owner always may. Otherwise it needs an explicit grant: admin rights
+ * plus that section ticked. Returns the staff row so callers can scope by
+ * tenant without a second query.
+ *
+ * Deliberately NOT applied blanket to every procedure yet: four groomers
+ * hold users.role = "admin" and would lose the salon floor the moment it
+ * was. It gates the surfaces wired to it, and the grant widens restricted
+ * accounts; moving the blanket admins onto grants is a follow-up.
+ */
+async function requireSection(db: any, user: { id: number; role: string; email?: string | null }, section: StaffSection) {
+  if (canAdministerStaff(user)) return null;
+  const [member] = await db.select({
+    id: staff.id, tenantId: staff.tenantId, isAdmin: staff.isAdmin, adminSections: staff.adminSections,
+  }).from(staff).where(eq(staff.userId, user.id)).limit(1);
+  if (!canEditSection(member, section)) {
+    throw new Error(`You do not have permission to change ${sectionLabel(section)}.`);
+  }
+  return member;
+}
+
 function requireStaffAdministrator(user: { id: number; role: string; email?: string | null }) {
   if (!canAdministerStaff(user)) throw new Error(STAFF_ADMIN_DENIED_MESSAGE);
 }
@@ -2203,6 +2227,8 @@ const staffRouter = router({
         id: staff.id,
         tenantId: staff.tenantId,
         userId: staff.userId,
+        isAdmin: staff.isAdmin,
+        adminSections: staff.adminSections,
         name: staff.name,
         email: staff.email,
         phone: staff.phone,
@@ -2438,6 +2464,86 @@ const staffRouter = router({
       if (fields.onlineMaxDogsPerDay !== undefined) updateData.onlineMaxDogsPerDay = fields.onlineMaxDogsPerDay;
       await db.update(staff).set(updateData as Parameters<typeof db.update>[0] extends infer T ? any : any).where(eq(staff.id, staffId));
       return { success: true };
+    }),
+
+  /**
+   * Admin rights for a staff member, and the sections they cover.
+   *
+   * Only the owner may call these - granting rights is the one action that
+   * could hand someone the ability to grant more. Section keys are validated
+   * against the canonical list rather than stored as given, so a crafted
+   * request cannot write a section the UI does not know about.
+   */
+  setAdminRights: protectedProcedure
+    .input(z.object({
+      staffId: z.number(),
+      isAdmin: z.boolean(),
+      sections: z.array(z.enum(STAFF_SECTION_KEYS as unknown as [string, ...string[]])).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      requireStaffAdministrator(ctx.user);
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [member] = await db.select({ id: staff.id, name: staff.name, userId: staff.userId })
+        .from(staff).where(eq(staff.id, input.staffId)).limit(1);
+      if (!member) throw new Error("Staff member not found");
+      if (input.isAdmin && !member.userId) {
+        // Rights are useless without a way in, and silently granting them
+        // would look like it worked.
+        throw new Error(`${member.name} has no login yet. Invite them to the staff portal first.`);
+      }
+      // Sections are kept when rights are revoked, so restoring someone
+      // brings back what they had; canEditSection requires both anyway.
+      const updates: Record<string, unknown> = { isAdmin: input.isAdmin };
+      if (input.sections !== undefined) updates.adminSections = parseSections(input.sections);
+      await db.update(staff).set(updates).where(eq(staff.id, member.id));
+      return { success: true, isAdmin: input.isAdmin };
+    }),
+
+  /**
+   * Remove someone who has left.
+   *
+   * Refuses to destroy history: a staff member with appointments against
+   * their name is deactivated and their login revoked, not deleted, because
+   * removing the row would orphan every groom they ever did. Only someone
+   * with no record at all is actually deleted.
+   */
+  deleteProfile: protectedProcedure
+    .input(z.object({ staffId: z.number(), confirmName: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      requireStaffAdministrator(ctx.user);
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [member] = await db.select({ id: staff.id, name: staff.name, userId: staff.userId })
+        .from(staff).where(eq(staff.id, input.staffId)).limit(1);
+      if (!member) throw new Error("Staff member not found");
+      // Typing the name is the guard against deleting the wrong row from a
+      // list of similar ones.
+      if (input.confirmName.trim().toLowerCase() !== member.name.trim().toLowerCase()) {
+        throw new Error("The name you typed does not match this staff member");
+      }
+      if (canAdministerStaff({ id: member.userId ?? undefined })) {
+        throw new Error("The salon owner's profile cannot be removed");
+      }
+
+      const [[counts]] = await db.execute(sql`
+        SELECT (SELECT COUNT(*) FROM appointments WHERE staff_id = ${member.id}) AS appts,
+               (SELECT COUNT(*) FROM workflow_logs WHERE changed_by_staff_id = ${member.id}) AS logs
+      `) as unknown as [Array<{ appts: number; logs: number }>];
+      const history = Number(counts?.appts ?? 0) + Number(counts?.logs ?? 0);
+
+      if (history > 0) {
+        await db.update(staff).set({
+          isActive: false, isAdmin: false, portalStatus: "revoked",
+        }).where(eq(staff.id, member.id));
+        return {
+          success: true, removed: false, history,
+          message: `${member.name} has ${history} record(s) in the salon's history, so the profile was deactivated and their access revoked rather than deleted. The history stays intact.`,
+        };
+      }
+
+      await db.delete(staff).where(eq(staff.id, member.id));
+      return { success: true, removed: true, history: 0, message: `${member.name}'s profile was deleted.` };
     }),
 
   invitePortalAccount: adminProcedure
@@ -2686,6 +2792,9 @@ const staffRouter = router({
         emergencyPhone: staff.emergencyPhone,
         emergencyEmail: staff.emergencyEmail,
         favouriteIceCream: staff.favouriteIceCream,
+        // Drives which sections the sidebar offers.
+        isAdmin: staff.isAdmin,
+        adminSections: staff.adminSections,
       }).from(staff).where(eq(staff.userId, ctx.user.id)).limit(1);
       return member ?? null;
     }),

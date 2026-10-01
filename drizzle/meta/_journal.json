@@ -414,6 +414,13 @@
       "when": 1790810853012,
       "tag": "0058_staff_profile_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "5",
+      "when": 1790812281743,
+      "tag": "0059_staff_admin_rights",
+      "breakpoints": true
     }
   ]
 }

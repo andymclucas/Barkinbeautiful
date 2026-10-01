@@ -13,9 +13,12 @@ import { Separator } from "@/components/ui/separator";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
+import { StaffAdminRightsDialog, type StaffRightsTarget } from "@/components/StaffAdminRightsDialog";
+import { canAdministerStaff } from "@shared/staffAdministrators";
+import { describeGrant } from "@shared/staffPermissions";
 import {
   Phone, Mail, MapPin, User, UserCog, Plus, Pencil, X,
-  CalendarDays, TrendingUp, AlertCircle, AlertTriangle, ShieldCheck, Smartphone, Send, CheckCircle2, Ban, Globe2, Download, ArrowLeft, ArrowUpRight
+  CalendarDays, TrendingUp, AlertCircle, AlertTriangle, ShieldCheck, ShieldOff, Smartphone, Send, CheckCircle2, Ban, Globe2, Download, ArrowLeft, ArrowUpRight
 } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 
@@ -574,6 +577,10 @@ export function StaffReviewProfile() {
 export default function Staff() {
   const utils = trpc.useUtils();
   const { data: staffList, isLoading } = trpc.staff.list.useQuery({ tenantId: 1 });
+  const { data: me } = trpc.auth.me.useQuery();
+  const ownerView = canAdministerStaff(me ?? null);
+  const [rightsFor, setRightsFor] = useState<StaffRightsTarget | null>(null);
+  const rightsUtils = trpc.useUtils();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", phone: "", role: "groomer", colourHex: "#6366f1" });
@@ -650,6 +657,20 @@ export default function Staff() {
                   </div>
                   {s.email && <p className="text-xs text-muted-foreground mt-2 truncate flex items-center gap-1"><Mail className="h-3 w-3 flex-shrink-0" />{s.email}</p>}
                   {s.phone && <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1"><Phone className="h-3 w-3 flex-shrink-0" />{s.phone}</p>}
+                  {/* Admin rights, at a glance and one click to change.
+                      Only the owner sees it; the server enforces it too. */}
+                  {ownerView && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setRightsFor({ id: s.id, name: s.name, userId: (s as any).userId ?? null, isAdmin: (s as any).isAdmin ?? false, adminSections: (s as any).adminSections }); }}
+                      className="mt-2 flex w-full items-center gap-1.5 rounded-lg border bg-muted/40 px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+                    >
+                      {(s as any).isAdmin
+                        ? <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        : <ShieldOff className="h-3.5 w-3.5 shrink-0" />}
+                      <span className="truncate">{describeGrant({ isAdmin: (s as any).isAdmin, adminSections: (s as any).adminSections })}</span>
+                    </button>
+                  )}
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <p className="text-xs text-primary/60 font-medium group-hover:text-primary transition-colors">View profile →</p>
                     {portalStatus === "not_invited" && <Button size="sm" variant={canQuickInvite ? "outline" : "secondary"} className="h-8 gap-1.5" disabled={quickInviteMutation.isPending && canQuickInvite} onClick={(event) => { event.stopPropagation(); if (canQuickInvite) quickInviteMutation.mutate({ staffId: s.id, email: s.email! }); else setSelectedId(s.id); }}><Send className="h-3.5 w-3.5" />{canQuickInvite ? "Send invite" : "Add email"}</Button>}
@@ -713,6 +734,12 @@ export default function Staff() {
           </DialogContent>
         </Dialog>
       </div>
+      <StaffAdminRightsDialog
+        member={rightsFor}
+        onOpenChange={(open) => { if (!open) setRightsFor(null); }}
+        onChanged={() => { rightsUtils.staff.list.invalidate(); rightsUtils.staff.listOperational.invalidate(); }}
+      />
+
     </DashboardLayout>
   );
 }
