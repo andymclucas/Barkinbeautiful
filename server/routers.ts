@@ -1,5 +1,6 @@
 import { isValidTimeZone } from "@shared/auditTimestamp";
 import { searchTerms } from "@shared/clientSearchMatch";
+import { applyDiscount, validateDiscount, fromCents } from "@shared/appointmentDiscount";
 import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
@@ -137,6 +138,89 @@ async function getAppointmentMembershipCoverage(db: any, tenantId: number, clien
 
 // ─── Calendar / Appointments ──────────────────────────────────────────────────
 const calendarRouter = router({
+  /**
+   * Apply or remove a staff discount on an appointment.
+   *
+   * grossPrice keeps the original charge and price becomes what the client
+   * pays, so the family price breakdown, split bills and expected-revenue
+   * analytics all pick it up without changing — they already read price.
+   *
+   * applyToSession discounts every dog booked in the same session, which is
+   * what "20% off for the Jeffries family" actually means. Each dog keeps
+   * its own prices; the percentage is applied to each.
+   *
+   * operationalProcedure: this is counter work, done by whoever is serving
+   * the client. The reason field and the recorded user id are what make
+   * that safe — every discount says who gave it and why.
+   */
+  setAppointmentDiscount: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      appointmentId: z.number().int().positive(),
+      percent: z.number().int().nullable(),
+      reason: z.string().max(300).nullable().optional(),
+      applyToSession: z.boolean().default(false),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const validated = validateDiscount({ percent: input.percent, reason: input.reason });
+      if (!validated.ok) throw new TRPCError({ code: "BAD_REQUEST", message: validated.error });
+
+      const [target] = await db
+        .select({
+          id: appointments.id,
+          tenantId: appointments.tenantId,
+          sessionId: appointments.sessionId,
+          price: appointments.price,
+          grossPrice: appointments.grossPrice,
+        })
+        .from(appointments)
+        .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, input.tenantId)))
+        .limit(1);
+      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
+
+      const rows = input.applyToSession && target.sessionId
+        ? await db
+            .select({ id: appointments.id, price: appointments.price, grossPrice: appointments.grossPrice })
+            .from(appointments)
+            .where(and(
+              eq(appointments.tenantId, input.tenantId),
+              eq(appointments.sessionId, target.sessionId),
+            ))
+        : [{ id: target.id, price: target.price, grossPrice: target.grossPrice }];
+
+      const now = new Date();
+      const updated: { id: number; gross: string; net: string; discount: string }[] = [];
+
+      for (const row of rows) {
+        // grossPrice is the original charge. On the first discount it may be
+        // unset, so seed it from price — otherwise re-discounting would
+        // compound, taking 10% off an already-discounted figure.
+        const gross = row.grossPrice ?? row.price ?? null;
+        const breakdown = applyDiscount(gross, validated.percent);
+
+        await db.update(appointments).set({
+          grossPrice: gross === null ? null : fromCents(breakdown.grossCents),
+          price: gross === null ? null : fromCents(breakdown.netCents),
+          discountPercent: validated.percent,
+          discountReason: validated.reason,
+          discountAppliedByUserId: validated.percent === null ? null : ctx.user.id,
+          discountAppliedAt: validated.percent === null ? null : now,
+        }).where(and(eq(appointments.id, row.id), eq(appointments.tenantId, input.tenantId)));
+
+        updated.push({
+          id: row.id,
+          gross: fromCents(breakdown.grossCents),
+          net: fromCents(breakdown.netCents),
+          discount: fromCents(breakdown.discountCents),
+        });
+      }
+
+      return { updated, percent: validated.percent, reason: validated.reason };
+    }),
+
   searchAppointments: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),

@@ -300,6 +300,17 @@ export const appointments = mysqlTable("appointments", {
   price: decimal("price", { precision: 10, scale: 2 }),
   /** Amount CHARGED, before discounts and non-payment (MoeGo gross sales). */
   grossPrice: decimal("gross_price", { precision: 10, scale: 2 }),
+  /**
+   * Staff discount. 5, 10, 15 or 20 — validated in
+   * shared/appointmentDiscount.ts, not by the column type. When set,
+   * grossPrice holds the original and price holds what the client pays, so
+   * family totals and split bills pick the discount up automatically.
+   */
+  discountPercent: int("discount_percent"),
+  /** Why. Required whenever discountPercent is set; enforced in shared/. */
+  discountReason: varchar("discount_reason", { length: 200 }),
+  discountAppliedByUserId: int("discount_applied_by_user_id"),
+  discountAppliedAt: timestamp("discount_applied_at"),
   /** Whether the money arrived, per MoeGo. Null where MoeGo has no view. */
   paymentStatus: mysqlEnum("payment_status", ["unpaid", "partial", "paid"]),
   status: mysqlEnum("status", ["confirmed", "pending", "cancelled", "no_show"]).default("confirmed").notNull(),
