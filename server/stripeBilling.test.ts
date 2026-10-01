@@ -190,3 +190,32 @@ describe("billingCycleFromWeeks", () => {
     expect(billingCycleFromWeeks(undefined)).toBeNull();
   });
 });
+
+describe("describeCard with no card details", () => {
+  it("still reports a saved payment method rather than claiming none", () => {
+    // A wallet/Link method charges fine but carries no brand or last4.
+    // Saying "no card" here made staff re-ask a client who had just paid.
+    expect(describeCard({ stripeDefaultPaymentMethodId: "pm_123" }))
+      .toBe("Payment method saved · card details unavailable");
+  });
+
+  it("names the method type when that is all we captured", () => {
+    expect(describeCard({ stripeCardBrand: "link", stripeDefaultPaymentMethodId: "pm_1" }))
+      .toBe("Link saved · card details unavailable");
+    expect(describeCard({ stripeCardBrand: "au_becs_debit", stripeDefaultPaymentMethodId: "pm_1" }))
+      .toBe("Au Becs Debit saved · card details unavailable");
+  });
+
+  it("still returns null when genuinely nothing is saved", () => {
+    expect(describeCard({})).toBeNull();
+    expect(describeCard({ stripeDefaultPaymentMethodId: null })).toBeNull();
+  });
+
+  it("is unchanged when full card details exist", () => {
+    expect(describeCard({
+      stripeCardBrand: "visa", stripeCardLast4: "4242",
+      stripeCardExpMonth: 8, stripeCardExpYear: 2028,
+      stripeDefaultPaymentMethodId: "pm_1",
+    })).toBe("Visa ···· 4242 · exp 08/28");
+  });
+});

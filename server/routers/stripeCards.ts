@@ -17,6 +17,7 @@ import { getDb } from "../db";
 import { clients, memberships, membershipPayments } from "../../drizzle/schema";
 import {
   createCardSetupLink,
+  emailCardSetupLink,
   detachClientCard,
   startMembershipSubscription,
   cancelMembershipSubscription,
@@ -81,6 +82,11 @@ export const stripeCardsRouter = router({
   createSetupLink: adminProcedure
     .input(z.object({ clientId: z.number() }))
     .mutation(async ({ input }) => createCardSetupLink(input.clientId)),
+
+  /** Create the link AND email it to the client's address on file. */
+  emailSetupLink: adminProcedure
+    .input(z.object({ clientId: z.number() }))
+    .mutation(async ({ input }) => emailCardSetupLink(input.clientId)),
 
   removeCard: adminProcedure
     .input(z.object({ clientId: z.number() }))

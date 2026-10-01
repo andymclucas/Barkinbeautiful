@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CreditCard, Link2, Loader2, ShieldCheck, TriangleAlert, Trash2, Copy, Check } from "lucide-react";
+import { CreditCard, Link2, Loader2, ShieldCheck, TriangleAlert, Trash2, Copy, Check, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,16 @@ export function StripeCardPanel({ clientId }: { clientId: number }) {
       setLink(result.url);
       setCopied(false);
       toast.success("Card link ready — send it to the client");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const emailLink = trpc.stripeCards.emailSetupLink.useMutation({
+    onSuccess: (result) => {
+      setLink(result.url);
+      setCopied(false);
+      if (result.emailSent) toast.success(`Card link emailed to ${result.emailedTo}`);
+      else toast.error("Email could not be sent — copy the link below and send it yourself");
     },
     onError: (error) => toast.error(error.message),
   });
