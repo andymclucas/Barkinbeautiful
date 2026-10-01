@@ -890,3 +890,27 @@ export const clientErrorLogs = mysqlTable("client_error_logs", {
 });
 
 export type ClientErrorLog = typeof clientErrorLogs.$inferSelect;
+
+// ─── Missed-call auto-text ledger (once per phone number, enforced by the DB) ─
+// One row per phone number that has been sent the missed-call auto-reply. The
+// UNIQUE key on (tenant_id, phone_e164) is what guarantees the text goes out
+// at most once: the voice-no-answer handler inserts the claim BEFORE sending
+// and only sends if the insert won, so a duplicate-key error is a definitive
+// "already texted" regardless of webhook retries, concurrent calls or
+// restarts. See drizzle/0060_missed_call_auto_texts.sql for why the previous
+// sms_logs body-scan could not provide that guarantee.
+export const missedCallAutoTexts = mysqlTable("missed_call_auto_texts", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().default(1),
+  phoneE164: varchar("phone_e164", { length: 30 }).notNull(),
+  firstCallSid: varchar("first_call_sid", { length: 64 }),
+  // "claimed" means the row was written but the send outcome is not known yet
+  // (or the process died mid-send). It still blocks further sends, by design:
+  // never texting twice matters more here than guaranteeing a single delivery.
+  sendStatus: mysqlEnum("send_status", ["claimed", "sent", "failed"]).default("claimed").notNull(),
+  twilioSid: varchar("twilio_sid", { length: 64 }),
+  errorMessage: text("error_message"),
+  claimedAt: timestamp("claimed_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("uq_missed_call_auto_text_number").on(t.tenantId, t.phoneE164)]);
+
+export type MissedCallAutoText = typeof missedCallAutoTexts.$inferSelect;

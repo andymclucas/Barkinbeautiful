@@ -421,6 +421,13 @@
       "when": 1790812281743,
       "tag": "0059_staff_admin_rights",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1790815281670,
+      "tag": "0060_missed_call_auto_texts",
+      "breakpoints": true
     }
   ]
 }

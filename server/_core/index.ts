@@ -11,7 +11,14 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { getDb } from "../db";
-import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, clientErrorLogs } from "../../drizzle/schema";
+import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, missedCallAutoTexts, clientErrorLogs } from "../../drizzle/schema";
+import {
+  MISSED_CALL_AUTO_TEXT,
+  autoTextPhoneKey,
+  classifyClaim,
+  describeClaim,
+  isDuplicateKeyError,
+} from "../../shared/missedCallAutoText";
 import { and, asc, desc, eq, gt, gte, lte, inArray, isNotNull } from "drizzle-orm";
 import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNumber } from "../inboundSms";
 import { sendSms } from "../sms";
@@ -300,7 +307,8 @@ async function startServer() {
   // once Twilio finishes transcribing, which can take a few seconds).
   const processedNoAnswerCallSids = new Set<string>();
 
-  const MISSED_CALL_AUTO_TEXT = "Thank you for calling Barkin' Beautiful and we're sorry we missed your call - we will call you back as soon as we are able, but please feel free to send us a reply text and let us know what you need.";
+  // MISSED_CALL_AUTO_TEXT now lives in shared/missedCallAutoText.ts alongside
+  // the once-only decision logic, which is unit-tested.
 
   app.post("/api/twilio/voice-no-answer", express.urlencoded({ extended: false }), async (req, res) => {
     const { DialCallStatus, From, CallSid } = req.body;
@@ -325,37 +333,82 @@ async function startServer() {
         if (oldest) processedNoAnswerCallSids.delete(oldest);
       }
     }
+    // ── The auto-text reaches any number AT MOST ONCE, EVER ────────────────
+    // Claim first, send second. The UNIQUE key on missed_call_auto_texts is
+    // what enforces that, so a webhook retry, two calls arriving together, a
+    // redeploy or a restart all collapse to a single send. Every uncertain
+    // outcome WITHHOLDS the text rather than risk a repeat - the caller still
+    // reaches voicemail and staff still see the missed call either way.
+    //
+    // The previous version read sms_logs to decide, then sent, then recorded
+    // the send asynchronously and swallowed any failure. That could not hold
+    // the line: it failed open when the read came back empty, and a send
+    // whose record never landed was a guaranteed repeat on the next call.
     if (From && !alreadyProcessed) {
-      const inboundNumber = normaliseAustralianMobile(String(From));
-      const db = await getDb();
-      // They've already been sent this exact auto-reply once before (from
-      // an earlier missed call) and already have the number — don't send
-      // it again every single time they call and it's not picked up.
-      let alreadySentBefore = false;
-      if (db) {
-        const priorAutoTexts = await db.select({ toNumber: smsLogs.toNumber })
-          .from(smsLogs)
-          .where(and(eq(smsLogs.tenantId, 1), eq(smsLogs.direction, "outbound"), eq(smsLogs.body, MISSED_CALL_AUTO_TEXT)));
-        alreadySentBefore = priorAutoTexts.some(row => phoneMatchesInboundNumber(row.toNumber, inboundNumber));
-      }
-      if (!alreadySentBefore) {
-        sendSms(String(From), MISSED_CALL_AUTO_TEXT)
-          .then(result => {
-            if (!db) return;
-            return db.insert(smsLogs).values({
-              tenantId: 1,
-              toNumber: inboundNumber,
-              body: MISSED_CALL_AUTO_TEXT,
-              twilioSid: result.sid,
-              status: result.success ? "sent" : "failed",
-              type: "custom",
-              direction: "outbound",
-              errorMessage: result.error,
-            });
-          })
-          .catch(err => console.error("[Twilio] Missed-call auto-text failed:", err));
-      } else {
-        console.log(`[Twilio] Skipping missed-call auto-text for ${inboundNumber} — already sent previously`);
+      const phoneKey = autoTextPhoneKey(String(From));
+      let insert: "won" | "duplicate" | "error" | "not-attempted" = "not-attempted";
+      let db: Awaited<ReturnType<typeof getDb>> = null;
+
+      try {
+        if (phoneKey) {
+          db = await getDb();
+          if (db) {
+            try {
+              await db.insert(missedCallAutoTexts).values({
+                tenantId: 1,
+                phoneE164: phoneKey,
+                firstCallSid: CallSid ? String(CallSid) : null,
+              });
+              insert = "won";
+            } catch (error) {
+              insert = isDuplicateKeyError(error) ? "duplicate" : "error";
+              if (insert === "error") {
+                console.error("[Twilio] Missed-call auto-text claim insert failed:", error);
+              }
+            }
+          }
+        }
+
+        const claim = classifyClaim({ phoneKey, databaseAvailable: Boolean(db), insert });
+        console.log(describeClaim(claim, phoneKey, String(From)));
+
+        if (claim.send && phoneKey && db) {
+          const claimedDb = db;
+          // We hold the only claim for this number, so this send cannot repeat.
+          sendSms(String(From), MISSED_CALL_AUTO_TEXT)
+            .then(async result => {
+              await claimedDb
+                .update(missedCallAutoTexts)
+                .set({
+                  sendStatus: result.success ? "sent" : "failed",
+                  twilioSid: result.sid,
+                  errorMessage: result.error,
+                })
+                .where(
+                  and(
+                    eq(missedCallAutoTexts.tenantId, 1),
+                    eq(missedCallAutoTexts.phoneE164, phoneKey),
+                  ),
+                );
+              // Mirrored into sms_logs so it still shows in Messages history.
+              await claimedDb.insert(smsLogs).values({
+                tenantId: 1,
+                toNumber: phoneKey,
+                body: MISSED_CALL_AUTO_TEXT,
+                twilioSid: result.sid,
+                status: result.success ? "sent" : "failed",
+                type: "custom",
+                direction: "outbound",
+                errorMessage: result.error,
+              });
+            })
+            .catch(err =>
+              console.error("[Twilio] Missed-call auto-text send/record failed:", err),
+            );
+        }
+      } catch (error) {
+        // Nothing here may stop the caller reaching voicemail below.
+        console.error("[Twilio] Missed-call auto-text handling errored:", error);
       }
     }
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
