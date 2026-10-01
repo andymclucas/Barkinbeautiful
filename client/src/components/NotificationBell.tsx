@@ -20,6 +20,9 @@ function timeAgo(date: Date | string) {
 export default function NotificationBell() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const markRead = trpc.sms.markNotificationRead.useMutation({
+    onSuccess: () => utils.sms.getUnreadPreview.invalidate(),
+  });
   const clearMissedCall = trpc.sms.clearMissedCall.useMutation({
     onSuccess: () => utils.sms.getUnreadPreview.invalidate(),
   });
@@ -59,7 +62,7 @@ export default function NotificationBell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const messageCount = data?.unreadCount ?? 0;
+  const messageCount = data?.unreadCount ?? 0; // unread only; the list below also shows read items
   const failedPayments = sortFailedPayments(failedPaymentsRaw ?? []);
   // Money that did not arrive belongs in the badge: it is the whole reason
   // for giving payments their own section rather than burying them.
@@ -71,6 +74,8 @@ export default function NotificationBell() {
   // explicitly dismisses it with the X, regardless of how many times it's
   // been viewed, so it can't quietly slip past everyone.
   const openItem = (item: any) => {
+    // Who opened it, not just that someone did.
+    if (!item.readAt) markRead.mutate({ tenantId: 1, kind: item.kind, id: item.id });
     if (item.kind === "missed_call") {
       if (item.clientId) setLocation(`/clients/${item.clientId}`);
       else setLocation("/messages");
@@ -149,7 +154,7 @@ export default function NotificationBell() {
             {recent.map((item: any) => (
               <div
                 key={`${item.kind}-${item.id}`}
-                className="w-full flex items-start gap-1 px-4 py-3 border-b last:border-b-0 hover:bg-accent transition-colors"
+                className={`w-full flex items-start gap-1 px-4 py-3 border-b last:border-b-0 hover:bg-accent transition-colors ${item.readAt ? "opacity-60" : ""}`}
               >
                 <button className="min-w-0 flex-1 text-left" onClick={() => openItem(item)}>
                   <div className="flex items-center justify-between gap-2">
@@ -162,6 +167,11 @@ export default function NotificationBell() {
                   <p className="text-xs text-muted-foreground truncate mt-0.5">
                     {item.kind === "missed_call" ? `Missed call: "${item.body}"` : item.body}
                   </p>
+                  {item.readAt && (
+                    <p className="mt-0.5 truncate text-[10px] text-muted-foreground/80">
+                      Read{item.readByName ? ` by ${item.readByName}` : ""} · {timeAgo(item.readAt)}
+                    </p>
+                  )}
                 </button>
                 {item.kind === "missed_call" && (
                   <button
