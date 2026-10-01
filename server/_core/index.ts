@@ -122,6 +122,20 @@ async function startServer() {
       return res.status(400).send("Webhook verification failed");
     }
   });
+  // Opening the webhook URL in a browser sends a GET, which otherwise falls
+  // through to the SPA and renders the app's 404 — which reads as "the
+  // webhook is broken" when it is fine. Stripe only ever POSTs here.
+  app.get("/api/stripe/webhook", (_req, res) => {
+    res
+      .status(405)
+      .type("text/plain")
+      .send(
+        "This is the Barkin' Beautiful Stripe webhook endpoint and it is live.\n" +
+          "It accepts POST from Stripe only, with a signed stripe-signature header.\n" +
+          "Seeing this page in a browser is expected and does not mean anything is wrong.",
+      );
+  });
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

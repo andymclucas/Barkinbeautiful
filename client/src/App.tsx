@@ -1,6 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch } from "wouter";
 import { lazy, Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -95,6 +95,15 @@ function Router() {
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/setup/:token" component={ClientPortalSetup} />
       <Route path="/portal/:token" component={ClientPortal} />
+
+      {/* Aliases for paths staff have bookmarked that were never routes.
+          The dashboard lives at "/", so a bookmark saved as "/dashboard"
+          hit the 404 page instead. Redirect rather than 404 — a dead
+          bookmark looks like the whole system is down to someone standing
+          at the counter. */}
+      <Route path="/dashboard"><Redirect to="/" /></Route>
+      <Route path="/home"><Redirect to="/" /></Route>
+      <Route path="/appointments"><Redirect to="/calendar" /></Route>
 
       <Route component={NotFound} />
     </Switch>
