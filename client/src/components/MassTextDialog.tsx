@@ -32,6 +32,9 @@ export function MassTextDialog() {
   const [tier, setTier] = useState<string>("gold");
   const [body, setBody] = useState("");
   const [typed, setTyped] = useState("");
+  // Stable for this composition. A retry after a timeout carries the same
+  // id, so the server resumes the batch instead of texting everyone again.
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
 
   const audience =
     kind === "booked_between" ? { kind, from, to }
@@ -46,10 +49,11 @@ export function MassTextDialog() {
 
   const send = trpc.sms.sendMassText.useMutation({
     onSuccess: (r) => {
-      toast.success(`Sent ${r.sent} of ${r.attempted}${r.failed ? ` — ${r.failed} failed` : ""}`);
+      toast.success(`${r.resumed ? "Resumed — s" : "S"}ent ${r.sent} of ${r.attempted}${r.failed ? ` — ${r.failed} failed` : ""}`);
       setOpen(false);
       setBody("");
       setTyped("");
+      setRequestId(crypto.randomUUID());
     },
     onError: (error) => toast.error(error.message),
   });
@@ -166,7 +170,7 @@ export function MassTextDialog() {
             <Button
               size="sm"
               disabled={!canSend || send.isPending}
-              onClick={() => send.mutate({ tenantId: 1, audience, body: body.trim(), confirmedCount: count })}
+              onClick={() => send.mutate({ tenantId: 1, requestId, audience, body: body.trim(), confirmedCount: count })}
             >
               {send.isPending ? "Sending…" : `Send to ${count}`}
             </Button>

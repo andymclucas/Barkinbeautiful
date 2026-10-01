@@ -15,7 +15,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -6375,9 +6375,20 @@ const smsRouter = router({
    * conversation history shows what they were sent, and a failure to one
    * number does not abandon the rest.
    */
+  /**
+   * Text many clients at once.
+   *
+   * Batch-backed, because there is no undo. The browser supplies a
+   * requestId; the batch and every intended recipient are written as
+   * "pending" BEFORE a single message goes out. A retry — a timeout
+   * partway through several hundred sends is the likely case — finds the
+   * same batch and resumes, skipping the rows already marked sent. Without
+   * this, one timeout texts the entire client list twice.
+   */
   sendMassText: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
+      requestId: z.string().min(8).max(64),
       audience: z.any(),
       body: z.string().min(1).max(MAX_BODY_LENGTH),
       confirmedCount: z.number().int().min(0),
@@ -6385,43 +6396,104 @@ const smsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-
       requireMassTextEnabled();
       await requireMassTextPermission(db, ctx.user);
 
       const validated = validateAudience(input.audience);
       if (!validated.ok) throw new TRPCError({ code: "BAD_REQUEST", message: validated.error });
 
-      const recipients = await massTextRecipients(db, input.tenantId, validated.audience);
-      const guard = guardSend({
-        body: input.body,
-        recipientCount: recipients.length,
-        confirmedCount: input.confirmedCount,
-      });
-      if (!guard.ok) throw new TRPCError({ code: "BAD_REQUEST", message: guard.error });
-
       const body = input.body.trim();
-      let sent = 0;
-      const failures: { phone: string; error: string }[] = [];
 
-      for (const recipient of recipients) {
-        const result = await sendSms(recipient.phone, body);
-        if (result.success) sent += 1;
-        else failures.push({ phone: recipient.phone, error: result.error ?? "unknown" });
-        await db.insert(smsLogs).values({
-          tenantId: input.tenantId,
-          clientId: recipient.clientId,
-          toNumber: recipient.phone,
+      // Resume an existing batch rather than starting a second one.
+      const [existing] = await db.select({ id: massTextBatches.id, body: massTextBatches.body })
+        .from(massTextBatches)
+        .where(and(
+          eq(massTextBatches.tenantId, input.tenantId),
+          eq(massTextBatches.requestId, input.requestId),
+        ))
+        .limit(1);
+
+      let batchId: number;
+      if (existing) {
+        if (existing.body !== body) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "That send has already started with a different message. Start a new one.",
+          });
+        }
+        batchId = existing.id;
+      } else {
+        const recipients = await massTextRecipients(db, input.tenantId, validated.audience);
+        const guard = guardSend({
           body,
-          twilioSid: result.sid,
-          status: result.success ? "sent" : "failed",
-          type: "custom",
-          direction: "outbound",
-          errorMessage: result.error,
+          recipientCount: recipients.length,
+          confirmedCount: input.confirmedCount,
         });
+        if (!guard.ok) throw new TRPCError({ code: "BAD_REQUEST", message: guard.error });
+
+        const [inserted] = await db.insert(massTextBatches).values({
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          body,
+          audience: JSON.stringify(validated.audience),
+          status: "sending",
+          sentByUserId: ctx.user.id,
+        }).$returningId();
+        batchId = inserted.id;
+
+        // The intended list, on disk, before anything is sent. A crash now
+        // still leaves a record of who was meant to receive it.
+        for (const r of recipients) {
+          await db.insert(massTextRecipientRows).values({
+            batchId, clientId: r.clientId, phone: r.phone, status: "pending",
+          }).onDuplicateKeyUpdate({ set: { batchId } });
+        }
       }
 
-      return { attempted: recipients.length, sent, failed: failures.length, failures: failures.slice(0, 10) };
+      const pending = await db.select({
+        id: massTextRecipientRows.id,
+        clientId: massTextRecipientRows.clientId,
+        phone: massTextRecipientRows.phone,
+      })
+        .from(massTextRecipientRows)
+        .where(and(eq(massTextRecipientRows.batchId, batchId), eq(massTextRecipientRows.status, "pending")));
+
+      let sent = 0;
+      let failed = 0;
+      for (const row of pending) {
+        const result = await sendSms(row.phone, body);
+        if (result.success) sent += 1; else failed += 1;
+
+        await db.update(massTextRecipientRows).set({
+          status: result.success ? "sent" : "failed",
+          errorMessage: result.error ?? null,
+          sentAt: new Date(),
+        }).where(eq(massTextRecipientRows.id, row.id));
+
+        // A failure to log must not abandon the people still waiting.
+        try {
+          await db.insert(smsLogs).values({
+            tenantId: input.tenantId,
+            clientId: row.clientId,
+            toNumber: row.phone,
+            body,
+            twilioSid: result.sid,
+            status: result.success ? "sent" : "failed",
+            type: "custom",
+            direction: "outbound",
+            errorMessage: result.error,
+          });
+        } catch (error) {
+          console.error("[MassText] could not log message to", row.phone, error);
+        }
+      }
+
+      await db.update(massTextBatches).set({
+        status: failed > 0 && sent === 0 ? "failed" : "complete",
+        completedAt: new Date(),
+      }).where(eq(massTextBatches.id, batchId));
+
+      return { batchId, attempted: pending.length, sent, failed, resumed: Boolean(existing) };
     }),
 
   markAllThreadsRead: protectedProcedure
@@ -6818,6 +6890,10 @@ async function massTextRecipients(
     eq(clients.status, "active"),
     isNotNull(clients.phone),
     ne(clients.phone, ""),
+    // A client who replied STOP is excluded from every audience. This is
+    // the obligation, not a nicety — and without it their sends come back
+    // as unexplained carrier failures anyway.
+    isNull(clients.smsOptedOutAt),
   ];
 
   let rows: { clientId: number; phone: string | null; firstName: string | null; lastName: string | null }[] = [];
