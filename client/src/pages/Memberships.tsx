@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { billingCycleFromWeeks } from "@shared/stripeBilling";
 import { Label } from "@/components/ui/label";
 import { AlertTriangle, CreditCard, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, TrendingDown, FileText, CheckCircle, XCircle, RefreshCw, Landmark } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -462,12 +463,23 @@ function MembershipRow({ m }: { m: MembershipItem }) {
  */
 function MembershipBillingControl({ m }: { m: MembershipItem }) {
   const utils = trpc.useUtils();
+  // Both actions below move real money off a real card, so each one is
+  // confirmed first. These are 10px links in a 154-row table; a misclick
+  // used to charge a client up to $104 with no way to undo it.
+  const [confirming, setConfirming] = useState<"start" | "charge" | null>(null);
+
+  const cycle = billingCycleFromWeeks(m.billingCycleWeeks);
+  const clientName = [m.clientFirstName, m.clientLastName].filter(Boolean).join(" ").trim() || "this client";
+  const amount = m.pricePerCycle ? `$${m.pricePerCycle}` : "the membership price";
+  const cadence = cycle === "fortnightly" ? "every 2 weeks" : "every week";
+
   const start = trpc.stripeCards.startSubscription.useMutation({
     onSuccess: (result) => {
-      toast.success(result.alreadyExisted ? "Already billing weekly" : "Weekly billing started");
+      toast.success(result.alreadyExisted ? "Already billing automatically" : "Automatic billing started");
       utils.memberships.list.invalidate();
+      setConfirming(null);
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => { toast.error(error.message); setConfirming(null); },
   });
   const chargeNow = trpc.stripeCards.chargeNow.useMutation({
     onSuccess: (result) => {
@@ -475,35 +487,87 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
       else toast.error(result.message ?? "The card was declined");
       utils.memberships.list.invalidate();
       utils.memberships.getFailedPayments.invalidate();
+      setConfirming(null);
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => { toast.error(error.message); setConfirming(null); },
   });
+
+  const busy = start.isPending || chargeNow.isPending;
+
+  const dialog = (
+    <Dialog open={confirming !== null} onOpenChange={(open) => !open && !busy && setConfirming(null)}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{confirming === "charge" ? "Retry this payment now?" : "Start automatic billing?"}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {confirming === "charge"
+            ? <>This retries {clientName}&rsquo;s outstanding membership payment against their saved card, now. The amount is whatever that failed invoice is for. It cannot be undone from here &mdash; a mistake has to be refunded in Stripe.</>
+            : <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, starting with a charge right now. It cannot be undone from here.</>}
+        </p>
+        <DialogFooter>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirming(null)}>Cancel</Button>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              if (confirming === "charge") chargeNow.mutate({ membershipId: m.id });
+              else start.mutate({ membershipId: m.id });
+            }}
+          >
+            {busy ? "Working…" : confirming === "charge" ? "Retry the payment" : `Bill ${amount} ${cadence}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 
   if (m.stripeSubscriptionId) {
     return (
       <div className="flex items-center gap-1">
-        <Badge className="block bg-emerald-100 dark:bg-emerald-950/50 text-[10px] text-emerald-800 dark:text-emerald-300">Stripe weekly</Badge>
-        <button
-          type="button"
-          className="text-[10px] font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50"
-          disabled={chargeNow.isPending}
-          onClick={() => chargeNow.mutate({ membershipId: m.id })}
-        >
-          {chargeNow.isPending ? "Charging…" : "Charge now"}
-        </button>
+        <Badge className={`block text-[10px] ${cycle ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300" : "bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300"}`}>
+          {cycle === "fortnightly" ? "Stripe fortnightly" : cycle === "weekly" ? "Stripe weekly" : "Stripe — cycle unclear"}
+        </Badge>
+        {(m.failedPaymentCount ?? 0) > 0 && (
+          <button
+            type="button"
+            className="text-[10px] font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50"
+            disabled={busy}
+            onClick={() => setConfirming("charge")}
+          >
+            {chargeNow.isPending ? "Retrying…" : "Retry payment"}
+          </button>
+        )}
+        {dialog}
       </div>
     );
   }
 
+  // An unrecognised cycle must not silently bill weekly — see
+  // billingCycleFromWeeks. Ask a human instead of guessing the cadence.
+  if (!cycle) {
+    return (
+      <span
+        className="text-[10px] font-medium text-muted-foreground"
+        title={`This membership bills every ${m.billingCycleWeeks ?? "?"} weeks, which Stripe billing doesn't cover yet. Change it to weekly or fortnightly first.`}
+      >
+        Cycle not supported
+      </span>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-primary hover:underline disabled:opacity-50"
-      disabled={start.isPending}
-      onClick={() => start.mutate({ membershipId: m.id, cycle: "weekly" })}
-    >
-      {start.isPending ? "Starting…" : "Bill weekly with Stripe"}
-    </button>
+    <>
+      <button
+        type="button"
+        className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-primary hover:underline disabled:opacity-50"
+        disabled={busy}
+        onClick={() => setConfirming("start")}
+      >
+        {start.isPending ? "Starting…" : `Bill ${cadence === "every week" ? "weekly" : "fortnightly"} with Stripe`}
+      </button>
+      {dialog}
+    </>
   );
 }
 

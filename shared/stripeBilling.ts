@@ -142,6 +142,24 @@ export function stripeRecurring(cycle: BillingCycle): { interval: "week" | "mont
 }
 
 /**
+ * The Stripe cadence a membership should bill at, derived from the weeks
+ * stored on the membership itself.
+ *
+ * Returns null rather than guessing. Every one of the salon's 154 active
+ * memberships is weekly today, so the staff UI used to pass "weekly" as a
+ * literal — correct now, silently wrong the first time someone sells a
+ * fortnightly package. Four weeks is deliberately NOT treated as monthly:
+ * 4-weekly bills 13 times a year and monthly bills 12, and picking one for
+ * the user would overcharge or undercharge them. An unmapped cycle disables
+ * the button and asks a human instead.
+ */
+export function billingCycleFromWeeks(weeks: number | null | undefined): BillingCycle | null {
+  if (weeks === 1) return "weekly";
+  if (weeks === 2) return "fortnightly";
+  return null;
+}
+
+/**
  * A card is usable for an off-session charge only if we have both the
  * customer and the payment method. Stripe rejects a charge with one and not
  * the other, with an error the salon cannot act on.

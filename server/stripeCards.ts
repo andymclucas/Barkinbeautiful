@@ -26,7 +26,7 @@ import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
 import { getAppBaseUrl } from "./appUrl";
-import { toStripeCents, stripeRecurring, type BillingCycle } from "@shared/stripeBilling";
+import { toStripeCents, stripeRecurring, billingCycleFromWeeks } from "@shared/stripeBilling";
 
 /** Find or create the Stripe customer that represents this client. */
 export async function ensureStripeCustomer(clientId: number): Promise<string> {
@@ -240,7 +240,14 @@ async function ensureMembershipProduct(stripe: Stripe, tenantId: number): Promis
  * Groomigo and mirroring a price catalogue into Stripe would be a second
  * source of truth to keep in step.
  */
-export async function startMembershipSubscription(membershipId: number, cycle: BillingCycle = "weekly") {
+/**
+ * Put a membership onto automatic Stripe billing.
+ *
+ * The cadence is derived from the membership's own billingCycleWeeks, never
+ * passed in: a caller-supplied cycle meant a stale tab or a second caller
+ * could bill a client at a cadence the membership does not agree with.
+ */
+export async function startMembershipSubscription(membershipId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const stripe = requireStripeClient();
@@ -251,12 +258,15 @@ export async function startMembershipSubscription(membershipId: number, cycle: B
       clientId: memberships.clientId,
       name: memberships.name,
       pricePerCycle: memberships.pricePerCycle,
+      billingCycleWeeks: memberships.billingCycleWeeks,
       stripeSubscriptionId: memberships.stripeSubscriptionId,
     })
     .from(memberships)
     .where(eq(memberships.id, membershipId))
     .limit(1);
-  if (!membership) throw new Error("Membership not found");
+  // Same tenant guard the client-portal procedures use: the tRPC context
+  // carries no tenantId, so fail closed rather than trusting an id.
+  if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
   if (membership.stripeSubscriptionId) {
     return { subscriptionId: membership.stripeSubscriptionId, alreadyExisted: true };
   }
@@ -276,6 +286,14 @@ export async function startMembershipSubscription(membershipId: number, cycle: B
 
   const amount = toStripeCents(membership.pricePerCycle);
   if (amount <= 0) throw new Error("This membership has no price to bill");
+
+  // Guessing a cadence overcharges or undercharges a real person, so refuse.
+  const cycle = billingCycleFromWeeks(membership.billingCycleWeeks);
+  if (!cycle) {
+    throw new Error(
+      `This membership bills every ${membership.billingCycleWeeks ?? "?"} weeks, which automatic Stripe billing doesn't cover. Change it to weekly or fortnightly first.`,
+    );
+  }
 
   const productId = await ensureMembershipProduct(stripe, membership.tenantId ?? 1);
   const subscription = await stripe.subscriptions.create({
@@ -300,6 +318,10 @@ export async function startMembershipSubscription(membershipId: number, cycle: B
     // A failed first payment should not leave a half-live subscription: we
     // want the invoice to exist so the retry job can pay it.
     payment_behavior: "allow_incomplete",
+  }, {
+    // Without this, a retry after a failed DB write — or two admins clicking
+    // at once — creates a second live subscription that bills forever.
+    idempotencyKey: `groomigo-membership-sub-${membership.id}`,
   });
 
   await db

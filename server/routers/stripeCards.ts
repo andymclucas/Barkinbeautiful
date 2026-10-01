@@ -87,11 +87,10 @@ export const stripeCardsRouter = router({
     .mutation(async ({ input }) => detachClientCard(input.clientId)),
 
   startSubscription: adminProcedure
-    .input(z.object({
-      membershipId: z.number(),
-      cycle: z.enum(["weekly", "fortnightly", "monthly"]).default("weekly"),
-    }))
-    .mutation(async ({ input }) => startMembershipSubscription(input.membershipId, input.cycle)),
+    // The cadence comes from the membership itself, not the caller: a
+    // stale tab must not be able to bill at a cadence of its choosing.
+    .input(z.object({ membershipId: z.number() }))
+    .mutation(async ({ input }) => startMembershipSubscription(input.membershipId)),
 
   cancelSubscription: adminProcedure
     .input(z.object({ membershipId: z.number() }))
@@ -119,7 +118,7 @@ export const stripeCardsRouter = router({
         .from(memberships)
         .where(eq(memberships.id, input.membershipId))
         .limit(1);
-      if (!membership?.clientId) throw new Error("Membership not found");
+      if (!membership?.clientId || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
 
       const [client] = await db.select(cardColumns).from(clients).where(eq(clients.id, membership.clientId)).limit(1);
       const now = new Date();
