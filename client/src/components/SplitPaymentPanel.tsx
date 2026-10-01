@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Banknote, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
+import { describeDiscount } from "@shared/appointmentDiscount";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -197,6 +199,26 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             Take payment
           </Button>
         </div>
+
+        {/* Discounts belong at the counter as much as at booking: the
+            reason for one often only emerges while the client is standing
+            there. price is already net, so every total above reflects it. */}
+        {selected && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+            <span className="text-xs text-muted-foreground">
+              {describeDiscount(selected.discountPercent, selected.discountReason)
+                ?? `No discount on ${selected.petName}`}
+            </span>
+            <ApplyDiscountDialog
+              appointmentId={selected.appointmentId}
+              grossPrice={selected.preDiscountPrice ?? (selected.total != null ? selected.total.toFixed(2) : null)}
+              currentPercent={selected.discountPercent}
+              currentReason={selected.discountReason}
+              sessionHasOtherPets={(data?.appointments.length ?? 0) > 1}
+              onApplied={() => utils.payments.forBooking.invalidate()}
+            />
+          </div>
+        )}
 
         {/* One tap for the two amounts anyone actually types. */}
         <div className="flex flex-wrap items-center gap-1.5">

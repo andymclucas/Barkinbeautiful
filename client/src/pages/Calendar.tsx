@@ -30,6 +30,8 @@ import {
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { CalendarSidebar } from "@/components/CalendarSidebar";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
+import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
+import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
@@ -193,6 +195,10 @@ type Appt = {
   serviceType: string;
   notes: string | null;
   price: string | null;
+  /** What price was before the discount. price is the net figure. */
+  preDiscountPrice: string | null;
+  discountPercent: number | null;
+  discountReason: string | null;
   staffId: number | null;
   clientId: number;
   petId: number;
@@ -2479,6 +2485,23 @@ export default function Calendar() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {/* A discount decided at booking time, not only at the
+                      counter. price becomes the net figure, so the family
+                      breakdown and the split bill both follow. */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                    <span className="text-xs text-muted-foreground">
+                      {describeDiscount(editAppt.discountPercent, editAppt.discountReason) ?? "No discount applied"}
+                    </span>
+                    <ApplyDiscountDialog
+                      appointmentId={editAppt.id}
+                      grossPrice={editAppt.preDiscountPrice ?? editAppt.price}
+                      currentPercent={editAppt.discountPercent}
+                      currentReason={editAppt.discountReason}
+                      sessionHasOtherPets={editSiblings.length > 0}
+                      onApplied={() => { setEditAppt(null); refetch(); }}
+                    />
+                  </div>
+
                   <div className="space-y-1.5">
                     <Label>Price ($)</Label>
                     {editSiblings.length > 0 ? (

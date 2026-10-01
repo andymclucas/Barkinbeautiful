@@ -1,6 +1,6 @@
 import { isValidTimeZone } from "@shared/auditTimestamp";
 import { searchTerms } from "@shared/clientSearchMatch";
-import { applyDiscount, validateDiscount, fromCents } from "@shared/appointmentDiscount";
+import { applyDiscount, validateDiscount, fromCents, toCents } from "@shared/appointmentDiscount";
 import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
@@ -153,17 +153,35 @@ const calendarRouter = router({
    * the client. The reason field and the recorded user id are what make
    * that safe — every discount says who gave it and why.
    */
+  /**
+   * Apply or remove a staff discount on an appointment.
+   *
+   * preDiscountPrice keeps what price was before, and price becomes what
+   * the client pays — so the family price breakdown, split bills and the
+   * payment panel all pick it up without changing, because they already
+   * read price. It is deliberately NOT grossPrice: that already means
+   * "charged before non-payment" on imported rows, and reusing it would
+   * have overwritten the collected figure on rows nobody paid in full.
+   *
+   * applyToSession discounts every dog booked together, which is what
+   * "20% off for the Jeffries family" means. Each dog is discounted by the
+   * percentage of its own price.
+   */
   setAppointmentDiscount: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
       appointmentId: z.number().int().positive(),
       percent: z.number().int().nullable(),
-      reason: z.string().max(300).nullable().optional(),
+      reason: z.string().max(200).nullable().optional(),
       applyToSession: z.boolean().default(false),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      // Same gate every other operational write on an appointment uses.
+      // Without it any authenticated user could discount any appointment.
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
 
       const validated = validateDiscount({ percent: input.percent, reason: input.reason });
       if (!validated.ok) throw new TRPCError({ code: "BAD_REQUEST", message: validated.error });
@@ -172,53 +190,98 @@ const calendarRouter = router({
         .select({
           id: appointments.id,
           tenantId: appointments.tenantId,
+          clientId: appointments.clientId,
           sessionId: appointments.sessionId,
-          price: appointments.price,
-          grossPrice: appointments.grossPrice,
+          status: appointments.status,
         })
         .from(appointments)
-        .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, input.tenantId)))
+        .where(eq(appointments.id, input.appointmentId))
         .limit(1);
       if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
 
-      const rows = input.applyToSession && target.sessionId
-        ? await db
-            .select({ id: appointments.id, price: appointments.price, grossPrice: appointments.grossPrice })
-            .from(appointments)
-            .where(and(
-              eq(appointments.tenantId, input.tenantId),
-              eq(appointments.sessionId, target.sessionId),
-            ))
-        : [{ id: target.id, price: target.price, grossPrice: target.grossPrice }];
+      const columns = {
+        id: appointments.id,
+        price: appointments.price,
+        preDiscountPrice: appointments.preDiscountPrice,
+        membershipId: appointments.membershipId,
+        status: appointments.status,
+      };
+
+      const candidates = input.applyToSession && target.sessionId
+        ? await db.select(columns).from(appointments).where(and(
+            eq(appointments.tenantId, target.tenantId),
+            eq(appointments.sessionId, target.sessionId),
+            // One client's visit, never a stray row sharing a session.
+            eq(appointments.clientId, target.clientId),
+          ))
+        : await db.select(columns).from(appointments).where(eq(appointments.id, target.id));
 
       const now = new Date();
-      const updated: { id: number; gross: string; net: string; discount: string }[] = [];
+      const updated: { id: number; before: string; after: string; discount: string }[] = [];
+      const skipped: { id: number; why: string }[] = [];
 
-      for (const row of rows) {
-        // grossPrice is the original charge. On the first discount it may be
-        // unset, so seed it from price — otherwise re-discounting would
-        // compound, taking 10% off an already-discounted figure.
-        const gross = row.grossPrice ?? row.price ?? null;
-        const breakdown = applyDiscount(gross, validated.percent);
+      for (const row of candidates) {
+        const status = (row.status ?? "").toLowerCase();
+        if (status === "cancelled" || status === "no_show") {
+          skipped.push({ id: row.id, why: "cancelled" });
+          continue;
+        }
+        // A membership-covered dog is already $0. "20% off nothing" is a
+        // false audit entry, not a discount.
+        if (row.membershipId !== null && toCents(row.price) === 0) {
+          skipped.push({ id: row.id, why: "covered by membership" });
+          continue;
+        }
+        // Add-pet deliberately inserts siblings with no price. Labelling
+        // one "20% off" with no amount, then pricing it later, charges the
+        // client in full under a discount badge.
+        const base = row.preDiscountPrice ?? row.price;
+        if (base === null || base === "") {
+          skipped.push({ id: row.id, why: "no price set" });
+          continue;
+        }
+
+        // Money already taken must not exceed the new total.
+        const [paidRow] = await db
+          .select({ paid: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)` })
+          .from(appointmentPayments)
+          .where(and(
+            eq(appointmentPayments.tenantId, target.tenantId),
+            eq(appointmentPayments.appointmentId, row.id),
+          ));
+        const breakdown = applyDiscount(base, validated.percent);
+        if (toCents(paidRow?.paid ?? 0) > breakdown.netCents) {
+          skipped.push({ id: row.id, why: "already paid more than the discounted total" });
+          continue;
+        }
 
         await db.update(appointments).set({
-          grossPrice: gross === null ? null : fromCents(breakdown.grossCents),
-          price: gross === null ? null : fromCents(breakdown.netCents),
+          preDiscountPrice: validated.percent === null ? null : fromCents(breakdown.grossCents),
+          price: fromCents(breakdown.netCents),
           discountPercent: validated.percent,
           discountReason: validated.reason,
           discountAppliedByUserId: validated.percent === null ? null : ctx.user.id,
           discountAppliedAt: validated.percent === null ? null : now,
-        }).where(and(eq(appointments.id, row.id), eq(appointments.tenantId, input.tenantId)));
+        }).where(and(eq(appointments.id, row.id), eq(appointments.tenantId, target.tenantId)));
 
         updated.push({
           id: row.id,
-          gross: fromCents(breakdown.grossCents),
-          net: fromCents(breakdown.netCents),
+          before: fromCents(breakdown.grossCents),
+          after: fromCents(breakdown.netCents),
           discount: fromCents(breakdown.discountCents),
         });
       }
 
-      return { updated, percent: validated.percent, reason: validated.reason };
+      if (updated.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: skipped[0]
+            ? `Can't discount this appointment — ${skipped[0].why}.`
+            : "Nothing to discount.",
+        });
+      }
+
+      return { updated, skipped, percent: validated.percent, reason: validated.reason };
     }),
 
   searchAppointments: operationalProcedure
@@ -338,6 +401,9 @@ const calendarRouter = router({
           serviceType: appointments.serviceType,
           notes: appointments.notes,
           price: appointments.price,
+          preDiscountPrice: appointments.preDiscountPrice,
+          discountPercent: appointments.discountPercent,
+          discountReason: appointments.discountReason,
           trackerToken: appointments.trackerToken,
           staffId: appointments.staffId,
           clientId: appointments.clientId,
@@ -876,7 +942,18 @@ const calendarRouter = router({
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       if (input.serviceType !== undefined) updates.serviceType = input.serviceType;
       if (input.notes !== undefined) updates.notes = input.notes;
-      if (input.price !== undefined) updates.price = input.price;
+      if (input.price !== undefined) {
+        updates.price = input.price;
+        // A hand-typed price replaces whatever the discount produced, so
+        // the discount no longer describes this figure. Leaving it would
+        // label a $120 upgrade "10% off", and re-opening the dialog would
+        // silently snap the price back to the old discounted amount.
+        updates.discountPercent = null;
+        updates.discountReason = null;
+        updates.preDiscountPrice = null;
+        updates.discountAppliedByUserId = null;
+        updates.discountAppliedAt = null;
+      }
       await db.update(appointments).set(updates).where(eq(appointments.id, input.appointmentId));
       return { success: true };
     }),

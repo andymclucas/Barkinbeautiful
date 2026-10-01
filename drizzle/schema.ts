@@ -303,12 +303,19 @@ export const appointments = mysqlTable("appointments", {
   /**
    * Staff discount. 5, 10, 15 or 20 — validated in
    * shared/appointmentDiscount.ts, not by the column type. When set,
-   * grossPrice holds the original and price holds what the client pays, so
-   * family totals and split bills pick the discount up automatically.
+   * preDiscountPrice holds the original and price holds what the client
+   * pays, so family totals and split bills pick the discount up
+   * automatically.
    */
   discountPercent: int("discount_percent"),
   /** Why. Required whenever discountPercent is set; enforced in shared/. */
   discountReason: varchar("discount_reason", { length: 200 }),
+  /**
+   * What `price` was immediately before the discount. Deliberately NOT
+   * grossPrice, which already means "charged before non-payment" for
+   * imported rows — see migration 0064.
+   */
+  preDiscountPrice: decimal("pre_discount_price", { precision: 10, scale: 2 }),
   discountAppliedByUserId: int("discount_applied_by_user_id"),
   discountAppliedAt: timestamp("discount_applied_at"),
   /** Whether the money arrived, per MoeGo. Null where MoeGo has no view. */
