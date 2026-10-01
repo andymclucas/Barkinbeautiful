@@ -674,7 +674,14 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
 export default function Memberships() {
   const [search, setSearch] = useState("");
   const [tierFilter, setTierFilter] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState("active");
+  // Deep link target for the notification bell: /memberships?tab=failed_payments
+  // lands straight on the failed payments it was telling you about.
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === "undefined") return "active";
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    const allowed = ["active", "pending_payment", "paused", "cancelled", "debt", "failed_payments", "receivable"];
+    return requested && allowed.includes(requested) ? requested : "active";
+  });
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState<SortKey>("client");
   const [sortDir, setSortDir] = useState<SortDir>("asc");

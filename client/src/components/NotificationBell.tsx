@@ -1,8 +1,9 @@
-import { Bell, Phone, X } from "lucide-react";
+import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
+import { failedPaymentDetail, failedPaymentHeadline, sortFailedPayments } from "@shared/failedPaymentNotice";
 
 function timeAgo(date: Date | string) {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -22,6 +23,12 @@ export default function NotificationBell() {
   const clearMissedCall = trpc.sms.clearMissedCall.useMutation({
     onSuccess: () => utils.sms.getUnreadPreview.invalidate(),
   });
+  // Failed payments are protectedProcedure, the same level as the unread
+  // preview below, so this adds no exposure: restricted staff see neither.
+  const { data: failedPaymentsRaw } = trpc.memberships.getFailedPayments.useQuery(
+    { tenantId: 1 },
+    { refetchInterval: 120_000 },
+  );
   const { data } = trpc.sms.getUnreadPreview.useQuery(
     { limit: 6 },
     { refetchInterval: 20000, refetchOnWindowFocus: true }
@@ -52,7 +59,11 @@ export default function NotificationBell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const unreadCount = data?.unreadCount ?? 0;
+  const messageCount = data?.unreadCount ?? 0;
+  const failedPayments = sortFailedPayments(failedPaymentsRaw ?? []);
+  // Money that did not arrive belongs in the badge: it is the whole reason
+  // for giving payments their own section rather than burying them.
+  const unreadCount = messageCount + failedPayments.length;
   const recent = data?.recent ?? [];
 
   // Opening a missed call (to see the caller's client record, say) never
@@ -91,8 +102,50 @@ export default function NotificationBell() {
             {unreadCount === 0 ? "You're all caught up" : `${unreadCount} unread`}
           </p>
         </div>
-        {recent.length > 0 ? (
-          <div className="overflow-y-auto flex-1 min-h-0">
+        <div className="overflow-y-auto flex-1 min-h-0">
+          {/* Payments first, deliberately. A failed payment sitting under six
+              voicemails is a payment nobody chases. */}
+          {failedPayments.length > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 bg-amber-50 px-4 py-1.5 dark:bg-amber-950/30">
+                <CreditCard className="h-3 w-3 shrink-0 text-amber-700 dark:text-amber-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                  Payments ({failedPayments.length})
+                </span>
+              </div>
+              {failedPayments.map((item) => (
+                <button
+                  key={`failed-${item.membershipId}`}
+                  className="w-full border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-accent"
+                  onClick={() => setLocation("/memberships?tab=failed_payments")}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
+                      <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600 dark:text-amber-400" />
+                      {failedPaymentHeadline(item)}
+                    </span>
+                    {item.lastFailedAt && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(item.lastFailedAt)}</span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{failedPaymentDetail(item)}</p>
+                </button>
+              ))}
+            </>
+          )}
+
+          {recent.length > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 bg-muted/60 px-4 py-1.5">
+                <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Messages &amp; calls ({messageCount})
+                </span>
+              </div>
+            </>
+          )}
+          {recent.length > 0 ? (
+          <div>
             {recent.map((item: any) => (
               <div
                 key={`${item.kind}-${item.id}`}
@@ -122,9 +175,10 @@ export default function NotificationBell() {
               </div>
             ))}
           </div>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-6 shrink-0">No new notifications</p>
-        )}
+          ) : failedPayments.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No new notifications</p>
+          ) : null}
+        </div>
         <button
           className="w-full shrink-0 text-center text-xs font-medium text-primary py-2.5 border-t bg-background hover:bg-accent transition-colors"
           onClick={() => setLocation("/messages")}
