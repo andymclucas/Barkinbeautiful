@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp } from "lucide-react";
+import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp, Star } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { EmojiPicker } from "@/components/EmojiPicker";
 import { calculateSmsCost } from "@shared/smsSegments";
@@ -168,6 +168,12 @@ export default function Messages() {
   );
 
   const utils = trpc.useUtils();
+  const { data: starredList, refetch: refetchStarred } = trpc.sms.getStarredThreads.useQuery({ tenantId: 1 });
+  const starredKeys = useMemo(() => new Set(starredList ?? []), [starredList]);
+  const setStarred = trpc.sms.setThreadStarred.useMutation({
+    onSuccess: () => refetchStarred(),
+    onError: (error) => toast.error(error.message),
+  });
   // Unread across both kinds, so "mark all" and the badge agree.
   const unreadThreadCount = (threads ?? []).filter((t: any) => (t.unreadCount ?? 0) > 0).length
     + (missedCallsList ?? []).filter((c: any) => !c.readAt).length;
@@ -500,7 +506,15 @@ export default function Messages() {
               <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
             ) : (
               <div className="divide-y">
-                {threads.map((thread: any) => {
+                {[...threads]
+                  .sort((a: any, b: any) => {
+                    // Starred first; everything else keeps the server's
+                    // most-recent-first order.
+                    const sa = starredKeys.has(a.threadKey) ? 1 : 0;
+                    const sb = starredKeys.has(b.threadKey) ? 1 : 0;
+                    return sb - sa;
+                  })
+                  .map((thread: any) => {
                   const displayName = thread.clientName?.trim() || thread.toNumber;
                   return (
                   <div
@@ -510,6 +524,18 @@ export default function Messages() {
                     onMouseMove={hasHover ? trackPointer : undefined}
                     onMouseLeave={hasHover ? closePreview : undefined}
                   >
+                    <button
+                      type="button"
+                      className="shrink-0 p-1 text-muted-foreground transition-colors hover:text-amber-500"
+                      aria-label={starredKeys.has(thread.threadKey) ? "Unstar this conversation" : "Star this conversation"}
+                      title={starredKeys.has(thread.threadKey) ? "Starred — shown first" : "Star this conversation"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setStarred.mutate({ tenantId: 1, threadKey: thread.threadKey, starred: !starredKeys.has(thread.threadKey) });
+                      }}
+                    >
+                      <Star className={`h-4 w-4 ${starredKeys.has(thread.threadKey) ? "fill-amber-400 text-amber-500" : ""}`} />
+                    </button>
                     <button
                       className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
                       onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}

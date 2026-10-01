@@ -15,7 +15,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -6300,6 +6300,42 @@ const smsRouter = router({
    * leaving readByUserId null here would put a hole in the accountability
    * the single-item path provides.
    */
+  /** Star or unstar a conversation. Shared across the salon, not per-user. */
+  setThreadStarred: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      threadKey: z.string().min(1).max(80),
+      starred: z.boolean(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      if (input.starred) {
+        // Starring twice is not an error; the unique key makes it a no-op.
+        await db.insert(messageThreadStars)
+          .values({ tenantId: input.tenantId, threadKey: input.threadKey, starredByUserId: ctx.user.id })
+          .onDuplicateKeyUpdate({ set: { starredByUserId: ctx.user.id } });
+      } else {
+        await db.delete(messageThreadStars).where(and(
+          eq(messageThreadStars.tenantId, input.tenantId),
+          eq(messageThreadStars.threadKey, input.threadKey),
+        ));
+      }
+      return { starred: input.starred };
+    }),
+
+  /** The starred thread keys, for the list to sort and badge by. */
+  getStarredThreads: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [] as string[];
+      const rows = await db.select({ threadKey: messageThreadStars.threadKey })
+        .from(messageThreadStars)
+        .where(eq(messageThreadStars.tenantId, input.tenantId));
+      return rows.map((r) => r.threadKey);
+    }),
+
   markAllThreadsRead: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
     .mutation(async ({ input, ctx }) => {
