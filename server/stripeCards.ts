@@ -27,6 +27,7 @@ import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
 import { getAppBaseUrl } from "./appUrl";
 import { toStripeCents, stripeRecurring, billingCycleFromWeeks } from "@shared/stripeBilling";
+import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 
 /** Find or create the Stripe customer that represents this client. */
 export async function ensureStripeCustomer(clientId: number): Promise<string> {
@@ -86,6 +87,56 @@ export async function createCardSetupLink(clientId: number) {
 }
 
 /**
+ * Create a card setup link and email it to the client.
+ *
+ * Separate from createCardSetupLink, which only returns the URL: emailing a
+ * real client is a deliberate act, so it is its own procedure rather than a
+ * flag. Fails loudly when the client has no email rather than silently
+ * doing nothing, because the staff member is standing there expecting the
+ * client to receive something.
+ *
+ * Not idempotent by design — clicking twice emails twice, the same as any
+ * other "send it again" action. The link itself is single-use at Stripe's
+ * end and the newest one always works.
+ */
+export async function emailCardSetupLink(clientId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+
+  const [client] = await db
+    .select({
+      id: clients.id,
+      tenantId: clients.tenantId,
+      firstName: clients.firstName,
+      email: clients.email,
+      existingPaymentMethodId: clients.stripeDefaultPaymentMethodId,
+    })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1);
+  if (!client || (client.tenantId ?? 1) !== 1) throw new Error("Client not found");
+
+  const to = (client.email ?? "").trim();
+  if (!to) {
+    throw new Error(
+      "This client has no email address on file. Add one first, or use the link below and send it yourself.",
+    );
+  }
+
+  const link = await createCardSetupLink(clientId);
+  const { subject, html } = buildCardLinkEmail({
+    firstName: client.firstName,
+    url: link.url,
+    replacingExistingCard: Boolean(client.existingPaymentMethodId),
+  });
+
+  const { sendEmail } = await import("./email");
+  const emailSent = await sendEmail({ to, subject, html });
+
+  return { ...link, emailSent, emailedTo: emailSent ? to : null };
+}
+
+/**
  * Copy a payment method's display details onto the client and make it the
  * customer's default for invoices.
  *
@@ -105,11 +156,15 @@ export async function attachPaymentMethodToClient(clientId: number, paymentMetho
     });
   }
   const card = method.card;
+  // A wallet or Link payment method has no `card` block, so brand and last4
+  // come back empty even though the method charges fine. Record the method
+  // type so the client page can say something true rather than "no card".
+  const brand = card?.brand ?? (method.type ? String(method.type) : null);
   await db
     .update(clients)
     .set({
       stripeDefaultPaymentMethodId: paymentMethodId,
-      stripeCardBrand: card?.brand ?? null,
+      stripeCardBrand: brand,
       stripeCardLast4: card?.last4 ?? null,
       stripeCardExpMonth: card?.exp_month ?? null,
       stripeCardExpYear: card?.exp_year ?? null,
@@ -117,7 +172,7 @@ export async function attachPaymentMethodToClient(clientId: number, paymentMetho
       ...(customerId ? { stripeCustomerId: customerId } : {}),
     })
     .where(eq(clients.id, clientId));
-  return { brand: card?.brand ?? null, last4: card?.last4 ?? null };
+  return { brand, last4: card?.last4 ?? null };
 }
 
 /** Forget the card. The client is asked for a new one before the next bill. */

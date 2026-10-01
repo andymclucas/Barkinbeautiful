@@ -171,14 +171,30 @@ export function canChargeOffSession(card: {
   return Boolean(card.stripeCustomerId && card.stripeDefaultPaymentMethodId);
 }
 
-/** "Visa ···· 4242 · exp 08/28", or null when no card is saved. */
+/**
+ * "Visa ···· 4242 · exp 08/28", or null when no payment method is saved.
+ *
+ * A saved payment method does NOT always carry card details: a wallet or a
+ * Link payment method arrives with `card` empty, so brand and last4 are
+ * null while the method itself charges perfectly well. Returning null for
+ * those made the client page say "No card saved" about a client who had
+ * just saved one — which sends staff to ask them again, and suggests
+ * membership billing cannot start when it can. Say what is true instead.
+ */
 export function describeCard(card: {
   stripeCardBrand?: string | null;
   stripeCardLast4?: string | null;
   stripeCardExpMonth?: number | null;
   stripeCardExpYear?: number | null;
+  stripeDefaultPaymentMethodId?: string | null;
 }): string | null {
-  if (!card.stripeCardLast4) return null;
+  if (!card.stripeCardLast4) {
+    if (card.stripeCardBrand) {
+      const named = card.stripeCardBrand.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      return `${named} saved · card details unavailable`;
+    }
+    return card.stripeDefaultPaymentMethodId ? "Payment method saved · card details unavailable" : null;
+  }
   const brand = (card.stripeCardBrand ?? "Card").replace(/\b\w/g, (c) => c.toUpperCase());
   const expiry =
     card.stripeCardExpMonth && card.stripeCardExpYear
