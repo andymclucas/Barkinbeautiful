@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { clientFacingPortalError } from "@shared/clientFacingError";
+import { formatMoney, invoiceOutstanding, totalPaid } from "@shared/portalBilling";
 import { CalendarDays, Dog, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,10 @@ type PortalPet = { id: number; name: string; breed: string | null; species: stri
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
 type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; sentAt: Date | string | null };
-type PortalData = { salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string };
+type PortalInvoiceRow = { id: number; invoiceNumber: string | null; total: string | null; status: string | null; paymentMethod: string | null; paidAt: string | Date | null; dueAt: string | Date | null; createdAt: string | Date | null };
+type PortalPaymentRow = { key: string; source: "invoice" | "membership" | "appointment"; amount: number; at: string | Date | number; method: string | null; description: string };
+
+type PortalData = { salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string; invoices: PortalInvoiceRow[]; payments: PortalPaymentRow[] };
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -30,6 +34,111 @@ function portalDate(value: Date | string | null) {
 
 function portalDateTime(value: Date | string) {
   return new Date(value).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+/**
+ * Invoices and payments, as a client would want to check them against their
+ * own bank statement. Recent first, with the rest behind an expander: a
+ * long-standing client has dozens and almost always wants the last few.
+ */
+function BillingSection({ invoices, payments }: { invoices: PortalInvoiceRow[]; payments: PortalPaymentRow[] }) {
+  const [showAllInvoices, setShowAllInvoices] = useState(false);
+  const [showAllPayments, setShowAllPayments] = useState(false);
+
+  const outstanding = invoiceOutstanding(invoices);
+  const paidTotal = totalPaid(payments);
+  const visibleInvoices = showAllInvoices ? invoices : invoices.slice(0, 5);
+  const visiblePayments = showAllPayments ? payments : payments.slice(0, 5);
+
+  const when = (value: string | Date | number | null) =>
+    value ? new Date(value).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" }) : "—";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5 text-primary" /> Invoices &amp; payments</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className={`rounded-xl border p-4 ${outstanding > 0 ? "border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30" : ""}`}>
+            <p className="text-xs text-muted-foreground">Outstanding</p>
+            <p className={`text-2xl font-bold ${outstanding > 0 ? "text-amber-800 dark:text-amber-300" : ""}`}>{formatMoney(outstanding)}</p>
+            {outstanding === 0 && <p className="mt-1 text-xs text-muted-foreground">Nothing owing — thank you.</p>}
+          </div>
+          <div className="rounded-xl border p-4">
+            <p className="text-xs text-muted-foreground">Paid to date</p>
+            <p className="text-2xl font-bold">{formatMoney(paidTotal)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{payments.length} payment{payments.length === 1 ? "" : "s"} on record</p>
+          </div>
+        </div>
+
+        <section>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Invoices ({invoices.length})</h4>
+          {invoices.length === 0 ? (
+            <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No invoices yet.</p>
+          ) : (
+            <>
+              <ul className="space-y-1">
+                {visibleInvoices.map((invoice) => {
+                  const paid = (invoice.status ?? "").toLowerCase() === "paid";
+                  return (
+                    <li key={invoice.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{invoice.invoiceNumber || `Invoice #${invoice.id}`}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {paid ? `Paid ${when(invoice.paidAt)}` : `Issued ${when(invoice.createdAt)}`}
+                          {invoice.paymentMethod ? ` · ${invoice.paymentMethod}` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="font-semibold">{formatMoney(invoice.total)}</span>
+                        <Badge variant={paid ? "outline" : "default"} className={paid ? "text-emerald-700 dark:text-emerald-400" : ""}>
+                          {paid ? "Paid" : invoice.status ?? "Due"}
+                        </Badge>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {invoices.length > 5 && (
+                <Button variant="ghost" size="sm" className="mt-1 w-full" onClick={() => setShowAllInvoices((v) => !v)}>
+                  {showAllInvoices ? "Show fewer" : `Show all ${invoices.length} invoices`}
+                </Button>
+              )}
+            </>
+          )}
+        </section>
+
+        <section>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payments ({payments.length})</h4>
+          {payments.length === 0 ? (
+            <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No payments recorded yet.</p>
+          ) : (
+            <>
+              <ul className="space-y-1">
+                {visiblePayments.map((payment) => (
+                  <li key={payment.key} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{payment.description}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {when(payment.at)}{payment.method ? ` · ${payment.method}` : ""}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-semibold">{formatMoney(payment.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+              {payments.length > 5 && (
+                <Button variant="ghost" size="sm" className="mt-1 w-full" onClick={() => setShowAllPayments((v) => !v)}>
+                  {showAllPayments ? "Show fewer" : `Show all ${payments.length} payments`}
+                </Button>
+              )}
+            </>
+          )}
+        </section>
+      </CardContent>
+    </Card>
+  );
 }
 
 /**
@@ -218,6 +327,8 @@ export default function ClientPortal() {
     </section>
 
     <YourDetailsCard client={data.client} onSaved={() => refetch()} />
+
+    <BillingSection invoices={data.invoices ?? []} payments={data.payments ?? []} />
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Dog className="h-5 w-5 text-primary" /> Your pets</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{data.pets.map(pet => <div key={pet.id} className="rounded-xl border bg-card p-4"><p className="font-semibold">{pet.name}</p><p className="text-sm text-muted-foreground">{pet.breed || pet.species}</p><Badge variant="outline" className="mt-2 capitalize">{pet.status}</Badge></div>)}</CardContent></Card>
 

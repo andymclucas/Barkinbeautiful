@@ -26,7 +26,13 @@ describe("client portal route safety", () => {
 
   it("keeps the client page separate from staff dashboard navigation and payment actions", () => {
     expect(portalPageSource).not.toContain("DashboardLayout");
-    expect(portalPageSource).not.toContain("Payment");
+    // Not the word "Payment": a client may see their own invoices and
+    // payment history. What must never appear is a STAFF payment action.
+    expect(portalPageSource).not.toContain("SplitPaymentPanel");
+    expect(portalPageSource).not.toContain("StripeCardPanel");
+    expect(portalPageSource).not.toContain("trpc.stripeCards.");
+    expect(portalPageSource).not.toContain("payments.record");
+    expect(portalPageSource).not.toContain("chargeNow");
     expect(portalPageSource).not.toContain("Book Appointment");
   });
 });

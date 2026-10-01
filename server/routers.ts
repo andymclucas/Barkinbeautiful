@@ -1,5 +1,6 @@
 import { isValidTimeZone } from "@shared/auditTimestamp";
 import { searchTerms } from "@shared/clientSearchMatch";
+import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
@@ -13,7 +14,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -6381,7 +6382,7 @@ async function buildClientPortalPayload(db: any, access: {
   salonPhone: string | null;
   salonEmail: string | null;
 }) {
-  const [clientPets, clientAppointments, clientMemberships, clientReports, creditBalanceRow] = await Promise.all([
+  const [clientPets, clientAppointments, clientMemberships, clientReports, creditBalanceRow, clientInvoices, clientApptPayments, clientMembershipPayments] = await Promise.all([
     db.select({ id: pets.id, name: pets.name, breed: pets.breed, species: pets.species, status: pets.status })
       .from(pets)
       .where(and(eq(pets.clientId, access.clientId), eq(pets.tenantId, access.tenantId)))
@@ -6443,16 +6444,60 @@ async function buildClientPortalPayload(db: any, access: {
     db.select({ total: sql<string>`COALESCE(SUM(${storeCreditTransactions.amount}), 0)` })
       .from(storeCreditTransactions)
       .where(and(eq(storeCreditTransactions.tenantId, access.tenantId), eq(storeCreditTransactions.clientId, access.clientId))),
+    // The client's own billing history. Capped: a long-standing client has
+    // dozens, and the portal shows the recent ones with a total beneath.
+    db.select({
+      id: invoices.id,
+      invoiceNumber: invoices.invoiceNumber,
+      total: invoices.total,
+      status: invoices.status,
+      paymentMethod: invoices.paymentMethod,
+      paidAt: invoices.paidAt,
+      dueAt: invoices.dueAt,
+      createdAt: invoices.createdAt,
+    })
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, access.tenantId), eq(invoices.clientId, access.clientId)))
+      .orderBy(desc(invoices.createdAt))
+      .limit(60),
+    db.select({
+      id: appointmentPayments.id,
+      amount: appointmentPayments.amount,
+      method: appointmentPayments.method,
+      note: appointmentPayments.note,
+      createdAt: appointmentPayments.createdAt,
+    })
+      .from(appointmentPayments)
+      .where(and(eq(appointmentPayments.tenantId, access.tenantId), eq(appointmentPayments.clientId, access.clientId)))
+      .orderBy(desc(appointmentPayments.createdAt))
+      .limit(60),
+    db.select({
+      id: membershipPayments.id,
+      amount: membershipPayments.amount,
+      status: membershipPayments.status,
+      paidAt: membershipPayments.paidAt,
+    })
+      .from(membershipPayments)
+      .innerJoin(memberships, eq(membershipPayments.membershipId, memberships.id))
+      .where(and(eq(memberships.tenantId, access.tenantId), eq(memberships.clientId, access.clientId)))
+      .orderBy(desc(membershipPayments.paidAt))
+      .limit(60),
   ]);
 
   return {
     salon: { name: access.salonName, phone: access.salonPhone, email: access.salonEmail },
-    client: { firstName: access.clientFirstName, lastName: access.clientLastName, email: access.clientEmail, phone: access.clientPhone },
+    client: { firstName: access.clientFirstName, lastName: access.clientLastName, email: access.clientEmail, phone: access.clientPhone, address: access.clientAddress ?? null },
     pets: clientPets,
     appointments: clientAppointments,
     memberships: clientMemberships,
     groomingCards: clientReports,
     storeCreditBalance: creditBalanceRow[0]?.total ?? "0.00",
+    invoices: clientInvoices,
+    payments: buildPaymentTimeline({
+      invoices: clientInvoices,
+      appointmentPayments: clientApptPayments,
+      membershipPayments: clientMembershipPayments,
+    }),
   };
 }
 
@@ -6619,7 +6664,10 @@ const clientPortalRouter = router({
     }),
 
   issueAccountSetupLink: adminProcedure
-    .input(z.object({ clientId: z.number().int().positive(), email: z.string().trim().email().optional() }))
+    // sendEmail defaults to true so existing callers are unchanged, but the
+    // salon can now create a link and hold it — setting a client up ahead of
+    // time should not mean mailing them before anyone is ready.
+    .input(z.object({ clientId: z.number().int().positive(), email: z.string().trim().email().optional(), sendEmail: z.boolean().default(true) }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -6664,7 +6712,7 @@ const clientPortalRouter = router({
 
       const { sendEmail } = await import("./email");
       const isReset = client.portalLoginEmail === loginEmail; // same address already had an account \u2014 this is a reset, not a first-time setup
-      const emailSent = await sendEmail({
+      const emailSent = input.sendEmail === false ? false : await sendEmail({
         to: loginEmail,
         subject: isReset ? "Reset your Barkin' Beautiful client portal password" : "Set up your Barkin' Beautiful client portal account",
         html: `<p>Hi ${client.firstName || "there"},</p><p>${isReset ? "Here's your link to set a new password for your Barkin' Beautiful client portal account." : "You've been given access to the Barkin' Beautiful client portal, where you can see your upcoming appointments and your dog's grooming status."}</p><p><a href="${setupUrl}">${isReset ? "Reset my password" : "Set up my account"}</a></p><p>This link expires on ${setup.expiresAt.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Brisbane" })}. It does not create staff or administrator access.</p>`,

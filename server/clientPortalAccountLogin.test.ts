@@ -112,7 +112,14 @@ describe("client portal account login isolation", () => {
   it("keeps account, setup and legacy portal pages separate from staff navigation, booking and payments", () => {
     for (const pageSource of [portalPageSource, portalLoginPageSource, portalSetupPageSource]) {
       expect(pageSource).not.toContain("DashboardLayout");
-      expect(pageSource).not.toContain("Payment");
+      // Not the word "Payment" — a client may see their own invoices and
+      // payment history. What must never appear here is a STAFF payment
+      // action: taking money, charging a card, recording a payment.
+      expect(pageSource).not.toContain("SplitPaymentPanel");
+      expect(pageSource).not.toContain("StripeCardPanel");
+      expect(pageSource).not.toContain("trpc.stripeCards.");
+      expect(pageSource).not.toContain("payments.record");
+      expect(pageSource).not.toContain("chargeNow");
       expect(pageSource).not.toContain("Book Appointment");
     }
     expect(portalPageSource).toContain("getPortal.useQuery");
