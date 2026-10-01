@@ -31,9 +31,10 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { CalendarSidebar } from "@/components/CalendarSidebar";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
 import { summariseCalendar } from "@shared/calendarSummary";
+import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
-  FileDown, Check, CheckCircle2, ImagePlus, Mail,
+  FileDown, Check, CheckCircle2, ImagePlus, Mail, ChevronDown, ChevronUp, Clock,
 } from "lucide-react";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
@@ -942,6 +943,20 @@ export default function Calendar() {
     { enabled: apptSearchTerm.trim().length >= 2 },
   );
 
+  // Clicking a search result opens this client's whole appointment list.
+  // Jumping straight to a date was the old behaviour and looked like nothing
+  // happened whenever the match was on the day already shown.
+  const [apptListClient, setApptListClient] = useState<{ clientId: number; name: string } | null>(null);
+  const [showPastAppts, setShowPastAppts] = useState(false);
+  const { data: clientAppts, isFetching: isClientApptsFetching } = trpc.calendar.appointmentsForClient.useQuery(
+    { tenantId: 1, clientId: apptListClient?.clientId ?? 0 },
+    { enabled: !!apptListClient },
+  );
+  const clientApptSplit = useMemo(
+    () => splitAppointmentsByTime(clientAppts ?? [], new Date()),
+    [clientAppts],
+  );
+
   const jumpToAppointment = (scheduledStart: string | Date) => {
     // Don't use setHours(0,0,0,0) here — that computes midnight in whatever
     // timezone the browser's system clock happens to be set to, which can
@@ -1796,7 +1811,14 @@ export default function Calendar() {
                         type="button"
                         role="option"
                         className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2"
-                        onClick={() => jumpToAppointment(r.scheduledStart)}
+                        onClick={() => {
+                          setApptSearchOpen(false);
+                          setShowPastAppts(false);
+                          setApptListClient({
+                            clientId: r.clientId,
+                            name: [r.clientFirstName, r.clientLastName].filter(Boolean).join(" ") || "This client",
+                          });
+                        }}
                       >
                         <span className="min-w-0 flex-1">
                           <span className="font-semibold block truncate">{r.petName ?? "Unnamed pet"}</span>
@@ -1927,6 +1949,107 @@ export default function Calendar() {
       </div>
 
       {/* ── New Appointment Dialog ── */}
+      {/* A client's appointments, opened from the calendar search. Upcoming
+          first because that is the question being asked ("when are they next
+          in?"); history collapses because it rarely is. */}
+      <Dialog open={!!apptListClient} onOpenChange={(v) => { if (!v) { setApptListClient(null); setShowPastAppts(false); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-primary" />
+              {apptListClient?.name}
+            </DialogTitle>
+          </DialogHeader>
+
+          {isClientApptsFetching ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Loading appointments…</p>
+          ) : (
+            <div className="max-h-[60vh] space-y-4 overflow-y-auto">
+              <section>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Upcoming ({clientApptSplit.upcoming.length})
+                </h4>
+                {clientApptSplit.upcoming.length === 0 ? (
+                  <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+                    Nothing booked. Use New Appointment to book them in.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {clientApptSplit.upcoming.map((a) => (
+                      <li key={a.id}>
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
+                          onClick={() => { setApptListClient(null); jumpToAppointment(a.scheduledStart); }}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{a.petName ?? "Unnamed pet"}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {SERVICE_LABELS[a.serviceType] ?? a.serviceType}
+                              {a.staffName ? ` · ${a.staffName}` : ""}
+                            </span>
+                          </span>
+                          <span className="shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">
+                            {formatAestDate(a.scheduledStart)}
+                            <br />
+                            {new Date(a.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: getActiveTimeZone() })}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              {clientApptSplit.past.length > 0 && (
+                <section>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted"
+                    onClick={() => setShowPastAppts((open) => !open)}
+                    aria-expanded={showPastAppts}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5" />
+                      Previous appointments ({clientApptSplit.past.length})
+                    </span>
+                    {showPastAppts ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </button>
+                  {showPastAppts && (
+                    <ul className="mt-1 space-y-1">
+                      {clientApptSplit.past.map((a) => (
+                        <li key={a.id}>
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
+                            onClick={() => { setApptListClient(null); jumpToAppointment(a.scheduledStart); }}
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium">{a.petName ?? "Unnamed pet"}</span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                {SERVICE_LABELS[a.serviceType] ?? a.serviceType}
+                                {["cancelled", "no_show"].includes((a.status ?? "").toLowerCase()) ? ` · ${a.status}` : ""}
+                              </span>
+                            </span>
+                            <span className="shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">
+                              {formatAestDate(a.scheduledStart)}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setApptListClient(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>

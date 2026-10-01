@@ -159,6 +159,8 @@ const calendarRouter = router({
           workflowState: appointments.workflowState,
           status: appointments.status,
           serviceType: appointments.serviceType,
+          // Needed so a result can open that client's full appointment list.
+          clientId: appointments.clientId,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           petName: pets.name,
@@ -175,6 +177,50 @@ const calendarRouter = router({
         .orderBy(desc(appointments.scheduledStart))
         .limit(50);
       return rows;
+    }),
+
+  /**
+   * Every appointment for one client, for the calendar's client search.
+   *
+   * operationalProcedure and a tenant check, matching getAppointments below:
+   * approved staff already see every appointment on the calendar, so listing
+   * one client's is the same data arranged differently, not new exposure.
+   * Splitting upcoming from past is shared/appointmentHistorySplit's job.
+   */
+  appointmentsForClient: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number().int().positive(), limit: z.number().int().min(1).max(500).default(200) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      if (ctx.user.role === "staff") {
+        const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+        if (portalStaff && portalStaff.tenantId !== input.tenantId) {
+          throw new Error("This calendar is not available to your salon staff profile");
+        }
+      }
+      return db
+        .select({
+          id: appointments.id,
+          scheduledStart: appointments.scheduledStart,
+          scheduledEnd: appointments.scheduledEnd,
+          status: appointments.status,
+          workflowState: appointments.workflowState,
+          serviceType: appointments.serviceType,
+          price: appointments.price,
+          petId: appointments.petId,
+          petName: pets.name,
+          staffId: appointments.staffId,
+          staffName: staff.name,
+        })
+        .from(appointments)
+        .leftJoin(pets, eq(appointments.petId, pets.id))
+        .leftJoin(staff, eq(appointments.staffId, staff.id))
+        .where(and(
+          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.clientId, input.clientId),
+        ))
+        .orderBy(desc(appointments.scheduledStart))
+        .limit(input.limit);
     }),
 
   getAppointments: operationalProcedure
