@@ -3671,22 +3671,65 @@ const membershipsRouter = router({
       return { success: true, failedPaymentCount: newFailCount, retryDate: retryDate.toISOString(), suspended: newFailCount >= 2 };
     }),
 
+  /**
+   * Close off a failed payment, saying which way it went.
+   *
+   * "paid" and "written off" look identical afterwards unless we record
+   * which, and they are not the same thing: one is money that arrived, the
+   * other is money given up on. A write-off also writes a ledger entry, so
+   * the books show the decision rather than the failure simply vanishing.
+   *
+   * This used to set status "active" unconditionally, which would have
+   * resurrected a cancelled membership the first time someone tidied up
+   * after a client who had left. Only a status the failure itself caused
+   * is lifted.
+   */
   resolvePaymentFailure: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
       membershipId: z.number(),
+      outcome: z.enum(["paid", "written_off"]).default("paid"),
+      note: z.string().max(500).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
+
+      const [membership] = await db
+        .select({
+          id: memberships.id,
+          tenantId: memberships.tenantId,
+          status: memberships.status,
+          pricePerCycle: memberships.pricePerCycle,
+        })
+        .from(memberships)
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId)))
+        .limit(1);
+      if (!membership) throw new TRPCError({ code: "NOT_FOUND", message: "Membership not found" });
+
+      const liftable = membership.status === "paused" || membership.status === "pending_payment";
+
       await db.update(memberships).set({
         failedPaymentCount: 0,
         lastFailedPaymentAt: null,
         paymentRetryScheduledAt: null,
-        status: "active",
         bookingSuspended: false,
-      }).where(eq(memberships.id, input.membershipId));
-      return { success: true };
+        ...(liftable ? { status: "active" as const } : {}),
+      }).where(and(eq(memberships.id, membership.id), eq(memberships.tenantId, input.tenantId)));
+
+      if (input.outcome === "written_off") {
+        await db.insert(membershipLedgerEntries).values({
+          tenantId: membership.tenantId,
+          membershipId: membership.id,
+          entryType: "credit_adjustment",
+          amount: String(membership.pricePerCycle ?? "0"),
+          source: "manual",
+          note: input.note?.trim() || "Failed payment written off",
+          createdByUserId: ctx.user.id,
+        });
+      }
+
+      return { success: true, outcome: input.outcome };
     }),
 
   markDebtPaid: protectedProcedure

@@ -1347,18 +1347,32 @@ export default function Memberships() {
               {confirmResolve?.petName ? ` (${confirmResolve.petName})` : ""} and restore their membership to <strong className="text-foreground">active</strong>.
             </p>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConfirmResolve(null)}>Cancel</Button>
+          {/* Two outcomes, because they are not the same thing. One is money
+              that arrived; the other is money given up on, and only the
+              second writes a credit adjustment to the ledger. */}
+          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
             <Button
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
               disabled={resolveFailureMutation.isPending}
               onClick={() => {
                 if (!confirmResolve) return;
-                resolveFailureMutation.mutate({ membershipId: confirmResolve.id });
+                resolveFailureMutation.mutate({ membershipId: confirmResolve.id, outcome: "paid" });
               }}
             >
-              {resolveFailureMutation.isPending ? "Resolving..." : "Confirm Resolve"}
+              {resolveFailureMutation.isPending ? "Saving…" : "Payment received"}
             </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={resolveFailureMutation.isPending}
+              onClick={() => {
+                if (!confirmResolve) return;
+                resolveFailureMutation.mutate({ membershipId: confirmResolve.id, outcome: "written_off" });
+              }}
+            >
+              {resolveFailureMutation.isPending ? "Saving…" : "Write off — not collecting"}
+            </Button>
+            <Button variant="ghost" className="w-full" onClick={() => setConfirmResolve(null)}>Cancel</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
