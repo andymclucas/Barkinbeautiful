@@ -6051,7 +6051,7 @@ const smsRouter = router({
   // Lightweight, frequently-polled preview for the notification bell.
   getUnreadPreview: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(5) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { unreadCount: 0, recent: [] };
       const unread = await db.select({
@@ -6085,9 +6085,16 @@ const smsRouter = router({
       const [{ count: callCount }] = await db.select({ count: sql<number>`count(*)` }).from(missedCalls)
         .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)));
 
+      // Who read a notification is management information: Lauren and Andy
+      // only. Filtered here, not in the UI — hiding it client-side would
+      // still ship every groomer the names.
+      const canSeeReaders = canAdministerStaff(ctx.user);
+      const hideReader = <T extends { readByName?: unknown }>(row: T): T =>
+        canSeeReaders ? row : { ...row, readByName: null };
+
       const combined = [
-        ...unread.map(m => ({ kind: "message" as const, id: m.id, body: m.body, at: m.sentAt, clientId: m.clientId, toNumber: m.toNumber, clientName: m.clientName, readAt: m.readAt, readByName: m.readByName })),
-        ...unreadCalls.map(c => ({ kind: "missed_call" as const, id: c.id, body: c.transcriptText || "(no transcript available)", at: c.receivedAt, clientId: c.clientId, toNumber: c.fromNumber, clientName: c.callerName || c.clientName, readAt: c.readAt, readByName: c.readByName })),
+        ...unread.map(m => hideReader({ kind: "message" as const, id: m.id, body: m.body, at: m.sentAt, clientId: m.clientId, toNumber: m.toNumber, clientName: m.clientName, readAt: m.readAt, readByName: m.readByName })),
+        ...unreadCalls.map(c => hideReader({ kind: "missed_call" as const, id: c.id, body: c.transcriptText || "(no transcript available)", at: c.receivedAt, clientId: c.clientId, toNumber: c.fromNumber, clientName: c.callerName || c.clientName, readAt: c.readAt, readByName: c.readByName })),
       ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, input.limit);
 
       return { unreadCount: Number(messageCount) + Number(callCount), recent: combined };
