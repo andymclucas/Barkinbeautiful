@@ -8,10 +8,15 @@ import {
  * Access control, so it fails closed everywhere it can fail.
  */
 describe("staff sections", () => {
-  it("covers exactly the ten sidebar sections, in sidebar order", () => {
+  it("covers the ten sidebar sections in order, plus the mass-text capability", () => {
+    // mass_text is not a sidebar entry. It is a capability inside Messages,
+    // separated because reading the inbox and texting every client at once
+    // are not the same permission — the second has no undo and a finite
+    // SMS balance behind it. It shares the /messages path, so granting it
+    // also unlocks the page, which is intended.
     expect(STAFF_SECTION_KEYS).toEqual([
       "appointments", "workflow", "pricing", "memberships", "clients",
-      "analytics", "staff", "messages", "email_campaigns", "reporting",
+      "analytics", "staff", "messages", "mass_text", "email_campaigns", "reporting",
     ]);
     // Every section must map to a real route, or a tick box grants nothing.
     for (const s of STAFF_SECTIONS) expect(s.path.startsWith("/")).toBe(true);

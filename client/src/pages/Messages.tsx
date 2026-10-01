@@ -1,5 +1,8 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { MassTextDialog } from "@/components/MassTextDialog";
+import { canAdministerStaff } from "@shared/staffAdministrators";
+import { canEditSection } from "@shared/staffPermissions";
 import { ThreadClientContext } from "@/components/ThreadClientContext";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useHasHover } from "@/hooks/useMobile";
@@ -168,6 +171,13 @@ export default function Messages() {
   );
 
   const utils = trpc.useUtils();
+  // The button only appears for someone who may actually send. The server
+  // checks again — this just avoids offering what would be refused.
+  const { data: me } = trpc.auth.me.useQuery();
+  const { data: myStaff } = trpc.staff.getMyProfile.useQuery(undefined, { retry: false });
+  const canMassText =
+    canAdministerStaff(me ? { id: me.id, email: me.email } : null) ||
+    canEditSection(myStaff ?? null, "mass_text");
   const { data: starredList, refetch: refetchStarred } = trpc.sms.getStarredThreads.useQuery({ tenantId: 1 });
   const starredKeys = useMemo(() => new Set(starredList ?? []), [starredList]);
   const setStarred = trpc.sms.setThreadStarred.useMutation({
@@ -488,17 +498,20 @@ export default function Messages() {
                   {threads?.length ?? 0} open
                 </span>
               </CardTitle>
-              {unreadThreadCount > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  disabled={markAllRead.isPending}
-                  onClick={() => markAllRead.mutate({ tenantId: 1 })}
-                >
-                  {markAllRead.isPending ? "Marking…" : "Mark all as read"}
-                </Button>
-              )}
+              <div className="flex items-center gap-1">
+                {canMassText && <MassTextDialog />}
+                {unreadThreadCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={markAllRead.isPending}
+                    onClick={() => markAllRead.mutate({ tenantId: 1 })}
+                  >
+                    {markAllRead.isPending ? "Marking…" : "Mark all as read"}
+                  </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
