@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLocation, useParams } from "wouter";
+import { clientFacingPortalError } from "@shared/clientFacingError";
 import { CalendarDays, Dog, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,11 @@ function portalDateTime(value: Date | string) {
 export default function ClientPortal() {
   const { token } = useParams<{ token: string }>();
   const [, navigate] = useLocation();
-  const tokenPortal = trpc.clientPortal.getPortal.useQuery({ token: token ?? "" }, { enabled: Boolean(token) });
+  // retry: false matters here. A bad, expired or malformed token can never
+  // succeed, but the default three retries with backoff left the client
+  // staring at a loading skeleton for ~7 seconds before the error appeared —
+  // which reads as the site hanging, right after they entered a card.
+  const tokenPortal = trpc.clientPortal.getPortal.useQuery({ token: token ?? "" }, { enabled: Boolean(token), retry: false });
   const accountPortal = trpc.clientPortal.getMyPortal.useQuery(undefined, { enabled: !token, retry: false });
   const logout = trpc.clientPortal.logout.useMutation({ onSuccess: () => navigate("/portal/login") });
   const data = (token ? tokenPortal.data : accountPortal.data) as PortalData | undefined;
@@ -78,7 +83,7 @@ export default function ClientPortal() {
   });
 
   if (isLoading) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 p-6"><div className="mx-auto max-w-4xl animate-pulse space-y-5"><div className="h-24 rounded-2xl bg-muted" /><div className="grid gap-4 sm:grid-cols-3">{[1, 2, 3].map(item => <div key={item} className="h-32 rounded-xl bg-muted" />)}</div></div></main>;
-  if (error || !data) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 grid place-items-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>{token ? "Portal link unavailable" : "Client sign in required"}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{error?.message ?? (token ? "Please ask the salon for a new secure portal link." : "Please sign in to view your client portal.")}</p>{!token && <Button onClick={() => navigate("/portal/login")}>Go to client sign in</Button>}</CardContent></Card></main>;
+  if (error || !data) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 grid place-items-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>{token ? "Portal link unavailable" : "Client sign in required"}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{clientFacingPortalError(error?.message, Boolean(token))}</p>{!token && <Button onClick={() => navigate("/portal/login")}>Go to client sign in</Button>}</CardContent></Card></main>;
 
   const upcoming = data.appointments.filter(appointment => new Date(appointment.scheduledStart).getTime() >= Date.now() && !["cancelled", "no_show"].includes(appointment.status));
   const past = data.appointments.filter(appointment => !upcoming.includes(appointment));
