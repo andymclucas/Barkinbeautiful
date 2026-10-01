@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 /**
  * The card a client has on file, and how to get one.
  *
- * The salon never types a card number: "Send card link" produces a Stripe
+ * The salon never types a card number: the card-link buttons produce a Stripe
  * hosted page, the client enters the card there, and Stripe tells us the
  * payment method through the webhook. Nothing on this panel can see or set
  * card details, which is what keeps the business out of PCI scope.
@@ -97,7 +97,19 @@ export function StripeCardPanel({ clientId }: { clientId: number }) {
             title={config?.configured ? undefined : "Stripe is not configured on this deployment"}
           >
             {createLink.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
-            {card?.description ? "New card link" : "Send card link"}
+            {card?.description ? "New card link" : "Create card link"}
+          </Button>
+          {/* The button above only produces a link for a human to send. This
+              one actually emails it, which is what "send" implied all along. */}
+          <Button
+            size="sm"
+            className="gap-1.5"
+            disabled={emailLink.isPending || !config?.configured}
+            onClick={() => emailLink.mutate({ clientId })}
+            title={config?.configured ? "Create the link and email it to this client" : "Stripe is not configured on this deployment"}
+          >
+            {emailLink.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+            {emailLink.isPending ? "Emailing…" : "Email to client"}
           </Button>
           {card?.description && (
             <Button
