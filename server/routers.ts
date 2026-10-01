@@ -70,20 +70,36 @@ import {
 /**
  * May this signed-in person CHANGE things in this section?
  *
- * The owner always may. Otherwise it needs an explicit grant: admin rights
- * plus that section ticked. Returns the staff row so callers can scope by
- * tenant without a second query.
+ * ⚠ NOTHING CALLS THIS YET, DELIBERATELY. Section grants are additive only:
+ * they widen a restricted staff account's sidebar to whatever the owner
+ * ticked, and they take nothing away from anyone. Every existing authority
+ * is unchanged.
  *
- * Deliberately NOT applied blanket to every procedure yet: four groomers
- * hold users.role = "admin" and would lose the salon floor the moment it
- * was. It gates the surfaces wired to it, and the grant widens restricted
- * accounts; moving the blanket admins onto grants is a follow-up.
+ * It is kept as the hook for the day that changes. Applying it to a
+ * procedure is what turns a grant into a restriction - so if you add a call,
+ * know that the four groomers holding users.role = "admin" are relying on
+ * blanket access until they have been given grants that cover their work.
+ *
+ * Layered ON TOP of the procedure's own gate, never instead of it. The
+ * procedure has already decided the caller is allowed in at all; this asks
+ * the narrower question of whether their grant covers this section.
+ *
+ *   owner                  -> always
+ *   has admin rights       -> only the sections ticked for them
+ *   no grant at all        -> unchanged, whatever the procedure already said
+ *
+ * The last line is what makes this safe to deploy to a working salon. Four
+ * groomers hold users.role = "admin" because that was how they were given
+ * the floor; enforcing a grant they do not have would lock them out
+ * mid-shift. Giving someone a grant is therefore the act that starts
+ * restricting them, and it is reversible by clearing it.
  */
 async function requireSection(db: any, user: { id: number; role: string; email?: string | null }, section: StaffSection) {
   if (canAdministerStaff(user)) return null;
   const [member] = await db.select({
     id: staff.id, tenantId: staff.tenantId, isAdmin: staff.isAdmin, adminSections: staff.adminSections,
   }).from(staff).where(eq(staff.userId, user.id)).limit(1);
+  if (!member?.isAdmin) return member ?? null;
   if (!canEditSection(member, section)) {
     throw new Error(`You do not have permission to change ${sectionLabel(section)}.`);
   }
