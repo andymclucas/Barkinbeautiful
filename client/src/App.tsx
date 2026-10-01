@@ -43,6 +43,7 @@ const StaffInvitationAccept = lazy(() => import("./pages/StaffInvitationAccept")
 const ClientPortal = lazy(() => import("./pages/ClientPortal"));
 const ClientPortalLogin = lazy(() => import("./pages/ClientPortalLogin"));
 const ClientPortalSetup = lazy(() => import("./pages/ClientPortalSetup"));
+const ClientPortalCardResult = lazy(() => import("./pages/ClientPortalCardResult"));
 
 /** Small, immediate visual feedback while a page chunk downloads — never
  * leaves the screen blank, even on a slow connection. */
@@ -94,6 +95,12 @@ function Router() {
       <Route path="/portal" component={ClientPortal} />
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/setup/:token" component={ClientPortalSetup} />
+      {/* Stripe returns here after a card setup link. These must stay above
+          "/portal/:token", which would otherwise match "card-saved" as a
+          token and show the client an error right after they handed over
+          their card. */}
+      <Route path="/portal/card-saved">{() => <ClientPortalCardResult saved />}</Route>
+      <Route path="/portal/card-cancelled">{() => <ClientPortalCardResult saved={false} />}</Route>
       <Route path="/portal/:token" component={ClientPortal} />
 
       <Route component={NotFound} />
