@@ -155,7 +155,7 @@ export default function Login() {
           >
             <img src="/groomigo_logo.png" alt="Groomigo" style={{ height: "80px", width: "auto" }} />
           </div>
-          <p className="mt-3 text-sm font-medium tracking-widest uppercase" style={{ color: "#7c3aedaa", letterSpacing: "0.2em" }}>
+          <p className="mt-3 text-sm font-medium tracking-widest uppercase" style={{ color: "var(--auth-text-brand-mid)", letterSpacing: "0.2em" }}>
             Grooming Salon Operating System
           </p>
         </div>
@@ -177,7 +177,7 @@ export default function Login() {
               <div className="text-center py-4">
                 <div className="text-4xl mb-3">✅</div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">Password updated</h3>
-                <p className="text-sm mb-5" style={{ color: "#6b7280" }}>
+                <p className="text-sm mb-5" style={{ color: "var(--auth-text-muted)" }}>
                   Your password has been changed. You can sign in with it now.
                 </p>
                 <Button
@@ -191,12 +191,12 @@ export default function Login() {
             ) : (
               <>
                 <h2 className="text-xl font-semibold text-foreground mb-1">Set a new password</h2>
-                <p className="text-sm mb-6" style={{ color: "#6b7280" }}>
+                <p className="text-sm mb-6" style={{ color: "var(--auth-text-muted)" }}>
                   Choose a new password for <strong className="text-foreground">{resetParams.email}</strong>
                 </p>
                 <form onSubmit={handleCompleteReset} className="space-y-5">
                   <div className="space-y-1.5">
-                    <Label htmlFor="reset-password" className="text-sm" style={{ color: "#4b5563" }}>New password</Label>
+                    <Label htmlFor="reset-password" className="text-sm" style={{ color: "var(--auth-text-body)" }}>New password</Label>
                     <div className="relative">
                       <Input
                         id="reset-password"
@@ -213,14 +213,14 @@ export default function Login() {
                         type="button"
                         onClick={() => setShowResetPassword(!showResetPassword)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                        style={{ color: "#9ca3af" }}
+                        style={{ color: "var(--auth-text-faint)" }}
                       >
                         {showResetPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="reset-password-confirm" className="text-sm" style={{ color: "#4b5563" }}>Confirm new password</Label>
+                    <Label htmlFor="reset-password-confirm" className="text-sm" style={{ color: "var(--auth-text-body)" }}>Confirm new password</Label>
                     <Input
                       id="reset-password-confirm"
                       type={showResetPassword ? "text" : "password"}
@@ -252,11 +252,11 @@ export default function Login() {
           ) : (
           <>
           <h2 className="text-xl font-semibold text-foreground mb-1">Sign in</h2>
-          <p className="text-sm mb-6" style={{ color: "#6b7280" }}>Enter your credentials to access the dashboard</p>
+          <p className="text-sm mb-6" style={{ color: "var(--auth-text-muted)" }}>Enter your credentials to access the dashboard</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm" style={{ color: "#4b5563" }}>Email address</Label>
+              <Label htmlFor="email" className="text-sm" style={{ color: "var(--auth-text-body)" }}>Email address</Label>
               <Input
                 id="email"
                 type="email"
@@ -279,7 +279,7 @@ export default function Login() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-sm" style={{ color: "#4b5563" }}>Password</Label>
+              <Label htmlFor="password" className="text-sm" style={{ color: "var(--auth-text-body)" }}>Password</Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -304,7 +304,7 @@ export default function Login() {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                  style={{ color: "#9ca3af" }}
+                  style={{ color: "var(--auth-text-faint)" }}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -362,7 +362,7 @@ export default function Login() {
               type="button"
               onClick={() => { setForgotOpen(true); setForgotEmail(email); setForgotSent(false); }}
               className="text-xs transition-colors hover:underline"
-              style={{ color: "#7c3aed80" }}
+              style={{ color: "var(--auth-text-brand-soft)" }}
               onMouseEnter={e => (e.currentTarget.style.color = "#7c3aed")}
               onMouseLeave={e => (e.currentTarget.style.color = "#7c3aed80")}
             >
@@ -370,7 +370,7 @@ export default function Login() {
             </button>
           </div>
 
-          <p className="text-center text-xs mt-4" style={{ color: "#6b7280" }}>
+          <p className="text-center text-xs mt-4" style={{ color: "var(--auth-text-muted)" }}>
             Barkin Beautiful Grooming Studio &amp; Playgroup
           </p>
           </>
@@ -380,10 +380,10 @@ export default function Login() {
 
         {/* Slogan footer — fade+slide-up with 300ms delay */}
         <div className="text-center mt-10 space-y-1" style={slideStyle(300)}>
-          <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: "#7c3aed66", letterSpacing: "0.25em" }}>
+          <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: "var(--auth-text-brand-faint)", letterSpacing: "0.25em" }}>
             Powered by Groomigo
           </p>
-          <p className="text-sm italic" style={{ color: "#9ca3af" }}>
+          <p className="text-sm italic" style={{ color: "var(--auth-text-faint)" }}>
             'Your grooming salon's best mate...well, amigo.'
           </p>
         </div>
@@ -408,7 +408,7 @@ export default function Login() {
             <button
               onClick={() => setForgotOpen(false)}
               className="absolute top-4 right-4 transition-colors"
-              style={{ color: "#9ca3af" }}
+              style={{ color: "var(--auth-text-faint)" }}
               onMouseEnter={e => (e.currentTarget.style.color = "#fff")}
               onMouseLeave={e => (e.currentTarget.style.color = "#9ca3af")}
             >
@@ -419,13 +419,13 @@ export default function Login() {
               <div className="text-center py-4">
                 <div className="text-4xl mb-3">📬</div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">Check your inbox</h3>
-                <p className="text-sm" style={{ color: "#6b7280" }}>
+                <p className="text-sm" style={{ color: "var(--auth-text-muted)" }}>
                   If an account exists for <strong className="text-foreground">{forgotEmail}</strong>, a password reset link has been sent.
                 </p>
                 <button
                   onClick={() => setForgotOpen(false)}
                   className="mt-5 text-sm font-medium transition-colors"
-                  style={{ color: "#7c3aed" }}
+                  style={{ color: "var(--auth-text-brand)" }}
                 >
                   Back to sign in
                 </button>
@@ -433,12 +433,12 @@ export default function Login() {
             ) : (
               <>
                 <h3 className="text-lg font-semibold text-foreground mb-1">Reset your password</h3>
-                <p className="text-sm mb-5" style={{ color: "#6b7280" }}>
+                <p className="text-sm mb-5" style={{ color: "var(--auth-text-muted)" }}>
                   Enter your email address and we'll send you a reset link.
                 </p>
                 <form onSubmit={handleForgot} className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="forgot-email" className="text-sm" style={{ color: "#4b5563" }}>Email address</Label>
+                    <Label htmlFor="forgot-email" className="text-sm" style={{ color: "var(--auth-text-body)" }}>Email address</Label>
                     <Input
                       id="forgot-email"
                       type="email"

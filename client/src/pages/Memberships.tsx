@@ -274,7 +274,7 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
               <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">Checking the dog’s recorded weight…</p>
             ) : requiresManualWeightSelection ? (
               <div className="space-y-3">
-                <div className="rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-950">
+                <div className="rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
                   <p className="font-medium">A verified recorded weight is not available for this dog.</p>
                   <p className="mt-1 text-xs text-amber-900 dark:text-amber-200">Choose the membership tier first, then an approved weight band. This fallback only sets the membership package and does not change the dog’s recorded weight.</p>
                 </div>
@@ -346,7 +346,7 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
           </div>
 
           {selectedPackage && (
-            <div className="grid grid-cols-2 gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950">
+            <div className="grid grid-cols-2 gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950 dark:text-emerald-100">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">Weekly price</p>
                 <p className="mt-1 text-lg font-bold">${selectedPackage.weeklyPrice.toFixed(2)} / week</p>
@@ -993,7 +993,7 @@ export default function Memberships() {
                             <Button
                               size="sm"
                               variant="outline"
-                              className="gap-1.5 text-xs h-7 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-50 dark:bg-red-950/40"
+                              className="gap-1.5 text-xs h-7 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40"
                               onClick={() => setConfirmRecordFailure({
                                 id: fp.membershipId,
                                 clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),

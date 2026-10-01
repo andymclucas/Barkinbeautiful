@@ -402,12 +402,12 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-blue-950"><TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" /> Timing performance</h3>
             <p className="mt-0.5 text-xs text-blue-800 dark:text-blue-300">Completed workflow stages for the selected dates. Waiting time between stages is excluded from stage averages.</p>
           </div>
-          <Button type="button" size="sm" variant="outline" className="shrink-0 gap-1 border-blue-200 dark:border-blue-900/50 bg-card text-blue-800 dark:text-blue-300 hover:bg-blue-50 dark:bg-blue-950/40" onClick={exportTimingCsv} disabled={!(data as any)?.timingAnalytics} title="Download the selected timing analytics as a CSV file"><Download className="h-3.5 w-3.5" /> Export CSV</Button>
+          <Button type="button" size="sm" variant="outline" className="shrink-0 gap-1 border-blue-200 dark:border-blue-900/50 bg-card text-blue-800 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40" onClick={exportTimingCsv} disabled={!(data as any)?.timingAnalytics} title="Download the selected timing analytics as a CSV file"><Download className="h-3.5 w-3.5" /> Export CSV</Button>
         </div>
         <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-blue-100 dark:border-blue-950/50 bg-card/70 p-2.5">
           <div><Label htmlFor={`timing-start-${staffId}`} className="text-[11px] text-muted-foreground">From</Label><Input id={`timing-start-${staffId}`} type="date" className="mt-1 h-8 w-[142px] bg-card text-xs" value={timingRange.start} max={timingRange.end} onChange={event => setTimingRange(range => ({ ...range, start: event.target.value }))} /></div>
           <div><Label htmlFor={`timing-end-${staffId}`} className="text-[11px] text-muted-foreground">To</Label><Input id={`timing-end-${staffId}`} type="date" className="mt-1 h-8 w-[142px] bg-card text-xs" value={timingRange.end} min={timingRange.start} max={dateInputValue(new Date())} onChange={event => setTimingRange(range => ({ ...range, end: event.target.value }))} /></div>
-          <div className="flex flex-wrap gap-1 pb-0.5"><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:bg-blue-950/50" onClick={() => setTimingRange(makeTimingRange(7))}>Last 7 days</Button><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:bg-blue-950/50" onClick={() => setTimingRange(makeTimingRange(28))}>Last 4 weeks</Button></div>
+          <div className="flex flex-wrap gap-1 pb-0.5"><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-950/50" onClick={() => setTimingRange(makeTimingRange(7))}>Last 7 days</Button><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-950/50" onClick={() => setTimingRange(makeTimingRange(28))}>Last 4 weeks</Button></div>
           <p className="ml-auto pb-1 text-[11px] text-muted-foreground">{(data as any).timingAnalytics?.range?.days ?? 0} days selected</p>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -509,7 +509,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             <div className="flex items-start gap-2 min-w-0">
               <Smartphone className="h-4 w-4 text-violet-700 dark:text-violet-300 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-violet-950">Groomigo mobile access</p>
+                <p className="text-sm font-semibold text-violet-950 dark:text-violet-100">Groomigo mobile access</p>
                 <p className="text-xs text-violet-800 dark:text-violet-300">{portalStatus === "approved" ? "Approved: this staff member can view assigned appointments and update workflow stages." : portalStatus === "awaiting_approval" ? "Account setup is complete and waiting for administrator approval." : portalStatus === "invited" ? "Invitation sent; waiting for the staff member to set up their account." : portalStatus === "revoked" ? "Portal access is currently revoked." : "Send a secure invitation for phone or iPad access."}</p>
               </div>
             </div>

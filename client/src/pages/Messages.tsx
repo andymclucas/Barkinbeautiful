@@ -347,7 +347,7 @@ export default function Messages() {
             <CardTitle className="text-base flex items-center gap-2">
               <PhoneMissed className="h-4 w-4 text-amber-600 dark:text-amber-400" /> Missed Calls
               {missedCallsList && missedCallsList.filter(c => !c.readAt).length > 0 && (
-                <Badge className="bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:bg-amber-950/50">
+                <Badge className="bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/50">
                   {missedCallsList.filter(c => !c.readAt).length} unread
                 </Badge>
               )}
@@ -409,7 +409,7 @@ export default function Messages() {
                     {/* Only allow deletion when there is no voicemail recording */}
                     {!call.recordingUrl && (
                       <button
-                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 dark:bg-red-950/50 text-muted-foreground hover:text-red-600 dark:text-red-400"
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 dark:hover:bg-red-950/50 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
                         title="Delete this missed call"
                         onClick={() => {
                           if (confirm("Delete this missed call? This can't be undone.")) {
@@ -502,7 +502,7 @@ export default function Messages() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 dark:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                       disabled={deleteThreadMutation.isPending}
                       aria-label="Delete conversation"
                       onClick={(e) => {
@@ -650,7 +650,7 @@ export default function Messages() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:text-red-300"
+                    className="h-8 text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
                     disabled={clearFailedMutation.isPending}
                     onClick={() => {
                       if (confirm("Delete all failed messages? This can't be undone.")) {
@@ -728,7 +728,7 @@ export default function Messages() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-red-600 dark:text-red-400"
+                          className="h-7 w-7 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
                           disabled={deleteMessageMutation.isPending}
                           onClick={() => deleteMessageMutation.mutate({ id: log.id, tenantId: 1 })}
                           aria-label="Delete message"
@@ -861,7 +861,7 @@ export default function Messages() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600 dark:text-red-400"
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
               disabled={deleteThreadMutation.isPending}
               aria-label="Delete conversation"
               onClick={() => {

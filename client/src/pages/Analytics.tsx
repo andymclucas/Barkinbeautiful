@@ -84,9 +84,11 @@ export default function Analytics() {
     URL.revokeObjectURL(url);
   };
 
+  // Variables, not hexes: these are applied by inline style, which no
+  // dark: utility can reach. See --tier-* in index.css.
   const TIER_COLOURS: Record<string, string> = {
-    diamond: "#a78bfa", platinum: "#94a3b8", gold: "#f59e0b",
-    silver: "#6b7280", bronze: "#b45309",
+    diamond: "var(--tier-diamond)", platinum: "var(--tier-platinum)", gold: "var(--tier-gold)",
+    silver: "var(--tier-silver)", bronze: "var(--tier-bronze)",
   };
   const TIER_ICONS: Record<string, string> = {
     diamond: "💎", platinum: "🥇", gold: "🏆", silver: "🥈", bronze: "🏅",

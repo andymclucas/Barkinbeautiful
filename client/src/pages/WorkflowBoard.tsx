@@ -473,7 +473,7 @@ export default function WorkflowBoard() {
             <span>🐾</span>
             <span className="font-medium">Showing family group only</span>
             <button
-              className="ml-auto text-xs text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:text-violet-300 font-medium underline"
+              className="ml-auto text-xs text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 font-medium underline"
               onClick={() => setFamilyFilter(null)}
             >
               Clear filter
@@ -624,7 +624,7 @@ export default function WorkflowBoard() {
                             type="button"
                             size="sm"
                             variant={reviews > 0 ? "outline" : "ghost"}
-                            className={reviews > 0 ? "h-7 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:bg-amber-950/50" : "h-7 px-2 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:bg-emerald-950/40"}
+                            className={reviews > 0 ? "h-7 border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/50" : "h-7 px-2 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"}
                             onClick={() => navigate(`/staff/review/${person.staffId}?date=${boardDate}`)}
                             title={`Review ${person.name}'s timing exceptions and recommended actions`}
                           >
@@ -946,11 +946,11 @@ export default function WorkflowBoard() {
             <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg border border-violet-100 dark:border-violet-950/50 bg-violet-50/40 dark:bg-violet-950/40 p-2">
               {bathGroupCandidates.map((candidate) => {
                 const selected = bathGroupSelectedIds.includes(candidate.id);
-                return <label key={candidate.id} className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${selected ? "border-violet-500 bg-card" : "border-transparent hover:border-violet-200 dark:border-violet-900/50 hover:bg-card/70"}`}><input type="checkbox" checked={selected} onChange={() => setBathGroupSelectedIds((current) => selected ? current.filter((id) => id !== candidate.id) : [...current, candidate.id])} className="h-4 w-4 accent-violet-700" /><span className="min-w-0 flex-1"><span className="font-semibold">{candidate.petName}</span><span className="ml-2 text-xs text-muted-foreground">{fmtTime(candidate.scheduledStart)} · {candidate.clientLastName}</span></span>{candidate.bathPriority && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[candidate.bathPriority as typeof BATH_PRIORITY_VALUES[number]]?.colour ?? "#0f766e" }}>{candidate.bathPriority}</span>}</label>;
+                return <label key={candidate.id} className={`flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${selected ? "border-violet-500 bg-card" : "border-transparent hover:border-violet-200 dark:hover:border-violet-900/50 hover:bg-card/70"}`}><input type="checkbox" checked={selected} onChange={() => setBathGroupSelectedIds((current) => selected ? current.filter((id) => id !== candidate.id) : [...current, candidate.id])} className="h-4 w-4 accent-violet-700" /><span className="min-w-0 flex-1"><span className="font-semibold">{candidate.petName}</span><span className="ml-2 text-xs text-muted-foreground">{fmtTime(candidate.scheduledStart)} · {candidate.clientLastName}</span></span>{candidate.bathPriority && <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[candidate.bathPriority as typeof BATH_PRIORITY_VALUES[number]]?.colour ?? "#0f766e" }}>{candidate.bathPriority}</span>}</label>;
               })}
             </div>
             <div className="space-y-1.5"><label className="text-sm font-semibold">Shared bath priority</label><Select value={bathGroupPriority} onValueChange={setBathGroupPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__keep__">Keep current priority</SelectItem><SelectItem value="__none__">No priority</SelectItem>{BATH_PRIORITY_VALUES.map((priority) => <SelectItem key={priority} value={String(priority)}><span className="inline-flex items-center gap-2"><span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: BATH_PRIORITY_META[priority].colour }}>{priority}</span>{BATH_PRIORITY_META[priority].label}</span></SelectItem>)}</SelectContent></Select></div>
-            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-between"><Button variant="outline" className="border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-50 dark:bg-red-950/40" disabled={setBathGroup.isPending} onClick={() => { if (!bathGroupPopup) return; setBathGroup.mutate({ appointmentId: bathGroupPopup.appointmentId, date: boardDate, linkedAppointmentIds: [], bathPriority: undefined }); }}>Remove coordination</Button><div className="flex gap-2"><Button variant="outline" disabled={setBathGroup.isPending} onClick={() => { setBathGroupPopup(null); setBathGroupSelectedIds([]); }}>Cancel</Button><Button disabled={!bathGroupPopup || bathGroupSelectedIds.length < 2 || setBathGroup.isPending} className="bg-violet-700 text-white hover:bg-violet-800" onClick={() => { if (!bathGroupPopup) return; setBathGroup.mutate({ appointmentId: bathGroupPopup.appointmentId, date: boardDate, linkedAppointmentIds: bathGroupSelectedIds.filter((id) => id !== bathGroupPopup.appointmentId), bathPriority: bathGroupPriority === "__keep__" ? undefined : bathGroupPriority === "__none__" ? null : Number(bathGroupPriority) as typeof BATH_PRIORITY_VALUES[number] }); }}>{setBathGroup.isPending ? "Saving…" : `Coordinate ${bathGroupSelectedIds.length} dogs`}</Button></div></div>
+            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-between"><Button variant="outline" className="border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40" disabled={setBathGroup.isPending} onClick={() => { if (!bathGroupPopup) return; setBathGroup.mutate({ appointmentId: bathGroupPopup.appointmentId, date: boardDate, linkedAppointmentIds: [], bathPriority: undefined }); }}>Remove coordination</Button><div className="flex gap-2"><Button variant="outline" disabled={setBathGroup.isPending} onClick={() => { setBathGroupPopup(null); setBathGroupSelectedIds([]); }}>Cancel</Button><Button disabled={!bathGroupPopup || bathGroupSelectedIds.length < 2 || setBathGroup.isPending} className="bg-violet-700 text-white hover:bg-violet-800" onClick={() => { if (!bathGroupPopup) return; setBathGroup.mutate({ appointmentId: bathGroupPopup.appointmentId, date: boardDate, linkedAppointmentIds: bathGroupSelectedIds.filter((id) => id !== bathGroupPopup.appointmentId), bathPriority: bathGroupPriority === "__keep__" ? undefined : bathGroupPriority === "__none__" ? null : Number(bathGroupPriority) as typeof BATH_PRIORITY_VALUES[number] }); }}>{setBathGroup.isPending ? "Saving…" : `Coordinate ${bathGroupSelectedIds.length} dogs`}</Button></div></div>
           </div>
         </DialogContent>
       </Dialog>
@@ -972,7 +972,7 @@ export default function WorkflowBoard() {
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-3 py-2">
                   <p className="text-xs text-red-900 dark:text-red-200">Need separate processing? Remove {familyLinkPopup.petName} from this family group. Appointments and workflow history are not changed.</p>
-                  <Button size="sm" variant="outline" className="shrink-0 border-red-300 dark:border-red-800 bg-card text-red-700 dark:text-red-300 hover:bg-red-100 dark:bg-red-950/50" disabled={unlinkPetMutation.isPending} onClick={() => unlinkPetMutation.mutate({ petId: familyLinkPopup.petId })}>{unlinkPetMutation.isPending ? "Unlinking…" : "Unlink dog"}</Button>
+                  <Button size="sm" variant="outline" className="shrink-0 border-red-300 dark:border-red-800 bg-card text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/50" disabled={unlinkPetMutation.isPending} onClick={() => unlinkPetMutation.mutate({ petId: familyLinkPopup.petId })}>{unlinkPetMutation.isPending ? "Unlinking…" : "Unlink dog"}</Button>
                 </div>
               </div>
             )}
@@ -998,7 +998,7 @@ export default function WorkflowBoard() {
                   ).map(r => (
                     <button
                       key={r.id}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-violet-50 dark:bg-violet-950/40 border border-transparent hover:border-violet-200 dark:border-violet-900/50 transition-colors text-sm"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-transparent hover:border-violet-200 dark:hover:border-violet-900/50 transition-colors text-sm"
                       onClick={() => linkPetsMutation.mutate({ petIds: [familyLinkPopup.petId, r.petId] })}
                     >
                       <span className="font-medium">{r.petName}</span>
@@ -1009,7 +1009,7 @@ export default function WorkflowBoard() {
                   {familySearchResults?.filter(p => !rows.some(r => r.petId === p.id)).map(p => (
                     <button
                       key={p.id}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-violet-50 dark:bg-violet-950/40 border border-transparent hover:border-violet-200 dark:border-violet-900/50 transition-colors text-sm opacity-70"
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-950/40 border border-transparent hover:border-violet-200 dark:hover:border-violet-900/50 transition-colors text-sm opacity-70"
                       onClick={() => linkPetsMutation.mutate({ petIds: [familyLinkPopup.petId, p.id] })}
                     >
                       <span className="font-medium">{p.name}</span>

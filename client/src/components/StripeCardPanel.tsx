@@ -93,7 +93,7 @@ export function StripeCardPanel({ clientId }: { clientId: number }) {
             <Button
               size="sm"
               variant="outline"
-              className="gap-1.5 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:bg-red-950/40 hover:text-red-700 dark:text-red-300"
+              className="gap-1.5 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-700 dark:hover:text-red-300"
               disabled={removeCard.isPending}
               onClick={() => removeCard.mutate({ clientId })}
             >

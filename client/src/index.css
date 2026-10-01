@@ -128,6 +128,28 @@
   --auth-grid-line: rgba(124, 58, 237, 0.30);
   --auth-field-border: rgba(124, 58, 237, 0.16);
   --auth-field-border-focus: rgba(124, 58, 237, 0.55);
+  /* The sign-in copy is coloured by inline styles too, so it needs variables
+     as well. These light values are the hexes that were hardcoded in
+     Login.tsx - unchanged, so light mode looks exactly as it did - while the
+     .dark block below lifts them. Without this the card went dark and the
+     text stayed #4b5563 on it, which is about 1.9:1 and unreadable. */
+  --auth-text-body: #4b5563;
+  --auth-text-muted: #6b7280;
+  --auth-text-faint: #9ca3af;
+  --auth-text-brand: #7c3aed;
+  --auth-text-brand-mid: #7c3aedaa;
+  --auth-text-brand-soft: #7c3aed80;
+  --auth-text-brand-faint: #7c3aed66;
+  /* Membership tier colours. Also applied by inline style (they come from a
+     lookup, not a class), so they need variables to follow the theme. Silver
+     (#6b7280) and bronze (#b45309) came out at roughly 2.4:1 and 1.8:1 on a
+     dark card - these are revenue figures, so that mattered. Light values are
+     the originals. */
+  --tier-diamond: #a78bfa;
+  --tier-platinum: #94a3b8;
+  --tier-gold: #f59e0b;
+  --tier-silver: #6b7280;
+  --tier-bronze: #b45309;
   --brand-primary: oklch(0.585 0.212 292);
   --brand-primary-strong: oklch(0.487 0.216 290);
   --brand-accent: oklch(0.905 0.058 295);
@@ -293,6 +315,23 @@
   /* Lifted: a 0.16-alpha violet edge is invisible on a dark card. */
   --auth-field-border: oklch(0.706 0.168 292 / 0.34);
   --auth-field-border-focus: oklch(0.760 0.150 292 / 0.85);
+  /* Measured against --auth-card-bg (oklch 0.232): body ~9:1, muted ~6:1,
+     faint ~4.7:1. The brand violet is lifted from 0.585 to 0.80 so it still
+     reads as violet on a dark card instead of disappearing into it. */
+  --auth-text-body: oklch(0.90 0.012 292);
+  --auth-text-muted: oklch(0.76 0.014 292);
+  --auth-text-faint: oklch(0.66 0.014 292);
+  --auth-text-brand: oklch(0.80 0.140 292);
+  --auth-text-brand-mid: oklch(0.80 0.140 292 / 0.78);
+  --auth-text-brand-soft: oklch(0.80 0.140 292 / 0.62);
+  --auth-text-brand-faint: oklch(0.80 0.140 292 / 0.48);
+  /* Same five hues, lifted to read on a dark card while staying
+     distinguishable from one another. */
+  --tier-diamond: oklch(0.82 0.120 292);
+  --tier-platinum: oklch(0.80 0.028 250);
+  --tier-gold: oklch(0.84 0.150 85);
+  --tier-silver: oklch(0.76 0.016 260);
+  --tier-bronze: oklch(0.78 0.120 55);
 }
 
 /* The browser's own widgets - scrollbars, form controls, the caret - follow

@@ -1613,7 +1613,7 @@ export default function Calendar() {
                             <span className="text-[10px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded px-1.5 py-0.5 flex items-center gap-1">
                               <Ban className="h-2.5 w-2.5" /> {b.reason || "Day Off"}
                             </span>
-                            <button className="pointer-events-auto text-red-400 hover:text-red-600 dark:text-red-400" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: b.reason || "Day Off" }); }}>
+                            <button className="pointer-events-auto text-red-400 hover:text-red-600 dark:hover:text-red-400" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: b.reason || "Day Off" }); }}>
                               <Trash2 className="h-3 w-3" />
                             </button>
                           </div>
@@ -1631,7 +1631,7 @@ export default function Calendar() {
                           <span className="text-[10px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded px-1.5 py-0.5 flex items-center gap-1">
                             <Ban className="h-2.5 w-2.5" /> {b.startTime}–{b.endTime} {b.reason || "Blocked"}
                           </span>
-                          <button className="pointer-events-auto text-red-400 hover:text-red-600 dark:text-red-400" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: `${b.startTime}–${b.endTime} ${b.reason || "Blocked"}` }); }}>
+                          <button className="pointer-events-auto text-red-400 hover:text-red-600 dark:hover:text-red-400" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: `${b.startTime}–${b.endTime} ${b.reason || "Blocked"}` }); }}>
                             <Trash2 className="h-3 w-3" />
                           </button>
                         </div>
@@ -1862,7 +1862,7 @@ export default function Calendar() {
                 setBlockoutForm(f => ({ ...f, blockoutDate: defaultDate }));
                 setShowBlockoutDialog(true);
               }}
-              size="sm" className="brand-lift gap-1.5 bg-card/80 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:bg-red-950/40 hover:text-red-700 dark:text-red-300">
+              size="sm" className="brand-lift gap-1.5 bg-card/80 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-700 dark:hover:text-red-300">
               <Ban className="h-4 w-4" /> Block Out
             </Button>
             <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
@@ -2065,7 +2065,7 @@ export default function Calendar() {
                       );
                     })}
                   </div>
-                  {familyBookingCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50/70 dark:bg-violet-950/70 p-3"><p className="text-sm font-semibold text-violet-950">Include linked family dogs?</p><p className="mt-0.5 text-xs text-violet-800 dark:text-violet-300">These dogs are remembered as family-linked. Select any that should share this appointment.</p><div className="mt-2 flex flex-wrap gap-2">{familyBookingCompanions.map(pet => <Button key={pet.id} type="button" size="sm" variant="outline" className="border-violet-300 dark:border-violet-800 bg-card text-violet-900 dark:text-violet-200 hover:bg-violet-100 dark:bg-violet-950/50" onClick={() => setNewAppt(prev => ({ ...prev, petIds: [...prev.petIds, String(pet.id)] }))}>+ {pet.name}</Button>)}</div></div>}
+                  {familyBookingCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50/70 dark:bg-violet-950/70 p-3"><p className="text-sm font-semibold text-violet-950">Include linked family dogs?</p><p className="mt-0.5 text-xs text-violet-800 dark:text-violet-300">These dogs are remembered as family-linked. Select any that should share this appointment.</p><div className="mt-2 flex flex-wrap gap-2">{familyBookingCompanions.map(pet => <Button key={pet.id} type="button" size="sm" variant="outline" className="border-violet-300 dark:border-violet-800 bg-card text-violet-900 dark:text-violet-200 hover:bg-violet-100 dark:hover:bg-violet-950/50" onClick={() => setNewAppt(prev => ({ ...prev, petIds: [...prev.petIds, String(pet.id)] }))}>+ {pet.name}</Button>)}</div></div>}
                   {membershipCoverage.isFetching ? <p className="mt-3 text-xs text-muted-foreground">Checking membership coverage…</p> : membershipCoverage.data?.fullyCovered ? <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950"><div><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{membershipCoverage.data.memberships.map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800 dark:text-emerald-300">Every selected dog is covered for this service. Appointment price is $0.00 because payment is managed through the weekly membership.</p></div></div> : membershipCoverage.data && membershipCoverage.data.coveredPetIds.length > 0 ? <div className="mt-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-amber-950"><Badge variant="outline" className="border-amber-300 dark:border-amber-800 bg-card text-amber-800 dark:text-amber-300">Partial membership coverage</Badge><p className="mt-1 text-xs text-amber-800 dark:text-amber-300">Only some selected dogs are covered for this service, so the appointment price remains available for review.</p></div> : null}
                   </>
                 )}
@@ -2388,7 +2388,7 @@ export default function Calendar() {
                 <DialogFooter className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <Button
                     variant="outline"
-                    className="mr-auto shrink-0 gap-1.5 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:bg-red-950/40 hover:text-red-700 dark:text-red-300"
+                    className="mr-auto shrink-0 gap-1.5 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-700 dark:hover:text-red-300"
                     onClick={() => setConfirmDelete({
                       type: "appointment",
                       id: editAppt.id,
@@ -2408,7 +2408,7 @@ export default function Calendar() {
                     return (
                       <Button
                         variant="outline"
-                        className="gap-1.5 border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:bg-emerald-950/40 hover:text-emerald-800 dark:text-emerald-300"
+                        className="gap-1.5 border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-800 dark:hover:text-emerald-300"
                         disabled={!allHavePrices || createSessionBillsMutation.isPending}
                         title={!allHavePrices ? "Set a price for each dog before generating bills" : "Create a separate draft invoice for each dog"}
                         onClick={() => createSessionBillsMutation.mutate({
