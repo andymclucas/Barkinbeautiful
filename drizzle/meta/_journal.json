@@ -449,6 +449,13 @@
       "when": 1790833819028,
       "tag": "0063_membership_notice_read",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "5",
+      "when": 1790857971954,
+      "tag": "0064_appointment_discount",
+      "breakpoints": true
     }
   ]
 }

@@ -56,6 +56,10 @@ export interface BookingAppointmentPayments {
   petId: number | null;
   petName: string;
   clientId: number;
+  /** What price was before the discount; null when never discounted. */
+  preDiscountPrice: string | null;
+  discountPercent: number | null;
+  discountReason: string | null;
   total: number | null;
   paid: number;
   outstanding: number | null;
@@ -73,6 +77,9 @@ async function loadBookingAppointments(db: any, appointmentId: number) {
       clientId: appointments.clientId,
       petId: appointments.petId,
       price: appointments.price,
+      preDiscountPrice: appointments.preDiscountPrice,
+      discountPercent: appointments.discountPercent,
+      discountReason: appointments.discountReason,
       sessionId: appointments.sessionId,
       paymentStatus: appointments.paymentStatus,
     })
@@ -179,6 +186,11 @@ export const paymentsRouter = router({
           petId: row.petId,
           petName: row.petId ? (petNames.get(row.petId) ?? "Pet") : "Pet",
           clientId: row.clientId,
+          // price is already net of any discount, so every total below —
+          // and the split-bill maths — is the discounted figure.
+          preDiscountPrice: row.preDiscountPrice ?? null,
+          discountPercent: row.discountPercent ?? null,
+          discountReason: row.discountReason ?? null,
           ...summarisePayments(row.price, own),
           lines: own,
         };
