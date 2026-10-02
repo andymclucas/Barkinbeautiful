@@ -169,7 +169,9 @@ export default function NotificationBell() {
                   </p>
                   {item.readAt && (
                     <p className="mt-0.5 truncate text-[10px] text-muted-foreground/80">
-                      Read{item.readByName ? ` by ${item.readByName}` : ""} · {timeAgo(item.readAt)}
+                      {item.readByName
+                        ? `Read by ${item.readByName}, ${new Date(item.readAt).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}`
+                        : `Read ${timeAgo(item.readAt)}`}
                     </p>
                   )}
                 </button>

@@ -6242,12 +6242,13 @@ const smsRouter = router({
   // message and how many inbound messages from them are still unread.
   getThreads: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(50) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const rows = await db.select({
         id: smsLogs.id, toNumber: smsLogs.toNumber, body: smsLogs.body,
         direction: smsLogs.direction, sentAt: smsLogs.sentAt, readAt: smsLogs.readAt,
+        readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${smsLogs.readByUserId} LIMIT 1)`,
         clientId: smsLogs.clientId,
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
       }).from(smsLogs)
@@ -6260,6 +6261,9 @@ const smsRouter = router({
       const threads = new Map<string, {
         threadKey: string; clientId: number | null; clientName: string | null; toNumber: string;
         lastMessage: string; lastDirection: string; lastAt: Date; unreadCount: number;
+        // Who opened the most recent inbound message, and when. Null on
+        // anything read before read_by_user_id existed — we cannot invent it.
+        readByName: string | null; readAt: Date | null;
       }>();
       for (const row of rows) {
         const key = row.clientId ? `client:${row.clientId}` : `number:${row.toNumber}`;
@@ -6269,12 +6273,20 @@ const smsRouter = router({
           threads.set(key, {
             threadKey: key, clientId: row.clientId, clientName: (row.clientName as string) ?? null, toNumber: row.toNumber,
             lastMessage: row.body, lastDirection: row.direction, lastAt: row.sentAt, unreadCount: unread ? 1 : 0,
+          readByName: (row.readByName as string) ?? null, readAt: row.readAt ?? null,
           });
         } else {
           if (unread) existing.unreadCount += 1;
         }
       }
-      return Array.from(threads.values()).sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime()).slice(0, input.limit);
+      // Who read it is for Lauren and Andy. Stripped on the server, not in
+      // the UI — hiding it client-side would still ship every groomer the
+      // names.
+      const canSeeReaders = canAdministerStaff(ctx.user);
+      return Array.from(threads.values())
+        .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())
+        .slice(0, input.limit)
+        .map((t) => (canSeeReaders ? t : { ...t, readByName: null }));
     }),
 
   markThreadRead: protectedProcedure

@@ -340,6 +340,93 @@ export default function Messages() {
     sendMutation.mutate({ tenantId: 1, clientId: selectedClientId ?? undefined, toNumber, body, type: selectedTemplate as any });
   };
 
+  // The conversation itself. Rendered in the centre pane on desktop and
+  // inside the dialog on a phone — one definition, so the two cannot
+  // drift apart.
+  const conversationPane = (
+    <>
+              <div className="space-y-0 border-b bg-background/95 px-4 py-3 backdrop-blur">
+                <div className="flex items-center gap-3">
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                    style={{ background: contactColour(openThread?.toNumber ?? "") }}
+                    aria-hidden="true"
+                  >
+                    {contactInitials(openThread?.clientName, openThread?.toNumber ?? "")}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] font-semibold leading-tight">
+                      {openThread?.clientName?.trim() || openThread?.toNumber}
+                    </p>
+                    {openThread?.clientName && (
+                      <p className="truncate text-[11px] font-normal text-muted-foreground">{openThread.toNumber}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+    
+              <div className="flex-1 min-h-[320px] overflow-y-auto bg-muted/20 px-3 py-2 lg:h-auto">
+                <MessageThread
+                  messages={threadMessages}
+                  showStatus
+                  autoScroll={!!openThread}
+                  emptyText="No messages in this conversation yet."
+                />
+              </div>
+    
+              {/* The bar an iPhone puts at the bottom of a thread. Replying still
+                  opens the compose dialog, which carries the template picker and
+                  the send-safety checks — this is the entry point, not a second
+                  send path. */}
+              <div className="flex items-center gap-2 border-t bg-background px-3 py-2.5">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+                  disabled={deleteThreadMutation.isPending}
+                  aria-label="Delete conversation"
+                  onClick={() => {
+                    if (!openThread) return;
+                    if (confirm(`Delete this entire conversation with ${openThread.clientName?.trim() || openThread.toNumber}? This can't be undone.`)) {
+                      deleteThreadMutation.mutate(openThread.clientId ? { tenantId: 1, clientId: openThread.clientId } : { tenantId: 1, toNumber: openThread.toNumber });
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+                <button
+                  type="button"
+                  className="flex h-10 min-w-0 flex-1 items-center rounded-full border bg-muted/40 px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
+                  onClick={() => {
+                    if (!openThread) return;
+                    setOpenThread(null);
+                    setToNumber(openThread.toNumber);
+                    setSelectedClientId(openThread.clientId);
+                    setClientSearch(openThread.clientId ? (openThread.clientName?.trim() || "") : "");
+                    setComposeOpen(true);
+                  }}
+                >
+                  Message…
+                </button>
+                <Button
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-full"
+                  aria-label="Reply"
+                  onClick={() => {
+                    if (!openThread) return;
+                    setOpenThread(null);
+                    setToNumber(openThread.toNumber);
+                    setSelectedClientId(openThread.clientId);
+                    setClientSearch(openThread.clientId ? (openThread.clientName?.trim() || "") : "");
+                    setComposeOpen(true);
+                  }}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </div>
+    </>
+  );
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -484,7 +571,13 @@ export default function Messages() {
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Three panes, the way a messaging app is actually used: the list
+            stays put, the conversation fills the middle, and who you are
+            talking to sits beside it. Below lg there is no room for three,
+            so the list is the page and a tap opens the conversation in a
+            dialog — the same markup, not a second implementation. */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)_minmax(0,17rem)]">
+        <Card className="lg:flex lg:h-[calc(100vh-13rem)] lg:flex-col lg:overflow-hidden">
           <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="text-sm font-semibold">
@@ -571,6 +664,13 @@ export default function Messages() {
                           <p className={`min-w-0 flex-1 truncate text-[13px] ${thread.unreadCount > 0 ? "text-foreground" : "text-muted-foreground"}`}>
                             {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
                           </p>
+                          {thread.readAt && thread.unreadCount === 0 && (
+                            <span className="truncate text-[10px] text-muted-foreground/80">
+                              {thread.readByName
+                                ? `Read by ${thread.readByName}, ${new Date(thread.readAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}`
+                                : "Read"}
+                            </span>
+                          )}
                           {thread.unreadCount > 0 && (
                             <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
                               {thread.unreadCount}
@@ -601,6 +701,25 @@ export default function Messages() {
             )}
           </CardContent>
         </Card>
+
+        <Card className="hidden lg:flex lg:h-[calc(100vh-13rem)] lg:flex-col lg:overflow-hidden">
+          {openThread ? conversationPane : (
+            <div className="flex flex-1 items-center justify-center p-8 text-center">
+              <p className="text-sm text-muted-foreground">Choose a conversation to read it here.</p>
+            </div>
+          )}
+        </Card>
+
+        <Card className="hidden lg:block lg:h-[calc(100vh-13rem)] lg:overflow-y-auto">
+          {openThread ? (
+            <ThreadClientContext clientId={openThread.clientId ?? null} />
+          ) : (
+            <div className="flex h-full items-center justify-center p-6 text-center">
+              <p className="text-xs text-muted-foreground">Client details appear here.</p>
+            </div>
+          )}
+        </Card>
+        </div>
 
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
@@ -898,100 +1017,15 @@ export default function Messages() {
       </Dialog>
 
       {/* ── Thread conversation dialog ── */}
+      {/* Below lg there is no room for three panes, so a tap opens the
+          same conversation in a dialog. */}
       <Dialog open={!!openThread} onOpenChange={(open) => !open && setOpenThread(null)}>
-        {/* Sized and shaped like a phone screen: a tall, narrow, rounded panel
-            with its own header and footer bars and a scrolling message area
-            between them. The whole panel is the conversation — no page chrome
-            bleeding in, which is what made the old dialog feel like a table. */}
-        <DialogContent className="max-w-[420px] gap-0 overflow-hidden rounded-[26px] p-0 lg:max-w-[780px]">
-          <div className="flex min-h-0">
-          <div className="flex min-w-0 flex-1 flex-col">
-          <DialogHeader className="space-y-0 border-b bg-background/95 px-4 py-3 backdrop-blur">
-            <div className="flex items-center gap-3">
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                style={{ background: contactColour(openThread?.toNumber ?? "") }}
-                aria-hidden="true"
-              >
-                {contactInitials(openThread?.clientName, openThread?.toNumber ?? "")}
-              </span>
-              <div className="min-w-0 flex-1">
-                <DialogTitle className="truncate text-[15px] font-semibold leading-tight">
-                  {openThread?.clientName?.trim() || openThread?.toNumber}
-                </DialogTitle>
-                {openThread?.clientName && (
-                  <p className="truncate text-[11px] font-normal text-muted-foreground">{openThread.toNumber}</p>
-                )}
-              </div>
-            </div>
-          </DialogHeader>
-
-          <div className="h-[58vh] min-h-[320px] overflow-y-auto bg-muted/20 px-3 py-2">
-            <MessageThread
-              messages={threadMessages}
-              showStatus
-              autoScroll={!!openThread}
-              emptyText="No messages in this conversation yet."
-            />
-          </div>
-
-          {/* The bar an iPhone puts at the bottom of a thread. Replying still
-              opens the compose dialog, which carries the template picker and
-              the send-safety checks — this is the entry point, not a second
-              send path. */}
-          <div className="flex items-center gap-2 border-t bg-background px-3 py-2.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
-              disabled={deleteThreadMutation.isPending}
-              aria-label="Delete conversation"
-              onClick={() => {
-                if (!openThread) return;
-                if (confirm(`Delete this entire conversation with ${openThread.clientName?.trim() || openThread.toNumber}? This can't be undone.`)) {
-                  deleteThreadMutation.mutate(openThread.clientId ? { tenantId: 1, clientId: openThread.clientId } : { tenantId: 1, toNumber: openThread.toNumber });
-                }
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-            <button
-              type="button"
-              className="flex h-10 min-w-0 flex-1 items-center rounded-full border bg-muted/40 px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
-              onClick={() => {
-                if (!openThread) return;
-                setOpenThread(null);
-                setToNumber(openThread.toNumber);
-                setSelectedClientId(openThread.clientId);
-                setClientSearch(openThread.clientId ? (openThread.clientName?.trim() || "") : "");
-                setComposeOpen(true);
-              }}
-            >
-              Message…
-            </button>
-            <Button
-              size="icon"
-              className="h-10 w-10 shrink-0 rounded-full"
-              aria-label="Reply"
-              onClick={() => {
-                if (!openThread) return;
-                setOpenThread(null);
-                setToNumber(openThread.toNumber);
-                setSelectedClientId(openThread.clientId);
-                setClientSearch(openThread.clientId ? (openThread.clientName?.trim() || "") : "");
-                setComposeOpen(true);
-              }}
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-          </div>
-          {/* Who is texting, beside what they said. Desktop only: on a
-              phone the conversation already fills the screen and this
-              would push the reply box off it. */}
-          <aside className="hidden w-[260px] shrink-0 overflow-y-auto border-l bg-muted/20 lg:block">
-            <ThreadClientContext clientId={openThread?.clientId ?? null} />
-          </aside>
+        <DialogContent className="max-w-[420px] gap-0 overflow-hidden rounded-[26px] p-0 lg:hidden">
+          <DialogTitle className="sr-only">
+            {openThread?.clientName?.trim() || openThread?.toNumber || "Conversation"}
+          </DialogTitle>
+          <div className="flex min-h-0 flex-col">
+            {conversationPane}
           </div>
         </DialogContent>
       </Dialog>
