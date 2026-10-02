@@ -15,7 +15,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -51,6 +51,8 @@ import { getPricingAmountValidationError, normalisePricingCode } from "../shared
 import { getAppBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
+import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
+import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
@@ -6336,6 +6338,164 @@ const smsRouter = router({
       return rows.map((r) => r.threadKey);
     }),
 
+  /**
+   * Who a mass text would reach, without sending anything.
+   *
+   * The sender sees this count and agrees to it; sendMassText then refuses
+   * if the number has moved, so nobody is texted who was not in the set the
+   * person actually authorised.
+   */
+  previewMassText: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), audience: z.any() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return { count: 0, sample: [] as string[], error: "Database unavailable" };
+      await requireMassTextPermission(db, ctx.user);
+      const validated = validateAudience(input.audience);
+      if (!validated.ok) return { count: 0, sample: [] as string[], error: validated.error };
+
+      const rows = await massTextRecipients(db, input.tenantId, validated.audience);
+      return {
+        count: rows.length,
+        sample: rows.slice(0, 5).map((r) => `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.phone),
+        description: describeAudience(validated.audience),
+        error: null as string | null,
+      };
+    }),
+
+  /**
+   * Text many clients at once.
+   *
+   * Gated on the mass_text grant, not plain admin: reading the inbox and
+   * texting the whole client list are different powers. Lauren and Andy
+   * hold it inherently; anyone else needs the box ticked in their staff
+   * profile.
+   *
+   * Every message is logged to sms_logs against its client, so the
+   * conversation history shows what they were sent, and a failure to one
+   * number does not abandon the rest.
+   */
+  /**
+   * Text many clients at once.
+   *
+   * Batch-backed, because there is no undo. The browser supplies a
+   * requestId; the batch and every intended recipient are written as
+   * "pending" BEFORE a single message goes out. A retry — a timeout
+   * partway through several hundred sends is the likely case — finds the
+   * same batch and resumes, skipping the rows already marked sent. Without
+   * this, one timeout texts the entire client list twice.
+   */
+  sendMassText: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      requestId: z.string().min(8).max(64),
+      audience: z.any(),
+      body: z.string().min(1).max(MAX_BODY_LENGTH),
+      confirmedCount: z.number().int().min(0),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      requireMassTextEnabled();
+      await requireMassTextPermission(db, ctx.user);
+
+      const validated = validateAudience(input.audience);
+      if (!validated.ok) throw new TRPCError({ code: "BAD_REQUEST", message: validated.error });
+
+      const body = input.body.trim();
+
+      // Resume an existing batch rather than starting a second one.
+      const [existing] = await db.select({ id: massTextBatches.id, body: massTextBatches.body })
+        .from(massTextBatches)
+        .where(and(
+          eq(massTextBatches.tenantId, input.tenantId),
+          eq(massTextBatches.requestId, input.requestId),
+        ))
+        .limit(1);
+
+      let batchId: number;
+      if (existing) {
+        if (existing.body !== body) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "That send has already started with a different message. Start a new one.",
+          });
+        }
+        batchId = existing.id;
+      } else {
+        const recipients = await massTextRecipients(db, input.tenantId, validated.audience);
+        const guard = guardSend({
+          body,
+          recipientCount: recipients.length,
+          confirmedCount: input.confirmedCount,
+        });
+        if (!guard.ok) throw new TRPCError({ code: "BAD_REQUEST", message: guard.error });
+
+        const [inserted] = await db.insert(massTextBatches).values({
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          body,
+          audience: JSON.stringify(validated.audience),
+          status: "sending",
+          sentByUserId: ctx.user.id,
+        }).$returningId();
+        batchId = inserted.id;
+
+        // The intended list, on disk, before anything is sent. A crash now
+        // still leaves a record of who was meant to receive it.
+        for (const r of recipients) {
+          await db.insert(massTextRecipientRows).values({
+            batchId, clientId: r.clientId, phone: r.phone, status: "pending",
+          }).onDuplicateKeyUpdate({ set: { batchId } });
+        }
+      }
+
+      const pending = await db.select({
+        id: massTextRecipientRows.id,
+        clientId: massTextRecipientRows.clientId,
+        phone: massTextRecipientRows.phone,
+      })
+        .from(massTextRecipientRows)
+        .where(and(eq(massTextRecipientRows.batchId, batchId), eq(massTextRecipientRows.status, "pending")));
+
+      let sent = 0;
+      let failed = 0;
+      for (const row of pending) {
+        const result = await sendSms(row.phone, body);
+        if (result.success) sent += 1; else failed += 1;
+
+        await db.update(massTextRecipientRows).set({
+          status: result.success ? "sent" : "failed",
+          errorMessage: result.error ?? null,
+          sentAt: new Date(),
+        }).where(eq(massTextRecipientRows.id, row.id));
+
+        // A failure to log must not abandon the people still waiting.
+        try {
+          await db.insert(smsLogs).values({
+            tenantId: input.tenantId,
+            clientId: row.clientId,
+            toNumber: row.phone,
+            body,
+            twilioSid: result.sid,
+            status: result.success ? "sent" : "failed",
+            type: "custom",
+            direction: "outbound",
+            errorMessage: result.error,
+          });
+        } catch (error) {
+          console.error("[MassText] could not log message to", row.phone, error);
+        }
+      }
+
+      await db.update(massTextBatches).set({
+        status: failed > 0 && sent === 0 ? "failed" : "complete",
+        completedAt: new Date(),
+      }).where(eq(massTextBatches.id, batchId));
+
+      return { batchId, attempted: pending.length, sent, failed, resumed: Boolean(existing) };
+    }),
+
   markAllThreadsRead: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
     .mutation(async ({ input, ctx }) => {
@@ -6671,6 +6831,126 @@ const familyRouter = router({
         .limit(10);
     }),
 });
+
+/**
+ * The clients a mass-text audience resolves to.
+ *
+ * Only clients with a phone number and an active status: texting a lapsed
+ * or blocked client is at best wasted credit and at worst unwelcome. The
+ * set is de-duplicated by client, so a family with three dogs booked in
+ * the range gets one message, not three.
+ */
+/**
+ * May this person mass-text?
+ *
+ * Shared by the preview and the send so they cannot drift: the preview
+ * returns client names and exact counts, which is an enumerable view of
+ * the client base, and guarding only the send left that open to every
+ * admin — four of whom are groomers.
+ */
+async function requireMassTextPermission(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  user: { id: number; email?: string | null },
+) {
+  if (canAdministerStaff(user)) return;
+  const [me] = await db.select({ isAdmin: staff.isAdmin, adminSections: staff.adminSections })
+    .from(staff).where(eq(staff.userId, user.id)).limit(1);
+  if (!canEditSection(me ?? null, "mass_text")) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You don't have permission to send a mass text. Ask Lauren or Andy to enable it on your profile.",
+    });
+  }
+}
+
+/**
+ * Mass texting is off unless the environment says otherwise.
+ *
+ * client-messaging-safety exists because a dev machine pointed at the
+ * production database can text real clients. A manual send cannot sit
+ * behind SMS_AUTOMATION_ENABLED without breaking whenever automation is
+ * paused, so this has its own flag, set only on Render.
+ */
+function requireMassTextEnabled() {
+  if (process.env.MASS_TEXT_ENABLED !== "true") {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Mass texting is switched off in this environment.",
+    });
+  }
+}
+
+async function massTextRecipients(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  tenantId: number,
+  audience: MassTextAudience,
+): Promise<{ clientId: number; phone: string; firstName: string | null; lastName: string | null }[]> {
+  const base = [
+    eq(clients.tenantId, tenantId),
+    eq(clients.status, "active"),
+    isNotNull(clients.phone),
+    ne(clients.phone, ""),
+    // A client who replied STOP is excluded from every audience. This is
+    // the obligation, not a nicety — and without it their sends come back
+    // as unexplained carrier failures anyway.
+    isNull(clients.smsOptedOutAt),
+  ];
+
+  let rows: { clientId: number; phone: string | null; firstName: string | null; lastName: string | null }[] = [];
+
+  if (audience.kind === "all_active") {
+    rows = await db.select({ clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
+      .from(clients).where(and(...base));
+  } else if (audience.kind === "hand_picked") {
+    rows = await db.select({ clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
+      .from(clients).where(and(...base, inArray(clients.id, audience.clientIds)));
+  } else if (audience.kind === "membership_tier") {
+    rows = await db.selectDistinct({ clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
+      .from(clients)
+      .innerJoin(memberships, eq(memberships.clientId, clients.id))
+      .where(and(
+        ...base,
+        eq(memberships.tenantId, tenantId),
+        eq(memberships.status, "active"),
+        eq(memberships.tier, audience.tier as any),
+        eq(memberships.isTest, false),
+      ));
+  } else {
+    // Dates are Brisbane calendar days; scheduled_start is UTC, so the
+    // window runs from the start of `from` to the end of `to` in +10:00.
+    const fromUtc = new Date(`${audience.from}T00:00:00+10:00`);
+    const toUtc = new Date(`${audience.to}T23:59:59+10:00`);
+    rows = await db.selectDistinct({ clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
+      .from(clients)
+      .innerJoin(appointments, eq(appointments.clientId, clients.id))
+      .where(and(
+        ...base,
+        eq(appointments.tenantId, tenantId),
+        gte(appointments.scheduledStart, fromUtc),
+        lte(appointments.scheduledStart, toUtc),
+        notInArray(appointments.status, ["cancelled", "no_show"]),
+      ));
+  }
+
+  // Dedupe by NUMBER, not by client: a couple with two client records and
+  // one phone is one person holding one handset, and texting them twice is
+  // both annoying and two credits.
+  //
+  // Mobiles only. A landline counted as a recipient overstates both the
+  // reach ("47 people will be texted") and the cost ("uses 47 of your
+  // balance"), and the message simply fails at Twilio.
+  const byNumber = new Map<string, { clientId: number; phone: string; firstName: string | null; lastName: string | null }>();
+  for (const row of rows) {
+    const phone = (row.phone ?? "").trim();
+    if (!phone) continue;
+    const key = normaliseAustralianMobile(phone);
+    if (!/^\+614\d{8}$/.test(key)) continue;
+    if (!byNumber.has(key)) {
+      byNumber.set(key, { clientId: row.clientId, phone, firstName: row.firstName, lastName: row.lastName });
+    }
+  }
+  return Array.from(byNumber.values());
+}
 
 // ─── Client portal ────────────────────────────────────────────────────────────
 // Client links are manually generated by an administrator. The raw access token

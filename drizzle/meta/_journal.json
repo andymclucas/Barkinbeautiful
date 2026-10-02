@@ -463,6 +463,27 @@
       "when": 1790862872133,
       "tag": "0065_message_thread_stars",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "5",
+      "when": 1790864579754,
+      "tag": "0066_client_sms_opt_out",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "5",
+      "when": 1790864579755,
+      "tag": "0067_mass_text_batches",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "5",
+      "when": 1790864579756,
+      "tag": "0068_mass_text_recipients",
+      "breakpoints": true
     }
   ]
 }

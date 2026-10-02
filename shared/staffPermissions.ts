@@ -20,6 +20,10 @@ export const STAFF_SECTIONS = [
   { key: "analytics",       label: "Analytics",         path: "/analytics" },
   { key: "staff",           label: "Staff",             path: "/staff" },
   { key: "messages",        label: "Messages",          path: "/messages" },
+  // Separate from "messages" on purpose: reading the inbox and texting
+  // every client at once are not the same permission, and the second has
+  // no undo and a finite SMS balance behind it.
+  { key: "mass_text",       label: "Mass Text",         path: "/messages" },
   { key: "email_campaigns", label: "Email Campaigns",   path: "/email-campaigns" },
   { key: "reporting",       label: "Reporting",         path: "/reporting" },
 ] as const;

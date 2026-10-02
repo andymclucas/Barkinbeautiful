@@ -20,7 +20,7 @@ import {
   isDuplicateKeyError,
 } from "../../shared/missedCallAutoText";
 import { and, asc, desc, eq, gt, gte, lte, inArray, isNotNull } from "drizzle-orm";
-import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNumber } from "../inboundSms";
+import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNumber, isSmsOptOutReply, isSmsOptInReply } from "../inboundSms";
 import { sendSms } from "../sms";
 import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
@@ -259,6 +259,21 @@ async function startServer() {
             .orderBy(asc(appointments.scheduledStart))
             .limit(1);
           if (appointment) appointmentId = appointment.id;
+        }
+      }
+
+      // A client telling us to stop must actually stop us. Twilio blocks
+      // STOP at carrier level, but the app never learned of it, so they
+      // stayed in every future mass-text audience and the sends came back
+      // as unexplained failures.
+      if (clientId) {
+        const body = String(Body ?? "");
+        if (isSmsOptOutReply(body)) {
+          await db.update(clients).set({ smsOptedOutAt: new Date() }).where(eq(clients.id, clientId));
+          console.log(`[SMS] ${inboundNumber} opted out of texts`);
+        } else if (isSmsOptInReply(body)) {
+          await db.update(clients).set({ smsOptedOutAt: null }).where(eq(clients.id, clientId));
+          console.log(`[SMS] ${inboundNumber} opted back in`);
         }
       }
 
