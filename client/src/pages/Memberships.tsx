@@ -530,6 +530,9 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   // confirmed first. These are 10px links in a 154-row table; a misclick
   // used to charge a client up to $104 with no way to undo it.
   const [confirming, setConfirming] = useState<"start" | "charge" | "pause" | "resume" | "cancel" | null>(null);
+  // Blank means charge now. Set when the client has to be told how the new
+  // billing works before any money leaves their account.
+  const [firstChargeOn, setFirstChargeOn] = useState("");
 
   const cycle = billingCycleFromWeeks(m.billingCycleWeeks);
   const clientName = [m.clientFirstName, m.clientLastName].filter(Boolean).join(" ").trim() || "this client";
@@ -541,6 +544,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
       toast.success(result.alreadyExisted ? "Already billing automatically" : "Automatic billing started");
       utils.memberships.list.invalidate();
       setConfirming(null);
+      setFirstChargeOn("");
     },
     onError: (error) => { toast.error(error.message); setConfirming(null); },
   });
@@ -591,7 +595,23 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
             ? <>{clientName} will be charged <strong>{amount}</strong> {cadence} again from their next billing date. Nothing is charged right now for the paused period.</>
             : confirming === "cancel"
             ? <>This stops {clientName} being charged automatically. The membership itself stays active &mdash; this only ends the card billing. Use <strong>Pause</strong> if they are away for a while, or cancel the membership itself if they are leaving the salon.</>
+            : firstChargeOn
+            ? <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, with the <strong>first charge on {firstChargeOn}</strong>. Nothing is taken before then.</>
             : <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, starting with a charge right now. It cannot be undone from here.</>}
+        {confirming === "start" && (
+          <div className="grid gap-1.5">
+            <Label htmlFor={`first-charge-${m.id}`} className="text-xs">First charge (leave blank to charge now)</Label>
+            <Input
+              id={`first-charge-${m.id}`}
+              type="date"
+              value={firstChargeOn}
+              onChange={(e) => setFirstChargeOn(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Starts at 9am Brisbane that day, so a decline lands while the salon is open.
+            </p>
+          </div>
+        )}
         </p>
         <DialogFooter>
           <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirming(null)}>Cancel</Button>
@@ -604,7 +624,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
               else if (confirming === "pause") pause.mutate({ membershipId: m.id });
               else if (confirming === "resume") resume.mutate({ membershipId: m.id });
               else if (confirming === "cancel") cancelBilling.mutate({ membershipId: m.id });
-              else start.mutate({ membershipId: m.id });
+              else start.mutate({ membershipId: m.id, firstChargeOn: firstChargeOn || null });
             }}
           >
             {busy ? "Working…"
@@ -612,7 +632,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
               : confirming === "pause" ? "Pause billing"
               : confirming === "resume" ? "Resume billing"
               : confirming === "cancel" ? "Stop billing"
-              : `Bill ${amount} ${cadence}`}
+              : firstChargeOn ? `Bill ${amount} ${cadence} from ${firstChargeOn}` : `Bill ${amount} ${cadence}`}
           </Button>
         </DialogFooter>
       </DialogContent>

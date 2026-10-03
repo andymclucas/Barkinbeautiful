@@ -302,7 +302,14 @@ async function ensureMembershipProduct(stripe: Stripe, tenantId: number): Promis
  * passed in: a caller-supplied cycle meant a stale tab or a second caller
  * could bill a client at a cadence the membership does not agree with.
  */
-export async function startMembershipSubscription(membershipId: number) {
+/**
+ * @param firstChargeOn  ISO date (yyyy-mm-dd, Brisbane) to take the first
+ *   payment. Omitted means charge now. Used when a client has to be told
+ *   how the new billing works before any money leaves their account —
+ *   the salon sets it up today and it starts on the agreed day, instead of
+ *   somebody having to remember to click the button that morning.
+ */
+export async function startMembershipSubscription(membershipId: number, firstChargeOn?: string | null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const stripe = requireStripeClient();
@@ -351,10 +358,16 @@ export async function startMembershipSubscription(membershipId: number) {
   }
 
   const productId = await ensureMembershipProduct(stripe, membership.tenantId ?? 1);
+  // trial_end rather than billing_cycle_anchor: "take nothing until this
+  // day, then charge and start the weekly cycle from it" is exactly the
+  // behaviour wanted, and it cannot accidentally prorate a part-week.
+  const trialEnd = firstChargeStamp(firstChargeOn);
+
   const subscription = await stripe.subscriptions.create({
     customer: client.stripeCustomerId,
     default_payment_method: client.paymentMethodId,
     collection_method: "charge_automatically",
+    ...(trialEnd ? { trial_end: trialEnd } : {}),
     items: [{
       metadata: { groomigo_membership_name: membership.name ?? "Grooming membership" },
       price_data: {
@@ -390,6 +403,26 @@ export async function startMembershipSubscription(membershipId: number) {
     .where(eq(memberships.id, membership.id));
 
   return { subscriptionId: subscription.id, alreadyExisted: false };
+}
+
+/**
+ * A Brisbane calendar date turned into the Unix second Stripe wants.
+ *
+ * Billing starts at 9am Brisbane on that day, not midnight: a charge that
+ * lands while the client is asleep and fails is discovered hours later,
+ * and a decline during salon hours can actually be dealt with.
+ *
+ * A date in the past is ignored rather than rejected — Stripe would refuse
+ * it, and "start now" is the sensible reading of a day that has been and
+ * gone.
+ */
+function firstChargeStamp(isoDate: string | null | undefined): number | undefined {
+  const value = (isoDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const when = new Date(`${value}T09:00:00+10:00`);
+  if (Number.isNaN(when.getTime())) return undefined;
+  const seconds = Math.floor(when.getTime() / 1000);
+  return seconds > Math.floor(Date.now() / 1000) ? seconds : undefined;
 }
 
 /**

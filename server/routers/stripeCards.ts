@@ -97,8 +97,12 @@ export const stripeCardsRouter = router({
   startSubscription: adminProcedure
     // The cadence comes from the membership itself, not the caller: a
     // stale tab must not be able to bill at a cadence of its choosing.
-    .input(z.object({ membershipId: z.number() }))
-    .mutation(async ({ input }) => startMembershipSubscription(input.membershipId)),
+    .input(z.object({
+      membershipId: z.number(),
+      /** yyyy-mm-dd, Brisbane. Omitted charges now. */
+      firstChargeOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    }))
+    .mutation(async ({ input }) => startMembershipSubscription(input.membershipId, input.firstChargeOn)),
 
   cancelSubscription: adminProcedure
     .input(z.object({ membershipId: z.number() }))
