@@ -3,6 +3,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { useTimezone } from "@/lib/timezone";
 import { brisbaneDateKey } from "@shared/localDateTime";
+import { greetingForHour } from "@shared/greeting";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,10 +70,20 @@ export default function Dashboard() {
   // is a no-op in React, so this checks every second but only re-renders on the
   // minute, and can never display a stale minute.
   const tz = useTimezone();
+  //
+  // The greeting rides the same tick. It was the literal string "Good
+  // morning", so the salon screen — which is left open for days — wished
+  // everyone good morning at 2:20pm. Deciding it once at mount would only
+  // move the problem to whenever the page was last loaded.
   const [salonTime, setSalonTime] = useState(() => tz.timeWithZone(Date.now()));
+  const [greeting, setGreeting] = useState(() => greetingForHour(tz.hourOfDay()));
   useEffect(() => {
-    setSalonTime(tz.timeWithZone(Date.now()));
-    const timer = window.setInterval(() => setSalonTime(tz.timeWithZone(Date.now())), 1000);
+    const tick = () => {
+      setSalonTime(tz.timeWithZone(Date.now()));
+      setGreeting(greetingForHour(tz.hourOfDay()));
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
   }, [tz]);
 
@@ -142,7 +153,7 @@ export default function Dashboard() {
           <div className="min-w-0">
             <p className="text-[11.5px] font-semibold tracking-[0.04em] text-muted-foreground mb-1">Salon control centre</p>
             <h1 className="text-[30px] font-bold font-display tracking-tight leading-tight">
-              Good morning{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
+              {greeting}{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
             </h1>
             <p className="text-[13.5px] text-muted-foreground mt-0.5">
               {tz.longDate(Date.now())}
