@@ -141,3 +141,53 @@ export function brisbaneRangeForDays(days: number, now: Date = new Date()): { fr
 
   return { from, to };
 }
+
+/**
+ * The year a range covers, if it covers exactly that whole calendar year.
+ *
+ * Returned as a string, and as "" when it is anything else, because it
+ * drives a <Select> value directly: the control must sit on nothing while
+ * a preset like "Month to date" is active, so that choosing the current
+ * year still registers as a change and widens the range to the whole of
+ * it. If it reported "2026" for 1–3 October, picking 2026 would do
+ * nothing at all.
+ */
+export function wholeCalendarYear(fromKey: string, toKey: string): string {
+  const year = fromKey.slice(0, 4);
+  return fromKey === `${year}-01-01` && toKey === `${year}-12-31` ? year : "";
+}
+
+/**
+ * One bad row must not produce a dropdown of fifty years.
+ */
+export const MAX_YEARS_OFFERED = 12;
+
+/**
+ * The years a reporting date picker should offer, newest first.
+ *
+ * A native date input steps one month per click, so reaching mid-2024
+ * from October 2026 is twenty-seven clicks on a small arrow. Offering the
+ * years outright makes it one.
+ *
+ * The bounds come from the bookings rather than being hardcoded, so an
+ * older import appears in the list instead of being unreachable, and a
+ * forward booking in a future year is offered too. The current year is
+ * always included — on an empty database it is the only entry.
+ */
+export function yearOptions(
+  earliest: number | null | undefined,
+  latest: number | null | undefined,
+  now: Date = new Date(),
+): number[] {
+  const thisYear = Number(brisbaneDateKey(now).slice(0, 4));
+  const sane = (y: number | null | undefined): y is number =>
+    typeof y === "number" && Number.isInteger(y) && y > 1970 && y < 3000;
+
+  const oldest = Math.min(sane(earliest) ? earliest : thisYear, thisYear);
+  const newest = Math.max(sane(latest) ? latest : thisYear, thisYear);
+  const floor = Math.max(oldest, newest - (MAX_YEARS_OFFERED - 1));
+
+  const years: number[] = [];
+  for (let y = newest; y >= floor; y--) years.push(y);
+  return years;
+}

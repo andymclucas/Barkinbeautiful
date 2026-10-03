@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBrisbaneLocalDateTime, brisbaneDateKey, brisbaneCalendarPeriod, brisbaneExplicitRange } from "../shared/localDateTime";
+import { parseBrisbaneLocalDateTime, brisbaneDateKey, brisbaneCalendarPeriod, brisbaneExplicitRange, wholeCalendarYear, yearOptions, MAX_YEARS_OFFERED } from "../shared/localDateTime";
 
 describe("parseBrisbaneLocalDateTime", () => {
   it("interprets a naive datetime-local string as Brisbane (UTC+10) time", () => {
@@ -134,5 +134,57 @@ describe("brisbaneExplicitRange", () => {
     const { from, to } = brisbaneExplicitRange("not-a-date", "2026-10-03");
     expect(Number.isNaN(from.getTime())).toBe(false);
     expect(Number.isNaN(to.getTime())).toBe(false);
+  });
+});
+
+describe("wholeCalendarYear", () => {
+  it("recognises a range that is exactly one calendar year", () => {
+    expect(wholeCalendarYear("2024-01-01", "2024-12-31")).toBe("2024");
+  });
+
+  it("reports nothing for a part-year, so picking that year still changes something", () => {
+    // Month to date in October 2026. If this said "2026", choosing 2026
+    // from the year picker would be a no-op and the range would stay on
+    // the three days of October.
+    expect(wholeCalendarYear("2026-10-01", "2026-10-03")).toBe("");
+    expect(wholeCalendarYear("2026-01-01", "2026-10-03")).toBe("");
+  });
+
+  it("reports nothing for a range spanning two years", () => {
+    expect(wholeCalendarYear("2024-01-01", "2026-12-31")).toBe("");
+  });
+});
+
+describe("yearOptions", () => {
+  const oct2026 = new Date("2026-10-03T04:00:00Z"); // 2pm Brisbane
+
+  it("offers every year the salon has bookings in, newest first", () => {
+    expect(yearOptions(2024, 2027, oct2026)).toEqual([2027, 2026, 2025, 2024]);
+  });
+
+  it("offers the current year on an empty database", () => {
+    expect(yearOptions(null, null, oct2026)).toEqual([2026]);
+  });
+
+  it("includes the current year even when the bookings stop short of it", () => {
+    expect(yearOptions(2024, 2024, oct2026)).toEqual([2026, 2025, 2024]);
+  });
+
+  it("ignores a rogue date rather than listing fifty years", () => {
+    // One bad import row with a 1970 timestamp must not swamp the dropdown.
+    expect(yearOptions(1970, 2026, oct2026)).toEqual([2026]);
+    expect(yearOptions(1900, 2026, oct2026).length).toBeLessThanOrEqual(MAX_YEARS_OFFERED);
+  });
+
+  it("caps a long history at MAX_YEARS_OFFERED", () => {
+    const years = yearOptions(1990, 2026, oct2026);
+    expect(years.length).toBe(MAX_YEARS_OFFERED);
+    expect(years[0]).toBe(2026);
+    expect(years[years.length - 1]).toBe(2026 - (MAX_YEARS_OFFERED - 1));
+  });
+
+  it("uses the Brisbane year, not the machine's", () => {
+    // 11pm UTC on 31 December is already 9am on 1 January in Brisbane.
+    expect(yearOptions(null, null, new Date("2026-12-31T23:00:00Z"))).toEqual([2027]);
   });
 });
