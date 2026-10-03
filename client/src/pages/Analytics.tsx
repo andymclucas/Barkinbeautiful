@@ -1,81 +1,17 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend, type TooltipProps } from "recharts";
 import { TrendingUp, Users, CreditCard, CalendarDays, Scissors, Heart, Download } from "lucide-react";
-import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { brisbaneRangeForDays, brisbaneCalendarPeriod, brisbaneExplicitRange, brisbaneDateKey, wholeCalendarYear } from "@shared/localDateTime";
-
-/**
- * Rolling windows and calendar periods are different questions, and the
- * page used to answer the second with the first: "This Month" ran a
- * rolling 30 days, so on 3 October it reported $36k of September against
- * three trading days of October. The figures were right; the label was
- * not, which is worse than either.
- *
- * Both are useful — month-to-date is what you compare with last month,
- * a rolling 30 days is the steadier trend — so offer both and say which
- * is which.
- */
-type RangeKey = "mtd" | "d30" | "wtd" | "d90" | "ytd" | "custom";
-
-const RANGES: { key: RangeKey; label: string }[] = [
-  { key: "mtd", label: "Month to date" },
-  { key: "d30", label: "Last 30 days" },
-  { key: "wtd", label: "Week to date" },
-  { key: "d90", label: "Last 90 days" },
-  { key: "ytd", label: "Year to date" },
-  { key: "custom", label: "Custom range…" },
-];
+import { useReportRange, ReportRangeControls } from "@/components/ReportRange";
 
 export default function Analytics() {
-  const [rangeKey, setRangeKey] = useState<RangeKey>("mtd");
-  // Custom range, as Brisbane calendar dates. Defaults to the calendar
-  // year, which is the comparison most often wanted against the old
-  // system's dashboard.
-  const [customFrom, setCustomFrom] = useState(() => `${new Date().getFullYear()}-01-01`);
-  const [customTo, setCustomTo] = useState(() => `${new Date().getFullYear()}-12-31`);
-
-  // Anchored to the salon's own day boundaries, not the viewer's. setHours()
-  // uses the browser's timezone, so the previous version produced a different
-  // window depending on where it was opened from — and appointments near
-  // midnight fell into the wrong period. Queensland is UTC+10 year-round.
-  const { from: dateFrom, to: dateTo } = useMemo(() => {
-    switch (rangeKey) {
-      case "mtd": return brisbaneCalendarPeriod("month");
-      case "wtd": return brisbaneCalendarPeriod("week");
-      case "ytd": return brisbaneCalendarPeriod("year");
-      case "d90": return brisbaneRangeForDays(90);
-      case "custom": return brisbaneExplicitRange(customFrom, customTo);
-      default:    return brisbaneRangeForDays(30);
-    }
-  }, [rangeKey, customFrom, customTo]);
-
-  // The two date boxes are always on show, and always display the range
-  // actually being reported — including under a preset, where they used to
-  // be hidden and hold a stale year. Editing either one therefore has to
-  // keep the other end at what is on screen, not at whatever was last
-  // typed into a custom range.
-  const fromKey = brisbaneDateKey(dateFrom);
-  const toKey = brisbaneDateKey(dateTo);
-
-  const editDate = (end: "from" | "to", value: string) => {
-    // A half-typed date arrives as "", and clearing the range would blank
-    // the whole page.
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
-    setCustomFrom(end === "from" ? value : fromKey);
-    setCustomTo(end === "to" ? value : toKey);
-    setRangeKey("custom");
-  };
-
-  const pickYear = (year: string) => {
-    setCustomFrom(`${year}-01-01`);
-    setCustomTo(`${year}-12-31`);
-    setRangeKey("custom");
-  };
+  // The period, the controls and the Brisbane day boundaries all live in
+  // one place now, shared with the Reporting page so the two cannot drift
+  // apart again.
+  const range = useReportRange("mtd");
+  const { dateFrom, dateTo, fromKey, toKey } = range;
 
   const { data: summary } = trpc.analytics.summary.useQuery({
     tenantId: 1,
@@ -99,8 +35,6 @@ export default function Analytics() {
 
   const { data: groomInterval } = trpc.analytics.averageGroomInterval.useQuery({ tenantId: 1 });
 
-  const { data: bookingYears } = trpc.analytics.dataYears.useQuery({ tenantId: 1 });
-
   const { data: timeSeries } = trpc.analyticsExt.revenueTimeSeries.useQuery({
     tenantId: 1,
     dateFrom: dateFrom.toISOString(),
@@ -109,7 +43,7 @@ export default function Analytics() {
 
   const handleExportCSV = () => {
     const rows: (string | number)[][] = [
-      ["Period", RANGES.find(r => r.key === rangeKey)?.label ?? rangeKey],
+      ["Period", range.label],
       // Brisbane, not the viewer's clock: 1 Jan 00:00 Brisbane is still 31 Dec in UTC.
       ["Covering", `${dateFrom.toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })} to ${dateTo.toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}`],
       [],
@@ -201,57 +135,13 @@ export default function Analytics() {
             {/* Name the actual dates. A figure labelled only "This Month"
                 was read as October and was in fact a rolling 30 days back
                 into September. */}
-            <p className="text-sm text-muted-foreground">
-              {dateFrom.toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" })}
-              {" – "}
-              {dateTo.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Brisbane" })}
-            </p>
+            <p className="text-sm text-muted-foreground">{range.dates}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-1.5 text-xs">
               <Download className="h-3.5 w-3.5" /> Export CSV
             </Button>
-            <Select value={rangeKey} onValueChange={v => setRangeKey(v as RangeKey)}>
-              <SelectTrigger className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {RANGES.map(r => (
-                  <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {/* A whole year in one click. The date boxes below step a month
-                at a time, so 2024 is two dozen clicks on the arrow away. */}
-            <Select value={wholeCalendarYear(fromKey, toKey)} onValueChange={pickYear}>
-              <SelectTrigger className="w-[7.5rem]" aria-label="Whole year">
-                <SelectValue placeholder="Whole year" />
-              </SelectTrigger>
-              <SelectContent>
-                {(bookingYears?.years ?? []).map(y => (
-                  <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {/* Always visible, never a mode you have to find: the dates on
-                show are the dates being reported, whichever preset is on. */}
-            <div className="flex items-center gap-1.5">
-              <Input
-                type="date"
-                className="h-9 w-[9.5rem]"
-                value={fromKey}
-                aria-label="From date"
-                onChange={(e) => editDate("from", e.target.value)}
-              />
-              <span className="text-muted-foreground">–</span>
-              <Input
-                type="date"
-                className="h-9 w-[9.5rem]"
-                value={toKey}
-                aria-label="To date"
-                onChange={(e) => editDate("to", e.target.value)}
-              />
-            </div>
+            <ReportRangeControls range={range} />
           </div>
         </div>
 
