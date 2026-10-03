@@ -607,15 +607,17 @@ table tbody tr:hover {
   box-shadow: var(--shadow-lg);
 }
 
-/* ── Reporting period calendar ────────────────────────────────────────────── */
-/* Scoped to .report-range, NOT to every calendar: the Calendar page and its
-   sidebar use the same component and were signed off as they are. */
+/* ── Calendars ────────────────────────────────────────────────────────────── */
+/* Keyed on the component's own data-slot, like the card rules above, so every
+   calendar in the app wears the same face: the reporting panel, the
+   Appointments rail and the date popovers. The range rules below simply do
+   not match a mode="single" picker. */
 .report-range {
   box-shadow: var(--shadow-md);
 }
 
 /* The month name carries the grid, so give it some weight. */
-.report-range .rdp-month_caption {
+[data-slot="calendar"] .rdp-month_caption {
   font-size: 0.9375rem;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -623,7 +625,7 @@ table tbody tr:hover {
 
 /* Small caps for the weekday letters — reads as a header rather than as
    more numbers. */
-.report-range .rdp-weekday {
+[data-slot="calendar"] .rdp-weekday {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 0.625rem;
@@ -631,43 +633,43 @@ table tbody tr:hover {
 }
 
 /* The arrows were ghost buttons with nothing to aim at. */
-.report-range .rdp-button_previous,
-.report-range .rdp-button_next {
+[data-slot="calendar"] .rdp-button_previous,
+[data-slot="calendar"] .rdp-button_next {
   border-radius: 9999px;
   background: color-mix(in oklch, var(--brand-primary) 7%, transparent);
   transition: background var(--dur-fast) ease;
 }
-.report-range .rdp-button_previous:hover,
-.report-range .rdp-button_next:hover {
+[data-slot="calendar"] .rdp-button_previous:hover,
+[data-slot="calendar"] .rdp-button_next:hover {
   background: color-mix(in oklch, var(--brand-primary) 16%, transparent);
 }
 
 /* The band between the two ends. --accent is barely a tint; at a glance
    the range did not read as selected at all. */
-.report-range .rdp-range_middle,
-.report-range [data-range-middle="true"] {
+[data-slot="calendar"] .rdp-range_middle,
+[data-slot="calendar"] [data-range-middle="true"] {
   background: color-mix(in oklch, var(--brand-primary) 13%, transparent);
   color: var(--color-foreground);
 }
-.report-range .rdp-range_start,
-.report-range .rdp-range_end {
+[data-slot="calendar"] .rdp-range_start,
+[data-slot="calendar"] .rdp-range_end {
   background: color-mix(in oklch, var(--brand-primary) 13%, transparent);
 }
 
 /* Both ends, pinned with a halo so the span is obvious across two months. */
-.report-range [data-range-start="true"],
-.report-range [data-range-end="true"],
-.report-range [data-selected-single="true"] {
+[data-slot="calendar"] [data-range-start="true"],
+[data-slot="calendar"] [data-range-end="true"],
+[data-slot="calendar"] [data-selected-single="true"] {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand-primary) 22%, transparent);
   font-weight: 600;
 }
 
 /* Today is a marker, not a selection, so it gets an outline rather than a
    fill that competes with the range. */
-.report-range .rdp-today:not(:has([data-range-start="true"])):not(:has([data-range-end="true"])) {
+[data-slot="calendar"] .rdp-today:not(:has([data-range-start="true"])):not(:has([data-range-end="true"])) {
   background: transparent;
 }
-.report-range .rdp-today > button::after {
+[data-slot="calendar"] .rdp-today > button::after {
   content: "";
   position: absolute;
   bottom: 0.1875rem;
@@ -676,9 +678,9 @@ table tbody tr:hover {
   border-radius: 9999px;
   background: var(--brand-primary);
 }
-.report-range .rdp-today > button[data-range-start="true"]::after,
-.report-range .rdp-today > button[data-range-end="true"]::after,
-.report-range .rdp-today > button[data-range-middle="true"]::after {
+[data-slot="calendar"] .rdp-today > button[data-range-start="true"]::after,
+[data-slot="calendar"] .rdp-today > button[data-range-end="true"]::after,
+[data-slot="calendar"] .rdp-today > button[data-range-middle="true"]::after {
   background: currentColor;
   opacity: 0.55;
 }
@@ -706,7 +708,7 @@ table tbody tr:hover {
 }
 
 /* A hover you can actually see on an unselected day. */
-.report-range .rdp-day > button:hover:not([data-range-start="true"]):not([data-range-end="true"]) {
+[data-slot="calendar"] .rdp-day > button:hover:not([data-range-start="true"]):not([data-range-end="true"]) {
   background: color-mix(in oklch, var(--brand-primary) 22%, transparent);
 }
 

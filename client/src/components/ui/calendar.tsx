@@ -15,6 +15,12 @@ function Calendar({
   showOutsideDays = true,
   captionLayout = "label",
   buttonVariant = "ghost",
+  // Monday, everywhere. The salon trades Tue–Fri, the Appointments week
+  // view runs Mon–Sun (getWeekStart) and brisbaneCalendarPeriod("week")
+  // agrees — but react-day-picker defaults to Sunday, so the rail and the
+  // date popovers were drawing a different week from the one the page
+  // beside them was showing.
+  weekStartsOn = 1,
   formatters,
   components,
   ...props
@@ -26,6 +32,7 @@ function Calendar({
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
+      weekStartsOn={weekStartsOn}
       className={cn(
         "bg-background group/calendar p-3 [--cell-size:--spacing(8)] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent",
         String.raw`rtl:**:[.rdp-button\_next>svg]:rotate-180`,
