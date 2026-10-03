@@ -113,9 +113,25 @@ export function MessageThread<M extends ThreadMessageInput>({
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!autoScroll) return;
-    // `auto` rather than `smooth`: opening a thread should already be at the
-    // bottom, not visibly travel there.
-    endRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
+    // Scroll the message list, NOT the page.
+    //
+    // scrollIntoView moves every scrollable ancestor, including the window.
+    // Inside a fixed-position dialog that went unnoticed; in the Messages
+    // centre pane, which sits in normal page flow, opening a conversation
+    // yanked the whole page to a different position. Walk up to the nearest
+    // scrolling box and move only that.
+    const end = endRef.current;
+    if (!end) return;
+    let box: HTMLElement | null = end.parentElement;
+    while (box) {
+      const overflowY = getComputedStyle(box).overflowY;
+      if ((overflowY === "auto" || overflowY === "scroll") && box.scrollHeight > box.clientHeight) {
+        box.scrollTop = box.scrollHeight;
+        return;
+      }
+      box = box.parentElement;
+    }
+    // No scrolling ancestor (a short thread, or a preview): nothing to do.
   }, [autoScroll, entries.length]);
 
   if (entries.length === 0) {

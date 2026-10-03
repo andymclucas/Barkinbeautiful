@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp, Star } from "lucide-react";
+import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp, Star, Loader2 } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { EmojiPicker } from "@/components/EmojiPicker";
 import { calculateSmsCost } from "@shared/smsSegments";
@@ -100,6 +100,8 @@ export default function Messages() {
   // At lg the conversation shows in the centre pane, so the dialog must not
   // mount at all — a Radix Dialog hidden with lg:hidden still renders its
   // overlay, which greys the page out and swallows every click.
+  const [replyBody, setReplyBody] = useState("");
+  const [replySending, setReplySending] = useState(false);
   const isWideScreen = useIsWideScreen();
   const utils = trpc.useUtils();
   // The button only appears for someone who may actually send. The server
@@ -271,6 +273,40 @@ export default function Messages() {
     sendMutation.mutate({ tenantId: 1, clientId: selectedClientId ?? undefined, toNumber, body, type: selectedTemplate as any });
   };
 
+  /**
+   * Send a reply to the open thread, without leaving it.
+   *
+   * Uses the same sms.send procedure the compose dialog does, so there is
+   * one send path and one set of logs. The thread stays selected
+   * afterwards — the old flow cleared it, so answering a message lost your
+   * place in the list.
+   */
+  const sendReply = useCallback(() => {
+    const body = replyBody.trim();
+    if (!openThread || !body || replySending) return;
+    setReplySending(true);
+    sendMutation.mutate(
+      {
+        tenantId: 1,
+        clientId: openThread.clientId ?? undefined,
+        toNumber: openThread.toNumber,
+        body,
+        type: "custom",
+      },
+      {
+        onSuccess: (result) => {
+          if (result.success) {
+            setReplyBody("");
+            refetch();
+            refetchThreads();
+          }
+          setReplySending(false);
+        },
+        onError: () => setReplySending(false),
+      },
+    );
+  }, [openThread, replyBody, replySending, sendMutation, refetch, refetchThreads]);
+
   // The conversation itself. Rendered in the centre pane on desktop and
   // inside the dialog on a phone — one definition, so the two cannot
   // drift apart.
@@ -305,56 +341,52 @@ export default function Messages() {
                 />
               </div>
     
-              {/* The bar an iPhone puts at the bottom of a thread. Replying still
-                  opens the compose dialog, which carries the template picker and
-                  the send-safety checks — this is the entry point, not a second
-                  send path. */}
-              <div className="flex items-center gap-2 border-t bg-background px-3 py-2.5">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
-                  disabled={deleteThreadMutation.isPending}
-                  aria-label="Delete conversation"
-                  onClick={() => {
-                    if (!openThread) return;
-                    if (confirm(`Delete this entire conversation with ${openThread.clientName?.trim() || openThread.toNumber}? This can't be undone.`)) {
-                      deleteThreadMutation.mutate(openThread.clientId ? { tenantId: 1, clientId: openThread.clientId } : { tenantId: 1, toNumber: openThread.toNumber });
-                    }
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-                <button
-                  type="button"
-                  className="flex h-10 min-w-0 flex-1 items-center rounded-full border bg-muted/40 px-4 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
-                  onClick={() => {
-                    if (!openThread) return;
-                    setOpenThread(null);
-                    setToNumber(openThread.toNumber);
-                    setSelectedClientId(openThread.clientId);
-                    setClientSearch(openThread.clientId ? (openThread.clientName?.trim() || "") : "");
-                    setComposeOpen(true);
-                  }}
-                >
-                  Message…
-                </button>
-                <Button
-                  size="icon"
-                  className="h-10 w-10 shrink-0 rounded-full"
-                  aria-label="Reply"
-                  onClick={() => {
-                    if (!openThread) return;
-                    setOpenThread(null);
-                    setToNumber(openThread.toNumber);
-                    setSelectedClientId(openThread.clientId);
-                    setClientSearch(openThread.clientId ? (openThread.clientName?.trim() || "") : "");
-                    setComposeOpen(true);
-                  }}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
+              {/* Reply where the conversation is. This used to clear the open
+              thread and launch the compose dialog, which closed over the
+              page and left nothing selected when it was dismissed — two
+              clicks to answer "I'm on my way". */}
+          <div className="flex items-end gap-2 border-t bg-background px-3 py-2.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+              disabled={deleteThreadMutation.isPending}
+              aria-label="Delete conversation"
+              onClick={() => {
+                if (!openThread) return;
+                if (confirm(`Delete this entire conversation with ${openThread.clientName?.trim() || openThread.toNumber}? This can't be undone.`)) {
+                  deleteThreadMutation.mutate(openThread.clientId ? { tenantId: 1, clientId: openThread.clientId } : { tenantId: 1, toNumber: openThread.toNumber });
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Textarea
+              rows={1}
+              value={replyBody}
+              placeholder="Message…"
+              className="min-h-[40px] max-h-32 flex-1 resize-none rounded-2xl py-2"
+              disabled={replySending}
+              onChange={(e) => setReplyBody(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter sends, shift+Enter makes a new line — what every
+                // messaging app does, and what the hands expect.
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendReply();
+                }
+              }}
+            />
+            <Button
+              size="icon"
+              className="h-10 w-10 shrink-0 rounded-full"
+              aria-label="Send reply"
+              disabled={replySending || replyBody.trim().length === 0}
+              onClick={sendReply}
+            >
+              {replySending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
     </>
   );
 
