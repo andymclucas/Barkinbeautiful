@@ -83,6 +83,12 @@ export const staff = mysqlTable("staff", {
   role: mysqlEnum("role", ["owner", "groomer", "bather", "receptionist", "manager"]).default("groomer").notNull(),
   colourHex: varchar("colour_hex", { length: 7 }).default("#6366f1").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
+  /**
+   * Takes appointments. Separate from isActive: deactivating removes
+   * someone from the platform, this only removes them from the roster.
+   * Andy administers the system and does not groom.
+   */
+  rostered: boolean("rostered").default(true).notNull(),
   xeroEmployeeId: varchar("xero_employee_id", { length: 100 }),
   onlineBookable: boolean("online_bookable").default(false).notNull(),
   onlineProfilePhotoUrl: text("online_profile_photo_url"),

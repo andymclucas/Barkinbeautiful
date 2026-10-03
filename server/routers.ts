@@ -2481,8 +2481,18 @@ const staffRouter = router({
         // Inactive staff are off the roster, so they get no calendar column
         // and cannot be assigned work. Christie and Nathan are on the
         // platform to watch it, not to groom.
+        //
+        // `rostered` is the softer version of the same idea, for someone
+        // who is very much on the platform but does not take dogs: Andy
+        // administers the system. Deactivating him would have done the
+        // job for the calendar and quietly cost him his place on the
+        // staff list everywhere else.
       }).from(staff)
-        .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true)))
+        .where(and(
+          eq(staff.tenantId, input.tenantId),
+          eq(staff.isActive, true),
+          eq(staff.rostered, true),
+        ))
         .orderBy(asc(staff.name));
     }),
 
