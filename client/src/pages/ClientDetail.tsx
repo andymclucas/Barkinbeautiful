@@ -12,6 +12,7 @@ import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel } from "@/component
 import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
 import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
 import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
+import { ClientPetsAside } from "@/components/client-record/ClientPetsAside";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -535,6 +536,12 @@ export default function ClientDetail() {
   // One call decides both the tab counts and the rows beneath them, so
   // a tab reading "(4)" above three rows is not possible.
   const bookingCounts = countBookingBuckets(appointments);
+  // Same bucketing as the Bookings tab, so Overview cannot disagree with it.
+  const upcomingBookings = appointments
+    .filter(a => bookingBucket(a) === "upcoming")
+    .slice()
+    .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime())
+    .slice(0, 5);
   const bookingsInTab = appointments
     .filter(a => bookingBucket(a) === bookingTab)
     .filter(a => paymentFilter === "all" || (a.paymentStatus ?? "unpaid") === paymentFilter);
@@ -863,9 +870,53 @@ export default function ClientDetail() {
           </TabsList>
 
           <div className="min-w-0">
-          <TabsContent value="overview" className="mt-0 space-y-4">
-            <ClientMetrics clientId={clientId} />
-            <ClientNotesPanel clientId={clientId} />
+          <TabsContent value="overview" className="mt-0">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,19rem)] xl:items-start">
+              <div className="min-w-0 space-y-4">
+                <ClientMetrics clientId={clientId} />
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center justify-between gap-2 text-base">
+                      Upcoming appointments
+                      <Button variant="ghost" size="sm" className="h-7 text-xs"
+                        onClick={() => setActiveClientTab("appointments")}>
+                        View all
+                      </Button>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {upcomingBookings.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Nothing booked in.</p>
+                    )}
+                    {upcomingBookings.map(a => (
+                      <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {a.petName} &middot; {SERVICE_LABELS[a.serviceType] ?? a.serviceType}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+                            {" · "}
+                            {new Date(a.scheduledStart).toLocaleTimeString("en-AU", { timeZone: getActiveTimeZone(), hour: "numeric", minute: "2-digit", hour12: true })}
+                            {a.staffName ? ` · ${a.staffName}` : ""}
+                          </p>
+                        </div>
+                        <span className="text-sm font-medium tabular-nums">
+                          {a.price ? `$${parseFloat(a.price).toFixed(2)}` : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <ClientNotesPanel clientId={clientId} />
+              </div>
+
+              <div className="min-w-0">
+                <ClientPetsAside clientId={clientId} pets={pets} />
+              </div>
+            </div>
           </TabsContent>
 
           <TabsContent value="agreements" className="mt-0">
