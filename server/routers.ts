@@ -4753,10 +4753,34 @@ const analyticsRouter = router({
         ? Math.round(appointmentRevenue / completedAppts * 100) / 100
         : 0;
 
+      // Membership money ACTUALLY RECEIVED in the period.
+      //
+      // Deliberately not the run rate. f6cca0e fixed exactly that: the page
+      // multiplied the current 153-member roster across every week of the
+      // period and called it revenue, overstating the year by $218,996.
+      // This is payments that exist, so it is zero until clients are billed
+      // through Groomigo rather than the old system — which is the honest
+      // picture, not a flattering one.
+      const [membershipPaid] = await db
+        .select({ total: sql<string>`COALESCE(SUM(${membershipPayments.amount}), 0)` })
+        .from(membershipPayments)
+        .innerJoin(memberships, eq(membershipPayments.membershipId, memberships.id))
+        .where(and(
+          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.isTest, false),
+          eq(membershipPayments.status, "paid"),
+          gte(membershipPayments.paidAt, dateFrom),
+          lte(membershipPayments.paidAt, dateTo),
+        ));
+      const membershipRevenueReceived = Math.round(Number(membershipPaid?.total ?? 0) * 100) / 100;
+
       return {
         appointmentRevenue,
         memberAttributedRevenue,
         membershipRunRateWeekly,
+        membershipRevenueReceived,
+        /** Appointments plus membership payments received. Money, not forecast. */
+        totalReceived: Math.round((appointmentRevenue + membershipRevenueReceived) * 100) / 100,
         activeMembers: memberRows.length,
         completedAppts,
         membershipAppts: membershipApptCount,

@@ -82,7 +82,9 @@ export default function Analytics() {
       ["Revenue Streams", ""],
       ["Appointment Revenue", `$${(revenueStreams?.appointmentRevenue ?? 0).toFixed(2)}`],
       ["  of which member-attributed", `$${(revenueStreams?.memberAttributedRevenue ?? 0).toFixed(2)}`],
-      ["Membership run rate (per week)", `$${(revenueStreams?.membershipRunRateWeekly ?? 0).toFixed(2)}`],
+      ["Membership payments received", `$${(revenueStreams?.membershipRevenueReceived ?? 0).toFixed(2)}`],
+      ["Total received (appointments + memberships)", `$${(revenueStreams?.totalReceived ?? 0).toFixed(2)}`],
+      ["Membership run rate (per week) — forecast, not received", `$${(revenueStreams?.membershipRunRateWeekly ?? 0).toFixed(2)}`],
       ["Avg Ticket", `$${(revenueStreams?.avgTicket ?? 0).toFixed(2)}`],
       ["Avg Weeks Between Completed Grooms", groomInterval?.averageWeeks != null ? `${groomInterval.averageWeeks} weeks` : "Not enough repeat-groom history"],
       ["Repeat Pets Included", groomInterval?.returningPetCount ?? 0],
@@ -191,7 +193,10 @@ export default function Analytics() {
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Revenue", value: `$${(revenueStreams?.appointmentRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: TrendingUp, colour: "text-emerald-600 dark:text-emerald-400" , detail: summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} completed appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : undefined },
+            { label: "Revenue received", value: `$${(revenueStreams?.totalReceived ?? revenueStreams?.appointmentRevenue ?? summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: TrendingUp, colour: "text-emerald-600 dark:text-emerald-400" , detail: [
+              revenueStreams?.membershipRevenueReceived ? `incl. $${revenueStreams.membershipRevenueReceived.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} membership` : "memberships still billed outside Groomigo",
+              summary?.appointmentsMissingPrice ? `${summary.appointmentsMissingPrice} appt${summary.appointmentsMissingPrice === 1 ? "" : "s"} with no price — not counted` : null,
+            ].filter(Boolean).join(" · ") },
             { label: "Appointments", value: String(summary?.appointments ?? 0), icon: CalendarDays, colour: "text-blue-600 dark:text-blue-400" },
             { label: "Active Clients", value: String(summary?.activeClients ?? 0), icon: Users, colour: "text-violet-600 dark:text-violet-400" },
             { label: "Active Memberships", value: String(summary?.activeMemberships ?? 0), icon: CreditCard, colour: "text-amber-600 dark:text-amber-400" },
