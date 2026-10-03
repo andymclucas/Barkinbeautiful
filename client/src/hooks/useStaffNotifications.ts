@@ -91,14 +91,14 @@ export function useStaffNotifications() {
     window.dispatchEvent(new Event(CHANGED_EVENT));
   }, [isSupported]);
 
-  const notify = useCallback((input: { title: string; body: string; url?: string; tag?: string }) => {
+  const notify = useCallback((input: { title: string; body: string; url?: string; tag?: string }): NotificationDelivery => {
     const delivery: NotificationDelivery = chooseDelivery({
       supported: isSupported,
       permission: currentPermission(),
       enabled: readEnabled(),
       documentHidden: typeof document !== "undefined" && document.hidden,
     });
-    if (delivery === "none") return;
+    if (delivery === "none") return "none";
 
     const body = notificationBody(input.body);
 
@@ -116,7 +116,7 @@ export function useStaffNotifications() {
           if (input.url) window.location.assign(input.url);
           notification.close();
         };
-        return;
+        return "os";
       } catch {
         // Some browsers throw where a service worker is expected instead.
         // Fall through to the page rather than losing the ping.
@@ -127,7 +127,34 @@ export function useStaffNotifications() {
       description: body,
       action: input.url ? { label: "Open", onClick: () => window.location.assign(input.url!) } : undefined,
     });
+    return "in_app";
   }, [isSupported]);
+
+  /**
+   * Fire one on purpose, to check it works on this device.
+   *
+   * After a delay, because a real notification only pops when the tab is
+   * in the background — that is the whole design — so a test fired while
+   * you are looking at the page would show a toast and prove nothing
+   * about the thing you are testing. The delay is the window to switch
+   * away. Whatever happens then is exactly what a real message does.
+   */
+  const sendTest = useCallback((afterMs = 5000, onResult?: (delivery: NotificationDelivery) => void) => {
+    window.setTimeout(() => {
+      const delivery = notify({
+        title: "Groomigo test notification",
+        // Neutral on purpose: the follow-up says whether this arrived
+        // as a desktop alert or only in the page, and the two must not
+        // contradict each other on screen.
+        body: "This is what a new message or missed call will look like.",
+        url: "/settings",
+        tag: "gsos-test",
+      });
+      // Saying "it works" after falling back to a toast would be a lie
+      // on exactly the device most likely to need the truth: a phone.
+      onResult?.(delivery);
+    }, afterMs);
+  }, [notify]);
 
   return {
     supported: isSupported,
@@ -138,5 +165,6 @@ export function useStaffNotifications() {
     /** True where the only possible ping is inside the page. */
     inAppOnly: !isSupported || permission !== "granted",
     notify,
+    sendTest,
   };
 }

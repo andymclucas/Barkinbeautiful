@@ -1,4 +1,6 @@
-import { Bell, BellOff, Smartphone } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Bell, BellOff, Send, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -18,7 +20,28 @@ import { useStaffNotifications } from "@/hooks/useStaffNotifications";
  * their phone is silent while their desktop pops.
  */
 export function StaffNotificationSetting() {
-  const { supported, permission, enabled, setEnabled, canAsk } = useStaffNotifications();
+  const { supported, permission, enabled, setEnabled, canAsk, sendTest } = useStaffNotifications();
+  const [testing, setTesting] = useState(false);
+
+  const runTest = () => {
+    setTesting(true);
+    // Five seconds to switch away. A notification only pops when the tab
+    // is in the background, so testing it while staring at the page
+    // would prove nothing about the case you care about.
+    toast("Switch to another window or app now", {
+      description: "The test notification fires in 5 seconds.",
+    });
+    sendTest(5000, (delivery) => {
+      setTesting(false);
+      if (delivery === "os") return; // they just saw it; saying so again is noise
+      toast.warning("That appeared in the page, not as a desktop alert", {
+        description:
+          "This device cannot show them outside the browser — on an iPhone, add Groomigo to the Home Screen "
+          + "and open it from there. Otherwise check the site is allowed to send notifications.",
+        duration: 10000,
+      });
+    });
+  };
 
   const isIos = typeof navigator !== "undefined"
     && /iPad|iPhone|iPod/.test(navigator.userAgent)
@@ -58,6 +81,20 @@ export function StaffNotificationSetting() {
           <Button size="sm" variant="outline" onClick={() => void setEnabled(true)}>
             Ask for permission again
           </Button>
+        )}
+
+        {enabled && (
+          <div className="space-y-1.5">
+            <Button size="sm" variant="outline" className="gap-1.5" disabled={testing} onClick={runTest}>
+              <Send className="h-3.5 w-3.5" />
+              {testing ? "Firing in 5 seconds…" : "Send a test notification"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Switch to another window or app once you press it. Alerts only pop when Groomigo is in the
+              background &mdash; if it is the window you are looking at, the alert appears in the page
+              instead, which is deliberate.
+            </p>
+          </div>
         )}
 
         {enabled && isIos && (
