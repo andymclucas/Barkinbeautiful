@@ -185,23 +185,29 @@ export default function Dashboard() {
         {/* KPI cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 gm-stagger">
           {[
-            { tint: "gm-tint-violet", Icon: CalendarDays, label: "Today's Appointments", value: todayCount,  sub: `${inProgress} in progress` },
-            { tint: "gm-tint-mint",   Icon: Dog,          label: "Ready for Pickup",      value: readyCount,  sub: "dogs waiting" },
-            { tint: "gm-tint-amber",  Icon: TrendingUp,   label: "Monthly Revenue",       value: `$${(analytics?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: "this month" },
-            { tint: "gm-tint-sky",    Icon: CreditCard,   label: "Active Memberships",    value: analytics?.activeMemberships ?? 0, sub: "currently active" },
-          ].map(({ tint, Icon, label, value, sub }) => (
-            <Card key={label} className="brand-lift py-[18px]">
-              <CardContent className="flex flex-col items-start gap-2 px-[18px] sm:flex-row sm:items-center sm:gap-3.5">
-                <div className={`${tint} flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl`}>
-                  <Icon className="h-[19px] w-[19px]" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[11.5px] font-medium text-muted-foreground leading-snug">{label}</p>
-                  <p className="text-[21px] font-bold font-display leading-[1.15] tabular-nums sm:text-[25px]">{value}</p>
-                  <p className="text-[11.5px] text-muted-foreground leading-snug">{sub}</p>
-                </div>
-              </CardContent>
-            </Card>
+            // Each figure goes where you would go to act on it. The
+            // revenue tile names its range explicitly rather than relying
+            // on Analytics happening to default to month-to-date, so the
+            // number you land on is the number you clicked.
+            { tint: "gm-tint-violet", Icon: CalendarDays, label: "Today's Appointments", value: todayCount,  sub: `${inProgress} in progress`, href: "/calendar" },
+            { tint: "gm-tint-mint",   Icon: Dog,          label: "Ready for Pickup",      value: readyCount,  sub: "dogs waiting", href: "/workflow" },
+            { tint: "gm-tint-amber",  Icon: TrendingUp,   label: "Monthly Revenue",       value: `$${(analytics?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: "this month", href: "/analytics?range=mtd" },
+            { tint: "gm-tint-sky",    Icon: CreditCard,   label: "Active Memberships",    value: analytics?.activeMemberships ?? 0, sub: "currently active", href: "/memberships" },
+          ].map(({ tint, Icon, label, value, sub, href }) => (
+            <Link key={label} href={href} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-[var(--radius)]">
+              <Card className="brand-lift h-full cursor-pointer py-[18px]">
+                <CardContent className="flex flex-col items-start gap-2 px-[18px] sm:flex-row sm:items-center sm:gap-3.5">
+                  <div className={`${tint} flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl`}>
+                    <Icon className="h-[19px] w-[19px]" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11.5px] font-medium text-muted-foreground leading-snug">{label}</p>
+                    <p className="text-[21px] font-bold font-display leading-[1.15] tabular-nums sm:text-[25px]">{value}</p>
+                    <p className="text-[11.5px] text-muted-foreground leading-snug">{sub}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
 

@@ -51,8 +51,22 @@ const asDay = (d: Date, withYear: boolean) =>
     timeZone: "Australia/Brisbane",
   });
 
+/**
+ * `?range=mtd` in the URL wins over the page's own default.
+ *
+ * So a link can say which period it means — the Dashboard's revenue tile
+ * sends you to month-to-date explicitly, rather than trusting Analytics
+ * to keep defaulting to it. Read once, at mount: changing the dropdown
+ * afterwards should not be fought by the address bar.
+ */
+function rangeFromUrl(): RangeKey | null {
+  if (typeof window === "undefined") return null;
+  const asked = new URLSearchParams(window.location.search).get("range");
+  return REPORT_RANGES.some(r => r.key === asked) ? (asked as RangeKey) : null;
+}
+
 export function useReportRange(initial: RangeKey = "mtd") {
-  const [rangeKey, setRangeKey] = useState<RangeKey>(initial);
+  const [rangeKey, setRangeKey] = useState<RangeKey>(() => rangeFromUrl() ?? initial);
   // Defaults to the calendar year, which is the comparison most often
   // wanted against the old system's dashboard.
   const thisYear = brisbaneDateKey().slice(0, 4);
