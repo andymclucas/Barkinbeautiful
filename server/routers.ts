@@ -46,7 +46,7 @@ import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlign
 import { resolveAppointmentMembershipCoverage, type AppointmentService } from "../shared/appointmentMembershipCoverage";
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
-import { parseBrisbaneLocalDateTime } from "../shared/localDateTime";
+import { parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
@@ -4421,6 +4421,33 @@ const analyticsRouter = router({
         ));
 
       return calculateGroomIntervalStats(completedVisits);
+    }),
+
+  /**
+   * The years the salon has bookings in, for the Analytics year picker.
+   *
+   * YEAR() is applied inside the query against an explicit +10:00 offset
+   * rather than reading the dates back and converting them here: the
+   * mysql2 pool does not pin a timezone, so a DATETIME arrives converted
+   * by whatever clock the host happens to keep, and a January booking
+   * read on a machine set to UTC comes back as the previous December.
+   * CONVERT_TZ with literal offsets needs no timezone tables loaded.
+   */
+  dataYears: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { years: yearOptions(null, null) };
+
+      const [row] = await db
+        .select({
+          earliest: sql<number | null>`MIN(YEAR(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')))`,
+          latest: sql<number | null>`MAX(YEAR(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')))`,
+        })
+        .from(appointments)
+        .where(eq(appointments.tenantId, input.tenantId));
+
+      return { years: yearOptions(Number(row?.earliest) || null, Number(row?.latest) || null) };
     }),
 
   summary: protectedProcedure
