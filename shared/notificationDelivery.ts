@@ -122,3 +122,22 @@ export function notificationForEvent(event: AppEvent): StaffNotification | null 
 
   return null;
 }
+
+/**
+ * What number to put on the Home Screen icon.
+ *
+ * Returns null to mean "clear it" rather than zero, because the Badging
+ * API draws a dot for setAppBadge(0) on some platforms instead of
+ * removing the badge — so passing the count straight through leaves a
+ * mark on the icon when there is nothing to see.
+ *
+ * Anything unreadable clears rather than throws. A badge is decoration;
+ * it must never be the reason a page falls over.
+ */
+export const MAX_BADGE_COUNT = 99;
+
+export function badgeCountFor(unread: unknown): number | null {
+  const n = typeof unread === "number" ? unread : Number(unread);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(Math.floor(n), MAX_BADGE_COUNT);
+}
