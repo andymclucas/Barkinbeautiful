@@ -4,6 +4,8 @@ import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
 import { failedPaymentDetail, failedPaymentHeadline, sortFailedPayments } from "@shared/failedPaymentNotice";
+import { notificationForEvent } from "@shared/notificationDelivery";
+import { useStaffNotifications } from "@/hooks/useStaffNotifications";
 
 function timeAgo(date: Date | string) {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -19,6 +21,7 @@ function timeAgo(date: Date | string) {
 
 export default function NotificationBell() {
   const [, setLocation] = useLocation();
+  const { notify } = useStaffNotifications();
   const utils = trpc.useUtils();
   const markRead = trpc.sms.markNotificationRead.useMutation({
     onSuccess: () => utils.sms.getUnreadPreview.invalidate(),
@@ -54,11 +57,20 @@ export default function NotificationBell() {
         } else if (payload?.type === "missed-call") {
           utils.sms.getUnreadPreview.invalidate();
         }
+
+        // Ping whoever is signed in. The hook decides between an
+        // operating-system popup and something in the page; a ringing
+        // call returns null here because IncomingCallAlert already has
+        // it, loudly.
+        const ping = notificationForEvent(payload ?? {});
+        if (ping) notify(ping);
       } catch {
         // ignore malformed events
       }
     };
     return () => source.close();
+    // Deliberately once: re-running would drop the EventSource and open a
+    // new one, and the server holds one listener per connected tab.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
