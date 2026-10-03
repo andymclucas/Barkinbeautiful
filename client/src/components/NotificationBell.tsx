@@ -6,6 +6,7 @@ import { trpc } from "@/lib/trpc";
 import { failedPaymentDetail, failedPaymentHeadline, sortFailedPayments } from "@shared/failedPaymentNotice";
 import { notificationForEvent } from "@shared/notificationDelivery";
 import { useStaffNotifications } from "@/hooks/useStaffNotifications";
+import { useAppBadge } from "@/hooks/useAppBadge";
 
 function timeAgo(date: Date | string) {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -79,6 +80,11 @@ export default function NotificationBell() {
   // Money that did not arrive belongs in the badge: it is the whole reason
   // for giving payments their own section rather than burying them.
   const unreadCount = messageCount + failedPayments.length;
+
+  // The same number as the badge on the bell, on the Home Screen icon.
+  // Driving it from here rather than its own query means the two cannot
+  // show different counts.
+  useAppBadge(unreadCount);
   const recent = data?.recent ?? [];
 
   // Opening a missed call (to see the caller's client record, say) never

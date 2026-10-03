@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseDelivery, canAskForPermission, notificationBody, notificationForEvent } from "../shared/notificationDelivery";
+import { chooseDelivery, canAskForPermission, notificationBody, notificationForEvent, badgeCountFor } from "../shared/notificationDelivery";
 
 const base = { supported: true, permission: "granted", enabled: true, documentHidden: true } as const;
 
@@ -119,5 +119,35 @@ describe("notificationForEvent", () => {
     expect(notificationForEvent({ type: "call-ringing", fromNumber: "+61400000000" })).toBeNull();
     expect(notificationForEvent({ type: "something-new" })).toBeNull();
     expect(notificationForEvent({})).toBeNull();
+  });
+});
+
+describe("badgeCountFor", () => {
+  it("shows the count", () => {
+    expect(badgeCountFor(1)).toBe(1);
+    expect(badgeCountFor(7)).toBe(7);
+  });
+
+  it("clears rather than badging a zero", () => {
+    // setAppBadge(0) draws a dot on some platforms instead of removing
+    // the badge, leaving a mark when there is nothing to see.
+    expect(badgeCountFor(0)).toBeNull();
+    expect(badgeCountFor(-3)).toBeNull();
+  });
+
+  it("caps at 99 rather than drawing a four-digit badge", () => {
+    expect(badgeCountFor(100)).toBe(99);
+    expect(badgeCountFor(14000)).toBe(99);
+  });
+
+  it("clears on anything unreadable rather than throwing", () => {
+    // A badge is decoration; it must never take the page down.
+    for (const bad of [NaN, Infinity, null, undefined, "", "abc", {}, []]) {
+      expect(badgeCountFor(bad)).toBeNull();
+    }
+  });
+
+  it("floors a fraction", () => {
+    expect(badgeCountFor(3.7)).toBe(3);
   });
 });
