@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney, invoiceOutstanding, totalPaid } from "@shared/portalBilling";
+import { clientFacingStage, isGroomInProgress, GROOMING_STEPS } from "@shared/groomingStage";
 import { CalendarDays, Dog, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
@@ -270,8 +271,18 @@ export default function ClientPortal() {
   // succeed, but the default three retries with backoff left the client
   // staring at a loading skeleton for ~7 seconds before the error appeared —
   // which reads as the site hanging, right after they entered a card.
-  const tokenPortal = trpc.clientPortal.getPortal.useQuery({ token: token ?? "" }, { enabled: Boolean(token) && !isPreview, retry: false });
-  const accountPortal = trpc.clientPortal.getMyPortal.useQuery(undefined, { enabled: !token && !isPreview, retry: false });
+  // Poll only while a dog is actually in the salon. A client watching the
+  // progress bar wants it to move without refreshing; a client reading
+  // their invoice history does not, and every portal page left open on a
+  // phone would otherwise poll the database all day for nothing.
+  const livePolling = (query: { state: { data?: unknown } }) => {
+    const portal = query.state.data as PortalData | undefined;
+    const active = portal?.appointments?.some(appointment => isGroomInProgress(appointment.workflowState));
+    return active ? 30_000 : false;
+  };
+
+  const tokenPortal = trpc.clientPortal.getPortal.useQuery({ token: token ?? "" }, { enabled: Boolean(token) && !isPreview, retry: false, refetchInterval: livePolling });
+  const accountPortal = trpc.clientPortal.getMyPortal.useQuery(undefined, { enabled: !token && !isPreview, retry: false, refetchInterval: livePolling });
   const logout = trpc.clientPortal.logout.useMutation({ onSuccess: () => navigate("/portal/login") });
   const data = (isPreview ? preview.data : token ? tokenPortal.data : accountPortal.data) as PortalData | undefined;
   const isLoading = isPreview ? preview.isLoading : token ? tokenPortal.isLoading : accountPortal.isLoading;
@@ -325,8 +336,52 @@ export default function ClientPortal() {
   const canReschedule = (appt: PortalAppointment) => canManage(appt) && new Date(appt.scheduledStart).getTime() - Date.now() >= 24 * 3600000;
   const creditBalance = Number(data.storeCreditBalance ?? 0);
 
+  // Whatever is happening in the salon right now. A dog is "in" from
+  // check-in until it is collected, which is exactly the window a client
+  // keeps refreshing the page. No times are shown: the salon runs behind
+  // on a bad day, and a pickup time that slips is worse than none.
+  const inSalon = data.appointments.filter(appointment => isGroomInProgress(appointment.workflowState));
+
   return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 py-8 px-4"><div className="mx-auto max-w-4xl space-y-6">
     <header className="rounded-2xl bg-primary p-6 text-primary-foreground"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm opacity-85">Welcome to</p><h1 className="font-display text-3xl font-bold">{data.salon.name}</h1><p className="mt-2 text-sm opacity-90">Hi {data.client.firstName}, here is a secure summary of your pets and grooming care.</p></div>{!token && <Button variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20" disabled={logout.isPending} onClick={() => logout.mutate()}>{logout.isPending ? "Signing out…" : "Sign out"}</Button>}</div></header>
+
+    {inSalon.length > 0 && <section className="space-y-3">
+      {inSalon.map(appointment => {
+        const stage = clientFacingStage(appointment.workflowState);
+        return <Card key={`live-${appointment.id}`} className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <span aria-hidden="true">{stage.step >= 0 ? GROOMING_STEPS[stage.step].icon : "🐾"}</span>
+              {appointment.petName} is in the salon
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-lg font-semibold text-primary">{stage.label}</p>
+              <p className="text-sm text-muted-foreground">{stage.description}</p>
+            </div>
+            {/* A bar rather than a list of times: it says where things are
+                up to without promising when they will finish. */}
+            <ol className="flex items-stretch gap-1" aria-label={`${appointment.petName}'s progress`}>
+              {GROOMING_STEPS.map((step, idx) => {
+                const done = idx < stage.step;
+                const active = idx === stage.step;
+                return <li key={step.key} className="flex-1" aria-current={active ? "step" : undefined}>
+                  <div className={`h-1.5 rounded-full ${done ? "bg-primary" : active ? "bg-primary/60" : "bg-muted"}`} />
+                  <p className={`mt-1.5 text-[11px] leading-tight ${active ? "font-semibold text-primary" : done ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+                    {step.label}
+                  </p>
+                </li>;
+              })}
+            </ol>
+            <p className="text-xs text-muted-foreground">
+              This updates as {appointment.petName} moves through the salon. We&rsquo;ll let you know as soon as
+              {" "}{appointment.petName} is ready.
+            </p>
+          </CardContent>
+        </Card>;
+      })}
+    </section>}
 
     <section className="grid gap-4 sm:grid-cols-4">
       <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">Your pets</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{data.pets.length}</p><p className="mt-1 text-sm text-muted-foreground">{data.pets.map(pet => pet.name).join(", ") || "No pets listed"}</p></CardContent></Card>

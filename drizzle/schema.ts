@@ -1003,7 +1003,8 @@ export const agreementDocuments = mysqlTable("agreement_documents", {
   version: int("version").default(1).notNull(),
   status: mysqlEnum("status", ["draft", "active", "archived"]).default("draft").notNull(),
   requiresSignature: boolean("requires_signature").default(true).notNull(),
-  appliesTo: mysqlEnum("applies_to", ["all_clients", "members_only", "manual"]).default("manual").notNull(),
+  /** MoeGo's own three settings, which the salon already thinks in. */
+  requirement: mysqlEnum("requirement", ["sign_once", "every_booking", "manual"]).default("manual").notNull(),
   createdByUserId: int("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1111,8 +1112,11 @@ export const petVaccinations = mysqlTable("pet_vaccinations", {
   tenantId: int("tenant_id").notNull(),
   petId: int("pet_id").notNull(),
   kind: varchar("kind", { length: 64 }).notNull(),
-  administeredOn: date("administered_on"),
-  expiresOn: date("expires_on"),
+  // mode:"string" so these stay "YYYY-MM-DD" end to end. A JS Date here
+  // would be midnight in the server's zone, and "expired" would flip on a
+  // different day depending on where the box is.
+  administeredOn: date("administered_on", { mode: "string" }),
+  expiresOn: date("expires_on", { mode: "string" }),
   documentUrl: text("document_url"),
   verifiedAt: timestamp("verified_at"),
   verifiedByUserId: int("verified_by_user_id"),

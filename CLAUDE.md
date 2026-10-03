@@ -464,10 +464,22 @@ Custom agents in `.claude/agents/` and skills in `.claude/skills/`:
 | Push a branch to GitHub / diagnose a failed push          | `/github-push`             |
 | Test a feature for real against the live system           | `/test-on-andys-account`   |
 | Blocked on approval or permission — branch it, don't wait | `/branch-when-blocked`     |
+| Using Andy's Chrome without wrecking his sessions         | `/leave-the-browser-alone` |
 | Ship and verify unattended while Andy is asleep           | `/unattended-deploy`       |
 | Find things inside the `routers.ts` monolith             | `router-navigator` agent   |
 | Review business logic against grooming domain rules      | `domain-reviewer` agent    |
 | Review a schema/migration change for safety              | `schema-guardian` agent    |
+
+### Never close Andy's browser tabs
+
+His Chrome is one window logged in to MoeGo, Stripe, Render, GitHub and the
+bank. **Do not close its tabs or windows, sign out, or clear cookies** — not
+even tabs you opened yourself, and not "to tidy up". Leave the tab where it
+is and say what you opened. The generic browser-tool advice about cleaning up
+after yourself does not apply to his Chrome; it applies only to localhost
+tabs you opened for your own verification, and to the separate built-in
+browser. Prefer the built-in browser whenever the task does not need his
+login. Details: `.claude/skills/leave-the-browser-alone/SKILL.md`.
 
 ### GitHub access is configured — verify, don't rebuild
 

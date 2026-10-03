@@ -2,21 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { useParams } from "wouter";
 import { Dog, Phone, CheckCircle2, Circle, Clock } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
-
-const STAGES = [
-  { key: "scheduled",  label: "Appointment Booked",  icon: "📅", desc: "Your appointment is confirmed." },
-  { key: "checked_in", label: "Checked In",           icon: "🚪", desc: "Your dog has arrived and is being settled in." },
-  { key: "bathing",    label: "Bath Time",            icon: "🛁", desc: "Your dog is getting a fresh bath and blow dry." },
-  { key: "grooming",   label: "Grooming",             icon: "✂️", desc: "Our groomer is working their magic!" },
-  { key: "ready",      label: "Ready for Pickup! 🎉", icon: "🐾", desc: "Your dog is looking fabulous and ready to go home." },
-  { key: "complete",   label: "All Done",             icon: "✅", desc: "Appointment complete. See you next time!" },
-] as const;
-
-type StageKey = typeof STAGES[number]["key"];
-
-const STAGE_ORDER: Record<StageKey, number> = {
-  scheduled: 0, checked_in: 1, bathing: 2, grooming: 3, ready: 4, complete: 5,
-};
+import { clientFacingStage, GROOMING_STEPS } from "@shared/groomingStage";
 
 export default function PetTracker() {
   const params = useParams<{ token: string }>();
@@ -44,8 +30,11 @@ export default function PetTracker() {
     </div>
   );
 
-  const currentStageIdx = STAGE_ORDER[data.workflowState as StageKey] ?? 0;
-  const currentStage = STAGES[currentStageIdx];
+  // Shared with the client portal, and covering all twelve workflow
+  // states. The table here only mapped six, so a dog under the dryer was
+  // shown to its owner as "Appointment Booked".
+  const stage = clientFacingStage(data.workflowState);
+  const currentStageIdx = stage.step;
   const isReady = data.workflowState === "ready";
   const isComplete = data.workflowState === "complete";
 
@@ -69,7 +58,7 @@ export default function PetTracker() {
         {/* Pet info */}
         <div className="text-center space-y-2">
           <div className={`text-6xl transition-all duration-500 ${isReady ? "animate-bounce" : ""}`}>
-            {currentStage?.icon}
+            {stage.step >= 0 ? GROOMING_STEPS[stage.step].icon : "ℹ️"}
           </div>
           <h1 className="text-2xl font-bold font-display">
             {data.petName} is {isReady ? "ready!" : isComplete ? "all done!" : "in the salon"}
@@ -82,9 +71,9 @@ export default function PetTracker() {
         {/* Current stage highlight */}
         <div className={`rounded-2xl p-5 text-center ${isReady ? "bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-300 dark:border-emerald-800" : "bg-primary/5 border-2 border-primary/20"}`}>
           <p className={`text-lg font-bold font-display ${isReady ? "text-emerald-700 dark:text-emerald-300" : "text-primary"}`}>
-            {currentStage?.label}
+            {stage.label}
           </p>
-          <p className="text-sm text-muted-foreground mt-1">{currentStage?.desc}</p>
+          <p className="text-sm text-muted-foreground mt-1">{stage.description}</p>
           {data.estimatedPickupAt && !isComplete && (
             <div className="mt-3 flex items-center justify-center gap-2 text-sm">
               <Clock className="h-4 w-4 text-muted-foreground" />
@@ -99,11 +88,11 @@ export default function PetTracker() {
 
         {/* Progress steps */}
         <div className="space-y-3">
-          {STAGES.filter(s => s.key !== "complete").map((stage, idx) => {
+          {GROOMING_STEPS.map((step, idx) => {
             const done = idx < currentStageIdx;
             const active = idx === currentStageIdx;
             return (
-              <div key={stage.key} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${active ? "bg-primary/5 border border-primary/20" : done ? "opacity-60" : "opacity-40"}`}>
+              <div key={step.key} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${active ? "bg-primary/5 border border-primary/20" : done ? "opacity-60" : "opacity-40"}`}>
                 <div className="flex-shrink-0">
                   {done ? (
                     <CheckCircle2 className="h-5 w-5 text-emerald-500" />
@@ -117,12 +106,14 @@ export default function PetTracker() {
                 </div>
                 <div>
                   <p className={`text-sm font-medium ${active ? "text-primary" : done ? "text-foreground" : "text-muted-foreground"}`}>
-                    {stage.label}
+                    {step.label}
                   </p>
                 </div>
                 {active && (
                   <div className="ml-auto">
-                    <span className="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">Now</span>
+                    <span className="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
+                      {stage.waiting ? "Next up" : "Now"}
+                    </span>
                   </div>
                 )}
               </div>

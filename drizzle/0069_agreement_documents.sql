@@ -14,7 +14,7 @@ CREATE TABLE `agreement_documents` (
   `version` int NOT NULL DEFAULT 1,
   `status` enum('draft','active','archived') NOT NULL DEFAULT 'draft',
   `requires_signature` boolean NOT NULL DEFAULT true,
-  `applies_to` enum('all_clients','members_only','manual') NOT NULL DEFAULT 'manual',
+  `requirement` enum('sign_once','every_booking','manual') NOT NULL DEFAULT 'manual',
   `created_by_user_id` int,
   `created_at` timestamp NOT NULL DEFAULT (now()),
   `updated_at` timestamp NOT NULL DEFAULT (now()),
