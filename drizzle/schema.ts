@@ -985,3 +985,159 @@ export const missedCallAutoTexts = mysqlTable("missed_call_auto_texts", {
 }, (t) => [uniqueIndex("uq_missed_call_auto_text_number").on(t.tenantId, t.phoneE164)]);
 
 export type MissedCallAutoText = typeof missedCallAutoTexts.$inferSelect;
+
+// ─── Agreements ──────────────────────────────────────────────────────────────
+/**
+ * The agreements a client signs: membership terms, salon policies.
+ *
+ * Versioned rather than edited in place. A signature has to mean "agreed
+ * to these exact words on this date", and editing a document someone has
+ * already signed would silently rewrite what they agreed to.
+ */
+export const agreementDocuments = mysqlTable("agreement_documents", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  slug: varchar("slug", { length: 64 }).notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  body: mediumtext("body").notNull(),
+  version: int("version").default(1).notNull(),
+  status: mysqlEnum("status", ["draft", "active", "archived"]).default("draft").notNull(),
+  requiresSignature: boolean("requires_signature").default(true).notNull(),
+  appliesTo: mysqlEnum("applies_to", ["all_clients", "members_only", "manual"]).default("manual").notNull(),
+  createdByUserId: int("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("uq_agreement_documents_slug_version").on(t.tenantId, t.slug, t.version)]);
+
+/** One client agreeing to one version of one document. */
+export const agreementSignatures = mysqlTable("agreement_signatures", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  documentId: int("document_id").notNull(),
+  documentVersion: int("document_version").notNull(),
+  clientId: int("client_id").notNull(),
+  signedName: varchar("signed_name", { length: 200 }).notNull(),
+  signedAt: timestamp("signed_at").defaultNow().notNull(),
+  signedIp: varchar("signed_ip", { length: 64 }),
+  signedUserAgent: text("signed_user_agent"),
+  recordedByUserId: int("recorded_by_user_id"),
+}, (t) => [uniqueIndex("uq_agreement_signatures_once").on(t.tenantId, t.documentId, t.documentVersion, t.clientId)]);
+
+export type AgreementDocument = typeof agreementDocuments.$inferSelect;
+export type AgreementSignature = typeof agreementSignatures.$inferSelect;
+
+// ─── Client reviews ──────────────────────────────────────────────────────────
+/**
+ * The salon's rating from the client's side. Not grooming_reports, which
+ * is the groomer's assessment of the dog's coat.
+ */
+export const clientReviews = mysqlTable("client_reviews", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  clientId: int("client_id").notNull(),
+  appointmentId: int("appointment_id"),
+  rating: int("rating").notNull(),
+  comment: text("comment"),
+  source: mysqlEnum("source", ["portal", "staff_entered", "imported"]).default("staff_entered").notNull(),
+  published: boolean("published").default(false).notNull(),
+  recordedByUserId: int("recorded_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ClientReview = typeof clientReviews.$inferSelect;
+
+// ─── Packages ────────────────────────────────────────────────────────────────
+/**
+ * A block of grooms bought up front: "5 baths for $200". Distinct from a
+ * membership, which bills on a cycle and never runs out.
+ */
+export const servicePackages = mysqlTable("service_packages", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  description: text("description"),
+  serviceType: varchar("service_type", { length: 64 }),
+  credits: int("credits").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  validForWeeks: int("valid_for_weeks"),
+  status: mysqlEnum("status", ["active", "archived"]).default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * One client's purchase. credits_total is copied at purchase, not joined:
+ * changing "5 baths" to "4" next year must not retroactively take a credit
+ * from someone who paid for five.
+ */
+export const clientPackages = mysqlTable("client_packages", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  clientId: int("client_id").notNull(),
+  packageId: int("package_id").notNull(),
+  packageName: varchar("package_name", { length: 200 }).notNull(),
+  creditsTotal: int("credits_total").notNull(),
+  creditsUsed: int("credits_used").default(0).notNull(),
+  pricePaid: decimal("price_paid", { precision: 10, scale: 2 }).notNull(),
+  purchasedAt: timestamp("purchased_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+  status: mysqlEnum("status", ["active", "used_up", "expired", "cancelled"]).default("active").notNull(),
+  soldByUserId: int("sold_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/** Drawing a credit down against an appointment. */
+export const clientPackageRedemptions = mysqlTable("client_package_redemptions", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  clientPackageId: int("client_package_id").notNull(),
+  appointmentId: int("appointment_id").notNull(),
+  credits: int("credits").default(1).notNull(),
+  redeemedByUserId: int("redeemed_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("uq_package_redemption_appt").on(t.clientPackageId, t.appointmentId)]);
+
+export type ServicePackage = typeof servicePackages.$inferSelect;
+export type ClientPackage = typeof clientPackages.$inferSelect;
+
+// ─── Pet paperwork ───────────────────────────────────────────────────────────
+/**
+ * Vaccination and form expiry. A row per record rather than columns on
+ * pets: a dog has several, each with its own date, and an expired one
+ * stays on file as history rather than being overwritten by the renewal.
+ */
+export const petVaccinations = mysqlTable("pet_vaccinations", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  petId: int("pet_id").notNull(),
+  kind: varchar("kind", { length: 64 }).notNull(),
+  administeredOn: date("administered_on"),
+  expiresOn: date("expires_on"),
+  documentUrl: text("document_url"),
+  verifiedAt: timestamp("verified_at"),
+  verifiedByUserId: int("verified_by_user_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type PetVaccination = typeof petVaccinations.$inferSelect;
+
+// ─── Client notes ────────────────────────────────────────────────────────────
+/**
+ * Notes as a list, with an author. `clients.notes` is a single field
+ * everyone overwrites, so the salon loses who said what; it stays as it is
+ * and new notes land here.
+ */
+export const clientNotes = mysqlTable("client_notes", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  clientId: int("client_id").notNull(),
+  body: text("body").notNull(),
+  pinned: boolean("pinned").default(false).notNull(),
+  createdByUserId: int("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [index("idx_client_notes_client").on(t.tenantId, t.clientId)]);
+
+export type ClientNote = typeof clientNotes.$inferSelect;
