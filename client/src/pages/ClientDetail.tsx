@@ -8,6 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel } from "@/components/client-record/ClientOverview";
+import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
+import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
+import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
+import { ClientPetsAside } from "@/components/client-record/ClientPetsAside";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,7 +24,7 @@ import {
   Dog, Phone, Mail, MapPin, CalendarDays, CreditCard, ArrowLeft,
   AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil
 } from "lucide-react";
-import { Link2, Link2Off, Search } from "lucide-react";
+import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -246,7 +251,15 @@ export default function ClientDetail() {
   const utils = trpc.useUtils();
   const [uploadingPhotoForPetId, setUploadingPhotoForPetId] = useState<number | null>(null);
   const [addCreditSignal, setAddCreditSignal] = useState(0);
-  const [activeClientTab, setActiveClientTab] = useState("pets");
+  // Overview first: the figures and the notes are what someone opening a
+  // client actually came for.
+  const [activeClientTab, setActiveClientTab] = useState("overview");
+  // Bookings sub-view. Ten a page, matching MoeGo, so a salon moving
+  // across finds the same rows in the same places.
+  const [bookingTab, setBookingTab] = useState<BookingBucket>("upcoming");
+  const [bookingPage, setBookingPage] = useState(1);
+  const [paymentFilter, setPaymentFilter] = useState("all");
+  const BOOKINGS_PER_PAGE = 10;
   const [departedPet, setDepartedPet] = useState<{ id: number; name: string } | null>(null);
   const [departureNote, setDepartureNote] = useState("");
   const [membershipAction, setMembershipAction] = useState<{ membershipId: number; petId: number; petName: string; membershipName: string } | null>(null);
@@ -519,6 +532,27 @@ export default function ClientDetail() {
     setReplacementPetId("");
     setShowMembershipActionSummary(false);
   };
+
+  // One call decides both the tab counts and the rows beneath them, so
+  // a tab reading "(4)" above three rows is not possible.
+  const bookingCounts = countBookingBuckets(appointments);
+  // Same bucketing as the Bookings tab, so Overview cannot disagree with it.
+  const upcomingBookings = appointments
+    .filter(a => bookingBucket(a) === "upcoming")
+    .slice()
+    .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime())
+    .slice(0, 5);
+  const bookingsInTab = appointments
+    .filter(a => bookingBucket(a) === bookingTab)
+    .filter(a => paymentFilter === "all" || (a.paymentStatus ?? "unpaid") === paymentFilter);
+  const bookingPageCount = Math.max(1, Math.ceil(bookingsInTab.length / BOOKINGS_PER_PAGE));
+  // Deleting or filtering can strand you past the end; clamp on render
+  // rather than leaving a blank table with no way back.
+  const currentBookingPage = Math.min(bookingPage, bookingPageCount);
+  const pagedBookings = bookingsInTab.slice(
+    (currentBookingPage - 1) * BOOKINGS_PER_PAGE,
+    currentBookingPage * BOOKINGS_PER_PAGE,
+  );
 
   return (
     <DashboardLayout>
@@ -801,28 +835,111 @@ export default function ClientDetail() {
           </div>
         )}
 
-        {/* Tabs */}
-        <Tabs value={activeClientTab} onValueChange={setActiveClientTab}>
-          <TabsList className="w-full justify-start">
-            <TabsTrigger value="pets">
-              <Dog className="h-3.5 w-3.5 mr-1.5" />Pets ({pets.length})
-            </TabsTrigger>
-            <TabsTrigger value="appointments">
-              <CalendarDays className="h-3.5 w-3.5 mr-1.5" />Appointments ({appointments.length})
-            </TabsTrigger>
-            <TabsTrigger value="memberships">
-              <Award className="h-3.5 w-3.5 mr-1.5" />Memberships ({memberships.length})
-            </TabsTrigger>
-            <TabsTrigger value="payments">
-              <CreditCard className="h-3.5 w-3.5 mr-1.5" />Payments ({payments.length})
-            </TabsTrigger>
-            <TabsTrigger value="activity">
-              <History className="h-3.5 w-3.5 mr-1.5" />Activity ({petMembershipEvents.length})
-            </TabsTrigger>
+        {/* The record, as a rail rather than a tab strip.
+            Radix Tabs still drives it — the panels below are untouched —
+            but five horizontal tabs could not grow to twelve sections
+            without wrapping into an unreadable row. */}
+        <Tabs
+          value={activeClientTab}
+          onValueChange={setActiveClientTab}
+          orientation="vertical"
+          className="grid gap-5 lg:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] lg:items-start"
+        >
+          <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:sticky lg:top-4 lg:flex-col lg:flex-nowrap">
+            {[
+              { value: "overview", label: "Overview", icon: LayoutDashboard },
+              { value: "pets", label: `Pets (${pets.length})`, icon: Dog },
+              { value: "appointments", label: `Bookings (${appointments.length})`, icon: CalendarDays },
+              { value: "memberships", label: `Memberships (${memberships.length})`, icon: Award },
+              { value: "payments", label: `Payments (${payments.length})`, icon: CreditCard },
+              { value: "agreements", label: "Agreements", icon: FileSignature },
+              { value: "packages", label: "Packages", icon: PackageOpen },
+              { value: "paperwork", label: "Vaccinations", icon: Syringe },
+              { value: "reviews", label: "Reviews", icon: Star },
+              { value: "activity", label: `History (${petMembershipEvents.length})`, icon: History },
+            ].map(item => (
+              <TabsTrigger
+                key={item.value}
+                value={item.value}
+                className="w-full justify-start gap-2 rounded-lg px-3 py-2 text-sm data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+              >
+                <item.icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </TabsTrigger>
+            ))}
           </TabsList>
 
+          <div className="min-w-0">
+          <TabsContent value="overview" className="mt-0">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,19rem)] xl:items-start">
+              <div className="min-w-0 space-y-4">
+                <ClientMetrics clientId={clientId} />
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center justify-between gap-2 text-base">
+                      Upcoming appointments
+                      <Button variant="ghost" size="sm" className="h-7 text-xs"
+                        onClick={() => setActiveClientTab("appointments")}>
+                        View all
+                      </Button>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {upcomingBookings.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Nothing booked in.</p>
+                    )}
+                    {upcomingBookings.map(a => (
+                      <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {a.petName} &middot; {SERVICE_LABELS[a.serviceType] ?? a.serviceType}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+                            {" · "}
+                            {new Date(a.scheduledStart).toLocaleTimeString("en-AU", { timeZone: getActiveTimeZone(), hour: "numeric", minute: "2-digit", hour12: true })}
+                            {a.staffName ? ` · ${a.staffName}` : ""}
+                          </p>
+                        </div>
+                        <span className="text-sm font-medium tabular-nums">
+                          {a.price ? `$${parseFloat(a.price).toFixed(2)}` : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <ClientNotesPanel clientId={clientId} />
+              </div>
+
+              <div className="min-w-0">
+                <ClientPetsAside clientId={clientId} pets={pets} />
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="agreements" className="mt-0">
+            <ClientAgreementsPanel
+              clientId={clientId}
+              clientName={`${client.firstName ?? ""} ${client.lastName ?? ""}`.trim()}
+            />
+          </TabsContent>
+
+          <TabsContent value="packages" className="mt-0">
+            <ClientPackagesPanel clientId={clientId} />
+          </TabsContent>
+
+          <TabsContent value="paperwork" className="mt-0">
+            <PetPaperworkPanel clientId={clientId} />
+          </TabsContent>
+
+          <TabsContent value="reviews" className="mt-0">
+            <ClientReviewsPanel clientId={clientId} />
+          </TabsContent>
+
           {/* ── Pets tab ── */}
-          <TabsContent value="pets" className="mt-4">
+          <TabsContent value="pets" className="mt-0">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {pets.length === 0 && <p className="text-muted-foreground text-sm col-span-3">No pets on file.</p>}
               {pets.map(pet => {
@@ -1085,7 +1202,40 @@ export default function ClientDetail() {
           </TabsContent>
 
           {/* ── Appointments tab ── */}
-          <TabsContent value="appointments" className="mt-4">
+          <TabsContent value="appointments" className="mt-0 space-y-3">
+            {/* Sub-tabs and their counts come from one bucketing call,
+                shared with the server-side reporting, so the number on a
+                tab always matches the rows under it. */}
+            <div className="flex flex-wrap items-center gap-1 border-b pb-2">
+              {BOOKING_BUCKETS.map(bucket => (
+                <button
+                  key={bucket}
+                  type="button"
+                  onClick={() => { setBookingTab(bucket); setBookingPage(1); }}
+                  className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                    bookingTab === bucket
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {BOOKING_BUCKET_LABELS[bucket]} ({bookingCounts[bucket]})
+                </button>
+              ))}
+              <div className="ml-auto">
+                <Select value={paymentFilter} onValueChange={(v) => { setPaymentFilter(v); setBookingPage(1); }}>
+                  <SelectTrigger className="h-8 w-[11rem] text-xs" aria-label="Payment status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any payment status</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="partial">Part paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="bg-card rounded-xl border overflow-hidden shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b">
@@ -1095,14 +1245,19 @@ export default function ClientDetail() {
                     <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Service</th>
                     <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">Groomer</th>
                     <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground hidden sm:table-cell">Payment</th>
                     <th className="text-right p-3 font-medium text-muted-foreground">Price</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {appointments.length === 0 && (
-                    <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No appointments yet.</td></tr>
+                  {pagedBookings.length === 0 && (
+                    <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">
+                      {appointments.length === 0
+                        ? "No appointments yet."
+                        : `Nothing in ${BOOKING_BUCKET_LABELS[bookingTab].toLowerCase()}${paymentFilter === "all" ? "" : " with that payment status"}.`}
+                    </td></tr>
                   )}
-                  {appointments.map((a, idx) => {
+                  {pagedBookings.map((a) => {
                     const isFuture = new Date(a.scheduledStart) > new Date();
                     return (
                       <tr key={a.id} className={`border-b last:border-0 hover:bg-muted/20 ${isFuture ? "bg-primary/3" : ""}`}>
@@ -1130,6 +1285,17 @@ export default function ClientDetail() {
                             {isFuture ? "Upcoming" : a.workflowState === "complete" ? "Complete" : a.status}
                           </Badge>
                         </td>
+                        <td className="p-3 hidden sm:table-cell">
+                          {a.paymentStatus
+                            ? <Badge variant="outline" className={
+                                a.paymentStatus === "paid" ? "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                : a.paymentStatus === "partial" ? "border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/50 dark:text-amber-300"
+                                : "border-red-200 bg-red-100 text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-300"
+                              }>
+                                {a.paymentStatus === "paid" ? "Paid" : a.paymentStatus === "partial" ? "Part paid" : "Unpaid"}
+                              </Badge>
+                            : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
                         <td className="p-3 text-right font-medium">{a.price ? `$${parseFloat(a.price).toFixed(2)}` : "—"}</td>
                       </tr>
                     );
@@ -1137,10 +1303,28 @@ export default function ClientDetail() {
                 </tbody>
               </table>
             </div>
+
+            {bookingsInTab.length > BOOKINGS_PER_PAGE && (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  {(currentBookingPage - 1) * BOOKINGS_PER_PAGE + 1}&ndash;
+                  {Math.min(currentBookingPage * BOOKINGS_PER_PAGE, bookingsInTab.length)} of {bookingsInTab.length}
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" disabled={currentBookingPage <= 1}
+                    onClick={() => setBookingPage(currentBookingPage - 1)}>Previous</Button>
+                  <span className="px-2 text-xs tabular-nums text-muted-foreground">
+                    {currentBookingPage} / {bookingPageCount}
+                  </span>
+                  <Button variant="outline" size="sm" disabled={currentBookingPage >= bookingPageCount}
+                    onClick={() => setBookingPage(currentBookingPage + 1)}>Next</Button>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           {/* ── Memberships tab ── */}
-          <TabsContent value="memberships" className="mt-4">
+          <TabsContent value="memberships" className="mt-0">
             <div className="space-y-3">
               {memberships.length === 0 && <p className="text-muted-foreground text-sm">No memberships on file.</p>}
               {memberships.map(m => {
@@ -1201,7 +1385,7 @@ export default function ClientDetail() {
           </TabsContent>
 
           {/* ── Payments tab ── */}
-          <TabsContent value="payments" className="mt-4">
+          <TabsContent value="payments" className="mt-0">
             <StripeCardPanel clientId={client.id} />
             <StoreCreditCard clientId={client.id} externalOpenSignal={addCreditSignal} />
 
@@ -1243,7 +1427,7 @@ export default function ClientDetail() {
             </div>
           </TabsContent>
 
-          <TabsContent value="activity" className="mt-4">
+          <TabsContent value="activity" className="mt-0">
             <div className="rounded-xl border bg-card shadow-sm">
               <div className="border-b bg-muted/30 px-5 py-4">
                 <div className="flex items-center gap-2 font-semibold"><History className="h-4 w-4 text-primary" />Membership & pet activity</div>
@@ -1272,6 +1456,7 @@ export default function ClientDetail() {
               )}
             </div>
           </TabsContent>
+          </div>
         </Tabs>
       </div>
 
