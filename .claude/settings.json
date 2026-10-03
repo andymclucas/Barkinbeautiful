@@ -43,7 +43,11 @@
       "Bash(git fetch:*)",
       "Bash(git ls-remote:*)",
       "Bash(corepack pnpm exec drizzle-kit migrate:*)",
-      "Bash(npx drizzle-kit migrate:*)"
+      "Bash(npx drizzle-kit migrate:*)",
+      "Bash(git merge:*)",
+      "Bash(git revert:*)",
+      "Bash(git checkout:*)",
+      "Bash(curl:*)"
     ],
     "deny": [
       "Bash(npm install:*)",
