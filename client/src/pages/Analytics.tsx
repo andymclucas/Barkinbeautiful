@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend, type TooltipProps } from "recharts";
 import { TrendingUp, Users, CreditCard, CalendarDays, Scissors, Heart, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useReportRange, ReportRangeControls } from "@/components/ReportRange";
+import { useReportRange, ReportRangeControls, ReportRangeCalendar } from "@/components/ReportRange";
 
 export default function Analytics() {
   // The period, the controls and the Brisbane day boundaries all live in
@@ -144,6 +144,8 @@ export default function Analytics() {
             <ReportRangeControls range={range} />
           </div>
         </div>
+
+        <ReportRangeCalendar range={range} />
 
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">

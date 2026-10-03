@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBrisbaneLocalDateTime, brisbaneDateKey, brisbaneCalendarPeriod, brisbaneExplicitRange, wholeCalendarYear, yearOptions, MAX_YEARS_OFFERED } from "../shared/localDateTime";
+import { parseBrisbaneLocalDateTime, brisbaneDateKey, brisbaneCalendarPeriod, brisbaneExplicitRange, wholeCalendarYear, yearOptions, MAX_YEARS_OFFERED, localCalendarDay, localCalendarDayKey } from "../shared/localDateTime";
 
 describe("parseBrisbaneLocalDateTime", () => {
   it("interprets a naive datetime-local string as Brisbane (UTC+10) time", () => {
@@ -186,5 +186,34 @@ describe("yearOptions", () => {
   it("uses the Brisbane year, not the machine's", () => {
     // 11pm UTC on 31 December is already 9am on 1 January in Brisbane.
     expect(yearOptions(null, null, new Date("2026-12-31T23:00:00Z"))).toEqual([2027]);
+  });
+});
+
+describe("localCalendarDay / localCalendarDayKey", () => {
+  it("round-trips a day exactly", () => {
+    for (const key of ["2024-01-01", "2024-02-29", "2026-10-03", "2027-12-31"]) {
+      expect(localCalendarDayKey(localCalendarDay(key))).toBe(key);
+    }
+  });
+
+  it("lands on the calendar square the key names, not an instant", () => {
+    // The whole point: the Brisbane instant for 1 Jan is 31 Dec 14:00 UTC,
+    // and a calendar grid that read that would draw the wrong square.
+    const day = localCalendarDay("2026-01-01");
+    expect(day.getFullYear()).toBe(2026);
+    expect(day.getMonth()).toBe(0);
+    expect(day.getDate()).toBe(1);
+    expect(day.getHours()).toBe(0);
+  });
+
+  it("pads single digits", () => {
+    expect(localCalendarDayKey(new Date(2026, 0, 5))).toBe("2026-01-05");
+  });
+
+  it("normalises a day that does not exist", () => {
+    // 2026 is not a leap year. Both callers — brisbaneDateKey and a date
+    // input — only ever produce real days, so rolling forward is fine;
+    // what matters is that it does not produce an Invalid Date.
+    expect(localCalendarDayKey(localCalendarDay("2026-02-29"))).toBe("2026-03-01");
   });
 });

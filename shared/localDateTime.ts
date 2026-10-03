@@ -191,3 +191,29 @@ export function yearOptions(
   for (let y = newest; y >= floor; y--) years.push(y);
   return years;
 }
+
+/**
+ * A "YYYY-MM-DD" day as a Date at midnight in the RUNTIME's own timezone.
+ *
+ * Deliberately local, and the one place in this file that is. A calendar
+ * grid asks "which square is this date in", which is a question about the
+ * viewer's own clock — react-day-picker reads `getMonth()` and
+ * `getDate()`, not an instant. Handing it the Brisbane instant for 1 Jan
+ * (31 Dec 14:00 UTC) would draw the wrong square for anyone west of
+ * Brisbane. Pair it with `localCalendarDayKey` and the round trip is
+ * exact in every timezone.
+ *
+ * Never use this to query or store anything: a reporting window still
+ * belongs to the salon's day, which is what `brisbaneExplicitRange` is
+ * for.
+ */
+export function localCalendarDay(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
+/** The inverse: a local Date back to its "YYYY-MM-DD". */
+export function localCalendarDayKey(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}

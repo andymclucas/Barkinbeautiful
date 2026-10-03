@@ -1,13 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { useIsMobile } from "@/hooks/useMobile";
 import {
   brisbaneRangeForDays,
   brisbaneCalendarPeriod,
   brisbaneExplicitRange,
   brisbaneDateKey,
   wholeCalendarYear,
+  localCalendarDay,
+  localCalendarDayKey,
 } from "@shared/localDateTime";
 
 /**
@@ -53,6 +58,9 @@ export function useReportRange(initial: RangeKey = "mtd") {
   const thisYear = brisbaneDateKey().slice(0, 4);
   const [customFrom, setCustomFrom] = useState(`${thisYear}-01-01`);
   const [customTo, setCustomTo] = useState(`${thisYear}-12-31`);
+  // The first day of a range being swept out on the calendar, if one is
+  // part-picked. See `pickDay`.
+  const [anchor, setAnchor] = useState<string | null>(null);
 
   // Anchored to the salon's own day boundaries, not the viewer's.
   // setHours() uses the browser's timezone, so the previous version
@@ -79,20 +87,51 @@ export function useReportRange(initial: RangeKey = "mtd") {
   const fromKey = brisbaneDateKey(dateFrom);
   const toKey = brisbaneDateKey(dateTo);
 
+  const setDays = (nextFrom: string, nextTo: string) => {
+    setAnchor(null);
+    setCustomFrom(nextFrom);
+    setCustomTo(nextTo);
+    setRangeKey("custom");
+  };
+
+  /**
+   * One day clicked on the calendar.
+   *
+   * Click a start, then click an end — the convention everywhere else,
+   * and the one the salon will expect. Left to its own devices
+   * react-day-picker adjusts whichever end of the existing range is
+   * nearest, so with a preset always selected the first click could only
+   * ever move the end: clicking 14 September while showing September
+   * gave "3 – 14 September" rather than starting afresh.
+   *
+   * Clicking the two days in either order works; they are sorted here.
+   */
+  const pickDay = (key: string) => {
+    if (anchor === null) {
+      setAnchor(key);
+      setCustomFrom(key);
+      setCustomTo(key);
+      setRangeKey("custom");
+      return;
+    }
+    const [lo, hi] = anchor <= key ? [anchor, key] : [key, anchor];
+    setDays(lo, hi);
+  };
+
+  /** Choosing a preset abandons any half-picked range. */
+  const choosePreset = (next: RangeKey) => {
+    setAnchor(null);
+    setRangeKey(next);
+  };
+
   const editDate = (end: "from" | "to", value: string) => {
     // A half-typed date arrives as "", and clearing the range would blank
     // the whole page.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
-    setCustomFrom(end === "from" ? value : fromKey);
-    setCustomTo(end === "to" ? value : toKey);
-    setRangeKey("custom");
+    setDays(end === "from" ? value : fromKey, end === "to" ? value : toKey);
   };
 
-  const pickYear = (year: string) => {
-    setCustomFrom(`${year}-01-01`);
-    setCustomTo(`${year}-12-31`);
-    setRangeKey("custom");
-  };
+  const pickYear = (year: string) => setDays(`${year}-01-01`, `${year}-12-31`);
 
   /** "3 Oct – 3 Oct 2026" — name the actual dates, always. */
   const dates = `${asDay(dateFrom, false)} – ${asDay(dateTo, true)}`;
@@ -100,7 +139,7 @@ export function useReportRange(initial: RangeKey = "mtd") {
   /** For a heading: the preset's name, or the dates when hand-picked. */
   const label = rangeKey === "custom" ? dates : REPORT_RANGES.find(r => r.key === rangeKey)!.label;
 
-  return { rangeKey, setRangeKey, dateFrom, dateTo, fromKey, toKey, editDate, pickYear, dates, label };
+  return { rangeKey, setRangeKey: choosePreset, dateFrom, dateTo, fromKey, toKey, editDate, pickYear, pickDay, setDays, dates, label };
 }
 
 export type ReportRange = ReturnType<typeof useReportRange>;
@@ -128,7 +167,7 @@ export function ReportRangeControls({ range }: { range: ReportRange }) {
       {/* A whole year in one click. The date boxes step a month at a time,
           so 2024 is two dozen clicks on the arrow away. */}
       <Select value={wholeCalendarYear(range.fromKey, range.toKey)} onValueChange={range.pickYear}>
-        <SelectTrigger className="h-9 w-[7.5rem]" aria-label="Whole year">
+        <SelectTrigger className="h-9 w-[9.5rem]" aria-label="Whole year">
           <SelectValue placeholder="Whole year" />
         </SelectTrigger>
         <SelectContent>
@@ -138,25 +177,89 @@ export function ReportRangeControls({ range }: { range: ReportRange }) {
         </SelectContent>
       </Select>
 
-      {/* Always visible, never a mode you have to find: the dates on show
-          are the dates being reported, whichever preset is on. */}
-      <div className="flex items-center gap-1.5">
-        <Input
-          type="date"
-          className="h-9 w-[9.5rem]"
-          value={range.fromKey}
-          aria-label="From date"
-          onChange={(e) => range.editDate("from", e.target.value)}
-        />
-        <span className="text-muted-foreground">–</span>
-        <Input
-          type="date"
-          className="h-9 w-[9.5rem]"
-          value={range.toKey}
-          aria-label="To date"
-          onChange={(e) => range.editDate("to", e.target.value)}
-        />
-      </div>
     </>
+  );
+}
+
+const sameMonth = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+
+/**
+ * The months themselves, with the dates typed out beside them.
+ *
+ * A native date input steps one month per press of a small arrow, which
+ * is no way to pick last August. Two months are on display so a range can
+ * be swept out in two clicks, and the typed boxes stay for when the dates
+ * are already known.
+ *
+ * Days are handled as local calendar days, never as instants — a grid
+ * square is a question about the viewer’s own clock, and handing it the
+ * Brisbane instant for 1 January would highlight 31 December for anyone
+ * west of here. The reporting window itself stays on the salon’s day.
+ */
+export function ReportRangeCalendar({ range }: { range: ReportRange }) {
+  const [month, setMonth] = useState(() => localCalendarDay(range.fromKey));
+  // Two stacked months fill a phone screen before a single figure is
+  // visible, so a phone gets one.
+  const months = useIsMobile() ? 1 : 2;
+
+  // Follow the range when something else moves it — a preset, a year, a
+  // typed date — but leave the view alone while the start is already on
+  // screen, so clicking a day in the right-hand month does not shunt it
+  // into the left one.
+  useEffect(() => {
+    const target = localCalendarDay(range.fromKey);
+    setMonth((current) => {
+      const next = new Date(current.getFullYear(), current.getMonth() + 1, 1);
+      const onScreen = sameMonth(target, current) || (months > 1 && sameMonth(target, next));
+      return onScreen ? current : target;
+    });
+  }, [range.fromKey, months]);
+
+  return (
+    <div className="flex flex-col gap-4 rounded-xl border bg-card p-3 sm:flex-row sm:items-start">
+      <Calendar
+        mode="range"
+        numberOfMonths={months}
+        month={month}
+        onMonthChange={setMonth}
+        weekStartsOn={1}
+        // Off, or the end of the range is drawn twice: once in its own
+        // month and again in the previous month's trailing row.
+        showOutsideDays={false}
+        // `selected` is only honoured while `onSelect` is supplied — without
+        // it react-day-picker keeps its own copy of the range and ignores
+        // ours, which left the band drawn from the previous start. The
+        // range it computes is discarded; only the day that was clicked
+        // matters, because `pickDay` decides what a click means.
+        selected={{ from: localCalendarDay(range.fromKey), to: localCalendarDay(range.toKey) }}
+        onSelect={(_ignored, clicked) => range.pickDay(localCalendarDayKey(clicked))}
+        className="p-0"
+      />
+
+      <div className="grid w-full gap-3 sm:w-[11rem] sm:shrink-0">
+        <div className="grid gap-1.5">
+          <Label htmlFor="range-from" className="text-xs text-muted-foreground">From</Label>
+          <Input
+            id="range-from"
+            type="date"
+            className="h-9"
+            value={range.fromKey}
+            onChange={(e) => range.editDate("from", e.target.value)}
+          />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="range-to" className="text-xs text-muted-foreground">To</Label>
+          <Input
+            id="range-to"
+            type="date"
+            className="h-9"
+            value={range.toKey}
+            onChange={(e) => range.editDate("to", e.target.value)}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">{range.dates}</p>
+      </div>
+    </div>
   );
 }
