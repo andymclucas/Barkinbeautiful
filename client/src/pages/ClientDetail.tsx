@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel } from "@/components/client-record/ClientOverview";
 import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
 import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
+import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -252,6 +253,12 @@ export default function ClientDetail() {
   // Overview first: the figures and the notes are what someone opening a
   // client actually came for.
   const [activeClientTab, setActiveClientTab] = useState("overview");
+  // Bookings sub-view. Ten a page, matching MoeGo, so a salon moving
+  // across finds the same rows in the same places.
+  const [bookingTab, setBookingTab] = useState<BookingBucket>("upcoming");
+  const [bookingPage, setBookingPage] = useState(1);
+  const [paymentFilter, setPaymentFilter] = useState("all");
+  const BOOKINGS_PER_PAGE = 10;
   const [departedPet, setDepartedPet] = useState<{ id: number; name: string } | null>(null);
   const [departureNote, setDepartureNote] = useState("");
   const [membershipAction, setMembershipAction] = useState<{ membershipId: number; petId: number; petName: string; membershipName: string } | null>(null);
@@ -524,6 +531,21 @@ export default function ClientDetail() {
     setReplacementPetId("");
     setShowMembershipActionSummary(false);
   };
+
+  // One call decides both the tab counts and the rows beneath them, so
+  // a tab reading "(4)" above three rows is not possible.
+  const bookingCounts = countBookingBuckets(appointments);
+  const bookingsInTab = appointments
+    .filter(a => bookingBucket(a) === bookingTab)
+    .filter(a => paymentFilter === "all" || (a.paymentStatus ?? "unpaid") === paymentFilter);
+  const bookingPageCount = Math.max(1, Math.ceil(bookingsInTab.length / BOOKINGS_PER_PAGE));
+  // Deleting or filtering can strand you past the end; clamp on render
+  // rather than leaving a blank table with no way back.
+  const currentBookingPage = Math.min(bookingPage, bookingPageCount);
+  const pagedBookings = bookingsInTab.slice(
+    (currentBookingPage - 1) * BOOKINGS_PER_PAGE,
+    currentBookingPage * BOOKINGS_PER_PAGE,
+  );
 
   return (
     <DashboardLayout>
@@ -1129,7 +1151,40 @@ export default function ClientDetail() {
           </TabsContent>
 
           {/* ── Appointments tab ── */}
-          <TabsContent value="appointments" className="mt-0">
+          <TabsContent value="appointments" className="mt-0 space-y-3">
+            {/* Sub-tabs and their counts come from one bucketing call,
+                shared with the server-side reporting, so the number on a
+                tab always matches the rows under it. */}
+            <div className="flex flex-wrap items-center gap-1 border-b pb-2">
+              {BOOKING_BUCKETS.map(bucket => (
+                <button
+                  key={bucket}
+                  type="button"
+                  onClick={() => { setBookingTab(bucket); setBookingPage(1); }}
+                  className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                    bookingTab === bucket
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {BOOKING_BUCKET_LABELS[bucket]} ({bookingCounts[bucket]})
+                </button>
+              ))}
+              <div className="ml-auto">
+                <Select value={paymentFilter} onValueChange={(v) => { setPaymentFilter(v); setBookingPage(1); }}>
+                  <SelectTrigger className="h-8 w-[11rem] text-xs" aria-label="Payment status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any payment status</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="partial">Part paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="bg-card rounded-xl border overflow-hidden shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b">
@@ -1139,14 +1194,19 @@ export default function ClientDetail() {
                     <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Service</th>
                     <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">Groomer</th>
                     <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground hidden sm:table-cell">Payment</th>
                     <th className="text-right p-3 font-medium text-muted-foreground">Price</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {appointments.length === 0 && (
-                    <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No appointments yet.</td></tr>
+                  {pagedBookings.length === 0 && (
+                    <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">
+                      {appointments.length === 0
+                        ? "No appointments yet."
+                        : `Nothing in ${BOOKING_BUCKET_LABELS[bookingTab].toLowerCase()}${paymentFilter === "all" ? "" : " with that payment status"}.`}
+                    </td></tr>
                   )}
-                  {appointments.map((a, idx) => {
+                  {pagedBookings.map((a) => {
                     const isFuture = new Date(a.scheduledStart) > new Date();
                     return (
                       <tr key={a.id} className={`border-b last:border-0 hover:bg-muted/20 ${isFuture ? "bg-primary/3" : ""}`}>
@@ -1174,6 +1234,17 @@ export default function ClientDetail() {
                             {isFuture ? "Upcoming" : a.workflowState === "complete" ? "Complete" : a.status}
                           </Badge>
                         </td>
+                        <td className="p-3 hidden sm:table-cell">
+                          {a.paymentStatus
+                            ? <Badge variant="outline" className={
+                                a.paymentStatus === "paid" ? "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                : a.paymentStatus === "partial" ? "border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/50 dark:text-amber-300"
+                                : "border-red-200 bg-red-100 text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-300"
+                              }>
+                                {a.paymentStatus === "paid" ? "Paid" : a.paymentStatus === "partial" ? "Part paid" : "Unpaid"}
+                              </Badge>
+                            : <span className="text-xs text-muted-foreground">—</span>}
+                        </td>
                         <td className="p-3 text-right font-medium">{a.price ? `$${parseFloat(a.price).toFixed(2)}` : "—"}</td>
                       </tr>
                     );
@@ -1181,6 +1252,24 @@ export default function ClientDetail() {
                 </tbody>
               </table>
             </div>
+
+            {bookingsInTab.length > BOOKINGS_PER_PAGE && (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  {(currentBookingPage - 1) * BOOKINGS_PER_PAGE + 1}&ndash;
+                  {Math.min(currentBookingPage * BOOKINGS_PER_PAGE, bookingsInTab.length)} of {bookingsInTab.length}
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" disabled={currentBookingPage <= 1}
+                    onClick={() => setBookingPage(currentBookingPage - 1)}>Previous</Button>
+                  <span className="px-2 text-xs tabular-nums text-muted-foreground">
+                    {currentBookingPage} / {bookingPageCount}
+                  </span>
+                  <Button variant="outline" size="sm" disabled={currentBookingPage >= bookingPageCount}
+                    onClick={() => setBookingPage(currentBookingPage + 1)}>Next</Button>
+                </div>
+              </div>
+            )}
           </TabsContent>
 
           {/* ── Memberships tab ── */}

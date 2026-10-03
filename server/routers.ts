@@ -2304,6 +2304,7 @@ const clientsRouter = router({
           workflowState: appointments.workflowState,
           status: appointments.status,
           price: appointments.price,
+          paymentStatus: appointments.paymentStatus,
           notes: appointments.notes,
           staffId: appointments.staffId,
           petId: appointments.petId,
