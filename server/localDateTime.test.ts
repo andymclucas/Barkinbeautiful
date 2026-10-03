@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBrisbaneLocalDateTime, brisbaneDateKey } from "../shared/localDateTime";
+import { parseBrisbaneLocalDateTime, brisbaneDateKey, brisbaneCalendarPeriod } from "../shared/localDateTime";
 
 describe("parseBrisbaneLocalDateTime", () => {
   it("interprets a naive datetime-local string as Brisbane (UTC+10) time", () => {
@@ -72,5 +72,40 @@ describe("the salon day boundary (regression, 30/09/2026)", () => {
     expect(appt >= start && appt < endExclusive).toBe(true);
     const yesterday = brisbaneMidnightUtc("2026-09-29");
     expect(appt >= yesterday.start && appt < yesterday.endExclusive).toBe(false);
+  });
+});
+
+describe("brisbaneCalendarPeriod", () => {
+  // 3 October 2026 is a Saturday. Brisbane is UTC+10.
+  const onThirdOct = new Date("2026-10-02T23:00:00Z"); // 3 Oct 09:00 Brisbane
+
+  it("month means the 1st of this month, not 30 days ago", () => {
+    // The actual bug: "This Month" on 3 Oct was showing 3 September.
+    const { from, to } = brisbaneCalendarPeriod("month", onThirdOct);
+    expect(from.toISOString()).toBe("2026-09-30T14:00:00.000Z"); // 1 Oct 00:00 +10
+    expect(to.toISOString()).toBe("2026-10-03T13:59:59.000Z");   // 3 Oct 23:59 +10
+  });
+
+  it("year means 1 January", () => {
+    const { from } = brisbaneCalendarPeriod("year", onThirdOct);
+    expect(from.toISOString()).toBe("2025-12-31T14:00:00.000Z"); // 1 Jan 00:00 +10
+  });
+
+  it("week starts Monday, so a trading week is not split in two", () => {
+    const { from } = brisbaneCalendarPeriod("week", onThirdOct);
+    expect(from.toISOString()).toBe("2026-09-27T14:00:00.000Z"); // Mon 28 Sep 00:00 +10
+  });
+
+  it("on a Monday the week starts that same day", () => {
+    const monday = new Date("2026-10-04T23:00:00Z"); // Mon 5 Oct 09:00 Brisbane
+    const { from } = brisbaneCalendarPeriod("week", monday);
+    expect(from.toISOString()).toBe("2026-10-04T14:00:00.000Z");
+  });
+
+  it("on the 1st, the month holds a single day", () => {
+    const first = new Date("2026-10-31T23:00:00Z"); // 1 Nov 09:00 Brisbane
+    const { from, to } = brisbaneCalendarPeriod("month", first);
+    expect(from.toISOString()).toBe("2026-10-31T14:00:00.000Z");
+    expect(to.toISOString()).toBe("2026-11-01T13:59:59.000Z");
   });
 });

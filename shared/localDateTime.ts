@@ -74,6 +74,42 @@ export function brisbaneDateKey(instant: Date = new Date()): string {
  * `brisbaneRangeForDays(30)` means "from 00:00:00 Brisbane 30 days ago through
  * 23:59:59 Brisbane today", regardless of where the browser is.
  */
+/**
+ * The calendar period a salon owner means by "this month".
+ *
+ * The Analytics page offered "This Week / This Month / This Year" and
+ * quietly ran a rolling 7 / 30 / 365-day window instead. On 3 October
+ * "This Month" showed 3 September onwards — $36k of real revenue against
+ * three trading days of actual October. The figures were right and the
+ * label was wrong, which is worse than either.
+ *
+ * Weeks start Monday: the salon trades Tue–Fri, so a Sunday-start week
+ * would split a trading week across two periods.
+ */
+export type CalendarPeriod = "week" | "month" | "year";
+
+export function brisbaneCalendarPeriod(
+  period: CalendarPeriod,
+  now: Date = new Date(),
+): { from: Date; to: Date } {
+  const todayKey = brisbaneDateKey(now);
+  const to = parseBrisbaneLocalDateTime(`${todayKey}T23:59:59`);
+  const [y, m, d] = todayKey.split("-").map(Number);
+
+  if (period === "year") {
+    return { from: parseBrisbaneLocalDateTime(`${y}-01-01T00:00:00`), to };
+  }
+  if (period === "month") {
+    return { from: parseBrisbaneLocalDateTime(`${todayKey.slice(0, 7)}-01T00:00:00`), to };
+  }
+  // Monday of the current Brisbane week.
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 Sun … 6 Sat
+  const backToMonday = (dow + 6) % 7;
+  const monday = new Date(Date.UTC(y, m - 1, d - backToMonday));
+  const mondayKey = monday.toISOString().slice(0, 10);
+  return { from: parseBrisbaneLocalDateTime(`${mondayKey}T00:00:00`), to };
+}
+
 export function brisbaneRangeForDays(days: number, now: Date = new Date()): { from: Date; to: Date } {
   const todayKey = brisbaneDateKey(now);
   const to = parseBrisbaneLocalDateTime(`${todayKey}T23:59:59`);

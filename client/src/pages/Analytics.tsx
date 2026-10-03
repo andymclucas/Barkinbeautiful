@@ -6,26 +6,45 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { TrendingUp, Users, CreditCard, CalendarDays, Scissors, Heart, Download } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { brisbaneRangeForDays } from "@shared/localDateTime";
+import { brisbaneRangeForDays, brisbaneCalendarPeriod } from "@shared/localDateTime";
 
-const RANGES = [
-  { label: "This Week", days: 7 },
-  { label: "This Month", days: 30 },
-  { label: "Last 3 Months", days: 90 },
-  { label: "This Year", days: 365 },
+/**
+ * Rolling windows and calendar periods are different questions, and the
+ * page used to answer the second with the first: "This Month" ran a
+ * rolling 30 days, so on 3 October it reported $36k of September against
+ * three trading days of October. The figures were right; the label was
+ * not, which is worse than either.
+ *
+ * Both are useful — month-to-date is what you compare with last month,
+ * a rolling 30 days is the steadier trend — so offer both and say which
+ * is which.
+ */
+type RangeKey = "mtd" | "d30" | "wtd" | "d90" | "ytd";
+
+const RANGES: { key: RangeKey; label: string }[] = [
+  { key: "mtd", label: "Month to date" },
+  { key: "d30", label: "Last 30 days" },
+  { key: "wtd", label: "Week to date" },
+  { key: "d90", label: "Last 90 days" },
+  { key: "ytd", label: "Year to date" },
 ];
 
 export default function Analytics() {
-  const [rangeDays, setRangeDays] = useState(30);
+  const [rangeKey, setRangeKey] = useState<RangeKey>("mtd");
 
   // Anchored to the salon's own day boundaries, not the viewer's. setHours()
   // uses the browser's timezone, so the previous version produced a different
   // window depending on where it was opened from — and appointments near
   // midnight fell into the wrong period. Queensland is UTC+10 year-round.
-  const { from: dateFrom, to: dateTo } = useMemo(
-    () => brisbaneRangeForDays(rangeDays),
-    [rangeDays],
-  );
+  const { from: dateFrom, to: dateTo } = useMemo(() => {
+    switch (rangeKey) {
+      case "mtd": return brisbaneCalendarPeriod("month");
+      case "wtd": return brisbaneCalendarPeriod("week");
+      case "ytd": return brisbaneCalendarPeriod("year");
+      case "d90": return brisbaneRangeForDays(90);
+      default:    return brisbaneRangeForDays(30);
+    }
+  }, [rangeKey]);
 
   const { data: summary } = trpc.analytics.summary.useQuery({
     tenantId: 1,
@@ -57,7 +76,8 @@ export default function Analytics() {
 
   const handleExportCSV = () => {
     const rows: (string | number)[][] = [
-      ["Period", RANGES.find(r => r.days === rangeDays)?.label ?? `${rangeDays} days`],
+      ["Period", RANGES.find(r => r.key === rangeKey)?.label ?? rangeKey],
+      ["Covering", `${dateFrom.toLocaleDateString("en-AU")} to ${dateTo.toLocaleDateString("en-AU")}`],
       [],
       ["Revenue Streams", ""],
       ["Appointment Revenue", `$${(revenueStreams?.appointmentRevenue ?? 0).toFixed(2)}`],
@@ -142,19 +162,26 @@ export default function Analytics() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold font-display">Analytics</h1>
-            <p className="text-sm text-muted-foreground">Business performance insights</p>
+            {/* Name the actual dates. A figure labelled only "This Month"
+                was read as October and was in fact a rolling 30 days back
+                into September. */}
+            <p className="text-sm text-muted-foreground">
+              {dateFrom.toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" })}
+              {" – "}
+              {dateTo.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Brisbane" })}
+            </p>
           </div>
           <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-1.5 text-xs">
             <Download className="h-3.5 w-3.5" /> Export CSV
           </Button>
-          <Select value={String(rangeDays)} onValueChange={v => setRangeDays(parseInt(v))}>
+          <Select value={rangeKey} onValueChange={v => setRangeKey(v as RangeKey)}>
             <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {RANGES.map(r => (
-                <SelectItem key={r.days} value={String(r.days)}>{r.label}</SelectItem>
+                <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
