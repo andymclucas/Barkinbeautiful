@@ -488,7 +488,6 @@ export default function ClientDetail() {
     bookService as "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other",
     activeMemberships,
   );
-  const totalSpend = appointments.reduce((sum, a) => sum + parseFloat(a.price ?? "0"), 0);
   const lastVisit = appointments[0]?.scheduledStart;
   const nextVisit = appointments.find(a => new Date(a.scheduledStart) > new Date());
 
@@ -767,52 +766,13 @@ export default function ClientDetail() {
         )}
 
         {/* Stats row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Dog className="h-4.5 w-4.5 text-primary" />
-              </div>
-              <div>
-                <p className="text-xl font-bold font-display">{pets.length}</p>
-                <p className="text-xs text-muted-foreground">Pets</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-blue-100 dark:bg-blue-950/50 flex items-center justify-center flex-shrink-0">
-                <CalendarDays className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
-              </div>
-              <div>
-                <p className="text-xl font-bold font-display">{appointments.length}</p>
-                <p className="text-xs text-muted-foreground">Appointments</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center flex-shrink-0">
-                <Award className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400" />
-              </div>
-              <div>
-                <p className="text-xl font-bold font-display">{activeMemberships.length}</p>
-                <p className="text-xs text-muted-foreground">Active Memberships</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center flex-shrink-0">
-                <DollarSign className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div>
-                <p className="text-xl font-bold font-display">${totalSpend.toFixed(0)}</p>
-                <p className="text-xs text-muted-foreground">Total Spend</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* The four-tile row that used to sit here is gone. Every figure
+            on it was already elsewhere — Pets, Bookings and Memberships
+            are counted in the rail, and the eight tiles on Overview
+            carry the rest — and its "Total Spend" disagreed with them.
+            It summed the price of every appointment including cancelled
+            and unpaid ones, so Carole Adams read $1,580 spent beside
+            $3,838 actually paid, with nothing to say which was which. */}
 
         {/* Last / Next visit */}
         {(lastVisit || nextVisit) && (
