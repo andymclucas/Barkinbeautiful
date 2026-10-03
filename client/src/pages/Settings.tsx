@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { StaffNotificationSetting } from "@/components/StaffNotificationSetting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -152,7 +153,11 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="notifications" className="mt-4">
+          <TabsContent value="notifications" className="mt-4 space-y-4">
+            {/* Per browser, so it sits above the salon-wide settings
+                rather than looking like one of them. */}
+            <StaffNotificationSetting />
+
             <Card>
               <CardHeader className="pb-2 pt-4 px-4">
                 <CardTitle className="text-base flex items-center gap-2">
