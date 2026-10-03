@@ -187,7 +187,7 @@ export function ReportRangePicker({ range }: { range: ReportRange }) {
     // which is generous for a page that is mostly figures. Everything else
     // is a multiple of --cell-size, so shrinking that shrinks the grid
     // whole rather than leaving a row to overflow in Safari.
-    <div className="flex flex-col gap-3 rounded-xl border bg-card p-2.5 sm:w-fit sm:flex-row sm:items-start [&_.rdp-month]:gap-2 [&_.rdp-week]:mt-1">
+    <div className="report-range flex flex-col gap-3 rounded-xl border bg-card p-3 sm:w-fit sm:flex-row sm:items-start [&_.rdp-month]:gap-2 [&_.rdp-week]:mt-1">
       <Calendar
         mode="range"
         numberOfMonths={months}
@@ -207,7 +207,7 @@ export function ReportRangePicker({ range }: { range: ReportRange }) {
         className="p-0 [--cell-size:--spacing(7)]"
       />
 
-      <div className="grid w-full gap-2 sm:w-[11.5rem] sm:shrink-0">
+      <div className="report-range-controls grid w-full gap-2 sm:w-[12rem] sm:shrink-0">
         <Select value={range.rangeKey} onValueChange={v => range.setRangeKey(v as RangeKey)}>
           <SelectTrigger className="h-9 w-full" aria-label="Period">
             <SelectValue />
