@@ -56,8 +56,20 @@ export function ClientPetsAside({ clientId, pets }: { clientId: number; pets: As
                     {[pet.breed, weight ? `${weight} kg` : null].filter(Boolean).join(" · ") || "No details recorded"}
                   </p>
                 </div>
-                {pet.alertLevel && pet.alertLevel !== "none" && (
-                  <Badge variant="destructive" className="shrink-0 gap-1">
+                {/* The enum is ok | caution | danger, and all but two of
+                    the salon's pets are "ok" — so badging anything that
+                    was not "none" (a value that does not exist) put a red
+                    warning reading "ok" on every dog in the business.
+                    Only the two that mean something get a badge. */}
+                {(pet.alertLevel === "caution" || pet.alertLevel === "danger") && (
+                  <Badge
+                    variant={pet.alertLevel === "danger" ? "destructive" : "secondary"}
+                    className={`shrink-0 gap-1 capitalize ${
+                      pet.alertLevel === "caution"
+                        ? "border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/50 dark:text-amber-200"
+                        : ""
+                    }`}
+                  >
                     <AlertTriangle className="h-3 w-3" /> {pet.alertLevel}
                   </Badge>
                 )}

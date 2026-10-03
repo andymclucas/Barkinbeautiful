@@ -45,9 +45,20 @@ export function ClientMetrics({ clientId }: { clientId: number }) {
       {tiles.map(tile => (
         <Card key={tile.label}>
           <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{tile.label}</p>
-            <p className={`mt-1 text-2xl font-bold font-display ${tile.tone ?? ""}`}>{tile.value}</p>
-            {tile.detail && <p className="mt-0.5 text-xs text-muted-foreground">{tile.detail}</p>}
+            {/* Two lines reserved whether or not the label needs them:
+                "Average review" wraps where "Upcoming" does not, and
+                without this the numbers sat at different heights across
+                the row. */}
+            <p className="flex min-h-[2.4em] items-start text-xs font-medium uppercase leading-[1.2] tracking-wide text-muted-foreground">
+              {tile.label}
+            </p>
+            {/* Money overflowed its tile and was clipped mid-figure —
+                "$3,838.0" with the last digit cut off, which reads as a
+                different number rather than as a layout fault. */}
+            <p className={`mt-1 truncate text-xl font-bold font-display tabular-nums sm:text-2xl ${tile.tone ?? ""}`} title={tile.value}>
+              {tile.value}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{tile.detail ?? "\u00a0"}</p>
           </CardContent>
         </Card>
       ))}
