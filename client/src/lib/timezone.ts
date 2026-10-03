@@ -155,6 +155,21 @@ export function useTimezone() {
       differsFromSalon: !!tenant?.timezone && tenant.timezone !== timezone,
       salonTimezone: safeTimeZone(tenant?.timezone ?? DEFAULT_TIMEZONE),
 
+      /**
+       * The hour of day on this clock, 0–23.
+       *
+       * `hourCycle: "h23"` because en-AU otherwise renders midnight as 24,
+       * and anything keying off the hour would read that as out of range.
+       */
+      hourOfDay: (value: number | string | Date = Date.now()) => {
+        const parts = new Intl.DateTimeFormat("en-AU", {
+          timeZone: timezone,
+          hour: "numeric",
+          hour12: false,
+          hourCycle: "h23",
+        }).formatToParts(new Date(value));
+        return Number(parts.find((part) => part.type === "hour")?.value ?? NaN);
+      },
       /** "8:00 am" */
       time: (value: number | string | Date | null | undefined) =>
         format(value, { hour: "numeric", minute: "2-digit", hour12: true }),
