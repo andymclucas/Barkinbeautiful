@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBrisbaneLocalDateTime, brisbaneDateKey, brisbaneCalendarPeriod } from "../shared/localDateTime";
+import { parseBrisbaneLocalDateTime, brisbaneDateKey, brisbaneCalendarPeriod, brisbaneExplicitRange } from "../shared/localDateTime";
 
 describe("parseBrisbaneLocalDateTime", () => {
   it("interprets a naive datetime-local string as Brisbane (UTC+10) time", () => {
@@ -107,5 +107,32 @@ describe("brisbaneCalendarPeriod", () => {
     const { from, to } = brisbaneCalendarPeriod("month", first);
     expect(from.toISOString()).toBe("2026-10-31T14:00:00.000Z");
     expect(to.toISOString()).toBe("2026-11-01T13:59:59.000Z");
+  });
+});
+
+describe("brisbaneExplicitRange", () => {
+  it("covers both days in full", () => {
+    const { from, to } = brisbaneExplicitRange("2026-01-01", "2026-12-31");
+    expect(from.toISOString()).toBe("2025-12-31T14:00:00.000Z"); // 1 Jan 00:00 +10
+    expect(to.toISOString()).toBe("2026-12-31T13:59:59.000Z");   // 31 Dec 23:59 +10
+  });
+
+  it("swaps a reversed pair rather than returning nothing", () => {
+    // A date picker makes this easy to do by accident.
+    const a = brisbaneExplicitRange("2026-12-31", "2026-01-01");
+    const b = brisbaneExplicitRange("2026-01-01", "2026-12-31");
+    expect(a).toEqual(b);
+  });
+
+  it("handles a single day", () => {
+    const { from, to } = brisbaneExplicitRange("2026-10-03", "2026-10-03");
+    expect(from.toISOString()).toBe("2026-10-02T14:00:00.000Z");
+    expect(to.toISOString()).toBe("2026-10-03T13:59:59.000Z");
+  });
+
+  it("falls back to today rather than producing an invalid range", () => {
+    const { from, to } = brisbaneExplicitRange("not-a-date", "2026-10-03");
+    expect(Number.isNaN(from.getTime())).toBe(false);
+    expect(Number.isNaN(to.getTime())).toBe(false);
   });
 });

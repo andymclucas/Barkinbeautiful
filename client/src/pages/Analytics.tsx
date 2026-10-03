@@ -6,7 +6,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { TrendingUp, Users, CreditCard, CalendarDays, Scissors, Heart, Download } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { brisbaneRangeForDays, brisbaneCalendarPeriod } from "@shared/localDateTime";
+import { Input } from "@/components/ui/input";
+import { brisbaneRangeForDays, brisbaneCalendarPeriod, brisbaneExplicitRange } from "@shared/localDateTime";
 
 /**
  * Rolling windows and calendar periods are different questions, and the
@@ -19,7 +20,7 @@ import { brisbaneRangeForDays, brisbaneCalendarPeriod } from "@shared/localDateT
  * a rolling 30 days is the steadier trend — so offer both and say which
  * is which.
  */
-type RangeKey = "mtd" | "d30" | "wtd" | "d90" | "ytd";
+type RangeKey = "mtd" | "d30" | "wtd" | "d90" | "ytd" | "custom";
 
 const RANGES: { key: RangeKey; label: string }[] = [
   { key: "mtd", label: "Month to date" },
@@ -27,10 +28,16 @@ const RANGES: { key: RangeKey; label: string }[] = [
   { key: "wtd", label: "Week to date" },
   { key: "d90", label: "Last 90 days" },
   { key: "ytd", label: "Year to date" },
+  { key: "custom", label: "Custom range…" },
 ];
 
 export default function Analytics() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("mtd");
+  // Custom range, as Brisbane calendar dates. Defaults to the calendar
+  // year, which is the comparison most often wanted against the old
+  // system's dashboard.
+  const [customFrom, setCustomFrom] = useState(() => `${new Date().getFullYear()}-01-01`);
+  const [customTo, setCustomTo] = useState(() => `${new Date().getFullYear()}-12-31`);
 
   // Anchored to the salon's own day boundaries, not the viewer's. setHours()
   // uses the browser's timezone, so the previous version produced a different
@@ -42,9 +49,10 @@ export default function Analytics() {
       case "wtd": return brisbaneCalendarPeriod("week");
       case "ytd": return brisbaneCalendarPeriod("year");
       case "d90": return brisbaneRangeForDays(90);
+      case "custom": return brisbaneExplicitRange(customFrom, customTo);
       default:    return brisbaneRangeForDays(30);
     }
-  }, [rangeKey]);
+  }, [rangeKey, customFrom, customTo]);
 
   const { data: summary } = trpc.analytics.summary.useQuery({
     tenantId: 1,
@@ -187,6 +195,27 @@ export default function Analytics() {
               ))}
             </SelectContent>
           </Select>
+          {rangeKey === "custom" && (
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="date"
+                className="h-9 w-[9.5rem]"
+                value={customFrom}
+                max={customTo}
+                aria-label="From date"
+                onChange={(e) => setCustomFrom(e.target.value)}
+              />
+              <span className="text-muted-foreground">–</span>
+              <Input
+                type="date"
+                className="h-9 w-[9.5rem]"
+                value={customTo}
+                min={customFrom}
+                aria-label="To date"
+                onChange={(e) => setCustomTo(e.target.value)}
+              />
+            </div>
+          )}
           </div>
         </div>
 

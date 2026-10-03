@@ -110,6 +110,25 @@ export function brisbaneCalendarPeriod(
   return { from: parseBrisbaneLocalDateTime(`${mondayKey}T00:00:00`), to };
 }
 
+/**
+ * An explicit from/to the user typed, as Brisbane calendar days.
+ *
+ * Both ends inclusive: someone asking for 1 Jan to 31 Dec means the whole
+ * of both days, not up to midnight on the 31st. A reversed pair is
+ * swapped rather than returning nothing, because a date picker makes that
+ * easy to do by accident.
+ */
+export function brisbaneExplicitRange(fromKey: string, toKey: string): { from: Date; to: Date } {
+  const valid = (k: string) => /^\d{4}-\d{2}-\d{2}$/.test(k);
+  const a = valid(fromKey) ? fromKey : brisbaneDateKey(new Date());
+  const b = valid(toKey) ? toKey : brisbaneDateKey(new Date());
+  const [lo, hi] = a <= b ? [a, b] : [b, a];
+  return {
+    from: parseBrisbaneLocalDateTime(`${lo}T00:00:00`),
+    to: parseBrisbaneLocalDateTime(`${hi}T23:59:59`),
+  };
+}
+
 export function brisbaneRangeForDays(days: number, now: Date = new Date()): { from: Date; to: Date } {
   const todayKey = brisbaneDateKey(now);
   const to = parseBrisbaneLocalDateTime(`${todayKey}T23:59:59`);
