@@ -153,15 +153,33 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="notifications" className="mt-4 space-y-4">
-            {/* Per browser, so it sits above the salon-wide settings
-                rather than looking like one of them. */}
-            <StaffNotificationSetting />
+          <TabsContent value="notifications" className="mt-4 space-y-6">
+            {/* Two unrelated things used to sit here unlabelled: alerts
+                that reach staff, and automated messages that reach
+                clients. Landing on both at once, both called
+                "notifications", told you nothing about which was which. */}
+            <section className="space-y-2">
+              <div>
+                <h2 className="text-sm font-semibold">Alerts to staff</h2>
+                <p className="text-sm text-muted-foreground">
+                  What this browser does when something happens in the salon. Nothing here reaches a client.
+                </p>
+              </div>
+              <StaffNotificationSetting />
+            </section>
 
+            <section className="space-y-2">
+              <div>
+                <h2 className="text-sm font-semibold">Automated messages to clients</h2>
+                <p className="text-sm text-muted-foreground">
+                  Texts the system sends on the salon&rsquo;s behalf. These apply to the whole salon, not just
+                  to you.
+                </p>
+              </div>
             <Card>
               <CardHeader className="pb-2 pt-4 px-4">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Bell className="h-5 w-5 text-primary" /> Notification Settings
+                  <Bell className="h-5 w-5 text-primary" /> Client messaging
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-3 text-sm">
@@ -181,6 +199,7 @@ export default function Settings() {
                 ))}
               </CardContent>
             </Card>
+            </section>
           </TabsContent>
 
           <TabsContent value="integrations" className="mt-4 space-y-4">

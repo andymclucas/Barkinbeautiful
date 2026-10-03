@@ -53,7 +53,7 @@ export function StaffNotificationSetting() {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           {enabled ? <Bell className="h-4 w-4 text-primary" /> : <BellOff className="h-4 w-4 text-muted-foreground" />}
-          Desktop notifications
+          Alerts on this device
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
