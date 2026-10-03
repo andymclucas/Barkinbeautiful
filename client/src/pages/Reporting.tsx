@@ -5,7 +5,7 @@ import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useReportRange, ReportRangeControls, ReportRangeCalendar } from "@/components/ReportRange";
+import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -82,11 +82,10 @@ export default function Reporting() {
             <Button size="sm" className="h-9 gap-1.5" disabled={exporting} onClick={handleExport}>
               <Download className="h-3.5 w-3.5" /> {exporting ? "Exporting…" : "Export full report"}
             </Button>
-            <ReportRangeControls range={range} />
           </div>
         </div>
 
-        <ReportRangeCalendar range={range} />
+        <ReportRangePicker range={range} />
 
         {/* KPI summary */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
