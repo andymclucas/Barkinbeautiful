@@ -7,6 +7,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
+import { agreementsRouter, clientReviewsRouter, packagesRouter, petPaperworkRouter, clientNotesRouter } from "./routers/clientRecord";
 import { getDb } from "./db"
 import { z } from "zod";
 import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";
@@ -7844,6 +7845,11 @@ export const appRouter = router({
   workflow: workflowRouter,
   tracker: trackerRouter,
   clients: clientsRouter,
+  agreements: agreementsRouter,
+  clientReviews: clientReviewsRouter,
+  packages: packagesRouter,
+  petPaperwork: petPaperworkRouter,
+  clientNotes: clientNotesRouter,
   pets: petsRouter,
   staff: staffRouter,
   memberships: membershipsRouter,
