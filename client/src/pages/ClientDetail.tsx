@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel } from "@/components/client-record/ClientOverview";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,7 +20,7 @@ import {
   Dog, Phone, Mail, MapPin, CalendarDays, CreditCard, ArrowLeft,
   AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil
 } from "lucide-react";
-import { Link2, Link2Off, Search } from "lucide-react";
+import { Link2, Link2Off, Search, LayoutDashboard, Star } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -246,7 +247,9 @@ export default function ClientDetail() {
   const utils = trpc.useUtils();
   const [uploadingPhotoForPetId, setUploadingPhotoForPetId] = useState<number | null>(null);
   const [addCreditSignal, setAddCreditSignal] = useState(0);
-  const [activeClientTab, setActiveClientTab] = useState("pets");
+  // Overview first: the figures and the notes are what someone opening a
+  // client actually came for.
+  const [activeClientTab, setActiveClientTab] = useState("overview");
   const [departedPet, setDepartedPet] = useState<{ id: number; name: string } | null>(null);
   const [departureNote, setDepartureNote] = useState("");
   const [membershipAction, setMembershipAction] = useState<{ membershipId: number; petId: number; petName: string; membershipName: string } | null>(null);
@@ -801,28 +804,49 @@ export default function ClientDetail() {
           </div>
         )}
 
-        {/* Tabs */}
-        <Tabs value={activeClientTab} onValueChange={setActiveClientTab}>
-          <TabsList className="w-full justify-start">
-            <TabsTrigger value="pets">
-              <Dog className="h-3.5 w-3.5 mr-1.5" />Pets ({pets.length})
-            </TabsTrigger>
-            <TabsTrigger value="appointments">
-              <CalendarDays className="h-3.5 w-3.5 mr-1.5" />Appointments ({appointments.length})
-            </TabsTrigger>
-            <TabsTrigger value="memberships">
-              <Award className="h-3.5 w-3.5 mr-1.5" />Memberships ({memberships.length})
-            </TabsTrigger>
-            <TabsTrigger value="payments">
-              <CreditCard className="h-3.5 w-3.5 mr-1.5" />Payments ({payments.length})
-            </TabsTrigger>
-            <TabsTrigger value="activity">
-              <History className="h-3.5 w-3.5 mr-1.5" />Activity ({petMembershipEvents.length})
-            </TabsTrigger>
+        {/* The record, as a rail rather than a tab strip.
+            Radix Tabs still drives it — the panels below are untouched —
+            but five horizontal tabs could not grow to twelve sections
+            without wrapping into an unreadable row. */}
+        <Tabs
+          value={activeClientTab}
+          onValueChange={setActiveClientTab}
+          orientation="vertical"
+          className="grid gap-5 lg:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] lg:items-start"
+        >
+          <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:sticky lg:top-4 lg:flex-col lg:flex-nowrap">
+            {[
+              { value: "overview", label: "Overview", icon: LayoutDashboard },
+              { value: "pets", label: `Pets (${pets.length})`, icon: Dog },
+              { value: "appointments", label: `Bookings (${appointments.length})`, icon: CalendarDays },
+              { value: "memberships", label: `Memberships (${memberships.length})`, icon: Award },
+              { value: "payments", label: `Payments (${payments.length})`, icon: CreditCard },
+              { value: "reviews", label: "Reviews", icon: Star },
+              { value: "activity", label: `History (${petMembershipEvents.length})`, icon: History },
+            ].map(item => (
+              <TabsTrigger
+                key={item.value}
+                value={item.value}
+                className="w-full justify-start gap-2 rounded-lg px-3 py-2 text-sm data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+              >
+                <item.icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </TabsTrigger>
+            ))}
           </TabsList>
 
+          <div className="min-w-0">
+          <TabsContent value="overview" className="mt-0 space-y-4">
+            <ClientMetrics clientId={clientId} />
+            <ClientNotesPanel clientId={clientId} />
+          </TabsContent>
+
+          <TabsContent value="reviews" className="mt-0">
+            <ClientReviewsPanel clientId={clientId} />
+          </TabsContent>
+
           {/* ── Pets tab ── */}
-          <TabsContent value="pets" className="mt-4">
+          <TabsContent value="pets" className="mt-0">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {pets.length === 0 && <p className="text-muted-foreground text-sm col-span-3">No pets on file.</p>}
               {pets.map(pet => {
@@ -1085,7 +1109,7 @@ export default function ClientDetail() {
           </TabsContent>
 
           {/* ── Appointments tab ── */}
-          <TabsContent value="appointments" className="mt-4">
+          <TabsContent value="appointments" className="mt-0">
             <div className="bg-card rounded-xl border overflow-hidden shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b">
@@ -1140,7 +1164,7 @@ export default function ClientDetail() {
           </TabsContent>
 
           {/* ── Memberships tab ── */}
-          <TabsContent value="memberships" className="mt-4">
+          <TabsContent value="memberships" className="mt-0">
             <div className="space-y-3">
               {memberships.length === 0 && <p className="text-muted-foreground text-sm">No memberships on file.</p>}
               {memberships.map(m => {
@@ -1201,7 +1225,7 @@ export default function ClientDetail() {
           </TabsContent>
 
           {/* ── Payments tab ── */}
-          <TabsContent value="payments" className="mt-4">
+          <TabsContent value="payments" className="mt-0">
             <StripeCardPanel clientId={client.id} />
             <StoreCreditCard clientId={client.id} externalOpenSignal={addCreditSignal} />
 
@@ -1243,7 +1267,7 @@ export default function ClientDetail() {
             </div>
           </TabsContent>
 
-          <TabsContent value="activity" className="mt-4">
+          <TabsContent value="activity" className="mt-0">
             <div className="rounded-xl border bg-card shadow-sm">
               <div className="border-b bg-muted/30 px-5 py-4">
                 <div className="flex items-center gap-2 font-semibold"><History className="h-4 w-4 text-primary" />Membership & pet activity</div>
@@ -1272,6 +1296,7 @@ export default function ClientDetail() {
               )}
             </div>
           </TabsContent>
+          </div>
         </Tabs>
       </div>
 
