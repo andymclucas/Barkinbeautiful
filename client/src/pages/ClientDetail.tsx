@@ -749,21 +749,6 @@ export default function ClientDetail() {
           </DialogContent>
         </Dialog>
 
-        {isAdmin && (
-          <Card>
-            <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><UserRoundPlus className="h-4 w-4 text-primary" /> Pickup contacts</CardTitle><p className="text-sm text-muted-foreground">The primary client number and any contacts listed here are available when staff send a ready-for-pickup message after a completed appointment.</p></CardHeader>
-            <CardContent className="space-y-3">
-              {client.phone && <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2"><div><p className="text-sm font-medium">{client.firstName} {client.lastName} <Badge variant="outline" className="ml-1.5">Primary</Badge></p><p className="text-xs text-muted-foreground">{client.phone}</p></div></div>}
-              {additionalContacts.map(contact => <div key={contact.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"><div className="min-w-0"><p className="text-sm font-medium truncate">{contact.name}{contact.relationship ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">{contact.relationship}</span> : null}</p><p className="text-xs text-muted-foreground">{contact.phone}{contact.email ? ` · ${contact.email}` : ""}</p></div><Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" title={`Remove ${contact.name}`} disabled={removeClientContact.isPending} onClick={() => removeClientContact.mutate({ clientId, contactId: contact.id })}><Trash2 className="h-4 w-4" /></Button></div>)}
-              <div className="grid grid-cols-1 gap-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Input placeholder="Contact name" value={contactForm.name} onChange={event => setContactForm(current => ({ ...current, name: event.target.value }))} />
-                <Input placeholder="Mobile number" value={contactForm.phone} onChange={event => setContactForm(current => ({ ...current, phone: event.target.value }))} />
-                <Input placeholder="Relationship (optional)" value={contactForm.relationship} onChange={event => setContactForm(current => ({ ...current, relationship: event.target.value }))} />
-                <div className="flex gap-2"><Input className="min-w-0" placeholder="Email (optional)" value={contactForm.email} onChange={event => setContactForm(current => ({ ...current, email: event.target.value }))} /><Button className="shrink-0" disabled={addClientContact.isPending || !contactForm.name.trim() || !contactForm.phone.trim()} onClick={() => addClientContact.mutate({ clientId, name: contactForm.name, phone: contactForm.phone, email: contactForm.email || undefined, relationship: contactForm.relationship || undefined })}>{addClientContact.isPending ? "Saving…" : "Add"}</Button></div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Stats row */}
         {/* The four-tile row that used to sit here is gone. Every figure
@@ -803,8 +788,13 @@ export default function ClientDetail() {
           value={activeClientTab}
           onValueChange={setActiveClientTab}
           orientation="vertical"
-          className="grid gap-5 lg:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] lg:items-start"
+          className="grid gap-5 lg:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]"
         >
+          {/* The rail is a column that runs the height of the record, not
+              a list that stops after its last item. Without items-start
+              the grid stretches it, so the divider runs the full length;
+              the nav inside stays stuck to the top while you scroll. */}
+          <div className="lg:h-full lg:border-r lg:border-border lg:pr-3">
           <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:sticky lg:top-4 lg:flex-col lg:flex-nowrap">
             {[
               { value: "overview", label: "Overview", icon: LayoutDashboard },
@@ -828,6 +818,7 @@ export default function ClientDetail() {
               </TabsTrigger>
             ))}
           </TabsList>
+          </div>
 
           <div className="min-w-0">
           <TabsContent value="overview" className="mt-0">
@@ -1418,6 +1409,25 @@ export default function ClientDetail() {
           </TabsContent>
           </div>
         </Tabs>
+
+        {/* Underneath the record, not above it. It is reference material
+            for the moment a dog is ready, not something you read on the
+            way in, and at the top it pushed the figures below the fold. */}
+        {isAdmin && (
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><UserRoundPlus className="h-4 w-4 text-primary" /> Pickup contacts</CardTitle><p className="text-sm text-muted-foreground">The primary client number and any contacts listed here are available when staff send a ready-for-pickup message after a completed appointment.</p></CardHeader>
+            <CardContent className="space-y-3">
+              {client.phone && <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2"><div><p className="text-sm font-medium">{client.firstName} {client.lastName} <Badge variant="outline" className="ml-1.5">Primary</Badge></p><p className="text-xs text-muted-foreground">{client.phone}</p></div></div>}
+              {additionalContacts.map(contact => <div key={contact.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"><div className="min-w-0"><p className="text-sm font-medium truncate">{contact.name}{contact.relationship ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">{contact.relationship}</span> : null}</p><p className="text-xs text-muted-foreground">{contact.phone}{contact.email ? ` · ${contact.email}` : ""}</p></div><Button size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive" title={`Remove ${contact.name}`} disabled={removeClientContact.isPending} onClick={() => removeClientContact.mutate({ clientId, contactId: contact.id })}><Trash2 className="h-4 w-4" /></Button></div>)}
+              <div className="grid grid-cols-1 gap-2 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Input placeholder="Contact name" value={contactForm.name} onChange={event => setContactForm(current => ({ ...current, name: event.target.value }))} />
+                <Input placeholder="Mobile number" value={contactForm.phone} onChange={event => setContactForm(current => ({ ...current, phone: event.target.value }))} />
+                <Input placeholder="Relationship (optional)" value={contactForm.relationship} onChange={event => setContactForm(current => ({ ...current, relationship: event.target.value }))} />
+                <div className="flex gap-2"><Input className="min-w-0" placeholder="Email (optional)" value={contactForm.email} onChange={event => setContactForm(current => ({ ...current, email: event.target.value }))} /><Button className="shrink-0" disabled={addClientContact.isPending || !contactForm.name.trim() || !contactForm.phone.trim()} onClick={() => addClientContact.mutate({ clientId, name: contactForm.name, phone: contactForm.phone, email: contactForm.email || undefined, relationship: contactForm.relationship || undefined })}>{addClientContact.isPending ? "Saving…" : "Add"}</Button></div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* ── Book Appointment Dialog ── */}
