@@ -15,6 +15,18 @@ import { useTimezone } from "@/lib/timezone";
  * them for the Messages panel — a second endpoint would be a second way
  * for the same number to be wrong.
  */
+/**
+ * Four tiles across a column that narrows once the pets panel appears,
+ * so "$3,838.00" has about half the room "24" needs. Nine characters at
+ * text-2xl does not fit; at text-lg it does.
+ */
+function sizeForValue(value: string): string {
+  if (value.length <= 4) return "text-2xl";
+  if (value.length <= 7) return "text-xl";
+  if (value.length <= 9) return "text-lg";
+  return "text-base";
+}
+
 export function ClientMetrics({ clientId }: { clientId: number }) {
   const { data } = trpc.clients.messageContext.useQuery({ tenantId: 1, clientId });
   const { data: reviews } = trpc.clientReviews.forClient.useQuery({ tenantId: 1, clientId });
@@ -52,10 +64,13 @@ export function ClientMetrics({ clientId }: { clientId: number }) {
             <p className="flex min-h-[2.4em] items-start text-xs font-medium uppercase leading-[1.2] tracking-wide text-muted-foreground">
               {tile.label}
             </p>
-            {/* Money overflowed its tile and was clipped mid-figure —
-                "$3,838.0" with the last digit cut off, which reads as a
-                different number rather than as a layout fault. */}
-            <p className={`mt-1 truncate text-xl font-bold font-display tabular-nums sm:text-2xl ${tile.tone ?? ""}`} title={tile.value}>
+            {/* Sized to fit rather than clipped or ellipsised. The first
+                attempt let it overflow ("$3,838.0", last digit gone) and
+                the second truncated it ("$3,8…"), both of which read as
+                a different number rather than as a layout fault. A
+                figure has to be shown in full or not at all, so the type
+                shrinks as the value gets longer. */}
+            <p className={`mt-1 font-bold font-display leading-tight tabular-nums ${sizeForValue(tile.value)} ${tile.tone ?? ""}`}>
               {tile.value}
             </p>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{tile.detail ?? "\u00a0"}</p>
