@@ -144,60 +144,26 @@ export function useReportRange(initial: RangeKey = "mtd") {
 
 export type ReportRange = ReturnType<typeof useReportRange>;
 
-/**
- * Preset, whole year, and the two dates. Rendered as a fragment so each
- * page can sit it in its own toolbar beside its own export button.
- */
-export function ReportRangeControls({ range }: { range: ReportRange }) {
-  const { data: bookingYears } = trpc.analytics.dataYears.useQuery({ tenantId: 1 });
-
-  return (
-    <>
-      <Select value={range.rangeKey} onValueChange={v => range.setRangeKey(v as RangeKey)}>
-        <SelectTrigger className="h-9 w-44">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {REPORT_RANGES.map(r => (
-            <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {/* A whole year in one click. The date boxes step a month at a time,
-          so 2024 is two dozen clicks on the arrow away. */}
-      <Select value={wholeCalendarYear(range.fromKey, range.toKey)} onValueChange={range.pickYear}>
-        <SelectTrigger className="h-9 w-[9.5rem]" aria-label="Whole year">
-          <SelectValue placeholder="Whole year" />
-        </SelectTrigger>
-        <SelectContent>
-          {(bookingYears?.years ?? []).map(y => (
-            <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-    </>
-  );
-}
-
 const sameMonth = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 
 /**
- * The months themselves, with the dates typed out beside them.
+ * The whole period control: the months, the presets and the typed dates,
+ * in one block.
  *
- * A native date input steps one month per press of a small arrow, which
- * is no way to pick last August. Two months are on display so a range can
- * be swept out in two clicks, and the typed boxes stay for when the dates
- * are already known.
+ * These started as a toolbar beside the page title with the calendar in a
+ * card of its own beneath it, which read as two unrelated things and cost
+ * a row of height for the privilege. Everything that changes the period
+ * now sits together, with the selects and the typed dates filling the
+ * column beside the calendar rather than taking a row above it.
  *
  * Days are handled as local calendar days, never as instants — a grid
  * square is a question about the viewer’s own clock, and handing it the
  * Brisbane instant for 1 January would highlight 31 December for anyone
  * west of here. The reporting window itself stays on the salon’s day.
  */
-export function ReportRangeCalendar({ range }: { range: ReportRange }) {
+export function ReportRangePicker({ range }: { range: ReportRange }) {
+  const { data: bookingYears } = trpc.analytics.dataYears.useQuery({ tenantId: 1 });
   const [month, setMonth] = useState(() => localCalendarDay(range.fromKey));
   // Two stacked months fill a phone screen before a single figure is
   // visible, so a phone gets one.
@@ -217,7 +183,11 @@ export function ReportRangeCalendar({ range }: { range: ReportRange }) {
   }, [range.fromKey, months]);
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border bg-card p-3 sm:flex-row sm:items-start">
+    // The two descendant rules tighten react-day-picker’s own spacing,
+    // which is generous for a page that is mostly figures. Everything else
+    // is a multiple of --cell-size, so shrinking that shrinks the grid
+    // whole rather than leaving a row to overflow in Safari.
+    <div className="flex flex-col gap-3 rounded-xl border bg-card p-2.5 sm:w-fit sm:flex-row sm:items-start [&_.rdp-month]:gap-2 [&_.rdp-week]:mt-1">
       <Calendar
         mode="range"
         numberOfMonths={months}
@@ -225,7 +195,7 @@ export function ReportRangeCalendar({ range }: { range: ReportRange }) {
         onMonthChange={setMonth}
         weekStartsOn={1}
         // Off, or the end of the range is drawn twice: once in its own
-        // month and again in the previous month's trailing row.
+        // month and again in the previous month’s trailing row.
         showOutsideDays={false}
         // `selected` is only honoured while `onSelect` is supplied — without
         // it react-day-picker keeps its own copy of the range and ignores
@@ -234,11 +204,37 @@ export function ReportRangeCalendar({ range }: { range: ReportRange }) {
         // matters, because `pickDay` decides what a click means.
         selected={{ from: localCalendarDay(range.fromKey), to: localCalendarDay(range.toKey) }}
         onSelect={(_ignored, clicked) => range.pickDay(localCalendarDayKey(clicked))}
-        className="p-0"
+        className="p-0 [--cell-size:--spacing(7)]"
       />
 
-      <div className="grid w-full gap-3 sm:w-[11rem] sm:shrink-0">
-        <div className="grid gap-1.5">
+      <div className="grid w-full gap-2 sm:w-[11.5rem] sm:shrink-0">
+        <Select value={range.rangeKey} onValueChange={v => range.setRangeKey(v as RangeKey)}>
+          <SelectTrigger className="h-9 w-full" aria-label="Period">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {REPORT_RANGES.map(r => (
+              <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* A whole year in one click. The months step one at a time, so
+            2024 is two dozen presses of the arrow away. */}
+        <Select value={wholeCalendarYear(range.fromKey, range.toKey)} onValueChange={range.pickYear}>
+          <SelectTrigger className="h-9 w-full" aria-label="Whole year">
+            <SelectValue placeholder="Whole year" />
+          </SelectTrigger>
+          <SelectContent>
+            {(bookingYears?.years ?? []).map(y => (
+              <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* For when the dates are already known and clicking to them is
+            the long way round. */}
+        <div className="grid gap-1">
           <Label htmlFor="range-from" className="text-xs text-muted-foreground">From</Label>
           <Input
             id="range-from"
@@ -248,7 +244,7 @@ export function ReportRangeCalendar({ range }: { range: ReportRange }) {
             onChange={(e) => range.editDate("from", e.target.value)}
           />
         </div>
-        <div className="grid gap-1.5">
+        <div className="grid gap-1">
           <Label htmlFor="range-to" className="text-xs text-muted-foreground">To</Label>
           <Input
             id="range-to"
@@ -258,7 +254,6 @@ export function ReportRangeCalendar({ range }: { range: ReportRange }) {
             onChange={(e) => range.editDate("to", e.target.value)}
           />
         </div>
-        <p className="text-xs text-muted-foreground">{range.dates}</p>
       </div>
     </div>
   );
