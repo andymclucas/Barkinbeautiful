@@ -29,14 +29,23 @@ describe("bookingBucket", () => {
     expect(bookingBucket({ scheduledStart: future, status: "confirmed", workflowState: "complete" }, NOW)).toBe("history");
   });
 
-  it("keeps an unconfirmed future booking in pending", () => {
-    expect(bookingBucket({ scheduledStart: future, status: "pending", workflowState: "scheduled" }, NOW)).toBe("pending");
+  it("treats status 'pending' as upcoming, because it is only an import default", () => {
+    // 1,023 of the salon's 1,025 future bookings carry status "pending".
+    // Reading it as "unconfirmed" put every upcoming groom in a Pending
+    // tab and left Upcoming showing two.
+    expect(bookingBucket({ scheduledStart: future, status: "pending", workflowState: "scheduled" }, NOW)).toBe("upcoming");
   });
 
-  it("leaves a past booking nobody finished in pending, not history", () => {
-    // It needs someone to say what happened; quietly filing it as history
-    // is how an unpriced, uncollected groom disappears.
-    expect(bookingBucket({ scheduledStart: past, status: "confirmed", workflowState: "scheduled" }, NOW)).toBe("pending");
+  it("files an imported past booking as history, not pending", () => {
+    // Ten of Holly's twenty past grooms came over from MoeGo as
+    // confirmed/scheduled because the import never advanced the
+    // workflow. Treating "never marked complete" as needing action filed
+    // two years of finished, paid grooms as outstanding.
+    expect(bookingBucket({ scheduledStart: past, status: "confirmed", workflowState: "scheduled" }, NOW)).toBe("history");
+  });
+
+  it("files a past booking as history whatever its status", () => {
+    expect(bookingBucket({ scheduledStart: past, status: "pending", workflowState: "scheduled" }, NOW)).toBe("history");
   });
 
   it("puts a part-done past booking in history", () => {
@@ -60,10 +69,10 @@ describe("countBookingBuckets", () => {
       { scheduledStart: past, status: "confirmed", workflowState: "complete" },
       { scheduledStart: past, status: "cancelled", workflowState: "cancelled" },
       { scheduledStart: past, status: "no_show", workflowState: "no_show" },
-      { scheduledStart: past, status: "confirmed", workflowState: "scheduled" },
+      { scheduledStart: past, status: "pending", workflowState: "scheduled" },
     ];
     const counts = countBookingBuckets(bookings, NOW);
-    expect(counts).toEqual({ pending: 1, upcoming: 2, history: 1, cancelled: 1, no_show: 1 });
+    expect(counts).toEqual({ upcoming: 2, history: 2, cancelled: 1, no_show: 1 });
     // The tab counts must add up to the list, or one pile hides a booking.
     expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(bookings.length);
   });
