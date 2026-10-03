@@ -44,3 +44,29 @@ export function useHasHover() {
 
   return hasHover;
 }
+
+/**
+ * Is the viewport at least Tailwind's `lg` (1024px)?
+ *
+ * Needed where a component must not RENDER below/above a breakpoint, as
+ * opposed to merely being hidden by a class. A Radix Dialog with
+ * `lg:hidden` on its content still mounts its overlay, which greys out
+ * and blocks the whole page — so the three-pane Messages layout has to
+ * not mount the dialog at all on a wide screen.
+ */
+export function useIsWideScreen() {
+  const query = "(min-width: 1024px)";
+  const [isWide, setIsWide] = React.useState(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches,
+  );
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setIsWide(mql.matches);
+    mql.addEventListener("change", onChange);
+    setIsWide(mql.matches);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  return isWide;
+}

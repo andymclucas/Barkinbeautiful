@@ -5,8 +5,7 @@ import { canAdministerStaff } from "@shared/staffAdministrators";
 import { canEditSection } from "@shared/staffPermissions";
 import { ThreadClientContext } from "@/components/ThreadClientContext";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { useHasHover } from "@/hooks/useMobile";
-import { createPortal } from "react-dom";
+import { useIsWideScreen } from "@/hooks/useMobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,78 +71,6 @@ export default function Messages() {
   }, []);
 
 
-  // Conversation preview, anchored to the cursor.
-  //
-  // This used to be a Radix HoverCard with side="right". The list rows are full
-  // width, so "right of the trigger" had no room, Radix flipped it, and the card
-  // landed at the far left of the window over the sidebar - nowhere near the
-  // pointer. Anchoring to the cursor is the only placement that reads correctly
-  // for a full-width row.
-  //
-  // Position is written straight to the node rather than held in state: the
-  // conversation list re-rendering on every mousemove was not worth it.
-  // How many messages the hover card shows before it gives up and points at the
-  // full conversation. Chosen so a compact thread still fits inside max-h-[80vh]
-  // on a laptop screen.
-  const PREVIEW_MESSAGE_LIMIT = 12;
-  const hasHover = useHasHover();
-  const [previewThread, setPreviewThread] = useState<any | null>(null);
-  const previewRef = useRef<HTMLDivElement | null>(null);
-  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pointer = useRef({ x: 0, y: 0 });
-
-  const positionPreview = useCallback(() => {
-    const el = previewRef.current;
-    if (!el) return;
-    const gap = 18;
-    const { x, y } = pointer.current;
-    const w = el.offsetWidth || 384; // w-96
-    const h = el.offsetHeight || 360;
-    // Flip to the left of the cursor when the card would run off the right edge.
-    const left = x + gap + w > window.innerWidth - 8 ? Math.max(8, x - gap - w) : x + gap;
-    // Sit slightly above the cursor, clamped so the card is always fully visible.
-    const top = Math.min(Math.max(8, y - 24), Math.max(8, window.innerHeight - h - 8));
-    el.style.left = `${left}px`;
-    el.style.top = `${top}px`;
-  }, []);
-
-  // Track the cursor so the card opens exactly where the pointer is, but do NOT
-  // reposition once it is open: the card is tall enough to read, and a panel of
-  // text that slides around under the pointer is unreadable. It settles where it
-  // opened and only moves when you hover a different conversation.
-  const trackPointer = useCallback((e: { clientX: number; clientY: number }) => {
-    pointer.current = { x: e.clientX, y: e.clientY };
-  }, []);
-
-  const openPreview = useCallback((thread: any, e: { clientX: number; clientY: number }) => {
-    // Touch devices synthesise mouseenter on tap, which would open this
-    // preview on top of the thread dialog the same tap just opened.
-    if (!hasHover) return;
-    pointer.current = { x: e.clientX, y: e.clientY };
-    if (previewTimer.current) clearTimeout(previewTimer.current);
-    previewTimer.current = setTimeout(() => setPreviewThread(thread), 220);
-  }, [hasHover]);
-
-  const closePreview = useCallback(() => {
-    if (previewTimer.current) clearTimeout(previewTimer.current);
-    previewTimer.current = null;
-    setPreviewThread(null);
-  }, []);
-
-  // Place the card as soon as it mounts, before the browser paints, so it never
-  // flashes at the top-left corner on the first frame.
-  useEffect(() => { if (previewThread) positionPreview(); }, [previewThread, positionPreview]);
-  useEffect(() => () => { if (previewTimer.current) clearTimeout(previewTimer.current); }, []);
-  // A scroll or a resize invalidates the anchor point entirely.
-  useEffect(() => {
-    if (!previewThread) return;
-    window.addEventListener("scroll", closePreview, true);
-    window.addEventListener("resize", closePreview);
-    return () => {
-      window.removeEventListener("scroll", closePreview, true);
-      window.removeEventListener("resize", closePreview);
-    };
-  }, [previewThread, closePreview]);
   const [selectedTemplate, setSelectedTemplate] = useState("custom");
   const [customBody, setCustomBody] = useState("");
   // Twilio bills per segment. One emoji forces the whole message to UCS-2,
@@ -170,6 +97,10 @@ export default function Messages() {
     { enabled: clientSearch.length >= 2 }
   );
 
+  // At lg the conversation shows in the centre pane, so the dialog must not
+  // mount at all — a Radix Dialog hidden with lg:hidden still renders its
+  // overlay, which greys the page out and swallows every click.
+  const isWideScreen = useIsWideScreen();
   const utils = trpc.useUtils();
   // The button only appears for someone who may actually send. The server
   // checks again — this just avoids offering what would be refused.
@@ -626,9 +557,6 @@ export default function Messages() {
                   <div
                     key={thread.threadKey}
                     className="group -mx-2 flex w-full items-center gap-2 rounded-xl px-2 transition-colors hover:bg-accent/50"
-                    onMouseEnter={hasHover ? (e) => openPreview(thread, e) : undefined}
-                    onMouseMove={hasHover ? trackPointer : undefined}
-                    onMouseLeave={hasHover ? closePreview : undefined}
                   >
                     <button
                       type="button"
@@ -1019,6 +947,7 @@ export default function Messages() {
       {/* ── Thread conversation dialog ── */}
       {/* Below lg there is no room for three panes, so a tap opens the
           same conversation in a dialog. */}
+      {!isWideScreen && (
       <Dialog open={!!openThread} onOpenChange={(open) => !open && setOpenThread(null)}>
         <DialogContent className="max-w-[420px] gap-0 overflow-hidden rounded-[26px] p-0 lg:hidden">
           <DialogTitle className="sr-only">
@@ -1029,65 +958,8 @@ export default function Messages() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Conversation preview, positioned at the cursor by positionPreview().
-          Portalled to the body so no ancestor's transform or overflow can clip
-          it, and pointer-events-none so it never swallows the click on the row
-          underneath. */}
-      {hasHover && previewThread && createPortal(
-        <div
-          ref={previewRef}
-          role="tooltip"
-          className="pointer-events-none fixed z-50 flex max-h-[80vh] w-96 flex-col overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg"
-          style={{ left: 0, top: 0 }}
-        >
-          <div className="flex items-center gap-2.5 border-b bg-muted/40 px-3 py-2.5">
-            <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
-              style={{ background: contactColour(previewThread.threadKey ?? (previewThread.clientName?.trim() || previewThread.toNumber)) }}
-              aria-hidden="true"
-            >
-              {contactInitials(previewThread.clientName, previewThread.toNumber)}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{previewThread.clientName?.trim() || previewThread.toNumber}</p>
-              {previewThread.clientName?.trim() && <p className="truncate text-[11px] text-muted-foreground">{previewThread.toNumber}</p>}
-            </div>
-            {previewThread.unreadCount > 0 && (
-              <span className="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">{previewThread.unreadCount} new</span>
-            )}
-          </div>
-          {(() => {
-            // Show the whole conversation where it fits. The card cannot be
-            // scrolled - it is pointer-events-none so it never steals the click
-            // on the row underneath - so anything we cannot show in full has to
-            // be announced rather than silently cut off.
-            const all = threadPreview(previewThread);
-            const hidden = Math.max(0, all.length - PREVIEW_MESSAGE_LIMIT);
-            return (
-              <>
-                {hidden > 0 && (
-                  <div className="border-b bg-muted/20 px-3 py-1.5 text-center text-[11px] text-muted-foreground">
-                    {hidden} earlier {hidden === 1 ? "message" : "messages"} not shown
-                  </div>
-                )}
-                <div className="min-h-0 flex-1 overflow-hidden px-3 py-2">
-                  <MessageThread
-                    messages={all}
-                    limit={hidden > 0 ? PREVIEW_MESSAGE_LIMIT : undefined}
-                    compact
-                    emptyText={previewThread.lastMessage ?? "No messages yet."}
-                  />
-                </div>
-                <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
-                  {hidden > 0 ? "Click to open the full conversation" : "Click to reply"}
-                </div>
-              </>
-            );
-          })()}
-        </div>,
-        document.body,
       )}
+
     </DashboardLayout>
   );
 }
