@@ -332,7 +332,7 @@ export default function Messages() {
                 </div>
               </div>
     
-              <div className="flex-1 min-h-[320px] overflow-y-auto bg-muted/20 px-3 py-2 lg:h-auto">
+              <div className="flex-1 min-h-[320px] overflow-y-auto bg-muted/20 px-3 py-2 lg:h-auto lg:min-h-0">
                 <MessageThread
                   messages={threadMessages}
                   showStatus
@@ -570,7 +570,11 @@ export default function Messages() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="px-4 pb-4">
+          {/* The card is a fixed-height flex column, so the list inside it
+              has to be the part that scrolls — min-h-0 because a flex child
+              will not shrink below its content without it, which is what left
+              the list clipped with nowhere to scroll. */}
+          <CardContent className="px-4 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
             {!threads || threads.length === 0 ? (
               <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
             ) : (
