@@ -33,6 +33,19 @@ const money = (n: number) =>
  */
 const QUICK_JUMP_WEEKS = Array.from({ length: 14 }, (_, i) => i + 1);
 
+/**
+ * Browsing to another month should land on a sensible day, not reset to
+ * the 1st every time: keep the day-of-month where it exists, and clamp to
+ * the last day where it does not (31 Jan → 28 Feb).
+ */
+function startOfMonthDay(month: Date, current: Date): Date {
+  const target = new Date(month.getFullYear(), month.getMonth(), 1);
+  const lastDay = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(current.getDate(), lastDay));
+  target.setHours(0, 0, 0, 0);
+  return target;
+}
+
 export function CalendarSidebar({
   selected,
   onSelectDate,
@@ -69,6 +82,11 @@ export function CalendarSidebar({
         <CalendarPicker
           mode="single"
           selected={selected}
+          // Controlled month. Without this react-day-picker keeps its own,
+          // so a quick jump of 4 or 8 weeks moved the calendar underneath
+          // while the grid carried on showing the month you started in.
+          month={selected}
+          onMonthChange={(m) => onSelectDate(startOfMonthDay(m, selected))}
           onSelect={(d) => {
             if (!d) return;
             const next = new Date(d);

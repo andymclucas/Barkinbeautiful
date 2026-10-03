@@ -1908,8 +1908,12 @@ export default function Calendar() {
           <CalendarSidebar
             selected={viewMode === "day" ? dayDate : weekStart}
             onSelectDate={(d) => {
-              if (viewMode === "day") setDayDate(d);
-              else setWeekStart(getWeekStart(d));
+              // Move BOTH. Setting only the one the current view reads left
+              // the other stale, so a quick jump moved the grid and then
+              // switching day/week put you back where you started.
+              // jumpToAppointment already does this; the rail did not.
+              setDayDate(d);
+              setWeekStart(getWeekStart(d));
             }}
             summary={sidebarSummary}
             summaryLabel={viewMode === "day" ? fmtDateShort(dayDate) : `Week of ${weekLabel}`}
