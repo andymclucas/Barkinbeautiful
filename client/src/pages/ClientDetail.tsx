@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel } from "@/components/client-record/ClientOverview";
+import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
+import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,7 +22,7 @@ import {
   Dog, Phone, Mail, MapPin, CalendarDays, CreditCard, ArrowLeft,
   AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil
 } from "lucide-react";
-import { Link2, Link2Off, Search, LayoutDashboard, Star } from "lucide-react";
+import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -821,6 +823,9 @@ export default function ClientDetail() {
               { value: "appointments", label: `Bookings (${appointments.length})`, icon: CalendarDays },
               { value: "memberships", label: `Memberships (${memberships.length})`, icon: Award },
               { value: "payments", label: `Payments (${payments.length})`, icon: CreditCard },
+              { value: "agreements", label: "Agreements", icon: FileSignature },
+              { value: "packages", label: "Packages", icon: PackageOpen },
+              { value: "paperwork", label: "Vaccinations", icon: Syringe },
               { value: "reviews", label: "Reviews", icon: Star },
               { value: "activity", label: `History (${petMembershipEvents.length})`, icon: History },
             ].map(item => (
@@ -839,6 +844,21 @@ export default function ClientDetail() {
           <TabsContent value="overview" className="mt-0 space-y-4">
             <ClientMetrics clientId={clientId} />
             <ClientNotesPanel clientId={clientId} />
+          </TabsContent>
+
+          <TabsContent value="agreements" className="mt-0">
+            <ClientAgreementsPanel
+              clientId={clientId}
+              clientName={`${client.firstName ?? ""} ${client.lastName ?? ""}`.trim()}
+            />
+          </TabsContent>
+
+          <TabsContent value="packages" className="mt-0">
+            <ClientPackagesPanel clientId={clientId} />
+          </TabsContent>
+
+          <TabsContent value="paperwork" className="mt-0">
+            <PetPaperworkPanel clientId={clientId} />
           </TabsContent>
 
           <TabsContent value="reviews" className="mt-0">
