@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useStaffNotifications } from "@/hooks/useStaffNotifications";
+import { flashTestBadge, badgingSupported } from "@/hooks/useAppBadge";
 
 /**
  * The switch, and an honest account of what it can do on this device.
@@ -23,13 +24,22 @@ export function StaffNotificationSetting() {
   const { supported, permission, enabled, setEnabled, canAsk, sendTest } = useStaffNotifications();
   const [testing, setTesting] = useState(false);
 
+  const canBadge = badgingSupported();
+
   const runTest = () => {
     setTesting(true);
+    // The badge goes on straight away rather than after the delay: it is
+    // not an interruption, and the point is that it is already sitting
+    // there when you look at the Home Screen icon. It puts the real
+    // unread count back on its own after twenty seconds.
+    const badged = flashTestBadge(20);
     // Five seconds to switch away. A notification only pops when the tab
     // is in the background, so testing it while staring at the page
     // would prove nothing about the case you care about.
     toast("Switch to another window or app now", {
-      description: "The test notification fires in 5 seconds.",
+      description: badged
+        ? "The alert fires in 5 seconds, and a 1 is on the app icon now — it clears itself after twenty."
+        : "The alert fires in 5 seconds.",
     });
     sendTest(5000, (delivery) => {
       setTesting(false);
@@ -93,6 +103,9 @@ export function StaffNotificationSetting() {
               Switch to another window or app once you press it. Alerts only pop when Groomigo is in the
               background &mdash; if it is the window you are looking at, the alert appears in the page
               instead, which is deliberate.
+              {canBadge
+                ? " It also puts a 1 on the app icon so you can see the unread count working; that clears itself after twenty seconds."
+                : " This device cannot show a count on an app icon, so only the alert is tested."}
             </p>
           </div>
         )}
