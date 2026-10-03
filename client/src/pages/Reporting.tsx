@@ -5,7 +5,7 @@ import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useReportRange, ReportRangeControls } from "@/components/ReportRange";
+import { useReportRange, ReportRangeControls, ReportRangeCalendar } from "@/components/ReportRange";
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -85,6 +85,8 @@ export default function Reporting() {
             <ReportRangeControls range={range} />
           </div>
         </div>
+
+        <ReportRangeCalendar range={range} />
 
         {/* KPI summary */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
