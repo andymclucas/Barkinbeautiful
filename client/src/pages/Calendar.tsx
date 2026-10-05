@@ -4,6 +4,7 @@ import { resolveCalendarStaffColumns } from "@/lib/calendarStaffColumns";
 import { toggleCalendarStaffSelection } from "@/lib/calendarStaffFilter";
 import { getDayCalendarGridSizing } from "@/lib/calendarGridSizing";
 import { buildAestDragSchedule } from "@/lib/calendarDragSchedule";
+import { GROOM_CONDITION_LABELS, GROOM_RATING_LABELS } from "@shared/groomingCard";
 import { buildSharedAppointmentPriceBreakdown } from "@shared/sharedAppointmentPricing";
 import { buildCalendarDragTargetMinutes, formatCalendarDragTargetTime } from "@shared/calendarDragTarget";
 import { formatSharedAppointmentName } from "@shared/appointmentDisplay";
@@ -423,8 +424,10 @@ function NowLine({ totalGridWidth }: { totalGridWidth: number }) {
 
 // ── Grooming Report Panel (per pet per appointment) ────────────────────────────
 const MOOD_OPTIONS = ["Happy 😊", "Well behaved 💕", "Restless 🚀", "A little shy 🐿️", "Talkative 🦜", "Anxious 😟", "Spicy 🔥", "Bitey"];
-const RATING_LABELS: Record<string, string> = { pawfect: "Absolutely pawfect 🐾", great: "Great session", good: "Good", okay: "Okay", difficult: "Difficult" };
-const CONDITION_LABELS: Record<string, string> = { excellent: "Excellent", good: "Good", fair: "Fair", poor: "Poor", matted: "Matted", irritated: "Irritated", flaky: "Flaky", bright_clear: "Bright & clear", mild_discharge: "Mild discharge", needs_vet: "Needs vet", clean: "Clean", mild_buildup: "Mild buildup", dirty: "Dirty", trimmed: "Trimmed", long: "Long", very_long: "Very long", broken: "Broken", mild_tartar: "Mild tartar", heavy_tartar: "Heavy tartar" };
+// Shared with the client portal so the card a client is emailed and the card
+// they see when they log in cannot drift apart. See shared/groomingCard.ts.
+const RATING_LABELS = GROOM_RATING_LABELS;
+const CONDITION_LABELS = GROOM_CONDITION_LABELS;
 
 type ReportSnapshot = {
   rating: string; moods: string[]; note: string;

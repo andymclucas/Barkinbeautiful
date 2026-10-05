@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { clientFacingPortalError } from "@shared/clientFacingError";
-import { formatMoney, invoiceOutstanding, totalPaid } from "@shared/portalBilling";
+import { formatMoney } from "@shared/portalBilling";
+import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { clientFacingStage, isGroomInProgress, GROOMING_STEPS } from "@shared/groomingStage";
-import { CalendarDays, Dog, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
+import { CalendarDays, Dog, FileDown, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 type PortalPet = { id: number; name: string; breed: string | null; species: string; status: string };
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
-type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; sentAt: Date | string | null };
+type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; coatCondition: string | null; skinCondition: string | null; eyeCondition: string | null; earCondition: string | null; nailCondition: string | null; teethCondition: string | null; serviceType: string | null; groomerName: string | null; sentAt: Date | string | null };
 type PortalInvoiceRow = { id: number; invoiceNumber: string | null; total: string | null; status: string | null; paymentMethod: string | null; paidAt: string | Date | null; dueAt: string | Date | null; createdAt: string | Date | null };
 type PortalPaymentRow = { key: string; source: "invoice" | "membership" | "appointment"; amount: number; at: string | Date | number; method: string | null; description: string };
 
@@ -42,101 +43,226 @@ function portalDateTime(value: Date | string) {
  * own bank statement. Recent first, with the rest behind an expander: a
  * long-standing client has dozens and almost always wants the last few.
  */
-function BillingSection({ invoices, payments }: { invoices: PortalInvoiceRow[]; payments: PortalPaymentRow[] }) {
-  const [showAllInvoices, setShowAllInvoices] = useState(false);
-  const [showAllPayments, setShowAllPayments] = useState(false);
+/**
+ * A grooming card as the client reads it.
+ *
+ * Mirrors the card the salon emails and prints, which is the whole point:
+ * a client who opens the portal should see the same check-over as the one
+ * in their inbox. Before this, the portal showed the after photo, one note
+ * and the return frequency, and silently dropped the rating, the mood, the
+ * before photo and every condition the groomer recorded.
+ *
+ * The veterinary disclaimer is carried across deliberately. The card names
+ * ear, skin and teeth findings, and must not read as a clinical opinion.
+ *
+ * groomerNotes is deliberately NOT shown. It is the salon's internal note on
+ * the dog, and two tests assert it never reaches the portal payload. The
+ * client-facing note is additionalNote, rendered above as "a note from your
+ * groomer".
+ */
+function GroomingCardDetail({ card }: { card: PortalGroomingCard }) {
+  const conditions = groomCardConditions(card);
+  const moods = groomCardMoods(card.mood);
+  const rating = groomCardRating(card.overallRating);
+  const service = (card.serviceType ?? "").replace(/_/g, " ");
 
-  const outstanding = invoiceOutstanding(invoices);
-  const paidTotal = totalPaid(payments);
-  const visibleInvoices = showAllInvoices ? invoices : invoices.slice(0, 5);
-  const visiblePayments = showAllPayments ? payments : payments.slice(0, 5);
+  return (
+    <article className="overflow-hidden rounded-2xl border bg-card">
+      <header className="bg-gradient-to-br from-violet-700 to-violet-500 px-5 py-4 text-white">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] opacity-80">Grooming card</p>
+        <h3 className="mt-1 text-lg font-extrabold">{card.petName}</h3>
+        <p className="mt-0.5 text-xs opacity-90">
+          {portalDate(card.appointmentDate)}
+          {card.groomerName ? ` · Groomed by ${card.groomerName}` : ""}
+        </p>
+      </header>
+
+      <div className="space-y-4 p-5">
+        {service && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Today&apos;s service</p>
+            <p className="text-sm font-semibold capitalize">{service}</p>
+          </div>
+        )}
+
+        {(card.beforePhotoUrl || card.afterPhotoUrl) && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {card.beforePhotoUrl && (
+              <figure>
+                <figcaption className="mb-1 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Before</figcaption>
+                <img src={card.beforePhotoUrl} alt={`${card.petName} before grooming`} className="h-44 w-full rounded-lg border object-cover" />
+              </figure>
+            )}
+            {card.afterPhotoUrl && (
+              <figure>
+                <figcaption className="mb-1 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">After</figcaption>
+                <img src={card.afterPhotoUrl} alt={`${card.petName} after grooming`} className="h-44 w-full rounded-lg border object-cover" />
+              </figure>
+            )}
+          </div>
+        )}
+
+        {rating && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Overall</p>
+            <p className="text-base font-extrabold text-primary">{rating}</p>
+          </div>
+        )}
+
+        {moods.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Mood</p>
+            <div className="flex flex-wrap gap-1.5">
+              {moods.map(m => <Badge key={m} variant="secondary" className="font-normal">{m}</Badge>)}
+            </div>
+          </div>
+        )}
+
+        {card.additionalNote && (
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">A note from your groomer</p>
+            <p className="whitespace-pre-wrap rounded-xl bg-muted/50 px-3.5 py-3 text-sm leading-relaxed">{card.additionalNote}</p>
+          </div>
+        )}
+
+        {conditions.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">We checked</p>
+            <dl className="divide-y rounded-xl border">
+              {conditions.map(row => (
+                <div key={row.label} className="flex items-center justify-between gap-3 px-3.5 py-2 text-sm">
+                  <dt className="text-muted-foreground">{row.label}</dt>
+                  <dd className="font-semibold">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+
+        {card.recommendedFrequencyWeeks ? (
+          <div className="rounded-xl bg-primary/10 px-3.5 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-primary">Recommended frequency</p>
+            <p className="mt-0.5 text-base font-extrabold text-primary">Every {card.recommendedFrequencyWeeks} weeks</p>
+          </div>
+        ) : null}
+
+        <p className="border-t pt-3 text-[10px] leading-relaxed text-muted-foreground">
+          This grooming card does not constitute veterinary advice. Please contact a veterinarian for professional health guidance.
+        </p>
+      </div>
+    </article>
+  );
+}
+
+/**
+ * The client's invoices, and nothing else about money.
+ *
+ * Deliberately quiet. This used to lead with "Outstanding" and "Paid to
+ * date" tiles and a payments timeline, which Andy found confusing for
+ * clients and which were also wrong: "Paid to date" summed every invoice
+ * regardless of whether the groom had happened, so clients with historic
+ * imported invoices saw a total far above what they had actually paid.
+ *
+ * A running total is not what a client needs from a grooming portal. They
+ * need to find a particular invoice and keep a copy. So this is a collapsed
+ * list they can open if they want one, with a printable copy per invoice.
+ *
+ * No total is shown here on purpose. If one is ever reintroduced it must be
+ * computed from completed work only — see the portal billing investigation
+ * on 05/10/2026.
+ */
+function InvoicesSection({ invoices, salon, client }: { invoices: PortalInvoiceRow[]; salon: PortalData["salon"]; client: PortalData["client"] }) {
+  const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? invoices : invoices.slice(0, 5);
 
   const when = (value: string | Date | number | null) =>
     value ? new Date(value).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" }) : "—";
 
+  // Printed through the browser rather than a server-rendered file: it is the
+  // same approach the grooming report already uses, needs no PDF dependency,
+  // and "Save as PDF" is in every print dialog on desktop and iOS.
+  const printInvoice = (invoice: PortalInvoiceRow) => {
+    const esc = (v: unknown) => String(v ?? "").replace(/[&<>]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch] as string));
+    const paid = (invoice.status ?? "").toLowerCase() === "paid";
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(invoice.invoiceNumber || `Invoice ${invoice.id}`)}</title>
+<style>
+ body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:#1c1917;margin:40px;max-width:720px}
+ h1{font-size:20px;margin:0 0 4px} .muted{color:#78716c;font-size:13px}
+ .row{display:flex;justify-content:space-between;gap:24px;margin-top:28px}
+ table{width:100%;border-collapse:collapse;margin-top:28px}
+ th,td{text-align:left;padding:10px 0;border-bottom:1px solid #e7e5e4;font-size:14px}
+ td.amt,th.amt{text-align:right}
+ .total{font-size:18px;font-weight:700}
+ .badge{display:inline-block;border:1px solid #d6d3d1;border-radius:999px;padding:2px 10px;font-size:12px}
+ @media print{body{margin:16px}}
+</style></head><body>
+ <h1>${esc(salon.name)}</h1>
+ <div class="muted">${[salon.phone, salon.email].filter(Boolean).map(esc).join(" &middot; ")}</div>
+ <div class="row">
+  <div><div class="muted">Billed to</div><div><strong>${esc([client.firstName, client.lastName].filter(Boolean).join(" "))}</strong></div>
+   <div class="muted">${esc(client.email ?? "")}</div></div>
+  <div style="text-align:right">
+   <div class="muted">Invoice</div><div><strong>${esc(invoice.invoiceNumber || `#${invoice.id}`)}</strong></div>
+   <div class="muted">${paid ? `Paid ${esc(when(invoice.paidAt))}` : `Issued ${esc(when(invoice.createdAt))}`}</div>
+   <div style="margin-top:6px"><span class="badge">${paid ? "Paid" : esc(invoice.status ?? "Due")}</span></div>
+  </div>
+ </div>
+ <table><thead><tr><th>Description</th><th class="amt">Amount</th></tr></thead>
+  <tbody><tr><td>Grooming services</td><td class="amt">${esc(formatMoney(invoice.total))}</td></tr></tbody>
+  <tfoot><tr><td class="total">Total</td><td class="amt total">${esc(formatMoney(invoice.total))}</td></tr></tfoot>
+ </table>
+</body></html>`;
+    const w = window.open("", "_blank", "width=800,height=900");
+    if (w) { w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 400); }
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5 text-primary" /> Invoices &amp; payments</CardTitle>
+        <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5 text-primary" /> Invoices</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className={`rounded-xl border p-4 ${outstanding > 0 ? "border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30" : ""}`}>
-            <p className="text-xs text-muted-foreground">Outstanding</p>
-            <p className={`text-2xl font-bold ${outstanding > 0 ? "text-amber-800 dark:text-amber-300" : ""}`}>{formatMoney(outstanding)}</p>
-            {outstanding === 0 && <p className="mt-1 text-xs text-muted-foreground">Nothing owing — thank you.</p>}
-          </div>
-          <div className="rounded-xl border p-4">
-            <p className="text-xs text-muted-foreground">Paid to date</p>
-            <p className="text-2xl font-bold">{formatMoney(paidTotal)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{payments.length} payment{payments.length === 1 ? "" : "s"} on record</p>
-          </div>
-        </div>
-
-        <section>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Invoices ({invoices.length})</h4>
-          {invoices.length === 0 ? (
-            <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No invoices yet.</p>
-          ) : (
-            <>
-              <ul className="space-y-1">
-                {visibleInvoices.map((invoice) => {
-                  const paid = (invoice.status ?? "").toLowerCase() === "paid";
-                  return (
-                    <li key={invoice.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm">
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{invoice.invoiceNumber || `Invoice #${invoice.id}`}</span>
-                        <span className="block text-xs text-muted-foreground">
-                          {paid ? `Paid ${when(invoice.paidAt)}` : `Issued ${when(invoice.createdAt)}`}
-                          {invoice.paymentMethod ? ` · ${invoice.paymentMethod}` : ""}
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className="font-semibold">{formatMoney(invoice.total)}</span>
-                        <Badge variant={paid ? "outline" : "default"} className={paid ? "text-emerald-700 dark:text-emerald-400" : ""}>
-                          {paid ? "Paid" : invoice.status ?? "Due"}
-                        </Badge>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-              {invoices.length > 5 && (
-                <Button variant="ghost" size="sm" className="mt-1 w-full" onClick={() => setShowAllInvoices((v) => !v)}>
-                  {showAllInvoices ? "Show fewer" : `Show all ${invoices.length} invoices`}
-                </Button>
-              )}
-            </>
-          )}
-        </section>
-
-        <section>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payments ({payments.length})</h4>
-          {payments.length === 0 ? (
-            <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No payments recorded yet.</p>
-          ) : (
-            <>
-              <ul className="space-y-1">
-                {visiblePayments.map((payment) => (
-                  <li key={payment.key} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm">
+      <CardContent>
+        {invoices.length === 0 ? (
+          <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No invoices yet.</p>
+        ) : !open ? (
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setOpen(true)}>
+            View my invoices ({invoices.length})
+          </Button>
+        ) : (
+          <div className="space-y-3">
+            <ul className="space-y-1">
+              {visible.map((invoice) => {
+                const paid = (invoice.status ?? "").toLowerCase() === "paid";
+                return (
+                  <li key={invoice.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm">
                     <span className="min-w-0">
-                      <span className="block truncate font-medium">{payment.description}</span>
+                      <span className="block truncate font-medium">{invoice.invoiceNumber || `Invoice #${invoice.id}`}</span>
                       <span className="block text-xs text-muted-foreground">
-                        {when(payment.at)}{payment.method ? ` · ${payment.method}` : ""}
+                        {paid ? `Paid ${when(invoice.paidAt)}` : `Issued ${when(invoice.createdAt)}`}
                       </span>
                     </span>
-                    <span className="shrink-0 font-semibold">{formatMoney(payment.amount)}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="font-semibold">{formatMoney(invoice.total)}</span>
+                      <Badge variant="outline" className={paid ? "text-emerald-700 dark:text-emerald-400" : ""}>
+                        {paid ? "Paid" : invoice.status ?? "Due"}
+                      </Badge>
+                      <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => printInvoice(invoice)}>
+                        <FileDown className="h-3.5 w-3.5" /> PDF
+                      </Button>
+                    </span>
                   </li>
-                ))}
-              </ul>
-              {payments.length > 5 && (
-                <Button variant="ghost" size="sm" className="mt-1 w-full" onClick={() => setShowAllPayments((v) => !v)}>
-                  {showAllPayments ? "Show fewer" : `Show all ${payments.length} payments`}
-                </Button>
-              )}
-            </>
-          )}
-        </section>
+                );
+              })}
+            </ul>
+            {invoices.length > 5 && (
+              <Button variant="ghost" size="sm" className="w-full" onClick={() => setShowAll(v => !v)}>
+                {showAll ? "Show fewer" : `Show all ${invoices.length} invoices`}
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" className="w-full" onClick={() => setOpen(false)}>Hide invoices</Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -413,7 +539,7 @@ export default function ClientPortal() {
       </Card>
     )}
 
-    <BillingSection invoices={data.invoices ?? []} payments={data.payments ?? []} />
+    <InvoicesSection invoices={data.invoices ?? []} salon={data.salon} client={data.client} />
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Dog className="h-5 w-5 text-primary" /> Your pets</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{data.pets.map(pet => <div key={pet.id} className="rounded-xl border bg-card p-4"><p className="font-semibold">{pet.name}</p><p className="text-sm text-muted-foreground">{pet.breed || pet.species}</p><Badge variant="outline" className="mt-2 capitalize">{pet.status}</Badge></div>)}</CardContent></Card>
 
@@ -450,7 +576,14 @@ export default function ClientPortal() {
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Heart className="h-5 w-5 text-primary" /> Memberships</CardTitle></CardHeader><CardContent className="space-y-3">{data.memberships.length ? data.memberships.map(membership => <div key={membership.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-3 last:border-0 last:pb-0"><div><p className="font-semibold">{membership.name}</p><p className="text-sm text-muted-foreground">{membership.status === "active" && membership.nextBillingDate ? `Next renewal: ${portalDate(membership.nextBillingDate)}` : "Please contact the salon for account details."}</p></div><Badge variant="outline" className="capitalize">{membership.tier}</Badge></div>) : <p className="text-sm text-muted-foreground">No memberships are currently shown.</p>}</CardContent></Card>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Scissors className="h-5 w-5 text-primary" /> Grooming cards</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">{data.groomingCards.length ? data.groomingCards.map(card => <div key={card.id} className="rounded-xl border bg-card p-4"><p className="font-semibold">{card.petName} · {portalDate(card.appointmentDate)}</p>{card.afterPhotoUrl && <img src={card.afterPhotoUrl} alt={`${card.petName} after grooming`} className="mt-3 h-44 w-full rounded-lg object-cover" />}{card.additionalNote && <p className="mt-3 text-sm text-muted-foreground">{card.additionalNote}</p>}{card.recommendedFrequencyWeeks && <p className="mt-3 text-xs font-medium text-primary">Recommended return: every {card.recommendedFrequencyWeeks} weeks</p>}</div>) : <p className="text-sm text-muted-foreground">Approved grooming cards will appear here when the salon shares them.</p>}</CardContent></Card>
+    <Card>
+      <CardHeader><CardTitle className="flex items-center gap-2"><Scissors className="h-5 w-5 text-primary" /> Grooming cards</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        {data.groomingCards.length
+          ? data.groomingCards.map(card => <GroomingCardDetail key={card.id} card={card} />)
+          : <p className="text-sm text-muted-foreground">Approved grooming cards will appear here when the salon shares them.</p>}
+      </CardContent>
+    </Card>
 
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><HistoryIcon className="h-5 w-5 text-primary" /> Appointment history</CardTitle></CardHeader>
