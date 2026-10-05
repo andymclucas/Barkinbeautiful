@@ -302,6 +302,20 @@ function DashboardLayoutContent({
   const grantedPaths: ReadonlySet<string> | null = myStaff?.isAdmin
     ? new Set<string>(parseSections(myStaff.adminSections).map(sectionPath))
     : null;
+  /**
+   * Counts only, polled on a slow timer. A minute is plenty for "someone is
+   * waiting": the pages themselves refresh faster, and this runs on every
+   * screen for every signed-in person.
+   */
+  const { data: counts } = trpc.sidebarCounts.get.useQuery(
+    { tenantId: 1 },
+    { refetchInterval: 60000, refetchOnWindowFocus: true },
+  );
+  const navBadges: Record<string, number> = {
+    "/messages": counts?.messages ?? 0,
+    "/portal-messages": counts?.portalMessages ?? 0,
+  };
+
   const visibleMenuItems =
     user?.role === "staff"
       ? menuItems.filter(
@@ -494,6 +508,20 @@ function DashboardLayoutContent({
                         }`}
                       />
                       <span className={isActive ? "font-semibold" : ""}>{item.label}</span>
+                      {/* What is waiting for someone. Capped at 99 so a
+                          backlog cannot stretch the sidebar, and hidden
+                          entirely at zero — a badge showing "0" is noise that
+                          trains people to ignore the badge that matters. */}
+                      {(navBadges[item.path] ?? 0) > 0 && (
+                        <span
+                          className={`ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums ${
+                            isActive ? "bg-white text-primary" : "bg-destructive text-destructive-foreground"
+                          }`}
+                          aria-label={`${navBadges[item.path]} waiting`}
+                        >
+                          {navBadges[item.path]! > 99 ? "99+" : navBadges[item.path]}
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

@@ -57,6 +57,7 @@ import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type S
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
+import { sidebarCountsRouter } from "./routers/sidebarCounts";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
   requireApprovedStaffTenant,
@@ -8183,6 +8184,7 @@ export const appRouter = router({
   sms: smsRouter,
   clientPortal: clientPortalRouter,
   portalChat: portalChatRouter,
+  sidebarCounts: sidebarCountsRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,
