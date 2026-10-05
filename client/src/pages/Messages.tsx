@@ -461,8 +461,19 @@ export default function Messages() {
                           </span>
                         )}
                       </div>
-                      <span className="text-[11px] text-muted-foreground shrink-0">
-                        {new Date(call.receivedAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                      <span className="flex shrink-0 flex-col items-end text-[11px] text-muted-foreground">
+                        <span>
+                          {new Date(call.receivedAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                        </span>
+                        {/* Only administrators are sent the name at all — see
+                            getMissedCalls. Voicemails archived before this was
+                            recorded simply have no reader, which is the truth
+                            about them. */}
+                        {call.readAt && (call as any).readByName && (
+                          <span className="text-[10px] text-muted-foreground/80">
+                            Checked by {(call as any).readByName}, {new Date(call.readAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                          </span>
+                        )}
                       </span>
                     </div>
                     {(call.clientName as string | null)?.trim() && <p className="text-xs text-muted-foreground">{call.fromNumber}</p>}
