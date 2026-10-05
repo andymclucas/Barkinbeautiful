@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Bell, BellOff, Send, Smartphone } from "lucide-react";
+import { Bell, BellOff, Send, Smartphone, PhoneIncoming } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useStaffNotifications } from "@/hooks/useStaffNotifications";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { flashTestBadge, badgingSupported } from "@/hooks/useAppBadge";
 
 /**
@@ -19,6 +20,14 @@ import { flashTestBadge, badgingSupported } from "@/hooks/useAppBadge";
  * constructor in an ordinary Safari tab at all; only a site added to the
  * Home Screen gets them. Saying nothing would leave someone wondering why
  * their phone is silent while their desktop pops.
+ *
+ * There are two switches here and they are genuinely different things,
+ * which is why they are not merged into one. The first covers alerts
+ * while Groomigo is OPEN — including an operating system popup when it is
+ * in a background tab. The second is Web Push: a service worker and a
+ * subscription at Google or Apple, which is the only way anything arrives
+ * once the app is closed. A device can do the first and not the second,
+ * and the commonest case — an iPhone in a Safari tab — is exactly that.
  */
 export function StaffNotificationSetting() {
   const { supported, permission, enabled, setEnabled, canAsk, sendTest } = useStaffNotifications();
@@ -57,6 +66,52 @@ export function StaffNotificationSetting() {
     && /iPad|iPhone|iPod/.test(navigator.userAgent)
     // iPadOS reports as a Mac, but a Mac with a touch screen is an iPad.
     || (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  const push = usePushSubscription();
+  const [pushTesting, setPushTesting] = useState(false);
+
+  const togglePush = async (next: boolean) => {
+    if (next) {
+      const ok = await push.subscribe();
+      if (ok) {
+        toast.success("This device will now be notified when Groomigo is closed");
+      } else {
+        toast.error("Could not turn that on", { description: push.lastError ?? undefined });
+      }
+      return;
+    }
+    await push.unsubscribe();
+    toast("This device will no longer be notified when Groomigo is closed");
+  };
+
+  const runPushTest = async () => {
+    setPushTesting(true);
+    const result = await push.sendTest();
+    setPushTesting(false);
+    if (!result) {
+      toast.error("Could not send the test", { description: push.lastError ?? undefined });
+      return;
+    }
+    if (result.skipped === "not_configured") {
+      toast.error("Push is not configured on the server", {
+        description: "The VAPID keys are missing, so nothing can be sent to any device.",
+      });
+      return;
+    }
+    if (result.skipped === "no_subscriptions" || result.sent === 0) {
+      toast.warning("No devices to send to", {
+        description: "Turn the switch above on for this device first.",
+      });
+      return;
+    }
+    // Close the app or lock the phone: the point is what happens when it
+    // is NOT on screen, and a notification that arrives over the page you
+    // are already reading proves nothing about that.
+    toast.success(`Sent to ${result.sent} device${result.sent === 1 ? "" : "s"}`, {
+      description: "Lock your phone or switch apps — it should arrive within a few seconds.",
+      duration: 8000,
+    });
+  };
 
   return (
     <Card>
@@ -126,6 +181,79 @@ export function StaffNotificationSetting() {
             This browser has no notification support, so alerts appear in the page while it is open.
           </p>
         )}
+
+        {/* Web Push. Everything above needs Groomigo to be open; this is the
+            only part that works when it is closed, and it is a separate
+            switch because a device can do one and not the other. */}
+        <div className="space-y-3 border-t pt-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="staff-push" className="flex items-center gap-1.5 text-sm font-normal">
+                <PhoneIncoming className="h-3.5 w-3.5 text-muted-foreground" />
+                Also notify me when Groomigo is closed
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Incoming calls and missed calls, on this device, with the app shut.
+              </p>
+            </div>
+            <Switch
+              id="staff-push"
+              checked={push.subscribed === true}
+              disabled={!push.capability.usable || push.busy || push.subscribed === null}
+              onCheckedChange={(next) => void togglePush(next)}
+            />
+          </div>
+
+          {push.capability.usable && push.subscribed === true && (
+            <div className="space-y-1.5">
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={pushTesting} onClick={() => void runPushTest()}>
+                <Send className="h-3.5 w-3.5" />
+                {pushTesting ? "Sending…" : "Send a test to my devices"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                This goes the whole way through Apple or Google rather than being faked in the page, so
+                it tests the part that matters. Lock your phone once you press it.
+              </p>
+            </div>
+          )}
+
+          {!push.capability.usable && push.capability.reason === "ios_needs_install" && (
+            <p className="flex gap-2 rounded-lg border border-dashed p-2.5 text-xs text-muted-foreground">
+              <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                On an iPhone or iPad this only works once Groomigo is on your Home Screen &mdash; Apple does
+                not allow it in an ordinary Safari tab, and there is no way around that. Tap Share
+                &rarr; <strong>Add to Home Screen</strong>, open Groomigo from the new icon, and this switch
+                will be available. You need iOS 16.4 or later.
+              </span>
+            </p>
+          )}
+
+          {!push.capability.usable && push.capability.reason === "permission_denied" && (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/30">
+              This browser has blocked notifications for Groomigo, so nothing can be delivered to it.
+              Allow them for this site in your browser settings, then reload.
+            </p>
+          )}
+
+          {!push.capability.usable && push.capability.reason === "unsupported" && (
+            <p className="text-xs text-muted-foreground">
+              This browser cannot receive notifications while Groomigo is closed.
+            </p>
+          )}
+
+          {!push.capability.usable && push.capability.reason === "server_not_configured" && (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/30">
+              Groomigo has no push keys configured, so no device can be notified while the app is closed.
+              This one is on the server, not your phone &mdash; VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY need
+              to be set.
+            </p>
+          )}
+
+          {push.lastError && (
+            <p className="text-xs text-destructive">{push.lastError}</p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

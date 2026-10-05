@@ -30,6 +30,26 @@ window.addEventListener("unhandledrejection", (event) => {
   });
 });
 
+/**
+ * Keep the notification service worker up to date.
+ *
+ * Registered here, on every load, and not only when someone touches the
+ * switch in Settings: calling register() is what makes the browser check
+ * for a new sw.js, and without it a device that subscribed once would run
+ * that first version forever. A bug in notification handling has to be
+ * fixable the same day.
+ *
+ * It handles push and nothing else — no fetch handler, so it intercepts
+ * no requests and cannot serve a stale bundle. Failure is ignored on
+ * purpose: a browser that will not register a worker must still run the
+ * salon software.
+ */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+  });
+}
+
 const queryClient = new QueryClient();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {

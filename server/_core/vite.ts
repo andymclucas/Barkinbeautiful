@@ -66,13 +66,28 @@ export function serveStatic(app: Express) {
   // The actual bundle files are safe to cache aggressively since their
   // filenames are content-hashed by the build — a new build never reuses an
   // old filename, so there's no staleness risk in caching them for a year.
+  // The service worker and the manifest must NEVER be cached immutably.
+  // Their filenames are fixed — they are not content-hashed like the
+  // bundles — so an `immutable, max-age=31536000` response means the
+  // browser keeps running whichever service worker it first saw, for a
+  // year, and a fix to it can never be deployed. That is the classic way
+  // to brick a PWA, and it is silent: the app looks fine and the
+  // notifications are being handled by last year's code.
+  const alwaysRevalidate = new Set(["index.html", "sw.js", "manifest.webmanifest"]);
+
   app.use(express.static(distPath, {
     index: false,
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith("index.html")) {
+      if (alwaysRevalidate.has(path.basename(filePath))) {
         res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       } else {
         res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+      // A service worker is only allowed to control the whole origin if
+      // it is served from the root with this header. Without it the scope
+      // silently narrows and pushes stop being handled.
+      if (path.basename(filePath) === "sw.js") {
+        res.setHeader("Service-Worker-Allowed", "/");
       }
     },
   }));
