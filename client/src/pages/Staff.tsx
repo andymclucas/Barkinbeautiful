@@ -128,6 +128,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoExpanded, setPhotoExpanded] = useState(false);
 
   // Uploads the chosen image and puts the returned URL into the form. It is not
   // persisted until the panel is saved, so cancelling leaves the record as-is.
@@ -350,7 +351,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
   );
   if (!data) return <div className="text-center py-10 text-muted-foreground">Staff member not found.</div>;
 
-  const initials = data.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+  const photoUrl: string | null = (data as any).onlineProfilePhotoUrl ?? null;
   const latestInvitation = invitations.filter(invitation => invitation.staffId === staffId)[0];
   const portalStatus = (data as any).portalStatus ?? "not_invited";
 
@@ -358,10 +359,24 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0"
-            style={{ background: data.colourHex }}>
-            {initials}
-          </div>
+          {/* This used to hand-roll an initials circle, so the profile was the
+              one place a staff member's photo never appeared — even though
+              the card behind it showed one. StaffAvatar falls back to the
+              same initials on the same roster colour when there is no photo,
+              so nothing is lost when there isn't one. */}
+          {photoUrl ? (
+            <button
+              type="button"
+              onClick={() => setPhotoExpanded(true)}
+              className="shrink-0 rounded-full ring-offset-background transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              title={`View ${data.name}'s photo`}
+              aria-label={`View ${data.name}'s photo full size`}
+            >
+              <StaffAvatar photoUrl={photoUrl} name={data.name} colourHex={data.colourHex} className="h-16 w-16 text-xl" />
+            </button>
+          ) : (
+            <StaffAvatar name={data.name} colourHex={data.colourHex} className="h-16 w-16 text-xl" />
+          )}
           <div>
             <h2 className="text-xl font-bold">{data.name}</h2>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -382,6 +397,22 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
           <Button size="sm" variant="ghost" onClick={onClose} className="h-8 w-8 p-0"><X className="h-4 w-4" /></Button>
         </div>
       </div>
+
+      {/* Full-size photo. A roster thumbnail is 24px on the calendar; staff
+          wanting to check it is actually the right person need to see it
+          properly. */}
+      <Dialog open={photoExpanded} onOpenChange={setPhotoExpanded}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{data.name}</DialogTitle></DialogHeader>
+          {photoUrl && (
+            <img
+              src={photoUrl}
+              alt={data.name}
+              className="max-h-[70vh] w-full rounded-xl object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
