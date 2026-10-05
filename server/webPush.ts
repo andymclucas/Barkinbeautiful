@@ -63,10 +63,45 @@ function ensureConfigured(): boolean {
     configured = true;
   } catch (error) {
     // A malformed key is a configuration error, not a reason to crash.
-    console.error("[push] VAPID keys were rejected, push disabled:", error);
+    console.error(
+      "[push] VAPID keys were rejected, push disabled:",
+      error instanceof Error ? error.message : error,
+    );
+    // Say what ARRIVED, not just what was expected. web-push reports the
+    // required length and nothing about the value it got, which turns a
+    // bad paste into guesswork — a key pasted with its own name in front,
+    // truncated by a double-click, or dropped into the wrong box all
+    // produce the same sentence. Lengths only: a key must never be
+    // logged, and the length is enough to identify every one of those.
+    console.error(`[push] received ${describeKey("public", publicKey, 65)}, ${describeKey("private", privateKey, 32)}`);
+    if (decodedBytes(publicKey) === 32 && decodedBytes(privateKey) === 65) {
+      console.error("[push] those are the right lengths in the wrong boxes — the two values are swapped.");
+    } else if (publicKey.includes("=") || privateKey.includes("=")) {
+      console.error("[push] a value contains '=', which usually means the VAPID_... name was pasted along with it.");
+    }
     configured = false;
   }
   return configured;
+}
+
+/** Decoded byte length, or -1 if the value is not valid base64url. */
+function decodedBytes(key: string): number {
+  try {
+    return Buffer.from(key, "base64url").length;
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * A key's shape, for a log line. Never the key itself — these are
+ * credentials, and a private key in a Render log is a private key on
+ * every screen that log reaches.
+ */
+function describeKey(name: string, key: string, expectedBytes: number): string {
+  const bytes = decodedBytes(key);
+  const ok = bytes === expectedBytes;
+  return `${name} ${key.length} chars / ${bytes} bytes${ok ? " (ok)" : ` (expected ${expectedBytes} bytes)`}`;
 }
 
 export function isPushConfigured(): boolean {
