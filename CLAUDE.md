@@ -97,7 +97,7 @@ server/
   routers/auth.ts   auth router, kept separate
   _core/            platform scaffolding: index.ts (Express boot), trpc.ts, sdk.ts, env.ts
   *.ts              domain logic (workflowTiming, groomInterval, stripePayments, sms, email, …)
-  *.test.ts         71 test files — all tests live here (see §7)
+  *.test.ts         104 test files — all tests live here (see §7)
 shared/             pure logic + types imported by BOTH client and server
 drizzle/
   schema.ts         39 tables
@@ -257,8 +257,10 @@ Until then, treat `generate` as unavailable.
 corepack pnpm test
 ```
 
-71 files, 232 tests. **The suite is fully green and must stay that way.** It is
-hermetic: no secrets, no network, no database. A failure is a real failure.
+103 files, 641 tests, in about 4 seconds. (104 `*.test.ts` files exist; one is
+an integration test excluded from the default run — see below.) **The suite is
+fully green and must stay that way.** It is hermetic: no secrets, no network,
+no database. A failure is a real failure.
 
 ### Live-network tests are separated
 
