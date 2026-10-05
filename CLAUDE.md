@@ -88,19 +88,19 @@ Path aliases (set in both `vite.config.ts` and `vitest.config.ts`):
 
 ```
 client/src/
-  pages/            27 route components (Calendar, WorkflowBoard, ClientDetail, …)
+  pages/            29 route components (Calendar, WorkflowBoard, ClientDetail, …)
   components/       shared UI; components/ui/* is shadcn
   contexts/ hooks/ lib/
   _core/            platform scaffolding — see §8
 server/
-  routers.ts        ~6,600 lines: ALL tRPC routers (see §5)
-  routers/auth.ts   auth router, kept separate
+  routers.ts        ~7,900 lines: MOST tRPC routers (see §5)
+  routers/*.ts      auth, clientRecord, payments, stripeCards — kept separate
   _core/            platform scaffolding: index.ts (Express boot), trpc.ts, sdk.ts, env.ts
   *.ts              domain logic (workflowTiming, groomInterval, stripePayments, sms, email, …)
   *.test.ts         104 test files — all tests live here (see §7)
 shared/             pure logic + types imported by BOTH client and server
 drizzle/
-  schema.ts         39 tables
+  schema.ts         51 tables
   migrations/       generated SQL — never hand-edit applied migrations
 docs/               ~50 dated engineering/QA notes (see docs/README.md)
 scripts/            one-off operational scripts (Stripe checks, seeding, verification)
@@ -117,17 +117,27 @@ rules here, not inline in a router or a component.**
 
 ## 5. The `routers.ts` monolith
 
-`server/routers.ts` is ~6,600 lines holding 26 router namespaces, composed at the
-bottom (~line 6550):
+`server/routers.ts` is ~7,900 lines, and the `appRouter` composition block at
+the bottom (~line 7850) wires up 33 namespaces. Seven of those live in
+`server/routers/` rather than the monolith:
 
-`system, auth, calendar, workflow, tracker, clients, pets, staff, memberships,
-groomNotes, groomingReports, groomStylePresets, pricing, storeCredit, retail,
-analytics, analyticsExt, migration, settings, stripeBilling, onlineBooking,
-campaigns, family, sms, clientPortal, workflowReview`
+`system, auth, calendar, workflow, tracker, clients, agreements, clientReviews,
+packages, petPaperwork, clientNotes, pets, staff, memberships, groomNotes,
+groomingReports, groomStylePresets, pricing, storeCredit, retail, analytics,
+analyticsExt, migration, settings, stripeBilling, onlineBooking, campaigns,
+family, sms, clientPortal, workflowReview, payments, stripeCards`
+
+Defined outside `routers.ts`: `auth` (`routers/auth.ts`); `agreements`,
+`clientReviews`, `packages`, `petPaperwork` and `clientNotes`
+(`routers/clientRecord.ts`); `payments` (`routers/payments.ts`); `stripeCards`
+(`routers/stripeCards.ts`). They are still composed into `appRouter` at the
+bottom of `routers.ts` — a router defined in its own file but never added
+there is dead code, which is exactly what commit `45253c5` had to fix.
 
 Do not read the whole file. Find the namespace at the composition block, then
 jump to its definition. Prefer extracting genuinely new surface into
-`server/routers/<name>.ts` (as `auth.ts` already is) over growing this file.
+`server/routers/<name>.ts`, as the four files above do, over growing this file
+— it has put on ~1,300 lines since this note first said ~6,600.
 
 ### Procedure types — the naming is counter-intuitive, read carefully
 
@@ -157,7 +167,7 @@ Two distinct role systems exist and must not be conflated:
 
 ## 6. Database
 
-39 tables in `drizzle/schema.ts`. Central chain:
+51 tables in `drizzle/schema.ts`. Central chain:
 `tenants → clients → pets → appointments → workflowLogs`, with `memberships`,
 `invoices`, `membershipLedgerEntries`, `familyGroups`, `smsLogs`, `petPhotos`
 hanging off it. Multi-tenant: most tables carry `tenantId`, and **queries must
