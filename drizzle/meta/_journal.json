@@ -547,6 +547,13 @@
       "when": 1790864579765,
       "tag": "0077_staff_rostered",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "5",
+      "when": 1791206898014,
+      "tag": "0078_portal_chat",
+      "breakpoints": true
     }
   ]
 }

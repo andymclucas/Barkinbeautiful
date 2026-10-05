@@ -16,7 +16,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -41,6 +41,7 @@ import { createStaffInvitationToken, hashStaffInvitationToken, isLinkedStaffUser
 import { createInvoiceCheckout } from "./stripePayments";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
+import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
@@ -6812,6 +6813,102 @@ const smsRouter = router({
     }),
 });
 
+
+/**
+ * The staff side of the client-portal chat.
+ *
+ * Its own inbox rather than threads mixed into Messages: these are a
+ * different medium with a different expectation. An SMS is a notification; a
+ * portal thread is a conversation the client can scroll back through, and it
+ * can be sitting in "awaiting_staff" because the assistant explicitly
+ * promised a human would reply.
+ *
+ * operationalProcedure, not protectedProcedure: answering a client is salon
+ * floor work and restricted staff must be able to do it.
+ */
+const portalChatRouter = router({
+  listThreads: operationalProcedure
+    .input(z.object({ tenantId: z.number().int().positive().default(1) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = input?.tenantId ?? 1;
+      const threads = await db.select({
+        id: portalThreads.id, clientId: portalThreads.clientId, status: portalThreads.status,
+        lastMessageAt: portalThreads.lastMessageAt, staffLastReadAt: portalThreads.staffLastReadAt,
+        firstName: clients.firstName, lastName: clients.lastName, phone: clients.phone,
+      }).from(portalThreads)
+        .innerJoin(clients, eq(portalThreads.clientId, clients.id))
+        .where(eq(portalThreads.tenantId, tenantId))
+        .orderBy(desc(portalThreads.lastMessageAt))
+        .limit(200);
+
+      const out = [];
+      for (const t of threads) {
+        const msgs = await db.select({ sender: portalMessages.sender, body: portalMessages.body, createdAt: portalMessages.createdAt })
+          .from(portalMessages).where(eq(portalMessages.threadId, t.id))
+          .orderBy(portalMessages.createdAt).limit(200);
+        const last = msgs[msgs.length - 1];
+        out.push({
+          ...t,
+          unread: unreadForStaff(msgs, t.staffLastReadAt),
+          preview: last ? last.body.slice(0, 120) : "",
+          lastSender: last ? last.sender : null,
+        });
+      }
+      return out;
+    }),
+
+  getThread: operationalProcedure
+    .input(z.object({ threadId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [thread] = await db.select({
+        id: portalThreads.id, clientId: portalThreads.clientId, status: portalThreads.status,
+        firstName: clients.firstName, lastName: clients.lastName,
+      }).from(portalThreads).innerJoin(clients, eq(portalThreads.clientId, clients.id))
+        .where(eq(portalThreads.id, input.threadId)).limit(1);
+      if (!thread) throw new TRPCError({ code: "NOT_FOUND", message: "Thread not found" });
+      const messages = await db.select({
+        id: portalMessages.id, sender: portalMessages.sender, body: portalMessages.body,
+        handedOff: portalMessages.handedOff, createdAt: portalMessages.createdAt, staffName: staff.name,
+      }).from(portalMessages).leftJoin(staff, eq(portalMessages.staffId, staff.id))
+        .where(eq(portalMessages.threadId, thread.id)).orderBy(portalMessages.createdAt).limit(400);
+      return { thread, messages };
+    }),
+
+  reply: operationalProcedure
+    .input(z.object({ threadId: z.number().int().positive(), body: z.string().trim().min(1).max(4000) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [thread] = await db.select().from(portalThreads).where(eq(portalThreads.id, input.threadId)).limit(1);
+      if (!thread) throw new TRPCError({ code: "NOT_FOUND", message: "Thread not found" });
+      const [me] = await db.select({ id: staff.id }).from(staff)
+        .where(eq(staff.userId, (ctx as any).user?.id ?? 0)).limit(1);
+      await db.insert(portalMessages).values({
+        tenantId: thread.tenantId, threadId: thread.id, sender: "staff",
+        staffId: me?.id ?? null, body: input.body, handedOff: false,
+      });
+      const now = new Date();
+      await db.update(portalThreads)
+        .set({ lastMessageAt: now, status: "open", staffLastReadAt: now })
+        .where(eq(portalThreads.id, thread.id));
+      return { success: true };
+    }),
+
+  markRead: operationalProcedure
+    .input(z.object({ threadId: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await db.update(portalThreads).set({ staffLastReadAt: new Date() })
+        .where(eq(portalThreads.id, input.threadId));
+      return { success: true };
+    }),
+});
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 // ─── Family Groups ────────────────────────────────────────────────────────────
 const familyRouter = router({
@@ -7859,6 +7956,114 @@ const clientPortalRouter = router({
       await db.update(appointments).set({ scheduledStart: newStart, scheduledEnd: newEnd }).where(eq(appointments.id, appt.id));
       return { success: true, scheduledStart: newStart, scheduledEnd: newEnd };
     }),
+
+  // ─── Chat ───────────────────────────────────────────────────────────────
+  // The assistant answers only from this client's own record and hands
+  // everything else to a person. See shared/portalChat.ts for why the scope
+  // is drawn where it is.
+  getChat: publicProcedure
+    .input(z.object({ token: z.string().optional() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      const [thread] = await db.select().from(portalThreads)
+        .where(and(eq(portalThreads.clientId, clientId), eq(portalThreads.tenantId, tenantId))).limit(1);
+      if (!thread) return { messages: [], unread: 0 };
+      const msgs = await db.select({
+        id: portalMessages.id, sender: portalMessages.sender, body: portalMessages.body,
+        handedOff: portalMessages.handedOff, createdAt: portalMessages.createdAt,
+        staffName: staff.name,
+      }).from(portalMessages)
+        .leftJoin(staff, eq(portalMessages.staffId, staff.id))
+        .where(eq(portalMessages.threadId, thread.id))
+        .orderBy(portalMessages.createdAt).limit(200);
+      return { messages: msgs, unread: unreadForClient(msgs, thread.clientLastReadAt) };
+    }),
+
+  markChatRead: publicProcedure
+    .input(z.object({ token: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      await db.update(portalThreads).set({ clientLastReadAt: new Date() })
+        .where(and(eq(portalThreads.clientId, clientId), eq(portalThreads.tenantId, tenantId)));
+      return { success: true };
+    }),
+
+  sendChatMessage: publicProcedure
+    .input(z.object({ token: z.string().optional(), body: z.string().trim().min(1).max(2000) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+
+      let [thread] = await db.select().from(portalThreads)
+        .where(and(eq(portalThreads.clientId, clientId), eq(portalThreads.tenantId, tenantId))).limit(1);
+      if (!thread) {
+        await db.insert(portalThreads).values({ tenantId, clientId, status: "open" });
+        [thread] = await db.select().from(portalThreads)
+          .where(and(eq(portalThreads.clientId, clientId), eq(portalThreads.tenantId, tenantId))).limit(1);
+      }
+
+      const now = new Date();
+      await db.insert(portalMessages).values({
+        tenantId, threadId: thread.id, sender: "client", body: input.body, handedOff: false,
+      });
+
+      // Everything the assistant is allowed to know, read fresh so it cannot
+      // answer from anything but this client's current record.
+      const [client] = await db.select({ firstName: clients.firstName }).from(clients).where(eq(clients.id, clientId)).limit(1);
+      const [tenant] = await db.select({ phone: tenants.phone, email: tenants.email }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+      const petRows = await db.select({ name: pets.name }).from(pets)
+        .where(and(eq(pets.clientId, clientId), eq(pets.status, "active")));
+      const [nextAppt] = await db.select({
+        start: appointments.scheduledStart, petName: pets.name, groomerName: staff.name,
+      }).from(appointments)
+        .innerJoin(pets, eq(appointments.petId, pets.id))
+        .leftJoin(staff, eq(appointments.staffId, staff.id))
+        .where(and(eq(appointments.clientId, clientId), eq(appointments.tenantId, tenantId),
+          eq(appointments.workflowState, "scheduled"), gte(appointments.scheduledStart, now)))
+        .orderBy(appointments.scheduledStart).limit(1);
+      const [lastAppt] = await db.select({ start: appointments.scheduledStart, petName: pets.name })
+        .from(appointments).innerJoin(pets, eq(appointments.petId, pets.id))
+        .where(and(eq(appointments.clientId, clientId), eq(appointments.tenantId, tenantId),
+          eq(appointments.workflowState, "complete")))
+        .orderBy(desc(appointments.scheduledStart)).limit(1);
+      const msRows = await db.select({ name: memberships.name }).from(memberships)
+        .where(and(eq(memberships.clientId, clientId), eq(memberships.status, "active")));
+
+      const label = (d: Date | null) => d ? new Date(d).toLocaleDateString("en-AU",
+        { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short" }) : "";
+      const time = (d: Date | null) => d ? new Date(d).toLocaleTimeString("en-AU",
+        { timeZone: "Australia/Brisbane", hour: "numeric", minute: "2-digit" }) : "";
+
+      const facts: PortalChatFacts = {
+        clientFirstName: client?.firstName ?? "there",
+        nextAppointment: nextAppt ? { petName: nextAppt.petName, groomerName: nextAppt.groomerName ?? null,
+          whenLabel: `${label(nextAppt.start)} at ${time(nextAppt.start)}` } : null,
+        lastAppointment: lastAppt ? { petName: lastAppt.petName, whenLabel: label(lastAppt.start) } : null,
+        petNames: petRows.map((p: any) => p.name),
+        membershipNames: msRows.map((m: any) => m.name),
+        salonPhone: tenant?.phone ?? null,
+        salonEmail: tenant?.email ?? null,
+        openingHoursLabel: null,
+      };
+
+      const reply = answerPortalMessage(input.body, facts);
+      await db.insert(portalMessages).values({
+        tenantId, threadId: thread.id, sender: "assistant", body: reply.body, handedOff: reply.handedOff,
+      });
+      await db.update(portalThreads).set({
+        lastMessageAt: now, lastClientMessageAt: now,
+        // A handed-off thread is the salon's to answer; one the assistant
+        // closed out stays open but needs nobody.
+        status: reply.handedOff ? "awaiting_staff" : "open",
+      }).where(eq(portalThreads.id, thread.id));
+
+      return { success: true, handedOff: reply.handedOff };
+    }),
 });
 
 // ─── App Router ───────────────────────────────────────────────────────────────
@@ -7893,6 +8098,7 @@ export const appRouter = router({
   family: familyRouter,
   sms: smsRouter,
   clientPortal: clientPortalRouter,
+  portalChat: portalChatRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,
