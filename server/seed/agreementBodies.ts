@@ -22,7 +22,7 @@ export type SeedAgreement = {
 
 const BUSINESS_HEADER = `BUSINESS DETAILS: The Trustee for Lauren Romari Family Trust trading as Barkin Beautiful
 
-ABN: 50 517 623 260 | Address: Shop 2/11 Dan Street, Capalaba, QLD 4157 | Phone: 07 3823 4567Email: barkinbeautiful@gmail.com`;
+ABN: 50 517 623 260 | Address: Shop 2/11 Dan Street, Capalaba, QLD 4157 | Phone: 07 3823 4567Email: info@barkinbeautiful.com.au`;
 
 const MEMBERSHIP_TERMS = `TERMS AND CONDITIONS:
 
@@ -99,7 +99,7 @@ Accidents with grooming Sessions
 In the event of an emergency, in your absence, you authorise us to contact the nearest Veterinarian
  Vet to treat the pet as necessary at your expense if in not direct injury from our grooming session, excluding matted or difficult pet's causing injury will be the owner's expense.
 If the injury occurs in a grooming session we will contact the client and take the dog to the closest vet available for treatment with vet costs covered by the groomer.
-If the injury is minor we will notify the client on precautions and if they would like to seek veterinary treatment with in 48 hours of grooming. Outside the 48hours of the incident the salon will not be held accountable for infections costs for veterinary treatment. All receipts from clinics to be emailed to barkinbeautiful@gmail.com
+If the injury is minor we will notify the client on precautions and if they would like to seek veterinary treatment with in 48 hours of grooming. Outside the 48hours of the incident the salon will not be held accountable for infections costs for veterinary treatment. All receipts from clinics to be emailed to info@barkinbeautiful.com.au
 
 Daycare/ Early drop off / Late pick up
 

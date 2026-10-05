@@ -58,6 +58,7 @@ import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type Ma
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
 import { sidebarCountsRouter } from "./routers/sidebarCounts";
+import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
   requireApprovedStaffTenant,
@@ -6774,7 +6775,7 @@ const smsRouter = router({
 
   getMissedCalls: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(100) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const rows = await db.select({
@@ -6787,6 +6788,7 @@ const smsRouter = router({
         transcriptionStatus: missedCalls.transcriptionStatus,
         recordingUrl: missedCalls.recordingUrl,
         readAt: missedCalls.readAt,
+        readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${missedCalls.readByUserId} LIMIT 1)`,
         receivedAt: missedCalls.receivedAt,
       }).from(missedCalls)
         .leftJoin(clients, eq(missedCalls.clientId, clients.id))
@@ -6808,19 +6810,30 @@ const smsRouter = router({
       // priority over the household's client name, since that's who was
       // actually on the phone \u2014 but their pets still come from the linked
       // client record either way.
+      // Who listened to a voicemail is management information, the same as
+      // it is for messages: Lauren and Andy see the name, a groomer does not.
+      // Filtered here, not in the page — hiding it client-side would still
+      // ship every groomer the names.
+      const canSeeReaders = canAdministerStaff(ctx.user);
       return rows.map(r => ({
         ...r,
         clientName: r.callerName || r.clientName,
         petNames: r.clientId ? (petsByClient.get(r.clientId) ?? []) : [],
+        readByName: canSeeReaders ? (r.readByName as string | null) : null,
       }));
     }),
 
   clearMissedCall: protectedProcedure
     .input(z.object({ id: z.number(), tenantId: z.number().default(1) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      await db.update(missedCalls).set({ readAt: new Date() })
+      // Who archived it, not just that it was archived. This is the button
+      // staff actually use on the Missed Calls list, and it recorded only
+      // the time — so 32 of the 34 voicemails marked read carry no reader,
+      // and nobody could say who had listened to one.
+      await db.update(missedCalls)
+        .set({ readAt: new Date(), readByUserId: ctx.user?.id ?? null })
         .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, input.tenantId)));
       return { success: true };
     }),
@@ -8203,6 +8216,7 @@ export const appRouter = router({
   clientPortal: clientPortalRouter,
   portalChat: portalChatRouter,
   sidebarCounts: sidebarCountsRouter,
+  pushSubscriptions: pushSubscriptionsRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,

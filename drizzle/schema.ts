@@ -1191,3 +1191,39 @@ export const clientNotes = mysqlTable("client_notes", {
 }, (t) => [index("idx_client_notes_client").on(t.tenantId, t.clientId)]);
 
 export type ClientNote = typeof clientNotes.$inferSelect;
+
+/**
+ * Web Push subscriptions — one row per staff member per device.
+ *
+ * What makes a notification arrive when Groomigo is closed. The browser's
+ * own Notification API only fires from an open page, so before this a
+ * phone with the app shut heard nothing about an incoming call.
+ *
+ * Keyed on a sha256 of the endpoint rather than the endpoint itself: the
+ * URL is long enough to run into TiDB's index key length limit, a
+ * char(64) never is, and re-subscribing the same device has to update its
+ * row or every send reaches that phone twice.
+ */
+export const pushSubscriptions = mysqlTable("push_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").default(1).notNull(),
+  userId: int("user_id").notNull(),
+  endpoint: text("endpoint").notNull(),
+  /** sha256 of endpoint — the real uniqueness key. See the migration. */
+  endpointHash: varchar("endpoint_hash", { length: 64 }).notNull(),
+  p256dh: varchar("p256dh", { length: 255 }).notNull(),
+  auth: varchar("auth", { length: 255 }).notNull(),
+  /** So a device is recognisable when someone needs to revoke one. */
+  userAgent: varchar("user_agent", { length: 255 }),
+  lastSuccessAt: timestamp("last_success_at"),
+  lastFailureAt: timestamp("last_failure_at"),
+  /** Only 404/410 prune; this is how a long-failing device stays visible. */
+  failureCount: int("failure_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_push_subscriptions_endpoint").on(t.endpointHash),
+  index("idx_push_subs_tenant").on(t.tenantId),
+  index("idx_push_subs_user").on(t.userId),
+]);
+
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
