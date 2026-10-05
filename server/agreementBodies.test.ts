@@ -11,23 +11,35 @@ import { SEED_AGREEMENTS, MEMBERSHIP_AGREEMENT_SLUGS } from "./seed/agreementBod
  * Changing the wording is a legal act. Update the fingerprint in the same
  * commit as the change, and bump the document version rather than editing
  * a document anyone has already signed.
+ *
+ * ONE deliberate departure from MoeGo, 6 October 2026: the contact address
+ * reads info@barkinbeautiful.com.au, not the gmail account MoeGo carried.
+ * The salon does not use that mailbox and a client emailing vet receipts to
+ * it would reach nobody. Every length below moved by exactly +2 — the
+ * difference between the two addresses — which is the evidence that only
+ * the address changed. The version was NOT bumped: clientRecord.ts matches
+ * a signature on `documentVersion === doc.version`, so bumping would have
+ * invalidated all 844 existing signatures and re-prompted every client for
+ * a correction to a contact detail.
  */
 const MOEGO_LENGTHS: Record<string, number> = {
-  "Gold VIP Agreement": 3053,
-  "Bronze VIP Agreement": 3056,
-  "Silver VIP Agreement": 3058,
-  "Diamond VIP Agreement": 3080,
-  "Platinum VIP Agreement": 3109,
+  "Gold VIP Agreement": 3055,
+  "Bronze VIP Agreement": 3058,
+  "Silver VIP Agreement": 3060,
+  "Diamond VIP Agreement": 3082,
+  "Platinum VIP Agreement": 3111,
 };
 
 /**
  * The service agreement is fingerprinted on its text with whitespace
  * collapsed. MoeGo's copy carries trailing spaces and runs of blank
  * lines that no reader can see and no editor preserves; the words are
- * what matter and they are identical.
+ * what matter. Re-fingerprinted 6 October 2026 for the address above,
+ * which this document carries twice: once in the letterhead and once in
+ * the clause telling clients where to email vet receipts.
  */
 const SERVICE_AGREEMENT_SHA256 =
-  "a81e4858c80abb8cb014cd69004b323748e0bb3619c2c1be30d24bc9df653509";
+  "415a1e14a5c883335a82ffa695377ca8fd216eb7a17a5b0612e90f1985c60305";
 
 const normalise = (s: string) => s.replace(/\s+/g, " ").trim();
 
@@ -52,6 +64,18 @@ describe("agreements carried over from MoeGo", () => {
     const svc = SEED_AGREEMENTS.find(a => a.slug === "service-agreement")!;
     const hash = crypto.createHash("sha256").update(normalise(svc.body)).digest("hex");
     expect(hash).toBe(SERVICE_AGREEMENT_SHA256);
+  });
+
+  it("points clients at the business mailbox, never the gmail account", () => {
+    // The gmail account is not monitored by the salon, and these documents
+    // are where a client is told where to send vet receipts. A guard rather
+    // than a one-off correction, because the gmail address is still all over
+    // the MoeGo originals these were transcribed from and would come back
+    // with the next clause anyone copies across.
+    for (const a of SEED_AGREEMENTS) {
+      expect(a.body, `${a.title} still names a gmail address`).not.toMatch(/gmail/i);
+      expect(a.body, `${a.title} has no contact address`).toContain("info@barkinbeautiful.com.au");
+    }
   });
 
   it("names the right tier in the title, body and declaration of each", () => {
