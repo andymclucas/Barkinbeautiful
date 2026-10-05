@@ -76,3 +76,29 @@ describe("buildPaymentTimeline", () => {
     expect(buildPaymentTimeline({})).toEqual([]);
   });
 });
+
+describe("a voided invoice is not outstanding", () => {
+  // 6,871 imported invoices were voided on 05/10/2026 because they asserted
+  // payments that never happened. Under the old "anything not paid is owed"
+  // reading, voiding them would have turned $903,022 of phantom revenue into
+  // $903,022 of phantom debt across 1,432 clients.
+  it("excludes cancelled invoices from the outstanding total", () => {
+    const rows = [
+      { id: 1, status: "paid", total: "100.00" },
+      { id: 2, status: "cancelled", total: "200.00" },
+      { id: 3, status: "sent", total: "50.00" },
+    ];
+    expect(invoiceOutstanding(rows as never)).toBe(50);
+  });
+
+  it("still counts genuinely unpaid invoices", () => {
+    expect(invoiceOutstanding([{ id: 1, status: "overdue", total: "75.50" }] as never)).toBe(75.5);
+  });
+
+  it("is zero when everything is paid or void", () => {
+    expect(invoiceOutstanding([
+      { id: 1, status: "paid", total: "10.00" },
+      { id: 2, status: "cancelled", total: "20.00" },
+    ] as never)).toBe(0);
+  });
+});

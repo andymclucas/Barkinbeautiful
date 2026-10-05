@@ -2070,7 +2070,7 @@ const clientsRouter = router({
           COALESCE((SELECT SUM(${invoices.total}) FROM ${invoices}
             WHERE ${invoices.tenantId} = ${input.tenantId}
               AND ${invoices.clientId} = ${input.clientId}
-              AND ${invoices.status} <> 'paid'), 0) AS outstanding,
+              AND ${invoices.status} NOT IN ('paid', 'cancelled')), 0) AS outstanding,
           COALESCE((SELECT SUM(${appointmentPayments.amount}) FROM ${appointmentPayments}
             WHERE ${appointmentPayments.tenantId} = ${input.tenantId}
               AND ${appointmentPayments.clientId} = ${input.clientId}), 0) AS counterPaid
@@ -7367,7 +7367,11 @@ const clientPortalRouter = router({
         eq(clientPortalAccess.tenantId, client.tenantId),
         eq(clientPortalAccess.status, "active"),
       ));
-      return { revoked: Number((result as any).affectedRows ?? 0) > 0 };
+      // result[0].affectedRows, not result.affectedRows. drizzle's mysql2
+      // driver hands back the raw [rows, fields] pair, so reading the count
+      // off the array itself is always undefined — which read as 0 and made
+      // a successful revoke report that it had revoked nothing.
+      return { revoked: Number((result as any)?.[0]?.affectedRows ?? 0) > 0 };
     }),
 
   revokeAccount: adminProcedure
@@ -7632,7 +7636,11 @@ const clientPortalRouter = router({
         eq(clients.portalAccountStatus, "setup_pending"),
         gt(clients.portalSetupExpiresAt, new Date()),
       ));
-      if (Number((setupResult as any).affectedRows ?? 0) !== 1) {
+      // result[0].affectedRows. Reading it off the array itself gives
+      // undefined, so this guard fired on every single setup: the account was
+      // created correctly and the client was then told their link was invalid.
+      // Andy hit it on 05/10/2026 with a link ten seconds old.
+      if (Number((setupResult as any)?.[0]?.affectedRows ?? 0) !== 1) {
         throw new TRPCError({ code: "UNAUTHORIZED", message: "This client portal setup link is invalid or no longer active." });
       }
       await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion + 1 });

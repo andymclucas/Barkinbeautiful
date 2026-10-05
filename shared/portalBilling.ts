@@ -60,8 +60,23 @@ export function isPaidInvoice(invoice: PortalInvoice): boolean {
   return (invoice.status ?? "").toLowerCase() === "paid";
 }
 
+/**
+ * A voided invoice is not owed.
+ *
+ * "Outstanding" used to mean anything not marked paid, which is fine while
+ * every invoice is either paid or due. It stops being fine the moment an
+ * invoice is cancelled: 6,871 imported invoices were voided on 05/10/2026
+ * because they asserted payments that never happened, and under the old
+ * reading every one of them would have reappeared as debt.
+ */
+export function isVoidInvoice(invoice: PortalInvoice): boolean {
+  return (invoice.status ?? "").toLowerCase() === "cancelled";
+}
+
 export function invoiceOutstanding(invoices: readonly PortalInvoice[]): number {
-  return invoices.filter((i) => !isPaidInvoice(i)).reduce((sum, i) => sum + toAmount(i.total), 0);
+  return invoices
+    .filter((i) => !isPaidInvoice(i) && !isVoidInvoice(i))
+    .reduce((sum, i) => sum + toAmount(i.total), 0);
 }
 
 /**
