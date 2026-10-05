@@ -771,6 +771,44 @@ export const groomingReports = mysqlTable("grooming_reports", {
   index("idx_report_pet").on(t.petId),
 ]);
 
+// ─── Client portal chat ───────────────────────────────────────────────────────
+/**
+ * One thread per client. Read state is two "last read at" timestamps rather
+ * than unread counters, so a count is always derived from the messages and
+ * cannot drift away from them.
+ */
+export const portalThreads = mysqlTable("portal_threads", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  clientId: int("client_id").notNull().references(() => clients.id),
+  status: mysqlEnum("status", ["open", "awaiting_staff", "closed"]).default("open").notNull(),
+  lastMessageAt: timestamp("last_message_at"),
+  lastClientMessageAt: timestamp("last_client_message_at"),
+  staffLastReadAt: timestamp("staff_last_read_at"),
+  clientLastReadAt: timestamp("client_last_read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_portal_threads_tenant_client").on(t.tenantId, t.clientId),
+  index("idx_portal_threads_tenant_status").on(t.tenantId, t.status),
+]);
+
+export const portalMessages = mysqlTable("portal_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  threadId: int("thread_id").notNull().references(() => portalThreads.id),
+  /** Who wrote it. "assistant" is the salon's automated first reply. */
+  sender: mysqlEnum("sender", ["client", "assistant", "staff"]).notNull(),
+  staffId: int("staff_id").references(() => staff.id),
+  body: text("body").notNull(),
+  /** True when the assistant could not answer and promised a human would. */
+  handedOff: boolean("handed_off").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_portal_messages_thread").on(t.threadId, t.createdAt),
+  index("idx_portal_messages_tenant").on(t.tenantId, t.createdAt),
+]);
+
 // ─── Type exports ─────────────────────────────────────────────────────────────
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

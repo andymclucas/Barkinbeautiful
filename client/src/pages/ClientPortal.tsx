@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
+import { PORTAL_CHAT_DISCLOSURE } from "@shared/portalChat";
 import { clientFacingStage, isGroomInProgress, GROOMING_STEPS } from "@shared/groomingStage";
-import { CalendarDays, Dog, FileDown, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
+import { CalendarDays, Dog, FileDown, MessageCircle, Send, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,92 @@ function portalDateTime(value: Date | string) {
  * own bank statement. Recent first, with the rest behind an expander: a
  * long-standing client has dozens and almost always wants the last few.
  */
+/**
+ * The client's conversation with the salon.
+ *
+ * The automated reply is labelled "Assistant" on every message and the
+ * disclosure sits under the composer, so a client knows what they are
+ * talking to before they type rather than working it out from the answer.
+ * Anything the assistant will not touch — prices, bookings, anything
+ * health-related — comes back as a promise that a person will reply, and
+ * the thread is flagged for staff. See shared/portalChat.ts.
+ */
+function PortalChatCard({ token, readOnly }: { token?: string; readOnly?: boolean }) {
+  const [draft, setDraft] = useState("");
+  // The composer is never disabled while a send is in flight. It used to be,
+  // and the re-enable stole focus back: a client who typed straight on after
+  // pressing Enter lost the next message entirely, with no sign anything had
+  // gone wrong. Only the button is disabled, and focus is restored on success.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const chat = trpc.clientPortal.getChat.useQuery({ token }, { enabled: !readOnly, refetchInterval: 20000 });
+  const send = trpc.clientPortal.sendChatMessage.useMutation({
+    onSuccess: () => { setDraft(""); chat.refetch(); inputRef.current?.focus(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const when = (v: string | Date) =>
+    new Date(v).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
+  const messages = chat.data?.messages ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><MessageCircle className="h-5 w-5 text-primary" /> Message the salon</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {readOnly ? (
+          <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+            The client can message the salon from here.
+          </p>
+        ) : (
+          <>
+            <div className="max-h-80 space-y-2 overflow-y-auto rounded-xl border bg-muted/30 p-3">
+              {messages.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No messages yet. Ask us anything about your visits or your pets.
+                </p>
+              ) : messages.map(m => {
+                const mine = m.sender === "client";
+                return (
+                  <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-card border"}`}>
+                      {!mine && (
+                        <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">
+                          {m.sender === "assistant" ? "Assistant" : (m.staffName ?? "Barkin' Beautiful")}
+                        </p>
+                      )}
+                      <p className="whitespace-pre-wrap leading-relaxed">{m.body}</p>
+                      <p className={`mt-1 text-[10px] ${mine ? "opacity-70" : "text-muted-foreground"}`}>{when(m.createdAt)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                ref={inputRef}
+                value={draft}
+                placeholder="Type a message…"
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && draft.trim() && !send.isPending) { e.preventDefault(); send.mutate({ token, body: draft.trim() }); } }}
+              />
+              <Button
+                onClick={() => draft.trim() && send.mutate({ token, body: draft.trim() })}
+                disabled={!draft.trim() || send.isPending}
+                className="gap-1.5"
+              >
+                <Send className="h-4 w-4" /> Send
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">{PORTAL_CHAT_DISCLOSURE}</p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 /**
  * A grooming card as the client reads it.
  *
@@ -546,6 +633,8 @@ export default function ClientPortal() {
         </CardContent>
       </Card>
     )}
+
+    <PortalChatCard token={token ?? undefined} readOnly={isPreview} />
 
     <InvoicesSection invoices={data.invoices ?? []} salon={data.salon} client={data.client} />
 

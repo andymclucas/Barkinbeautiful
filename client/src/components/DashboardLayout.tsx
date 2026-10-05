@@ -44,6 +44,7 @@ import {
   UserCog,
   DollarSign,
   MessageSquare,
+  MessageCircle,
   Mail,
   FileBarChart2,
   LogOut,
@@ -78,6 +79,7 @@ const menuItems = [
   { icon: BarChart3,      label: "Analytics",         path: "/analytics" },
   { icon: UserCog,        label: "Staff",             path: "/staff" },
   { icon: MessageSquare,  label: "Messages",          path: "/messages" },
+  { icon: MessageCircle,  label: "Portal messages",   path: "/portal-messages" },
   { icon: Mail,           label: "Email Campaigns",   path: "/email-campaigns" },
   { icon: FileBarChart2,  label: "Reporting",         path: "/reporting" },
 ];
