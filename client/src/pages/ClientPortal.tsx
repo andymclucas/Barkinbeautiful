@@ -1,11 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE } from "@shared/portalChat";
 import { clientFacingStage, isGroomInProgress, GROOMING_STEPS } from "@shared/groomingStage";
-import { CalendarDays, Dog, FileDown, MessageCircle, Send, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
+import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,88 +45,149 @@ function portalDateTime(value: Date | string) {
  * long-standing client has dozens and almost always wants the last few.
  */
 /**
- * The client's conversation with the salon.
+ * The client's conversation with the salon, as a bubble in the corner.
+ *
+ * Deliberately not a card in the page flow: a client opens their portal to
+ * check a booking, and the moment they want to ask something they should not
+ * have to scroll looking for where to ask. So it sits where every support
+ * chat sits, bottom right, out of the way until wanted.
+ *
+ * The greeting is rendered, not stored. An empty thread shows "Hi, how can I
+ * help you today?" without writing a row, so the salon's inbox does not fill
+ * with conversations nobody actually started.
  *
  * The automated reply is labelled "Assistant" on every message and the
  * disclosure sits under the composer, so a client knows what they are
- * talking to before they type rather than working it out from the answer.
- * Anything the assistant will not touch — prices, bookings, anything
- * health-related — comes back as a promise that a person will reply, and
- * the thread is flagged for staff. See shared/portalChat.ts.
+ * talking to before they type. Anything it will not touch — prices,
+ * bookings, anything health-related — comes back as a promise that a person
+ * will reply. See shared/portalChat.ts.
  */
-function PortalChatCard({ token, readOnly }: { token?: string; readOnly?: boolean }) {
+function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string; readOnly?: boolean; clientFirstName?: string }) {
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  // The composer is never disabled while a send is in flight. It used to be,
-  // and the re-enable stole focus back: a client who typed straight on after
-  // pressing Enter lost the next message entirely, with no sign anything had
-  // gone wrong. Only the button is disabled, and focus is restored on success.
   const inputRef = useRef<HTMLInputElement>(null);
-  const chat = trpc.clientPortal.getChat.useQuery({ token }, { enabled: !readOnly, refetchInterval: 20000 });
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const chat = trpc.clientPortal.getChat.useQuery(
+    { token },
+    { enabled: !readOnly, refetchInterval: open ? 15000 : 60000 },
+  );
+  const markRead = trpc.clientPortal.markChatRead.useMutation({ onSuccess: () => chat.refetch() });
   const send = trpc.clientPortal.sendChatMessage.useMutation({
     onSuccess: () => { setDraft(""); chat.refetch(); inputRef.current?.focus(); },
     onError: (e) => toast.error(e.message),
   });
 
+  const messages = chat.data?.messages ?? [];
+  const unread = chat.data?.unread ?? 0;
+
+  // Opening the panel is reading it, and a new reply should not leave the
+  // client staring at the top of the thread.
+  useEffect(() => { if (open && unread > 0) markRead.mutate({ token }); }, [open, unread]);
+  useEffect(() => {
+    if (!open) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [open, messages.length]);
+
+  if (readOnly) return null;
+
   const when = (v: string | Date) =>
     new Date(v).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
-  const messages = chat.data?.messages ?? [];
+  const submit = () => {
+    const body = draft.trim();
+    if (!body || send.isPending) return;
+    send.mutate({ token, body });
+  };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2"><MessageCircle className="h-5 w-5 text-primary" /> Message the salon</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {readOnly ? (
-          <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-            The client can message the salon from here.
-          </p>
-        ) : (
-          <>
-            <div className="max-h-80 space-y-2 overflow-y-auto rounded-xl border bg-muted/30 p-3">
-              {messages.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No messages yet. Ask us anything about your visits or your pets.
-                </p>
-              ) : messages.map(m => {
-                const mine = m.sender === "client";
-                return (
-                  <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-card border"}`}>
-                      {!mine && (
-                        <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">
-                          {m.sender === "assistant" ? "Assistant" : (m.staffName ?? "Barkin' Beautiful")}
-                        </p>
-                      )}
-                      <p className="whitespace-pre-wrap leading-relaxed">{m.body}</p>
-                      <p className={`mt-1 text-[10px] ${mine ? "opacity-70" : "text-muted-foreground"}`}>{when(m.createdAt)}</p>
-                    </div>
-                  </div>
-                );
-              })}
+    <>
+      {/* The panel. Anchored to the bubble on a desktop, and on a phone it
+          takes the width it needs with a gutter either side. */}
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Message the salon"
+          className="fixed bottom-24 right-4 z-50 flex max-h-[min(32rem,calc(100dvh-8rem))] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl sm:right-6 sm:w-96"
+        >
+          <header className="flex shrink-0 items-center justify-between gap-2 bg-gradient-to-br from-violet-700 to-violet-500 px-4 py-3 text-white">
+            <div>
+              <p className="text-sm font-bold">Barkin&apos; Beautiful</p>
+              <p className="text-[11px] opacity-85">We usually reply during salon hours</p>
             </div>
+            <Button
+              variant="ghost" size="icon"
+              className="h-7 w-7 shrink-0 text-white hover:bg-white/20 hover:text-white"
+              onClick={() => setOpen(false)}
+              aria-label="Close chat"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </header>
+
+          <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain bg-muted/30 p-3">
+            {/* Shown, never stored — see the note above the component. */}
+            <div className="flex justify-start">
+              <div className="max-w-[85%] rounded-2xl border bg-card px-3.5 py-2 text-sm">
+                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">Assistant</p>
+                <p className="leading-relaxed">
+                  Hi{clientFirstName ? ` ${clientFirstName}` : ""}, how can I help you today?
+                </p>
+              </div>
+            </div>
+            {messages.map(m => {
+              const mine = m.sender === "client";
+              return (
+                <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "border bg-card"}`}>
+                    {!mine && (
+                      <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">
+                        {m.sender === "assistant" ? "Assistant" : (m.staffName ?? "Barkin' Beautiful")}
+                      </p>
+                    )}
+                    <p className="whitespace-pre-wrap leading-relaxed">{m.body}</p>
+                    <p className={`mt-1 text-[10px] ${mine ? "opacity-70" : "text-muted-foreground"}`}>{when(m.createdAt)}</p>
+                  </div>
+                </div>
+              );
+            })}
+            {send.isPending && (
+              <p className="px-1 text-xs text-muted-foreground">Sending…</p>
+            )}
+          </div>
+
+          <div className="shrink-0 space-y-2 border-t bg-card p-3">
             <div className="flex gap-2">
               <Input
                 ref={inputRef}
                 value={draft}
                 placeholder="Type a message…"
                 onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && draft.trim() && !send.isPending) { e.preventDefault(); send.mutate({ token, body: draft.trim() }); } }}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
               />
-              <Button
-                onClick={() => draft.trim() && send.mutate({ token, body: draft.trim() })}
-                disabled={!draft.trim() || send.isPending}
-                className="gap-1.5"
-              >
-                <Send className="h-4 w-4" /> Send
+              <Button onClick={submit} disabled={!draft.trim() || send.isPending} size="icon" aria-label="Send">
+                <Send className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">{PORTAL_CHAT_DISCLOSURE}</p>
-          </>
+            <p className="text-[11px] leading-snug text-muted-foreground">{PORTAL_CHAT_DISCLOSURE}</p>
+          </div>
+        </div>
+      )}
+
+      <Button
+        onClick={() => setOpen(v => !v)}
+        aria-label={open ? "Close chat" : "Message the salon"}
+        className="fixed bottom-6 right-4 z-50 h-14 w-14 rounded-full p-0 shadow-xl sm:right-6"
+      >
+        {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
+        {!open && unread > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-bold text-destructive-foreground">
+            {unread}
+          </span>
         )}
-      </CardContent>
-    </Card>
+      </Button>
+    </>
   );
 }
 
@@ -634,8 +695,6 @@ export default function ClientPortal() {
       </Card>
     )}
 
-    <PortalChatCard token={token ?? undefined} readOnly={isPreview} />
-
     <InvoicesSection invoices={data.invoices ?? []} salon={data.salon} client={data.client} />
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Dog className="h-5 w-5 text-primary" /> Your pets</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{data.pets.map(pet => <div key={pet.id} className="rounded-xl border bg-card p-4"><p className="font-semibold">{pet.name}</p><p className="text-sm text-muted-foreground">{pet.breed || pet.species}</p><Badge variant="outline" className="mt-2 capitalize">{pet.status}</Badge></div>)}</CardContent></Card>
@@ -704,6 +763,8 @@ export default function ClientPortal() {
 
     <Card><CardContent className="flex flex-wrap items-center gap-5 py-5 text-sm text-muted-foreground"><span>Need help with an appointment?</span>{data.salon.phone && <a className="inline-flex items-center gap-1.5 hover:text-primary" href={`tel:${data.salon.phone}`}><Phone className="h-4 w-4" /> {data.salon.phone}</a>}{data.salon.email && <a className="inline-flex items-center gap-1.5 hover:text-primary" href={`mailto:${data.salon.email}`}><Mail className="h-4 w-4" /> {data.salon.email}</a>}</CardContent></Card>
   </div>
+
+  <PortalChatBubble token={token ?? undefined} readOnly={isPreview} clientFirstName={data.client.firstName} />
 
   <Dialog open={!!rescheduleTarget} onOpenChange={(open) => !open && setRescheduleTarget(null)}>
     <DialogContent className="sm:max-w-sm">
