@@ -527,9 +527,17 @@ export default function ClientPortal() {
     )}
 
     {!isPreview && <YourDetailsCard client={data.client} onSaved={() => refetch()} />}
+    {/*
+      The preview is a read-only copy of the client's own card, so it carries
+      the client's heading. It said "Their details", which contradicted the
+      banner directly above it promising "this is exactly what X sees" — the
+      one thing a preview must not do is word itself differently from the
+      page it is previewing. Only the Edit action is withheld, which the
+      banner already explains.
+    */}
     {isPreview && (
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><PencilLine className="h-5 w-5 text-primary" /> Their details</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><PencilLine className="h-5 w-5 text-primary" /> Your details</CardTitle></CardHeader>
         <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
           <div><p className="text-xs text-muted-foreground">Name</p><p className="font-medium">{[data.client.firstName, data.client.lastName].filter(Boolean).join(" ") || "Not provided"}</p></div>
           <div><p className="text-xs text-muted-foreground">Phone</p><p className="font-medium">{data.client.phone || "Not provided"}</p></div>
