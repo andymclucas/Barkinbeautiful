@@ -5,6 +5,7 @@ import { toggleCalendarStaffSelection } from "@/lib/calendarStaffFilter";
 import { getDayCalendarGridSizing } from "@/lib/calendarGridSizing";
 import { buildAestDragSchedule } from "@/lib/calendarDragSchedule";
 import { GROOM_CONDITION_LABELS, GROOM_RATING_LABELS } from "@shared/groomingCard";
+import { arrivalLabel, hasArrivedOnSite } from "@shared/appointmentArrival";
 import { buildSharedAppointmentPriceBreakdown } from "@shared/sharedAppointmentPricing";
 import { buildCalendarDragTargetMinutes, formatCalendarDragTargetTime } from "@shared/calendarDragTarget";
 import { formatSharedAppointmentName } from "@shared/appointmentDisplay";
@@ -219,6 +220,25 @@ type Appt = {
 };
 
 // ── Shared time-grid appointment card ────────────────────────────────────────
+/**
+ * "This dog is here."
+ *
+ * Filled and leading the name, where the reminder-delivered tick is an
+ * outline and trails it. Two green ticks on one block would be worse than
+ * one, so they must not look alike.
+ */
+function ArrivedTick({ workflowState }: { workflowState: string }) {
+  const label = arrivalLabel(workflowState);
+  return (
+    <span title={label} className="inline-flex align-[-2px]">
+      <CheckCircle2
+        aria-label={label}
+        className="mr-1 h-3.5 w-3.5 shrink-0 fill-emerald-600 text-white dark:fill-emerald-500"
+      />
+    </span>
+  );
+}
+
 function ApptBlock({
   appt,
   col,
@@ -293,14 +313,17 @@ function ApptBlock({
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onDragStart={canDrag && onDragStart ? (e) => onDragStart(e, appt) : undefined}
       onDragEnd={onDragEnd}
-      aria-label={`${isCancelled ? "Cancelled " : ""}appointment for ${sharedAppointmentLabel || "pet"}`}
+      aria-label={`${isCancelled ? "Cancelled " : ""}appointment for ${sharedAppointmentLabel || "pet"}${hasArrivedOnSite(appt.workflowState, appt.status) ? ", checked in" : ""}`}
     >
       <div className="px-2 py-1 h-full overflow-hidden leading-tight">
         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
         {siblings && siblings.length > 0 ? (
           <>
             <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
-              <div className="leading-tight" title={sharedAppointmentLabel}>{sharedAppointmentLabel}</div>
+              <div className="leading-tight" title={sharedAppointmentLabel}>
+                {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
+                {sharedAppointmentLabel}
+              </div>
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
             </div>
             {!compact && <div className="mt-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
@@ -314,6 +337,7 @@ function ApptBlock({
         ) : (
           <>
             <div className={`font-bold text-[12px] truncate tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+              {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
               {appt.petName}{appt.clientLastName ? ` ${appt.clientLastName}` : ""}
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
             </div>
@@ -1462,6 +1486,7 @@ export default function Calendar() {
                       >
                         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
                         <div className={`font-bold truncate ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+                          {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
                           {sharedAppointmentLabel}
                           {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
                         </div>
