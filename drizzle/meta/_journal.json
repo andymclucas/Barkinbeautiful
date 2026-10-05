@@ -554,6 +554,13 @@
       "when": 1791206898014,
       "tag": "0078_portal_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "5",
+      "when": 1791241349595,
+      "tag": "0079_portal_thread_read_by",
+      "breakpoints": true
     }
   ]
 }

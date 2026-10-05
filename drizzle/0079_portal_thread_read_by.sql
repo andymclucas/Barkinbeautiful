@@ -1,0 +1,11 @@
+-- Who opened a portal conversation, not just when.
+--
+-- portal_threads already carried staff_last_read_at, so the salon could see
+-- that a client's message had been looked at but not by whom. That is the
+-- same gap the Messages list had: a message opened and not acted on should be
+-- as attributable as a voicemail.
+--
+-- Nullable with no default, so every existing thread keeps its read time and
+-- simply has no reader recorded — which is the truth for anything read before
+-- this column existed.
+ALTER TABLE `portal_threads` ADD COLUMN `staff_last_read_by_user_id` int NULL;

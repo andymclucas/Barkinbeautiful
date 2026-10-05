@@ -785,6 +785,8 @@ export const portalThreads = mysqlTable("portal_threads", {
   lastMessageAt: timestamp("last_message_at"),
   lastClientMessageAt: timestamp("last_client_message_at"),
   staffLastReadAt: timestamp("staff_last_read_at"),
+  /** Who opened it last — a message looked at and not acted on is attributable. */
+  staffLastReadByUserId: int("staff_last_read_by_user_id"),
   clientLastReadAt: timestamp("client_last_read_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
