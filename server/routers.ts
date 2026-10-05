@@ -6432,7 +6432,7 @@ const smsRouter = router({
 
   markThreadRead: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), clientId: z.number().optional(), toNumber: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
       if (!input.clientId && !input.toNumber) return { success: true };
@@ -6442,7 +6442,18 @@ const smsRouter = router({
         isNull(smsLogs.readAt),
       ];
       conditions.push(input.clientId ? eq(smsLogs.clientId, input.clientId) : eq(smsLogs.toNumber, input.toNumber!));
-      await db.update(smsLogs).set({ readAt: new Date() }).where(and(...conditions));
+      // Record WHO opened it, not just that someone did. The thread list has
+      // always rendered "Read by {name}, {time}" and the query has always
+      // selected readByName — but this, the only place a thread is marked
+      // read, set readAt alone. readByUserId stayed null, so the name was
+      // always missing and every thread fell back to a bare "Read".
+      //
+      // The voicemail path (markNotificationRead) has recorded the reader
+      // from the start. A message opened and not acted on is exactly as
+      // attributable as a voicemail.
+      await db.update(smsLogs)
+        .set({ readAt: new Date(), readByUserId: ctx.user?.id ?? null })
+        .where(and(...conditions));
       return { success: true };
     }),
 
