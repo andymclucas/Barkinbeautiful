@@ -42,6 +42,7 @@ import { createInvoiceCheckout } from "./stripePayments";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
+import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
@@ -855,6 +856,66 @@ const calendarRouter = router({
       }
 
 
+
+      // Raise the invoice for the groom that just finished.
+      //
+      // Until now nothing did: an invoice only existed if a staff member
+      // remembered to press "Create Bills" on the calendar. That is why 114
+      // completed grooms were sitting with no price and no invoice when this
+      // was written.
+      //
+      // Every reason to skip lives in shared/appointmentInvoicing.ts, so this
+      // path and the manual button cannot drift. Nothing is sent to anyone:
+      // raising an invoice writes a row, it does not email or charge.
+      if (input.newState === "complete" && appt.workflowState !== "complete") {
+        const [invoiceCount] = await db.select({ n: sql<number>`COUNT(*)` })
+          .from(invoices).where(eq(invoices.appointmentId, appt.id));
+        const decision = decideAppointmentInvoice({
+          price: appt.price,
+          membershipId: appt.membershipId,
+          existingInvoiceCount: Number(invoiceCount?.n ?? 0),
+          workflowState: "complete",
+          status: appt.status,
+        });
+        if (decision.invoice) {
+          const [paidRow] = await db.select({ total: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)` })
+            .from(appointmentPayments).where(eq(appointmentPayments.appointmentId, appt.id));
+          const [petRow] = await db.select({ name: pets.name }).from(pets).where(eq(pets.id, appt.petId)).limit(1);
+          const total = Number(appt.price).toFixed(2);
+          const status = invoiceStatusForPayments(total, paidRow?.total ?? 0);
+          const SERVICE_LABELS: Record<string, string> = {
+            classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath Only",
+            fft: "FFT", nail_trim: "Nail Trim", daycare: "Daycare", deshed: "Deshed", other: "Other",
+          };
+          const invoiceNumber = groomInvoiceNumber(
+            petRow?.name, new Date(appt.scheduledStart), Date.now().toString(36).slice(-4));
+          const [created] = await db.insert(invoices).values({
+            tenantId: appt.tenantId,
+            clientId: appt.clientId,
+            appointmentId: appt.id,
+            membershipId: appt.membershipId,
+            invoiceNumber,
+            subtotal: total,
+            taxAmount: "0",
+            total,
+            status,
+            paidAt: status === "paid" ? new Date() : null,
+            dueAt: invoiceDueAt(),
+            notes: "Raised automatically when the appointment was completed.",
+          });
+          const invoiceId = Number((created as any)?.insertId ?? 0);
+          if (invoiceId) {
+            await db.insert(invoiceLineItems).values({
+              invoiceId,
+              description: `${petRow?.name ?? "Pet"} \u2014 ${SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}`,
+              quantity: "1",
+              unitPrice: total,
+              lineTotal: total,
+            });
+          }
+        }
+      }
+
       // Pet Tracker links are operationally useful but must not be sent during the
       // prototype. A successful send is logged and marked once to prevent repeats.
       if (input.newState === "checked_in" && !appt.trackerSmsSent && appt.trackerToken && process.env.SMS_AUTOMATION_ENABLED === "true") {
@@ -1073,7 +1134,22 @@ const calendarRouter = router({
       };
 
       const created: Array<{ invoiceId: number; invoiceNumber: string; petName: string; total: string }> = [];
+      const skipped: Array<{ petName: string; reason: string }> = [];
       for (const appt of appts) {
+        // Pressing this button twice used to bill the client twice, and it
+        // billed membership grooms that the weekly charge already covers.
+        // Same decision as the automatic path on completion, so the two
+        // cannot diverge — see shared/appointmentInvoicing.ts.
+        const [already] = await db.select({ n: sql<number>`COUNT(*)` })
+          .from(invoices).where(eq(invoices.appointmentId, appt.id));
+        const decision = decideAppointmentInvoice({
+          price: appt.price,
+          membershipId: appt.membershipId,
+          existingInvoiceCount: Number(already?.n ?? 0),
+          workflowState: "complete",
+          status: "confirmed",
+        });
+        if (!decision.invoice) { skipped.push({ petName: appt.petName ?? "Pet", reason: decision.reason }); continue; }
         const price = appt.price ? parseFloat(String(appt.price)) : 0;
         const total = price.toFixed(2);
         const petSlug = (appt.petName ?? "PET").toUpperCase().replace(/[^A-Z0-9]/g, "-").slice(0, 8);
@@ -1106,7 +1182,7 @@ const calendarRouter = router({
         });
         created.push({ invoiceId, invoiceNumber: invNum, petName: appt.petName ?? "Pet", total });
       }
-      return { success: true, created };
+      return { success: true, created, skipped };
     }),
 });
 
