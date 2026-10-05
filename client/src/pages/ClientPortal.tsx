@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney } from "@shared/portalBilling";
+import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { clientFacingStage, isGroomInProgress, GROOMING_STEPS } from "@shared/groomingStage";
 import { CalendarDays, Dog, FileDown, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -18,7 +19,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 type PortalPet = { id: number; name: string; breed: string | null; species: string; status: string };
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
-type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; sentAt: Date | string | null };
+type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; coatCondition: string | null; skinCondition: string | null; eyeCondition: string | null; earCondition: string | null; nailCondition: string | null; teethCondition: string | null; serviceType: string | null; groomerName: string | null; sentAt: Date | string | null };
 type PortalInvoiceRow = { id: number; invoiceNumber: string | null; total: string | null; status: string | null; paymentMethod: string | null; paidAt: string | Date | null; dueAt: string | Date | null; createdAt: string | Date | null };
 type PortalPaymentRow = { key: string; source: "invoice" | "membership" | "appointment"; amount: number; at: string | Date | number; method: string | null; description: string };
 
@@ -42,6 +43,117 @@ function portalDateTime(value: Date | string) {
  * own bank statement. Recent first, with the rest behind an expander: a
  * long-standing client has dozens and almost always wants the last few.
  */
+/**
+ * A grooming card as the client reads it.
+ *
+ * Mirrors the card the salon emails and prints, which is the whole point:
+ * a client who opens the portal should see the same check-over as the one
+ * in their inbox. Before this, the portal showed the after photo, one note
+ * and the return frequency, and silently dropped the rating, the mood, the
+ * before photo and every condition the groomer recorded.
+ *
+ * The veterinary disclaimer is carried across deliberately. The card names
+ * ear, skin and teeth findings, and must not read as a clinical opinion.
+ *
+ * groomerNotes is deliberately NOT shown. It is the salon's internal note on
+ * the dog, and two tests assert it never reaches the portal payload. The
+ * client-facing note is additionalNote, rendered above as "a note from your
+ * groomer".
+ */
+function GroomingCardDetail({ card }: { card: PortalGroomingCard }) {
+  const conditions = groomCardConditions(card);
+  const moods = groomCardMoods(card.mood);
+  const rating = groomCardRating(card.overallRating);
+  const service = (card.serviceType ?? "").replace(/_/g, " ");
+
+  return (
+    <article className="overflow-hidden rounded-2xl border bg-card">
+      <header className="bg-gradient-to-br from-violet-700 to-violet-500 px-5 py-4 text-white">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] opacity-80">Grooming card</p>
+        <h3 className="mt-1 text-lg font-extrabold">{card.petName}</h3>
+        <p className="mt-0.5 text-xs opacity-90">
+          {portalDate(card.appointmentDate)}
+          {card.groomerName ? ` · Groomed by ${card.groomerName}` : ""}
+        </p>
+      </header>
+
+      <div className="space-y-4 p-5">
+        {service && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Today&apos;s service</p>
+            <p className="text-sm font-semibold capitalize">{service}</p>
+          </div>
+        )}
+
+        {(card.beforePhotoUrl || card.afterPhotoUrl) && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {card.beforePhotoUrl && (
+              <figure>
+                <figcaption className="mb-1 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Before</figcaption>
+                <img src={card.beforePhotoUrl} alt={`${card.petName} before grooming`} className="h-44 w-full rounded-lg border object-cover" />
+              </figure>
+            )}
+            {card.afterPhotoUrl && (
+              <figure>
+                <figcaption className="mb-1 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">After</figcaption>
+                <img src={card.afterPhotoUrl} alt={`${card.petName} after grooming`} className="h-44 w-full rounded-lg border object-cover" />
+              </figure>
+            )}
+          </div>
+        )}
+
+        {rating && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Overall</p>
+            <p className="text-base font-extrabold text-primary">{rating}</p>
+          </div>
+        )}
+
+        {moods.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Mood</p>
+            <div className="flex flex-wrap gap-1.5">
+              {moods.map(m => <Badge key={m} variant="secondary" className="font-normal">{m}</Badge>)}
+            </div>
+          </div>
+        )}
+
+        {card.additionalNote && (
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">A note from your groomer</p>
+            <p className="whitespace-pre-wrap rounded-xl bg-muted/50 px-3.5 py-3 text-sm leading-relaxed">{card.additionalNote}</p>
+          </div>
+        )}
+
+        {conditions.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">We checked</p>
+            <dl className="divide-y rounded-xl border">
+              {conditions.map(row => (
+                <div key={row.label} className="flex items-center justify-between gap-3 px-3.5 py-2 text-sm">
+                  <dt className="text-muted-foreground">{row.label}</dt>
+                  <dd className="font-semibold">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+
+        {card.recommendedFrequencyWeeks ? (
+          <div className="rounded-xl bg-primary/10 px-3.5 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-primary">Recommended frequency</p>
+            <p className="mt-0.5 text-base font-extrabold text-primary">Every {card.recommendedFrequencyWeeks} weeks</p>
+          </div>
+        ) : null}
+
+        <p className="border-t pt-3 text-[10px] leading-relaxed text-muted-foreground">
+          This grooming card does not constitute veterinary advice. Please contact a veterinarian for professional health guidance.
+        </p>
+      </div>
+    </article>
+  );
+}
+
 /**
  * The client's invoices, and nothing else about money.
  *
@@ -464,7 +576,14 @@ export default function ClientPortal() {
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Heart className="h-5 w-5 text-primary" /> Memberships</CardTitle></CardHeader><CardContent className="space-y-3">{data.memberships.length ? data.memberships.map(membership => <div key={membership.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-3 last:border-0 last:pb-0"><div><p className="font-semibold">{membership.name}</p><p className="text-sm text-muted-foreground">{membership.status === "active" && membership.nextBillingDate ? `Next renewal: ${portalDate(membership.nextBillingDate)}` : "Please contact the salon for account details."}</p></div><Badge variant="outline" className="capitalize">{membership.tier}</Badge></div>) : <p className="text-sm text-muted-foreground">No memberships are currently shown.</p>}</CardContent></Card>
 
-    <Card><CardHeader><CardTitle className="flex items-center gap-2"><Scissors className="h-5 w-5 text-primary" /> Grooming cards</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">{data.groomingCards.length ? data.groomingCards.map(card => <div key={card.id} className="rounded-xl border bg-card p-4"><p className="font-semibold">{card.petName} · {portalDate(card.appointmentDate)}</p>{card.afterPhotoUrl && <img src={card.afterPhotoUrl} alt={`${card.petName} after grooming`} className="mt-3 h-44 w-full rounded-lg object-cover" />}{card.additionalNote && <p className="mt-3 text-sm text-muted-foreground">{card.additionalNote}</p>}{card.recommendedFrequencyWeeks && <p className="mt-3 text-xs font-medium text-primary">Recommended return: every {card.recommendedFrequencyWeeks} weeks</p>}</div>) : <p className="text-sm text-muted-foreground">Approved grooming cards will appear here when the salon shares them.</p>}</CardContent></Card>
+    <Card>
+      <CardHeader><CardTitle className="flex items-center gap-2"><Scissors className="h-5 w-5 text-primary" /> Grooming cards</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        {data.groomingCards.length
+          ? data.groomingCards.map(card => <GroomingCardDetail key={card.id} card={card} />)
+          : <p className="text-sm text-muted-foreground">Approved grooming cards will appear here when the salon shares them.</p>}
+      </CardContent>
+    </Card>
 
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><HistoryIcon className="h-5 w-5 text-primary" /> Appointment history</CardTitle></CardHeader>

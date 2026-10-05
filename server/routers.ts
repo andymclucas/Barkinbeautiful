@@ -7086,11 +7086,24 @@ async function buildClientPortalPayload(db: any, access: {
       beforePhotoUrl: groomingReports.beforePhotoUrl,
       afterPhotoUrl: groomingReports.afterPhotoUrl,
       recommendedFrequencyWeeks: groomingReports.recommendedFrequencyWeeks,
+      // The conditions the groomer recorded. These were already being
+      // collected and printed on the emailed card, but the portal never
+      // selected them, so a client who logged in saw a photo and a note
+      // where the card they were emailed had a full check-over.
+      coatCondition: groomingReports.coatCondition,
+      skinCondition: groomingReports.skinCondition,
+      eyeCondition: groomingReports.eyeCondition,
+      earCondition: groomingReports.earCondition,
+      nailCondition: groomingReports.nailCondition,
+      teethCondition: groomingReports.teethCondition,
+      serviceType: appointments.serviceType,
+      groomerName: staff.name,
       sentAt: groomingReports.sentAt,
     })
       .from(groomingReports)
       .innerJoin(appointments, eq(groomingReports.appointmentId, appointments.id))
       .innerJoin(pets, eq(groomingReports.petId, pets.id))
+      .leftJoin(staff, eq(appointments.staffId, staff.id))
       .where(and(
         eq(groomingReports.tenantId, access.tenantId),
         eq(appointments.clientId, access.clientId),
