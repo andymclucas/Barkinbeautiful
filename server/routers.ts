@@ -6917,13 +6917,14 @@ const smsRouter = router({
 const portalChatRouter = router({
   listThreads: operationalProcedure
     .input(z.object({ tenantId: z.number().int().positive().default(1) }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const tenantId = input?.tenantId ?? 1;
       const threads = await db.select({
         id: portalThreads.id, clientId: portalThreads.clientId, status: portalThreads.status,
         lastMessageAt: portalThreads.lastMessageAt, staffLastReadAt: portalThreads.staffLastReadAt,
+        readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${portalThreads.staffLastReadByUserId} LIMIT 1)`,
         firstName: clients.firstName, lastName: clients.lastName, phone: clients.phone,
       }).from(portalThreads)
         .innerJoin(clients, eq(portalThreads.clientId, clients.id))
@@ -6944,7 +6945,12 @@ const portalChatRouter = router({
           lastSender: last ? last.sender : null,
         });
       }
-      return out;
+      // Who read what is management information, the same as it is on
+      // Messages: Lauren and Andy see the name, a groomer does not. Filtered
+      // here rather than in the page — hiding it client-side would still
+      // ship every groomer the names.
+      const canSeeReaders = canAdministerStaff((ctx as any).user);
+      return out.map((t) => (canSeeReaders ? t : { ...t, readByName: null }));
     }),
 
   getThread: operationalProcedure
@@ -6981,17 +6987,18 @@ const portalChatRouter = router({
       });
       const now = new Date();
       await db.update(portalThreads)
-        .set({ lastMessageAt: now, status: "open", staffLastReadAt: now })
+        .set({ lastMessageAt: now, status: "open", staffLastReadAt: now, staffLastReadByUserId: (ctx as any).user?.id ?? null })
         .where(eq(portalThreads.id, thread.id));
       return { success: true };
     }),
 
   markRead: operationalProcedure
     .input(z.object({ threadId: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      await db.update(portalThreads).set({ staffLastReadAt: new Date() })
+      await db.update(portalThreads)
+        .set({ staffLastReadAt: new Date(), staffLastReadByUserId: ctx.user?.id ?? null })
         .where(eq(portalThreads.id, input.threadId));
       return { success: true };
     }),

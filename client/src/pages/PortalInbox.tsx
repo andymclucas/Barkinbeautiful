@@ -77,9 +77,15 @@ export default function PortalInbox() {
                     {t.unread > 0 && <Badge variant="default" className="shrink-0">{t.unread}</Badge>}
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-muted-foreground">{t.preview || "—"}</span>
-                  <span className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground">
                     {t.lastMessageAt ? when(t.lastMessageAt) : ""}
                     {t.status === "awaiting_staff" && <span className="font-semibold text-amber-700 dark:text-amber-400">Needs a reply</span>}
+                    {/* Only the salon's administrators are sent the name at
+                        all — see listThreads. For everyone else this is
+                        simply absent rather than hidden in the markup. */}
+                    {t.readByName && t.staffLastReadAt && t.unread === 0 && (
+                      <span className="truncate">Read by {t.readByName}, {when(t.staffLastReadAt)}</span>
+                    )}
                   </span>
                 </button>
               ))}
