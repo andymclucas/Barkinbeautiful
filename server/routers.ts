@@ -58,6 +58,7 @@ import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type Ma
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
 import { sidebarCountsRouter } from "./routers/sidebarCounts";
+import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
   requireApprovedStaffTenant,
@@ -8215,6 +8216,7 @@ export const appRouter = router({
   clientPortal: clientPortalRouter,
   portalChat: portalChatRouter,
   sidebarCounts: sidebarCountsRouter,
+  pushSubscriptions: pushSubscriptionsRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,

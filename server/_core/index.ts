@@ -6,6 +6,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
 import { registerUploadRoutes } from "../uploadRoutes";
 import { logAppUrlConfiguration } from "../appUrl";
+import { startPushFanout } from "../pushFanout";
 import { paymentRetryHandler, appointmentReminderHandler } from "../scheduledHandlers";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -741,6 +742,11 @@ async function startServer() {
       createContext,
     })
   );
+  // Push notifications to devices with Groomigo closed. Attached here
+  // rather than at import so it starts once, after dotenv has run and the
+  // VAPID keys are actually readable.
+  startPushFanout();
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
