@@ -4,7 +4,7 @@ import { applyDiscount, validateDiscount, fromCents, toCents } from "@shared/app
 import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
-import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
 import { agreementsRouter, clientReviewsRouter, packagesRouter, petPaperworkRouter, clientNotesRouter } from "./routers/clientRecord";
@@ -294,7 +294,7 @@ const calendarRouter = router({
       if (!db) return [];
       if (ctx.user.role === "staff") {
         const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-        if (portalStaff && portalStaff.tenantId !== input.tenantId) {
+        if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
           throw new Error("This calendar is not available to your salon staff profile");
         }
       }
@@ -319,7 +319,7 @@ const calendarRouter = router({
         .leftJoin(pets, eq(appointments.petId, pets.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           sql`${pets.name} LIKE ${term} OR ${clients.firstName} LIKE ${term} OR ${clients.lastName} LIKE ${term} OR CONCAT(${clients.firstName}, ' ', ${clients.lastName}) LIKE ${term}`,
         ))
         .orderBy(desc(appointments.scheduledStart))
@@ -342,7 +342,7 @@ const calendarRouter = router({
       if (!db) return [];
       if (ctx.user.role === "staff") {
         const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-        if (portalStaff && portalStaff.tenantId !== input.tenantId) {
+        if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
           throw new Error("This calendar is not available to your salon staff profile");
         }
       }
@@ -364,7 +364,7 @@ const calendarRouter = router({
         .leftJoin(pets, eq(appointments.petId, pets.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.clientId, input.clientId),
         ))
         .orderBy(desc(appointments.scheduledStart))
@@ -381,13 +381,13 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) return [];
       const conditions = [
-        eq(appointments.tenantId, input.tenantId),
+        eq(appointments.tenantId, tenantOf(ctx, input)),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
         lte(appointments.scheduledStart, new Date(input.dateTo)),
       ];
       if (ctx.user.role === "staff") {
         const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-        if (portalStaff && portalStaff.tenantId !== input.tenantId) {
+        if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
           throw new Error("This calendar is not available to your salon staff profile");
         }
       }
@@ -458,7 +458,7 @@ const calendarRouter = router({
           .where(and(
             inArray(appointments.petId, petIds),
             gt(appointments.scheduledStart, now),
-            eq(appointments.tenantId, input.tenantId)
+            eq(appointments.tenantId, tenantOf(ctx, input))
           ))
           .orderBy(asc(appointments.scheduledStart));
         for (const na of nextAppts) {
@@ -473,7 +473,7 @@ const calendarRouter = router({
           .where(and(
             inArray(appointments.petId, petIds),
             lt(appointments.scheduledStart, now),
-            eq(appointments.tenantId, input.tenantId)
+            eq(appointments.tenantId, tenantOf(ctx, input))
           ))
           .orderBy(desc(appointments.scheduledStart));
         Object.assign(lastAppointmentMap, resolveLastAppointmentDates(priorAppointments));
@@ -504,17 +504,17 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your staff profile");
       const [pet] = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
         .from(pets).where(eq(pets.id, input.petId)).limit(1);
-      if (!pet || pet.clientId !== input.clientId || pet.tenantId !== input.tenantId) {
+      if (!pet || pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input)) {
         throw new Error("The selected client and pet are not available to this salon");
       }
-      const coverage = await getAppointmentMembershipCoverage(db, input.tenantId, input.clientId, [input.petId], input.serviceType);
+      const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, [input.petId], input.serviceType);
       const coveredMembership = coverage.membershipByPetId[input.petId] ?? null;
       const token = nanoid(32);
       await db.insert(appointments).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         clientId: input.clientId,
         petId: input.petId,
         staffId: input.staffId,
@@ -549,11 +549,11 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your salon profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your salon profile");
       const petIds = Array.from(new Set(input.petIds));
       const selectedPets = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
         .from(pets).where(inArray(pets.id, petIds));
-      if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== input.tenantId)) {
+      if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input))) {
         throw new Error("The selected client and pets are not available to this salon");
       }
 
@@ -583,7 +583,7 @@ const calendarRouter = router({
         if (input.staffId) {
           const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
             eq(appointments.staffId, input.staffId),
-            eq(appointments.tenantId, input.tenantId),
+            eq(appointments.tenantId, tenantOf(ctx, input)),
             ne(appointments.workflowState, "cancelled"),
             ne(appointments.status, "cancelled"),
             lt(appointments.scheduledStart, occurrenceEnd),
@@ -596,11 +596,11 @@ const calendarRouter = router({
           }
         }
 
-        const coverage = await getAppointmentMembershipCoverage(db, input.tenantId, input.clientId, petIds, input.serviceType);
+        const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
         const sessionId = petIds.length > 1 ? nanoid(16) : null;
         for (const petId of petIds) {
           await db.insert(appointments).values({
-            tenantId: input.tenantId,
+            tenantId: tenantOf(ctx, input),
             clientId: input.clientId,
             petId,
             staffId: input.staffId,
@@ -648,21 +648,21 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your staff profile");
       const petIds = Array.from(new Set(input.petIds));
       const selectedPets = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
         .from(pets).where(inArray(pets.id, petIds));
-      if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== input.tenantId)) {
+      if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input))) {
         throw new Error("The selected client and pets are not available to this salon");
       }
-      const coverage = await getAppointmentMembershipCoverage(db, input.tenantId, input.clientId, petIds, input.serviceType);
+      const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
       // Assign a shared sessionId when booking multiple pets together
       const sessionId = petIds.length > 1 ? nanoid(16) : null;
       const created: number[] = [];
       for (const petId of petIds) {
         const token = nanoid(32);
         await db.insert(appointments).values({
-          tenantId: input.tenantId,
+          tenantId: tenantOf(ctx, input),
           clientId: input.clientId,
           petId,
           staffId: input.staffId,
@@ -693,14 +693,14 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your staff profile");
       const petIds = Array.from(new Set(input.petIds));
       const selectedPets = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
         .from(pets).where(inArray(pets.id, petIds));
-      if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== input.tenantId)) {
+      if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input))) {
         throw new Error("The selected client and pets are not available to this salon");
       }
-      const coverage = await getAppointmentMembershipCoverage(db, input.tenantId, input.clientId, petIds, input.serviceType);
+      const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
       return {
         ...coverage,
         memberships: Object.values(coverage.membershipByPetId).map(membership => ({
@@ -721,10 +721,10 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your staff profile");
       const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId })
         .from(clients).where(eq(clients.id, input.clientId)).limit(1);
-      if (!client || client.tenantId !== input.tenantId) throw new Error("This client is not available to this salon");
+      if (!client || client.tenantId !== tenantOf(ctx, input)) throw new Error("This client is not available to this salon");
       const clientMemberships = await db.select({
         id: memberships.id,
         petId: memberships.petId,
@@ -734,7 +734,7 @@ const calendarRouter = router({
         status: memberships.status,
         bookingSuspended: memberships.bookingSuspended,
       }).from(memberships).where(and(
-        eq(memberships.tenantId, input.tenantId),
+        eq(memberships.tenantId, tenantOf(ctx, input)),
         eq(memberships.clientId, input.clientId),
         eq(memberships.status, "active"),
       )).orderBy(asc(memberships.name));
@@ -1142,7 +1142,7 @@ const calendarRouter = router({
         .leftJoin(pets, eq(appointments.petId, pets.id))
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           inArray(appointments.id, input.appointmentIds),
         ));
 
@@ -1161,7 +1161,7 @@ const calendarRouter = router({
         // cannot diverge — see shared/appointmentInvoicing.ts.
         const [already] = await db.select({ n: sql<number>`COUNT(*)` })
           .from(invoices).where(eq(invoices.appointmentId, appt.id));
-        const addOns = await loadAddOnsForInvoice(db, input.tenantId, appt.id);
+        const addOns = await loadAddOnsForInvoice(db, tenantOf(ctx, input), appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
@@ -1183,7 +1183,7 @@ const calendarRouter = router({
         // a bill raised by hand and one raised on completion cannot differ.
         const itemised = buildInvoiceLines({ petName: appt.petName, serviceLabel, servicePrice: total, addOns });
         const [result] = await db.insert(invoices).values({
-          tenantId: input.tenantId,
+          tenantId: tenantOf(ctx, input),
           clientId: appt.clientId,
           appointmentId: appt.id,
           membershipId: appt.membershipId,
@@ -1213,7 +1213,7 @@ const workflowRouter = router({
       const db = await getDb();
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This workflow is not available to your salon staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This workflow is not available to your salon staff profile");
       // The salon's day, not the server's. Render runs UTC, so a naive local
       // midnight here put the window at 10:00-10:00 Brisbane: the dashboard
       // listed yesterday's dogs from 10am alongside today's up to 10am, and
@@ -1240,7 +1240,7 @@ const workflowRouter = router({
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, today),
           lte(appointments.scheduledStart, tomorrow),
         ))
@@ -1256,7 +1256,7 @@ const workflowRouter = router({
       const db = await getDb();
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This workflow is not available to your salon staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This workflow is not available to your salon staff profile");
       const dateStr = input.date || new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10);
       // AEST = UTC+10. Midnight AEST = 14:00 UTC previous day.
       const [y, m, d] = dateStr.split('-').map(Number);
@@ -1317,7 +1317,7 @@ const workflowRouter = router({
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, dayStart),
           lte(appointments.scheduledStart, dayEnd),
           sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
@@ -1329,7 +1329,7 @@ const workflowRouter = router({
       if (familyGroupIds.length > 0) {
         const familyPets = await db.select({ familyGroupId: pets.familyGroupId, name: pets.name })
           .from(pets)
-          .where(and(eq(pets.tenantId, input.tenantId), inArray(pets.familyGroupId, familyGroupIds)))
+          .where(and(eq(pets.tenantId, tenantOf(ctx, input)), inArray(pets.familyGroupId, familyGroupIds)))
           .orderBy(asc(pets.name));
         for (const familyPet of familyPets) {
           if (!familyPet.familyGroupId) continue;
@@ -1369,7 +1369,7 @@ const workflowRouter = router({
       const vipPetIds = new Set<number>();
       if (petIdsOnBoard.length > 0) {
         const activeMemberships = await db.select({ petId: memberships.petId }).from(memberships)
-          .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard)));
+          .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard)));
         for (const m of activeMemberships) vipPetIds.add(m.petId);
       }
 
@@ -1757,10 +1757,10 @@ const workflowRouter = router({
       const db = await getDb();
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This staff directory is not available to your salon staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This staff directory is not available to your salon staff profile");
       return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl })
         .from(staff)
-        .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true)))
+        .where(and(eq(staff.tenantId, tenantOf(ctx, input)), eq(staff.isActive, true)))
         .orderBy(asc(staff.name));
     }),
 });
@@ -1895,10 +1895,10 @@ function brisbaneDayRange(dateInput?: string) {
 const workflowReviewRouter = router({
   getThresholds: adminProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { defaults: DEFAULT_TIMING_REVIEW_THRESHOLDS, rules: [], sizePresets: TIMING_REVIEW_SIZE_PRESETS };
-      const rows = await db.select().from(workflowTimingReviewThresholds).where(eq(workflowTimingReviewThresholds.tenantId, input.tenantId));
+      const rows = await db.select().from(workflowTimingReviewThresholds).where(eq(workflowTimingReviewThresholds.tenantId, tenantOf(ctx, input)));
       return { defaults: DEFAULT_TIMING_REVIEW_THRESHOLDS, rules: timingReviewRules(rows), sizePresets: TIMING_REVIEW_SIZE_PRESETS };
     }),
 
@@ -1908,14 +1908,14 @@ const workflowReviewRouter = router({
       const db = await getDb();
       if (!db) return { defaults: DEFAULT_TIMING_REVIEW_THRESHOLDS, rules: [] };
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This workflow is not available to your salon staff profile");
-      const rows = await db.select().from(workflowTimingReviewThresholds).where(eq(workflowTimingReviewThresholds.tenantId, input.tenantId));
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This workflow is not available to your salon staff profile");
+      const rows = await db.select().from(workflowTimingReviewThresholds).where(eq(workflowTimingReviewThresholds.tenantId, tenantOf(ctx, input)));
       return { defaults: DEFAULT_TIMING_REVIEW_THRESHOLDS, rules: timingReviewRules(rows) };
     }),
 
   upsertThreshold: adminProcedure
     .input(timingReviewThresholdInput)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       if (input.scope === "size" && !input.petSize) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a pet size for this preset." });
       if (input.scope === "breed" && !input.breedName) throw new TRPCError({ code: "BAD_REQUEST", message: "Enter a breed name for this override." });
       const db = await getDb();
@@ -1924,7 +1924,7 @@ const workflowReviewRouter = router({
       const petSize = input.scope === "size" ? input.petSize ?? null : null;
       const scopeKey = getTimingReviewScopeKey({ scope: input.scope, petSize, breedName });
       await db.insert(workflowTimingReviewThresholds).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         scope: input.scope,
         scopeKey,
         petSize,
@@ -1939,25 +1939,25 @@ const workflowReviewRouter = router({
 
   removeThreshold: adminProcedure
     .input(z.object({ tenantId: z.number().default(1), scope: z.enum(["default", "size", "breed"]), petSize: z.enum(["small", "small_medium", "medium", "large", "extra_large", "giant"]).optional(), breedName: z.string().trim().min(1).max(100).optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       if (input.scope === "size" && !input.petSize) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a pet size to reset." });
       if (input.scope === "breed" && !input.breedName) throw new TRPCError({ code: "BAD_REQUEST", message: "Enter a breed name to reset." });
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const scopeKey = getTimingReviewScopeKey({ scope: input.scope, petSize: input.petSize, breedName: input.breedName });
-      await db.delete(workflowTimingReviewThresholds).where(and(eq(workflowTimingReviewThresholds.tenantId, input.tenantId), eq(workflowTimingReviewThresholds.scopeKey, scopeKey)));
+      await db.delete(workflowTimingReviewThresholds).where(and(eq(workflowTimingReviewThresholds.tenantId, tenantOf(ctx, input)), eq(workflowTimingReviewThresholds.scopeKey, scopeKey)));
       return { success: true };
     }),
 
   getAlerts: adminProcedure
     .input(z.object({ tenantId: z.number().default(1), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const range = brisbaneDayRange(input.date);
-      const thresholdRows = await db.select().from(workflowTimingReviewThresholds).where(eq(workflowTimingReviewThresholds.tenantId, input.tenantId));
+      const thresholdRows = await db.select().from(workflowTimingReviewThresholds).where(eq(workflowTimingReviewThresholds.tenantId, tenantOf(ctx, input)));
       const rules = timingReviewRules(thresholdRows);
-      const staffRows = await db.select({ id: staff.id, name: staff.name }).from(staff).where(eq(staff.tenantId, input.tenantId));
+      const staffRows = await db.select({ id: staff.id, name: staff.name }).from(staff).where(eq(staff.tenantId, tenantOf(ctx, input)));
       const staffNameById = new Map(staffRows.map((member) => [member.id, member.name]));
       const rows = await db.select({
         appointmentId: appointments.id,
@@ -1980,7 +1980,7 @@ const workflowReviewRouter = router({
         checkedInAt: appointments.checkedInAt,
         completedAt: appointments.completedAt,
       }).from(appointments).leftJoin(pets, eq(appointments.petId, pets.id)).leftJoin(clients, eq(appointments.clientId, clients.id)).where(and(
-        eq(appointments.tenantId, input.tenantId),
+        eq(appointments.tenantId, tenantOf(ctx, input)),
         gte(appointments.scheduledStart, range.start),
         lt(appointments.scheduledStart, range.endExclusive),
         sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
@@ -2020,11 +2020,11 @@ const clientsRouter = router({
       sortBy: z.enum(["firstName", "lastName", "email", "phone", "status", "createdAt"]).default("firstName"),
       sortDir: z.enum(["asc", "desc"]).default("asc"),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { clients: [], total: 0 };
       const offset = (input.page - 1) * input.pageSize;
-      const conditions = [eq(clients.tenantId, input.tenantId)];
+      const conditions = [eq(clients.tenantId, tenantOf(ctx, input))];
       if (input.status) conditions.push(eq(clients.status, input.status));
       if (input.search) {
         const term = `%${input.search}%`;
@@ -2139,7 +2139,7 @@ const clientsRouter = router({
    */
   messageContext: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), clientId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
 
@@ -2152,22 +2152,22 @@ const clientsRouter = router({
           COALESCE(SUM(CASE WHEN ${appointments.status} = 'no_show' THEN 1 ELSE 0 END), 0) AS noShow,
           COUNT(*) AS total
         FROM ${appointments}
-        WHERE ${appointments.tenantId} = ${input.tenantId}
+        WHERE ${appointments.tenantId} = ${tenantOf(ctx, input)}
           AND ${appointments.clientId} = ${input.clientId}
       `) as unknown as [[{ upcoming: number; finished: number; cancelled: number; noShow: number; total: number }]];
 
       const [[money]] = await db.execute(sql`
         SELECT
           COALESCE((SELECT SUM(${invoices.total}) FROM ${invoices}
-            WHERE ${invoices.tenantId} = ${input.tenantId}
+            WHERE ${invoices.tenantId} = ${tenantOf(ctx, input)}
               AND ${invoices.clientId} = ${input.clientId}
               AND ${invoices.status} = 'paid'), 0) AS invoicesPaid,
           COALESCE((SELECT SUM(${invoices.total}) FROM ${invoices}
-            WHERE ${invoices.tenantId} = ${input.tenantId}
+            WHERE ${invoices.tenantId} = ${tenantOf(ctx, input)}
               AND ${invoices.clientId} = ${input.clientId}
               AND ${invoices.status} NOT IN ('paid', 'cancelled')), 0) AS outstanding,
           COALESCE((SELECT SUM(${appointmentPayments.amount}) FROM ${appointmentPayments}
-            WHERE ${appointmentPayments.tenantId} = ${input.tenantId}
+            WHERE ${appointmentPayments.tenantId} = ${tenantOf(ctx, input)}
               AND ${appointmentPayments.clientId} = ${input.clientId}), 0) AS counterPaid
       `) as unknown as [[{ invoicesPaid: string; outstanding: string; counterPaid: string }]];
 
@@ -2217,10 +2217,10 @@ const clientsRouter = router({
       sortBy: z.enum(["firstName", "lastName", "email", "phone", "status", "createdAt"]).default("firstName"),
       sortDir: z.enum(["asc", "desc"]).default("asc"),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { rows: [] };
-      const conditions = [eq(clients.tenantId, input.tenantId)];
+      const conditions = [eq(clients.tenantId, tenantOf(ctx, input))];
       if (input.status) conditions.push(eq(clients.status, input.status));
       if (input.search) {
         const term = `%${input.search}%`;
@@ -2514,12 +2514,12 @@ const petsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) {
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
         throw new Error("This pet is not available to your salon staff profile");
       }
       const [pet] = await db.select({ id: pets.id, tenantId: pets.tenantId })
         .from(pets)
-        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, input.tenantId)))
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!pet) throw new Error("Pet not found");
       const recordedWeight = input.weightKg === null ? null : input.weightKg.toFixed(1);
@@ -2539,7 +2539,7 @@ const petsRouter = router({
       const [pet] = await db
         .select({ id: pets.id, tenantId: pets.tenantId, clientId: pets.clientId, name: pets.name, status: pets.status })
         .from(pets)
-        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, input.tenantId)))
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!pet) throw new Error("Pet not found");
       if (pet.status === "departed") return { success: true, alreadyRecorded: true, petName: pet.name };
@@ -2565,7 +2565,7 @@ const staffRouter = router({
       const db = await getDb();
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This staff directory is not available to your salon staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This staff directory is not available to your salon staff profile");
       return db.select({
         id: staff.id,
         tenantId: staff.tenantId,
@@ -2585,7 +2585,7 @@ const staffRouter = router({
         // staff list everywhere else.
       }).from(staff)
         .where(and(
-          eq(staff.tenantId, input.tenantId),
+          eq(staff.tenantId, tenantOf(ctx, input)),
           eq(staff.isActive, true),
           eq(staff.rostered, true),
         ))
@@ -2594,7 +2594,7 @@ const staffRouter = router({
 
   list: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select({
@@ -2613,7 +2613,7 @@ const staffRouter = router({
         // the edit dialog. Two sibling list procedures already returned it.
         photoUrl: staff.onlineProfilePhotoUrl,
         isActive: staff.isActive,
-      }).from(staff).where(eq(staff.tenantId, input.tenantId)).orderBy(asc(staff.name));
+      }).from(staff).where(eq(staff.tenantId, tenantOf(ctx, input))).orderBy(asc(staff.name));
     }),
 
   create: protectedProcedure
@@ -2639,10 +2639,10 @@ const staffRouter = router({
       dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
-      const [member] = await db.select().from(staff).where(and(eq(staff.id, input.staffId), eq(staff.tenantId, input.tenantId))).limit(1);
+      const [member] = await db.select().from(staff).where(and(eq(staff.id, input.staffId), eq(staff.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!member) return null;
       const brisbaneDateKey = (date: Date) => new Intl.DateTimeFormat("en-CA", {
         timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
@@ -2667,10 +2667,10 @@ const staffRouter = router({
         SELECT COUNT(*) as total,
           SUM(CASE WHEN scheduled_start >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) as last30,
           SUM(CASE WHEN scheduled_start >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) as last7
-        FROM appointments WHERE staff_id = ${input.staffId} AND tenant_id = ${input.tenantId}
+        FROM appointments WHERE staff_id = ${input.staffId} AND tenant_id = ${tenantOf(ctx, input)}
       `);
       const stats = (apptStats as any)[0]?.[0] ?? { total: 0, last30: 0, last7: 0 };
-      const reviewThresholdRows = await db.select().from(workflowTimingReviewThresholds).where(eq(workflowTimingReviewThresholds.tenantId, input.tenantId));
+      const reviewThresholdRows = await db.select().from(workflowTimingReviewThresholds).where(eq(workflowTimingReviewThresholds.tenantId, tenantOf(ctx, input)));
       const reviewRules = timingReviewRules(reviewThresholdRows);
       const timingRows = await db.execute(sql`
         SELECT
@@ -2683,7 +2683,7 @@ const staffRouter = router({
           AVG(CASE WHEN staff_id = ${input.staffId} AND checked_in_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= checked_in_at THEN FLOOR((completed_at - checked_in_at) / 60000) END) AS total_average_minutes,
           SUM(CASE WHEN staff_id = ${input.staffId} AND checked_in_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= checked_in_at THEN 1 ELSE 0 END) AS total_completed_count
         FROM appointments
-        WHERE tenant_id = ${input.tenantId}
+        WHERE tenant_id = ${tenantOf(ctx, input)}
           AND scheduled_start >= ${rangeStart}
           AND scheduled_start < ${rangeEndExclusive}
           AND status NOT IN ('cancelled', 'no_show')
@@ -2700,7 +2700,7 @@ const staffRouter = router({
           AVG(CASE WHEN staff_id = ${input.staffId} AND checked_in_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= checked_in_at THEN FLOOR((completed_at - checked_in_at) / 60000) END) AS total_average_minutes,
           SUM(CASE WHEN staff_id = ${input.staffId} AND checked_in_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= checked_in_at THEN 1 ELSE 0 END) AS total_completed_count
         FROM appointments
-        WHERE tenant_id = ${input.tenantId}
+        WHERE tenant_id = ${tenantOf(ctx, input)}
           AND scheduled_start >= ${rangeStart}
           AND scheduled_start < ${rangeEndExclusive}
           AND status NOT IN ('cancelled', 'no_show')
@@ -2725,7 +2725,7 @@ const staffRouter = router({
         FROM appointments a
         LEFT JOIN pets p ON a.pet_id = p.id
         LEFT JOIN clients c ON a.client_id = c.id
-        WHERE a.tenant_id = ${input.tenantId}
+        WHERE a.tenant_id = ${tenantOf(ctx, input)}
           AND a.scheduled_start >= ${rangeStart}
           AND a.scheduled_start < ${rangeEndExclusive}
           AND a.status NOT IN ('cancelled', 'no_show')
@@ -3108,7 +3108,7 @@ const staffRouter = router({
 
   listPortalInvitations: adminProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select({
@@ -3122,7 +3122,7 @@ const staffRouter = router({
         approvedAt: staffInvitations.approvedAt,
         portalStatus: staff.portalStatus,
       }).from(staffInvitations).leftJoin(staff, eq(staffInvitations.staffId, staff.id))
-        .where(eq(staffInvitations.tenantId, input.tenantId)).orderBy(desc(staffInvitations.createdAt));
+        .where(eq(staffInvitations.tenantId, tenantOf(ctx, input))).orderBy(desc(staffInvitations.createdAt));
     }),
 
   getAccessHistory: adminProcedure
@@ -3296,10 +3296,10 @@ const staffRouter = router({
 
   clockIn: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), staffId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(timesheets).values({ tenantId: input.tenantId, staffId: input.staffId, clockIn: new Date() });
+      await db.insert(timesheets).values({ tenantId: tenantOf(ctx, input), staffId: input.staffId, clockIn: new Date() });
       return { success: true };
     }),
 
@@ -3327,7 +3327,7 @@ const staffRouter = router({
       const db = await getDb();
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This calendar is not available to your salon staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This calendar is not available to your salon staff profile");
       return db
         .select({
           id: staffBlockouts.id,
@@ -3344,7 +3344,7 @@ const staffRouter = router({
         .from(staffBlockouts)
         .leftJoin(staff, eq(staffBlockouts.staffId, staff.id))
         .where(and(
-          eq(staffBlockouts.tenantId, input.tenantId),
+          eq(staffBlockouts.tenantId, tenantOf(ctx, input)),
           gte(staffBlockouts.blockoutDate, new Date(input.dateFrom)),
           lte(staffBlockouts.blockoutDate, new Date(input.dateTo)),
         ))
@@ -3367,7 +3367,7 @@ const staffRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await assertCanManageBlockout(db, ctx.user, input.tenantId, input.staffId);
+      await assertCanManageBlockout(db, ctx.user, tenantOf(ctx, input), input.staffId);
 
       const endDate = input.endDate ?? input.startDate;
       const span = rangeLengthInDays(input.startDate, endDate);
@@ -3386,7 +3386,7 @@ const staffRouter = router({
       // draw a second set of hatching over the days that were already done.
       const existing = await db.select({ blockoutDate: staffBlockouts.blockoutDate })
         .from(staffBlockouts).where(and(
-          eq(staffBlockouts.tenantId, input.tenantId),
+          eq(staffBlockouts.tenantId, tenantOf(ctx, input)),
           eq(staffBlockouts.staffId, input.staffId),
           gte(staffBlockouts.blockoutDate, blockoutDateValue(days[0])),
           lte(staffBlockouts.blockoutDate, blockoutDateValue(days[days.length - 1])),
@@ -3396,7 +3396,7 @@ const staffRouter = router({
 
       if (toCreate.length > 0) {
         await db.insert(staffBlockouts).values(toCreate.map(dateKey => ({
-          tenantId: input.tenantId,
+          tenantId: tenantOf(ctx, input),
           staffId: input.staffId,
           blockoutDate: blockoutDateValue(dateKey),
           isFullDay: input.isFullDay,
@@ -3434,13 +3434,13 @@ const staffRouter = router({
       if (!db) throw new Error("DB unavailable");
 
       const [row] = await db.select().from(staffBlockouts)
-        .where(and(eq(staffBlockouts.id, input.id), eq(staffBlockouts.tenantId, input.tenantId))).limit(1);
+        .where(and(eq(staffBlockouts.id, input.id), eq(staffBlockouts.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!row) throw new Error("That blocked-out time no longer exists");
-      await assertCanManageBlockout(db, ctx.user, input.tenantId, row.staffId);
+      await assertCanManageBlockout(db, ctx.user, tenantOf(ctx, input), row.staffId);
 
       const siblings = row.groupId
         ? await db.select().from(staffBlockouts).where(and(
-            eq(staffBlockouts.tenantId, input.tenantId),
+            eq(staffBlockouts.tenantId, tenantOf(ctx, input)),
             eq(staffBlockouts.groupId, row.groupId),
           )).orderBy(asc(staffBlockouts.blockoutDate))
         : [row];
@@ -3480,7 +3480,7 @@ const staffRouter = router({
       const adding = wantedKeys.filter(k => !have.has(k));
       if (adding.length > 0) {
         await db.insert(staffBlockouts).values(adding.map(dateKey => ({
-          tenantId: input.tenantId,
+          tenantId: tenantOf(ctx, input),
           staffId: row.staffId,
           blockoutDate: blockoutDateValue(dateKey),
           isFullDay, startTime, endTime, reason, groupId,
@@ -3506,13 +3506,13 @@ const staffRouter = router({
       if (!db) throw new Error("DB unavailable");
 
       const [row] = await db.select().from(staffBlockouts)
-        .where(and(eq(staffBlockouts.id, input.id), eq(staffBlockouts.tenantId, input.tenantId))).limit(1);
+        .where(and(eq(staffBlockouts.id, input.id), eq(staffBlockouts.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!row) return { success: true, removed: 0 };
-      await assertCanManageBlockout(db, ctx.user, input.tenantId, row.staffId);
+      await assertCanManageBlockout(db, ctx.user, tenantOf(ctx, input), row.staffId);
 
       if (input.wholeGroup && row.groupId) {
         const group = await db.select({ id: staffBlockouts.id }).from(staffBlockouts).where(and(
-          eq(staffBlockouts.tenantId, input.tenantId),
+          eq(staffBlockouts.tenantId, tenantOf(ctx, input)),
           eq(staffBlockouts.groupId, row.groupId),
         ));
         await db.delete(staffBlockouts).where(inArray(staffBlockouts.id, group.map(r => r.id)));
@@ -3537,10 +3537,10 @@ const membershipsRouter = router({
       sortBy: z.enum(["client", "membership", "tier", "price", "nextBilling", "status"]).default("client"),
       sortDir: z.enum(["asc", "desc"]).default("asc"),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { items: [], total: 0 };
-      const conditions = [eq(memberships.tenantId, input.tenantId)];
+      const conditions = [eq(memberships.tenantId, tenantOf(ctx, input))];
       if (input.status) conditions.push(eq(memberships.status, input.status));
       if (input.tier) conditions.push(eq(memberships.tier, input.tier));
       if (input.search) {
@@ -3613,7 +3613,7 @@ const membershipsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) {
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
         throw new Error("This membership setup is not available to your salon staff profile");
       }
       const [pet] = await db.select({
@@ -3622,7 +3622,7 @@ const membershipsRouter = router({
         tenantId: pets.tenantId,
         weightKg: pets.weightKg,
         weight: pets.weight,
-      }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, input.tenantId))).limit(1);
+      }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!pet || pet.clientId !== input.clientId) throw new Error("Pet does not belong to the selected client");
       const recordedWeight = pet.weightKg ?? pet.weight;
       const weightBand = getMembershipWeightBand(recordedWeight);
@@ -3650,7 +3650,7 @@ const membershipsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) {
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
         throw new Error("This membership setup is not available to your salon staff profile");
       }
       if (portalStaff && (input.paymentGateway !== "cash" || input.nextBillingDate)) {
@@ -3662,7 +3662,7 @@ const membershipsRouter = router({
         tenantId: pets.tenantId,
         weightKg: pets.weightKg,
         weight: pets.weight,
-      }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, input.tenantId))).limit(1);
+      }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!pet || pet.clientId !== input.clientId) throw new Error("Pet does not belong to the selected client");
       const membershipPackage = getMembershipPackageById(input.packageId);
       const recordedWeightBand = getMembershipWeightBand(pet.weightKg ?? pet.weight);
@@ -3674,7 +3674,7 @@ const membershipsRouter = router({
         throw new Error(recordedWeightBand ? "Choose a valid membership package for this dog's recorded weight" : "Choose a membership tier and approved weight band for this dog");
       }
       const [result] = await db.insert(memberships).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         clientId: input.clientId,
         petId: input.petId,
         name: membershipPackage.name,
@@ -3723,7 +3723,7 @@ const membershipsRouter = router({
           stripeSubscriptionId: memberships.stripeSubscriptionId,
         })
         .from(memberships)
-        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId)))
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!membership) throw new TRPCError({ code: "NOT_FOUND", message: "Membership not found" });
       if (membership.status === "cancelled" || membership.status === "expired") {
@@ -3783,7 +3783,7 @@ const membershipsRouter = router({
         })
         .from(memberships)
         .innerJoin(pets, eq(memberships.petId, pets.id))
-        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId)))
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!membership || membership.petId !== input.petId) throw new Error("Membership and pet do not match");
       if (membership.petStatus !== "departed") throw new Error("Record the pet as passed away before changing its membership");
@@ -3820,7 +3820,7 @@ const membershipsRouter = router({
           weight: pets.weight,
         })
         .from(pets)
-        .where(and(eq(pets.id, input.replacementPetId), eq(pets.tenantId, input.tenantId)))
+        .where(and(eq(pets.id, input.replacementPetId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!replacementPet || replacementPet.clientId !== membership.clientId || replacementPet.status !== "active") {
         throw new Error("Choose an active pet belonging to the same client");
@@ -3851,12 +3851,12 @@ const membershipsRouter = router({
       const db = await getDb();
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && input.tenantId !== portalStaff.tenantId) {
+      if (portalStaff && tenantOf(ctx, input) !== portalStaff.tenantId) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Client search is limited to your salon" });
       }
       if (input.search.length < 1) return [];
       const s = `%${input.search}%`;
-      const tenantId = portalStaff?.tenantId ?? input.tenantId;
+      const tenantId = portalStaff?.tenantId ?? tenantOf(ctx, input);
       const rows = await db
         .select({
           clientId: clients.id,
@@ -3886,7 +3886,7 @@ const membershipsRouter = router({
 
   getFailedPayments: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db
@@ -3905,7 +3905,7 @@ const membershipsRouter = router({
         .leftJoin(clients, eq(memberships.clientId, clients.id))
         .leftJoin(pets, eq(memberships.petId, pets.id))
         .where(and(
-          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.tenantId, tenantOf(ctx, input)),
           sql`${memberships.failedPaymentCount} > 0`
         ))
         .orderBy(desc(memberships.lastFailedPaymentAt));
@@ -3914,7 +3914,7 @@ const membershipsRouter = router({
   // Debt tracking: for each active membership, count paid billing cycles vs. completed grooms
   getDebtSummary: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       // Get all active memberships with client/pet info
@@ -3939,7 +3939,7 @@ const membershipsRouter = router({
         .leftJoin(clients, eq(memberships.clientId, clients.id))
         .leftJoin(pets, eq(memberships.petId, pets.id))
         .where(and(
-          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.tenantId, tenantOf(ctx, input)),
           sql`${memberships.status} IN ('active', 'paused', 'pending_payment')`
         ));
 
@@ -3981,7 +3981,7 @@ const membershipsRouter = router({
       debtGrooms: z.number(),
       pricePerGroom: z.string(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [m] = await db
@@ -3993,7 +3993,7 @@ const membershipsRouter = router({
       const subtotal = (input.debtGrooms * parseFloat(input.pricePerGroom)).toFixed(2);
       const invNum = `DEBT-${Date.now().toString(36).toUpperCase()}`;
       const [result] = await db.insert(invoices).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         clientId: m.clientId,
         invoiceNumber: invNum,
         subtotal,
@@ -4151,7 +4151,7 @@ const membershipsRouter = router({
           pricePerCycle: memberships.pricePerCycle,
         })
         .from(memberships)
-        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId)))
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!membership) throw new TRPCError({ code: "NOT_FOUND", message: "Membership not found" });
 
@@ -4163,7 +4163,7 @@ const membershipsRouter = router({
         paymentRetryScheduledAt: null,
         bookingSuspended: false,
         ...(liftable ? { status: "active" as const } : {}),
-      }).where(and(eq(memberships.id, membership.id), eq(memberships.tenantId, input.tenantId)));
+      }).where(and(eq(memberships.id, membership.id), eq(memberships.tenantId, tenantOf(ctx, input))));
 
       if (input.outcome === "written_off") {
         await db.insert(membershipLedgerEntries).values({
@@ -4212,7 +4212,7 @@ const membershipsRouter = router({
 
   getAccountsReceivable: adminProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const rows = await db.select({
@@ -4233,7 +4233,7 @@ const membershipsRouter = router({
       }).from(memberships)
         .innerJoin(clients, eq(memberships.clientId, clients.id))
         .innerJoin(pets, eq(memberships.petId, pets.id))
-        .where(eq(memberships.tenantId, input.tenantId));
+        .where(eq(memberships.tenantId, tenantOf(ctx, input)));
 
       return Promise.all(rows.map(async (membership) => {
         const [paymentStats] = await db.select({
@@ -4295,13 +4295,13 @@ const membershipsRouter = router({
       const [appointment] = await db.select({ id: appointments.id, clientId: appointments.clientId, petId: appointments.petId, workflowState: appointments.workflowState })
         .from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
       const [membership] = await db.select({ id: memberships.id, clientId: memberships.clientId, petId: memberships.petId })
-        .from(memberships).where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId))).limit(1);
+        .from(memberships).where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!membership || !appointment || appointment.workflowState !== "complete" || appointment.clientId !== membership.clientId || appointment.petId !== membership.petId) throw new Error("This completed groom does not belong to the selected membership");
       const [existing] = await db.select({ id: membershipLedgerEntries.id }).from(membershipLedgerEntries)
         .where(and(eq(membershipLedgerEntries.membershipId, input.membershipId), eq(membershipLedgerEntries.appointmentId, input.appointmentId), eq(membershipLedgerEntries.entryType, "groom_value"))).limit(1);
       if (existing) throw new Error("A delivered-groom value has already been recorded for this appointment");
       await db.insert(membershipLedgerEntries).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         membershipId: input.membershipId,
         appointmentId: input.appointmentId,
         entryType: "groom_value",
@@ -4328,10 +4328,10 @@ const membershipsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [membership] = await db.select({ id: memberships.id }).from(memberships)
-        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId))).limit(1);
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!membership) throw new Error("Membership not found");
       await db.insert(membershipLedgerEntries).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         membershipId: membership.id,
         entryType: "payment",
         amount: input.amount.toFixed(2),
@@ -4346,11 +4346,11 @@ const membershipsRouter = router({
 
   setBookingReviewHold: adminProcedure
     .input(z.object({ tenantId: z.number().default(1), membershipId: z.number(), hold: z.boolean() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [membership] = await db.select({ id: memberships.id }).from(memberships)
-        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId))).limit(1);
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!membership) throw new Error("Membership not found");
       await db.update(memberships).set({ bookingSuspended: input.hold }).where(eq(memberships.id, membership.id));
       return { success: true, hold: input.hold };
@@ -4363,7 +4363,7 @@ const membershipsRouter = router({
       if (!db) throw new Error("DB unavailable");
       const [membership] = await db.select({
         id: memberships.id, clientId: memberships.clientId, petId: memberships.petId, name: memberships.name, startedAt: memberships.startedAt,
-      }).from(memberships).where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, input.tenantId))).limit(1);
+      }).from(memberships).where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!membership) throw new Error("Membership not found");
       const [openInvoice] = await db.select({ invoiceNumber: invoices.invoiceNumber }).from(invoices)
         .where(and(eq(invoices.membershipId, membership.id), sql`${invoices.status} IN ('draft', 'sent', 'overdue')`)).limit(1);
@@ -4383,10 +4383,10 @@ const membershipsRouter = router({
       if (account.arrearsAmount <= 0) throw new Error("This membership has no invoicable arrears");
       const invoiceNumber = `MEM-AR-${Date.now().toString(36).toUpperCase()}`;
       const dueAt = new Date(Date.now() + input.dueInDays * 24 * 60 * 60 * 1000);
-      const [result] = await db.insert(invoices).values({ tenantId: input.tenantId, clientId: membership.clientId, membershipId: membership.id, invoiceNumber, subtotal: account.arrearsAmount.toFixed(2), taxAmount: "0", total: account.arrearsAmount.toFixed(2), status: "draft", dueAt, notes: `Membership arrears draft. Paid to date: $${account.paidToDate.toFixed(2)}. Completed groom value: $${account.groomValueDelivered.toFixed(2)}. Prepared for staff review; not sent automatically.` });
+      const [result] = await db.insert(invoices).values({ tenantId: tenantOf(ctx, input), clientId: membership.clientId, membershipId: membership.id, invoiceNumber, subtotal: account.arrearsAmount.toFixed(2), taxAmount: "0", total: account.arrearsAmount.toFixed(2), status: "draft", dueAt, notes: `Membership arrears draft. Paid to date: $${account.paidToDate.toFixed(2)}. Completed groom value: $${account.groomValueDelivered.toFixed(2)}. Prepared for staff review; not sent automatically.` });
       const invoiceId = Number((result as { insertId: number }).insertId);
       await db.insert(invoiceLineItems).values({ invoiceId, description: `Membership arrears — ${membership.name}`, quantity: "1", unitPrice: account.arrearsAmount.toFixed(2), lineTotal: account.arrearsAmount.toFixed(2) });
-      await db.insert(membershipLedgerEntries).values({ tenantId: input.tenantId, membershipId: membership.id, invoiceId, entryType: "debit_adjustment", amount: "0.00", source: "system", note: `Draft arrears invoice ${invoiceNumber} prepared by staff; no charge or client message sent.`, occurredAt: new Date(), createdByUserId: ctx.user.id });
+      await db.insert(membershipLedgerEntries).values({ tenantId: tenantOf(ctx, input), membershipId: membership.id, invoiceId, entryType: "debit_adjustment", amount: "0.00", source: "system", note: `Draft arrears invoice ${invoiceNumber} prepared by staff; no charge or client message sent.`, occurredAt: new Date(), createdByUserId: ctx.user.id });
       return { success: true, invoiceNumber, invoiceId, total: account.arrearsAmount };
     }),
 });
@@ -4427,18 +4427,18 @@ const membershipPlanInput = z.object({
 const storeCreditRouter = router({
   getBalance: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), clientId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { balance: "0.00" };
       const [row] = await db.select({ total: sql<string>`COALESCE(SUM(${storeCreditTransactions.amount}), 0)` })
         .from(storeCreditTransactions)
-        .where(and(eq(storeCreditTransactions.tenantId, input.tenantId), eq(storeCreditTransactions.clientId, input.clientId)));
+        .where(and(eq(storeCreditTransactions.tenantId, tenantOf(ctx, input)), eq(storeCreditTransactions.clientId, input.clientId)));
       return { balance: row?.total ?? "0.00" };
     }),
 
   getHistory: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), clientId: z.number(), limit: z.number().default(50) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select({
@@ -4452,7 +4452,7 @@ const storeCreditRouter = router({
         createdByName: users.name,
       }).from(storeCreditTransactions)
         .leftJoin(users, eq(storeCreditTransactions.createdByUserId, users.id))
-        .where(and(eq(storeCreditTransactions.tenantId, input.tenantId), eq(storeCreditTransactions.clientId, input.clientId)))
+        .where(and(eq(storeCreditTransactions.tenantId, tenantOf(ctx, input)), eq(storeCreditTransactions.clientId, input.clientId)))
         .orderBy(desc(storeCreditTransactions.createdAt))
         .limit(input.limit);
     }),
@@ -4470,7 +4470,7 @@ const storeCreditRouter = router({
       if (!db) throw new Error("DB unavailable");
       if (Number(input.amount) <= 0) throw new Error("Amount must be greater than zero");
       await db.insert(storeCreditTransactions).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         clientId: input.clientId,
         amount: input.amount,
         type: "credit_added",
@@ -4493,7 +4493,7 @@ const storeCreditRouter = router({
       if (!db) throw new Error("DB unavailable");
       if (Number(input.amount) === 0) throw new Error("Adjustment amount can't be zero");
       await db.insert(storeCreditTransactions).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         clientId: input.clientId,
         amount: input.amount,
         type: "adjustment",
@@ -4507,11 +4507,11 @@ const storeCreditRouter = router({
 const pricingRouter = router({
   listServices: adminProcedure
     .input(z.object({ tenantId: z.number().int().positive().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(pricingServices)
-        .where(eq(pricingServices.tenantId, input.tenantId))
+        .where(eq(pricingServices.tenantId, tenantOf(ctx, input)))
         .orderBy(asc(pricingServices.catalogueType), asc(pricingServices.sortOrder), asc(pricingServices.name));
     }),
   createService: adminProcedure
@@ -4554,20 +4554,20 @@ const pricingRouter = router({
     }),
   deleteService: adminProcedure
     .input(z.object({ tenantId: z.number().int().positive().default(1), id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const result = await db.delete(pricingServices).where(and(eq(pricingServices.id, input.id), eq(pricingServices.tenantId, input.tenantId)));
+      const result = await db.delete(pricingServices).where(and(eq(pricingServices.id, input.id), eq(pricingServices.tenantId, tenantOf(ctx, input))));
       if (result[0].affectedRows !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Catalogue item not found" });
       return { success: true };
     }),
   listMembershipPlans: adminProcedure
     .input(z.object({ tenantId: z.number().int().positive().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(membershipPlans)
-        .where(eq(membershipPlans.tenantId, input.tenantId))
+        .where(eq(membershipPlans.tenantId, tenantOf(ctx, input)))
         .orderBy(asc(membershipPlans.sortOrder), asc(membershipPlans.name));
     }),
   createMembershipPlan: adminProcedure
@@ -4604,10 +4604,10 @@ const pricingRouter = router({
     }),
   deleteMembershipPlan: adminProcedure
     .input(z.object({ tenantId: z.number().int().positive().default(1), id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const result = await db.delete(membershipPlans).where(and(eq(membershipPlans.id, input.id), eq(membershipPlans.tenantId, input.tenantId)));
+      const result = await db.delete(membershipPlans).where(and(eq(membershipPlans.id, input.id), eq(membershipPlans.tenantId, tenantOf(ctx, input))));
       if (result[0].affectedRows !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Membership plan not found" });
       return { success: true };
   }),
@@ -4621,10 +4621,10 @@ function assertPricingServiceAmount(input: { priceMode: "fixed" | "range" | "fro
 const retailRouter = router({
   list: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), search: z.string().optional() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      const conditions = [eq(retailProducts.tenantId, input.tenantId), eq(retailProducts.isActive, true)];
+      const conditions = [eq(retailProducts.tenantId, tenantOf(ctx, input)), eq(retailProducts.isActive, true)];
       if (input.search) conditions.push(like(retailProducts.name, `%${input.search}%`));
       return db.select().from(retailProducts).where(and(...conditions)).orderBy(asc(retailProducts.name));
     }),
@@ -4653,7 +4653,7 @@ const retailRouter = router({
 const analyticsRouter = router({
   averageGroomInterval: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { averageWeeks: null, medianWeeks: null, intervalCount: 0, returningPetCount: 0 };
 
@@ -4661,7 +4661,7 @@ const analyticsRouter = router({
         .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart })
         .from(appointments)
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           sql`${appointments.petId} IS NOT NULL`
@@ -4682,7 +4682,7 @@ const analyticsRouter = router({
    */
   dataYears: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { years: yearOptions(null, null) };
 
@@ -4692,14 +4692,14 @@ const analyticsRouter = router({
           latest: sql<number | null>`MAX(YEAR(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')))`,
         })
         .from(appointments)
-        .where(eq(appointments.tenantId, input.tenantId));
+        .where(eq(appointments.tenantId, tenantOf(ctx, input)));
 
       return { years: yearOptions(Number(row?.earliest) || null, Number(row?.latest) || null) };
     }),
 
   summary: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
       // Earned is what came in; expected is what was charged. They used to
@@ -4718,7 +4718,7 @@ const analyticsRouter = router({
         })
         .from(appointments)
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
@@ -4728,18 +4728,18 @@ const analyticsRouter = router({
         .select({ count: sql<number>`COUNT(*)` })
         .from(appointments)
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ));
       const [membershipCount] = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(memberships)
-        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"), eq(memberships.isTest, false)));
+        .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), eq(memberships.isTest, false)));
       const [clientCount] = await db
         .select({ count: sql<number>`COUNT(*)` })
         .from(clients)
-        .where(and(eq(clients.tenantId, input.tenantId), eq(clients.status, "active")));
+        .where(and(eq(clients.tenantId, tenantOf(ctx, input)), eq(clients.status, "active")));
       // Completed appointments with no price contribute 0 to the revenue sum.
       // COALESCE hides that, so the total looks precise while silently
       // understating. Return the count so the UI can say so out loud.
@@ -4747,7 +4747,7 @@ const analyticsRouter = router({
         .select({ count: sql<number>`COUNT(*)` })
         .from(appointments)
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           isNull(appointments.price),
@@ -4770,11 +4770,11 @@ const analyticsRouter = router({
 
   financialBreakdown: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { byServiceType: [], membershipRevenue: 0, oneOffRevenue: 0, totalRevenue: 0 };
       const range = [
-        eq(appointments.tenantId, input.tenantId),
+        eq(appointments.tenantId, tenantOf(ctx, input)),
         eq(appointments.workflowState, "complete"),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
@@ -4809,7 +4809,7 @@ const analyticsRouter = router({
 
   workflowTiming: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { stages: [], sampleSize: 0 };
       const rows = await db.select({
@@ -4824,7 +4824,7 @@ const analyticsRouter = router({
         pickedUpAt: appointments.pickedUpAt,
         completedAt: appointments.completedAt,
       }).from(appointments).where(and(
-        eq(appointments.tenantId, input.tenantId),
+        eq(appointments.tenantId, tenantOf(ctx, input)),
         eq(appointments.workflowState, "complete"),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
@@ -4866,7 +4866,7 @@ const analyticsRouter = router({
 
   membershipBreakdown: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { tiers: [], totalWeeklyRevenue: 0, totalMonthlyRevenue: 0 };
 
@@ -4882,7 +4882,7 @@ const analyticsRouter = router({
         })
         .from(memberships)
         .leftJoin(clients, eq(memberships.clientId, clients.id))
-        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"), eq(memberships.isTest, false)));
+        .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), eq(memberships.isTest, false)));
 
       // Group by tier
       const tierMap: Record<string, { count: number; weeklyRevenue: number; names: string[] }> = {};
@@ -4923,7 +4923,7 @@ const analyticsRouter = router({
 
   staffProductivity: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db
@@ -4936,7 +4936,7 @@ const analyticsRouter = router({
         .from(appointments)
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ))
@@ -4946,7 +4946,7 @@ const analyticsRouter = router({
 
   membershipAttributedRevenue: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { appointmentRevenue: 0, memberAttributedRevenue: 0, membershipRunRateWeekly: 0, activeMembers: 0, completedAppts: 0, membershipAppts: 0, avgTicket: 0 };
 
@@ -4958,7 +4958,7 @@ const analyticsRouter = router({
         .select({ total: sql<string>`COALESCE(SUM(${appointments.price}), 0)`, count: sql<number>`COUNT(*)` })
         .from(appointments)
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
@@ -4978,11 +4978,11 @@ const analyticsRouter = router({
         .innerJoin(memberships, and(
           eq(memberships.clientId, appointments.clientId),
           eq(memberships.status, "active"),
-          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.tenantId, tenantOf(ctx, input)),
           eq(memberships.isTest, false)
         ))
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
@@ -4993,7 +4993,7 @@ const analyticsRouter = router({
       const memberRows = await db
         .select({ pricePerCycle: memberships.pricePerCycle, billingCycleWeeks: memberships.billingCycleWeeks })
         .from(memberships)
-        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"), eq(memberships.isTest, false)));
+        .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), eq(memberships.isTest, false)));
 
       let totalWeeklyMemberRevenue = 0;
       for (const m of memberRows) {
@@ -5040,7 +5040,7 @@ const analyticsRouter = router({
         .from(membershipPayments)
         .innerJoin(memberships, eq(membershipPayments.membershipId, memberships.id))
         .where(and(
-          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.tenantId, tenantOf(ctx, input)),
           eq(memberships.isTest, false),
           eq(membershipPayments.status, "paid"),
           gte(membershipPayments.paidAt, dateFrom),
@@ -5067,7 +5067,7 @@ const analyticsRouter = router({
 const analyticsRouterExtended = router({
   revenueTimeSeries: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const dateFrom = new Date(input.dateFrom);
@@ -5078,7 +5078,7 @@ const analyticsRouterExtended = router({
         .select({ scheduledStart: appointments.scheduledStart, price: appointments.price })
         .from(appointments)
         .where(and(
-          eq(appointments.tenantId, input.tenantId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
@@ -5088,7 +5088,7 @@ const analyticsRouterExtended = router({
       const memberRows = await db
         .select({ pricePerCycle: memberships.pricePerCycle, billingCycleWeeks: memberships.billingCycleWeeks })
         .from(memberships)
-        .where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active")));
+        .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active")));
       let totalWeeklyMemberRevenue = 0;
       for (const m of memberRows) {
         const price = parseFloat(m.pricePerCycle ?? "0");
@@ -5180,10 +5180,10 @@ const groomStyleNotesRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffPetAccess(db, ctx.user, input.petId);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon is not available to your staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your staff profile");
       if (input.appointmentId) await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId, input.petId);
       await db.insert(groomStyleNotes).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         petId: input.petId,
         appointmentId: input.appointmentId ?? null,
         staffId: portalStaff?.id ?? input.staffId ?? null,
@@ -5384,7 +5384,7 @@ const groomingReportsRouter = router({
         .limit(1);
       const values = {
         petId: input.petId,
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         overallRating: input.overallRating,
         mood: input.mood,
         additionalNote: input.additionalNote,
@@ -5518,7 +5518,7 @@ const settingsRouter = router({
       const db = await getDb();
       if (!db) return null;
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && portalStaff.tenantId !== input.tenantId) throw new Error("This salon branding is not available to your staff profile");
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon branding is not available to your staff profile");
       const [t] = await db
         .select({
           name: tenants.name,
@@ -5537,7 +5537,7 @@ const settingsRouter = router({
           stripeConnectedAt: tenants.stripeConnectedAt,
         })
         .from(tenants)
-        .where(eq(tenants.id, input.tenantId))
+        .where(eq(tenants.id, tenantOf(ctx, input)))
         .limit(1);
       return t ?? null;
     }),
@@ -5568,7 +5568,7 @@ const settingsRouter = router({
         brandPrimary: input.brandPrimary,
         brandAccent: input.brandAccent,
         brandSidebar: input.brandSidebar,
-      }).where(eq(tenants.id, input.tenantId));
+      }).where(eq(tenants.id, tenantOf(ctx, input)));
       return { success: true };
   }),
 });
@@ -5577,16 +5577,16 @@ const settingsRouter = router({
 const stripeBillingRouter = router({
   getStatus: adminProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const [tenant] = await db.select({ mode: tenants.stripeBillingMode, connectedAt: tenants.stripeConnectedAt }).from(tenants).where(eq(tenants.id, input.tenantId)).limit(1);
+      const [tenant] = await db.select({ mode: tenants.stripeBillingMode, connectedAt: tenants.stripeConnectedAt }).from(tenants).where(eq(tenants.id, tenantOf(ctx, input))).limit(1);
       const [membershipStats] = await db.select({
         activeMemberships: sql<number>`SUM(CASE WHEN ${memberships.status} = 'active' THEN 1 ELSE 0 END)`,
         moegoLinkedMemberships: sql<number>`SUM(CASE WHEN ${memberships.moegoMembershipId} IS NOT NULL THEN 1 ELSE 0 END)`,
         stripeMappedSubscriptions: sql<number>`SUM(CASE WHEN ${memberships.stripeSubscriptionId} IS NOT NULL THEN 1 ELSE 0 END)`,
-      }).from(memberships).where(eq(memberships.tenantId, input.tenantId));
-      const [clientStats] = await db.select({ stripeMappedCustomers: sql<number>`SUM(CASE WHEN ${clients.stripeCustomerId} IS NOT NULL THEN 1 ELSE 0 END)` }).from(clients).where(eq(clients.tenantId, input.tenantId));
+      }).from(memberships).where(eq(memberships.tenantId, tenantOf(ctx, input)));
+      const [clientStats] = await db.select({ stripeMappedCustomers: sql<number>`SUM(CASE WHEN ${clients.stripeCustomerId} IS NOT NULL THEN 1 ELSE 0 END)` }).from(clients).where(eq(clients.tenantId, tenantOf(ctx, input)));
       const counts = {
         activeMemberships: Number(membershipStats?.activeMemberships ?? 0),
         moegoLinkedMemberships: Number(membershipStats?.moegoLinkedMemberships ?? 0),
@@ -5597,7 +5597,7 @@ const stripeBillingRouter = router({
     }),
   getReconciliationPreview: adminProcedure
     .input(z.object({ tenantId: z.number().default(1), limit: z.number().min(1).max(100).default(25) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select({
@@ -5609,7 +5609,7 @@ const stripeBillingRouter = router({
         clientId: clients.id,
         clientName: sql<string>`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
         stripeCustomerId: clients.stripeCustomerId,
-      }).from(memberships).innerJoin(clients, eq(memberships.clientId, clients.id)).where(and(eq(memberships.tenantId, input.tenantId), eq(memberships.status, "active"))).limit(input.limit);
+      }).from(memberships).innerJoin(clients, eq(memberships.clientId, clients.id)).where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"))).limit(input.limit);
     }),
   createInvoiceCheckout: adminProcedure
     .input(z.object({ tenantId: z.number().default(1), invoiceId: z.number() }))
@@ -5620,7 +5620,7 @@ const stripeBillingRouter = router({
         id: invoices.id, invoiceNumber: invoices.invoiceNumber, total: invoices.total, status: invoices.status,
         tenantId: invoices.tenantId, membershipId: invoices.membershipId, clientId: invoices.clientId,
         clientFirstName: clients.firstName, clientLastName: clients.lastName, clientEmail: clients.email,
-      }).from(invoices).innerJoin(clients, eq(invoices.clientId, clients.id)).where(and(eq(invoices.id, input.invoiceId), eq(invoices.tenantId, input.tenantId))).limit(1);
+      }).from(invoices).innerJoin(clients, eq(invoices.clientId, clients.id)).where(and(eq(invoices.id, input.invoiceId), eq(invoices.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!invoice) throw new Error("Invoice not found");
       if (invoice.status === "paid" || invoice.status === "cancelled") throw new Error("This invoice is no longer available for payment");
       const origin = typeof ctx.req.headers.origin === "string" ? ctx.req.headers.origin : getAppBaseUrl();
@@ -5866,7 +5866,7 @@ const onlineBookingRouter = router({
   getSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
-    const [tenant] = await db.select({ onlineBookingEnabled: tenants.onlineBookingEnabled, onlineBathOnlyDailyLimit: tenants.onlineBathOnlyDailyLimit, onlineBathCapacityPerSlot: tenants.onlineBathCapacityPerSlot, onlineBookingSlotMinutes: tenants.onlineBookingSlotMinutes, onlineBookingLeadHours: tenants.onlineBookingLeadHours }).from(tenants).where(eq(tenants.id, input.tenantId)).limit(1);
+    const [tenant] = await db.select({ onlineBookingEnabled: tenants.onlineBookingEnabled, onlineBathOnlyDailyLimit: tenants.onlineBathOnlyDailyLimit, onlineBathCapacityPerSlot: tenants.onlineBathCapacityPerSlot, onlineBookingSlotMinutes: tenants.onlineBookingSlotMinutes, onlineBookingLeadHours: tenants.onlineBookingLeadHours }).from(tenants).where(eq(tenants.id, tenantOf(ctx, input))).limit(1);
     return tenant;
   }),
   updateSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1), onlineBookingEnabled: z.boolean().optional(), onlineBathOnlyDailyLimit: z.number().int().min(0).max(30).optional(), onlineBathCapacityPerSlot: z.number().int().min(1).max(20).optional(), onlineBookingSlotMinutes: z.number().int().min(15).max(120).optional(), onlineBookingLeadHours: z.number().int().min(0).max(336).optional() })).mutation(async ({ input, ctx }) => {
@@ -5883,7 +5883,7 @@ const onlineBookingRouter = router({
   listPreviewGroomerProfiles: protectedProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     const db = await getDb(); if (!db) return [];
-    return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl, bio: staff.onlineBio, services: staff.onlineServices, maxDogsPerSlot: staff.onlineMaxDogsPerSlot }).from(staff).where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true))).orderBy(asc(staff.name));
+    return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl, bio: staff.onlineBio, services: staff.onlineServices, maxDogsPerSlot: staff.onlineMaxDogsPerSlot }).from(staff).where(and(eq(staff.tenantId, tenantOf(ctx, input)), eq(staff.isActive, true), eq(staff.onlineBookable, true))).orderBy(asc(staff.name));
   }),
   listAvailableSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
     return listAvailableOnlineSlots(input);
@@ -5968,19 +5968,19 @@ const onlineBookingRouter = router({
     const capacity = await checkOnlineCapacity(input, { preview: true }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
     const email = input.email?.trim().toLowerCase() || null;
     const identity = email ? or(eq(clients.email, email), eq(clients.phone, input.phone)) : eq(clients.phone, input.phone);
-    let [client] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.tenantId, input.tenantId), identity)).limit(1);
+    let [client] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.tenantId, tenantOf(ctx, input)), identity)).limit(1);
     if (!client) {
-      const [created] = await db.insert(clients).values({ tenantId: input.tenantId, firstName: input.firstName, lastName: input.lastName, phone: input.phone, email, status: "active" });
+      const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), firstName: input.firstName, lastName: input.lastName, phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
-    const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(eq(pets.tenantId, input.tenantId), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
     let petId = existingPet?.id;
     if (!petId) {
-      const [createdPet] = await db.insert(pets).values({ tenantId: input.tenantId, clientId: client.id, name: input.petName, breed: input.breed || null, weightKg: String(input.weightKg), weight: String(input.weightKg) });
+      const [createdPet] = await db.insert(pets).values({ tenantId: tenantOf(ctx, input), clientId: client.id, name: input.petName, breed: input.breed || null, weightKg: String(input.weightKg), weight: String(input.weightKg) });
       petId = (createdPet as any).insertId as number;
     }
     const notes = buildOnlineBookingNotes({ notes: input.notes, sizeLabel: weightBand.label, weightKg: input.weightKg, preview: true });
-    const [result] = await db.insert(appointments).values({ tenantId: input.tenantId, clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, status: "pending", workflowState: "scheduled" });
+    const [result] = await db.insert(appointments).values({ tenantId: tenantOf(ctx, input), clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, status: "pending", workflowState: "scheduled" });
     return { success: true, appointmentId: (result as any).insertId as number, preview: true };
   }),
   // Returns all MoeGo pet IDs stored in Groomigo — used by the pet-code extraction script.
@@ -6000,11 +6000,11 @@ const onlineBookingRouter = router({
 const migrationRouter = router({
   listJobs: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select().from(migrationJobs)
-        .where(eq(migrationJobs.tenantId, input.tenantId))
+        .where(eq(migrationJobs.tenantId, tenantOf(ctx, input)))
         .orderBy(desc(migrationJobs.createdAt));
     }),
 
@@ -6013,10 +6013,10 @@ const migrationRouter = router({
       tenantId: z.number().default(1),
       type: z.enum(["csv_import", "moego_extract"]),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(migrationJobs).values({ tenantId: input.tenantId, type: input.type });
+      await db.insert(migrationJobs).values({ tenantId: tenantOf(ctx, input), type: input.type });
       return { success: true };
     }),
 
@@ -6032,7 +6032,7 @@ const migrationRouter = router({
         moegoClientId: z.string().optional(),
       })),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await db.update(migrationJobs).set({ status: "running", startedAt: new Date(), totalRecords: input.records.length }).where(eq(migrationJobs.id, input.jobId));
@@ -6041,7 +6041,7 @@ const migrationRouter = router({
       const errorMessages: string[] = [];
       for (const rec of input.records) {
         try {
-          await db.insert(clients).values({ tenantId: input.tenantId, ...rec }).onDuplicateKeyUpdate({ set: { updatedAt: new Date() } });
+          await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...rec }).onDuplicateKeyUpdate({ set: { updatedAt: new Date() } });
           processed++;
         } catch (e: unknown) {
           errors++;
@@ -6076,7 +6076,7 @@ const migrationRouter = router({
         })),
       })),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       let updated = 0;
@@ -6084,7 +6084,7 @@ const migrationRouter = router({
       for (const { moegoPetId, petCodes } of input.records) {
         const result = await db.update(pets)
           .set({ moeGoPetCodes: petCodes, updatedAt: new Date() })
-          .where(and(eq(pets.tenantId, input.tenantId), eq(pets.moegoClientId, moegoPetId)));
+          .where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.moegoClientId, moegoPetId)));
         // affectedRows > 0 means at least one pet was matched & updated
         const affected = (result as any)?.[0]?.affectedRows ?? (Array.isArray(result) ? result[0]?.affectedRows : 0) ?? 0;
         if (affected > 0) updated++;
@@ -6098,7 +6098,7 @@ const migrationRouter = router({
 const emailCampaignsRouter = router({
   list: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db
@@ -6118,7 +6118,7 @@ const emailCampaignsRouter = router({
           updatedAt: emailCampaigns.updatedAt,
         })
         .from(emailCampaigns)
-        .where(eq(emailCampaigns.tenantId, input.tenantId))
+        .where(eq(emailCampaigns.tenantId, tenantOf(ctx, input)))
         .orderBy(desc(emailCampaigns.createdAt));
     }),
 
@@ -6145,11 +6145,11 @@ const emailCampaignsRouter = router({
       bodyText: z.string().optional(),
       audienceFilter: z.string().optional(), // JSON string
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [result] = await db.insert(emailCampaigns).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         name: input.name,
         subject: input.subject,
         previewText: input.previewText ?? null,
@@ -6202,7 +6202,7 @@ const emailCampaignsRouter = router({
       tenantId: z.number().default(1),
       audienceFilter: z.string(), // JSON: { type: "all_active" | "membership_holders" | "inactive_8w" | "inactive_12w" | "all_clients" }
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { count: 0, sampleNames: [] };
 
@@ -6213,11 +6213,11 @@ const emailCampaignsRouter = router({
       const unsubRows = await db
         .select({ email: emailUnsubscribes.email })
         .from(emailUnsubscribes)
-        .where(eq(emailUnsubscribes.tenantId, input.tenantId));
+        .where(eq(emailUnsubscribes.tenantId, tenantOf(ctx, input)));
       const unsubEmails = new Set(unsubRows.map(r => r.email.toLowerCase()));
 
       let conditions: ReturnType<typeof and>[] = [
-        eq(clients.tenantId, input.tenantId) as any,
+        eq(clients.tenantId, tenantOf(ctx, input)) as any,
       ];
 
       if (filter.type === "all_active") {
@@ -6246,7 +6246,7 @@ const emailCampaignsRouter = router({
           })
           .from(clients)
           .innerJoin(memberships, and(eq(memberships.clientId, clients.id), eq(memberships.status, "active")))
-          .where(eq(clients.tenantId, input.tenantId));
+          .where(eq(clients.tenantId, tenantOf(ctx, input)));
       } else {
         rows = await db
           .select({
@@ -6284,7 +6284,7 @@ const emailCampaignsRouter = router({
       tenantId: z.number().default(1),
       campaignId: z.number(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
 
@@ -6300,7 +6300,7 @@ const emailCampaignsRouter = router({
       const unsubRows = await db
         .select({ email: emailUnsubscribes.email })
         .from(emailUnsubscribes)
-        .where(eq(emailUnsubscribes.tenantId, input.tenantId));
+        .where(eq(emailUnsubscribes.tenantId, tenantOf(ctx, input)));
       const unsubEmails = new Set(unsubRows.map(r => r.email.toLowerCase()));
 
       // Determine audience
@@ -6319,23 +6319,23 @@ const emailCampaignsRouter = router({
           })
           .from(clients)
           .innerJoin(memberships, and(eq(memberships.clientId, clients.id), eq(memberships.status, "active")))
-          .where(eq(clients.tenantId, input.tenantId));
+          .where(eq(clients.tenantId, tenantOf(ctx, input)));
       } else if (filter.type === "inactive_8w" || filter.type === "inactive_12w") {
         audienceRows = await db
           .select({ id: clients.id, firstName: clients.firstName, lastName: clients.lastName, email: clients.email })
           .from(clients)
-          .where(and(eq(clients.tenantId, input.tenantId), eq(clients.status, "inactive")));
+          .where(and(eq(clients.tenantId, tenantOf(ctx, input)), eq(clients.status, "inactive")));
       } else if (filter.type === "all_active") {
         audienceRows = await db
           .select({ id: clients.id, firstName: clients.firstName, lastName: clients.lastName, email: clients.email })
           .from(clients)
-          .where(and(eq(clients.tenantId, input.tenantId), eq(clients.status, "active")));
+          .where(and(eq(clients.tenantId, tenantOf(ctx, input)), eq(clients.status, "active")));
       } else {
         // all_clients
         audienceRows = await db
           .select({ id: clients.id, firstName: clients.firstName, lastName: clients.lastName, email: clients.email })
           .from(clients)
-          .where(eq(clients.tenantId, input.tenantId));
+          .where(eq(clients.tenantId, tenantOf(ctx, input)));
       }
 
       // Filter out no-email and unsubscribed
@@ -6356,7 +6356,7 @@ const emailCampaignsRouter = router({
       for (const recipient of eligible) {
         if (!recipient.email) continue;
         // Build unsubscribe token (simple base64 of email+tenantId)
-        const unsubToken = Buffer.from(`${input.tenantId}:${recipient.email}`).toString("base64url");
+        const unsubToken = Buffer.from(`${tenantOf(ctx, input)}:${recipient.email}`).toString("base64url");
         const unsubLink = `${unsubscribeBaseUrl}/unsubscribe?token=${unsubToken}`;
 
         // Inject unsubscribe footer into HTML
@@ -6528,12 +6528,12 @@ const smsRouter = router({
       body: z.string().min(1).max(1600),
       type: z.enum(["reminder", "confirmation", "ready_pickup", "payment_failed", "custom", "campaign"]).default("custom"),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      const result = await sendSms(input.toNumber, input.body, { tenantId: input.tenantId });
+      const result = await sendSms(input.toNumber, input.body, { tenantId: tenantOf(ctx, input) });
       if (db) {
         await db.insert(smsLogs).values({
-          tenantId: input.tenantId,
+          tenantId: tenantOf(ctx, input),
           clientId: input.clientId,
           appointmentId: input.appointmentId,
           toNumber: input.toNumber,
@@ -6556,7 +6556,7 @@ const smsRouter = router({
       templateType: z.enum(["reminder", "confirmation", "ready_pickup", "payment_failed", "custom"]),
       customMessage: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [client] = await db.select({ firstName: clients.firstName, phone: clients.phone }).from(clients).where(eq(clients.id, input.clientId)).limit(1);
@@ -6576,17 +6576,17 @@ const smsRouter = router({
       } else {
         body = input.customMessage ?? "";
       }
-      const result = await sendSms(client.phone, body, { tenantId: input.tenantId });
-      await db.insert(smsLogs).values({ tenantId: input.tenantId, clientId: input.clientId, appointmentId: input.appointmentId, toNumber: client.phone, body, twilioSid: result.sid, status: result.success ? "sent" : "failed", type: input.templateType, direction: "outbound", errorMessage: result.error });
+      const result = await sendSms(client.phone, body, { tenantId: tenantOf(ctx, input) });
+      await db.insert(smsLogs).values({ tenantId: tenantOf(ctx, input), clientId: input.clientId, appointmentId: input.appointmentId, toNumber: client.phone, body, twilioSid: result.sid, status: result.success ? "sent" : "failed", type: input.templateType, direction: "outbound", errorMessage: result.error });
       return result;
     }),
 
   getLogs: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(50), clientId: z.number().optional() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      const conditions = [eq(smsLogs.tenantId, input.tenantId)];
+      const conditions = [eq(smsLogs.tenantId, tenantOf(ctx, input))];
       if (input.clientId) conditions.push(eq(smsLogs.clientId, input.clientId));
       return db.select({
         id: smsLogs.id, toNumber: smsLogs.toNumber, body: smsLogs.body,
@@ -6621,7 +6621,7 @@ const smsRouter = router({
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
       }).from(smsLogs)
         .leftJoin(clients, eq(smsLogs.clientId, clients.id))
-        .where(eq(smsLogs.tenantId, input.tenantId))
+        .where(eq(smsLogs.tenantId, tenantOf(ctx, input)))
         .orderBy(desc(smsLogs.sentAt))
         .limit(1000);
 
@@ -6664,7 +6664,7 @@ const smsRouter = router({
       if (!db) throw new Error("Database unavailable");
       if (!input.clientId && !input.toNumber) return { success: true };
       const conditions = [
-        eq(smsLogs.tenantId, input.tenantId),
+        eq(smsLogs.tenantId, tenantOf(ctx, input)),
         eq(smsLogs.direction, "inbound" as const),
         isNull(smsLogs.readAt),
       ];
@@ -6706,11 +6706,11 @@ const smsRouter = router({
       if (input.starred) {
         // Starring twice is not an error; the unique key makes it a no-op.
         await db.insert(messageThreadStars)
-          .values({ tenantId: input.tenantId, threadKey: input.threadKey, starredByUserId: ctx.user.id })
+          .values({ tenantId: tenantOf(ctx, input), threadKey: input.threadKey, starredByUserId: ctx.user.id })
           .onDuplicateKeyUpdate({ set: { starredByUserId: ctx.user.id } });
       } else {
         await db.delete(messageThreadStars).where(and(
-          eq(messageThreadStars.tenantId, input.tenantId),
+          eq(messageThreadStars.tenantId, tenantOf(ctx, input)),
           eq(messageThreadStars.threadKey, input.threadKey),
         ));
       }
@@ -6720,12 +6720,12 @@ const smsRouter = router({
   /** The starred thread keys, for the list to sort and badge by. */
   getStarredThreads: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [] as string[];
       const rows = await db.select({ threadKey: messageThreadStars.threadKey })
         .from(messageThreadStars)
-        .where(eq(messageThreadStars.tenantId, input.tenantId));
+        .where(eq(messageThreadStars.tenantId, tenantOf(ctx, input)));
       return rows.map((r) => r.threadKey);
     }),
 
@@ -6745,7 +6745,7 @@ const smsRouter = router({
       const validated = validateAudience(input.audience);
       if (!validated.ok) return { count: 0, sample: [] as string[], error: validated.error };
 
-      const rows = await massTextRecipients(db, input.tenantId, validated.audience);
+      const rows = await massTextRecipients(db, tenantOf(ctx, input), validated.audience);
       return {
         count: rows.length,
         sample: rows.slice(0, 5).map((r) => `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.phone),
@@ -6799,7 +6799,7 @@ const smsRouter = router({
       const [existing] = await db.select({ id: massTextBatches.id, body: massTextBatches.body })
         .from(massTextBatches)
         .where(and(
-          eq(massTextBatches.tenantId, input.tenantId),
+          eq(massTextBatches.tenantId, tenantOf(ctx, input)),
           eq(massTextBatches.requestId, input.requestId),
         ))
         .limit(1);
@@ -6814,7 +6814,7 @@ const smsRouter = router({
         }
         batchId = existing.id;
       } else {
-        const recipients = await massTextRecipients(db, input.tenantId, validated.audience);
+        const recipients = await massTextRecipients(db, tenantOf(ctx, input), validated.audience);
         const guard = guardSend({
           body,
           recipientCount: recipients.length,
@@ -6823,7 +6823,7 @@ const smsRouter = router({
         if (!guard.ok) throw new TRPCError({ code: "BAD_REQUEST", message: guard.error });
 
         const [inserted] = await db.insert(massTextBatches).values({
-          tenantId: input.tenantId,
+          tenantId: tenantOf(ctx, input),
           requestId: input.requestId,
           body,
           audience: JSON.stringify(validated.audience),
@@ -6852,7 +6852,7 @@ const smsRouter = router({
       let sent = 0;
       let failed = 0;
       for (const row of pending) {
-        const result = await sendSms(row.phone, body, { tenantId: input.tenantId });
+        const result = await sendSms(row.phone, body, { tenantId: tenantOf(ctx, input) });
         if (result.success) sent += 1; else failed += 1;
 
         await db.update(massTextRecipientRows).set({
@@ -6864,7 +6864,7 @@ const smsRouter = router({
         // A failure to log must not abandon the people still waiting.
         try {
           await db.insert(smsLogs).values({
-            tenantId: input.tenantId,
+            tenantId: tenantOf(ctx, input),
             clientId: row.clientId,
             toNumber: row.phone,
             body,
@@ -6896,13 +6896,13 @@ const smsRouter = router({
       await db.update(smsLogs)
         .set({ readAt: now, readByUserId: ctx.user.id })
         .where(and(
-          eq(smsLogs.tenantId, input.tenantId),
+          eq(smsLogs.tenantId, tenantOf(ctx, input)),
           eq(smsLogs.direction, "inbound"),
           isNull(smsLogs.readAt),
         ));
       await db.update(missedCalls)
         .set({ readAt: now, readByUserId: ctx.user.id })
-        .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)));
+        .where(and(eq(missedCalls.tenantId, tenantOf(ctx, input)), isNull(missedCalls.readAt)));
       return { marked: true };
     }),
 
@@ -6921,11 +6921,11 @@ const smsRouter = router({
         .leftJoin(clients, eq(smsLogs.clientId, clients.id))
         // Read items stay listed: a notification that vanishes on click is
         // one nobody can be held to. The count below still counts unread.
-        .where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.direction, "inbound")))
+        .where(and(eq(smsLogs.tenantId, tenantOf(ctx, input)), eq(smsLogs.direction, "inbound")))
         .orderBy(desc(smsLogs.sentAt))
         .limit(input.limit);
       const [{ count: messageCount }] = await db.select({ count: sql<number>`count(*)` }).from(smsLogs)
-        .where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.direction, "inbound"), isNull(smsLogs.readAt)));
+        .where(and(eq(smsLogs.tenantId, tenantOf(ctx, input)), eq(smsLogs.direction, "inbound"), isNull(smsLogs.readAt)));
 
       const unreadCalls = await db.select({
         id: missedCalls.id, transcriptText: missedCalls.transcriptText, receivedAt: missedCalls.receivedAt,
@@ -6936,11 +6936,11 @@ const smsRouter = router({
         readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${missedCalls.readByUserId} LIMIT 1)`,
       }).from(missedCalls)
         .leftJoin(clients, eq(missedCalls.clientId, clients.id))
-        .where(eq(missedCalls.tenantId, input.tenantId))
+        .where(eq(missedCalls.tenantId, tenantOf(ctx, input)))
         .orderBy(desc(missedCalls.receivedAt))
         .limit(input.limit);
       const [{ count: callCount }] = await db.select({ count: sql<number>`count(*)` }).from(missedCalls)
-        .where(and(eq(missedCalls.tenantId, input.tenantId), isNull(missedCalls.readAt)));
+        .where(and(eq(missedCalls.tenantId, tenantOf(ctx, input)), isNull(missedCalls.readAt)));
 
       // Who read a notification is management information: Lauren and Andy
       // only. Filtered here, not in the UI — hiding it client-side would
@@ -6984,7 +6984,7 @@ const smsRouter = router({
           .set({ readAt: now, readByUserId: ctx.user.id })
           .where(and(
             eq(missedCalls.id, input.id),
-            eq(missedCalls.tenantId, input.tenantId),
+            eq(missedCalls.tenantId, tenantOf(ctx, input)),
             isNull(missedCalls.readAt),
           ));
       } else {
@@ -6992,7 +6992,7 @@ const smsRouter = router({
           .set({ readAt: now, readByUserId: ctx.user.id })
           .where(and(
             eq(smsLogs.id, input.id),
-            eq(smsLogs.tenantId, input.tenantId),
+            eq(smsLogs.tenantId, tenantOf(ctx, input)),
             isNull(smsLogs.readAt),
           ));
       }
@@ -7018,7 +7018,7 @@ const smsRouter = router({
         receivedAt: missedCalls.receivedAt,
       }).from(missedCalls)
         .leftJoin(clients, eq(missedCalls.clientId, clients.id))
-        .where(eq(missedCalls.tenantId, input.tenantId))
+        .where(eq(missedCalls.tenantId, tenantOf(ctx, input)))
         .orderBy(desc(missedCalls.receivedAt))
         .limit(input.limit);
 
@@ -7060,36 +7060,36 @@ const smsRouter = router({
       // and nobody could say who had listened to one.
       await db.update(missedCalls)
         .set({ readAt: new Date(), readByUserId: ctx.user?.id ?? null })
-        .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, input.tenantId)));
+        .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 
   deleteMissedCall: protectedProcedure
     .input(z.object({ id: z.number(), tenantId: z.number().default(1) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
       await db.delete(missedCalls)
-        .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, input.tenantId)));
+        .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 
   deleteMessage: protectedProcedure
     .input(z.object({ id: z.number(), tenantId: z.number().default(1) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      await db.delete(smsLogs).where(and(eq(smsLogs.id, input.id), eq(smsLogs.tenantId, input.tenantId)));
+      await db.delete(smsLogs).where(and(eq(smsLogs.id, input.id), eq(smsLogs.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 
   deleteThread: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), clientId: z.number().optional(), toNumber: z.string().optional() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
       if (!input.clientId && !input.toNumber) return { success: true };
-      const conditions = [eq(smsLogs.tenantId, input.tenantId)];
+      const conditions = [eq(smsLogs.tenantId, tenantOf(ctx, input))];
       conditions.push(input.clientId ? eq(smsLogs.clientId, input.clientId) : eq(smsLogs.toNumber, input.toNumber!));
       await db.delete(smsLogs).where(and(...conditions));
       return { success: true };
@@ -7097,10 +7097,10 @@ const smsRouter = router({
 
   clearFailed: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
-      await db.delete(smsLogs).where(and(eq(smsLogs.tenantId, input.tenantId), eq(smsLogs.status, "failed")));
+      await db.delete(smsLogs).where(and(eq(smsLogs.tenantId, tenantOf(ctx, input)), eq(smsLogs.status, "failed")));
       return { success: true };
     }),
 
@@ -7120,7 +7120,7 @@ const smsRouter = router({
         direction: smsLogs.direction,
         replyIntent: smsLogs.replyIntent,
         processedAt: smsLogs.processedAt,
-      }).from(smsLogs).where(and(eq(smsLogs.id, input.smsLogId), eq(smsLogs.tenantId, input.tenantId))).limit(1);
+      }).from(smsLogs).where(and(eq(smsLogs.id, input.smsLogId), eq(smsLogs.tenantId, tenantOf(ctx, input)))).limit(1);
 
       if (!reply || reply.direction !== "inbound" || !reply.appointmentId) {
         throw new Error("This reply is not linked to an appointment for review");
@@ -7159,7 +7159,7 @@ const portalChatRouter = router({
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const tenantId = input?.tenantId ?? 1;
+      const tenantId = tenantOf(ctx, input) ?? 1;
       const threads = await db.select({
         id: portalThreads.id, clientId: portalThreads.clientId, status: portalThreads.status,
         lastMessageAt: portalThreads.lastMessageAt, staffLastReadAt: portalThreads.staffLastReadAt,

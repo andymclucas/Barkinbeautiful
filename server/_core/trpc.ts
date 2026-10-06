@@ -27,6 +27,33 @@ const t = initTRPC.context<TrpcContext>().create({
   },
 });
 
+
+/**
+ * Which salon this call is about.
+ *
+ * Prefers the tenant resolved from the authenticated caller. `tenantId`
+ * on the input is now only a fallback, kept so the existing clients keep
+ * working while they are migrated off it — and because the PUBLIC
+ * surface (online booking, the client portal) genuinely has no signed-in
+ * user to resolve from and must still name its salon.
+ *
+ * The two can no longer disagree: enforceTenant refuses a request naming
+ * a tenant other than the caller's own before this is ever reached. So on
+ * the authenticated surface this returns the caller's salon, and the
+ * number the client sent is ignored rather than trusted.
+ *
+ * The final `?? 1` is the last remnant of the single-salon assumption. It
+ * is reached only when a caller has no resolvable tenant AND sent none,
+ * which today means nothing real; it stays until the public surface
+ * resolves its salon from the hostname, and then it goes.
+ */
+export function tenantOf(
+  ctx: { tenantId?: number | null },
+  input?: { tenantId?: number | null } | null,
+): number {
+  return ctx.tenantId ?? input?.tenantId ?? 1;
+}
+
 export const router = t.router;
 export const publicProcedure = t.procedure;
 

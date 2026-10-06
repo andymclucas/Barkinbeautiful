@@ -81,7 +81,11 @@ describe("canStaffUpdateAppointment", () => {
     expect(routerSource).toContain("searchClients: operationalProcedure");
     expect(routerSource).toContain("requireApprovedStaffTenant(db, ctx.user)");
     expect(routerSource).toContain("Client search is limited to your salon");
-    expect(routerSource).toContain("const tenantId = portalStaff?.tenantId ?? input.tenantId");
+    // The point is that a restricted staff member's OWN salon wins over
+    // anything the request names. What supplies the fallback changed when
+    // the tenant moved to the authenticated caller; that it is overridden
+    // did not.
+    expect(routerSource).toContain("const tenantId = portalStaff?.tenantId ??");
   });
 
   it("allows approved staff to create tenant-scoped bookings and grooming notes without opening client messaging", () => {
