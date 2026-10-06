@@ -57,6 +57,11 @@ import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type S
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
+import { randomUUID } from "node:crypto";
+import {
+  expandDateRange, rangeLengthInDays, blockoutDateValue, blockoutDateKey,
+  findBlockingBlockout, MAX_BLOCKOUT_DAYS,
+} from "../shared/staffBlockouts";
 import { sidebarCountsRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { stripeCardsRouter } from "./routers/stripeCards";
@@ -65,6 +70,7 @@ import {
   requireApprovedFamilyLinkStaff,
   requireApprovedStaffAppointmentAccess,
   requireApprovedStaffPetAccess,
+  assertCanManageBlockout,
 } from "./staffAccess";
 
 // The four staff-access guards moved to ./staffAccess so the payments router
@@ -3322,6 +3328,7 @@ const staffRouter = router({
           endTime: staffBlockouts.endTime,
           isFullDay: staffBlockouts.isFullDay,
           reason: staffBlockouts.reason,
+          groupId: staffBlockouts.groupId,
         })
         .from(staffBlockouts)
         .leftJoin(staff, eq(staffBlockouts.staffId, staff.id))
@@ -3333,38 +3340,176 @@ const staffRouter = router({
         .orderBy(asc(staffBlockouts.blockoutDate));
     }),
 
-  createBlockout: protectedProcedure
+  createBlockout: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
       staffId: z.number(),
-      blockoutDate: z.string(), // ISO date string
+      /** First day blocked out, inclusive. YYYY-MM-DD. */
+      startDate: z.string(),
+      /** Last day blocked out, inclusive. Defaults to a single day. */
+      endDate: z.string().optional(),
       isFullDay: z.boolean().default(true),
       startTime: z.string().optional(), // "HH:MM"
       endTime: z.string().optional(),
       reason: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      await db.insert(staffBlockouts).values({
-        tenantId: input.tenantId,
-        staffId: input.staffId,
-        blockoutDate: new Date(input.blockoutDate),
-        isFullDay: input.isFullDay,
-        startTime: input.startTime ?? null,
-        endTime: input.endTime ?? null,
-        reason: input.reason ?? null,
-      });
-      return { success: true };
+      await assertCanManageBlockout(db, ctx.user, input.tenantId, input.staffId);
+
+      const endDate = input.endDate ?? input.startDate;
+      const span = rangeLengthInDays(input.startDate, endDate);
+      if (span === 0) throw new Error("The last day cannot be before the first day");
+      if (span > MAX_BLOCKOUT_DAYS) {
+        throw new Error(`That is ${span} days. Blockouts are limited to ${MAX_BLOCKOUT_DAYS} days at a time.`);
+      }
+
+      const days = expandDateRange(input.startDate, endDate);
+      // One id across the whole run, so it can be edited or cancelled as
+      // the single decision it was rather than day by day.
+      const groupId = randomUUID();
+
+      // Skip days this groomer is already blocked out for: re-running a
+      // range that was half-entered by hand should fill the gaps, not
+      // draw a second set of hatching over the days that were already done.
+      const existing = await db.select({ blockoutDate: staffBlockouts.blockoutDate })
+        .from(staffBlockouts).where(and(
+          eq(staffBlockouts.tenantId, input.tenantId),
+          eq(staffBlockouts.staffId, input.staffId),
+          gte(staffBlockouts.blockoutDate, blockoutDateValue(days[0])),
+          lte(staffBlockouts.blockoutDate, blockoutDateValue(days[days.length - 1])),
+        ));
+      const taken = new Set(existing.map(r => blockoutDateKey(r.blockoutDate as Date)));
+      const toCreate = days.filter(d => !taken.has(d));
+
+      if (toCreate.length > 0) {
+        await db.insert(staffBlockouts).values(toCreate.map(dateKey => ({
+          tenantId: input.tenantId,
+          staffId: input.staffId,
+          blockoutDate: blockoutDateValue(dateKey),
+          isFullDay: input.isFullDay,
+          startTime: input.startTime ?? null,
+          endTime: input.endTime ?? null,
+          reason: input.reason ?? null,
+          groupId,
+        })));
+      }
+
+      return { success: true, groupId, created: toCreate.length, alreadyBlocked: days.length - toCreate.length };
     }),
 
-  deleteBlockout: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+  /**
+   * Change a blockout that already exists.
+   *
+   * Edits the whole run when the row belongs to one, because that is the
+   * thing the person made and the thing they see on the calendar. Dates
+   * are changed by replacing the days rather than moving them: a range
+   * that grows has to gain rows, and one that shrinks has to lose them.
+   */
+  updateBlockout: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      id: z.number(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      isFullDay: z.boolean().optional(),
+      startTime: z.string().nullable().optional(),
+      endTime: z.string().nullable().optional(),
+      reason: z.string().nullable().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
+
+      const [row] = await db.select().from(staffBlockouts)
+        .where(and(eq(staffBlockouts.id, input.id), eq(staffBlockouts.tenantId, input.tenantId))).limit(1);
+      if (!row) throw new Error("That blocked-out time no longer exists");
+      await assertCanManageBlockout(db, ctx.user, input.tenantId, row.staffId);
+
+      const siblings = row.groupId
+        ? await db.select().from(staffBlockouts).where(and(
+            eq(staffBlockouts.tenantId, input.tenantId),
+            eq(staffBlockouts.groupId, row.groupId),
+          )).orderBy(asc(staffBlockouts.blockoutDate))
+        : [row];
+
+      const isFullDay = input.isFullDay ?? row.isFullDay;
+      const startTime = input.startTime === undefined ? row.startTime : input.startTime;
+      const endTime = input.endTime === undefined ? row.endTime : input.endTime;
+      const reason = input.reason === undefined ? row.reason : input.reason;
+
+      const currentKeys = siblings.map(r => blockoutDateKey(r.blockoutDate as Date));
+      const wantedStart = input.startDate ?? currentKeys[0];
+      const wantedEnd = input.endDate ?? currentKeys[currentKeys.length - 1];
+
+      const span = rangeLengthInDays(wantedStart, wantedEnd);
+      if (span === 0) throw new Error("The last day cannot be before the first day");
+      if (span > MAX_BLOCKOUT_DAYS) {
+        throw new Error(`That is ${span} days. Blockouts are limited to ${MAX_BLOCKOUT_DAYS} days at a time.`);
+      }
+      const wantedKeys = expandDateRange(wantedStart, wantedEnd);
+      const groupId = row.groupId ?? randomUUID();
+
+      // Days that fall out of the range go; days that join it are added;
+      // the ones that stay are updated in place so their ids survive.
+      const dropping = siblings.filter(r => !wantedKeys.includes(blockoutDateKey(r.blockoutDate as Date)));
+      if (dropping.length > 0) {
+        await db.delete(staffBlockouts).where(inArray(staffBlockouts.id, dropping.map(r => r.id)));
+      }
+
+      const keeping = siblings.filter(r => wantedKeys.includes(blockoutDateKey(r.blockoutDate as Date)));
+      if (keeping.length > 0) {
+        await db.update(staffBlockouts)
+          .set({ isFullDay, startTime, endTime, reason, groupId })
+          .where(inArray(staffBlockouts.id, keeping.map(r => r.id)));
+      }
+
+      const have = new Set(keeping.map(r => blockoutDateKey(r.blockoutDate as Date)));
+      const adding = wantedKeys.filter(k => !have.has(k));
+      if (adding.length > 0) {
+        await db.insert(staffBlockouts).values(adding.map(dateKey => ({
+          tenantId: input.tenantId,
+          staffId: row.staffId,
+          blockoutDate: blockoutDateValue(dateKey),
+          isFullDay, startTime, endTime, reason, groupId,
+        })));
+      }
+
+      return { success: true, days: wantedKeys.length };
+    }),
+
+  deleteBlockout: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      id: z.number(),
+      /**
+       * Remove every day of the run, not just the one clicked. The
+       * calendar offers this because cancelling leave means cancelling
+       * all of it; clearing one day of twelve is almost never the intent.
+       */
+      wholeGroup: z.boolean().default(false),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const [row] = await db.select().from(staffBlockouts)
+        .where(and(eq(staffBlockouts.id, input.id), eq(staffBlockouts.tenantId, input.tenantId))).limit(1);
+      if (!row) return { success: true, removed: 0 };
+      await assertCanManageBlockout(db, ctx.user, input.tenantId, row.staffId);
+
+      if (input.wholeGroup && row.groupId) {
+        const group = await db.select({ id: staffBlockouts.id }).from(staffBlockouts).where(and(
+          eq(staffBlockouts.tenantId, input.tenantId),
+          eq(staffBlockouts.groupId, row.groupId),
+        ));
+        await db.delete(staffBlockouts).where(inArray(staffBlockouts.id, group.map(r => r.id)));
+        return { success: true, removed: group.length };
+      }
+
       await db.delete(staffBlockouts).where(eq(staffBlockouts.id, input.id));
-      return { success: true };
+      return { success: true, removed: 1 };
     }),
 });
 
@@ -5490,6 +5635,70 @@ function aestDayBounds(dateKey: string) {
   };
 }
 
+/**
+ * Is this groomer blocked out at this time?
+ *
+ * Returns the reason when they are, so the caller can say "Annual leave"
+ * rather than "unavailable". Until this existed, staff_blockouts was read
+ * by nothing but its own list endpoint: the calendar drew red hatching
+ * over a groomer on leave and the booking system cheerfully filled her
+ * day anyway.
+ *
+ * Deliberately NOT applied to staff creating an appointment directly on
+ * the calendar. They can see the hatching, and covering a shift or
+ * squeezing in a regular on someone's day off is a judgement the salon
+ * floor is allowed to make. This closes the automated paths, where nobody
+ * is looking at the calendar at all.
+ */
+async function blockoutReasonFor(input: { tenantId: number; staffId: number; scheduledStart: Date; scheduledEnd: Date }): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const dateKey = input.scheduledStart.toLocaleDateString("en-CA", { timeZone: "Australia/Brisbane" });
+  const dayStart = blockoutDateValue(dateKey);
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+
+  // A range rather than an equality: every row written so far sits at
+  // exactly midnight UTC, but one that did not would silently stop
+  // matching and let a booking through.
+  const rows = await db.select({
+    staffId: staffBlockouts.staffId,
+    blockoutDate: staffBlockouts.blockoutDate,
+    isFullDay: staffBlockouts.isFullDay,
+    startTime: staffBlockouts.startTime,
+    endTime: staffBlockouts.endTime,
+    reason: staffBlockouts.reason,
+  }).from(staffBlockouts).where(and(
+    eq(staffBlockouts.tenantId, input.tenantId),
+    eq(staffBlockouts.staffId, input.staffId),
+    gte(staffBlockouts.blockoutDate, dayStart),
+    lt(staffBlockouts.blockoutDate, dayEnd),
+  ));
+  if (rows.length === 0) return null;
+
+  const blocking = findBlockingBlockout(rows, {
+    staffId: input.staffId,
+    dateKey,
+    startMinutes: brisbaneMinutesOfDay(input.scheduledStart),
+    endMinutes: brisbaneMinutesOfDay(input.scheduledEnd, true),
+  });
+  if (!blocking) return null;
+  return (blocking as { reason?: string | null }).reason?.trim() || "Unavailable";
+}
+
+/**
+ * Minutes from Brisbane midnight. `asEnd` rolls a midnight end on to the
+ * end of the day, so a booking finishing at 00:00 is not read as
+ * finishing before it started.
+ */
+function brisbaneMinutesOfDay(instant: Date, asEnd = false): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(instant).split(":");
+  const minutes = Number(parts[0]) * 60 + Number(parts[1]);
+  return asEnd && minutes === 0 ? 24 * 60 : minutes;
+}
+
 async function checkOnlineCapacity(input: { tenantId: number; staffId: number; serviceType: keyof typeof ONLINE_SERVICE_MINUTES; scheduledStart: Date; petWeightKg?: number }, options: { preview?: boolean } = {}) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -5510,6 +5719,9 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   const scheduledEnd = new Date(input.scheduledStart.getTime() + durationMinutes * 60000);
   const dateKey = input.scheduledStart.toLocaleDateString("en-CA", { timeZone: "Australia/Brisbane" });
   const { start, end } = aestDayBounds(dateKey);
+  // Before any capacity arithmetic: a groomer on leave has no capacity.
+  const blockedReason = await blockoutReasonFor({ tenantId: input.tenantId, staffId: input.staffId, scheduledStart: input.scheduledStart, scheduledEnd });
+  if (blockedReason) return { available: false, reason: `This groomer is unavailable that day (${blockedReason})` } as const;
   const activeStatuses = ["confirmed", "pending"] as const;
   const staffAppointments = await db.select({ id: appointments.id, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd })
     .from(appointments).where(and(eq(appointments.tenantId, input.tenantId), eq(appointments.staffId, input.staffId), gte(appointments.scheduledStart, start), lte(appointments.scheduledStart, end), inArray(appointments.status, activeStatuses as any)));
@@ -5606,6 +5818,9 @@ async function checkRescheduleSlotFree(input: { tenantId: number; staffId: numbe
   if (!db) throw new Error("DB unavailable");
   const dateKey = input.scheduledStart.toLocaleDateString("en-CA", { timeZone: "Australia/Brisbane" });
   const { start, end } = aestDayBounds(dateKey);
+  // A groomer's leave is as real a conflict as another dog. Without this
+  // a client could move their own appointment onto a day off.
+  if (await blockoutReasonFor({ tenantId: input.tenantId, staffId: input.staffId, scheduledStart: input.scheduledStart, scheduledEnd: input.scheduledEnd })) return false;
   const staffAppointments = await db.select({ id: appointments.id, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd })
     .from(appointments).where(and(
       eq(appointments.tenantId, input.tenantId),

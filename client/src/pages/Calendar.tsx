@@ -43,6 +43,8 @@ import {
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
+import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
+import { blockoutDateKey } from "@shared/staffBlockouts";
 import { getActiveTimeZone } from "@/lib/timezone";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -822,14 +824,9 @@ export default function Calendar() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showBlockoutDialog, setShowBlockoutDialog] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ type: "blockout" | "styleNote" | "appointment"; id: number; label: string } | null>(null);
-  const [blockoutForm, setBlockoutForm] = useState({
-    staffId: "",
-    blockoutDate: "",
-    isFullDay: true,
-    startTime: "09:00",
-    endTime: "17:00",
-    reason: "",
-  });
+  /** The blockout being edited, or null when creating a new one. */
+  const [blockoutEditing, setBlockoutEditing] = useState<BlockoutEditing | null>(null);
+  const [blockoutDefaultDate, setBlockoutDefaultDate] = useState("");
 
   // Drag-and-drop state
   const dragApptRef = useRef<Appt | null>(null);
@@ -895,15 +892,32 @@ export default function Calendar() {
     dateFrom: queryFrom.toISOString(),
     dateTo: queryTo.toISOString(),
   });
-  const createBlockoutMutation = trpc.staff.createBlockout.useMutation({
-    onSuccess: () => {
-      toast.success("Blockout created");
-      setShowBlockoutDialog(false);
-      setBlockoutForm({ staffId: "", blockoutDate: "", isFullDay: true, startTime: "09:00", endTime: "17:00", reason: "" });
-      refetchBlockouts();
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  /**
+   * Turn a clicked blockout into something the dialog can edit.
+   *
+   * A range is stored as one row per day sharing a group id, so the first
+   * and last day have to be found across its siblings — clicking the
+   * middle of someone's leave must still open the whole run, not the one
+   * day that happened to be under the pointer.
+   */
+  const openBlockout = (b: { id: number; staffId: number; blockoutDate: Date; isFullDay: boolean; startTime: string | null; endTime: string | null; reason: string | null; groupId?: string | null }) => {
+    const siblings = (blockouts ?? []).filter(o =>
+      b.groupId ? (o as { groupId?: string | null }).groupId === b.groupId : o.id === b.id);
+    const keys = siblings.map(o => blockoutDateKey(o.blockoutDate)).sort();
+    setBlockoutEditing({
+      id: b.id,
+      staffId: b.staffId,
+      startDate: keys[0] ?? blockoutDateKey(b.blockoutDate),
+      endDate: keys[keys.length - 1] ?? blockoutDateKey(b.blockoutDate),
+      isFullDay: b.isFullDay,
+      startTime: b.startTime,
+      endTime: b.endTime,
+      reason: b.reason,
+      groupId: (b as { groupId?: string | null }).groupId ?? null,
+    });
+    setShowBlockoutDialog(true);
+  };
+
   const deleteBlockoutMutation = trpc.staff.deleteBlockout.useMutation({
     onSuccess: () => { toast.success("Blockout removed"); refetchBlockouts(); },
     onError: (e) => toast.error(e.message),
@@ -1658,11 +1672,24 @@ export default function Calendar() {
                     if (b.isFullDay) {
                       return (
                         <div key={b.id} className="absolute inset-0 z-10 pointer-events-none" style={{ background: "repeating-linear-gradient(45deg, rgba(239,68,68,0.07), rgba(239,68,68,0.07) 6px, transparent 6px, transparent 12px)" }}>
-                          <div className="absolute top-2 left-1 right-1 flex items-center justify-between">
-                            <span className="text-[10px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded px-1.5 py-0.5 flex items-center gap-1">
-                              <Ban className="h-2.5 w-2.5" /> {b.reason || "Day Off"}
-                            </span>
-                            <button className="pointer-events-auto text-red-400 hover:text-red-600 dark:hover:text-red-400" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: b.reason || "Day Off" }); }}>
+                          {/* The bar is the blockout you can click; the hatching
+                              behind it stays transparent to clicks so appointments
+                              on the day are still reachable and a dog can still be
+                              dragged onto it. */}
+                          <div className="pointer-events-auto absolute top-2 left-1 right-1 flex items-center justify-between gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 dark:border-red-900/50 dark:bg-red-950/40">
+                            <button
+                              className="flex min-w-0 flex-1 items-center gap-1 text-left text-[10px] font-semibold text-red-600 hover:underline dark:text-red-400"
+                              title="Edit this blocked-out time"
+                              onClick={(e) => { e.stopPropagation(); openBlockout(b); }}
+                            >
+                              <Ban className="h-2.5 w-2.5 shrink-0" />
+                              <span className="truncate">{b.reason || "Day Off"}</span>
+                            </button>
+                            <button
+                              className="shrink-0 text-red-400 hover:text-red-600 dark:hover:text-red-400"
+                              title="Remove"
+                              onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: b.reason || "Day Off" }); }}
+                            >
                               <Trash2 className="h-3 w-3" />
                             </button>
                           </div>
@@ -1676,11 +1703,20 @@ export default function Calendar() {
                     const heightPx = ((eh - sh) + (em - sm) / 60) * HOUR_HEIGHT;
                     return (
                       <div key={b.id} className="absolute left-0 right-0 z-10 pointer-events-none" style={{ top: topPx, height: Math.max(heightPx, 24), background: "repeating-linear-gradient(45deg, rgba(239,68,68,0.1), rgba(239,68,68,0.1) 6px, transparent 6px, transparent 12px)" }}>
-                        <div className="absolute top-1 left-1 right-1 flex items-center justify-between">
-                          <span className="text-[10px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded px-1.5 py-0.5 flex items-center gap-1">
-                            <Ban className="h-2.5 w-2.5" /> {b.startTime}–{b.endTime} {b.reason || "Blocked"}
-                          </span>
-                          <button className="pointer-events-auto text-red-400 hover:text-red-600 dark:hover:text-red-400" onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: `${b.startTime}–${b.endTime} ${b.reason || "Blocked"}` }); }}>
+                        <div className="pointer-events-auto absolute top-1 left-1 right-1 flex items-center justify-between gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 dark:border-red-900/50 dark:bg-red-950/40">
+                          <button
+                            className="flex min-w-0 flex-1 items-center gap-1 text-left text-[10px] font-semibold text-red-600 hover:underline dark:text-red-400"
+                            title="Edit this blocked-out time"
+                            onClick={(e) => { e.stopPropagation(); openBlockout(b); }}
+                          >
+                            <Ban className="h-2.5 w-2.5 shrink-0" />
+                            <span className="truncate">{b.startTime}–{b.endTime} {b.reason || "Blocked"}</span>
+                          </button>
+                          <button
+                            className="shrink-0 text-red-400 hover:text-red-600 dark:hover:text-red-400"
+                            title="Remove"
+                            onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: "blockout", id: b.id, label: `${b.startTime}–${b.endTime} ${b.reason || "Blocked"}` }); }}
+                          >
                             <Trash2 className="h-3 w-3" />
                           </button>
                         </div>
@@ -1914,8 +1950,8 @@ export default function Calendar() {
             <Button
               variant="outline"
               onClick={() => {
-                const defaultDate = dayDateKey(viewMode === "day" ? dayDate : weekStart);
-                setBlockoutForm(f => ({ ...f, blockoutDate: defaultDate }));
+                setBlockoutEditing(null);
+                setBlockoutDefaultDate(dayDateKey(viewMode === "day" ? dayDate : weekStart));
                 setShowBlockoutDialog(true);
               }}
               size="sm" className="brand-lift gap-1.5 bg-card/80 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-700 dark:hover:text-red-300">
@@ -2870,84 +2906,14 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
       {/* ── Block Out Dialog ── */}
-      <Dialog open={showBlockoutDialog} onOpenChange={setShowBlockoutDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Ban className="h-4 w-4 text-red-500" />
-              Block Out Groomer
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Groomer <span className="text-red-500">*</span></Label>
-              <Select value={blockoutForm.staffId} onValueChange={v => setBlockoutForm(f => ({ ...f, staffId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select groomer..." /></SelectTrigger>
-                <SelectContent>
-                  {activeStaff.map(s => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      <span className="flex items-center gap-1.5">
-                        <StaffAvatar photoUrl={(s as { photoUrl?: string | null }).photoUrl} name={s.name} colourHex={s.colourHex} className="h-5 w-5" ring={false} />
-                        {s.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Date <span className="text-red-500">*</span></Label>
-              <Input type="date" value={blockoutForm.blockoutDate} onChange={e => setBlockoutForm(f => ({ ...f, blockoutDate: e.target.value }))} />
-            </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="isFullDay"
-                checked={blockoutForm.isFullDay}
-                onChange={e => setBlockoutForm(f => ({ ...f, isFullDay: e.target.checked }))}
-                className="h-4 w-4 rounded border-input"
-              />
-              <Label htmlFor="isFullDay">Full day blockout</Label>
-            </div>
-            {!blockoutForm.isFullDay && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Start Time</Label>
-                  <Input type="time" value={blockoutForm.startTime} onChange={e => setBlockoutForm(f => ({ ...f, startTime: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>End Time</Label>
-                  <Input type="time" value={blockoutForm.endTime} onChange={e => setBlockoutForm(f => ({ ...f, endTime: e.target.value }))} />
-                </div>
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label>Reason (optional)</Label>
-              <Input placeholder="e.g. Annual leave, sick day, training..." value={blockoutForm.reason} onChange={e => setBlockoutForm(f => ({ ...f, reason: e.target.value }))} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBlockoutDialog(false)}>Cancel</Button>
-            <Button
-              className="bg-red-600 hover:bg-red-700 text-white"
-              disabled={!blockoutForm.staffId || !blockoutForm.blockoutDate || createBlockoutMutation.isPending}
-              onClick={() => {
-                createBlockoutMutation.mutate({
-                  tenantId: 1,
-                  staffId: parseInt(blockoutForm.staffId),
-                  blockoutDate: blockoutForm.blockoutDate,
-                  isFullDay: blockoutForm.isFullDay,
-                  startTime: blockoutForm.isFullDay ? undefined : blockoutForm.startTime,
-                  endTime: blockoutForm.isFullDay ? undefined : blockoutForm.endTime,
-                  reason: blockoutForm.reason || undefined,
-                });
-              }}
-            >
-              {createBlockoutMutation.isPending ? "Saving..." : "Block Out"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BlockoutDialog
+        open={showBlockoutDialog}
+        onOpenChange={(open) => { setShowBlockoutDialog(open); if (!open) setBlockoutEditing(null); }}
+        staff={activeStaff.map(st => ({ id: st.id, name: st.name, colourHex: st.colourHex, photoUrl: (st as { photoUrl?: string | null }).photoUrl }))}
+        editing={blockoutEditing}
+        defaultStartDate={blockoutDefaultDate}
+        onSaved={() => { void refetchBlockouts(); }}
+      />
       {/* ── Confirm Delete Dialog ── */}
       <Dialog open={!!confirmDelete} onOpenChange={open => { if (!open) setConfirmDelete(null); }}>
         <DialogContent className="max-w-sm">
@@ -2973,7 +2939,7 @@ export default function Calendar() {
               onClick={() => {
                 if (!confirmDelete) return;
                 if (confirmDelete.type === "blockout") {
-                  deleteBlockoutMutation.mutate({ id: confirmDelete.id }, { onSuccess: () => setConfirmDelete(null) });
+                  deleteBlockoutMutation.mutate({ tenantId: 1, id: confirmDelete.id, wholeGroup: true }, { onSuccess: () => setConfirmDelete(null) });
                 } else if (confirmDelete.type === "appointment") {
                   deleteAppointmentMutation.mutate({ appointmentId: confirmDelete.id });
                 } else {

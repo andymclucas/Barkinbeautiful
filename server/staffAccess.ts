@@ -53,3 +53,32 @@ export async function requireApprovedStaffPetAccess(db: any, user: { id: number;
   }
   return portalStaff;
 }
+
+/**
+ * Who may block out whose calendar.
+ *
+ * Staff can now record their own leave from the Staff page, which means
+ * this runs on `operationalProcedure` and restricted staff accounts reach
+ * it. A groomer marking herself on leave is the point; a groomer marking
+ * ANOTHER groomer on leave is not, and would silently take that person's
+ * day out of the booking diary now that blockouts actually stop bookings.
+ *
+ * Owners and admins are unrestricted, which is how it has always worked
+ * and is what the Calendar's own blockout dialog relies on.
+ */
+export async function assertCanManageBlockout(
+  db: any,
+  user: { id: number; role: string },
+  tenantId: number,
+  staffId: number,
+) {
+  const portalStaff = await requireApprovedStaffTenant(db, user);
+  if (!portalStaff) return; // admin — may manage anyone's
+
+  if (portalStaff.tenantId !== tenantId) {
+    throw new Error("This calendar is not available to your salon staff profile");
+  }
+  if (portalStaff.id !== staffId) {
+    throw new Error("You can only block out your own calendar");
+  }
+}
