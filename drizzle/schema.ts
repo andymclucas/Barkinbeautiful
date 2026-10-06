@@ -37,6 +37,13 @@ export const tenants = mysqlTable("tenants", {
   onlineBathCapacityPerSlot: int("online_bath_capacity_per_slot").default(3).notNull(),
   onlineBookingSlotMinutes: int("online_booking_slot_minutes").default(30).notNull(),
   onlineBookingLeadHours: int("online_booking_lead_hours").default(24).notNull(),
+  /**
+   * Never billed, never chased, never downgraded. Barkin' Beautiful is
+   * not a customer — the concept is theirs. Kept separate from the plan
+   * because WHAT a salon can use and WHETHER they pay are different
+   * questions that come apart for partners and pilots.
+   */
+  billingExempt: boolean("billing_exempt").default(false).notNull(),
   stripeBillingMode: mysqlEnum("stripe_billing_mode", ["prototype", "live"]).default("prototype").notNull(),
   stripeConnectedAt: timestamp("stripe_connected_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -81,6 +81,60 @@ export function effectivePlan(plan: Plan, status: SubscriptionStatus): readonly 
   return PLAN_FEATURES[plan] ?? ["core"];
 }
 
+/**
+ * Everything the entitlement rules need to know about a salon.
+ *
+ * Shaped as the tenant row rather than loose arguments so a caller cannot
+ * forget `billingExempt` and quietly start charging the people whose
+ * concept this is.
+ */
+export type TenantEntitlementState = {
+  subscriptionPlan?: Plan | string | null;
+  subscriptionStatus?: SubscriptionStatus | string | null;
+  /** Never billed, never chased, never downgraded. See isBillable. */
+  billingExempt?: boolean | null;
+};
+
+/**
+ * What this salon can use.
+ *
+ * An exempt salon gets everything, always. Barkin' Beautiful is not a
+ * customer — Groomigo is being built for them and the idea is theirs —
+ * so no plan, no lapsed status and no future dunning job may ever take a
+ * feature away from them. Expressing that as "put them on the top plan"
+ * would work until the day something downgrades an unpaid subscription.
+ */
+export function tenantFeatures(tenant: TenantEntitlementState): readonly Feature[] {
+  if (tenant.billingExempt) return FEATURES;
+  return hasFeatureList(tenant.subscriptionPlan, tenant.subscriptionStatus);
+}
+
+export function tenantHasFeature(tenant: TenantEntitlementState, feature: Feature): boolean {
+  if (feature === "core") return true;
+  return tenantFeatures(tenant).includes(feature);
+}
+
+/**
+ * Should this salon ever be charged, or chased?
+ *
+ * The other half of exemption, and the half that bites later: a dunning
+ * job that emails every past_due tenant would otherwise one day email the
+ * salon this was all built for.
+ */
+export function isBillable(tenant: TenantEntitlementState): boolean {
+  return !tenant.billingExempt;
+}
+
+function hasFeatureList(
+  plan: Plan | string | null | undefined,
+  status: SubscriptionStatus | string | null | undefined,
+): readonly Feature[] {
+  const p = (PLANS as readonly string[]).includes(plan as string) ? (plan as Plan) : null;
+  const st = (SUBSCRIPTION_STATUSES as readonly string[]).includes(status as string) ? (status as SubscriptionStatus) : null;
+  if (p === null) return FEATURES; // unknown plan fails OPEN — see below
+  return effectivePlan(p, st ?? "active");
+}
+
 export function hasFeature(
   plan: Plan | string | null | undefined,
   status: SubscriptionStatus | string | null | undefined,

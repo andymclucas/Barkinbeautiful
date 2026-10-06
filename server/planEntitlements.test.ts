@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PLANS, FEATURES, PLAN_FEATURES, effectivePlan, hasFeature,
-  smallestPlanWith, upgradeMessage,
+  smallestPlanWith, upgradeMessage, tenantFeatures, tenantHasFeature, isBillable,
 } from "@shared/planEntitlements";
 
 describe("the three stages Groomigo is sold in", () => {
@@ -82,5 +82,42 @@ describe("telling a salon what they are missing", () => {
     const message = upgradeMessage("workflow");
     expect(message).toMatch(/bathing, drying and grooming/);
     expect(message).not.toMatch(/error|denied|forbidden/i);
+  });
+});
+
+describe("a salon that is never billed", () => {
+  // Barkin' Beautiful. The concept is theirs and Groomigo is being built
+  // for them, so they are not a customer. Expressing that as "put them on
+  // the top plan" would hold only until something downgrades an unpaid
+  // subscription — which is exactly what a billing system does.
+  const exempt = { subscriptionPlan: "starter", subscriptionStatus: "cancelled", billingExempt: true };
+
+  it("gets everything, whatever the plan says", () => {
+    for (const f of FEATURES) expect(tenantHasFeature(exempt, f), f).toBe(true);
+    expect(tenantFeatures(exempt)).toEqual(FEATURES);
+  });
+
+  it("keeps everything even when the subscription is cancelled", () => {
+    // The dangerous direction: a lapsed status must not reach them.
+    expect(tenantHasFeature(exempt, "workflow")).toBe(true);
+  });
+
+  it("is never charged and never chased", () => {
+    // The half that bites later — a dunning job emailing every past_due
+    // tenant would otherwise one day email the salon this was built for.
+    expect(isBillable(exempt)).toBe(false);
+    expect(isBillable({ subscriptionPlan: "enterprise", subscriptionStatus: "past_due" })).toBe(true);
+  });
+
+  it("leaves paying salons subject to their plan", () => {
+    const paying = { subscriptionPlan: "professional", subscriptionStatus: "active", billingExempt: false };
+    expect(tenantHasFeature(paying, "messaging")).toBe(true);
+    expect(tenantHasFeature(paying, "workflow")).toBe(false);
+    expect(isBillable(paying)).toBe(true);
+  });
+
+  it("treats a missing flag as billable, so nobody is exempt by accident", () => {
+    expect(isBillable({ subscriptionPlan: "starter" })).toBe(true);
+    expect(tenantHasFeature({ subscriptionPlan: "starter" }, "workflow")).toBe(false);
   });
 });
