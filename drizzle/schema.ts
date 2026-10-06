@@ -627,8 +627,15 @@ export const staffBlockouts = mysqlTable("staff_blockouts", {
   endTime: varchar("end_time", { length: 5 }),     // "HH:MM" — null means full day
   isFullDay: boolean("is_full_day").default(true).notNull(),
   reason: varchar("reason", { length: 255 }),
+  /**
+   * Shared by every day of one blocked-out range, so "the 9th to the
+   * 20th" can be edited or cancelled as the single decision it was.
+   * Null on rows created one day at a time, which is all nine that
+   * predate this.
+   */
+  groupId: varchar("group_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (t) => [index("idx_blockout_staff").on(t.staffId), index("idx_blockout_tenant_date").on(t.tenantId, t.blockoutDate)]);
+}, (t) => [index("idx_blockout_staff").on(t.staffId), index("idx_blockout_tenant_date").on(t.tenantId, t.blockoutDate), index("idx_blockout_group").on(t.groupId)]);
 
 // ─── Groom Style Notes ───────────────────────────────────────────────────────
 export const groomStyleNotes = mysqlTable("groom_style_notes", {

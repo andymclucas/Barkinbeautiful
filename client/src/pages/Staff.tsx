@@ -13,6 +13,8 @@ import { Separator } from "@/components/ui/separator";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
+import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
+import { blockoutDateKey } from "@shared/staffBlockouts";
 import { StaffAdminRightsDialog, type StaffRightsTarget } from "@/components/StaffAdminRightsDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { describeGrant } from "@shared/staffPermissions";
@@ -605,6 +607,134 @@ export function StaffReviewProfile() {
   );
 }
 
+
+/**
+ * Blocked-out time, from the Staff page.
+ *
+ * The same dialog the Calendar uses, so there is one set of rules for
+ * what a blockout is. This view exists because leave is a staff-admin
+ * thing as much as a calendar thing: you come here to say "I'm away these
+ * dates", and you should not have to find the right week on a calendar to
+ * do it.
+ *
+ * Runs are shown as runs. The table stores a row per day, so a fortnight
+ * off is twelve rows; listing those would bury the one fact that matters.
+ */
+function BlockoutControls() {
+  const today = new Date();
+  const from = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const to = new Date(from.getTime() + 365 * 86_400_000);
+
+  const { data: staffList } = trpc.staff.list.useQuery({ tenantId: 1 });
+  const { data: blockouts, refetch } = trpc.staff.listBlockouts.useQuery({
+    tenantId: 1,
+    dateFrom: from.toISOString().slice(0, 10),
+    dateTo: to.toISOString().slice(0, 10),
+  });
+
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<BlockoutEditing | null>(null);
+
+  const activeStaff = (staffList ?? []).filter(s => isActiveStaffValue(s.isActive));
+
+  // Collapse the per-day rows back into the runs they were created as.
+  const runs = (() => {
+    const byKey = new Map<string, typeof blockouts>();
+    for (const b of blockouts ?? []) {
+      const key = (b as { groupId?: string | null }).groupId ?? `single:${b.id}`;
+      const list = byKey.get(key) ?? [];
+      list.push(b);
+      byKey.set(key, list as typeof blockouts);
+    }
+    return Array.from(byKey.values())
+      .map(list => {
+        const sorted = [...(list ?? [])].sort((a, b) =>
+          blockoutDateKey(a.blockoutDate).localeCompare(blockoutDateKey(b.blockoutDate)));
+        const first = sorted[0];
+        return {
+          first,
+          days: sorted.length,
+          startDate: blockoutDateKey(first.blockoutDate),
+          endDate: blockoutDateKey(sorted[sorted.length - 1].blockoutDate),
+        };
+      })
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  })();
+
+  const pretty = (key: string) =>
+    new Date(`${key}T00:00:00Z`).toLocaleDateString("en-AU", {
+      timeZone: "UTC", weekday: "short", day: "numeric", month: "short",
+    });
+
+  return (
+    <div className="rounded-xl border bg-card p-4 space-y-3">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-semibold flex items-center gap-2"><Ban className="h-4 w-4 text-red-500" /> Block out calendar</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Annual leave, personal leave or any other time a groomer is away. Blocked days stop online
+            bookings and client reschedules.
+          </p>
+        </div>
+        <Button
+          size="sm" variant="outline"
+          className="shrink-0 gap-1.5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40"
+          onClick={() => { setEditing(null); setOpen(true); }}
+        >
+          <Plus className="h-4 w-4" /> Block out
+        </Button>
+      </div>
+
+      {runs.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-2">Nobody has time blocked out in the next year.</p>
+      ) : (
+        <div className="divide-y rounded-lg border">
+          {runs.map(({ first, days, startDate, endDate }) => (
+            <button
+              key={first.id}
+              className="flex w-full items-center gap-3 p-2.5 text-left hover:bg-muted/50"
+              onClick={() => {
+                setEditing({
+                  id: first.id,
+                  staffId: first.staffId,
+                  startDate, endDate,
+                  isFullDay: first.isFullDay,
+                  startTime: first.startTime,
+                  endTime: first.endTime,
+                  reason: first.reason,
+                  groupId: (first as { groupId?: string | null }).groupId ?? null,
+                });
+                setOpen(true);
+              }}
+            >
+              <StaffAvatar photoUrl={(first as { staffPhotoUrl?: string | null }).staffPhotoUrl} name={first.staffName ?? "?"} colourHex={first.staffColour} className="h-8 w-8" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{first.staffName ?? "Unknown"}</div>
+                <div className="text-xs text-muted-foreground">
+                  {startDate === endDate ? pretty(startDate) : `${pretty(startDate)} — ${pretty(endDate)}`}
+                  {days > 1 && ` · ${days} days`}
+                  {!first.isFullDay && first.startTime && ` · ${first.startTime}–${first.endTime}`}
+                </div>
+              </div>
+              <span className="shrink-0 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400">
+                {first.reason || "Blocked"}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <BlockoutDialog
+        open={open}
+        onOpenChange={(o) => { setOpen(o); if (!o) setEditing(null); }}
+        staff={activeStaff.map(s => ({ id: s.id, name: s.name, colourHex: s.colourHex, photoUrl: (s as { photoUrl?: string | null }).photoUrl }))}
+        editing={editing}
+        onSaved={() => { void refetch(); }}
+      />
+    </div>
+  );
+}
+
 export default function Staff() {
   const utils = trpc.useUtils();
   const { data: staffList, isLoading } = trpc.staff.list.useQuery({ tenantId: 1 });
@@ -655,6 +785,8 @@ export default function Staff() {
         </div>
 
         <OnlineBookingControls />
+
+        <BlockoutControls />
 
         {isLoading && <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" /></div>}
 
