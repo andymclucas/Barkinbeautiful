@@ -13,6 +13,10 @@
  */
 import crypto from "node:crypto";
 import webpush, { WebPushError } from "web-push";
+import {
+  derivePublicKey, describeKey, diagnoseVapidPair,
+  VAPID_PUBLIC_BYTES, VAPID_PRIVATE_BYTES,
+} from "./vapidKeys";
 import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { pushSubscriptions } from "../drizzle/schema";
@@ -31,6 +35,8 @@ export type PushResult = {
 };
 
 let configured: boolean | null = null;
+/** The public key actually in use — derived, so it always matches the signer. */
+let publicKeyInUse: string | null = null;
 
 /**
  * Configure VAPID once, on first use rather than at import.
@@ -38,32 +44,68 @@ let configured: boolean | null = null;
  * At import time this module is pulled in by the router barrel before
  * dotenv has necessarily run, and a key read then would be undefined
  * forever.
+ *
+ * The public key is DERIVED from the private key rather than read from
+ * the environment. VAPID_PUBLIC_KEY is kept only as a cross-check: only
+ * one value has to be transcribed correctly into a hosting dashboard, and
+ * the two halves can no longer disagree. A mismatched pair is the worst
+ * failure this feature has, because nothing reports it — browsers
+ * subscribe happily against one key and every send is then rejected by a
+ * push service that was given another.
  */
 function ensureConfigured(): boolean {
   if (configured !== null) return configured;
 
-  const publicKey = process.env.VAPID_PUBLIC_KEY?.trim();
+  const declaredPublic = process.env.VAPID_PUBLIC_KEY?.trim();
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
   // A mailto: or https: subject is required by the spec — it is how a
   // push service contacts the sender about a misbehaving application.
   const subject = process.env.VAPID_SUBJECT?.trim() || "mailto:info@barkinbeautiful.com.au";
 
-  if (!publicKey || !privateKey) {
+  if (!privateKey) {
     console.error(
-      "[push] VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY are not set — staff will get no "
-      + "notifications while Groomigo is closed. In-page alerts still work.",
+      "[push] VAPID_PRIVATE_KEY is not set — staff will get no notifications while "
+      + "Groomigo is closed. In-page alerts still work.",
     );
     configured = false;
     return false;
   }
 
+  const derived = derivePublicKey(privateKey);
+  if (!derived) {
+    console.error("[push] VAPID_PRIVATE_KEY is not a usable P-256 private key, push disabled.");
+    console.error(`[push] received ${describeKey("private", privateKey, VAPID_PRIVATE_BYTES)}, ${describeKey("public", declaredPublic, VAPID_PUBLIC_BYTES)}`);
+    const why = diagnoseVapidPair(declaredPublic, privateKey);
+    if (why) console.error(`[push] ${why}`);
+    configured = false;
+    return false;
+  }
+
+  if (declaredPublic && declaredPublic !== derived) {
+    // Not fatal: the derived key is correct by construction, so pushes
+    // will work. But the environment is wrong and should be corrected,
+    // because anything else reading VAPID_PUBLIC_KEY would be misled.
+    console.warn(
+      "[push] VAPID_PUBLIC_KEY does not match VAPID_PRIVATE_KEY. Using the key derived "
+      + "from the private one, which is the one that will actually sign. Correct the "
+      + "environment variable to the value logged below.",
+    );
+    console.warn(`[push] correct VAPID_PUBLIC_KEY is: ${derived}`);
+    const why = diagnoseVapidPair(declaredPublic, privateKey);
+    if (why) console.warn(`[push] ${why}`);
+  }
+
   try {
-    webpush.setVapidDetails(subject, publicKey, privateKey);
+    webpush.setVapidDetails(subject, derived, privateKey);
+    publicKeyInUse = derived;
     console.log("[push] Web Push configured, subject", subject);
     configured = true;
   } catch (error) {
-    // A malformed key is a configuration error, not a reason to crash.
-    console.error("[push] VAPID keys were rejected, push disabled:", error);
+    // A malformed subject is the only thing left that can land here.
+    console.error(
+      "[push] VAPID details were rejected, push disabled:",
+      error instanceof Error ? error.message : error,
+    );
     configured = false;
   }
   return configured;
@@ -82,7 +124,9 @@ export function isPushConfigured(): boolean {
  */
 export function getVapidPublicKey(): string | null {
   if (!ensureConfigured()) return null;
-  return process.env.VAPID_PUBLIC_KEY?.trim() ?? null;
+  // The derived key, never the declared one: the browser must subscribe
+  // against the same key that signs, or every send is rejected.
+  return publicKeyInUse;
 }
 
 /** The uniqueness key for a subscription. See the 0080 migration. */
