@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { StaffNotificationSetting } from "@/components/StaffNotificationSetting";
 import { SmsUsageCard } from "@/components/SmsUsageCard";
+import { StripeConnectCard } from "@/components/StripeConnectCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -205,6 +206,10 @@ export default function Settings() {
           </TabsContent>
 
           <TabsContent value="integrations" className="mt-4 space-y-4">
+            {/* Where the salon's own money arrives. First, because it is the
+                only one here that is real rather than a placeholder. */}
+            <StripeConnectCard />
+
             {[
               { name: "Xero", desc: "Sync invoices, payroll, and reconciliations with Xero accounting", icon: "💼", status: "Not connected" },
               { name: "Twilio SMS", desc: "Send Pet Tracker links and appointment reminders via SMS", icon: "📱", status: "Not connected" },

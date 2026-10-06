@@ -40,6 +40,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const PetTracker = lazy(() => import("./pages/PetTracker"));
 const OnlineBooking = lazy(() => import("./pages/OnlineBooking"));
 const Login = lazy(() => import("./pages/Login"));
+const SalonSignup = lazy(() => import("./pages/SalonSignup"));
 const StaffInvitationAccept = lazy(() => import("./pages/StaffInvitationAccept"));
 const ClientPortal = lazy(() => import("./pages/ClientPortal"));
 const ClientPortalLogin = lazy(() => import("./pages/ClientPortalLogin"));
@@ -90,6 +91,8 @@ function Router() {
 
       {/* Public — no auth required */}
       <Route path="/login" component={Login} />
+      {/* Public, and the only route that creates a salon. */}
+      <Route path="/signup" component={SalonSignup} />
       <Route path="/staff-invite/:token" component={StaffInvitationAccept} />
       <Route path="/book" component={OnlineBookingPublic} />
       <Route path="/book/preview" component={OnlineBookingPreview} />
