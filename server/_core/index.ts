@@ -7,6 +7,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { registerUploadRoutes } from "../uploadRoutes";
 import { logAppUrlConfiguration } from "../appUrl";
 import { startPushFanout } from "../pushFanout";
+import { tenantIdForWebhook } from "../tenantByNumber";
 import { paymentRetryHandler, appointmentReminderHandler } from "../scheduledHandlers";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -41,7 +42,7 @@ import { sdk } from "./sdk";
  * Either way, the matched client's pet names are attached so the popup can
  * read e.g. "Greg Blackaby (Ruby & Charlie)".
  */
-async function lookupCallerByPhone(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, inboundNumber: string) {
+async function lookupCallerByPhone(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, inboundNumber: string, tenantId: number) {
   const numberVariants = Array.from(new Set([
     inboundNumber,
     inboundNumber.replace(/^\+61/, "0"),
@@ -50,7 +51,7 @@ async function lookupCallerByPhone(db: NonNullable<Awaited<ReturnType<typeof get
 
   const primaryCandidates = await db.select({ id: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
     .from(clients)
-    .where(and(eq(clients.tenantId, 1), inArray(clients.phone, numberVariants)));
+    .where(and(eq(clients.tenantId, tenantId), inArray(clients.phone, numberVariants)));
   const primaryMatch = primaryCandidates.find(c => phoneMatchesInboundNumber(c.phone, inboundNumber));
 
   let clientId: number | undefined;
@@ -67,7 +68,7 @@ async function lookupCallerByPhone(db: NonNullable<Awaited<ReturnType<typeof get
       name: clientContacts.name,
     })
       .from(clientContacts)
-      .where(and(eq(clientContacts.tenantId, 1), inArray(clientContacts.phone, numberVariants)));
+      .where(and(eq(clientContacts.tenantId, tenantId), inArray(clientContacts.phone, numberVariants)));
     const contactMatch = contactCandidates.find(c => phoneMatchesInboundNumber(c.phone, inboundNumber));
     if (contactMatch) {
       clientId = contactMatch.clientId;
@@ -224,8 +225,11 @@ async function startServer() {
   });
 
   app.post("/api/twilio/inbound", express.urlencoded({ extended: false }), async (req, res) => {
-    const { From, Body, MessageSid } = req.body;
-    console.log(`[Twilio] Inbound SMS from ${From}: ${Body}`);
+    const { From, To, Body, MessageSid } = req.body;
+    // `To` is the salon's own number — the only thing on a webhook that
+    // says which business this message belongs to.
+    const tenantId = await tenantIdForWebhook(To);
+    console.log(`[Twilio] Inbound SMS from ${From} to ${To} (tenant ${tenantId}): ${Body}`);
     const db = await getDb();
     const intent = classifyInboundReply(String(Body ?? ""));
     let clientId: number | undefined;
@@ -233,7 +237,7 @@ async function startServer() {
 
     if (db && From) {
       const inboundNumber = normaliseAustralianMobile(From);
-      const caller = await lookupCallerByPhone(db, inboundNumber);
+      const caller = await lookupCallerByPhone(db, inboundNumber, tenantId);
       clientId = caller.clientId;
 
       // Link every reply to the latest future reminder where the match is clear.
@@ -279,7 +283,7 @@ async function startServer() {
       }
 
       const [insertedMessage] = await db.insert(smsLogs).values({
-        tenantId: 1,
+        tenantId,
         clientId,
         appointmentId,
         toNumber: inboundNumber,
@@ -290,7 +294,7 @@ async function startServer() {
         direction: "inbound",
         replyIntent: intent,
       }).$returningId();
-      emitNewMessage(1, {
+      emitNewMessage(tenantId, {
         id: insertedMessage.id,
         fromNumber: inboundNumber,
         clientName: caller.displayName,
@@ -308,16 +312,19 @@ async function startServer() {
   // office phone first; Twilio calls /api/twilio/voice-no-answer once that
   // dial finishes, whether answered or not.
   app.post("/api/twilio/voice-incoming", express.urlencoded({ extended: false }), async (req, res) => {
-    const { CallSid, From } = req.body;
-    console.log(`[Twilio] Incoming call ${CallSid} from ${From}`);
+    const { CallSid, From, To } = req.body;
+    // Which salon was called. Without this a second salon's ringing phone
+    // would light up Barkin' Beautiful's screens.
+    const tenantId = await tenantIdForWebhook(To);
+    console.log(`[Twilio] Incoming call ${CallSid} from ${From} to ${To} (tenant ${tenantId})`);
     if (From) {
       const inboundNumber = normaliseAustralianMobile(String(From));
       const db = await getDb();
       if (db) {
-        const caller = await lookupCallerByPhone(db, inboundNumber);
-        emitCallRinging(1, String(CallSid), inboundNumber, caller.displayName, caller.petNames);
+        const caller = await lookupCallerByPhone(db, inboundNumber, tenantId);
+        emitCallRinging(tenantId, String(CallSid), inboundNumber, caller.displayName, caller.petNames);
       } else {
-        emitCallRinging(1, String(CallSid), inboundNumber, null);
+        emitCallRinging(tenantId, String(CallSid), inboundNumber, null);
       }
     }
     res.set("Content-Type", "text/xml");
@@ -341,12 +348,13 @@ async function startServer() {
   // the once-only decision logic, which is unit-tested.
 
   app.post("/api/twilio/voice-no-answer", express.urlencoded({ extended: false }), async (req, res) => {
-    const { DialCallStatus, From, CallSid } = req.body;
-    console.log(`[Twilio] Dial result for call from ${From}: ${DialCallStatus}`);
+    const { DialCallStatus, From, To, CallSid } = req.body;
+    const tenantId = await tenantIdForWebhook(To);
+    console.log(`[Twilio] Dial result for call from ${From} to ${To} (tenant ${tenantId}): ${DialCallStatus}`);
     // The call is no longer ringing either way (answered or not) — tell the
     // client to drop the "call-ringing" toast now rather than waiting out
     // its own timer.
-    if (CallSid) emitCallEnded(1, String(CallSid));
+    if (CallSid) emitCallEnded(tenantId, String(CallSid));
     res.set("Content-Type", "text/xml");
     if (DialCallStatus === "completed") {
       res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
@@ -385,7 +393,7 @@ async function startServer() {
           if (db) {
             try {
               await db.insert(missedCallAutoTexts).values({
-                tenantId: 1,
+                tenantId,
                 phoneE164: phoneKey,
                 firstCallSid: CallSid ? String(CallSid) : null,
               });
@@ -405,7 +413,7 @@ async function startServer() {
         if (claim.send && phoneKey && db) {
           const claimedDb = db;
           // We hold the only claim for this number, so this send cannot repeat.
-          sendSms(String(From), MISSED_CALL_AUTO_TEXT, { tenantId: 1 })
+          sendSms(String(From), MISSED_CALL_AUTO_TEXT, { tenantId })
             .then(async result => {
               await claimedDb
                 .update(missedCallAutoTexts)
@@ -416,7 +424,7 @@ async function startServer() {
                 })
                 .where(
                   and(
-                    eq(missedCallAutoTexts.tenantId, 1),
+                    eq(missedCallAutoTexts.tenantId, tenantId),
                     eq(missedCallAutoTexts.phoneE164, phoneKey),
                   ),
                 );
@@ -427,9 +435,9 @@ async function startServer() {
               // from the rows in it, a known client's whole conversation
               // displayed as a bare +61 number — 61 of 79 outbound rows,
               // 28 of them existing clients.
-              const autoTextCaller = await lookupCallerByPhone(claimedDb, phoneKey);
+              const autoTextCaller = await lookupCallerByPhone(claimedDb, phoneKey, tenantId);
               await claimedDb.insert(smsLogs).values({
-                tenantId: 1,
+                tenantId,
                 clientId: autoTextCaller.clientId ?? null,
                 toNumber: phoneKey,
                 body: MISSED_CALL_AUTO_TEXT,
@@ -462,15 +470,16 @@ async function startServer() {
   // notification to the notification bell, the same way a new inbound SMS
   // does.
   app.post("/api/twilio/voicemail-transcription", express.urlencoded({ extended: false }), async (req, res) => {
-    const { From, CallSid, RecordingUrl, TranscriptionText, TranscriptionStatus } = req.body;
-    console.log(`[Twilio] Voicemail transcription for call ${CallSid} from ${From}: ${TranscriptionStatus}`);
+    const { From, To, CallSid, RecordingUrl, TranscriptionText, TranscriptionStatus } = req.body;
+    const tenantId = await tenantIdForWebhook(To);
+    console.log(`[Twilio] Voicemail transcription for call ${CallSid} from ${From} to ${To} (tenant ${tenantId}): ${TranscriptionStatus}`);
     const db = await getDb();
     if (db && From) {
       const inboundNumber = normaliseAustralianMobile(String(From));
-      const caller = await lookupCallerByPhone(db, inboundNumber);
+      const caller = await lookupCallerByPhone(db, inboundNumber, tenantId);
 
       const [inserted] = await db.insert(missedCalls).values({
-        tenantId: 1,
+        tenantId,
         clientId: caller.clientId,
         callerName: caller.isSecondaryContact ? caller.displayName : null,
         fromNumber: inboundNumber,
@@ -479,7 +488,7 @@ async function startServer() {
         transcriptionStatus: TranscriptionStatus === "completed" ? "completed" : "failed",
         twilioCallSid: CallSid,
       }).$returningId();
-      emitMissedCall(1, {
+      emitMissedCall(tenantId, {
         id: inserted.id,
         fromNumber: inboundNumber,
         clientName: caller.displayName,

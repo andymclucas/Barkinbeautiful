@@ -44,6 +44,13 @@ export const tenants = mysqlTable("tenants", {
    */
   customDomain: varchar("custom_domain", { length: 255 }),
   /**
+   * The number this salon texts from and is called on. Both directions:
+   * it is the only thing identifying a salon on a Twilio webhook, where
+   * there is no signed-in user and no hostname. Null for a salon with no
+   * messaging.
+   */
+  twilioNumber: varchar("twilio_number", { length: 30 }),
+  /**
    * Never billed, never chased, never downgraded. Barkin' Beautiful is
    * not a customer — the concept is theirs. Kept separate from the plan
    * because WHAT a salon can use and WHETHER they pay are different
