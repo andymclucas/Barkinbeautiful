@@ -44,7 +44,7 @@ export async function countOutboundThisMonth(tenantId: number, when: Date = new 
   return Number(row?.n ?? 0);
 }
 
-type TenantRow = { subscriptionPlan: string | null; subscriptionStatus: string | null; billingExempt: boolean | null };
+type TenantRow = { subscriptionPlan: string | null; subscriptionStatus: string | null; billingExempt: boolean | null; smsOverageRateAud: string | null };
 
 async function loadTenant(tenantId: number): Promise<TenantRow | null> {
   const db = await getDb();
@@ -53,6 +53,7 @@ async function loadTenant(tenantId: number): Promise<TenantRow | null> {
     subscriptionPlan: tenants.subscriptionPlan,
     subscriptionStatus: tenants.subscriptionStatus,
     billingExempt: tenants.billingExempt,
+    smsOverageRateAud: tenants.smsOverageRateAud,
   }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
   return (row as TenantRow) ?? null;
 }
@@ -64,7 +65,8 @@ export async function getSmsUsage(tenantId: number, when: Date = new Date()): Pr
   // A tenant we cannot read is not metered. Failing closed here would mean
   // a database hiccup silently stops a salon texting its clients.
   if (!tenant) return describeSmsUsage(sent, null);
-  return describeSmsUsage(sent, smsQuotaFor(tenant));
+  const rate = tenant.smsOverageRateAud === null ? null : Number(tenant.smsOverageRateAud);
+  return describeSmsUsage(sent, smsQuotaFor(tenant), Number.isFinite(rate as number) ? rate : null);
 }
 
 /**

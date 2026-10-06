@@ -1,0 +1,19 @@
+-- What a salon pays for a text beyond its monthly allowance.
+--
+-- The metering already works the way it should: an allowance per plan, a
+-- warning at 80%, and going over still SENDS — a hard cap would mean the
+-- platform stopping a salon telling a client their dog is ready. What it
+-- has never had is a price, so "the extra will appear on your next
+-- invoice" has been a promise with no number behind it.
+--
+-- NULL on purpose, and NULL is not zero. Zero would mean overage is free
+-- and is a real commercial position; NULL means nobody has set a price
+-- yet, and the salon is shown "not yet priced" rather than a confident
+-- $0.00 that later turns into a bill. Costings come later; this is the
+-- shape they land in.
+--
+-- Per tenant rather than per plan so an early salon can be given a rate,
+-- or none, without changing what every plan costs. A per-plan default can
+-- sit in front of this when there is one.
+ALTER TABLE `tenants` ADD COLUMN `sms_overage_rate_aud` decimal(10,4) NULL;
+--> statement-breakpoint

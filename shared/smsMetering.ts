@@ -45,6 +45,22 @@ export type SmsUsage = {
   remaining: number | null;
   percentUsed: number | null;
   state: SmsMeterState;
+  /** What the month has cost beyond the allowance. */
+  overage: SmsOverage;
+};
+
+export type SmsOverage = {
+  /** Messages sent beyond the allowance. Zero when inside it. */
+  messages: number;
+  /** Dollars per extra message, or null when none has been set. */
+  rate: number | null;
+  /**
+   * What those messages come to. NULL — not zero — when there is no rate,
+   * because "we have not priced this yet" and "this is free" are
+   * different things and a salon should never be shown the second when we
+   * mean the first.
+   */
+  amount: number | null;
 };
 
 /**
@@ -87,10 +103,30 @@ export function smsQuotaFor(tenant: MeteredTenant): number | null {
   return SMS_QUOTA_BY_PLAN[plan];
 }
 
-export function describeSmsUsage(sent: number, quota: number | null): SmsUsage {
+/**
+ * What a month beyond the allowance costs.
+ *
+ * Rounded to whole cents at the end rather than per message: at a rate
+ * like 5.15c, rounding each of four hundred messages separately drifts
+ * away from the figure anyone checking the arithmetic would get.
+ */
+export function calculateOverage(sent: number, quota: number | null, rate: number | null | undefined): SmsOverage {
+  const over = quota === null ? 0 : Math.max(0, Math.floor(sent) - quota);
+  const usableRate = typeof rate === "number" && Number.isFinite(rate) && rate >= 0 ? rate : null;
+  return {
+    messages: over,
+    rate: usableRate,
+    amount: usableRate === null ? null : Math.round(over * usableRate * 100) / 100,
+  };
+}
+
+export function describeSmsUsage(sent: number, quota: number | null, overageRate?: number | null): SmsUsage {
   const used = Math.max(0, Math.floor(sent));
   if (quota === null) {
-    return { sent: used, quota: null, remaining: null, percentUsed: null, state: "unlimited" };
+    return {
+      sent: used, quota: null, remaining: null, percentUsed: null, state: "unlimited",
+      overage: calculateOverage(used, null, overageRate),
+    };
   }
   // The displayed figure rounds; the threshold must not. 799 of 1000 is
   // 79.9%, which rounds to 80 and would raise the warning a message early
@@ -100,7 +136,10 @@ export function describeSmsUsage(sent: number, quota: number | null): SmsUsage {
   const state: SmsMeterState = used >= quota
     ? "exceeded"
     : exactPercent >= SMS_WARN_AT_PERCENT ? "approaching" : "ok";
-  return { sent: used, quota, remaining: Math.max(0, quota - used), percentUsed, state };
+  return {
+    sent: used, quota, remaining: Math.max(0, quota - used), percentUsed, state,
+    overage: calculateOverage(used, quota, overageRate),
+  };
 }
 
 export type SendDecision = { send: true } | { send: false; reason: string };

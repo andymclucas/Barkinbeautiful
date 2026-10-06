@@ -24,7 +24,7 @@ export function SmsUsageCard() {
 
   if (!data) return null;
 
-  const { sent, quota, remaining, percentUsed, state } = data;
+  const { sent, quota, remaining, percentUsed, state, overage } = data;
   const month = new Date().toLocaleDateString("en-AU", {
     timeZone: "Australia/Brisbane", month: "long",
   });
@@ -80,8 +80,18 @@ export function SmsUsageCard() {
           <p className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/30">
             <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
-              You have gone past this month&rsquo;s {quota} included texts. Messages are still being sent
-              &mdash; nobody is cut off mid-service &mdash; and the extra will appear on your next invoice.
+              You have gone past this month&rsquo;s {quota} included texts by{" "}
+              <strong>{overage.messages}</strong>. Messages are still being sent &mdash; nobody is cut off
+              mid-service.{" "}
+              {overage.amount !== null ? (
+                <>That comes to <strong>${overage.amount.toFixed(2)}</strong> at ${overage.rate?.toFixed(4)} each,
+                and will appear on your next invoice.</>
+              ) : (
+                /* No rate set. Saying "$0.00" would be a confident lie; saying
+                   nothing would leave a salon unsure whether it is being
+                   charged. So it says exactly what is true. */
+                <>Extra messages are not priced yet, so nothing has been charged for them.</>
+              )}
             </span>
           </p>
         ) : near ? (

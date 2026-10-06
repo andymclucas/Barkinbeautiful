@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  smsBillingPeriod, smsQuotaFor, describeSmsUsage, maySendSms,
+  smsBillingPeriod, smsQuotaFor, describeSmsUsage, maySendSms, calculateOverage,
   SMS_QUOTA_BY_PLAN, SMS_WARN_AT_PERCENT,
 } from "@shared/smsMetering";
 
@@ -89,5 +89,63 @@ describe("whether the message actually goes", () => {
   it("never stops an unmetered salon, even with hardStop set", () => {
     const unlimited = describeSmsUsage(99999, null);
     expect(maySendSms({ usage: unlimited, hasMessagingFeature: true, hardStop: true })).toEqual({ send: true });
+  });
+});
+
+describe("what going over the allowance costs", () => {
+  it("counts only the messages beyond it", () => {
+    expect(calculateOverage(1200, 1000, 0.08).messages).toBe(200);
+    expect(calculateOverage(1000, 1000, 0.08).messages).toBe(0);
+    expect(calculateOverage(400, 1000, 0.08).messages).toBe(0);
+  });
+
+  it("prices them at the salon's rate", () => {
+    expect(calculateOverage(1200, 1000, 0.08).amount).toBe(16);
+    expect(calculateOverage(1500, 1000, 0.0515).amount).toBe(25.75);
+  });
+
+  it("rounds once at the end, not per message", () => {
+    // At 5.15c, rounding each of 400 messages separately drifts away from
+    // the figure anyone checking the arithmetic by hand would get.
+    expect(calculateOverage(1400, 1000, 0.0515).amount).toBe(20.6);
+    expect(calculateOverage(1003, 1000, 0.0333).amount).toBe(0.1);
+  });
+
+  it("says NULL, not zero, when no price has been set", () => {
+    // The whole point of leaving costings for later. "We have not priced
+    // this yet" and "this is free" are different things, and a salon
+    // should never be shown the second when we mean the first.
+    const o = calculateOverage(1500, 1000, null);
+    expect(o.messages).toBe(500);
+    expect(o.rate).toBeNull();
+    expect(o.amount).toBeNull();
+    expect(calculateOverage(1500, 1000, undefined).amount).toBeNull();
+  });
+
+  it("treats zero as a real price meaning free", () => {
+    const o = calculateOverage(1500, 1000, 0);
+    expect(o.rate).toBe(0);
+    expect(o.amount).toBe(0);
+  });
+
+  it("ignores a nonsense rate rather than inventing a charge", () => {
+    for (const bad of [-1, NaN, Infinity]) {
+      expect(calculateOverage(1500, 1000, bad).amount, String(bad)).toBeNull();
+    }
+  });
+
+  it("never charges an unmetered salon", () => {
+    // Barkin' Beautiful. No quota means no overage, whatever the rate.
+    const o = calculateOverage(5000, null, 0.08);
+    expect(o.messages).toBe(0);
+    expect(o.amount).toBe(0);
+  });
+
+  it("rides along on the usage a salon is shown", () => {
+    const u = describeSmsUsage(1240, 1000, 0.08);
+    expect(u.state).toBe("exceeded");
+    expect(u.overage).toEqual({ messages: 240, rate: 0.08, amount: 19.2 });
+    expect(describeSmsUsage(500, 1000, 0.08).overage.messages).toBe(0);
+    expect(describeSmsUsage(500, 1000).overage.amount).toBeNull();
   });
 });
