@@ -1305,3 +1305,31 @@ export const appointmentAddOns = mysqlTable("appointment_add_ons", {
 ]);
 
 export type AppointmentAddOn = typeof appointmentAddOns.$inferSelect;
+
+/**
+ * A code sent to an email address, to be proved before a salon is made.
+ *
+ * /signup is the only public endpoint that creates a tenant. Requiring a
+ * working mailbox first turns "a script can fill the database with
+ * salons" into "a script needs a mailbox per salon", which is a
+ * different kind of effort.
+ *
+ * Hashed like a password reset token: briefly, this code is enough to
+ * create an account.
+ */
+export const signupVerifications = mysqlTable("signup_verifications", {
+  id: int("id").autoincrement().primaryKey(),
+  email: varchar("email", { length: 320 }).notNull(),
+  codeHash: varchar("code_hash", { length: 255 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  /** Five wrong guesses and the row is spent — six digits is a million. */
+  attempts: int("attempts").default(0).notNull(),
+  verifiedAt: timestamp("verified_at"),
+  requestedFrom: varchar("requested_from", { length: 64 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_signup_verifications_email").on(t.email),
+  index("idx_signup_verifications_expires").on(t.expiresAt),
+]);
+
+export type SignupVerification = typeof signupVerifications.$inferSelect;

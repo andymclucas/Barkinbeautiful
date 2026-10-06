@@ -617,6 +617,13 @@
       "when": 1791267128276,
       "tag": "0087_stripe_connect",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "5",
+      "when": 1791321756294,
+      "tag": "0088_signup_verifications",
+      "breakpoints": true
     }
   ]
 }
