@@ -1,0 +1,17 @@
+-- A salon that is never billed.
+--
+-- Barkin' Beautiful is not a customer: the concept is theirs and Groomigo
+-- is being built for them. They need every feature, permanently, and must
+-- never be charged, chased for a failed payment, or downgraded when a
+-- subscription lapses — because they have no subscription to lapse.
+--
+-- A flag rather than a plan value. Adding "founder" to subscription_plan
+-- would rewrite the enum on a live table, and it would conflate two
+-- different questions: WHAT a salon can use, and WHETHER they pay for it.
+-- Those come apart for a partner, a pilot salon, or a staff demo account,
+-- and will come apart again.
+--
+-- Defaults to false, so every salon added from here on is billable unless
+-- somebody deliberately says otherwise.
+ALTER TABLE `tenants` ADD COLUMN `billing_exempt` boolean NOT NULL DEFAULT false;
+--> statement-breakpoint
