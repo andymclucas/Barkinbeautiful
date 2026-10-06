@@ -4,6 +4,7 @@ import type { User } from "../../drizzle/schema";
 import { staff } from "../../drizzle/schema";
 import { getDb } from "../db";
 import { resolveTenantId } from "../../shared/tenantResolution";
+import { tenantIdForHost } from "../hostTenant";
 import { sdk } from "./sdk";
 
 export type TrpcContext = {
@@ -37,7 +38,15 @@ export async function createContext(
     req: opts.req,
     res: opts.res,
     user,
-    tenantId: user ? await tenantForUser(user) : null,
+    // A signed-in caller's own salon ALWAYS wins. The Host header is set
+    // by whoever made the request, so resolving a tenant from it for an
+    // authenticated user would let anyone read another salon's data by
+    // changing one header. Host resolution is only for the public
+    // surface — online booking and the client portal — which has nobody
+    // signed in and no other signal to go on.
+    tenantId: user
+      ? await tenantForUser(user)
+      : await tenantIdForHost(opts.req.headers.host),
   };
 }
 
