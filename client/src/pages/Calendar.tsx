@@ -821,6 +821,26 @@ export default function Calendar() {
   const [apptSearchTerm, setApptSearchTerm] = useState("");
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The day board's own width, so the staff columns can be sized to fit it
+  // instead of always taking 320px each and pushing the salon off-screen.
+  // Measured rather than guessed from the viewport: the sidebar, the padding
+  // and the week/day toggle all eat into it, and a guess is wrong on every
+  // screen but the one it was tuned on.
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [boardWidth, setBoardWidth] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width;
+      // Zero means the board is hidden (another view is showing). Keeping
+      // the last real measurement stops the columns collapsing to their
+      // minimum and then visibly snapping back when the day view returns.
+      if (width && width > 0) setBoardWidth(width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showBlockoutDialog, setShowBlockoutDialog] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ type: "blockout" | "styleNote" | "appointment"; id: number; label: string } | null>(null);
@@ -1529,11 +1549,15 @@ export default function Calendar() {
 
     return (
       <div className="min-h-[500px] flex-1 bg-card rounded-2xl border border-white/90 shadow-xl shadow-[color-mix(in_oklch,var(--brand-primary)_10%,transparent)] flex flex-col overflow-hidden lg:min-h-0">
-        {/* Intentional horizontal scrolling keeps every staff track wide enough to read appointment details. */}
-        <div className="overflow-x-auto overscroll-x-contain flex-1 flex flex-col" aria-label="Scrollable staff calendar columns">
-          {/* Computed total width: time gutter + fixed readable-width staff columns. */}
+        <div ref={boardRef} className="overflow-x-auto overscroll-x-contain flex-1 flex flex-col" aria-label="Scrollable staff calendar columns">
+          {/* Columns fit the measured board width, down to a readable floor;
+              only below that floor does the board scroll sideways. */}
           {(() => {
-            const { totalWidth, gridTemplateColumns: colTemplate } = getDayCalendarGridSizing(cols.length, TIME_COL_W);
+            const { totalWidth, gridTemplateColumns: colTemplate } = getDayCalendarGridSizing(
+              cols.length,
+              TIME_COL_W,
+              { availableWidth: boardWidth },
+            );
             // A flex COLUMN that may shrink vertically. This used to be a plain
             // block with shrink-0, which broke the day view's vertical scroll two
             // ways: a block gives no flex context, so flex-1 on the grid body
