@@ -44,6 +44,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
+import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { getActiveTimeZone } from "@/lib/timezone";
 
@@ -2591,6 +2592,11 @@ export default function Calendar() {
                     )}
                   </div>
                 </div>
+
+                {/* Extras done on the day. Each one becomes its own line on
+                    the invoice rather than disappearing into the price. */}
+                {editAppt && <AppointmentAddOns appointmentId={editAppt.id} />}
+
                 <div className="space-y-1.5">
                   <Label>Notes</Label>
                   <Textarea rows={2} value={editForm.notes} onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))} />

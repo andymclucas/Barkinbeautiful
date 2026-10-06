@@ -19,6 +19,13 @@ export type InvoiceDecisionInput = {
   workflowState: string;
   /** cancelled / no_show never bill. */
   status: string;
+  /**
+   * What the add-ons come to, in dollars. A groom with no price recorded
+   * but a $65 teeth clean done on the day is still worth billing — the
+   * price check below looks at the TOTAL, or those extras would be given
+   * away by a guard meant for appointments with nothing on them at all.
+   */
+  addOnsTotal?: string | number | null;
 };
 
 export type InvoiceDecision =
@@ -45,10 +52,12 @@ export function decideAppointmentInvoice(input: InvoiceDecisionInput): InvoiceDe
     return { invoice: false, reason: "membership_covered" };
   }
 
-  const amount = toAmount(input.price);
-  // NULL is not zero: it means nobody recorded a figure. Either way there is
-  // nothing to bill, and inventing one would be worse than raising nothing.
-  if (amount === null || amount <= 0) return { invoice: false, reason: "no_price" };
+  // NULL is not zero: it means nobody recorded a figure. But add-ons are
+  // recorded explicitly, so a groom with no price and a $65 teeth clean has
+  // something real to bill even though the groom itself does not.
+  const amount = toAmount(input.price) ?? 0;
+  const extras = toAmount(input.addOnsTotal) ?? 0;
+  if (amount + extras <= 0) return { invoice: false, reason: "no_price" };
 
   return { invoice: true };
 }
