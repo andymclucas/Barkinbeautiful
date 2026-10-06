@@ -20,7 +20,7 @@ import { nanoid } from "nanoid";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { tenants, users, staff } from "../../drizzle/schema";
+import { tenants, users, staff, signupVerifications } from "../../drizzle/schema";
 import { sdk } from "../_core/sdk";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "../_core/cookies";
@@ -28,6 +28,12 @@ import {
   slugifySalonName, checkSlugShape, nextFreeSlug, checkPassword, splitName,
   SLUG_PROBLEM_MESSAGES, PASSWORD_PROBLEM_MESSAGES, MIN_PASSWORD_LENGTH,
 } from "@shared/salonSignup";
+import {
+  codeState, codeExpiry, normaliseCode, verificationStillGood, buildVerificationEmail,
+  CODE_STATE_MESSAGES, CODE_LENGTH, MAX_ATTEMPTS,
+} from "@shared/signupVerification";
+import { sendEmail } from "../email";
+import crypto from "node:crypto";
 
 const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
 
@@ -74,6 +80,93 @@ export const salonSignupRouter = router({
       return { slug, available: slug === base, problem: null };
     }),
 
+  /**
+   * Send a code to an address, so it can be proved before anything is
+   * made.
+   *
+   * Always reports success, whatever is behind the address. Saying "that
+   * email already has an account" HERE would turn this endpoint into a
+   * way to ask whether any given salon owner is a Groomigo customer. The
+   * create step still says so plainly, where the person has committed to
+   * signing up and the answer is useful to them rather than to a
+   * stranger with a list of addresses.
+   */
+  requestCode: publicProcedure
+    .input(z.object({ email: z.string().email().max(320) }))
+    .mutation(async ({ input, ctx }) => {
+      const ip = String(ctx.req.ip ?? ctx.req.socket?.remoteAddress ?? "unknown");
+      if (tooManyFrom(ip)) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many codes requested. Try again shortly." });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Database unavailable" });
+
+      const email = input.email.trim().toLowerCase();
+      // Digits from a CSPRNG, not Math.random: briefly this is enough to
+      // create an account.
+      const code = String(crypto.randomInt(0, 10 ** CODE_LENGTH)).padStart(CODE_LENGTH, "0");
+      const codeHash = await bcrypt.hash(code, 10);
+
+      // One row per address, replaced each time, so asking again
+      // supersedes the last code rather than leaving two that both work.
+      await db.insert(signupVerifications).values({
+        email, codeHash, expiresAt: codeExpiry(), attempts: 0, verifiedAt: null, requestedFrom: ip.slice(0, 64),
+      }).onDuplicateKeyUpdate({
+        set: { codeHash, expiresAt: codeExpiry(), attempts: 0, verifiedAt: null, requestedFrom: ip.slice(0, 64) },
+      });
+
+      const mail = buildVerificationEmail(code);
+      const sent = await sendEmail({ to: email, subject: mail.subject, html: mail.html });
+      if (!sent) {
+        // Resend unconfigured, or it refused. Said out loud rather than
+        // leaving somebody waiting for an email that is never coming.
+        console.error("[signup] verification email could not be sent to", email);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "We could not send the code. Try again, or get in touch and we will set you up.",
+        });
+      }
+      return { sent: true };
+    }),
+
+  /** Check the digits. Spends an attempt whether or not they are right. */
+  verifyCode: publicProcedure
+    .input(z.object({ email: z.string().email().max(320), code: z.string().max(20) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Database unavailable" });
+
+      const email = input.email.trim().toLowerCase();
+      const [row] = await db.select().from(signupVerifications)
+        .where(eq(signupVerifications.email, email)).limit(1);
+
+      // Checked BEFORE comparing, so a locked or expired row costs no
+      // bcrypt work and cannot be used to time the difference.
+      const state = codeState(row ?? null);
+      if (!state.usable) throw new TRPCError({ code: "BAD_REQUEST", message: CODE_STATE_MESSAGES[state.reason] });
+
+      const typed = normaliseCode(input.code);
+      const matches = typed.length === CODE_LENGTH && await bcrypt.compare(typed, row.codeHash);
+
+      if (!matches) {
+        const attempts = row.attempts + 1;
+        await db.update(signupVerifications).set({ attempts })
+          .where(eq(signupVerifications.id, row.id));
+        const left = MAX_ATTEMPTS - attempts;
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: left > 0
+            ? `That code is not right. ${left} ${left === 1 ? "try" : "tries"} left.`
+            : CODE_STATE_MESSAGES.locked,
+        });
+      }
+
+      await db.update(signupVerifications).set({ verifiedAt: new Date() })
+        .where(eq(signupVerifications.id, row.id));
+      return { verified: true };
+    }),
+
   create: publicProcedure
     .input(z.object({
       salonName: z.string().min(1).max(200),
@@ -101,6 +194,19 @@ export const salonSignupRouter = router({
       }
 
       const email = input.email.trim().toLowerCase();
+
+      // Nothing is created for an address nobody has proved they can
+      // read. This is what stops /signup being a way to fill the
+      // database with salons: a flood now needs a mailbox each.
+      const [proof] = await db.select().from(signupVerifications)
+        .where(eq(signupVerifications.email, email)).limit(1);
+      if (!verificationStillGood(proof?.verifiedAt)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Confirm your email address first — we will send you a code.",
+        });
+      }
+
       const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
       if (existing) {
         // Deliberately specific. This is a signup form, not a login: a
@@ -176,6 +282,9 @@ export const salonSignupRouter = router({
           expiresInMs: ONE_YEAR_MS,
         });
         ctx.res.cookie(COOKIE_NAME, sessionToken, getSessionCookieOptions(ctx.req));
+
+        // Spent. One proven address makes one salon, not a supply of them.
+        await db.delete(signupVerifications).where(eq(signupVerifications.email, email));
 
         console.log(`[signup] salon ${tenantId} "${input.salonName.trim()}" at ${slug}, owner ${userId} (${firstName})`);
         return { success: true, tenantId, slug, salonName: input.salonName.trim() };

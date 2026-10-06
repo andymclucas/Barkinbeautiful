@@ -7,22 +7,33 @@ vi.mock("./_core/sdk", () => ({ sdk: { createSessionToken: vi.fn(async () => "to
 import { appRouter } from "./routers";
 
 /** A database that records what was inserted and deleted. */
-function spyDb(opts: { existingEmail?: boolean; failOnUsers?: boolean } = {}) {
+function spyDb(opts: { existingEmail?: boolean; failOnUsers?: boolean; verifiedAt?: Date | null } = {}) {
   const log: Array<{ op: string; table: string }> = [];
-  const selectRows: unknown[] = opts.existingEmail ? [{ id: 1 }] : [];
-  const chain = (rows: unknown[]) => {
+  const tableName = (t: any) => String(t?.[Symbol.for("drizzle:Name")] ?? "?");
+  const verified = opts.verifiedAt === undefined ? new Date() : opts.verifiedAt;
+
+  // Dispatch on the TABLE, not a call counter: a counter breaks the
+  // moment a test creates more than one salon from the same mock.
+  const rowsFor = (table: string): unknown[] => {
+    if (table === "signup_verifications") return verified ? [{ id: 5, verifiedAt: verified }] : [];
+    if (table === "users") return opts.existingEmail ? [{ id: 1 }] : [];
+    return [];
+  };
+
+  const chain = () => {
     const c: any = {
+      _t: "?",
       from: (t: any) => { c._t = tableName(t); return c; },
       where: () => c,
-      limit: () => Promise.resolve(rows),
-      then: (res: (v: unknown[]) => unknown, rej?: any) => Promise.resolve(rows).then(res, rej),
+      limit: () => Promise.resolve(rowsFor(c._t)),
+      then: (res: (v: unknown[]) => unknown, rej?: any) => Promise.resolve(rowsFor(c._t)).then(res, rej),
     };
     return c;
   };
-  const tableName = (t: any) => String(t?.[Symbol.for("drizzle:Name")] ?? "?");
+
   return {
     log,
-    select: vi.fn(() => chain(selectRows)),
+    select: vi.fn(() => chain()),
     insert: vi.fn((t: any) => ({
       values: async () => {
         const name = tableName(t);
@@ -30,6 +41,7 @@ function spyDb(opts: { existingEmail?: boolean; failOnUsers?: boolean } = {}) {
         if (name === "users" && opts.failOnUsers) throw new Error("boom");
         return [{ insertId: name === "tenants" ? 77 : 88 }];
       },
+      onDuplicateKeyUpdate: async () => undefined,
     })),
     delete: vi.fn((t: any) => ({
       where: async () => { log.push({ op: "delete", table: tableName(t) }); return undefined; },
@@ -59,7 +71,7 @@ describe("creating a salon", () => {
     expect(r.success).toBe(true);
     expect(r.slug).toBe("paws-and-whiskers");
     expect(db.log.map(l => `${l.op} ${l.table}`)).toEqual([
-      "insert tenants", "insert users", "insert staff",
+      "insert tenants", "insert users", "insert staff", "delete signup_verifications",
     ]);
   });
 
@@ -107,5 +119,34 @@ describe("a flood of signups from one place", () => {
     }
     await expect(appRouter.createCaller(fixed()).salonSignup.create({ ...good, email: "a4@example.com" }))
       .rejects.toThrow(/a lot of salons in one hour/i);
+  });
+});
+
+describe("an address nobody has proved", () => {
+  it("creates nothing at all", async () => {
+    // The whole point. Without this, /signup is a way to fill the
+    // database with salons nobody asked for.
+    const db = spyDb({ verifiedAt: null });
+    getDb.mockResolvedValue(db);
+    await expect(appRouter.createCaller(ctx()).salonSignup.create(good))
+      .rejects.toThrow(/confirm your email address first/i);
+    expect(db.log).toHaveLength(0);
+  });
+
+  it("refuses a proof that has gone stale", async () => {
+    // Thirty minutes. A proven address is a key to making a tenant.
+    const db = spyDb({ verifiedAt: new Date(Date.now() - 31 * 60 * 1000) });
+    getDb.mockResolvedValue(db);
+    await expect(appRouter.createCaller(ctx()).salonSignup.create(good))
+      .rejects.toThrow(/confirm your email address first/i);
+    expect(db.log).toHaveLength(0);
+  });
+
+  it("spends the proof once the salon exists", async () => {
+    // One proven address makes one salon, not a supply of them.
+    const db = spyDb();
+    getDb.mockResolvedValue(db);
+    await appRouter.createCaller(ctx()).salonSignup.create(good);
+    expect(db.log.some(l => l.op === "delete" && l.table === "signup_verifications")).toBe(true);
   });
 });

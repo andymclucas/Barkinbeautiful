@@ -10,6 +10,7 @@ import {
   slugifySalonName, checkSlugShape, checkPassword,
   SLUG_PROBLEM_MESSAGES, PASSWORD_PROBLEM_MESSAGES, MIN_PASSWORD_LENGTH,
 } from "@shared/salonSignup";
+import { normaliseCode, isCompleteCode, CODE_LENGTH, CODE_TTL_MINUTES } from "@shared/signupVerification";
 
 /**
  * Starting a salon on Groomigo.
@@ -31,6 +32,13 @@ export default function SalonSignup() {
   const [phone, setPhone] = useState("");
   const [touchedPassword, setTouchedPassword] = useState(false);
 
+  // The address has to be proved before anything is created, so the page
+  // has two moments rather than two screens: everything entered stays on
+  // screen behind the code box.
+  const [codeSent, setCodeSent] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [code, setCode] = useState("");
+
   const localSlug = useMemo(() => slugifySalonName(salonName), [salonName]);
   const slugShape = localSlug ? checkSlugShape(localSlug) : null;
 
@@ -42,6 +50,15 @@ export default function SalonSignup() {
   );
 
   const passwordProblem = touchedPassword && password ? checkPassword(password) : null;
+
+  const requestCode = trpc.salonSignup.requestCode.useMutation({
+    onSuccess: () => { setCodeSent(true); toast.success("Code sent", { description: `Check ${email} — it lasts ${CODE_TTL_MINUTES} minutes.` }); },
+    onError: (e) => toast.error("Could not send the code", { description: e.message }),
+  });
+  const verifyCode = trpc.salonSignup.verifyCode.useMutation({
+    onSuccess: () => { setEmailVerified(true); toast.success("Email confirmed"); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const create = trpc.salonSignup.create.useMutation({
     onSuccess: (r) => {
@@ -57,7 +74,7 @@ export default function SalonSignup() {
   const effectiveSlug = slugCheck?.slug ?? localSlug;
   const canSubmit = Boolean(
     salonName.trim() && ownerName.trim() && email.trim() && password &&
-    !slugShape && !checkPassword(password) && !create.isPending,
+    !slugShape && !checkPassword(password) && emailVerified && !create.isPending,
   );
 
   // Never leave somebody staring at a form that silently will not submit.
@@ -68,6 +85,7 @@ export default function SalonSignup() {
     !email.trim() ? "We need an email to sign you in with." :
     !password ? "Choose a password." :
     checkPassword(password) ? PASSWORD_PROBLEM_MESSAGES[checkPassword(password)!] :
+    !emailVerified ? "Confirm your email address to finish." :
     null;
 
   useEffect(() => { document.title = "Start a salon — Groomigo"; }, []);
@@ -120,8 +138,62 @@ export default function SalonSignup() {
 
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jo@pawsandwhiskers.com.au" autoComplete="email" />
-            <p className="text-xs text-muted-foreground">This is what you will sign in with.</p>
+            <div className="flex gap-2">
+              <Input
+                id="email" type="email" value={email} autoComplete="email"
+                placeholder="jo@pawsandwhiskers.com.au"
+                disabled={emailVerified}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  // Changing the address undoes the proof — it was proof
+                  // of the OLD one.
+                  setCodeSent(false); setEmailVerified(false); setCode("");
+                }}
+              />
+              {!emailVerified && (
+                <Button
+                  type="button" variant="outline" className="shrink-0"
+                  disabled={!email.trim() || requestCode.isPending}
+                  onClick={() => requestCode.mutate({ email: email.trim() })}
+                >
+                  {requestCode.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                  {codeSent ? "Resend" : "Send code"}
+                </Button>
+              )}
+            </div>
+
+            {emailVerified ? (
+              <p className="flex items-center gap-1.5 text-xs text-emerald-600">
+                <Check className="h-3 w-3" /> Confirmed. This is what you will sign in with.
+              </p>
+            ) : codeSent ? (
+              <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
+                <Label htmlFor="code" className="text-xs">Enter the {CODE_LENGTH}-digit code we sent</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="code" inputMode="numeric" autoComplete="one-time-code"
+                    className="font-mono tracking-[0.3em]" placeholder="000000"
+                    value={code}
+                    onChange={(e) => setCode(normaliseCode(e.target.value))}
+                  />
+                  <Button
+                    type="button" className="shrink-0"
+                    disabled={!isCompleteCode(code) || verifyCode.isPending}
+                    onClick={() => verifyCode.mutate({ email: email.trim(), code })}
+                  >
+                    {verifyCode.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                    Confirm
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  It lasts {CODE_TTL_MINUTES} minutes. Nothing has been created yet.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                This is what you will sign in with. We will send a code to check it works.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
