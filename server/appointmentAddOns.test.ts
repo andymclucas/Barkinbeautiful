@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   toCents, centsToAmount, addOnRequiresManualPrice,
-  buildInvoiceLines, appointmentTotal, addOnsTotal,
+  buildInvoiceLines, appointmentTotal, addOnsTotal, billableTotal,
+  billableTotalsByAppointment,
 } from "@shared/appointmentAddOns";
 
 describe("money arrives as decimal strings and must stay exact", () => {
@@ -123,5 +124,88 @@ describe("the itemised invoice", () => {
   it("refuses a nonsense quantity rather than inverting the bill", () => {
     expect(addOnsTotal([{ name: "a", unitPrice: "35.00", quantity: 0 }])).toBe("35.00");
     expect(addOnsTotal([{ name: "a", unitPrice: "35.00", quantity: -3 }])).toBe("35.00");
+  });
+});
+
+describe("what is actually owed on an appointment", () => {
+  it("adds the extras to the groom", () => {
+    // Lauren, 07/10/2026, on Millie: "$145 for the groom $35 for the extra
+    // care". The panel was showing $145 owing.
+    expect(billableTotal("145.00", [{ name: "Extra Care", unitPrice: "35.00", quantity: 1 }]))
+      .toBe("180.00");
+  });
+
+  it("counts quantity", () => {
+    expect(billableTotal("145.00", [{ name: "Nail trim", unitPrice: "15.00", quantity: 3 }]))
+      .toBe("190.00");
+  });
+
+  it("is just the price when nothing was added", () => {
+    expect(billableTotal("145.00", [])).toBe("145.00");
+  });
+
+  it("keeps 'nobody has priced this' distinct from 'it is free'", () => {
+    // A null total is what stops the panel calling an unpriced booking
+    // settled. Most imported history has no price at all.
+    expect(billableTotal(null, [])).toBeNull();
+    expect(billableTotal(undefined, [])).toBeNull();
+    expect(billableTotal("", [])).toBeNull();
+    expect(billableTotal("0.00", [])).toBe("0.00");
+  });
+
+  it("bills the extras on a groom that carries no price", () => {
+    // A membership groom has no price on purpose — the weekly payment
+    // covers it — but the de-matt done on the day is covered by nothing.
+    expect(billableTotal(null, [{ name: "De-matt", unitPrice: "65.00", quantity: 1 }]))
+      .toBe("65.00");
+  });
+
+  it("adds up in cents, not floats", () => {
+    expect(billableTotal("0.10", [{ name: "a", unitPrice: "0.20", quantity: 1 }])).toBe("0.30");
+    expect(billableTotal("99.99", [
+      { name: "a", unitPrice: "35.35", quantity: 3 },
+      { name: "b", unitPrice: "10.10", quantity: 1 },
+    ])).toBe("216.14");
+  });
+});
+
+describe("a booking that covers several dogs", () => {
+  it("puts each dog's extras on its own bill", () => {
+    // The mistake worth a test: one flat list of add-ons for two
+    // appointments, and the de-matt landing on the wrong dog's bill.
+    const totals = billableTotalsByAppointment(
+      [{ id: 10, price: "145.00" }, { id: 11, price: "95.00" }],
+      [
+        { appointmentId: 10, name: "Extra Care", unitPrice: "35.00", quantity: 1 },
+        { appointmentId: 11, name: "Nail trim", unitPrice: "15.00", quantity: 2 },
+      ],
+    );
+    expect(totals.get(10)).toBe("180.00");
+    expect(totals.get(11)).toBe("125.00");
+  });
+
+  it("leaves a dog with no extras on its own price", () => {
+    const totals = billableTotalsByAppointment(
+      [{ id: 10, price: "145.00" }, { id: 11, price: "95.00" }],
+      [{ appointmentId: 10, name: "Extra Care", unitPrice: "35.00", quantity: 1 }],
+    );
+    expect(totals.get(11)).toBe("95.00");
+  });
+
+  it("ignores add-ons belonging to an appointment outside the booking", () => {
+    const totals = billableTotalsByAppointment(
+      [{ id: 10, price: "145.00" }],
+      [{ appointmentId: 999, name: "Someone else's", unitPrice: "500.00", quantity: 1 }],
+    );
+    expect(totals.get(10)).toBe("145.00");
+  });
+
+  it("keeps an unpriced dog unpriced, so it stays out of the booking total", () => {
+    const totals = billableTotalsByAppointment(
+      [{ id: 10, price: "145.00" }, { id: 11, price: null }],
+      [],
+    );
+    expect(totals.get(10)).toBe("145.00");
+    expect(totals.get(11)).toBeNull();
   });
 });

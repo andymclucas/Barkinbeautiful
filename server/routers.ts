@@ -900,7 +900,6 @@ const calendarRouter = router({
             .from(appointmentPayments).where(eq(appointmentPayments.appointmentId, appt.id));
           const [petRow] = await db.select({ name: pets.name }).from(pets).where(eq(pets.id, appt.petId)).limit(1);
           const total = Number(appt.price).toFixed(2);
-          const status = invoiceStatusForPayments(total, paidRow?.total ?? 0);
           const SERVICE_LABELS: Record<string, string> = {
             classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath Only",
             fft: "FFT", nail_trim: "Nail Trim", daycare: "Daycare", deshed: "Deshed", other: "Other",
@@ -916,6 +915,11 @@ const calendarRouter = router({
             servicePrice: total,
             addOns,
           });
+          // Judged against the WHOLE bill, not the groom alone. Paying the
+          // $145 groom on a $180 booking leaves the $35 extra owing, and
+          // stamping that invoice "paid" is how an extra never gets
+          // collected.
+          const status = invoiceStatusForPayments(itemised.subtotal, paidRow?.total ?? 0);
           const [created] = await db.insert(invoices).values({
             tenantId: appt.tenantId,
             clientId: appt.clientId,

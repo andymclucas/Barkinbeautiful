@@ -119,3 +119,46 @@ export function addOnsTotal(addOns: AddOnLine[]): string {
   }
   return centsToAmount(cents);
 }
+
+/**
+ * What this appointment actually comes to, or null when nobody has priced it.
+ *
+ * The difference from appointmentTotal is the null, and the null is the
+ * whole point: "not priced yet" and "costs nothing" are different, and the
+ * payment panel must not show a booking as settled because no figure was
+ * ever entered. Most imported history is in that state.
+ *
+ * An unpriced groom WITH extras is not unpriced any more. A membership
+ * groom carries no price on purpose — the weekly payment covers it — but
+ * the $35 de-matt done on the day is not covered by anything, and the
+ * client owes it.
+ */
+export function billableTotal(
+  servicePrice: string | number | null | undefined,
+  addOns: AddOnLine[],
+): string | null {
+  const hasPrice =
+    servicePrice !== null && servicePrice !== undefined && String(servicePrice).trim() !== "";
+  if (!hasPrice && addOns.length === 0) return null;
+  return appointmentTotal(hasPrice ? servicePrice : 0, addOns);
+}
+
+/**
+ * Each appointment's billable total, for a booking that may cover several dogs.
+ *
+ * Separated from the database so the matching is testable: a two-dog booking
+ * is two appointments and one flat list of add-ons, and putting one dog's
+ * de-matt on the other dog's bill is the mistake worth a test. Each dog pays
+ * for its own extras, which is also how the split-payment panel settles up.
+ */
+export function billableTotalsByAppointment(
+  appointments: ReadonlyArray<{ id: number; price: string | number | null | undefined }>,
+  addOns: ReadonlyArray<AddOnLine & { appointmentId: number }>,
+): Map<number, string | null> {
+  const totals = new Map<number, string | null>();
+  for (const appointment of appointments) {
+    const own = addOns.filter((addOn) => addOn.appointmentId === appointment.id);
+    totals.set(appointment.id, billableTotal(appointment.price, own));
+  }
+  return totals;
+}

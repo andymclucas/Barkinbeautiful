@@ -23,7 +23,8 @@ import { z } from "zod";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { router, operationalProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { appointmentPayments, appointments, clients, pets } from "../../drizzle/schema";
+import { appointmentAddOns, appointmentPayments, appointments, clients, pets } from "../../drizzle/schema";
+import { billableTotalsByAppointment } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import {
   PAYMENT_METHODS,
@@ -140,8 +141,10 @@ async function loadLines(db: any, appointmentIds: number[]) {
  * measure "paid" against, and most imported history is in that state.
  */
 async function refreshPaymentStatus(db: any, appointmentId: number) {
+  // Existence only — what it is WORTH comes from loadBillableTotals below,
+  // which has to read the add-ons too.
   const [appointment] = await db
-    .select({ id: appointments.id, price: appointments.price })
+    .select({ id: appointments.id })
     .from(appointments)
     .where(eq(appointments.id, appointmentId))
     .limit(1);
@@ -150,11 +153,48 @@ async function refreshPaymentStatus(db: any, appointmentId: number) {
     .select({ amount: appointmentPayments.amount })
     .from(appointmentPayments)
     .where(eq(appointmentPayments.appointmentId, appointmentId));
-  const status = derivePaymentStatus(appointment.price, lines);
+  const totals = await loadBillableTotals(db, [appointmentId]);
+  const status = derivePaymentStatus(totals.get(appointmentId) ?? null, lines);
   if (status !== null) {
     await db.update(appointments).set({ paymentStatus: status }).where(eq(appointments.id, appointmentId));
   }
   return status;
+}
+
+
+/**
+ * What each appointment is actually worth: its price plus anything done on
+ * the day.
+ *
+ * Every "what is owed" question in this file goes through here, because
+ * answering any of them from `appointments.price` alone silently drops the
+ * extras. On 07/10/2026 a $35 Extra Care on Millie's $145 groom left the
+ * panel reading "owing $145", would have refused the $180 at the counter as
+ * an overpayment, and would have stamped the booking paid at $145.
+ *
+ * Returns null for an appointment nobody has priced AND has added nothing
+ * to — see billableTotal. That null is load-bearing: it keeps an unpriced
+ * booking out of the totals instead of showing it as settled.
+ */
+async function loadBillableTotals(db: any, appointmentIds: number[]) {
+  if (appointmentIds.length === 0) return new Map<number, string | null>();
+
+  const rows = await db
+    .select({ id: appointments.id, price: appointments.price })
+    .from(appointments)
+    .where(inArray(appointments.id, appointmentIds));
+
+  const addOns = await db
+    .select({
+      appointmentId: appointmentAddOns.appointmentId,
+      name: appointmentAddOns.name,
+      unitPrice: appointmentAddOns.unitPrice,
+      quantity: appointmentAddOns.quantity,
+    })
+    .from(appointmentAddOns)
+    .where(inArray(appointmentAddOns.appointmentId, appointmentIds));
+
+  return billableTotalsByAppointment(rows, addOns);
 }
 
 export const paymentsRouter = router({
@@ -171,6 +211,7 @@ export const paymentsRouter = router({
 
       const { rows } = await loadBookingAppointments(db, input.appointmentId);
       const lines = await loadLines(db, rows.map((r: any) => r.id));
+      const totals = await loadBillableTotals(db, rows.map((r: any) => r.id));
       const petRows = rows.some((r: any) => r.petId)
         ? await db
             .select({ id: pets.id, name: pets.name })
@@ -191,7 +232,7 @@ export const paymentsRouter = router({
           preDiscountPrice: row.preDiscountPrice ?? null,
           discountPercent: row.discountPercent ?? null,
           discountReason: row.discountReason ?? null,
-          ...summarisePayments(row.price, own),
+          ...summarisePayments(totals.get(row.id) ?? null, own),
           lines: own,
         };
       });
@@ -244,7 +285,8 @@ export const paymentsRouter = router({
         .select({ amount: appointmentPayments.amount })
         .from(appointmentPayments)
         .where(eq(appointmentPayments.appointmentId, input.appointmentId));
-      const summary = summarisePayments(appointment.price, existing);
+      const totals = await loadBillableTotals(db, [input.appointmentId]);
+      const summary = summarisePayments(totals.get(input.appointmentId) ?? null, existing);
       const check = validatePaymentAmount(input.amount, summary);
       if (!check.ok) throw new Error(check.error ?? "That amount cannot be recorded");
 
