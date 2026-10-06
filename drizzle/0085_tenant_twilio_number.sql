@@ -1,0 +1,24 @@
+-- The phone number a salon texts and is called on.
+--
+-- Serves both directions, which is why it is one column and not two.
+-- Inbound: Twilio tells us which number was called, and that is the only
+-- thing identifying the salon on a webhook — there is no signed-in user
+-- and no hostname. Outbound: it is the number a client sees when the
+-- salon texts them, which today is one TWILIO_FROM_NUMBER shared by the
+-- whole system.
+--
+-- Until now every inbound webhook assumed tenant 1. A second salon's
+-- client texting their own salon would have had the reply matched against
+-- Barkin' Beautiful's client list, and the message filed under the wrong
+-- business entirely.
+--
+-- Unique: two salons claiming one number has no correct answer. Twilio
+-- would not permit it either, but a stale row here could, and then
+-- inbound routing would pick whichever sorted first.
+--
+-- Nullable, because a salon on the Software tier has no messaging and
+-- needs no number.
+ALTER TABLE `tenants` ADD COLUMN `twilio_number` varchar(30) NULL;
+--> statement-breakpoint
+CREATE UNIQUE INDEX `uq_tenants_twilio_number` ON `tenants` (`twilio_number`);
+--> statement-breakpoint

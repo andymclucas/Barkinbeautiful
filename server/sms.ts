@@ -1,6 +1,7 @@
 import twilio from "twilio";
 import { getAppBaseUrl } from "./appUrl";
 import { checkSmsAllowance } from "./smsUsage";
+import { fromNumberForTenant } from "./tenantByNumber";
 
 let _client: ReturnType<typeof twilio> | null = null;
 
@@ -29,7 +30,12 @@ export async function sendSms(
   options: { tenantId?: number } = {},
 ): Promise<{ success: boolean; sid?: string; error?: string }> {
   const client = getClient();
-  const from = process.env.TWILIO_FROM_NUMBER;
+  // Each salon texts from its own number, so a client replying reaches the
+  // business that messaged them. Falls back to the shared TWILIO_FROM_NUMBER
+  // for a salon with no number of its own, which is every salon today.
+  const from = options.tenantId !== undefined
+    ? await fromNumberForTenant(options.tenantId)
+    : process.env.TWILIO_FROM_NUMBER ?? null;
   if (!client || !from) {
     console.warn("[SMS] Twilio not configured — skipping SMS to", to);
     return { success: false, error: "Twilio not configured" };
