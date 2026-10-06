@@ -51,6 +51,15 @@ export const tenants = mysqlTable("tenants", {
    */
   twilioNumber: varchar("twilio_number", { length: 30 }),
   /**
+   * Charged per text beyond the monthly allowance. Four decimal places
+   * because a per-message rate is cents, not dollars — 5.15c is 0.0515.
+   *
+   * NULL is NOT zero. Zero means overage is free, which is a real
+   * position; NULL means nobody has set a price yet, and the salon is
+   * shown "not yet priced" rather than a confident $0.00.
+   */
+  smsOverageRateAud: decimal("sms_overage_rate_aud", { precision: 10, scale: 4 }),
+  /**
    * Never billed, never chased, never downgraded. Barkin' Beautiful is
    * not a customer — the concept is theirs. Kept separate from the plan
    * because WHAT a salon can use and WHETHER they pay are different
