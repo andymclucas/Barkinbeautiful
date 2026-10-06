@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { StaffNotificationSetting } from "@/components/StaffNotificationSetting";
+import { SmsUsageCard } from "@/components/SmsUsageCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -176,6 +177,8 @@ export default function Settings() {
                   to you.
                 </p>
               </div>
+
+            <SmsUsageCard />
             <Card>
               <CardHeader className="pb-2 pt-4 px-4">
                 <CardTitle className="text-base flex items-center gap-2">
