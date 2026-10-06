@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { TRIAL_DAYS } from "@shared/planEntitlements";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { Loader2, Check, AlertCircle } from "lucide-react";
@@ -97,7 +98,7 @@ export default function SalonSignup() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">Start your salon on Groomigo</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Fourteen days with everything switched on, including the workflow board. No card, and nothing
+            {TRIAL_DAYS} days with everything switched on, including the workflow board. No card, and nothing
             to cancel if you decide against it.
           </p>
         </div>

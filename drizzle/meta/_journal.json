@@ -624,6 +624,13 @@
       "when": 1791321756294,
       "tag": "0088_signup_verifications",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "5",
+      "when": 1791322994287,
+      "tag": "0089_trial_ends_at",
+      "breakpoints": true
     }
   ]
 }

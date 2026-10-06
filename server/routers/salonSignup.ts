@@ -14,6 +14,7 @@
  * poor first impression.
  */
 import { z } from "zod";
+import { trialEndsAfter, TRIAL_DAYS } from "@shared/planEntitlements";
 import bcrypt from "bcryptjs";
 import { and, eq, like } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -237,6 +238,10 @@ export const salonSignupRouter = router({
         timezone: input.timezone,
         subscriptionPlan: "trial",
         subscriptionStatus: "trialing",
+        // The clock starts when the salon is created, not when they first
+        // log in — otherwise a salon that signs up and wanders off keeps an
+        // open-ended trial for as long as it never visits.
+        trialEndsAt: trialEndsAfter(),
         onlineBookingEnabled: false,
       });
       const tenantId = Number((tenantResult as { insertId?: number } | undefined)?.insertId ?? 0);
@@ -286,7 +291,7 @@ export const salonSignupRouter = router({
         // Spent. One proven address makes one salon, not a supply of them.
         await db.delete(signupVerifications).where(eq(signupVerifications.email, email));
 
-        console.log(`[signup] salon ${tenantId} "${input.salonName.trim()}" at ${slug}, owner ${userId} (${firstName})`);
+        console.log(`[signup] salon ${tenantId} "${input.salonName.trim()}" at ${slug}, owner ${userId} (${firstName}), ${TRIAL_DAYS}-day trial`);
         return { success: true, tenantId, slug, salonName: input.salonName.trim() };
       } catch (error) {
         // A salon with no owner can never be signed into and would sit

@@ -32,6 +32,12 @@ export const tenants = mysqlTable("tenants", {
   timezone: varchar("timezone", { length: 64 }).default("Australia/Brisbane").notNull(),
   subscriptionPlan: mysqlEnum("subscription_plan", ["trial", "starter", "professional", "enterprise"]).default("trial").notNull(),
   subscriptionStatus: mysqlEnum("subscription_status", ["active", "past_due", "cancelled", "trialing"]).default("trialing").notNull(),
+  /**
+   * When a trial stops working. NULL means this salon is not on a trial
+   * — Barkin' Beautiful never was, and a paid salon no longer is —
+   * which is a different thing from a trial that has run out.
+   */
+  trialEndsAt: timestamp("trial_ends_at"),
   onlineBookingEnabled: boolean("online_booking_enabled").default(false).notNull(),
   onlineBathOnlyDailyLimit: int("online_bath_only_daily_limit").default(3).notNull(),
   onlineBathCapacityPerSlot: int("online_bath_capacity_per_slot").default(3).notNull(),

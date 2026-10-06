@@ -69,6 +69,7 @@ import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { stripeConnectRouter } from "./routers/stripeConnect";
 import { salonSignupRouter } from "./routers/salonSignup";
+import { trialRouter } from "./routers/trial";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
   requireApprovedStaffTenant,
@@ -8492,6 +8493,7 @@ export const appRouter = router({
   appointmentAddOns: appointmentAddOnsRouter,
   stripeConnect: stripeConnectRouter,
   salonSignup: salonSignupRouter,
+  trial: trialRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,

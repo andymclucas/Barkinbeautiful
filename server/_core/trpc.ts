@@ -4,6 +4,8 @@ import superjson from "superjson";
 import type { TrpcContext } from "./context";
 import { readableValidationMessage } from "@shared/clientFacingError";
 import { mayAccessTenant, CROSS_TENANT_MESSAGE } from "@shared/tenantResolution";
+import { getTrialState } from "../trialState";
+import { allowedWhileExpired, TRIAL_ENDED_MESSAGE } from "@shared/planEntitlements";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -90,6 +92,33 @@ const enforceTenant = t.middleware(async opts => {
   return next();
 });
 
+/**
+ * Stop a salon whose trial has run out.
+ *
+ * In one place rather than on each procedure, because an expired trial
+ * loses EVERYTHING — there is no feature left to check individually.
+ *
+ * The allowlist is what keeps this decent: they can still sign in, read
+ * why, set up paying, and take their records with them. Holding a salon's
+ * client list hostage over an unpaid invoice is not a thing we do; the
+ * product stops, the data does not.
+ *
+ * Fails OPEN on any error. A lookup that throws must never be the reason a
+ * salon cannot open its diary.
+ */
+const enforceTrial = t.middleware(async opts => {
+  const { ctx, next, path } = opts;
+  if (ctx.tenantId === null || allowedWhileExpired(path)) return next();
+  try {
+    const trial = await getTrialState(ctx.tenantId);
+    if (trial.ended) throw new TRPCError({ code: "FORBIDDEN", message: TRIAL_ENDED_MESSAGE });
+  } catch (error) {
+    if (error instanceof TRPCError) throw error;
+    console.error("[trial] check failed, allowing through:", error);
+  }
+  return next();
+});
+
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
 
@@ -118,8 +147,8 @@ const requireNonStaffUser = t.middleware(async opts => {
 
 // Restricted staff accounts are deliberately excluded from the general application
 // surface. Only narrowly scoped operational procedures opt into `operationalProcedure`.
-export const protectedProcedure = t.procedure.use(requireNonStaffUser).use(enforceTenant);
-export const operationalProcedure = t.procedure.use(requireUser).use(enforceTenant);
+export const protectedProcedure = t.procedure.use(requireNonStaffUser).use(enforceTenant).use(enforceTrial);
+export const operationalProcedure = t.procedure.use(requireUser).use(enforceTenant).use(enforceTrial);
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
@@ -136,4 +165,4 @@ export const adminProcedure = t.procedure.use(
       },
     });
   }),
-).use(enforceTenant);
+).use(enforceTenant).use(enforceTrial);

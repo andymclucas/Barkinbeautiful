@@ -4,6 +4,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useTheme, type ThemeChoice } from "@/contexts/ThemeContext";
 import NotificationBell from "@/components/NotificationBell";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
+import { TrialBanner } from "@/components/TrialBanner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -590,6 +591,7 @@ function DashboardLayoutContent({
             {accountControls}
           </div>
         )}
+        <TrialBanner />
         <main className="flex-1 p-4 md:p-6 gm-fade">{children}</main>
       </SidebarInset>
     </>

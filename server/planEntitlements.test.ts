@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   PLANS, FEATURES, PLAN_FEATURES, effectivePlan, hasFeature,
   smallestPlanWith, upgradeMessage, tenantFeatures, tenantHasFeature, isBillable,
+  TRIAL_DAYS, trialEndsAfter, trialHasEnded, trialDaysLeft, canExportData,
+  allowedWhileExpired,
 } from "@shared/planEntitlements";
 
 describe("the three stages Groomigo is sold in", () => {
@@ -119,5 +121,143 @@ describe("a salon that is never billed", () => {
   it("treats a missing flag as billable, so nobody is exempt by accident", () => {
     expect(isBillable({ subscriptionPlan: "starter" })).toBe(true);
     expect(tenantHasFeature({ subscriptionPlan: "starter" }, "workflow")).toBe(false);
+  });
+});
+
+describe("a trial that runs out", () => {
+  const day = 24 * 60 * 60 * 1000;
+  const now = new Date("2026-10-14T00:00:00.000Z");
+  const onTrial = (endsAt: Date | null) => ({
+    subscriptionPlan: "trial",
+    subscriptionStatus: "trialing",
+    trialEndsAt: endsAt,
+  });
+
+  it("is seven days", () => {
+    expect(TRIAL_DAYS).toBe(7);
+    expect(
+      trialEndsAfter(new Date("2026-10-07T00:00:00.000Z")).toISOString()
+    ).toBe("2026-10-14T00:00:00.000Z");
+  });
+
+  it("gives everything while it is running", () => {
+    const live = onTrial(new Date(now.getTime() + 3 * day));
+    for (const f of FEATURES)
+      expect(tenantHasFeature(live, f, now), f).toBe(true);
+    expect(trialDaysLeft(live, now)).toBe(3);
+  });
+
+  it("takes EVERYTHING when it ends, core included", () => {
+    // The one place core is gated. A cancelled paying customer keeps
+    // core because they paid; a trial that ran out never did, and the
+    // Software plan IS core — leaving them on it is giving the first
+    // tier away rather than being decent.
+    const over = onTrial(new Date(now.getTime() - 1));
+    expect(tenantFeatures(over, now)).toEqual([]);
+    for (const f of FEATURES)
+      expect(tenantHasFeature(over, f, now), f).toBe(false);
+  });
+
+  it("but they can always get their data out", () => {
+    // Not a Feature at all, so no plan check can ever remove it.
+    expect(canExportData()).toBe(true);
+  });
+
+  it("ends at the instant, not the day after", () => {
+    const exactly = onTrial(now);
+    expect(trialHasEnded(exactly, now)).toBe(true);
+    expect(trialDaysLeft(exactly, now)).toBe(0);
+  });
+
+  it("does not touch a salon that is not on a trial", () => {
+    // "Not on a trial" and "trial expired" are different things, and
+    // conflating them switches off a paying customer.
+    const paying = {
+      subscriptionPlan: "enterprise",
+      subscriptionStatus: "active",
+      trialEndsAt: null,
+    };
+    expect(trialHasEnded(paying, now)).toBe(false);
+    expect(tenantHasFeature(paying, "workflow", now)).toBe(true);
+    expect(trialDaysLeft(paying, now)).toBeNull();
+  });
+
+  it("never applies to Barkin' Beautiful, whatever the date says", () => {
+    // Exemption is checked first. Even a stray trial date cannot switch
+    // off the salon this was built for.
+    const exempt = {
+      subscriptionPlan: "trial",
+      billingExempt: true,
+      trialEndsAt: new Date(now.getTime() - 999 * day),
+    };
+    expect(tenantFeatures(exempt, now)).toEqual(FEATURES);
+    for (const f of FEATURES)
+      expect(tenantHasFeature(exempt, f, now), f).toBe(true);
+  });
+
+  it("ignores a date it cannot read rather than locking anybody out", () => {
+    const broken = onTrial("not a date" as unknown as Date);
+    expect(trialHasEnded(broken, now)).toBe(false);
+    expect(tenantHasFeature(broken, "core", now)).toBe(true);
+  });
+});
+
+describe("what an expired trial may still reach", () => {
+  it("lets them sign in, sign out and change their password", () => {
+    for (const path of [
+      "auth.login",
+      "auth.logout",
+      "auth.changePassword",
+      "auth.me",
+    ]) {
+      expect(allowedWhileExpired(path)).toBe(true);
+    }
+  });
+
+  it("lets them export their client list", () => {
+    // The promise in canExportData() is only real if this path survives.
+    expect(canExportData()).toBe(true);
+    expect(allowedWhileExpired("clients.exportCsv")).toBe(true);
+  });
+
+  it("lets them set up paying", () => {
+    expect(allowedWhileExpired("stripeConnect.createAccountLink")).toBe(true);
+    expect(allowedWhileExpired("trial.get")).toBe(true);
+  });
+
+  it("refuses the rest of the product", () => {
+    for (const path of [
+      "calendar.getAppointments",
+      "workflow.updateState",
+      "clients.list",
+      "pets.create",
+      "memberships.create",
+      "sms.send",
+      "analytics.revenue",
+      "retail.listProducts",
+      "payments.charge",
+    ]) {
+      expect(allowedWhileExpired(path)).toBe(false);
+    }
+  });
+
+  it("allows one named settings procedure, not the whole namespace", () => {
+    // settings.* holds Twilio credentials and pricing. Only the read that
+    // tells them who they are is open.
+    expect(allowedWhileExpired("settings.getTenantInfo")).toBe(true);
+    expect(allowedWhileExpired("settings.updateTwilioCredentials")).toBe(false);
+    expect(allowedWhileExpired("settings.setPricing")).toBe(false);
+  });
+
+  it("does not let a lookalike namespace through", () => {
+    // "clients." is NOT allowed — only clients.exportCsv. A prefix match on
+    // the wrong boundary would open every client read in the app.
+    // An exact entry matches exactly: a procedure added later whose name
+    // happens to start with an allowed one must NOT inherit the exemption.
+    expect(allowedWhileExpired("clients.exportCsvAndAlsoDelete")).toBe(false);
+    expect(allowedWhileExpired("settings.getTenantInfoAndSecrets")).toBe(false);
+    expect(allowedWhileExpired("clientsExport.everything")).toBe(false);
+    expect(allowedWhileExpired("authority.grantSelfAdmin")).toBe(false);
+    expect(allowedWhileExpired("systematicOverride.run")).toBe(false);
   });
 });

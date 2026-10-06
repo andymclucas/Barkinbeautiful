@@ -93,8 +93,65 @@ export type TenantEntitlementState = {
   subscriptionStatus?: SubscriptionStatus | string | null;
   /** Never billed, never chased, never downgraded. See isBillable. */
   billingExempt?: boolean | null;
+  /** When a trial stops. Null means this salon is not on one. */
+  trialEndsAt?: Date | string | null;
 };
 
+
+export const TRIAL_DAYS = 7;
+
+/** When a trial starting now should stop. */
+export function trialEndsAfter(from: Date = new Date()): Date {
+  return new Date(from.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Has this salon's trial run out?
+ *
+ * False when there is no trial at all — Barkin' Beautiful, and every
+ * paid salon. "Not on a trial" and "trial expired" are different things
+ * and conflating them would switch off a paying customer.
+ */
+export function trialHasEnded(
+  tenant: TenantEntitlementState,
+  now: Date = new Date()
+): boolean {
+  if (!tenant.trialEndsAt) return false;
+  const ends =
+    tenant.trialEndsAt instanceof Date
+      ? tenant.trialEndsAt
+      : new Date(tenant.trialEndsAt);
+  if (Number.isNaN(ends.getTime())) return false;
+  return now.getTime() >= ends.getTime();
+}
+
+/** Whole days left, floored. Zero once it has gone. */
+export function trialDaysLeft(
+  tenant: TenantEntitlementState,
+  now: Date = new Date()
+): number | null {
+  if (!tenant.trialEndsAt) return null;
+  const ends =
+    tenant.trialEndsAt instanceof Date
+      ? tenant.trialEndsAt
+      : new Date(tenant.trialEndsAt);
+  if (Number.isNaN(ends.getTime())) return null;
+  return Math.max(
+    0,
+    Math.floor((ends.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+  );
+}
+
+/**
+ * A salon can ALWAYS get its own records out.
+ *
+ * Separate from every other entitlement, and deliberately not a Feature,
+ * so no plan check can ever take it away. Holding a salon's client list
+ * hostage over an unpaid invoice is not a thing we do.
+ */
+export function canExportData(): boolean {
+  return true;
+}
 /**
  * What this salon can use.
  *
@@ -104,14 +161,31 @@ export type TenantEntitlementState = {
  * feature away from them. Expressing that as "put them on the top plan"
  * would work until the day something downgrades an unpaid subscription.
  */
-export function tenantFeatures(tenant: TenantEntitlementState): readonly Feature[] {
+export function tenantFeatures(tenant: TenantEntitlementState, now: Date = new Date()): readonly Feature[] {
   if (tenant.billingExempt) return FEATURES;
+
+  // An expired trial loses EVERYTHING, core included — and that is the
+  // one place core is gated.
+  //
+  // A cancelled paying customer keeps core, because they paid and the
+  // diary is theirs. A trial that ran out never paid, so leaving them
+  // core forever is not decency, it is giving the first tier away: the
+  // Software plan IS core. They keep their data and can export it; they
+  // do not keep the product.
+  if (trialHasEnded(tenant, now)) return [];
+
   return hasFeatureList(tenant.subscriptionPlan, tenant.subscriptionStatus);
 }
 
-export function tenantHasFeature(tenant: TenantEntitlementState, feature: Feature): boolean {
-  if (feature === "core") return true;
-  return tenantFeatures(tenant).includes(feature);
+export function tenantHasFeature(
+  tenant: TenantEntitlementState,
+  feature: Feature,
+  now: Date = new Date(),
+): boolean {
+  // Core is never gated BY PLAN — see hasFeature — but an expired trial
+  // is not a plan, and it takes everything.
+  if (feature === "core" && !trialHasEnded(tenant, now)) return true;
+  return tenantFeatures(tenant, now).includes(feature);
 }
 
 /**
@@ -170,3 +244,45 @@ export function smallestPlanWith(feature: Feature): Plan {
   const order: Plan[] = ["starter", "professional", "enterprise"];
   return order.find(p => PLAN_FEATURES[p].includes(feature)) ?? "enterprise";
 }
+
+/**
+ * What an expired salon may still reach.
+ *
+ * Signing in and out, seeing what has happened and why, and taking their
+ * own records with them. Everything else waits until they pay.
+ *
+ * Public procedures are deliberately NOT on this list, because they never
+ * reach the check at all. A dog owner's tracker link and online booking
+ * page keep working when the salon's trial runs out. The backlog risk is
+ * real — a client books a slot the locked-out salon cannot see — but a
+ * seven-day trial salon has essentially no client traffic yet, and showing
+ * a dog owner a billing error for someone else's unpaid account is the
+ * worse failure. Revisit if trials ever start with migrated clients
+ * already in place.
+ */
+const ALLOWED_WHEN_EXPIRED = [
+  "auth.", // sign in, sign out, change password
+  "system.", // health and version
+  "salonSignup.", // public anyway, but harmless here
+  "settings.getTenantInfo",
+  "stripeConnect.", // so they can set up paying
+  "trial.", // the screen telling them what happened
+  "clients.exportCsv", // THE data export — see canExportData() in planEntitlements
+];
+
+/**
+ * An entry ending in "." is a whole namespace; anything else must match the
+ * procedure path exactly.
+ *
+ * A plain `startsWith` would have let "clients.exportCsvAnythingElse"
+ * through on the back of "clients.exportCsv", so a procedure added later
+ * with an unlucky name would silently open while the trial is expired.
+ */
+export function allowedWhileExpired(path: string): boolean {
+  return ALLOWED_WHEN_EXPIRED.some(entry =>
+    entry.endsWith(".") ? path.startsWith(entry) : path === entry
+  );
+}
+
+export const TRIAL_ENDED_MESSAGE =
+  "Your Groomigo trial has ended. Your salon's records are safe and you can still export them — choose a plan to pick up where you left off.";

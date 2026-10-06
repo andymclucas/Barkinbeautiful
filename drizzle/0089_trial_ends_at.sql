@@ -1,0 +1,16 @@
+-- When a trial stops.
+--
+-- Trials have never ended. A salon signing up today could use Groomigo
+-- free forever: the plan says "trial" and nothing has ever acted on it.
+--
+-- A DATE rather than a status that something has to flip. A nightly job
+-- that moves tenants from trialing to expired is one more thing that can
+-- fail quietly, and a tenant left in the wrong state is either a salon
+-- locked out that should not be or one using the product for nothing.
+-- Comparing a date cannot drift.
+--
+-- Nullable: Barkin' Beautiful has no trial and never will, and neither
+-- does any salon on a paid plan. Null means "not on a trial", which is
+-- different from a trial that has run out.
+ALTER TABLE `tenants` ADD COLUMN `trial_ends_at` timestamp NULL;
+--> statement-breakpoint
