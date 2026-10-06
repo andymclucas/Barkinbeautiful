@@ -78,8 +78,8 @@ export default function Messages() {
   const smsCost = useMemo(() => calculateSmsCost(customBody), [customBody]);
   const [sending, setSending] = useState(false);
 
-  const { data: logs, refetch } = trpc.sms.getLogs.useQuery({ tenantId: 1, limit: 100 });
-  const { data: threads, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({ tenantId: 1, limit: 50 });
+  const { data: logs, refetch } = trpc.sms.getLogs.useQuery({ limit: 100 });
+  const { data: threads, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({ limit: 50 });
   const markAllRead = trpc.sms.markAllThreadsRead.useMutation({
     onSuccess: () => {
       toast.success("All conversations marked as read");
@@ -89,11 +89,11 @@ export default function Messages() {
     },
     onError: (error) => toast.error(error.message),
   });
-  const { data: missedCallsList, refetch: refetchMissedCalls } = trpc.sms.getMissedCalls.useQuery({ tenantId: 1, limit: 100 });
+  const { data: missedCallsList, refetch: refetchMissedCalls } = trpc.sms.getMissedCalls.useQuery({ limit: 100 });
   const clearMissedCall = trpc.sms.clearMissedCall.useMutation({ onSuccess: () => refetchMissedCalls() });
   const deleteMissedCall = trpc.sms.deleteMissedCall.useMutation({ onSuccess: () => { toast.success("Missed call removed"); refetchMissedCalls(); } });
   const { data: clientResults } = trpc.memberships.searchClients.useQuery(
-    { search: clientSearch, tenantId: 1 },
+    { search: clientSearch },
     { enabled: clientSearch.length >= 2 }
   );
 
@@ -111,7 +111,7 @@ export default function Messages() {
   const canMassText =
     canAdministerStaff(me ? { id: me.id, email: me.email } : null) ||
     canEditSection(myStaff ?? null, "mass_text");
-  const { data: starredList, refetch: refetchStarred } = trpc.sms.getStarredThreads.useQuery({ tenantId: 1 });
+  const { data: starredList, refetch: refetchStarred } = trpc.sms.getStarredThreads.useQuery({});
   const starredKeys = useMemo(() => new Set(starredList ?? []), [starredList]);
   const setStarred = trpc.sms.setThreadStarred.useMutation({
     onSuccess: () => refetchStarred(),
@@ -160,7 +160,7 @@ export default function Messages() {
 
   const openThreadDialog = (thread: { clientId: number | null; toNumber: string; clientName: string | null }) => {
     setOpenThread(thread);
-    markThreadReadMutation.mutate(thread.clientId ? { tenantId: 1, clientId: thread.clientId } : { tenantId: 1, toNumber: thread.toNumber });
+    markThreadReadMutation.mutate(thread.clientId ? { clientId: thread.clientId } : { toNumber: thread.toNumber });
   };
 
   // Support arriving here from the notification bell with ?clientId=X or ?toNumber=Y
@@ -270,7 +270,7 @@ export default function Messages() {
     const body = selectedTemplate === "custom" ? customBody : templatePreview;
     if (!body.trim()) { toast.error("Message body is empty"); return; }
     setSending(true);
-    sendMutation.mutate({ tenantId: 1, clientId: selectedClientId ?? undefined, toNumber, body, type: selectedTemplate as any });
+    sendMutation.mutate({ clientId: selectedClientId ?? undefined, toNumber, body, type: selectedTemplate as any });
   };
 
   /**
@@ -287,7 +287,6 @@ export default function Messages() {
     setReplySending(true);
     sendMutation.mutate(
       {
-        tenantId: 1,
         clientId: openThread.clientId ?? undefined,
         toNumber: openThread.toNumber,
         body,
@@ -355,7 +354,7 @@ export default function Messages() {
               onClick={() => {
                 if (!openThread) return;
                 if (confirm(`Delete this entire conversation with ${openThread.clientName?.trim() || openThread.toNumber}? This can't be undone.`)) {
-                  deleteThreadMutation.mutate(openThread.clientId ? { tenantId: 1, clientId: openThread.clientId } : { tenantId: 1, toNumber: openThread.toNumber });
+                  deleteThreadMutation.mutate(openThread.clientId ? { clientId: openThread.clientId } : { toNumber: openThread.toNumber });
                 }
               }}
             >
@@ -573,7 +572,7 @@ export default function Messages() {
                     size="sm"
                     className="h-7 text-xs"
                     disabled={markAllRead.isPending}
-                    onClick={() => markAllRead.mutate({ tenantId: 1 })}
+                    onClick={() => markAllRead.mutate({})}
                   >
                     {markAllRead.isPending ? "Marking…" : "Mark all as read"}
                   </Button>
@@ -612,7 +611,7 @@ export default function Messages() {
                       title={starredKeys.has(thread.threadKey) ? "Starred — shown first" : "Star this conversation"}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setStarred.mutate({ tenantId: 1, threadKey: thread.threadKey, starred: !starredKeys.has(thread.threadKey) });
+                        setStarred.mutate({ threadKey: thread.threadKey, starred: !starredKeys.has(thread.threadKey) });
                       }}
                     >
                       <Star className={`h-4 w-4 ${starredKeys.has(thread.threadKey) ? "fill-amber-400 text-amber-500" : ""}`} />
@@ -663,7 +662,7 @@ export default function Messages() {
                       onClick={(e) => {
                         e.stopPropagation();
                         if (confirm(`Delete this entire conversation with ${thread.clientName?.trim() || thread.toNumber}? This can't be undone.`)) {
-                          deleteThreadMutation.mutate(thread.clientId ? { tenantId: 1, clientId: thread.clientId } : { tenantId: 1, toNumber: thread.toNumber });
+                          deleteThreadMutation.mutate(thread.clientId ? { clientId: thread.clientId } : { toNumber: thread.toNumber });
                         }
                       }}
                     >
@@ -775,7 +774,7 @@ export default function Messages() {
                       size="sm"
                       className={log.replyIntent === "cancel" ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}
                       disabled={reviewInboundMutation.isPending}
-                      onClick={() => reviewInboundMutation.mutate({ tenantId: 1, smsLogId: log.id, action: log.replyIntent })}
+                      onClick={() => reviewInboundMutation.mutate({ smsLogId: log.id, action: log.replyIntent })}
                     >
                       {log.replyIntent === "confirm" ? "Confirm appointment" : "Cancel booking"}
                     </Button>
@@ -828,7 +827,7 @@ export default function Messages() {
                     disabled={clearFailedMutation.isPending}
                     onClick={() => {
                       if (confirm("Delete all failed messages? This can't be undone.")) {
-                        clearFailedMutation.mutate({ tenantId: 1 });
+                        clearFailedMutation.mutate({});
                       }
                     }}
                   >
@@ -882,7 +881,7 @@ export default function Messages() {
                             size="sm"
                             className={`h-7 text-xs ${log.replyIntent === "cancel" ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`}
                             disabled={reviewInboundMutation.isPending || !log.appointmentId}
-                            onClick={() => reviewInboundMutation.mutate({ tenantId: 1, smsLogId: log.id, action: log.replyIntent })}
+                            onClick={() => reviewInboundMutation.mutate({ smsLogId: log.id, action: log.replyIntent })}
                           >
                             {log.replyIntent === "confirm" ? "Confirm appointment" : "Cancel booking"}
                           </Button>
@@ -904,7 +903,7 @@ export default function Messages() {
                           size="icon"
                           className="h-7 w-7 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
                           disabled={deleteMessageMutation.isPending}
-                          onClick={() => deleteMessageMutation.mutate({ id: log.id, tenantId: 1 })}
+                          onClick={() => deleteMessageMutation.mutate({ id: log.id })}
                           aria-label="Delete message"
                         >
                           <Trash2 className="h-3.5 w-3.5" />

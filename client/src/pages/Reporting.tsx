@@ -23,19 +23,19 @@ export default function Reporting() {
   const to = range.dateTo.toISOString();
 
   const { data: summary, isLoading: loadingSummary } = trpc.analytics.summary.useQuery({
-    tenantId: 1, dateFrom: from, dateTo: to,
+    dateFrom: from, dateTo: to,
   });
 
   const { data: staffData, isLoading: loadingStaff } = trpc.analytics.staffProductivity.useQuery({
-    tenantId: 1, dateFrom: from, dateTo: to,
+    dateFrom: from, dateTo: to,
   });
 
   const { data: financials, isLoading: loadingFinancials } = trpc.analytics.financialBreakdown.useQuery({
-    tenantId: 1, dateFrom: from, dateTo: to,
+    dateFrom: from, dateTo: to,
   });
 
   const { data: timing, isLoading: loadingTiming } = trpc.analytics.workflowTiming.useQuery({
-    tenantId: 1, dateFrom: from, dateTo: to,
+    dateFrom: from, dateTo: to,
   });
 
   const [exporting, setExporting] = useState(false);

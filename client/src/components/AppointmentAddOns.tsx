@@ -23,15 +23,15 @@ import { addOnRequiresManualPrice, addOnsTotal } from "@shared/appointmentAddOns
  */
 export function AppointmentAddOns({ appointmentId }: { appointmentId: number }) {
   const utils = trpc.useUtils();
-  const { data: catalogue } = trpc.appointmentAddOns.catalogue.useQuery({ tenantId: 1 });
-  const { data, isLoading } = trpc.appointmentAddOns.list.useQuery({ tenantId: 1, appointmentId });
+  const { data: catalogue } = trpc.appointmentAddOns.catalogue.useQuery({});
+  const { data, isLoading } = trpc.appointmentAddOns.list.useQuery({ appointmentId });
 
   const [picked, setPicked] = useState("");
   const [manualPrice, setManualPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
 
   const refresh = () => {
-    void utils.appointmentAddOns.list.invalidate({ tenantId: 1, appointmentId });
+    void utils.appointmentAddOns.list.invalidate({ appointmentId });
     void utils.calendar.invalidate();
   };
 
@@ -85,7 +85,7 @@ export function AppointmentAddOns({ appointmentId }: { appointmentId: number }) 
                 className="shrink-0 text-muted-foreground hover:text-destructive"
                 title={`Remove ${a.name}`}
                 disabled={removeMutation.isPending}
-                onClick={() => removeMutation.mutate({ tenantId: 1, id: a.id })}
+                onClick={() => removeMutation.mutate({ id: a.id })}
               >
                 <Trash2 className="h-3 w-3" />
               </button>
@@ -129,7 +129,7 @@ export function AppointmentAddOns({ appointmentId }: { appointmentId: number }) 
           size="sm" variant="outline" className="h-8 shrink-0 gap-1"
           disabled={!canAdd || addMutation.isPending}
           onClick={() => addMutation.mutate({
-            tenantId: 1, appointmentId,
+            appointmentId,
             pricingServiceId: Number(picked),
             quantity: Math.max(1, Math.min(20, parseInt(quantity) || 1)),
             ...(needsPrice ? { unitPrice: parseFloat(manualPrice) } : {}),

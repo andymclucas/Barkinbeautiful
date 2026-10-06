@@ -13,9 +13,9 @@ import { useEffect, useState } from "react";
 
 export default function Settings() {
   const utils = trpc.useUtils();
-  const { data: tenant } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 });
-  const { data: stripeBilling, isLoading: stripeBillingLoading } = trpc.stripeBilling.getStatus.useQuery({ tenantId: 1 });
-  const { data: timingReviewSettings, isLoading: timingReviewSettingsLoading } = trpc.workflowReview.getThresholds.useQuery({ tenantId: 1 });
+  const { data: tenant } = trpc.settings.getTenantInfo.useQuery({});
+  const { data: stripeBilling, isLoading: stripeBillingLoading } = trpc.stripeBilling.getStatus.useQuery({});
+  const { data: timingReviewSettings, isLoading: timingReviewSettingsLoading } = trpc.workflowReview.getThresholds.useQuery({});
   const [brand, setBrand] = useState({ primary: "#d61572", accent: "#f9d4e7", sidebar: "#2b1830", font: "Inter", logoUrl: "" });
   const [timingScope, setTimingScope] = useState<"default" | "size" | "breed">("default");
   const [timingSize, setTimingSize] = useState("small");
@@ -39,21 +39,20 @@ export default function Settings() {
     root.style.setProperty("--font-sans", next.font);
   };
   const updateBrand = trpc.settings.updateTenantInfo.useMutation({
-    onSuccess: () => { utils.settings.getTenantInfo.invalidate({ tenantId: 1 }); toast.success("Salon branding saved"); },
+    onSuccess: () => { utils.settings.getTenantInfo.invalidate({}); toast.success("Salon branding saved"); },
     onError: () => toast.error("Could not save salon branding"),
   });
   const saveTimingThreshold = trpc.workflowReview.upsertThreshold.useMutation({
-    onSuccess: () => { utils.workflowReview.getThresholds.invalidate({ tenantId: 1 }); toast.success("Timing review threshold saved"); },
+    onSuccess: () => { utils.workflowReview.getThresholds.invalidate({}); toast.success("Timing review threshold saved"); },
     onError: (error) => toast.error(error.message),
   });
   const resetTimingThreshold = trpc.workflowReview.removeThreshold.useMutation({
-    onSuccess: () => { utils.workflowReview.getThresholds.invalidate({ tenantId: 1 }); toast.success("Timing review threshold reset to its fallback"); },
+    onSuccess: () => { utils.workflowReview.getThresholds.invalidate({}); toast.success("Timing review threshold reset to its fallback"); },
     onError: (error) => toast.error(error.message),
   });
   const timingScopeLabel = timingScope === "default" ? "Salon default" : timingScope === "size" ? timingReviewSettings?.sizePresets.find((preset) => preset.id === timingSize)?.label ?? "Size preset" : timingBreed.trim() || "Breed override";
   const canSaveTiming = timingScope !== "breed" || timingBreed.trim().length > 0;
   const saveTiming = () => saveTimingThreshold.mutate({
-    tenantId: 1,
     scope: timingScope,
     petSize: timingScope === "size" ? timingSize as any : undefined,
     breedName: timingScope === "breed" ? timingBreed.trim() : undefined,
@@ -130,7 +129,7 @@ export default function Settings() {
                   <div><p className="font-semibold">Live brand preview</p><p className="text-sm text-white/70">Navigation and shared dashboard surfaces update immediately.</p></div>
                   <span className="rounded-lg px-4 py-2 font-semibold" style={{ background: brand.primary }}>Save the look</span>
                 </div>
-                <Button disabled={updateBrand.isPending} onClick={() => updateBrand.mutate({ tenantId: 1, brandPrimary: brand.primary, brandAccent: brand.accent, brandSidebar: brand.sidebar, brandFont: brand.font as any, logoUrl: brand.logoUrl || undefined })}>{updateBrand.isPending ? "Saving…" : "Save branding"}</Button>
+                <Button disabled={updateBrand.isPending} onClick={() => updateBrand.mutate({ brandPrimary: brand.primary, brandAccent: brand.accent, brandSidebar: brand.sidebar, brandFont: brand.font as any, logoUrl: brand.logoUrl || undefined })}>{updateBrand.isPending ? "Saving…" : "Save branding"}</Button>
               </CardContent>
             </Card>
           </TabsContent>
@@ -148,7 +147,7 @@ export default function Settings() {
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{([
                   { key: "bath", label: "Bath", hint: "active bath" }, { key: "dry", label: "Dry", hint: "active dry" }, { key: "groom", label: "Groom", hint: "active groom" }, { key: "total", label: "Total", hint: "check-in to complete" },
                 ] as const).map((metric) => <div key={metric.key} className="rounded-lg border bg-card p-3"><Label htmlFor={`timing-${metric.key}`} className="text-sm">{metric.label}</Label><div className="mt-1.5 flex items-center gap-1"><Input id={`timing-${metric.key}`} type="number" min="1" max="1440" value={timingMinutes[metric.key]} onChange={(event) => setTimingMinutes((current) => ({ ...current, [metric.key]: event.target.value }))} /><span className="text-xs text-muted-foreground">min</span></div><p className="mt-1 text-[11px] text-muted-foreground">{metric.hint}</p></div>)}</div>
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/60 p-3"><p className="text-sm text-amber-950 dark:text-amber-100"><span className="font-semibold">Editing:</span> {timingScopeLabel}</p><div className="flex gap-2"><Button variant="outline" size="sm" className="gap-1 border-amber-300 dark:border-amber-800 bg-card text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/50" onClick={() => resetTimingThreshold.mutate({ tenantId: 1, scope: timingScope, petSize: timingScope === "size" ? timingSize as any : undefined, breedName: timingScope === "breed" ? timingBreed.trim() : undefined })} disabled={resetTimingThreshold.isPending || !canSaveTiming}><RotateCcw className="h-3.5 w-3.5" /> Reset</Button><Button size="sm" onClick={saveTiming} disabled={!canSaveTiming || saveTimingThreshold.isPending || timingReviewSettingsLoading}>{saveTimingThreshold.isPending ? "Saving…" : "Save trigger"}</Button></div></div>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/60 p-3"><p className="text-sm text-amber-950 dark:text-amber-100"><span className="font-semibold">Editing:</span> {timingScopeLabel}</p><div className="flex gap-2"><Button variant="outline" size="sm" className="gap-1 border-amber-300 dark:border-amber-800 bg-card text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/50" onClick={() => resetTimingThreshold.mutate({ scope: timingScope, petSize: timingScope === "size" ? timingSize as any : undefined, breedName: timingScope === "breed" ? timingBreed.trim() : undefined })} disabled={resetTimingThreshold.isPending || !canSaveTiming}><RotateCcw className="h-3.5 w-3.5" /> Reset</Button><Button size="sm" onClick={saveTiming} disabled={!canSaveTiming || saveTimingThreshold.isPending || timingReviewSettingsLoading}>{saveTimingThreshold.isPending ? "Saving…" : "Save trigger"}</Button></div></div>
                 {(timingReviewSettings?.rules.length ?? 0) > 0 && <div className="rounded-lg border bg-card p-3"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved overrides</p><div className="flex flex-wrap gap-2">{timingReviewSettings?.rules.map((rule) => <span key={rule.scopeKey} className="rounded-full border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-xs text-amber-900 dark:text-amber-200">{rule.scope === "default" ? "Salon default" : rule.scope === "size" ? `Size · ${rule.petSize}` : `Breed · ${rule.breedName}`}</span>)}</div></div>}
               </CardContent>
             </Card>

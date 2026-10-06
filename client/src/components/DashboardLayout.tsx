@@ -120,7 +120,7 @@ function applySidebarColor(hex: string, root: HTMLElement) {
 /** Quick brand-colour editor rendered in a Dialog. */
 function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const utils = trpc.useUtils();
-  const { data: tenant } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 });
+  const { data: tenant } = trpc.settings.getTenantInfo.useQuery({});
   // Publish the signed-in user's zone to module scope so the plain formatting
   // helpers — the ones that are not components — render in it too.
   useTimezoneSync();
@@ -136,7 +136,7 @@ function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 
   const save = trpc.settings.updateTenantInfo.useMutation({
     onSuccess: () => {
-      utils.settings.getTenantInfo.invalidate({ tenantId: 1 });
+      utils.settings.getTenantInfo.invalidate({});
       toast.success("Brand colours saved");
       onOpenChange(false);
     },
@@ -185,7 +185,7 @@ function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           <Button
             size="sm"
             disabled={save.isPending}
-            onClick={() => save.mutate({ tenantId: 1, brandPrimary: colors.primary, brandAccent: colors.accent, brandSidebar: colors.sidebar })}
+            onClick={() => save.mutate({ brandPrimary: colors.primary, brandAccent: colors.accent, brandSidebar: colors.sidebar })}
           >
             {save.isPending ? "Saving…" : "Save colours"}
           </Button>
@@ -261,7 +261,7 @@ function DashboardLayoutContent({
   const [brandDialogOpen, setBrandDialogOpen] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const { data: tenantBranding } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 });
+  const { data: tenantBranding } = trpc.settings.getTenantInfo.useQuery({});
   // The signed-in user's own staff record, so they can set their own profile
   // photo from here. Returns null for accounts with no staff row, in which case
   // the control is simply not offered.
@@ -308,7 +308,7 @@ function DashboardLayoutContent({
    * screen for every signed-in person.
    */
   const { data: counts } = trpc.sidebarCounts.get.useQuery(
-    { tenantId: 1 },
+    {},
     { refetchInterval: 60000, refetchOnWindowFocus: true },
   );
   const navBadges: Record<string, number> = {

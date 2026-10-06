@@ -28,8 +28,8 @@ function sizeForValue(value: string): string {
 }
 
 export function ClientMetrics({ clientId }: { clientId: number }) {
-  const { data } = trpc.clients.messageContext.useQuery({ tenantId: 1, clientId });
-  const { data: reviews } = trpc.clientReviews.forClient.useQuery({ tenantId: 1, clientId });
+  const { data } = trpc.clients.messageContext.useQuery({ clientId });
+  const { data: reviews } = trpc.clientReviews.forClient.useQuery({ clientId });
 
   const money = (n: number) => `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   // messageContext already folds paid invoices and counter payments into
@@ -90,9 +90,9 @@ export function ClientMetrics({ clientId }: { clientId: number }) {
 export function ClientNotesPanel({ clientId }: { clientId: number }) {
   const tz = useTimezone();
   const utils = trpc.useUtils();
-  const { data } = trpc.clientNotes.forClient.useQuery({ tenantId: 1, clientId });
+  const { data } = trpc.clientNotes.forClient.useQuery({ clientId });
   const [draft, setDraft] = useState("");
-  const refresh = () => utils.clientNotes.forClient.invalidate({ tenantId: 1, clientId });
+  const refresh = () => utils.clientNotes.forClient.invalidate({ clientId });
 
   const create = trpc.clientNotes.create.useMutation({
     onSuccess: () => { setDraft(""); refresh(); },
@@ -118,11 +118,11 @@ export function ClientNotesPanel({ clientId }: { clientId: number }) {
               <p className="whitespace-pre-wrap text-sm">{note.body}</p>
               <div className="flex shrink-0 gap-1">
                 <Button variant="ghost" size="icon" className="h-7 w-7" title={note.pinned ? "Unpin" : "Pin to the top"}
-                  onClick={() => update.mutate({ tenantId: 1, id: note.id, pinned: !note.pinned })}>
+                  onClick={() => update.mutate({ id: note.id, pinned: !note.pinned })}>
                   <Pin className={`h-3.5 w-3.5 ${note.pinned ? "fill-current text-primary" : "text-muted-foreground"}`} />
                 </Button>
                 <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete this note"
-                  onClick={() => remove.mutate({ tenantId: 1, id: note.id })}>
+                  onClick={() => remove.mutate({ id: note.id })}>
                   <span aria-hidden="true" className="text-muted-foreground">&times;</span>
                   <span className="sr-only">Delete note</span>
                 </Button>
@@ -138,7 +138,7 @@ export function ClientNotesPanel({ clientId }: { clientId: number }) {
           <Textarea rows={2} value={draft} placeholder="Add a note — it records who wrote it and when."
             onChange={(e) => setDraft(e.target.value)} />
           <Button size="sm" className="gap-1.5" disabled={!draft.trim() || create.isPending}
-            onClick={() => create.mutate({ tenantId: 1, clientId, body: draft.trim(), pinned: false })}>
+            onClick={() => create.mutate({ clientId, body: draft.trim(), pinned: false })}>
             <Plus className="h-3.5 w-3.5" /> {create.isPending ? "Adding…" : "Add note"}
           </Button>
         </div>
@@ -151,10 +151,10 @@ export function ClientNotesPanel({ clientId }: { clientId: number }) {
 export function ClientReviewsPanel({ clientId }: { clientId: number }) {
   const tz = useTimezone();
   const utils = trpc.useUtils();
-  const { data } = trpc.clientReviews.forClient.useQuery({ tenantId: 1, clientId });
+  const { data } = trpc.clientReviews.forClient.useQuery({ clientId });
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
-  const refresh = () => utils.clientReviews.forClient.invalidate({ tenantId: 1, clientId });
+  const refresh = () => utils.clientReviews.forClient.invalidate({ clientId });
 
   const create = trpc.clientReviews.create.useMutation({
     onSuccess: () => { setComment(""); setRating(5); refresh(); },
@@ -184,7 +184,7 @@ export function ClientReviewsPanel({ clientId }: { clientId: number }) {
                 ))}
               </div>
               <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete this review"
-                onClick={() => remove.mutate({ tenantId: 1, id: review.id })}>
+                onClick={() => remove.mutate({ id: review.id })}>
                 <span aria-hidden="true" className="text-muted-foreground">&times;</span>
                 <span className="sr-only">Delete review</span>
               </Button>
@@ -206,7 +206,7 @@ export function ClientReviewsPanel({ clientId }: { clientId: number }) {
           </div>
           <Textarea rows={2} value={comment} placeholder="What did they say? (optional)" onChange={(e) => setComment(e.target.value)} />
           <Button size="sm" disabled={create.isPending}
-            onClick={() => create.mutate({ tenantId: 1, clientId, rating, comment: comment.trim() || undefined })}>
+            onClick={() => create.mutate({ clientId, rating, comment: comment.trim() || undefined })}>
             {create.isPending ? "Saving…" : "Record review"}
           </Button>
         </div>

@@ -134,7 +134,7 @@ export function BlockoutDialog({
   const save = () => {
     if (isEditing && editing) {
       updateMutation.mutate({
-        tenantId: 1, id: editing.id, startDate, endDate, isFullDay,
+        id: editing.id, startDate, endDate, isFullDay,
         startTime: isFullDay ? null : startTime,
         endTime: isFullDay ? null : endTime,
         reason: reason || null,
@@ -142,7 +142,7 @@ export function BlockoutDialog({
       return;
     }
     createMutation.mutate({
-      tenantId: 1, staffId: parseInt(staffId), startDate, endDate, isFullDay,
+      staffId: parseInt(staffId), startDate, endDate, isFullDay,
       startTime: isFullDay ? undefined : startTime,
       endTime: isFullDay ? undefined : endTime,
       reason: reason || undefined,
@@ -261,7 +261,7 @@ export function BlockoutDialog({
             <Button
               variant="outline" disabled={saving}
               className="text-destructive hover:text-destructive"
-              onClick={() => deleteMutation.mutate({ tenantId: 1, id: editing.id, wholeGroup: Boolean(editing.groupId) })}
+              onClick={() => deleteMutation.mutate({ id: editing.id, wholeGroup: Boolean(editing.groupId) })}
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
               {editing.groupId ? "Remove all days" : "Remove"}

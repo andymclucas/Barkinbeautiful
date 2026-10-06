@@ -171,11 +171,11 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
   });
 
   const { data: searchResults } = trpc.memberships.searchClients.useQuery(
-    { tenantId: 1, search: clientSearch },
+    { search: clientSearch },
     { enabled: clientSearch.length >= 2 }
   );
   const { data: packageOptions, isLoading: isLoadingPackages } = trpc.memberships.getPackageOptions.useQuery(
-    { tenantId: 1, clientId: selectedClient?.clientId ?? 0, petId: selectedClient?.petId ?? 0 },
+    { clientId: selectedClient?.clientId ?? 0, petId: selectedClient?.petId ?? 0 },
     { enabled: !!selectedClient?.clientId && !!selectedClient?.petId },
   );
   const { data: currentUser } = trpc.auth.me.useQuery();
@@ -214,7 +214,6 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
       return;
     }
     createMutation.mutate({
-      tenantId: 1,
       clientId: selectedClient.clientId,
       petId: selectedClient.petId,
       ...form,
@@ -504,7 +503,7 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
               variant="destructive"
               size="sm"
               disabled={cancelMembership.isPending}
-              onClick={() => cancelMembership.mutate({ tenantId: 1, membershipId: m.id })}
+              onClick={() => cancelMembership.mutate({ membershipId: m.id })}
             >
               {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
             </Button>
@@ -780,7 +779,6 @@ export default function Memberships() {
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.memberships.list.useQuery({
-    tenantId: 1,
     status: statusParam,
     tier: tierParam,
     search: search || undefined,
@@ -790,8 +788,8 @@ export default function Memberships() {
     sortDir,
   }, { enabled: isAdmin });
 
-  const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({ tenantId: 1 }, { enabled: isAdmin });
-  const { data: debtSummary, refetch: refetchDebt } = trpc.memberships.getDebtSummary.useQuery({ tenantId: 1 }, { enabled: isAdmin });
+  const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({}, { enabled: isAdmin });
+  const { data: debtSummary, refetch: refetchDebt } = trpc.memberships.getDebtSummary.useQuery({}, { enabled: isAdmin });
   const generateInvoiceMutation = trpc.memberships.generateDebtInvoice.useMutation({
     onSuccess: (res) => {
       toast.success(`Draft invoice ${res.invoiceNumber} created`);

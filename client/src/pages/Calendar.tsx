@@ -561,8 +561,7 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
 
   const handleSave = (status: "draft" | "sent") => {
     upsert.mutate({
-      appointmentId: appt.id, petId: appt.petId, tenantId: 1,
-      overallRating: rating as "pawfect" | "great" | "good" | "okay" | "difficult",
+      appointmentId: appt.id, petId: appt.petId, overallRating: rating as "pawfect" | "great" | "good" | "okay" | "difficult",
       mood: moods.join(","), additionalNote: note || undefined,
       groomerNotes: groomerNotes || undefined,
       coatCondition: coat as "excellent" | "good" | "fair" | "poor" | "matted" || undefined,
@@ -889,7 +888,6 @@ export default function Calendar() {
   }, [viewMode, weekEnd, dayTo]);
 
   const { data: blockouts, refetch: refetchBlockouts } = trpc.staff.listBlockouts.useQuery({
-    tenantId: 1,
     dateFrom: queryFrom.toISOString(),
     dateTo: queryTo.toISOString(),
   });
@@ -981,13 +979,12 @@ export default function Calendar() {
   };
 
   const { data: weekAppts, refetch } = trpc.calendar.getAppointments.useQuery({
-    tenantId: 1,
     dateFrom: queryFrom.toISOString(),
     dateTo:   queryTo.toISOString(),
   });
 
   const { data: apptSearchResults, isFetching: isApptSearchFetching } = trpc.calendar.searchAppointments.useQuery(
-    { tenantId: 1, query: apptSearchTerm },
+    { query: apptSearchTerm },
     { enabled: apptSearchTerm.trim().length >= 2 },
   );
 
@@ -997,7 +994,7 @@ export default function Calendar() {
   const [apptListClient, setApptListClient] = useState<{ clientId: number; name: string } | null>(null);
   const [showPastAppts, setShowPastAppts] = useState(false);
   const { data: clientAppts, isFetching: isClientApptsFetching } = trpc.calendar.appointmentsForClient.useQuery(
-    { tenantId: 1, clientId: apptListClient?.clientId ?? 0 },
+    { clientId: apptListClient?.clientId ?? 0 },
     { enabled: !!apptListClient },
   );
   const clientApptSplit = useMemo(
@@ -1021,7 +1018,7 @@ export default function Calendar() {
     setApptSearchTerm("");
   };
 
-  const { data: staffList }  = trpc.staff.listOperational.useQuery({ tenantId: 1 });
+  const { data: staffList }  = trpc.staff.listOperational.useQuery({});
   const editableAppointmentPets = trpc.pets.listByClient.useQuery(
     { clientId: editAppt?.clientId ?? 0 },
     { enabled: !!editAppt?.clientId },
@@ -1033,7 +1030,7 @@ export default function Calendar() {
     isFetching: isClientSearchFetching,
     isError: isClientSearchError,
   } = trpc.memberships.searchClients.useQuery(
-    { tenantId: 1, search: clientSearch },
+    { search: clientSearch },
     { enabled: clientSearch.length >= 1 }
   );
   type ClientOption = {
@@ -1066,7 +1063,7 @@ export default function Calendar() {
     }
     return Array.from(map.values());
   }, [clientSearchResults]);
-  const { data: tenantInfo } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 });
+  const { data: tenantInfo } = trpc.settings.getTenantInfo.useQuery({});
 
   const createMutation = trpc.calendar.createAppointment.useMutation({
     onSuccess: () => {
@@ -1234,7 +1231,6 @@ export default function Calendar() {
   );
   const membershipCoverage = trpc.calendar.getMembershipCoverage.useQuery(
     {
-      tenantId: 1,
       clientId: Number(newAppt.clientId),
       petIds: selectedAppointmentPetIds,
       serviceType: newAppt.serviceType as "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other",
@@ -1242,7 +1238,7 @@ export default function Calendar() {
     { enabled: !!newAppt.clientId && selectedAppointmentPetIds.length > 0 },
   );
   const clientMembershipSummary = trpc.calendar.getClientMembershipSummary.useQuery(
-    { tenantId: 1, clientId: Number(newAppt.clientId) },
+    { clientId: Number(newAppt.clientId) },
     { enabled: !!newAppt.clientId },
   );
   useEffect(() => {
@@ -1320,7 +1316,6 @@ export default function Calendar() {
         toast.error("Please choose a date to repeat until"); return;
       }
       createRecurringMutation.mutate({
-        tenantId: 1,
         clientId: parseInt(newAppt.clientId),
         petIds: newAppt.petIds.map(id => parseInt(id)),
         staffId: newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
@@ -1335,7 +1330,6 @@ export default function Calendar() {
       return;
     }
     multiPetCreateMutation.mutate({
-      tenantId: 1,
       clientId: parseInt(newAppt.clientId),
       petIds:   newAppt.petIds.map(id => parseInt(id)),
       staffId:  newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
@@ -2632,7 +2626,6 @@ export default function Calendar() {
                         disabled={!allHavePrices || createSessionBillsMutation.isPending}
                         title={!allHavePrices ? "Set a price for each dog before generating bills" : "Create a separate draft invoice for each dog"}
                         onClick={() => createSessionBillsMutation.mutate({
-                          tenantId: 1,
                           appointmentIds: allPets.map(p => p.id),
                         })}
                       >
@@ -2945,7 +2938,7 @@ export default function Calendar() {
               onClick={() => {
                 if (!confirmDelete) return;
                 if (confirmDelete.type === "blockout") {
-                  deleteBlockoutMutation.mutate({ tenantId: 1, id: confirmDelete.id, wholeGroup: true }, { onSuccess: () => setConfirmDelete(null) });
+                  deleteBlockoutMutation.mutate({ id: confirmDelete.id, wholeGroup: true }, { onSuccess: () => setConfirmDelete(null) });
                 } else if (confirmDelete.type === "appointment") {
                   deleteAppointmentMutation.mutate({ appointmentId: confirmDelete.id });
                 } else {

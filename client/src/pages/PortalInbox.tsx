@@ -20,7 +20,7 @@ export default function PortalInbox() {
   const [selected, setSelected] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
 
-  const threads = trpc.portalChat.listThreads.useQuery({ tenantId: 1 }, { refetchInterval: 20000 });
+  const threads = trpc.portalChat.listThreads.useQuery({}, { refetchInterval: 20000 });
   const thread = trpc.portalChat.getThread.useQuery(
     { threadId: selected ?? 0 },
     { enabled: Boolean(selected), refetchInterval: 15000 },

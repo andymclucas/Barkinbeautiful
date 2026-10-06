@@ -15,7 +15,7 @@ import { trpc } from "@/lib/trpc";
  * cap. It exposes counts, never message content.
  */
 export function SmsUsageCard() {
-  const { data } = trpc.smsUsage.get.useQuery({ tenantId: 1 }, {
+  const { data } = trpc.smsUsage.get.useQuery({}, {
     // Moves whenever anyone texts a client, and is watched precisely when
     // somebody is wondering whether they are close to the limit.
     staleTime: 60 * 1000,

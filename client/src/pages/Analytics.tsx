@@ -14,29 +14,25 @@ export default function Analytics() {
   const { dateFrom, dateTo, fromKey, toKey } = range;
 
   const { data: summary } = trpc.analytics.summary.useQuery({
-    tenantId: 1,
     dateFrom: dateFrom.toISOString(),
     dateTo: dateTo.toISOString(),
   });
 
   const { data: staffProductivity } = trpc.analytics.staffProductivity.useQuery({
-    tenantId: 1,
     dateFrom: dateFrom.toISOString(),
     dateTo: dateTo.toISOString(),
   });
 
   const { data: revenueStreams } = trpc.analytics.membershipAttributedRevenue.useQuery({
-    tenantId: 1,
     dateFrom: dateFrom.toISOString(),
     dateTo: dateTo.toISOString(),
   });
 
-  const { data: membershipBreakdown } = trpc.analytics.membershipBreakdown.useQuery({ tenantId: 1 });
+  const { data: membershipBreakdown } = trpc.analytics.membershipBreakdown.useQuery({});
 
-  const { data: groomInterval } = trpc.analytics.averageGroomInterval.useQuery({ tenantId: 1 });
+  const { data: groomInterval } = trpc.analytics.averageGroomInterval.useQuery({});
 
   const { data: timeSeries } = trpc.analyticsExt.revenueTimeSeries.useQuery({
-    tenantId: 1,
     dateFrom: dateFrom.toISOString(),
     dateTo: dateTo.toISOString(),
   });

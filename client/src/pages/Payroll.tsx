@@ -14,7 +14,7 @@ export default function Payroll() {
 
   const fmt = (d: Date) => d.toISOString().split("T")[0];
 
-  const { data: staffList } = trpc.staff.list.useQuery({ tenantId: 1 });
+  const { data: staffList } = trpc.staff.list.useQuery({});
 
   return (
     <DashboardLayout>

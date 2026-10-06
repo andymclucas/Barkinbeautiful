@@ -220,7 +220,6 @@ export default function Clients() {
   }, []);
 
   const queryParams = {
-    tenantId: 1,
     search: debouncedSearch || undefined,
     status: statusFilter !== "all" ? statusFilter : undefined,
     page,
@@ -233,7 +232,7 @@ export default function Clients() {
 
   // CSV export — fetches all matching rows then triggers download
   const exportQuery = trpc.clients.exportCsv.useQuery(
-    { tenantId: 1, search: debouncedSearch || undefined, status: statusFilter !== "all" ? statusFilter : undefined, sortBy, sortDir },
+    { search: debouncedSearch || undefined, status: statusFilter !== "all" ? statusFilter : undefined, sortBy, sortDir },
     { enabled: false }
   );
 
@@ -524,7 +523,7 @@ export default function Clients() {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
                 <Button
-                  onClick={() => createMutation.mutate({ tenantId: 1, ...form })}
+                  onClick={() => createMutation.mutate({ ...form })}
                   disabled={createMutation.isPending || !form.firstName || !form.lastName}
                 >
                   {createMutation.isPending ? "Saving…" : "Next: Add Pet →"}
@@ -594,7 +593,6 @@ export default function Clients() {
                   onClick={() => {
                     if (!petForm.name.trim()) { toast.error("Pet name is required"); return; }
                     createPetMutation.mutate({
-                      tenantId: 1,
                       clientId: newClientId!,
                       name: petForm.name.trim(),
                       breed: petForm.breed || undefined,

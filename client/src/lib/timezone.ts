@@ -133,7 +133,7 @@ export function useTimezoneSync(): string {
  */
 export function useTimezone() {
   const { user } = useAuth();
-  const { data: tenant } = trpc.settings.getTenantInfo.useQuery({ tenantId: 1 }, { enabled: !!user });
+  const { data: tenant } = trpc.settings.getTenantInfo.useQuery({}, { enabled: !!user });
 
   const timezone = safeTimeZone(
     (user as { timezone?: string | null } | null | undefined)?.timezone ?? tenant?.timezone ?? DEFAULT_TIMEZONE,

@@ -177,7 +177,7 @@ const sameMonth = (a: Date, b: Date) =>
  * west of here. The reporting window itself stays on the salon’s day.
  */
 export function ReportRangePicker({ range }: { range: ReportRange }) {
-  const { data: bookingYears } = trpc.analytics.dataYears.useQuery({ tenantId: 1 });
+  const { data: bookingYears } = trpc.analytics.dataYears.useQuery({});
   const [month, setMonth] = useState(() => localCalendarDay(range.fromKey));
   // Two stacked months fill a phone screen before a single figure is
   // visible, so a phone gets one.

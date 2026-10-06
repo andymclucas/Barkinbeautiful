@@ -33,7 +33,7 @@ export default function NotificationBell() {
   // Failed payments are protectedProcedure, the same level as the unread
   // preview below, so this adds no exposure: restricted staff see neither.
   const { data: failedPaymentsRaw } = trpc.memberships.getFailedPayments.useQuery(
-    { tenantId: 1 },
+    {},
     { refetchInterval: 120_000 },
   );
   const { data } = trpc.sms.getUnreadPreview.useQuery(
@@ -93,7 +93,7 @@ export default function NotificationBell() {
   // been viewed, so it can't quietly slip past everyone.
   const openItem = (item: any) => {
     // Who opened it, not just that someone did.
-    if (!item.readAt) markRead.mutate({ tenantId: 1, kind: item.kind, id: item.id });
+    if (!item.readAt) markRead.mutate({ kind: item.kind, id: item.id });
     if (item.kind === "missed_call") {
       if (item.clientId) setLocation(`/clients/${item.clientId}`);
       else setLocation("/messages");

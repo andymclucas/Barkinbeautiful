@@ -125,11 +125,11 @@ export default function WorkflowBoard() {
   }, [boardDate, reviewDate]);
 
   const { data: boardData, refetch, isLoading } = trpc.workflow.getBoard.useQuery(
-    { tenantId: 1, date: boardDate },
+    { date: boardDate },
     workflowBoardRefreshOptions,
   );
-  const { data: staffList } = trpc.workflow.getStaff.useQuery({ tenantId: 1 });
-  const { data: timingReviewThresholds } = trpc.workflowReview.getBoardThresholds.useQuery({ tenantId: 1 });
+  const { data: staffList } = trpc.workflow.getStaff.useQuery({});
+  const { data: timingReviewThresholds } = trpc.workflowReview.getBoardThresholds.useQuery({});
   const { data: pickupRecipients, isLoading: pickupRecipientsLoading, error: pickupRecipientsError } = trpc.sms.getPickupRecipients.useQuery(
     { appointmentId: pickupMessageAppointment?.id ?? 0 },
     { enabled: Boolean(pickupMessageAppointment), retry: false },
