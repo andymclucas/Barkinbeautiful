@@ -1,0 +1,21 @@
+-- The hostname a salon's clients arrive at.
+--
+-- Every authenticated request now takes its tenant from the signed-in
+-- user, but the public surface — online booking and the client portal —
+-- has nobody signed in. The only signal available there is the hostname,
+-- and a salon on its own domain has no slug in it to read.
+--
+-- Barkin' Beautiful is exactly that case: staff.barkinbeautiful.com.au
+-- says nothing about the slug "barkin-beautiful". Salons given a
+-- subdomain of the platform domain need no row here at all — the slug is
+-- in the hostname.
+--
+-- Unique, because two salons claiming one hostname has no correct
+-- answer and the database should refuse it rather than let a lookup pick
+-- whichever row sorted first.
+--
+-- Nullable: most salons will be on a platform subdomain and never set it.
+ALTER TABLE `tenants` ADD COLUMN `custom_domain` varchar(255) NULL;
+--> statement-breakpoint
+CREATE UNIQUE INDEX `uq_tenants_custom_domain` ON `tenants` (`custom_domain`);
+--> statement-breakpoint

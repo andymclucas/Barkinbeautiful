@@ -5874,11 +5874,11 @@ const onlineBookingRouter = router({
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
     const { tenantId, ...settings } = input; await db.update(tenants).set(settings).where(eq(tenants.id, tenantId)); return { success: true };
   }),
-  listGroomerProfiles: publicProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input }) => {
+  listGroomerProfiles: publicProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input, ctx }) => {
     const db = await getDb(); if (!db) return [];
-    const [tenant] = await db.select({ enabled: tenants.onlineBookingEnabled }).from(tenants).where(eq(tenants.id, input.tenantId)).limit(1);
+    const [tenant] = await db.select({ enabled: tenants.onlineBookingEnabled }).from(tenants).where(eq(tenants.id, tenantOf(ctx, input))).limit(1);
     if (!Boolean(Number(tenant?.enabled))) return [];
-    return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl, bio: staff.onlineBio, services: staff.onlineServices, maxDogsPerSlot: staff.onlineMaxDogsPerSlot }).from(staff).where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true))).orderBy(asc(staff.name));
+    return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl, bio: staff.onlineBio, services: staff.onlineServices, maxDogsPerSlot: staff.onlineMaxDogsPerSlot }).from(staff).where(and(eq(staff.tenantId, tenantOf(ctx, input)), eq(staff.isActive, true), eq(staff.onlineBookable, true))).orderBy(asc(staff.name));
   }),
   listPreviewGroomerProfiles: protectedProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
@@ -5901,14 +5901,14 @@ const onlineBookingRouter = router({
     if (!isEligibleOnlineBookingService(input.serviceType, input.petWeightKg)) throw new Error("Select a valid dog weight to see eligible booking services");
     return checkOnlineCapacity(input, { preview: true });
   }),
-  create: publicProcedure.input(z.object({ tenantId: z.number().default(1), clientId: z.number(), petId: z.number(), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), scheduledStart: z.coerce.date(), notes: z.string().max(1000).optional() })).mutation(async ({ input }) => {
+  create: publicProcedure.input(z.object({ tenantId: z.number().default(1), clientId: z.number(), petId: z.number(), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), scheduledStart: z.coerce.date(), notes: z.string().max(1000).optional() })).mutation(async ({ input, ctx }) => {
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
-    const [pet] = await db.select({ id: pets.id, weightKg: pets.weightKg, weight: pets.weight }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, input.tenantId))).limit(1);
+    const [pet] = await db.select({ id: pets.id, weightKg: pets.weightKg, weight: pets.weight }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
     if (!pet) throw new Error("Pet does not belong to the selected client");
     const petWeight = pet.weightKg ?? pet.weight;
     if (!isEligibleOnlineBookingService(input.serviceType, petWeight)) throw new Error("This pet needs a recorded weight between 0 and 80kg before online booking");
     const capacity = await checkOnlineCapacity({ ...input, petWeightKg: Number(petWeight) }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
-    const [result] = await db.insert(appointments).values({ tenantId: input.tenantId, clientId: input.clientId, petId: input.petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes: input.notes ?? null, status: "pending", workflowState: "scheduled" });
+    const [result] = await db.insert(appointments).values({ tenantId: tenantOf(ctx, input), clientId: input.clientId, petId: input.petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes: input.notes ?? null, status: "pending", workflowState: "scheduled" });
     return { success: true, appointmentId: (result as any).insertId as number };
   }),
   createGuest: publicProcedure.input(z.object({
@@ -5924,27 +5924,27 @@ const onlineBookingRouter = router({
     serviceType: z.enum(SERVICE_TYPES),
     scheduledStart: z.coerce.date(),
     notes: z.string().max(1000).optional(),
-  })).mutation(async ({ input }) => {
+  })).mutation(async ({ input, ctx }) => {
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
     const weightBand = getPetWeightBand(input.weightKg);
     if (!weightBand || !isEligibleOnlineBookingService(input.serviceType, input.weightKg)) throw new Error("Select a valid dog weight to see eligible booking services");
     const capacity = await checkOnlineCapacity(input); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
     const email = input.email?.trim().toLowerCase() || null;
     const identity = email ? or(eq(clients.email, email), eq(clients.phone, input.phone)) : eq(clients.phone, input.phone);
-    let [client] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.tenantId, input.tenantId), identity)).limit(1);
+    let [client] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.tenantId, tenantOf(ctx, input)), identity)).limit(1);
     if (!client) {
-      const [created] = await db.insert(clients).values({ tenantId: input.tenantId, firstName: input.firstName, lastName: input.lastName, phone: input.phone, email, status: "active" });
+      const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), firstName: input.firstName, lastName: input.lastName, phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
-    const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(eq(pets.tenantId, input.tenantId), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
     let petId = existingPet?.id;
     if (!petId) {
-      const [createdPet] = await db.insert(pets).values({ tenantId: input.tenantId, clientId: client.id, name: input.petName, breed: input.breed || null, weightKg: String(input.weightKg), weight: String(input.weightKg) });
+      const [createdPet] = await db.insert(pets).values({ tenantId: tenantOf(ctx, input), clientId: client.id, name: input.petName, breed: input.breed || null, weightKg: String(input.weightKg), weight: String(input.weightKg) });
       petId = (createdPet as any).insertId as number;
     }
     const sizeNote = `Online booking size: ${weightBand.label} (${input.weightKg}kg).`;
     const notes = [input.notes?.trim(), sizeNote].filter(Boolean).join("\n");
-    const [result] = await db.insert(appointments).values({ tenantId: input.tenantId, clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, status: "pending", workflowState: "scheduled" });
+    const [result] = await db.insert(appointments).values({ tenantId: tenantOf(ctx, input), clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, status: "pending", workflowState: "scheduled" });
     return { success: true, appointmentId: (result as any).insertId as number };
   }),
   createPreviewGuest: protectedProcedure.input(z.object({
@@ -8206,7 +8206,7 @@ const clientPortalRouter = router({
   listAvailableSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.string(), petWeightKg: z.coerce.number().optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), excludeAppointmentId: z.number() })).query(async ({ input }) => {
     return listRescheduleSlots(input);
   }),
-  listAvailableSlotsAnyStaff: publicProcedure.input(z.object({ tenantId: z.number().default(1), serviceType: z.string(), petWeightKg: z.coerce.number().optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), excludeAppointmentId: z.number() })).query(async ({ input }) => {
+  listAvailableSlotsAnyStaff: publicProcedure.input(z.object({ tenantId: z.number().default(1), serviceType: z.string(), petWeightKg: z.coerce.number().optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), excludeAppointmentId: z.number() })).query(async ({ input, ctx }) => {
     // "No preferred groomer": a time slot is offered if AT LEAST ONE
     // groomer/bather is free then (real calendar check, same as picking a
     // specific groomer) \u2014 merges every active groomer's individual
@@ -8214,7 +8214,7 @@ const clientPortalRouter = router({
     // confirmed.
     const db = await getDb(); if (!db) return [];
     const activeStaff = await db.select({ id: staff.id }).from(staff)
-      .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), inArray(staff.role, ["groomer", "bather", "owner", "manager"])));
+      .where(and(eq(staff.tenantId, tenantOf(ctx, input)), eq(staff.isActive, true), inArray(staff.role, ["groomer", "bather", "owner", "manager"])));
     const perStaffSlots = await Promise.all(activeStaff.map((s: { id: number }) =>
       listRescheduleSlots({ ...input, staffId: s.id }).catch(() => [])
     ));
@@ -8230,7 +8230,7 @@ const clientPortalRouter = router({
 
   listReschedulableStaff: publicProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       // Deliberately separate from onlineBooking.listGroomerProfiles: that
       // list is scoped to staff who accept public web bookings, which can
       // be a smaller set than "everyone who actually grooms dogs here."
@@ -8240,7 +8240,7 @@ const clientPortalRouter = router({
       if (!db) return [];
       return db.select({ id: staff.id, name: staff.name })
         .from(staff)
-        .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), inArray(staff.role, ["groomer", "bather", "owner", "manager"])))
+        .where(and(eq(staff.tenantId, tenantOf(ctx, input)), eq(staff.isActive, true), inArray(staff.role, ["groomer", "bather", "owner", "manager"])))
         .orderBy(asc(staff.name));
     }),
 

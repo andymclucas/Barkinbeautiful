@@ -38,6 +38,12 @@ export const tenants = mysqlTable("tenants", {
   onlineBookingSlotMinutes: int("online_booking_slot_minutes").default(30).notNull(),
   onlineBookingLeadHours: int("online_booking_lead_hours").default(24).notNull(),
   /**
+   * The hostname this salon's clients arrive at, when it is not a
+   * subdomain of the platform domain. Null for a salon on
+   * <slug>.groomigo.com, where the slug is already in the hostname.
+   */
+  customDomain: varchar("custom_domain", { length: 255 }),
+  /**
    * Never billed, never chased, never downgraded. Barkin' Beautiful is
    * not a customer — the concept is theirs. Kept separate from the plan
    * because WHAT a salon can use and WHETHER they pay are different

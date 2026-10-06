@@ -589,6 +589,13 @@
       "when": 1791256680904,
       "tag": "0083_tenant_billing_exempt",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "5",
+      "when": 1791264257575,
+      "tag": "0084_tenant_custom_domain",
+      "breakpoints": true
     }
   ]
 }
