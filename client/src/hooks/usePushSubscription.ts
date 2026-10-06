@@ -180,5 +180,7 @@ export function usePushSubscription() {
     }
   }, [testMutation]);
 
-  return { capability, subscribed, busy, lastError, subscribe, unsubscribe, sendTest };
+  return { capability, subscribed, busy, lastError, subscribe, unsubscribe, sendTest,
+    /** Why the server has no keys, for an owner. Null for everyone else. */
+    serverProblem: keyData?.problem ?? null };
 }

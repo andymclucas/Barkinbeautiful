@@ -243,11 +243,19 @@ export function StaffNotificationSetting() {
           )}
 
           {!push.capability.usable && push.capability.reason === "server_not_configured" && (
-            <p className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/30">
-              Groomigo has no push keys configured, so no device can be notified while the app is closed.
-              This one is on the server, not your phone &mdash; VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY need
-              to be set.
-            </p>
+            <div className="space-y-1.5 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/30">
+              <p>
+                Groomigo has no push keys configured, so no device can be notified while the app is closed.
+                This one is on the server, not your phone &mdash; <strong>VAPID_PRIVATE_KEY</strong> needs to
+                be set in the hosting environment. The public key is worked out from it and does not need
+                setting at all.
+              </p>
+              {/* The exact cause, rather than a log dive. Shapes only: a key
+                  must never be rendered on a screen. */}
+              {push.serverProblem && (
+                <p className="font-mono text-[11px] leading-relaxed opacity-90">{push.serverProblem}</p>
+              )}
+            </div>
           )}
 
           {push.lastError && (

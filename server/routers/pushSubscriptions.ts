@@ -17,8 +17,9 @@ import { router, operationalProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { pushSubscriptions } from "../../drizzle/schema";
 import {
-  getVapidPublicKey, isPushConfigured, endpointHash, sendPushToUser,
+  getVapidPublicKey, isPushConfigured, endpointHash, sendPushToUser, describeVapidProblem,
 } from "../webPush";
+import { canAdministerStaff } from "../../shared/staffAdministrators";
 
 /**
  * The browser hands back an endpoint URL and two base64url keys. Lengths
@@ -41,9 +42,13 @@ export const pushSubscriptionsRouter = router({
    * rotating the keypair then needs no rebuild, and the private key has
    * no route into the client bundle.
    */
-  publicKey: operationalProcedure.query(() => ({
+  publicKey: operationalProcedure.query(({ ctx }) => ({
     publicKey: getVapidPublicKey(),
     configured: isPushConfigured(),
+    // Only an owner or admin can act on this, and it names environment
+    // variables — a groomer seeing server configuration detail helps
+    // nobody and tells them something they cannot use.
+    problem: canAdministerStaff(ctx.user) ? describeVapidProblem() : null,
   })),
 
   subscribe: operationalProcedure
