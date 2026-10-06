@@ -49,6 +49,7 @@ import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimin
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
 import { resolveAppointmentMembershipCoverage, type AppointmentService } from "../shared/appointmentMembershipCoverage";
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
+import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
@@ -3626,10 +3627,24 @@ const membershipsRouter = router({
       if (!pet || pet.clientId !== input.clientId) throw new Error("Pet does not belong to the selected client");
       const recordedWeight = pet.weightKg ?? pet.weight;
       const weightBand = getMembershipWeightBand(recordedWeight);
+      // The salon's own plans, offered alongside the built-ins. Until now
+      // membership_plans was a price list nobody read: a plan created on
+      // the Pricing screen never appeared here, so a bespoke membership —
+      // a five-weekly styled clip, say — could be written and then not
+      // found anywhere.
+      const customPlans = await db.select().from(membershipPlans).where(and(
+        eq(membershipPlans.tenantId, tenantOf(ctx, input)),
+        eq(membershipPlans.isActive, true),
+      )).orderBy(asc(membershipPlans.sortOrder));
+
       return {
         recordedWeight,
         weightBand,
-        packages: weightBand ? getMembershipPackagesForWeight(recordedWeight) : MEMBERSHIP_PACKAGES,
+        packages: assignablePackagesFor(
+          weightBand ? getMembershipPackagesForWeight(recordedWeight) : MEMBERSHIP_PACKAGES,
+          customPlans,
+          weightBand?.id ?? null,
+        ),
         weightBands: MEMBERSHIP_WEIGHT_BANDS,
         requiresManualWeightSelection: !weightBand,
       };
@@ -3664,22 +3679,50 @@ const membershipsRouter = router({
         weight: pets.weight,
       }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!pet || pet.clientId !== input.clientId) throw new Error("Pet does not belong to the selected client");
-      const membershipPackage = getMembershipPackageById(input.packageId);
+      // Either a built-in package or one the salon wrote. A custom plan
+      // is identified by a "plan:<id>" package id.
+      const planRowId = customPlanId(input.packageId);
+      let membershipPackage: { name: string; tier: string; serviceType: string; weightClass: string | null; weeklyPrice: number; appointmentIntervalWeeks: number } | null = null;
+
+      if (planRowId !== null) {
+        const [plan] = await db.select().from(membershipPlans).where(and(
+          eq(membershipPlans.id, planRowId),
+          eq(membershipPlans.tenantId, tenantOf(ctx, input)),
+          eq(membershipPlans.isActive, true),
+        )).limit(1);
+        if (plan) membershipPackage = fromPlan(plan);
+      } else {
+        const builtIn = getMembershipPackageById(input.packageId);
+        if (builtIn) membershipPackage = { ...builtIn, weightClass: builtIn.weightClass };
+      }
+
       const recordedWeightBand = getMembershipWeightBand(pet.weightKg ?? pet.weight);
       if (recordedWeightBand && input.manualWeightClass && input.manualWeightClass !== recordedWeightBand.id) {
         throw new Error("The selected weight band does not match this dog's recorded weight");
       }
       const selectedWeightClass = recordedWeightBand?.id ?? input.manualWeightClass;
-      if (!membershipPackage || !selectedWeightClass || membershipPackage.weightClass !== selectedWeightClass) {
+      if (!membershipPackage) {
+        throw new Error("That membership is no longer available");
+      }
+      // A bespoke plan with no weight band suits any dog — that is the
+      // point of writing one. Only a plan that NAMES a band has to match.
+      if (membershipPackage.weightClass !== null && (!selectedWeightClass || membershipPackage.weightClass !== selectedWeightClass)) {
         throw new Error(recordedWeightBand ? "Choose a valid membership package for this dog's recorded weight" : "Choose a membership tier and approved weight band for this dog");
       }
+      // memberships.tier is a database enum, so a custom plan has to name
+      // one of the five. The plan's NAME carries the branding — "Silver +"
+      // stores as tier "silver", name "Silver +" — and the error says so
+      // rather than failing with a column constraint nobody can read.
+      const tierCheck = validatePlanForAssignment(membershipPackage);
+      if (!tierCheck.ok) throw new Error(tierCheck.reason);
+
       const [result] = await db.insert(memberships).values({
         tenantId: tenantOf(ctx, input),
         clientId: input.clientId,
         petId: input.petId,
         name: membershipPackage.name,
-        tier: membershipPackage.tier,
-        serviceType: membershipPackage.serviceType,
+        tier: membershipPackage.tier as typeof STORABLE_TIERS[number],
+        serviceType: membershipPackage.serviceType as typeof STORABLE_SERVICE_TYPES[number],
         billingCycleWeeks: 1,
         appointmentIntervalWeeks: membershipPackage.appointmentIntervalWeeks,
         pricePerCycle: membershipPackage.weeklyPrice.toFixed(2),
