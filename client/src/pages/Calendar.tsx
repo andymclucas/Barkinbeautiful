@@ -14,7 +14,7 @@ import { GROOM_CONDITION_LABELS, GROOM_RATING_LABELS } from "@shared/groomingCar
 import { arrivalLabel, hasArrivedOnSite } from "@shared/appointmentArrival";
 import { buildSharedAppointmentPriceBreakdown } from "@shared/sharedAppointmentPricing";
 import { buildCalendarDragTargetMinutes, formatCalendarDragTargetTime } from "@shared/calendarDragTarget";
-import { formatSharedAppointmentName } from "@shared/appointmentDisplay";
+import { formatSharedAppointmentName, formatAppointmentHeading } from "@shared/appointmentDisplay";
 import { formatAestDate, formatAestDateTime } from "@shared/auditTimestamp";
 import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
 import { Button } from "@/components/ui/button";
@@ -2461,27 +2461,34 @@ export default function Calendar() {
       <Dialog open={!!editAppt} onOpenChange={open => { if (!open) { setEditAppt(null); setSelectedStylePetId(null); setSiblingGroomers({}); setSiblingPrices({}); setAdditionalFamilyPetIds([]); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Pencil className="h-4 w-4 text-primary" />
-              Edit Appointment
-              {editAppt && (() => {
-                const sibs = getSiblings(editAppt);
-                if (sibs.length > 0) {
-                  return (
-                    <span className="text-muted-foreground font-normal text-sm ml-1">
-                      — {[editAppt, ...sibs].map(p => p.petName).filter(Boolean).join(" & ")} {editAppt.clientLastName}
-                      <span className="ml-1.5 text-xs bg-primary/10 text-primary rounded px-1.5 py-0.5">
-                        {1 + sibs.length} pets
-                      </span>
+            {/* The dog and the owner carry the heading. "Edit appointment"
+                is the one thing on this screen a groomer already knows, and
+                it was taking the bold while the name sat in small grey text
+                beside it. */}
+            <DialogTitle className="flex items-start gap-2">
+              <Pencil className="mt-1 h-4 w-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-normal uppercase tracking-wide text-muted-foreground">
+                  Edit appointment
+                </span>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base font-semibold leading-tight">
+                  {/* Wraps rather than truncates: on a phone the owner's
+                      surname is exactly what gets cut off, and it is half
+                      the reason the name is here at all. */}
+                  {editAppt
+                    ? formatAppointmentHeading({
+                        petNames: [editAppt, ...getSiblings(editAppt)].map(p => p.petName),
+                        clientFirstName: getSiblings(editAppt).length > 0 ? null : editAppt.clientFirstName,
+                        clientLastName: editAppt.clientLastName,
+                      })
+                    : "Appointment"}
+                  {editAppt && getSiblings(editAppt).length > 0 && (
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                      {1 + getSiblings(editAppt).length} pets
                     </span>
-                  );
-                }
-                return (
-                  <span className="text-muted-foreground font-normal text-sm ml-1">
-                    — {editAppt.petName} ({editAppt.clientFirstName} {editAppt.clientLastName})
-                  </span>
-                );
-              })()}
+                  )}
+                </span>
+              </span>
             </DialogTitle>
           </DialogHeader>
           {editAppt && (() => {
