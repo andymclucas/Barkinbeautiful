@@ -1234,3 +1234,30 @@ export const pushSubscriptions = mysqlTable("push_subscriptions", {
 ]);
 
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+
+/**
+ * Extras done on an appointment — the itemised part of an invoice.
+ *
+ * Price and name are SNAPSHOTS, not joins. A catalogue price is a price
+ * list and it changes; an invoice records what was charged on the day.
+ * Reading the figure from pricing_services would rewrite every past
+ * invoice the next time a price moved.
+ */
+export const appointmentAddOns = mysqlTable("appointment_add_ons", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").default(1).notNull(),
+  appointmentId: int("appointment_id").notNull(),
+  /** Kept for reporting; null once a catalogue entry is retired. */
+  pricingServiceId: int("pricing_service_id"),
+  name: varchar("name", { length: 255 }).notNull(),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  quantity: int("quantity").default(1).notNull(),
+  createdByUserId: int("created_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_appt_add_ons_appointment").on(t.appointmentId),
+  index("idx_appt_add_ons_tenant").on(t.tenantId),
+  index("idx_appt_add_ons_service").on(t.pricingServiceId),
+]);
+
+export type AppointmentAddOn = typeof appointmentAddOns.$inferSelect;

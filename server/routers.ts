@@ -43,6 +43,7 @@ import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
+import { buildInvoiceLines, addOnsTotal } from "../shared/appointmentAddOns";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
@@ -64,6 +65,7 @@ import {
 } from "../shared/staffBlockouts";
 import { sidebarCountsRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
+import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
   requireApprovedStaffTenant,
@@ -878,12 +880,16 @@ const calendarRouter = router({
       if (input.newState === "complete" && appt.workflowState !== "complete") {
         const [invoiceCount] = await db.select({ n: sql<number>`COUNT(*)` })
           .from(invoices).where(eq(invoices.appointmentId, appt.id));
+        // Loaded before the decision, not after: an appointment with no
+        // price but a real add-on still has something to bill.
+        const addOns = await loadAddOnsForInvoice(db, appt.tenantId, appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
           existingInvoiceCount: Number(invoiceCount?.n ?? 0),
           workflowState: "complete",
           status: appt.status,
+          addOnsTotal: addOnsTotal(addOns),
         });
         if (decision.invoice) {
           const [paidRow] = await db.select({ total: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)` })
@@ -897,15 +903,24 @@ const calendarRouter = router({
           };
           const invoiceNumber = groomInvoiceNumber(
             petRow?.name, new Date(appt.scheduledStart), Date.now().toString(36).slice(-4));
+          // Itemised: the groom, then every add-on done on the day. The
+          // total is the groom PLUS the extras — billing the appointment
+          // price alone would hand the add-ons over for free.
+          const itemised = buildInvoiceLines({
+            petName: petRow?.name,
+            serviceLabel: SERVICE_LABELS[appt.serviceType] ?? appt.serviceType,
+            servicePrice: total,
+            addOns,
+          });
           const [created] = await db.insert(invoices).values({
             tenantId: appt.tenantId,
             clientId: appt.clientId,
             appointmentId: appt.id,
             membershipId: appt.membershipId,
             invoiceNumber,
-            subtotal: total,
+            subtotal: itemised.subtotal,
             taxAmount: "0",
-            total,
+            total: itemised.subtotal,
             status,
             paidAt: status === "paid" ? new Date() : null,
             dueAt: invoiceDueAt(),
@@ -913,13 +928,9 @@ const calendarRouter = router({
           });
           const invoiceId = Number((created as any)?.insertId ?? 0);
           if (invoiceId) {
-            await db.insert(invoiceLineItems).values({
-              invoiceId,
-              description: `${petRow?.name ?? "Pet"} \u2014 ${SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}`,
-              quantity: "1",
-              unitPrice: total,
-              lineTotal: total,
-            });
+            await db.insert(invoiceLineItems).values(
+              itemised.lines.map(line => ({ invoiceId, ...line })),
+            );
           }
         }
       }
@@ -1150,12 +1161,14 @@ const calendarRouter = router({
         // cannot diverge — see shared/appointmentInvoicing.ts.
         const [already] = await db.select({ n: sql<number>`COUNT(*)` })
           .from(invoices).where(eq(invoices.appointmentId, appt.id));
+        const addOns = await loadAddOnsForInvoice(db, input.tenantId, appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
           existingInvoiceCount: Number(already?.n ?? 0),
           workflowState: "complete",
           status: "confirmed",
+          addOnsTotal: addOnsTotal(addOns),
         });
         if (!decision.invoice) { skipped.push({ petName: appt.petName ?? "Pet", reason: decision.reason }); continue; }
         const price = appt.price ? parseFloat(String(appt.price)) : 0;
@@ -1166,29 +1179,27 @@ const calendarRouter = router({
         }).replace(/\//g, "");
         const invNum = `GROOM-${petSlug}-${datePart}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
         const serviceLabel = SERVICE_LABELS_SERVER[appt.serviceType] ?? appt.serviceType;
-        const description = `${appt.petName ?? "Pet"} — ${serviceLabel}`;
+        // Same itemisation as the automatic path, from the same helper, so
+        // a bill raised by hand and one raised on completion cannot differ.
+        const itemised = buildInvoiceLines({ petName: appt.petName, serviceLabel, servicePrice: total, addOns });
         const [result] = await db.insert(invoices).values({
           tenantId: input.tenantId,
           clientId: appt.clientId,
           appointmentId: appt.id,
           membershipId: appt.membershipId,
           invoiceNumber: invNum,
-          subtotal: total,
+          subtotal: itemised.subtotal,
           taxAmount: "0",
-          total,
+          total: itemised.subtotal,
           status: "draft",
           dueAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-          notes: `Grooming invoice — ${appt.petName ?? "Pet"} — ${new Date(appt.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}`,
+          notes: `Grooming invoice \u2014 ${appt.petName ?? "Pet"} \u2014 ${new Date(appt.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}`,
         });
         const invoiceId = Number((result as any).insertId);
-        await db.insert(invoiceLineItems).values({
-          invoiceId,
-          description,
-          quantity: "1",
-          unitPrice: total,
-          lineTotal: total,
-        });
-        created.push({ invoiceId, invoiceNumber: invNum, petName: appt.petName ?? "Pet", total });
+        await db.insert(invoiceLineItems).values(
+          itemised.lines.map(line => ({ invoiceId, ...line })),
+        );
+        created.push({ invoiceId, invoiceNumber: invNum, petName: appt.petName ?? "Pet", total: itemised.subtotal });
       }
       return { success: true, created, skipped };
     }),
@@ -8432,6 +8443,7 @@ export const appRouter = router({
   portalChat: portalChatRouter,
   sidebarCounts: sidebarCountsRouter,
   pushSubscriptions: pushSubscriptionsRouter,
+  appointmentAddOns: appointmentAddOnsRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,

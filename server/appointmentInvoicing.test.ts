@@ -118,3 +118,43 @@ describe("invoiceDueAt", () => {
     expect(invoiceDueAt(from).toISOString()).toBe("2026-10-20T00:00:00.000Z");
   });
 });
+
+describe("add-ons make an otherwise unbillable groom billable", () => {
+  const base = {
+    membershipId: null, existingInvoiceCount: 0,
+    workflowState: "complete", status: "confirmed",
+  };
+
+  it("bills a groom with no price when a real add-on was done", () => {
+    // Appointment 210003 in production is exactly this: complete, no
+    // membership, price NULL. Before add-ons existed there was genuinely
+    // nothing to bill; a $65 teeth clean changes that.
+    expect(decideAppointmentInvoice({ ...base, price: null, addOnsTotal: "65.00" }))
+      .toEqual({ invoice: true });
+  });
+
+  it("still skips a groom with no price and no add-ons", () => {
+    expect(decideAppointmentInvoice({ ...base, price: null, addOnsTotal: "0.00" }))
+      .toEqual({ invoice: false, reason: "no_price" });
+    expect(decideAppointmentInvoice({ ...base, price: null }))
+      .toEqual({ invoice: false, reason: "no_price" });
+  });
+
+  it("adds the extras to a priced groom", () => {
+    expect(decideAppointmentInvoice({ ...base, price: "95.00", addOnsTotal: "35.00" }))
+      .toEqual({ invoice: true });
+  });
+
+  it("still refuses a membership groom, add-ons or not", () => {
+    // The weekly membership charge covers the groom. Whether it should also
+    // cover a $65 teeth clean is a commercial question, not a code one, so
+    // the existing rule is left exactly as it was.
+    expect(decideAppointmentInvoice({ ...base, membershipId: 12, price: null, addOnsTotal: "65.00" }))
+      .toEqual({ invoice: false, reason: "membership_covered" });
+  });
+
+  it("still refuses a cancelled appointment with add-ons on it", () => {
+    expect(decideAppointmentInvoice({ ...base, status: "cancelled", price: "95.00", addOnsTotal: "35.00" }))
+      .toEqual({ invoice: false, reason: "cancelled" });
+  });
+});
