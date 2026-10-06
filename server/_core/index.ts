@@ -405,7 +405,7 @@ async function startServer() {
         if (claim.send && phoneKey && db) {
           const claimedDb = db;
           // We hold the only claim for this number, so this send cannot repeat.
-          sendSms(String(From), MISSED_CALL_AUTO_TEXT)
+          sendSms(String(From), MISSED_CALL_AUTO_TEXT, { tenantId: 1 })
             .then(async result => {
               await claimedDb
                 .update(missedCallAutoTexts)

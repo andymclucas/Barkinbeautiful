@@ -20,6 +20,7 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { router, operationalProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { missedCalls, portalMessages, portalThreads, smsLogs } from "../../drizzle/schema";
+import { getSmsUsage } from "../smsUsage";
 
 export type SidebarCounts = {
   /** Unread inbound SMS plus unheard voicemails — both live on Messages. */
@@ -27,6 +28,18 @@ export type SidebarCounts = {
   /** Client portal messages nobody at the salon has read yet. */
   portalMessages: number;
 };
+
+export const smsUsageRouter = router({
+  /**
+   * This month's outbound texts against the salon's allowance.
+   *
+   * operationalProcedure: a groomer about to send a pickup text should be
+   * able to see the salon is near its cap. It exposes counts, not content.
+   */
+  get: operationalProcedure
+    .input(z.object({ tenantId: z.number().int().positive().default(1) }).optional())
+    .query(async ({ input }) => getSmsUsage(input?.tenantId ?? 1)),
+});
 
 export const sidebarCountsRouter = router({
   get: operationalProcedure

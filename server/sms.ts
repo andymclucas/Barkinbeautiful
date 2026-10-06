@@ -1,5 +1,6 @@
 import twilio from "twilio";
 import { getAppBaseUrl } from "./appUrl";
+import { checkSmsAllowance } from "./smsUsage";
 
 let _client: ReturnType<typeof twilio> | null = null;
 
@@ -12,12 +13,47 @@ function getClient() {
   return _client;
 }
 
-export async function sendSms(to: string, body: string): Promise<{ success: boolean; sid?: string; error?: string }> {
+/**
+ * Send a text, and count it against the salon's monthly allowance.
+ *
+ * `tenantId` is optional only because seven existing callers predate
+ * metering; every one of them should pass it. Without it the message is
+ * sent and NOT counted, which is the safe failure — a text that escapes
+ * the meter costs the platform a few cents, while a text refused because
+ * the meter could not identify the salon leaves a dog waiting with an
+ * owner who was never told.
+ */
+export async function sendSms(
+  to: string,
+  body: string,
+  options: { tenantId?: number } = {},
+): Promise<{ success: boolean; sid?: string; error?: string }> {
   const client = getClient();
   const from = process.env.TWILIO_FROM_NUMBER;
   if (!client || !from) {
     console.warn("[SMS] Twilio not configured — skipping SMS to", to);
     return { success: false, error: "Twilio not configured" };
+  }
+
+  // The allowance check is soft by default — see checkSmsAllowance. It
+  // refuses only a plan with no messaging at all, or a salon that has
+  // asked to be stopped at its cap.
+  if (options.tenantId !== undefined) {
+    try {
+      const allowance = await checkSmsAllowance(options.tenantId);
+      if (!allowance.send) {
+        console.warn(`[SMS] blocked for tenant ${options.tenantId}: ${allowance.reason}`);
+        return { success: false, error: allowance.reason };
+      }
+      if (allowance.usage.state === "approaching") {
+        console.warn(`[SMS] tenant ${options.tenantId} has used ${allowance.usage.sent} of ${allowance.usage.quota} texts this month`);
+      } else if (allowance.usage.state === "exceeded") {
+        console.warn(`[SMS] tenant ${options.tenantId} is OVER its allowance — ${allowance.usage.sent} of ${allowance.usage.quota}. Sending anyway; this is billable overage.`);
+      }
+    } catch (error) {
+      // Metering must never be the reason a message fails to go.
+      console.error("[SMS] allowance check failed, sending anyway:", error);
+    }
   }
   // Normalise Australian mobile numbers
   let toNorm = to.replace(/\s/g, "");
