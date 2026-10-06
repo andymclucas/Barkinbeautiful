@@ -26,11 +26,11 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "wa
 
 export function ThreadClientContext({ clientId }: { clientId: number | null }) {
   const { data, isLoading } = trpc.calendar.appointmentsForClient.useQuery(
-    { tenantId: 1, clientId: clientId ?? 0 },
+    { clientId: clientId ?? 0 },
     { enabled: !!clientId },
   );
   const { data: stats } = trpc.clients.messageContext.useQuery(
-    { tenantId: 1, clientId: clientId ?? 0 },
+    { clientId: clientId ?? 0 },
     { enabled: !!clientId },
   );
 

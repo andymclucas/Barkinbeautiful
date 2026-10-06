@@ -14,15 +14,15 @@ import { useTimezone } from "@/lib/timezone";
 export function ClientPackagesPanel({ clientId }: { clientId: number }) {
   const tz = useTimezone();
   const utils = trpc.useUtils();
-  const { data: owned } = trpc.packages.forClient.useQuery({ tenantId: 1, clientId });
-  const { data: catalogue } = trpc.packages.catalogue.useQuery({ tenantId: 1 });
+  const { data: owned } = trpc.packages.forClient.useQuery({ clientId });
+  const { data: catalogue } = trpc.packages.catalogue.useQuery({});
   const [chosen, setChosen] = useState<string>("");
 
   const purchase = trpc.packages.purchase.useMutation({
     onSuccess: () => {
       toast.success("Package added");
       setChosen("");
-      utils.packages.forClient.invalidate({ tenantId: 1, clientId });
+      utils.packages.forClient.invalidate({ clientId });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -76,7 +76,7 @@ export function ClientPackagesPanel({ clientId }: { clientId: number }) {
           <Button
             size="sm"
             disabled={!chosen || purchase.isPending}
-            onClick={() => purchase.mutate({ tenantId: 1, clientId, packageId: Number(chosen) })}
+            onClick={() => purchase.mutate({ clientId, packageId: Number(chosen) })}
           >
             {purchase.isPending ? "Adding…" : "Add"}
           </Button>
@@ -100,12 +100,12 @@ const KINDS = ["C5", "Kennel cough", "Customer form", "Other"];
  */
 export function PetPaperworkPanel({ clientId }: { clientId: number }) {
   const utils = trpc.useUtils();
-  const { data } = trpc.petPaperwork.forClient.useQuery({ tenantId: 1, clientId });
+  const { data } = trpc.petPaperwork.forClient.useQuery({ clientId });
   const [adding, setAdding] = useState<number | null>(null);
   const [kind, setKind] = useState(KINDS[0]);
   const [expiresOn, setExpiresOn] = useState("");
 
-  const refresh = () => utils.petPaperwork.forClient.invalidate({ tenantId: 1, clientId });
+  const refresh = () => utils.petPaperwork.forClient.invalidate({ clientId });
   const save = trpc.petPaperwork.save.useMutation({
     onSuccess: () => { setAdding(null); setExpiresOn(""); refresh(); },
     onError: (e) => toast.error(e.message),
@@ -132,7 +132,7 @@ export function PetPaperworkPanel({ clientId }: { clientId: number }) {
                   <Badge variant="outline">No expiry recorded</Badge>
                 )}
                 <Button variant="ghost" size="icon" className="ml-auto h-7 w-7" title="Delete this record"
-                  onClick={() => remove.mutate({ tenantId: 1, id: record.id })}>
+                  onClick={() => remove.mutate({ id: record.id })}>
                   <span aria-hidden="true" className="text-muted-foreground">&times;</span>
                   <span className="sr-only">Delete record</span>
                 </Button>
@@ -154,7 +154,7 @@ export function PetPaperworkPanel({ clientId }: { clientId: number }) {
                   <Input type="date" className="h-9 w-[9.5rem]" value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} />
                 </div>
                 <Button size="sm" disabled={save.isPending}
-                  onClick={() => save.mutate({ tenantId: 1, petId: pet.petId, kind, expiresOn: expiresOn || undefined })}>
+                  onClick={() => save.mutate({ petId: pet.petId, kind, expiresOn: expiresOn || undefined })}>
                   {save.isPending ? "Saving…" : "Save"}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setAdding(null)}>Cancel</Button>

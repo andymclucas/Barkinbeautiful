@@ -452,7 +452,7 @@ export default function ClientDetail() {
   const [bookDate, setBookDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [bookTime, setBookTime] = useState("09:00");
   const [bookStaffId, setBookStaffId] = useState<string>("");
-  const { data: staffList } = trpc.staff.list.useQuery({ tenantId: 1 });
+  const { data: staffList } = trpc.staff.list.useQuery({});
   const createAppt = trpc.calendar.createMultiPetAppointment.useMutation({
     onSuccess: () => {
       toast.success("Appointment booked!");
@@ -496,7 +496,6 @@ export default function ClientDetail() {
     const start = new Date(`${bookDate}T${bookTime}:00`);
     const end = new Date(start.getTime() + 90 * 60000);
     createAppt.mutate({
-      tenantId: 1,
       clientId: client.id,
       petIds: Array.from(new Set([bookPetId, ...bookFamilyPetIds])).map(id => parseInt(id)),
       staffId: bookStaffId ? parseInt(bookStaffId) : undefined,

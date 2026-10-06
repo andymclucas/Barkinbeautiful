@@ -43,7 +43,7 @@ export function MassTextDialog() {
     : { kind: "all_active" as const };
 
   const preview = trpc.sms.previewMassText.useQuery(
-    { tenantId: 1, audience },
+    { audience },
     { enabled: open && kind !== "hand_picked" },
   );
 
@@ -170,7 +170,7 @@ export function MassTextDialog() {
             <Button
               size="sm"
               disabled={!canSend || send.isPending}
-              onClick={() => send.mutate({ tenantId: 1, requestId, audience, body: body.trim(), confirmedCount: count })}
+              onClick={() => send.mutate({ requestId, audience, body: body.trim(), confirmedCount: count })}
             >
               {send.isPending ? "Sending…" : `Send to ${count}`}
             </Button>

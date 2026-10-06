@@ -28,7 +28,7 @@ const REQUIREMENT_LABEL: Record<string, string> = {
 export function ClientAgreementsPanel({ clientId, clientName }: { clientId: number; clientName: string }) {
   const tz = useTimezone();
   const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.agreements.forClient.useQuery({ tenantId: 1, clientId });
+  const { data, isLoading } = trpc.agreements.forClient.useQuery({ clientId });
   const [reading, setReading] = useState<{ title: string; body: string } | null>(null);
   const [signing, setSigning] = useState<{ id: number; title: string } | null>(null);
   const [signedName, setSignedName] = useState("");
@@ -36,8 +36,8 @@ export function ClientAgreementsPanel({ clientId, clientName }: { clientId: numb
   const importFromMoeGo = trpc.agreements.importFromMoeGo.useMutation({
     onSuccess: (r) => {
       toast.success(r.added.length ? `Imported ${r.added.length} agreements` : "Nothing new to import");
-      utils.agreements.forClient.invalidate({ tenantId: 1, clientId });
-      utils.agreements.list.invalidate({ tenantId: 1 });
+      utils.agreements.forClient.invalidate({ clientId });
+      utils.agreements.list.invalidate({});
     },
     onError: (e) => toast.error(e.message),
   });
@@ -47,7 +47,7 @@ export function ClientAgreementsPanel({ clientId, clientName }: { clientId: numb
       toast.success("Signature recorded");
       setSigning(null);
       setSignedName("");
-      utils.agreements.forClient.invalidate({ tenantId: 1, clientId });
+      utils.agreements.forClient.invalidate({ clientId });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -63,7 +63,7 @@ export function ClientAgreementsPanel({ clientId, clientName }: { clientId: numb
             No agreements are set up yet. The six written in MoeGo — the five VIP tiers and the service
             agreement — can be brought across as they are.
           </p>
-          <Button size="sm" disabled={importFromMoeGo.isPending} onClick={() => importFromMoeGo.mutate({ tenantId: 1 })}>
+          <Button size="sm" disabled={importFromMoeGo.isPending} onClick={() => importFromMoeGo.mutate({})}>
             {importFromMoeGo.isPending ? "Importing…" : "Import the MoeGo agreements"}
           </Button>
           <p className="text-xs text-muted-foreground">
@@ -141,7 +141,7 @@ export function ClientAgreementsPanel({ clientId, clientName }: { clientId: numb
             <Button
               size="sm"
               disabled={!signedName.trim() || record.isPending}
-              onClick={() => signing && record.mutate({ tenantId: 1, clientId, documentId: signing.id, signedName: signedName.trim() })}
+              onClick={() => signing && record.mutate({ clientId, documentId: signing.id, signedName: signedName.trim() })}
             >
               {record.isPending ? "Recording…" : "Record"}
             </Button>

@@ -11,7 +11,11 @@ describe("recorded pet weight and controlled staff membership setup", () => {
     expect(petsSection).toContain("updateWeight: operationalProcedure");
     expect(petsSection).toContain("weightKg: z.number().finite().min(0).max(80).nullable()");
     expect(petsSection).toContain("requireApprovedStaffTenant(db, ctx.user)");
-    expect(petsSection).toContain("and(eq(pets.id, input.petId), eq(pets.tenantId, input.tenantId))");
+    // Anchored on the tenant SCOPING, not on which expression supplies the
+    // tenant. The previous version pinned `input.tenantId` and broke when
+    // procedures moved to taking the tenant from the authenticated caller
+    // — a strictly stronger guarantee than the one it was guarding.
+    expect(petsSection).toContain("and(eq(pets.id, input.petId), eq(pets.tenantId,");
     expect(petsSection).toContain("set({ weightKg: recordedWeight, weight: recordedWeight })");
   });
 

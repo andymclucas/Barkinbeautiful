@@ -14,7 +14,7 @@ export default function Retail() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", sku: "", description: "", category: "", priceAud: "", costAud: "", stockQty: "0", reorderThreshold: "5" });
 
-  const { data: products, refetch } = trpc.retail.list.useQuery({ tenantId: 1, search: search || undefined });
+  const { data: products, refetch } = trpc.retail.list.useQuery({ search: search || undefined });
   const createMutation = trpc.retail.create.useMutation({
     onSuccess: () => { toast.success("Product added"); setShowAdd(false); refetch(); },
     onError: (e) => toast.error(e.message),
@@ -111,7 +111,7 @@ export default function Retail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-            <Button onClick={() => createMutation.mutate({ tenantId: 1, ...form, stockQty: parseInt(form.stockQty), reorderThreshold: parseInt(form.reorderThreshold) })} disabled={createMutation.isPending || !form.name || !form.priceAud}>
+            <Button onClick={() => createMutation.mutate({ ...form, stockQty: parseInt(form.stockQty), reorderThreshold: parseInt(form.reorderThreshold) })} disabled={createMutation.isPending || !form.name || !form.priceAud}>
               {createMutation.isPending ? "Adding..." : "Add Product"}
             </Button>
           </DialogFooter>

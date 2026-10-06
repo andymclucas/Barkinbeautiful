@@ -145,7 +145,6 @@ export function ApplyDiscountDialog({
               disabled={save.isPending || reasonMissing}
               title={reasonMissing ? "Please say why this discount is being applied" : undefined}
               onClick={() => save.mutate({
-                tenantId: 1,
                 appointmentId,
                 percent,
                 reason: reason.trim() || null,

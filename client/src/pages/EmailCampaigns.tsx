@@ -88,7 +88,7 @@ function CampaignComposer({ open, onClose, editCampaignId, onSaved }: ComposerPr
 
   // Audience preview
   const { data: preview, isFetching: previewLoading } = trpc.campaigns.getAudiencePreview.useQuery(
-    { tenantId: 1, audienceFilter: JSON.stringify({ type: audience }) },
+    { audienceFilter: JSON.stringify({ type: audience }) },
     { enabled: open }
   );
 
@@ -136,7 +136,7 @@ function CampaignComposer({ open, onClose, editCampaignId, onSaved }: ComposerPr
     if (editCampaignId) {
       updateMutation.mutate({ id: editCampaignId, ...payload });
     } else {
-      createMutation.mutate({ tenantId: 1, ...payload });
+      createMutation.mutate({ ...payload });
     }
   }
 
@@ -306,7 +306,6 @@ function SendConfirmDialog({
   const audienceLabel = AUDIENCE_OPTIONS.find(o => o.value === audienceType)?.label ?? audienceType;
 
   const { data: preview } = trpc.campaigns.getAudiencePreview.useQuery({
-    tenantId: 1,
     audienceFilter: JSON.stringify({ type: audienceType }),
   });
 
@@ -349,7 +348,7 @@ export default function EmailCampaigns() {
   const [sendTarget, setSendTarget] = useState<{ id: number; name: string; subject: string; audienceFilter: string | null } | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const { data: campaigns = [], isLoading } = trpc.campaigns.list.useQuery({ tenantId: 1 });
+  const { data: campaigns = [], isLoading } = trpc.campaigns.list.useQuery({});
 
   const deleteMutation = trpc.campaigns.delete.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); toast.success("Campaign deleted"); setDeleteId(null); },
@@ -374,7 +373,6 @@ export default function EmailCampaigns() {
 
   // Active client count from audience preview
   const { data: allActivePreview } = trpc.campaigns.getAudiencePreview.useQuery({
-    tenantId: 1,
     audienceFilter: JSON.stringify({ type: "all_active" }),
   });
 
@@ -521,7 +519,7 @@ export default function EmailCampaigns() {
       {sendTarget && (
         <SendConfirmDialog
           campaign={sendTarget}
-          onConfirm={() => sendMutation.mutate({ tenantId: 1, campaignId: sendTarget.id })}
+          onConfirm={() => sendMutation.mutate({ campaignId: sendTarget.id })}
           onClose={() => setSendTarget(null)}
           isSending={sendMutation.isPending}
         />

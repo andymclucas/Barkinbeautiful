@@ -107,11 +107,11 @@ export default function Pricing() {
   const [planEditor, setPlanEditor] = useState<{ record?: MembershipPlanRecord; form: ReturnType<typeof emptyPlanForm> } | null>(null);
 
   const { data: serviceRows = [], isLoading: servicesLoading } = trpc.pricing.listServices.useQuery(
-    { tenantId: 1 },
+    {},
     { enabled: user?.role === "admin" }
   );
   const { data: planRows = [], isLoading: plansLoading } = trpc.pricing.listMembershipPlans.useQuery(
-    { tenantId: 1 },
+    {},
     { enabled: user?.role === "admin" }
   );
 
@@ -209,9 +209,9 @@ export default function Pricing() {
             <TabsTrigger value="memberships">Memberships <span className="ml-1 text-xs text-muted-foreground">{planRows.length}</span></TabsTrigger>
           </TabsList>
 
-          <TabsContent value="services" className="mt-4"><CatalogueTable rows={services} loading={servicesLoading} onEdit={(record) => openServiceEditor("service", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ tenantId: 1, id: record.id }); }} /></TabsContent>
-          <TabsContent value="add-ons" className="mt-4"><CatalogueTable rows={addOns} loading={servicesLoading} onEdit={(record) => openServiceEditor("add_on", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ tenantId: 1, id: record.id }); }} /></TabsContent>
-          <TabsContent value="memberships" className="mt-4"><MembershipPlanTable rows={planRows} loading={plansLoading} onEdit={openPlanEditor} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change existing memberships.`)) deletePlanMutation.mutate({ tenantId: 1, id: record.id }); }} /></TabsContent>
+          <TabsContent value="services" className="mt-4"><CatalogueTable rows={services} loading={servicesLoading} onEdit={(record) => openServiceEditor("service", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ id: record.id }); }} /></TabsContent>
+          <TabsContent value="add-ons" className="mt-4"><CatalogueTable rows={addOns} loading={servicesLoading} onEdit={(record) => openServiceEditor("add_on", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ id: record.id }); }} /></TabsContent>
+          <TabsContent value="memberships" className="mt-4"><MembershipPlanTable rows={planRows} loading={plansLoading} onEdit={openPlanEditor} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change existing memberships.`)) deletePlanMutation.mutate({ id: record.id }); }} /></TabsContent>
         </Tabs>
       </div>
 
@@ -222,7 +222,7 @@ export default function Pricing() {
           <DialogFooter><Button variant="outline" onClick={() => setServiceEditor(null)}>Cancel</Button><Button disabled={!serviceEditor?.form.name || !serviceEditor?.form.code || (serviceEditor?.form.priceMode !== "quote" && !serviceEditor?.form.priceAud) || (serviceEditor?.form.priceMode === "range" && !serviceEditor?.form.priceMaxAud) || serviceMutation.isPending || updateServiceMutation.isPending} onClick={() => {
             if (!serviceEditor) return;
             const { form, record } = serviceEditor;
-            const payload = { tenantId: 1, catalogueType: form.catalogueType, name: form.name, code: form.code, description: form.description || undefined, priceMode: form.priceMode, priceAud: form.priceMode === "quote" ? undefined : Number(form.priceAud), priceMaxAud: form.priceMode === "range" ? Number(form.priceMaxAud) : undefined, durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : undefined, legacyServiceType: form.legacyServiceType || undefined, weightBand: form.weightBand || undefined, isActive: form.isActive, sortOrder: Number(form.sortOrder || 0) };
+            const payload = { catalogueType: form.catalogueType, name: form.name, code: form.code, description: form.description || undefined, priceMode: form.priceMode, priceAud: form.priceMode === "quote" ? undefined : Number(form.priceAud), priceMaxAud: form.priceMode === "range" ? Number(form.priceMaxAud) : undefined, durationMinutes: form.durationMinutes ? Number(form.durationMinutes) : undefined, legacyServiceType: form.legacyServiceType || undefined, weightBand: form.weightBand || undefined, isActive: form.isActive, sortOrder: Number(form.sortOrder || 0) };
             if (record) updateServiceMutation.mutate({ ...payload, id: record.id }); else serviceMutation.mutate(payload);
           }}>{serviceEditor?.record ? "Save Changes" : "Add to Catalogue"}</Button></DialogFooter>
         </DialogContent>
@@ -235,7 +235,7 @@ export default function Pricing() {
           <DialogFooter><Button variant="outline" onClick={() => setPlanEditor(null)}>Cancel</Button><Button disabled={!planEditor?.form.name || !planEditor?.form.code || !planEditor?.form.tier || !planEditor?.form.weeklyPriceAud || !planEditor?.form.appointmentIntervalWeeks || planMutation.isPending || updatePlanMutation.isPending} onClick={() => {
             if (!planEditor) return;
             const { form, record } = planEditor;
-            const payload = { tenantId: 1, name: form.name, code: form.code, tier: form.tier, serviceVariant: form.serviceVariant || undefined, weightBand: form.weightBand || undefined, weeklyPriceAud: Number(form.weeklyPriceAud), billingCycleWeeks: Number(form.billingCycleWeeks || 1), appointmentIntervalWeeks: Number(form.appointmentIntervalWeeks), description: form.description || undefined, isActive: form.isActive, sortOrder: Number(form.sortOrder || 0) };
+            const payload = { name: form.name, code: form.code, tier: form.tier, serviceVariant: form.serviceVariant || undefined, weightBand: form.weightBand || undefined, weeklyPriceAud: Number(form.weeklyPriceAud), billingCycleWeeks: Number(form.billingCycleWeeks || 1), appointmentIntervalWeeks: Number(form.appointmentIntervalWeeks), description: form.description || undefined, isActive: form.isActive, sortOrder: Number(form.sortOrder || 0) };
             if (record) updatePlanMutation.mutate({ ...payload, id: record.id }); else planMutation.mutate(payload);
           }}>{planEditor?.record ? "Save Changes" : "Add Plan"}</Button></DialogFooter>
         </DialogContent>

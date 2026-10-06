@@ -137,7 +137,6 @@ export function usePushSubscription() {
       }
 
       await subscribeMutation.mutateAsync({
-        tenantId: 1,
         endpoint: subscription.endpoint,
         p256dh: json.keys.p256dh,
         auth: json.keys.auth,
@@ -183,7 +182,7 @@ export function usePushSubscription() {
   const sendTest = useCallback(async () => {
     setLastError(null);
     try {
-      return await testMutation.mutateAsync({ tenantId: 1 });
+      return await testMutation.mutateAsync({});
     } catch (error) {
       setLastError(error instanceof Error ? error.message : "Could not send the test.");
       return null;

@@ -14,7 +14,7 @@
 import { z } from "zod";
 import { and, asc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, operationalProcedure } from "../_core/trpc";
+import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointmentAddOns, pricingServices } from "../../drizzle/schema";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
@@ -24,7 +24,7 @@ export const appointmentAddOnsRouter = router({
   /** The add-ons the salon offers, for the picker. */
   catalogue: operationalProcedure
     .input(z.object({ tenantId: z.number().int().positive().default(1) }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       return db.select({
@@ -36,7 +36,7 @@ export const appointmentAddOnsRouter = router({
         priceMaxAud: pricingServices.priceMaxAud,
         description: pricingServices.description,
       }).from(pricingServices).where(and(
-        eq(pricingServices.tenantId, input?.tenantId ?? 1),
+        eq(pricingServices.tenantId, tenantOf(ctx, input) ?? 1),
         eq(pricingServices.catalogueType, "add_on"),
         eq(pricingServices.isActive, true),
       )).orderBy(asc(pricingServices.sortOrder), asc(pricingServices.name));
@@ -51,7 +51,7 @@ export const appointmentAddOnsRouter = router({
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
 
       const addOns = await db.select().from(appointmentAddOns).where(and(
-        eq(appointmentAddOns.tenantId, input.tenantId),
+        eq(appointmentAddOns.tenantId, tenantOf(ctx, input)),
         eq(appointmentAddOns.appointmentId, input.appointmentId),
       )).orderBy(asc(appointmentAddOns.id));
 
@@ -74,7 +74,7 @@ export const appointmentAddOnsRouter = router({
 
       const [service] = await db.select().from(pricingServices).where(and(
         eq(pricingServices.id, input.pricingServiceId),
-        eq(pricingServices.tenantId, input.tenantId),
+        eq(pricingServices.tenantId, tenantOf(ctx, input)),
         eq(pricingServices.catalogueType, "add_on"),
       )).limit(1);
       if (!service) throw new TRPCError({ code: "NOT_FOUND", message: "That add-on is not in the catalogue" });
@@ -95,7 +95,7 @@ export const appointmentAddOnsRouter = router({
         : (service.priceAud ?? "0.00");
 
       await db.insert(appointmentAddOns).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         appointmentId: input.appointmentId,
         pricingServiceId: service.id,
         // Snapshots, so a rename or a price rise never changes a past bill.
@@ -122,7 +122,7 @@ export const appointmentAddOnsRouter = router({
 
       const [row] = await db.select().from(appointmentAddOns).where(and(
         eq(appointmentAddOns.id, input.id),
-        eq(appointmentAddOns.tenantId, input.tenantId),
+        eq(appointmentAddOns.tenantId, tenantOf(ctx, input)),
       )).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "That add-on is no longer on this appointment" });
       await requireApprovedStaffAppointmentAccess(db, ctx.user, row.appointmentId);
@@ -143,7 +143,7 @@ export const appointmentAddOnsRouter = router({
 
       const [row] = await db.select().from(appointmentAddOns).where(and(
         eq(appointmentAddOns.id, input.id),
-        eq(appointmentAddOns.tenantId, input.tenantId),
+        eq(appointmentAddOns.tenantId, tenantOf(ctx, input)),
       )).limit(1);
       if (!row) return { success: true };
       await requireApprovedStaffAppointmentAccess(db, ctx.user, row.appointmentId);

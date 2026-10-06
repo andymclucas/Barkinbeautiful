@@ -577,14 +577,14 @@ export default function ClientPortal() {
     setSelectedSlot("");
   };
 
-  const groomerProfiles = trpc.clientPortal.listReschedulableStaff.useQuery({ tenantId: 1 });
+  const groomerProfiles = trpc.clientPortal.listReschedulableStaff.useQuery({});
   const petWeightKg = rescheduleTarget?.petWeightKg ? Number(rescheduleTarget.petWeightKg) : 0;
   const specificSlots = trpc.clientPortal.listAvailableSlots.useQuery(
-    { tenantId: 1, staffId: Number(selectedStaffId), serviceType: rescheduleTarget?.serviceType as any, petWeightKg, date: selectedDate, excludeAppointmentId: rescheduleTarget?.id ?? 0 },
+    { staffId: Number(selectedStaffId), serviceType: rescheduleTarget?.serviceType as any, petWeightKg, date: selectedDate, excludeAppointmentId: rescheduleTarget?.id ?? 0 },
     { enabled: !!rescheduleTarget && !!selectedDate && selectedStaffId !== "" && selectedStaffId !== "any" }
   );
   const anyStaffSlots = trpc.clientPortal.listAvailableSlotsAnyStaff.useQuery(
-    { tenantId: 1, serviceType: rescheduleTarget?.serviceType as any, petWeightKg, date: selectedDate, excludeAppointmentId: rescheduleTarget?.id ?? 0 },
+    { serviceType: rescheduleTarget?.serviceType as any, petWeightKg, date: selectedDate, excludeAppointmentId: rescheduleTarget?.id ?? 0 },
     { enabled: !!rescheduleTarget && !!selectedDate && selectedStaffId === "any" }
   );
   const availableSlots = selectedStaffId === "any" ? anyStaffSlots.data : specificSlots.data;

@@ -24,7 +24,7 @@ type AsidePet = {
  * pet records are still a section of their own.
  */
 export function ClientPetsAside({ clientId, pets }: { clientId: number; pets: AsidePet[] }) {
-  const { data: paperwork } = trpc.petPaperwork.forClient.useQuery({ tenantId: 1, clientId });
+  const { data: paperwork } = trpc.petPaperwork.forClient.useQuery({ clientId });
 
   const active = pets.filter(pet => pet.status !== "departed");
   if (active.length === 0) {

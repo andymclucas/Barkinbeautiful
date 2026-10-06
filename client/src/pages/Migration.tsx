@@ -20,7 +20,7 @@ export default function Migration() {
   const [importing, setImporting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const { data: jobs, refetch } = trpc.migration.listJobs.useQuery({ tenantId: 1 });
+  const { data: jobs, refetch } = trpc.migration.listJobs.useQuery({});
   const createJobMutation = trpc.migration.createJob.useMutation();
   const importMutation = trpc.migration.importClients.useMutation({
     onSuccess: (res) => {
@@ -56,14 +56,14 @@ export default function Migration() {
       return;
     }
 
-    await createJobMutation.mutateAsync({ tenantId: 1, type: "csv_import" });
+    await createJobMutation.mutateAsync({ type: "csv_import" });
 
     // Get the job ID from the latest job
     const latestJobs = await refetch();
     const latestJob = latestJobs.data?.[0];
     if (!latestJob) { setImporting(false); return; }
 
-    importMutation.mutate({ tenantId: 1, jobId: latestJob.id, records });
+    importMutation.mutate({ jobId: latestJob.id, records });
   };
 
   return (

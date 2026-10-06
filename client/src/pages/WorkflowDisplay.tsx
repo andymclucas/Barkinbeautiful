@@ -71,12 +71,12 @@ export default function WorkflowDisplay() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [boardDate, setBoardDate] = useState(() => new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10));
   const { data: boardData, refetch, isFetching, isLoading: isBoardLoading, isError } = trpc.workflow.getBoard.useQuery(
-    { tenantId: 1, date: boardDate },
+    { date: boardDate },
     { ...workflowBoardRefreshOptions, enabled: !!user },
   );
   // The board shows each stage's staff member with their photo. The wall
   // display now renders the same table, so it needs the same staff list.
-  const { data: staffList } = trpc.workflow.getStaff.useQuery({ tenantId: 1 }, { enabled: !!user });
+  const { data: staffList } = trpc.workflow.getStaff.useQuery({}, { enabled: !!user });
   const groomers = staffList?.filter(s => s.role !== "bather") ?? [];
   const bathers = staffList?.filter(s => s.role === "bather" || s.role === "groomer") ?? [];
   const restoreCompletedMutation = trpc.calendar.updateWorkflowState.useMutation({

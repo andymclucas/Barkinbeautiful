@@ -112,11 +112,11 @@ export default function Dashboard() {
   // they poll rather than sitting on whatever was true at page load.
   const live = { refetchInterval: 60_000, refetchOnWindowFocus: true } as const;
 
-  const { data: boardData } = trpc.workflow.getTodayBoard.useQuery({ tenantId: 1 }, live);
-  const { data: analytics } = trpc.analytics.summary.useQuery({ tenantId: 1, dateFrom: monthStart.toISOString(), dateTo: tomorrow.toISOString() }, live);
-  const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({ tenantId: 1 });
-  const { data: timingReviewAlerts } = trpc.workflowReview.getAlerts.useQuery({ tenantId: 1, date: dashboardDate }, { ...live, enabled: user?.role === "admin" });
-  const { data: messagePreview } = trpc.sms.getUnreadPreview.useQuery({ tenantId: 1, limit: 5 }, live);
+  const { data: boardData } = trpc.workflow.getTodayBoard.useQuery({}, live);
+  const { data: analytics } = trpc.analytics.summary.useQuery({ dateFrom: monthStart.toISOString(), dateTo: tomorrow.toISOString() }, live);
+  const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({});
+  const { data: timingReviewAlerts } = trpc.workflowReview.getAlerts.useQuery({ date: dashboardDate }, { ...live, enabled: user?.role === "admin" });
+  const { data: messagePreview } = trpc.sms.getUnreadPreview.useQuery({ limit: 5 }, live);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-background">

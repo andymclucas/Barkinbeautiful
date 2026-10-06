@@ -100,13 +100,13 @@ function australianDateKey(timestamp: number | string | Date | null | undefined)
 
 function OnlineBookingControls() {
   const utils = trpc.useUtils();
-  const { data } = trpc.onlineBooking.getSettings.useQuery({ tenantId: 1 });
+  const { data } = trpc.onlineBooking.getSettings.useQuery({});
   const [form, setForm] = useState({ enabled: false, bathLimit: "3", bathCapacity: "3", slotMinutes: "30", leadHours: "24" });
   useEffect(() => {
     if (data) setForm({ enabled: data.onlineBookingEnabled, bathLimit: String(data.onlineBathOnlyDailyLimit), bathCapacity: String(data.onlineBathCapacityPerSlot), slotMinutes: String(data.onlineBookingSlotMinutes), leadHours: String(data.onlineBookingLeadHours) });
   }, [data]);
   const save = trpc.onlineBooking.updateSettings.useMutation({
-    onSuccess: () => { toast.success("Online booking controls saved"); utils.onlineBooking.getSettings.invalidate({ tenantId: 1 }); },
+    onSuccess: () => { toast.success("Online booking controls saved"); utils.onlineBooking.getSettings.invalidate({}); },
     onError: e => toast.error(e.message),
   });
   return <section className="rounded-2xl border border-violet-100 dark:border-violet-950/50 bg-gradient-to-br from-violet-50 dark:from-violet-950/40 to-violet-50/40 dark:to-violet-950/40 p-4 sm:p-5">
@@ -118,7 +118,7 @@ function OnlineBookingControls() {
       <div><Label>Slot interval (minutes)</Label><Input className="mt-1 bg-card" type="number" min="15" step="15" value={form.slotMinutes} onChange={e => setForm(p => ({ ...p, slotMinutes: e.target.value }))} /></div>
       <div><Label>Minimum notice (hours)</Label><Input className="mt-1 bg-card" type="number" min="0" value={form.leadHours} onChange={e => setForm(p => ({ ...p, leadHours: e.target.value }))} /></div>
     </div>
-    <div className="mt-4 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Set each groomer’s profile, services and capacity in their Staff profile before switching public booking on.</p><Button size="sm" onClick={() => save.mutate({ tenantId: 1, onlineBookingEnabled: form.enabled, onlineBathOnlyDailyLimit: Math.max(0, Number(form.bathLimit) || 0), onlineBathCapacityPerSlot: Math.max(1, Number(form.bathCapacity) || 1), onlineBookingSlotMinutes: Math.max(15, Number(form.slotMinutes) || 30), onlineBookingLeadHours: Math.max(0, Number(form.leadHours) || 0) })} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save controls"}</Button></div>
+    <div className="mt-4 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Set each groomer’s profile, services and capacity in their Staff profile before switching public booking on.</p><Button size="sm" onClick={() => save.mutate({ onlineBookingEnabled: form.enabled, onlineBathOnlyDailyLimit: Math.max(0, Number(form.bathLimit) || 0), onlineBathCapacityPerSlot: Math.max(1, Number(form.bathCapacity) || 1), onlineBookingSlotMinutes: Math.max(15, Number(form.slotMinutes) || 30), onlineBookingLeadHours: Math.max(0, Number(form.leadHours) || 0) })} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save controls"}</Button></div>
   </section>;
 }
 
@@ -126,7 +126,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const [timingRange, setTimingRange] = useState(() => initialTimingRange ?? makeTimingRange(7));
-  const { data, isLoading } = trpc.staff.getProfile.useQuery({ staffId, tenantId: 1, dateFrom: timingRange.start, dateTo: timingRange.end });
+  const { data, isLoading } = trpc.staff.getProfile.useQuery({ staffId, dateFrom: timingRange.start, dateTo: timingRange.end });
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -169,7 +169,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
   // the page and there was no way to shorten it.
   const [activityExpanded, setActivityExpanded] = useState(false);
   const ACTIVITY_PREVIEW_COUNT = 5;
-  const { data: invitations = [] } = trpc.staff.listPortalInvitations.useQuery({ tenantId: 1 });
+  const { data: invitations = [] } = trpc.staff.listPortalInvitations.useQuery({});
   const { data: accessHistory = [] } = trpc.staff.getAccessHistory.useQuery({ staffId });
 
   // Separate from updateMutation because that one closes the edit panel on
@@ -200,21 +200,21 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
       toast.success(result.emailSent ? `Invitation emailed to ${result.email}` : `Invitation prepared for ${result.email}. Email delivery needs attention.`);
       utils.staff.list.invalidate();
       utils.staff.getProfile.invalidate({ staffId });
-      utils.staff.listPortalInvitations.invalidate({ tenantId: 1 });
+      utils.staff.listPortalInvitations.invalidate({});
       setPortalOpen(false);
     },
     onError: (e) => toast.error(e.message),
   });
   const approvePortalMutation = trpc.staff.approveInvitation.useMutation({
-    onSuccess: () => { toast.success("Staff access approved"); utils.staff.getProfile.invalidate({ staffId }); utils.staff.listPortalInvitations.invalidate({ tenantId: 1 }); },
+    onSuccess: () => { toast.success("Staff access approved"); utils.staff.getProfile.invalidate({ staffId }); utils.staff.listPortalInvitations.invalidate({}); },
     onError: (e) => toast.error(e.message),
   });
   const revokePortalMutation = trpc.staff.revokePortalAccess.useMutation({
-    onSuccess: () => { toast.success("Staff portal access revoked"); utils.staff.getProfile.invalidate({ staffId }); utils.staff.listPortalInvitations.invalidate({ tenantId: 1 }); },
+    onSuccess: () => { toast.success("Staff portal access revoked"); utils.staff.getProfile.invalidate({ staffId }); utils.staff.listPortalInvitations.invalidate({}); },
     onError: (e) => toast.error(e.message),
   });
   const restorePortalMutation = trpc.staff.restorePortalAccess.useMutation({
-    onSuccess: () => { toast.success("Staff portal access restored"); utils.staff.getProfile.invalidate({ staffId }); utils.staff.listPortalInvitations.invalidate({ tenantId: 1 }); },
+    onSuccess: () => { toast.success("Staff portal access restored"); utils.staff.getProfile.invalidate({ staffId }); utils.staff.listPortalInvitations.invalidate({}); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -625,9 +625,8 @@ function BlockoutControls() {
   const from = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const to = new Date(from.getTime() + 365 * 86_400_000);
 
-  const { data: staffList } = trpc.staff.list.useQuery({ tenantId: 1 });
+  const { data: staffList } = trpc.staff.list.useQuery({});
   const { data: blockouts, refetch } = trpc.staff.listBlockouts.useQuery({
-    tenantId: 1,
     dateFrom: from.toISOString().slice(0, 10),
     dateTo: to.toISOString().slice(0, 10),
   });
@@ -737,7 +736,7 @@ function BlockoutControls() {
 
 export default function Staff() {
   const utils = trpc.useUtils();
-  const { data: staffList, isLoading } = trpc.staff.list.useQuery({ tenantId: 1 });
+  const { data: staffList, isLoading } = trpc.staff.list.useQuery({});
   const { data: me } = trpc.auth.me.useQuery();
   const ownerView = canAdministerStaff(me ?? null);
   const [rightsFor, setRightsFor] = useState<StaffRightsTarget | null>(null);
@@ -763,7 +762,7 @@ export default function Staff() {
     onSuccess: (result) => {
       toast.success(result.emailSent ? `Invitation emailed to ${result.email}` : `Invitation prepared for ${result.email}. Email delivery needs attention.`);
       utils.staff.list.invalidate();
-      utils.staff.listPortalInvitations.invalidate({ tenantId: 1 });
+      utils.staff.listPortalInvitations.invalidate({});
     },
     onError: (e) => toast.error(e.message),
   });
@@ -889,7 +888,7 @@ export default function Staff() {
               <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
               <Button onClick={() => {
                 if (!form.name.trim()) { toast.error("Name is required"); return; }
-                createMutation.mutate({ tenantId: 1, name: form.name, email: form.email || undefined, phone: form.phone || undefined, role: form.role as any, colourHex: form.colourHex });
+                createMutation.mutate({ name: form.name, email: form.email || undefined, phone: form.phone || undefined, role: form.role as any, colourHex: form.colourHex });
               }} disabled={createMutation.isPending}>
                 {createMutation.isPending ? "Adding..." : "Add Staff Member"}
               </Button>

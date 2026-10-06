@@ -13,7 +13,7 @@
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, operationalProcedure } from "../_core/trpc";
+import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { pushSubscriptions } from "../../drizzle/schema";
 import {
@@ -66,7 +66,7 @@ export const pushSubscriptionsRouter = router({
       // rotation, or simply over time — and inserting a second row would
       // notify that phone twice for every call.
       await db.insert(pushSubscriptions).values({
-        tenantId: input.tenantId,
+        tenantId: tenantOf(ctx, input),
         userId,
         endpoint: input.endpoint,
         endpointHash: hash,
@@ -131,7 +131,7 @@ export const pushSubscriptionsRouter = router({
         lastFailureAt: pushSubscriptions.lastFailureAt,
         failureCount: pushSubscriptions.failureCount,
       }).from(pushSubscriptions).where(and(
-        eq(pushSubscriptions.tenantId, input?.tenantId ?? 1),
+        eq(pushSubscriptions.tenantId, tenantOf(ctx, input) ?? 1),
         eq(pushSubscriptions.userId, userId),
       )).orderBy(desc(pushSubscriptions.createdAt));
 
@@ -153,7 +153,7 @@ export const pushSubscriptionsRouter = router({
       const userId = ctx.user?.id;
       if (!userId) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-      return await sendPushToUser(input?.tenantId ?? 1, userId, {
+      return await sendPushToUser(tenantOf(ctx, input) ?? 1, userId, {
         title: "Groomigo test notification",
         body: "This is what an incoming call or a new message will look like.",
         url: "/settings",

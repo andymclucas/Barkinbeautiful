@@ -20,8 +20,8 @@ import { getBookingGroomerDisplayName } from "../../../shared/bookingGroomerDisp
 import { getActiveTimeZone } from "@/lib/timezone";
 
 export default function OnlineBooking({ previewMode = false }: { previewMode?: boolean }) {
-  const publicProfiles = trpc.onlineBooking.listGroomerProfiles.useQuery({ tenantId: 1 }, { enabled: !previewMode });
-  const previewProfiles = trpc.onlineBooking.listPreviewGroomerProfiles.useQuery({ tenantId: 1 }, { enabled: previewMode });
+  const publicProfiles = trpc.onlineBooking.listGroomerProfiles.useQuery({}, { enabled: !previewMode });
+  const previewProfiles = trpc.onlineBooking.listPreviewGroomerProfiles.useQuery({}, { enabled: previewMode });
   const groomers = previewMode ? previewProfiles.data : publicProfiles.data;
   const isLoading = previewMode ? previewProfiles.isLoading : publicProfiles.isLoading;
   const [form, setForm] = useState({ firstName: "", lastName: "", phone: "", email: "", petName: "", breed: "", weightKg: "", staffId: "", serviceType: "classic_groom", scheduledStart: "", notes: "" });
@@ -38,14 +38,14 @@ export default function OnlineBooking({ previewMode = false }: { previewMode?: b
   const selectedWeightBand = getPetWeightBand(form.weightKg);
   const serviceOptions = getEligibleOnlineBookingServices(form.weightKg);
   const canLoadSlots = Boolean(form.staffId && selectedWeightBand && selectedDate);
-  const slotInput = { tenantId: 1, staffId: Number(form.staffId), serviceType: form.serviceType as any, petWeightKg: Number(form.weightKg), date: selectedDate };
+  const slotInput = { staffId: Number(form.staffId), serviceType: form.serviceType as any, petWeightKg: Number(form.weightKg), date: selectedDate };
   const publicSlots = trpc.onlineBooking.listAvailableSlots.useQuery(slotInput, { enabled: !previewMode && canLoadSlots });
   const previewSlots = trpc.onlineBooking.listPreviewAvailableSlots.useQuery(slotInput, { enabled: previewMode && canLoadSlots });
   const availableSlots = previewMode ? previewSlots.data : publicSlots.data;
   const slotsLoading = previewMode ? previewSlots.isLoading : publicSlots.isLoading;
   const creating = previewMode ? createPreview.isPending : create.isPending;
   const submitRequest = () => {
-    const input = { tenantId: 1, firstName: form.firstName, lastName: form.lastName, phone: form.phone, email: form.email, petName: form.petName, breed: form.breed || undefined, weightKg: Number(form.weightKg), staffId: Number(form.staffId), serviceType: form.serviceType as any, scheduledStart: new Date(form.scheduledStart), notes: form.notes || undefined };
+    const input = { firstName: form.firstName, lastName: form.lastName, phone: form.phone, email: form.email, petName: form.petName, breed: form.breed || undefined, weightKg: Number(form.weightKg), staffId: Number(form.staffId), serviceType: form.serviceType as any, scheduledStart: new Date(form.scheduledStart), notes: form.notes || undefined };
     if (previewMode) createPreview.mutate(input); else create.mutate(input);
   };
   if (complete) return <main className="min-h-screen bg-gradient-to-br from-violet-950 via-slate-950 to-violet-950 flex items-center justify-center px-5 py-12 text-white"><div className="max-w-md text-center rounded-3xl border border-violet-300/30 dark:border-violet-800/30 bg-white/10 backdrop-blur p-8 shadow-2xl"><div className="mx-auto w-fit rounded-2xl bg-emerald-400/20 p-4"><CheckCircle2 className="h-10 w-10 text-emerald-300" /></div><h1 className="mt-5 text-2xl font-bold">{previewMode ? "Preview booking recorded" : "Booking request received"}</h1><p className="mt-3 text-violet-100">{previewMode ? "This is a marked preview test. No client message, automatic confirmation or live booking release has occurred." : "Thank you. We have reserved your requested time pending confirmation from Barkin’ Beautiful."}</p><Button className="mt-6 bg-violet-400 text-foreground hover:bg-violet-300 dark:hover:bg-violet-800" onClick={() => { setComplete(false); setSelectedDate(""); setForm({ firstName: "", lastName: "", phone: "", email: "", petName: "", breed: "", weightKg: "", staffId: "", serviceType: "classic_groom", scheduledStart: "", notes: "" }); }}>Book another visit</Button></div></main>;

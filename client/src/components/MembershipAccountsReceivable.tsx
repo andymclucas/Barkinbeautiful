@@ -11,7 +11,7 @@ import { toast } from "sonner";
 
 export function MembershipAccountsReceivable() {
   const utils = trpc.useUtils();
-  const { data: accounts, refetch, isLoading } = trpc.memberships.getAccountsReceivable.useQuery({ tenantId: 1 });
+  const { data: accounts, refetch, isLoading } = trpc.memberships.getAccountsReceivable.useQuery({});
   const [valueTarget, setValueTarget] = useState<{ membershipId: number; appointmentId: number; clientName: string; petName: string | null } | null>(null);
   const [groomValue, setGroomValue] = useState("");
   const [paymentTarget, setPaymentTarget] = useState<{ membershipId: number; clientName: string; petName: string | null } | null>(null);

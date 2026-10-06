@@ -17,7 +17,7 @@
  */
 import { z } from "zod";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
-import { router, operationalProcedure } from "../_core/trpc";
+import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { missedCalls, portalMessages, portalThreads, smsLogs } from "../../drizzle/schema";
 import { getSmsUsage } from "../smsUsage";
@@ -44,10 +44,10 @@ export const smsUsageRouter = router({
 export const sidebarCountsRouter = router({
   get: operationalProcedure
     .input(z.object({ tenantId: z.number().int().positive().default(1) }).optional())
-    .query(async ({ input }): Promise<SidebarCounts> => {
+    .query(async ({ input, ctx }): Promise<SidebarCounts> => {
       const db = await getDb();
       if (!db) return { messages: 0, portalMessages: 0 };
-      const tenantId = input?.tenantId ?? 1;
+      const tenantId = tenantOf(ctx, input) ?? 1;
 
       const [[sms], [calls], [portal]] = await Promise.all([
         db.select({ n: sql<number>`COUNT(*)` }).from(smsLogs).where(and(

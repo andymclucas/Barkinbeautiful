@@ -1,4 +1,4 @@
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, tenantOf } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -40,11 +40,11 @@ async function assertClient(tenantId: number, clientId: number) {
 // ─── Agreements ──────────────────────────────────────────────────────────────
 export const agreementsRouter = router({
   /** Every live document, newest version of each slug. */
-  list: protectedProcedure.input(TENANT).query(async ({ input }) => {
+  list: protectedProcedure.input(TENANT).query(async ({ input, ctx }) => {
     const d = await db();
     const rows = await d.select()
       .from(agreementDocuments)
-      .where(and(eq(agreementDocuments.tenantId, input.tenantId), sql`${agreementDocuments.status} <> 'archived'`))
+      .where(and(eq(agreementDocuments.tenantId, tenantOf(ctx, input)), sql`${agreementDocuments.status} <> 'archived'`))
       .orderBy(desc(agreementDocuments.version));
     const newest = new Map<string, typeof rows[number]>();
     for (const r of rows) if (!newest.has(r.slug)) newest.set(r.slug, r);
@@ -53,10 +53,10 @@ export const agreementsRouter = router({
 
   get: protectedProcedure
     .input(TENANT.extend({ id: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const d = await db();
       const [row] = await d.select().from(agreementDocuments)
-        .where(and(eq(agreementDocuments.id, input.id), eq(agreementDocuments.tenantId, input.tenantId)))
+        .where(and(eq(agreementDocuments.id, input.id), eq(agreementDocuments.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Agreement not found" });
       return row;
@@ -86,11 +86,11 @@ export const agreementsRouter = router({
       if (!input.id) {
         const [existing] = await d.select({ v: agreementDocuments.version })
           .from(agreementDocuments)
-          .where(and(eq(agreementDocuments.tenantId, input.tenantId), eq(agreementDocuments.slug, input.slug)))
+          .where(and(eq(agreementDocuments.tenantId, tenantOf(ctx, input)), eq(agreementDocuments.slug, input.slug)))
           .orderBy(desc(agreementDocuments.version)).limit(1);
         const version = (existing?.v ?? 0) + 1;
         await d.insert(agreementDocuments).values({
-          tenantId: input.tenantId, slug: input.slug, title: input.title, body: input.body,
+          tenantId: tenantOf(ctx, input), slug: input.slug, title: input.title, body: input.body,
           requirement: input.requirement, status: input.status, version,
           createdByUserId: userId,
         });
@@ -98,14 +98,14 @@ export const agreementsRouter = router({
       }
 
       const [current] = await d.select().from(agreementDocuments)
-        .where(and(eq(agreementDocuments.id, input.id), eq(agreementDocuments.tenantId, input.tenantId)))
+        .where(and(eq(agreementDocuments.id, input.id), eq(agreementDocuments.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Agreement not found" });
 
       const [signed] = await d.select({ n: sql<number>`COUNT(*)` })
         .from(agreementSignatures)
         .where(and(
-          eq(agreementSignatures.tenantId, input.tenantId),
+          eq(agreementSignatures.tenantId, tenantOf(ctx, input)),
           eq(agreementSignatures.documentId, current.id),
           eq(agreementSignatures.documentVersion, current.version),
         ));
@@ -115,11 +115,11 @@ export const agreementsRouter = router({
       if (hasSignatures && wordsChanged) {
         const [newest] = await d.select({ v: agreementDocuments.version })
           .from(agreementDocuments)
-          .where(and(eq(agreementDocuments.tenantId, input.tenantId), eq(agreementDocuments.slug, current.slug)))
+          .where(and(eq(agreementDocuments.tenantId, tenantOf(ctx, input)), eq(agreementDocuments.slug, current.slug)))
           .orderBy(desc(agreementDocuments.version)).limit(1);
         const version = (newest?.v ?? current.version) + 1;
         await d.insert(agreementDocuments).values({
-          tenantId: input.tenantId, slug: current.slug, title: input.title, body: input.body,
+          tenantId: tenantOf(ctx, input), slug: current.slug, title: input.title, body: input.body,
           requirement: input.requirement, status: input.status, version, createdByUserId: userId,
         });
         return { created: true, version, supersededBecauseSigned: true };
@@ -134,21 +134,21 @@ export const agreementsRouter = router({
 
   archive: protectedProcedure
     .input(TENANT.extend({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
       await d.update(agreementDocuments).set({ status: "archived", updatedAt: new Date() })
-        .where(and(eq(agreementDocuments.id, input.id), eq(agreementDocuments.tenantId, input.tenantId)));
+        .where(and(eq(agreementDocuments.id, input.id), eq(agreementDocuments.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 
   /** Documents plus whether this client has signed the current version. */
   forClient: protectedProcedure
     .input(TENANT.extend({ clientId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      await assertClient(input.tenantId, input.clientId);
+    .query(async ({ input, ctx }) => {
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       const docs = await d.select().from(agreementDocuments)
-        .where(and(eq(agreementDocuments.tenantId, input.tenantId), eq(agreementDocuments.status, "active")))
+        .where(and(eq(agreementDocuments.tenantId, tenantOf(ctx, input)), eq(agreementDocuments.status, "active")))
         .orderBy(desc(agreementDocuments.version));
       const newest = new Map<string, typeof docs[number]>();
       for (const doc of docs) if (!newest.has(doc.slug)) newest.set(doc.slug, doc);
@@ -157,7 +157,7 @@ export const agreementsRouter = router({
 
       const sigs = await d.select().from(agreementSignatures)
         .where(and(
-          eq(agreementSignatures.tenantId, input.tenantId),
+          eq(agreementSignatures.tenantId, tenantOf(ctx, input)),
           eq(agreementSignatures.clientId, input.clientId),
           inArray(agreementSignatures.documentId, live.map(doc => doc.id)),
         ));
@@ -186,17 +186,17 @@ export const agreementsRouter = router({
       signedName: z.string().trim().min(1).max(200),
     }))
     .mutation(async ({ input, ctx }) => {
-      await assertClient(input.tenantId, input.clientId);
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       const [doc] = await d.select({ id: agreementDocuments.id, version: agreementDocuments.version })
         .from(agreementDocuments)
-        .where(and(eq(agreementDocuments.id, input.documentId), eq(agreementDocuments.tenantId, input.tenantId)))
+        .where(and(eq(agreementDocuments.id, input.documentId), eq(agreementDocuments.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!doc) throw new TRPCError({ code: "NOT_FOUND", message: "Agreement not found" });
 
       try {
         await d.insert(agreementSignatures).values({
-          tenantId: input.tenantId, documentId: doc.id, documentVersion: doc.version,
+          tenantId: tenantOf(ctx, input), documentId: doc.id, documentVersion: doc.version,
           clientId: input.clientId, signedName: input.signedName,
           recordedByUserId: ctx.user?.id ? Number(ctx.user.id) : null,
         });
@@ -220,13 +220,13 @@ export const agreementsRouter = router({
       const d = await db();
       const existing = await d.select({ slug: agreementDocuments.slug })
         .from(agreementDocuments)
-        .where(eq(agreementDocuments.tenantId, input.tenantId));
+        .where(eq(agreementDocuments.tenantId, tenantOf(ctx, input)));
       const have = new Set(existing.map(r => r.slug));
       const added: string[] = [];
       for (const a of SEED_AGREEMENTS) {
         if (have.has(a.slug)) continue;
         await d.insert(agreementDocuments).values({
-          tenantId: input.tenantId, slug: a.slug, title: a.title, body: a.body,
+          tenantId: tenantOf(ctx, input), slug: a.slug, title: a.title, body: a.body,
           requirement: a.requirement, status: "active", version: 1,
           createdByUserId: ctx.user?.id ? Number(ctx.user.id) : null,
         });
@@ -240,11 +240,11 @@ export const agreementsRouter = router({
 export const clientReviewsRouter = router({
   forClient: protectedProcedure
     .input(TENANT.extend({ clientId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      await assertClient(input.tenantId, input.clientId);
+    .query(async ({ input, ctx }) => {
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       const rows = await d.select().from(clientReviews)
-        .where(and(eq(clientReviews.tenantId, input.tenantId), eq(clientReviews.clientId, input.clientId)))
+        .where(and(eq(clientReviews.tenantId, tenantOf(ctx, input)), eq(clientReviews.clientId, input.clientId)))
         .orderBy(desc(clientReviews.createdAt));
       const average = rows.length
         ? Math.round((rows.reduce((sum, r) => sum + r.rating, 0) / rows.length) * 10) / 10
@@ -260,10 +260,10 @@ export const clientReviewsRouter = router({
       comment: z.string().trim().max(2000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      await assertClient(input.tenantId, input.clientId);
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       await d.insert(clientReviews).values({
-        tenantId: input.tenantId, clientId: input.clientId,
+        tenantId: tenantOf(ctx, input), clientId: input.clientId,
         appointmentId: input.appointmentId ?? null,
         rating: input.rating, comment: input.comment || null,
         source: "staff_entered",
@@ -274,10 +274,10 @@ export const clientReviewsRouter = router({
 
   remove: protectedProcedure
     .input(TENANT.extend({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
       await d.delete(clientReviews)
-        .where(and(eq(clientReviews.id, input.id), eq(clientReviews.tenantId, input.tenantId)));
+        .where(and(eq(clientReviews.id, input.id), eq(clientReviews.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 });
@@ -285,10 +285,10 @@ export const clientReviewsRouter = router({
 // ─── Packages ────────────────────────────────────────────────────────────────
 export const packagesRouter = router({
   /** What the salon sells. */
-  catalogue: protectedProcedure.input(TENANT).query(async ({ input }) => {
+  catalogue: protectedProcedure.input(TENANT).query(async ({ input, ctx }) => {
     const d = await db();
     return d.select().from(servicePackages)
-      .where(and(eq(servicePackages.tenantId, input.tenantId), eq(servicePackages.status, "active")))
+      .where(and(eq(servicePackages.tenantId, tenantOf(ctx, input)), eq(servicePackages.status, "active")))
       .orderBy(servicePackages.name);
   }),
 
@@ -302,7 +302,7 @@ export const packagesRouter = router({
       price: z.number().nonnegative(),
       validForWeeks: z.number().int().min(1).max(260).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
       const values = {
         name: input.name,
@@ -315,29 +315,29 @@ export const packagesRouter = router({
       };
       if (input.id) {
         await d.update(servicePackages).set(values)
-          .where(and(eq(servicePackages.id, input.id), eq(servicePackages.tenantId, input.tenantId)));
+          .where(and(eq(servicePackages.id, input.id), eq(servicePackages.tenantId, tenantOf(ctx, input))));
         return { id: input.id };
       }
-      await d.insert(servicePackages).values({ tenantId: input.tenantId, ...values });
+      await d.insert(servicePackages).values({ tenantId: tenantOf(ctx, input), ...values });
       return { id: null };
     }),
 
   archiveCatalogueItem: protectedProcedure
     .input(TENANT.extend({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
       await d.update(servicePackages).set({ status: "archived", updatedAt: new Date() })
-        .where(and(eq(servicePackages.id, input.id), eq(servicePackages.tenantId, input.tenantId)));
+        .where(and(eq(servicePackages.id, input.id), eq(servicePackages.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 
   forClient: protectedProcedure
     .input(TENANT.extend({ clientId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      await assertClient(input.tenantId, input.clientId);
+    .query(async ({ input, ctx }) => {
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       const rows = await d.select().from(clientPackages)
-        .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.clientId, input.clientId)))
+        .where(and(eq(clientPackages.tenantId, tenantOf(ctx, input)), eq(clientPackages.clientId, input.clientId)))
         .orderBy(desc(clientPackages.purchasedAt));
       const now = Date.now();
       return rows.map(r => ({
@@ -359,10 +359,10 @@ export const packagesRouter = router({
       packageId: z.number().int().positive(),
     }))
     .mutation(async ({ input, ctx }) => {
-      await assertClient(input.tenantId, input.clientId);
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       const [pkg] = await d.select().from(servicePackages)
-        .where(and(eq(servicePackages.id, input.packageId), eq(servicePackages.tenantId, input.tenantId)))
+        .where(and(eq(servicePackages.id, input.packageId), eq(servicePackages.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!pkg) throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
       if (pkg.status !== "active") throw new TRPCError({ code: "BAD_REQUEST", message: "That package is archived" });
@@ -371,7 +371,7 @@ export const packagesRouter = router({
         ? new Date(Date.now() + pkg.validForWeeks * 7 * 24 * 60 * 60 * 1000)
         : null;
       await d.insert(clientPackages).values({
-        tenantId: input.tenantId, clientId: input.clientId, packageId: pkg.id,
+        tenantId: tenantOf(ctx, input), clientId: input.clientId, packageId: pkg.id,
         packageName: pkg.name, creditsTotal: pkg.credits, pricePaid: pkg.price,
         expiresAt, soldByUserId: ctx.user?.id ? Number(ctx.user.id) : null,
       });
@@ -386,7 +386,7 @@ export const packagesRouter = router({
     .mutation(async ({ input, ctx }) => {
       const d = await db();
       const [cp] = await d.select().from(clientPackages)
-        .where(and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.tenantId, input.tenantId)))
+        .where(and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!cp) throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
       if (cp.status !== "active") throw new TRPCError({ code: "BAD_REQUEST", message: "That package is no longer active" });
@@ -399,7 +399,7 @@ export const packagesRouter = router({
 
       try {
         await d.insert(clientPackageRedemptions).values({
-          tenantId: input.tenantId, clientPackageId: cp.id, appointmentId: input.appointmentId,
+          tenantId: tenantOf(ctx, input), clientPackageId: cp.id, appointmentId: input.appointmentId,
           redeemedByUserId: ctx.user?.id ? Number(ctx.user.id) : null,
         });
       } catch {
@@ -424,17 +424,17 @@ export const petPaperworkRouter = router({
   /** Every pet on the client, each with its records — one query per page. */
   forClient: protectedProcedure
     .input(TENANT.extend({ clientId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      await assertClient(input.tenantId, input.clientId);
+    .query(async ({ input, ctx }) => {
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       const owned = await d.select({ id: pets.id, name: pets.name })
         .from(pets)
-        .where(and(eq(pets.clientId, input.clientId), eq(pets.tenantId, input.tenantId)));
+        .where(and(eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input))));
       if (owned.length === 0) return [];
 
       const records = await d.select().from(petVaccinations)
         .where(and(
-          eq(petVaccinations.tenantId, input.tenantId),
+          eq(petVaccinations.tenantId, tenantOf(ctx, input)),
           inArray(petVaccinations.petId, owned.map(p => p.id)),
         ))
         .orderBy(desc(petVaccinations.expiresOn));
@@ -466,7 +466,7 @@ export const petPaperworkRouter = router({
     .mutation(async ({ input, ctx }) => {
       const d = await db();
       const [pet] = await d.select({ id: pets.id }).from(pets)
-        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, input.tenantId))).limit(1);
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!pet) throw new TRPCError({ code: "NOT_FOUND", message: "Pet not found" });
 
       const values = {
@@ -480,19 +480,19 @@ export const petPaperworkRouter = router({
       };
       if (input.id) {
         await d.update(petVaccinations).set(values)
-          .where(and(eq(petVaccinations.id, input.id), eq(petVaccinations.tenantId, input.tenantId)));
+          .where(and(eq(petVaccinations.id, input.id), eq(petVaccinations.tenantId, tenantOf(ctx, input))));
         return { success: true };
       }
-      await d.insert(petVaccinations).values({ tenantId: input.tenantId, petId: input.petId, ...values });
+      await d.insert(petVaccinations).values({ tenantId: tenantOf(ctx, input), petId: input.petId, ...values });
       return { success: true };
     }),
 
   remove: protectedProcedure
     .input(TENANT.extend({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
       await d.delete(petVaccinations)
-        .where(and(eq(petVaccinations.id, input.id), eq(petVaccinations.tenantId, input.tenantId)));
+        .where(and(eq(petVaccinations.id, input.id), eq(petVaccinations.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 });
@@ -501,8 +501,8 @@ export const petPaperworkRouter = router({
 export const clientNotesRouter = router({
   forClient: protectedProcedure
     .input(TENANT.extend({ clientId: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      await assertClient(input.tenantId, input.clientId);
+    .query(async ({ input, ctx }) => {
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       const rows = await d.select({
         id: clientNotes.id,
@@ -514,7 +514,7 @@ export const clientNotesRouter = router({
       })
         .from(clientNotes)
         .leftJoin(users, eq(clientNotes.createdByUserId, users.id))
-        .where(and(eq(clientNotes.tenantId, input.tenantId), eq(clientNotes.clientId, input.clientId)))
+        .where(and(eq(clientNotes.tenantId, tenantOf(ctx, input)), eq(clientNotes.clientId, input.clientId)))
         .orderBy(desc(clientNotes.pinned), desc(clientNotes.createdAt));
 
       // The old single free-text field still holds whatever was typed
@@ -522,7 +522,7 @@ export const clientNotesRouter = router({
       // silently dropped.
       const [legacy] = await d.select({ notes: clients.notes })
         .from(clients)
-        .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, input.tenantId)))
+        .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, tenantOf(ctx, input))))
         .limit(1);
 
       return { notes: rows, legacyNote: legacy?.notes?.trim() || null };
@@ -535,10 +535,10 @@ export const clientNotesRouter = router({
       pinned: z.boolean().default(false),
     }))
     .mutation(async ({ input, ctx }) => {
-      await assertClient(input.tenantId, input.clientId);
+      await assertClient(tenantOf(ctx, input), input.clientId);
       const d = await db();
       await d.insert(clientNotes).values({
-        tenantId: input.tenantId, clientId: input.clientId, body: input.body,
+        tenantId: tenantOf(ctx, input), clientId: input.clientId, body: input.body,
         pinned: input.pinned, createdByUserId: ctx.user?.id ? Number(ctx.user.id) : null,
       });
       return { success: true };
@@ -550,22 +550,22 @@ export const clientNotesRouter = router({
       body: z.string().trim().min(1).max(4000).optional(),
       pinned: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
       const patch: Record<string, unknown> = { updatedAt: new Date() };
       if (input.body !== undefined) patch.body = input.body;
       if (input.pinned !== undefined) patch.pinned = input.pinned;
       await d.update(clientNotes).set(patch)
-        .where(and(eq(clientNotes.id, input.id), eq(clientNotes.tenantId, input.tenantId)));
+        .where(and(eq(clientNotes.id, input.id), eq(clientNotes.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 
   remove: protectedProcedure
     .input(TENANT.extend({ id: z.number().int().positive() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const d = await db();
       await d.delete(clientNotes)
-        .where(and(eq(clientNotes.id, input.id), eq(clientNotes.tenantId, input.tenantId)));
+        .where(and(eq(clientNotes.id, input.id), eq(clientNotes.tenantId, tenantOf(ctx, input))));
       return { success: true };
     }),
 });
