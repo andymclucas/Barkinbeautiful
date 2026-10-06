@@ -67,6 +67,7 @@ import {
 import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
+import { stripeConnectRouter } from "./routers/stripeConnect";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
   requireApprovedStaffTenant,
@@ -8488,6 +8489,7 @@ export const appRouter = router({
   smsUsage: smsUsageRouter,
   pushSubscriptions: pushSubscriptionsRouter,
   appointmentAddOns: appointmentAddOnsRouter,
+  stripeConnect: stripeConnectRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,

@@ -68,6 +68,21 @@ export const tenants = mysqlTable("tenants", {
   billingExempt: boolean("billing_exempt").default(false).notNull(),
   stripeBillingMode: mysqlEnum("stripe_billing_mode", ["prototype", "live"]).default("prototype").notNull(),
   stripeConnectedAt: timestamp("stripe_connected_at"),
+  /** The Express connected account this salon's clients pay into. */
+  stripeAccountId: varchar("stripe_account_id", { length: 255 }),
+  /** Stripe's own verdict, kept in step by the account.updated webhook. */
+  stripeChargesEnabled: boolean("stripe_charges_enabled").default(false).notNull(),
+  stripePayoutsEnabled: boolean("stripe_payouts_enabled").default(false).notNull(),
+  stripeDetailsSubmitted: boolean("stripe_details_submitted").default(false).notNull(),
+  /** What Stripe is still waiting for, as JSON, so the salon can be told. */
+  stripeRequirementsDue: text("stripe_requirements_due"),
+  /**
+   * Groomigo's cut of each client payment, in BASIS POINTS — 250 is 2.5%.
+   * Basis points rather than a percent because 0.025 and 2.5 are only
+   * ever told apart by someone being charged a hundred times too much.
+   * NULL means undecided; zero means deliberately nothing.
+   */
+  platformFeeBps: int("platform_fee_bps"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 });

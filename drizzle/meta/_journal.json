@@ -610,6 +610,13 @@
       "when": 1791266791871,
       "tag": "0086_sms_overage_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "5",
+      "when": 1791267128276,
+      "tag": "0087_stripe_connect",
+      "breakpoints": true
     }
   ]
 }
