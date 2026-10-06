@@ -1,7 +1,13 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { resolveCalendarStaffColumns } from "@/lib/calendarStaffColumns";
-import { toggleCalendarStaffSelection } from "@/lib/calendarStaffFilter";
+import {
+  toggleCalendarStaffSelection,
+  calendarStaffFilterKey,
+  serialiseStaffSelection,
+  parseStoredStaffSelection,
+} from "@/lib/calendarStaffFilter";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { getDayCalendarGridSizing } from "@/lib/calendarGridSizing";
 import { buildAestDragSchedule } from "@/lib/calendarDragSchedule";
 import { GROOM_CONDITION_LABELS, GROOM_RATING_LABELS } from "@shared/groomingCard";
@@ -810,6 +816,9 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function Calendar() {
+  // Identifies whose filter this is. auth.me is already fetched and cached
+  // by the dashboard shell, so this costs nothing.
+  const { user } = useAuth();
   const [weekStart, setWeekStart]   = useState(() => getWeekStart(getTodayAEST()));
   const [showNewAppt, setShowNewAppt] = useState(false);
   const [editAppt, setEditAppt]     = useState<Appt | null>(null);
@@ -817,6 +826,13 @@ export default function Calendar() {
   const [viewMode, setViewMode]     = useState<"week" | "day">("day");
   const [dayDate, setDayDate]       = useState(() => getTodayAEST());
   const [visibleStaffIds, setVisibleStaffIds] = useState<number[] | null>(null);
+  // Which storage key the current selection was restored FROM, or null
+  // before anything has been read.
+  //
+  // A key rather than a boolean, so a user switching accounts without a
+  // remount cannot have the previous person's selection written under their
+  // name — which is the leak the per-user key exists to prevent.
+  const restoredStaffFilterKey = useRef<string | null>(null);
   const [apptSearchOpen, setApptSearchOpen] = useState(false);
   const [apptSearchTerm, setApptSearchTerm] = useState("");
 
@@ -1209,6 +1225,48 @@ export default function Calendar() {
     () => resolveCalendarStaffColumns(staffList, weekAppts),
     [staffList, weekAppts],
   );
+  const activeStaffIds = useMemo(() => activeStaff.map((member) => member.id), [activeStaff]);
+
+  // Bring back the staff columns this user last chose.
+  //
+  // Waits for the staff list, because a stored list is a snapshot of a
+  // roster that has since changed and has to be reconciled against who
+  // works here now — see parseStoredStaffSelection. Runs once: after that
+  // the user's own clicks are the source of truth.
+  const staffFilterKey = calendarStaffFilterKey(user?.id);
+
+  useEffect(() => {
+    if (restoredStaffFilterKey.current === staffFilterKey) return;
+    // Wait for the signed-in user, so the choice is never read from or
+    // written to the "anon" key on the way through.
+    if (!user) return;
+    // Wait for the staff LIST, not just the derived columns. The columns
+    // resolve from appointments too, so if those land first the roster is
+    // briefly partial — and reconciling against a partial roster reads as
+    // "this selection covers everyone" and quietly wipes the filter.
+    if (!staffList || activeStaffIds.length === 0) return;
+    try {
+      setVisibleStaffIds(
+        parseStoredStaffSelection(window.localStorage.getItem(staffFilterKey), activeStaffIds),
+      );
+    } catch {
+      // Private browsing, or storage disabled. A remembered filter is a
+      // convenience; losing it must never stop the calendar loading.
+      setVisibleStaffIds(null);
+    }
+    restoredStaffFilterKey.current = staffFilterKey;
+  }, [activeStaffIds, staffFilterKey, staffList, user]);
+
+  useEffect(() => {
+    // Only write back to the key the current selection actually came from.
+    if (restoredStaffFilterKey.current !== staffFilterKey) return;
+    try {
+      window.localStorage.setItem(staffFilterKey, serialiseStaffSelection(visibleStaffIds));
+    } catch {
+      // As above — a filter that cannot be saved is not worth an error.
+    }
+  }, [visibleStaffIds, staffFilterKey]);
+
   const calendarGroomers = useMemo(() => activeStaff.filter((member) => member.role !== "bather"), [activeStaff]);
   const calendarBathers = useMemo(() => activeStaff.filter((member) => member.role === "bather"), [activeStaff]);
   const weekDays    = useMemo(() => getWeekDays(weekStart), [weekStart]);
