@@ -35,7 +35,12 @@ describe("completed Workflow pickup messaging", () => {
     const pickupStart = routerSource.indexOf("getPickupRecipients: operationalProcedure");
     const pickupSection = routerSource.slice(pickupStart, routerSource.indexOf("getLogs: protectedProcedure", pickupStart));
     expect(pickupSection.split("Pickup messages are available after the dog is marked complete").length - 1).toBe(2);
-    expect(pickupSection).toContain("const result = await sendSms(recipient.phone, body)");
+    // Anchored WITHOUT the closing bracket on purpose. The previous
+    // version broke the moment sendSms gained a tenantId argument for SMS
+    // metering, while the behaviour it guards — this section texts the
+    // chosen recipient — was completely unchanged. That is exactly the
+    // brittleness this file's own note warns about.
+    expect(pickupSection).toContain("await sendSms(recipient.phone, body");
     expect(pickupSection).toContain('type: "ready_pickup"');
   });
 

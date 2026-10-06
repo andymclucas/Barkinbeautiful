@@ -63,7 +63,7 @@ import {
   expandDateRange, rangeLengthInDays, blockoutDateValue, blockoutDateKey,
   findBlockingBlockout, MAX_BLOCKOUT_DAYS,
 } from "../shared/staffBlockouts";
-import { sidebarCountsRouter } from "./routers/sidebarCounts";
+import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { stripeCardsRouter } from "./routers/stripeCards";
@@ -957,7 +957,7 @@ const calendarRouter = router({
             salonName: trackerRecipient.tenantName ?? "Barkin' Beautiful",
             trackerUrl,
           });
-          const result = await sendSms(trackerRecipient.phone, body);
+          const result = await sendSms(trackerRecipient.phone, body, { tenantId: appt.tenantId });
           await db.insert(smsLogs).values({
             tenantId: appt.tenantId,
             clientId: appt.clientId,
@@ -6514,7 +6514,7 @@ const smsRouter = router({
       }
       if (!recipient?.phone) throw new Error("The selected contact does not have a phone number");
       const body = buildReadyForPickupSms({ clientFirstName: recipient.name.split(" ")[0] || "there", petName: appointment.petName ?? "your dog" });
-      const result = await sendSms(recipient.phone, body);
+      const result = await sendSms(recipient.phone, body, { tenantId: appointment.tenantId });
       await db.insert(smsLogs).values({ tenantId: appointment.tenantId, clientId: appointment.clientId, appointmentId: appointment.id, toNumber: recipient.phone, body, twilioSid: result.sid, status: result.success ? "sent" : "failed", type: "ready_pickup", direction: "outbound", errorMessage: result.error });
       return { ...result, recipientName: recipient.name, body };
     }),
@@ -6530,7 +6530,7 @@ const smsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      const result = await sendSms(input.toNumber, input.body);
+      const result = await sendSms(input.toNumber, input.body, { tenantId: input.tenantId });
       if (db) {
         await db.insert(smsLogs).values({
           tenantId: input.tenantId,
@@ -6576,7 +6576,7 @@ const smsRouter = router({
       } else {
         body = input.customMessage ?? "";
       }
-      const result = await sendSms(client.phone, body);
+      const result = await sendSms(client.phone, body, { tenantId: input.tenantId });
       await db.insert(smsLogs).values({ tenantId: input.tenantId, clientId: input.clientId, appointmentId: input.appointmentId, toNumber: client.phone, body, twilioSid: result.sid, status: result.success ? "sent" : "failed", type: input.templateType, direction: "outbound", errorMessage: result.error });
       return result;
     }),
@@ -6852,7 +6852,7 @@ const smsRouter = router({
       let sent = 0;
       let failed = 0;
       for (const row of pending) {
-        const result = await sendSms(row.phone, body);
+        const result = await sendSms(row.phone, body, { tenantId: input.tenantId });
         if (result.success) sent += 1; else failed += 1;
 
         await db.update(massTextRecipientRows).set({
@@ -8442,6 +8442,7 @@ export const appRouter = router({
   clientPortal: clientPortalRouter,
   portalChat: portalChatRouter,
   sidebarCounts: sidebarCountsRouter,
+  smsUsage: smsUsageRouter,
   pushSubscriptions: pushSubscriptionsRouter,
   appointmentAddOns: appointmentAddOnsRouter,
   workflowReview: workflowReviewRouter,

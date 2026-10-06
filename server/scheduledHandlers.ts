@@ -448,6 +448,9 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
       const rows = await db
         .select({
           apptId: appointments.id,
+          // Selected so the reminder counts against the right salon's
+          // allowance. This job runs for every tenant on the system.
+          tenantId: appointments.tenantId,
           clientId: appointments.clientId,
           scheduledStart: appointments.scheduledStart,
           clientFirstName: clients.firstName,
@@ -489,7 +492,7 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
           stage: stage.key,
         });
 
-        const result = await sendSms(row.clientPhone, body);
+        const result = await sendSms(row.clientPhone, body, { tenantId: row.tenantId });
 
         if (result.success) {
           await db
