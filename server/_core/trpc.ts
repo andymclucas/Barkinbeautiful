@@ -3,6 +3,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
 import { readableValidationMessage } from "@shared/clientFacingError";
+import { mayAccessTenant, CROSS_TENANT_MESSAGE } from "@shared/tenantResolution";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -28,6 +29,39 @@ const t = initTRPC.context<TrpcContext>().create({
 
 export const router = t.router;
 export const publicProcedure = t.procedure;
+
+
+/**
+ * Refuse a request that names a salon other than the caller's own.
+ *
+ * This is the whole cross-tenant fix, in one place rather than in the 122
+ * procedures that take a `tenantId` input. Every one of them currently
+ * trusts that number, and the guard that was supposed to catch it —
+ * requireApprovedStaffTenant — returns null for admins, which all eight
+ * real users are. With one salon that is harmless; with two it is a data
+ * breach performed by editing a number in a request.
+ *
+ * Deliberately a BLOCK, not a silent override. Quietly rewriting the
+ * tenant would hide a client bug that is still worth finding, and would
+ * make a genuinely cross-tenant feature (a future group-owner view)
+ * impossible to add honestly later.
+ *
+ * Unauthenticated callers pass through: online booking and the client
+ * portal have no signed-in user and are scoped by their own tokens.
+ * Refusing those would take the public booking page down.
+ */
+const enforceTenant = t.middleware(async opts => {
+  const { ctx, next, getRawInput } = opts;
+  const raw = await getRawInput();
+  const requested = (raw && typeof raw === "object" && "tenantId" in raw)
+    ? (raw as { tenantId?: unknown }).tenantId
+    : undefined;
+
+  if (typeof requested === "number" && !mayAccessTenant(ctx.tenantId, requested)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: CROSS_TENANT_MESSAGE });
+  }
+  return next();
+});
 
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
@@ -57,8 +91,8 @@ const requireNonStaffUser = t.middleware(async opts => {
 
 // Restricted staff accounts are deliberately excluded from the general application
 // surface. Only narrowly scoped operational procedures opt into `operationalProcedure`.
-export const protectedProcedure = t.procedure.use(requireNonStaffUser);
-export const operationalProcedure = t.procedure.use(requireUser);
+export const protectedProcedure = t.procedure.use(requireNonStaffUser).use(enforceTenant);
+export const operationalProcedure = t.procedure.use(requireUser).use(enforceTenant);
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
@@ -75,4 +109,4 @@ export const adminProcedure = t.procedure.use(
       },
     });
   }),
-);
+).use(enforceTenant);
