@@ -122,6 +122,29 @@ export function isPushConfigured(): boolean {
  * prefix, so rotating the keypair does not need a rebuild — and so the
  * private key has no path into the client bundle at all.
  */
+/**
+ * Why push is not configured, in words, for the Settings screen.
+ *
+ * Shapes only — lengths and byte counts, never a key. Andy spent three
+ * deploy cycles reading Render logs to find out that a value had been
+ * pasted into the wrong box; the application knows that at boot and
+ * should say so where the person who can fix it is already looking.
+ *
+ * Null when push is working, or when there is simply nothing configured
+ * yet, which the UI already words better than this could.
+ */
+export function describeVapidProblem(): string | null {
+  if (ensureConfigured()) return null;
+
+  const declaredPublic = process.env.VAPID_PUBLIC_KEY?.trim();
+  const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
+  if (!privateKey) return "VAPID_PRIVATE_KEY is not set on the server.";
+
+  const why = diagnoseVapidPair(declaredPublic, privateKey);
+  const shapes = `Received ${describeKey("private", privateKey, VAPID_PRIVATE_BYTES)}, ${describeKey("public", declaredPublic, VAPID_PUBLIC_BYTES)}.`;
+  return why ? `${why} ${shapes}` : shapes;
+}
+
 export function getVapidPublicKey(): string | null {
   if (!ensureConfigured()) return null;
   // The derived key, never the declared one: the browser must subscribe

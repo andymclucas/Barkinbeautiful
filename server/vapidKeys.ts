@@ -78,6 +78,12 @@ export function diagnoseVapidPair(publicKey: string | undefined, privateKey: str
   if (privateKey.trim() === "") {
     return "VAPID_PRIVATE_KEY is empty — if it was filled from a clipboard, the copy command may have found nothing.";
   }
+  // 65 bytes is the length of a PUBLIC key. Calling that "truncated" sends
+  // someone looking for a copy-paste error that is not there; the value is
+  // simply the wrong half of the pair.
+  if (decodedBytes(privateKey) === VAPID_PUBLIC_BYTES) {
+    return "VAPID_PRIVATE_KEY holds a public key — it is 65 bytes, and a private key is 32. The 43-character value is the private one.";
+  }
   if (decodedBytes(privateKey) !== VAPID_PRIVATE_BYTES) {
     return `VAPID_PRIVATE_KEY decodes to ${decodedBytes(privateKey)} bytes, not ${VAPID_PRIVATE_BYTES}. It looks truncated or incomplete.`;
   }

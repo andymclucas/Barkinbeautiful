@@ -45,8 +45,18 @@ export function usePushSubscription() {
   const [busy, setBusy] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
+  // Cached for a minute, not an hour.
+  //
+  // The KEY almost never changes, which is what the original hour was
+  // for. But `configured` flips exactly when someone is in the hosting
+  // dashboard fixing it — and that is precisely when they are staring at
+  // this page waiting for it to change. An hour of cache meant a correct
+  // fix still showed "no push keys configured", which is indistinguishable
+  // from the fix not having worked, and sends someone round the loop again.
   const { data: keyData } = trpc.pushSubscriptions.publicKey.useQuery(undefined, {
-    staleTime: 60 * 60 * 1000,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
   const subscribeMutation = trpc.pushSubscriptions.subscribe.useMutation();
   const unsubscribeMutation = trpc.pushSubscriptions.unsubscribe.useMutation();
@@ -180,5 +190,7 @@ export function usePushSubscription() {
     }
   }, [testMutation]);
 
-  return { capability, subscribed, busy, lastError, subscribe, unsubscribe, sendTest };
+  return { capability, subscribed, busy, lastError, subscribe, unsubscribe, sendTest,
+    /** Why the server has no keys, for an owner. Null for everyone else. */
+    serverProblem: keyData?.problem ?? null };
 }

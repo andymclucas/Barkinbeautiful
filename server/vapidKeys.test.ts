@@ -74,3 +74,20 @@ describe("describing a key without leaking it", () => {
     expect(describeKey("public", undefined, VAPID_PUBLIC_BYTES)).toBe("public not set");
   });
 });
+
+describe("naming the wrong half of the pair", () => {
+  const pair = webpush.generateVAPIDKeys();
+
+  it("says a public key is in the private box, not that it is truncated", () => {
+    // 65 bytes is exactly the length of a public key. Reporting it as
+    // truncated sends someone hunting a copy-paste error that isn't there.
+    const why = diagnoseVapidPair(pair.publicKey, pair.publicKey)!;
+    expect(why).toMatch(/holds a public key/);
+    expect(why).not.toMatch(/truncated/);
+  });
+
+  it("still calls a genuinely short value truncated", () => {
+    expect(diagnoseVapidPair(pair.publicKey, pair.privateKey.slice(0, 20)))
+      .toMatch(/truncated or incomplete/);
+  });
+});
