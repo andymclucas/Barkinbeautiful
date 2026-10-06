@@ -29,8 +29,17 @@ export type InvoiceDecisionInput = {
 };
 
 export type InvoiceDecision =
-  | { invoice: true }
+  | { invoice: true; bill: InvoiceCoverage }
   | { invoice: false; reason: InvoiceSkipReason };
+
+/**
+ * How much of the appointment the invoice is for.
+ *
+ * "extras_only" is a membership groom that had work done on top. The weekly
+ * membership covers the groom and nothing else, so the de-matt is billed and
+ * the groom is not.
+ */
+export type InvoiceCoverage = "everything" | "extras_only";
 
 export type InvoiceSkipReason =
   | "already_invoiced"
@@ -44,22 +53,31 @@ export function decideAppointmentInvoice(input: InvoiceDecisionInput): InvoiceDe
   if (input.status === "cancelled" || input.status === "no_show") return { invoice: false, reason: "cancelled" };
   if (input.workflowState !== "complete") return { invoice: false, reason: "not_complete" };
 
-  // A membership groom is already paid for by the weekly membership charge.
-  // Billing it again on the appointment charges the client twice and
-  // double-counts the revenue — the same reason these appointments carry no
-  // price at all. See the membership rule established 05/10/2026.
-  if (input.membershipId !== null && input.membershipId !== undefined) {
-    return { invoice: false, reason: "membership_covered" };
-  }
-
   // NULL is not zero: it means nobody recorded a figure. But add-ons are
   // recorded explicitly, so a groom with no price and a $65 teeth clean has
   // something real to bill even though the groom itself does not.
   const amount = toAmount(input.price) ?? 0;
   const extras = toAmount(input.addOnsTotal) ?? 0;
+
+  // A membership groom is already paid for by the weekly membership charge.
+  // Billing the GROOM again charges the client twice and double-counts the
+  // revenue — the same reason these appointments carry no price at all. See
+  // the membership rule established 05/10/2026.
+  //
+  // The extras are a different matter. The membership buys a groom every N
+  // weeks; it does not buy a de-matt, a teeth clean or a nail paint done on
+  // the day, and until 07/10/2026 those were given away silently. So a
+  // membership appointment bills its extras and only its extras — stated
+  // explicitly rather than leaning on the price being null, so a membership
+  // groom that somehow carries a price still cannot be charged twice.
+  if (input.membershipId !== null && input.membershipId !== undefined) {
+    if (extras <= 0) return { invoice: false, reason: "membership_covered" };
+    return { invoice: true, bill: "extras_only" };
+  }
+
   if (amount + extras <= 0) return { invoice: false, reason: "no_price" };
 
-  return { invoice: true };
+  return { invoice: true, bill: "everything" };
 }
 
 function toAmount(value: string | number | null | undefined): number | null {

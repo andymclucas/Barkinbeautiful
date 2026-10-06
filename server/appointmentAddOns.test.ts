@@ -209,3 +209,50 @@ describe("a booking that covers several dogs", () => {
     expect(totals.get(11)).toBeNull();
   });
 });
+
+describe("the invoice a membership client gets for extras", () => {
+  const addOns = [{ name: "De-matt", unitPrice: "65.00", quantity: 1 }];
+
+  it("charges the extras and not the groom", () => {
+    const itemised = buildInvoiceLines({
+      petName: "Millie", serviceLabel: "Styled Groom", servicePrice: null,
+      addOns, membershipCovered: true,
+    });
+    expect(itemised.subtotal).toBe("65.00");
+  });
+
+  it("still shows the groom, so a $65 bill makes sense to the client", () => {
+    // An invoice listing a de-matt and nothing else reads like a mistake.
+    const itemised = buildInvoiceLines({
+      petName: "Millie", serviceLabel: "Styled Groom", servicePrice: null,
+      addOns, membershipCovered: true,
+    });
+    expect(itemised.lines[0]).toEqual({
+      description: "Millie — Styled Groom (covered by membership)",
+      quantity: "1",
+      unitPrice: "0.00",
+      lineTotal: "0.00",
+    });
+    expect(itemised.lines[1].description).toBe("De-matt");
+  });
+
+  it("refuses to bill the groom even when the appointment carries a price", () => {
+    // The double-charge guard. A membership groom should have no price; if
+    // one ever does, the client must not pay weekly AND be invoiced for it.
+    const itemised = buildInvoiceLines({
+      petName: "Millie", serviceLabel: "Styled Groom", servicePrice: "290.00",
+      addOns, membershipCovered: true,
+    });
+    expect(itemised.subtotal).toBe("65.00");
+    expect(itemised.lines[0].lineTotal).toBe("0.00");
+  });
+
+  it("leaves an ordinary groom billed in full", () => {
+    const itemised = buildInvoiceLines({
+      petName: "Millie", serviceLabel: "Styled Groom", servicePrice: "145.00", addOns,
+    });
+    expect(itemised.subtotal).toBe("210.00");
+    expect(itemised.lines[0].description).toBe("Millie — Styled Groom");
+    expect(itemised.lines[0].lineTotal).toBe("145.00");
+  });
+});

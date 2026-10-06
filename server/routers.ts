@@ -914,6 +914,7 @@ const calendarRouter = router({
             serviceLabel: SERVICE_LABELS[appt.serviceType] ?? appt.serviceType,
             servicePrice: total,
             addOns,
+            membershipCovered: decision.bill === "extras_only",
           });
           // Judged against the WHOLE bill, not the groom alone. Paying the
           // $145 groom on a $180 booking leaves the $35 extra owing, and
@@ -924,7 +925,14 @@ const calendarRouter = router({
             tenantId: appt.tenantId,
             clientId: appt.clientId,
             appointmentId: appt.id,
-            membershipId: appt.membershipId,
+            // NOT linked to the membership, even though the groom is.
+            // invoices.membershipId means "this is the membership's own
+            // bill": the Memberships screen reads it to show an open
+            // balance, and raising arrears THROWS when one exists. An
+            // extras invoice sitting there would read as unpaid dues and
+            // block arrears invoicing for that client. The appointment
+            // link keeps the trail.
+            membershipId: decision.bill === "extras_only" ? null : appt.membershipId,
             invoiceNumber,
             subtotal: itemised.subtotal,
             taxAmount: "0",
@@ -1189,12 +1197,17 @@ const calendarRouter = router({
         const serviceLabel = SERVICE_LABELS_SERVER[appt.serviceType] ?? appt.serviceType;
         // Same itemisation as the automatic path, from the same helper, so
         // a bill raised by hand and one raised on completion cannot differ.
-        const itemised = buildInvoiceLines({ petName: appt.petName, serviceLabel, servicePrice: total, addOns });
+        const itemised = buildInvoiceLines({
+          petName: appt.petName, serviceLabel, servicePrice: total, addOns,
+          membershipCovered: decision.bill === "extras_only",
+        });
         const [result] = await db.insert(invoices).values({
           tenantId: tenantOf(ctx, input),
           clientId: appt.clientId,
           appointmentId: appt.id,
-          membershipId: appt.membershipId,
+          // See the completion path: an extras invoice must not look like
+          // the membership's own unpaid bill.
+          membershipId: decision.bill === "extras_only" ? null : appt.membershipId,
           invoiceNumber: invNum,
           subtotal: itemised.subtotal,
           taxAmount: "0",

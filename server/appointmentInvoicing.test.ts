@@ -14,7 +14,7 @@ const base: InvoiceDecisionInput = {
 
 describe("decideAppointmentInvoice", () => {
   it("invoices a completed, priced, non-membership groom", () => {
-    expect(decideAppointmentInvoice(base)).toEqual({ invoice: true });
+    expect(decideAppointmentInvoice(base)).toEqual({ invoice: true, bill: "everything" });
   });
 
   it("never raises a second invoice for the same appointment", () => {
@@ -24,7 +24,7 @@ describe("decideAppointmentInvoice", () => {
       .toEqual({ invoice: false, reason: "already_invoiced" });
   });
 
-  it("does not invoice a membership groom", () => {
+  it("does not invoice a membership groom with nothing added", () => {
     // The weekly membership charge already covers it. Billing the
     // appointment too charges twice and double-counts the revenue.
     expect(decideAppointmentInvoice({ ...base, membershipId: 3 }))
@@ -130,7 +130,7 @@ describe("add-ons make an otherwise unbillable groom billable", () => {
     // membership, price NULL. Before add-ons existed there was genuinely
     // nothing to bill; a $65 teeth clean changes that.
     expect(decideAppointmentInvoice({ ...base, price: null, addOnsTotal: "65.00" }))
-      .toEqual({ invoice: true });
+      .toEqual({ invoice: true, bill: "everything" });
   });
 
   it("still skips a groom with no price and no add-ons", () => {
@@ -142,15 +142,23 @@ describe("add-ons make an otherwise unbillable groom billable", () => {
 
   it("adds the extras to a priced groom", () => {
     expect(decideAppointmentInvoice({ ...base, price: "95.00", addOnsTotal: "35.00" }))
-      .toEqual({ invoice: true });
+      .toEqual({ invoice: true, bill: "everything" });
   });
 
-  it("still refuses a membership groom, add-ons or not", () => {
-    // The weekly membership charge covers the groom. Whether it should also
-    // cover a $65 teeth clean is a commercial question, not a code one, so
-    // the existing rule is left exactly as it was.
+  it("bills a membership groom for its extras, and only its extras", () => {
+    // Andy, 07/10/2026: "Yes, invoice membership clients for extras." The
+    // membership buys a groom every N weeks; it does not buy a $65 teeth
+    // clean done on the day, and those were being given away silently.
     expect(decideAppointmentInvoice({ ...base, membershipId: 12, price: null, addOnsTotal: "65.00" }))
-      .toEqual({ invoice: false, reason: "membership_covered" });
+      .toEqual({ invoice: true, bill: "extras_only" });
+  });
+
+  it("will not charge a membership groom twice, even if it carries a price", () => {
+    // A membership groom should have no price. If one ever does, the
+    // decision must still say extras_only — otherwise the client pays
+    // weekly for the groom AND gets an invoice for it.
+    expect(decideAppointmentInvoice({ ...base, membershipId: 12, price: "290.00", addOnsTotal: "65.00" }))
+      .toEqual({ invoice: true, bill: "extras_only" });
   });
 
   it("still refuses a cancelled appointment with add-ons on it", () => {

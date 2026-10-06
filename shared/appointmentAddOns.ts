@@ -64,12 +64,26 @@ export function buildInvoiceLines(input: {
   serviceLabel: string;
   servicePrice: string | number | null | undefined;
   addOns: AddOnLine[];
+  /**
+   * The groom is paid for by the weekly membership, so it appears on the
+   * invoice at zero and only the extras are charged.
+   *
+   * It still gets a line. A membership client opening a bill for $35 should
+   * be able to see WHAT it was on top of — an invoice listing a de-matt and
+   * nothing else reads like a mistake.
+   */
+  membershipCovered?: boolean;
 }): { lines: InvoiceLine[]; subtotalCents: number; subtotal: string } {
   const pet = input.petName?.trim() || "Pet";
-  const serviceCents = toCents(input.servicePrice);
+  // Zero, explicitly: never the recorded price. A membership groom should
+  // carry no price, and if one ever does, charging it here would bill the
+  // client for a groom their membership already paid for.
+  const serviceCents = input.membershipCovered ? 0 : toCents(input.servicePrice);
 
   const lines: InvoiceLine[] = [{
-    description: `${pet} — ${input.serviceLabel}`,
+    description: input.membershipCovered
+      ? `${pet} — ${input.serviceLabel} (covered by membership)`
+      : `${pet} — ${input.serviceLabel}`,
     quantity: "1",
     unitPrice: centsToAmount(serviceCents),
     lineTotal: centsToAmount(serviceCents),
