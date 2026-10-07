@@ -183,8 +183,20 @@ export function RevenueTargets() {
                   <span className="text-xs text-muted-foreground">no target</span>
                 ) : (
                   <>
-                    <span className="text-xs text-muted-foreground tabular-nums">
+                    <span
+                      className="text-xs text-muted-foreground tabular-nums"
+                      title={
+                        row.weightedTarget
+                          ? `Set at ${money(row.weightedTarget.flat)} for this period. ${row.difficultyNote ?? ""}`
+                          : undefined
+                      }
+                    >
                       of {money(row.target)}
+                      {row.weightedTarget && row.weightedTarget.difficulty !== 1 && (
+                        <span className={row.weightedTarget.difficulty < 1 ? "ml-1 text-violet-600 dark:text-violet-400" : "ml-1 text-sky-600 dark:text-sky-400"}>
+                          ({row.weightedTarget.difficulty < 1 ? "↓" : "↑"} size)
+                        </span>
+                      )}
                     </span>
                     <span
                       className={
@@ -232,6 +244,15 @@ export function RevenueTargets() {
               <span className="h-2 w-2 rounded-sm bg-muted-foreground/25" aria-hidden /> no size recorded
             </span>
           </div>
+        )}
+
+        {!isLoading && rows.some((r) => r.weightedTarget && r.weightedTarget.difficulty !== 1) && (
+          <p className="pt-2 text-[11px] text-muted-foreground">
+            Targets marked ↓ or ↑ have been moved for the size of dogs that person was given. A
+            giant takes three times a small's chair time and earns about half as much an hour, so
+            a heavy book is measured against a lower figure. Hover a target to see what it was set
+            at and why it moved.
+          </p>
         )}
 
         {!isLoading && rows.length > 0 && withTargets.length < rows.length && (
@@ -372,7 +393,10 @@ export function StaffRevenueTarget({ staffId, from, to }: { staffId: number; fro
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Figure label="Brought in" value={money(row.actual)} />
-        <Figure label="Target" value={row.target === null ? "—" : money(row.target)} />
+        <Figure
+          label={row.weightedTarget && row.weightedTarget.difficulty !== 1 ? "Target (for this book)" : "Target"}
+          value={row.target === null ? "—" : money(row.target)}
+        />
         <Figure
           label={row.difference !== null && row.difference < 0 ? "Short by" : "Ahead by"}
           value={row.difference === null ? "—" : money(Math.abs(row.difference))}
@@ -390,7 +414,12 @@ export function StaffRevenueTarget({ staffId, from, to }: { staffId: number; fro
 
       {row.storedTarget !== null && (
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Target set as {money(Number(row.storedTarget))} per {TARGET_PERIOD_LABELS[row.storedPeriod].toLowerCase()}.
+          Target set as {money(Number(row.storedTarget))} per {TARGET_PERIOD_LABELS[row.storedPeriod].toLowerCase()}
+          {row.weightedTarget && row.weightedTarget.difficulty !== 1 && (
+            <> — {money(row.weightedTarget.flat)} for these days, {row.difficultyNote?.toLowerCase()}</>
+          )}
+          {row.weightedTarget && row.weightedTarget.difficulty === 1 && <>.</>}
+          {!row.weightedTarget && <>.</>}
         </p>
       )}
 

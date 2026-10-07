@@ -15,7 +15,7 @@
  * floor, which is why shared/staffAdministrators.ts exists.
  */
 import { z } from "zod";
-import { and, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { router, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointmentAddOns, appointments, pets, staff } from "../../drizzle/schema";
@@ -25,6 +25,9 @@ import {
   daysInRange, targetForDays, targetProgress,
 } from "@shared/revenueTargets";
 import { SIZE_BAND_IDS, type DogSizeBand } from "@shared/dogSizeBand";
+import {
+  SIZE_HOURS, weightTargetForMix, describeDifficulty, type BandStat,
+} from "@shared/sizeWeightedTargets";
 
 const REVENUE_TARGETS_DENIED =
   "Revenue targets are visible to the salon owner only.";
@@ -139,6 +142,42 @@ export const revenueTargetsRouter = router({
         ))
         .groupBy(appointments.staffId, pets.sizeBand);
 
+      // What each size of dog actually earns the salon, over a trailing
+      // year. Computed rather than hardcoded: the day the salon reprices, a
+      // constant in a file becomes a lie, and this is the number the whole
+      // adjustment rests on.
+      const twelveMonthsAgo = new Date(Date.now() - 365 * 86_400_000);
+      const bandStatRows = await db
+        .select({
+          band: pets.sizeBand,
+          n: sql<number>`COUNT(*)`,
+          avgPrice: sql<string>`AVG(${appointments.price})`,
+        })
+        .from(appointments)
+        .innerJoin(pets, eq(pets.id, appointments.petId))
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.workflowState, "complete"),
+          ne(appointments.status, "cancelled"),
+          isNotNull(pets.sizeBand),
+          gt(appointments.price, "0"),
+          gte(appointments.scheduledStart, twelveMonthsAgo),
+        ))
+        .groupBy(pets.sizeBand);
+      const bandStats: Partial<Record<DogSizeBand, BandStat>> = {};
+      let salonRevenue = 0;
+      let salonHours = 0;
+      for (const row of bandStatRows as any[]) {
+        const band = row.band as DogSizeBand;
+        const count = Number(row.n ?? 0);
+        const averagePrice = Number(row.avgPrice ?? 0);
+        if (!band || count <= 0 || !Number.isFinite(averagePrice)) continue;
+        bandStats[band] = { count, averagePrice };
+        salonRevenue += averagePrice * count;
+        salonHours += (SIZE_HOURS[band] ?? 1) * count;
+      }
+      const salonRate = salonHours > 0 ? salonRevenue / salonHours : null;
+
       const priceBy = new Map(earned.map((r: any) => [Number(r.staffId), Number(r.price ?? 0)]));
       const extraBy = new Map(extras.map((r: any) => [Number(r.staffId), Number(r.total ?? 0)]));
       const sizeBy = new Map<number, { bands: Record<string, number>; unknown: number; dogs: number }>();
@@ -171,6 +210,10 @@ export const revenueTargetsRouter = router({
             start,
           );
           const size = sizeBy.get(member.id) ?? { bands: {}, unknown: 0, dogs: 0 };
+          // The target, moved for the book they were actually given. Null
+          // when they have no target, or when nothing they did falls in a
+          // band with enough history to rate.
+          const weighted = weightTargetForMix(target, size.bands as any, bandStats, salonRate);
           return {
             id: member.id,
             name: member.name,
@@ -182,7 +225,12 @@ export const revenueTargetsRouter = router({
             dogs: size.dogs,
             sizeMix: size.bands as Partial<Record<DogSizeBand, number>>,
             unbandedDogs: size.unknown,
-            ...targetProgress(actual, target),
+            weightedTarget: weighted,
+            difficultyNote: describeDifficulty(weighted),
+            // Progress is measured against the ADJUSTED target when there is
+            // one. Showing "behind" against a figure their book could not
+            // reach is the problem this set out to fix.
+            ...targetProgress(actual, weighted ? weighted.adjusted : target),
           };
         }),
       };

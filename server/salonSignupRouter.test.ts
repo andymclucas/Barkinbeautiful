@@ -119,7 +119,12 @@ describe("a flood of signups from one place", () => {
     }
     await expect(appRouter.createCaller(fixed()).salonSignup.create({ ...good, email: "a4@example.com" }))
       .rejects.toThrow(/a lot of salons in one hour/i);
-  });
+    // Four signups means four bcrypt hashes, which are slow on purpose. On
+    // its own this takes about 1.6s; sharing a machine with the rest of the
+    // suite it has gone over the default 5s and failed as a timeout, with
+    // nothing wrong with the code. The work is genuinely this expensive, so
+    // it gets the time rather than the suite getting a flake.
+  }, 30_000);
 });
 
 describe("an address nobody has proved", () => {
