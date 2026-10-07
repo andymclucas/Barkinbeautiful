@@ -308,3 +308,139 @@ export function RevenueTargets() {
     </Card>
   );
 }
+
+/**
+ * One staff member's target against what they actually brought in, for the
+ * staff profile panel.
+ *
+ * Reuses revenueTargets.list rather than adding a per-staff endpoint, so
+ * there is exactly one owner-gated door to this data and no second place to
+ * get the permission wrong. The caller must not render it for anyone else —
+ * the server refuses them regardless, but a permission error is a poor way
+ * to learn the figures exist.
+ *
+ * The date range is the profile panel's own, so the money and the timing
+ * analytics above it describe the same days.
+ */
+export function StaffRevenueTarget({ staffId, from, to }: { staffId: number; from: string; to: string }) {
+  const utils = trpc.useUtils();
+  const { data, isLoading } = trpc.revenueTargets.list.useQuery(
+    { from, to },
+    { staleTime: 60 * 1000, retry: false },
+  );
+  const row = data?.staff.find((s) => s.id === staffId);
+
+  const [editing, setEditing] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [storedPeriod, setStoredPeriod] = useState<TargetPeriod>("weekly");
+
+  const save = trpc.revenueTargets.set.useMutation({
+    onSuccess: () => {
+      toast.success("Target saved");
+      utils.revenueTargets.list.invalidate();
+      setEditing(false);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  if (isLoading || !row) return null;
+
+  const open = () => {
+    setAmount(row.storedTarget ?? "");
+    setStoredPeriod(row.storedPeriod);
+    setEditing(true);
+  };
+
+  return (
+    <section className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/70 to-white p-4 dark:border-violet-950/50 dark:from-violet-950/70">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-1.5 text-sm font-bold text-violet-950 dark:text-violet-100">
+            <Target className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Revenue
+            <span className="flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-normal text-violet-800 dark:bg-violet-900/60 dark:text-violet-200">
+              <Lock className="h-3 w-3" /> Owner only
+            </span>
+          </h3>
+          <p className="mt-0.5 text-xs text-violet-800 dark:text-violet-300">
+            {from} to {to} — the same days as the timing above. The target is scaled to match.
+          </p>
+        </div>
+        <Button type="button" size="sm" variant="outline" className="shrink-0 gap-1 bg-card text-xs" onClick={open}>
+          <Pencil className="h-3 w-3" /> {row.storedTarget === null ? "Set target" : "Edit target"}
+        </Button>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Figure label="Brought in" value={money(row.actual)} />
+        <Figure label="Target" value={row.target === null ? "—" : money(row.target)} />
+        <Figure
+          label={row.difference !== null && row.difference < 0 ? "Short by" : "Ahead by"}
+          value={row.difference === null ? "—" : money(Math.abs(row.difference))}
+          tone={row.status === "ahead" ? "good" : row.status === "behind" ? "warn" : "flat"}
+        />
+        <Figure label="Dogs" value={String(row.dogs)} />
+      </div>
+
+      {row.dogs > 0 && (
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-xs text-violet-800 dark:text-violet-300">Size mix</span>
+          <SizeMix mix={row.sizeMix} unbanded={row.unbandedDogs} dogs={row.dogs} />
+        </div>
+      )}
+
+      {row.storedTarget !== null && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Target set as {money(Number(row.storedTarget))} per {TARGET_PERIOD_LABELS[row.storedPeriod].toLowerCase()}.
+        </p>
+      )}
+
+      <Dialog open={editing} onOpenChange={(value) => { if (!value) setEditing(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle className="text-base">Revenue target — {row.name}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor={`bio-target-${staffId}`}>Amount ($)</label>
+              <Input id={`bio-target-${staffId}`} inputMode="decimal" placeholder="e.g. 2000"
+                value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Per</label>
+              <Select value={storedPeriod} onValueChange={(v) => setStoredPeriod(v as TargetPeriod)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TARGET_PERIODS.map((p) => <SelectItem key={p} value={p}>{TARGET_PERIOD_LABELS[p]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" size="sm" disabled={save.isPending}
+              onClick={() => save.mutate({ staffId, amount: null, period: storedPeriod })}>
+              Clear target
+            </Button>
+            <Button size="sm" disabled={save.isPending} onClick={() => {
+              const parsed = Number(amount.replace(/[$,\s]/g, ""));
+              if (!Number.isFinite(parsed) || parsed < 0) { toast.error("Enter an amount like 2000"); return; }
+              save.mutate({ staffId, amount: parsed, period: storedPeriod });
+            }}>
+              {save.isPending ? "Saving…" : "Save target"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
+  );
+}
+
+function Figure({ label, value, tone = "flat" }: { label: string; value: string; tone?: "good" | "warn" | "flat" }) {
+  return (
+    <div className="rounded-lg border bg-card/70 p-2">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className={
+        "text-sm font-bold tabular-nums " +
+        (tone === "good" ? "text-emerald-700 dark:text-emerald-300"
+          : tone === "warn" ? "text-amber-700 dark:text-amber-300" : "")
+      }>{value}</p>
+    </div>
+  );
+}

@@ -17,7 +17,7 @@ import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialo
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { StaffAdminRightsDialog, type StaffRightsTarget } from "@/components/StaffAdminRightsDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
-import { RevenueTargets } from "@/components/RevenueTargets";
+import { RevenueTargets, StaffRevenueTarget } from "@/components/RevenueTargets";
 import { describeGrant } from "@shared/staffPermissions";
 import {
   Phone, Mail, MapPin, User, UserCog, Plus, Pencil, X,
@@ -128,6 +128,10 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
   const [, navigate] = useLocation();
   const [timingRange, setTimingRange] = useState(() => initialTimingRange ?? makeTimingRange(7));
   const { data, isLoading } = trpc.staff.getProfile.useQuery({ staffId, dateFrom: timingRange.start, dateTo: timingRange.end });
+  // Its own check: this panel is rendered from two places and must not rely
+  // on a caller remembering to gate it. The server refuses the data anyway.
+  const { data: viewer } = trpc.auth.me.useQuery();
+  const canSeeRevenue = canAdministerStaff(viewer ?? null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -429,6 +433,10 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
           </div>
         ))}
       </div>
+
+      {canSeeRevenue && (
+        <StaffRevenueTarget staffId={staffId} from={timingRange.start} to={timingRange.end} />
+      )}
 
       <section className="rounded-xl border border-blue-100 dark:border-blue-950/50 bg-gradient-to-br from-blue-50/70 dark:from-blue-950/70 to-white p-4">
         <div className="flex items-start justify-between gap-3">
