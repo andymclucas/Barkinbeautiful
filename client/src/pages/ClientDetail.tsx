@@ -1,4 +1,8 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
+  type DogSizeBand, type SizeBandSource,
+} from "@shared/dogSizeBand";
 import { StripeCardPanel } from "@/components/StripeCardPanel";
 import { PetAvatar } from "@/components/PetAvatar";
 import { trpc } from "@/lib/trpc";
@@ -326,6 +330,13 @@ export default function ClientDetail() {
       setReplacementPetForm({ name: "", breed: "", weightKg: "" });
       setAddingReplacementPet(false);
       toast.success("Replacement pet added. Review eligibility, then continue.");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const updatePetSizeBand = trpc.pets.updateSizeBand.useMutation({
+    onSuccess: async () => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      toast.success("Size band saved");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -1008,6 +1019,38 @@ export default function ClientDetail() {
                           </div>
                         )}
                         {pet.gender && <p><span className="text-muted-foreground">Gender:</span> {pet.gender}{pet.desexed ? " (desexed)" : ""}</p>}
+                      </div>
+                      {/* Size band. Shown next to the weight because they
+                          answer different questions: the weight is what the
+                          dog weighed, the band is what it grooms like — and
+                          most dogs here have a band and no weight, because
+                          MoeGo never gave us one. Recording a weight sets
+                          the band automatically; this is for the dogs
+                          nobody is going to put on the scales. */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-muted-foreground text-sm">Size:</span>
+                        <Select
+                          value={pet.sizeBand ?? "none"}
+                          onValueChange={(value) =>
+                            updatePetSizeBand.mutate({
+                              petId: pet.id,
+                              sizeBand: value === "none" ? null : (value as DogSizeBand),
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-[200px] text-sm"><SelectValue placeholder="Not set" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Not set</SelectItem>
+                            {SIZE_BAND_IDS.map((band) => (
+                              <SelectItem key={band} value={band}>{sizeBandLabel(band)}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {pet.sizeBandSource && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {SIZE_BAND_SOURCE_LABELS[pet.sizeBandSource as SizeBandSource] ?? pet.sizeBandSource}
+                          </span>
+                        )}
                       </div>
                       {pet.coatType && <p><span className="text-muted-foreground">Coat:</span> {pet.coatType}</p>}
                       {pet.colour && <p><span className="text-muted-foreground">Colour:</span> {pet.colour}</p>}

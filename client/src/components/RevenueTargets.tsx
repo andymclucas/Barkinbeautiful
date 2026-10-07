@@ -15,6 +15,53 @@ import {
   TARGET_PERIODS, TARGET_PERIOD_LABELS, rangeForPeriod, brisbaneToday,
   type TargetPeriod,
 } from "@shared/revenueTargets";
+import { SIZE_BAND_IDS, sizeBandLabel, type DogSizeBand } from "@shared/dogSizeBand";
+
+/**
+ * The size mix behind a number.
+ *
+ * Revenue alone says two groomers had a similar week; it does not say one
+ * of them spent it on giants. Shown as a stacked bar rather than six
+ * numbers, because the shape is the point — a bar leaning right is a week
+ * of big dogs.
+ */
+const BAND_SHADE: Record<DogSizeBand, string> = {
+  small: "bg-violet-200 dark:bg-violet-900",
+  small_medium: "bg-violet-300 dark:bg-violet-800",
+  medium: "bg-violet-400 dark:bg-violet-700",
+  large: "bg-violet-500 dark:bg-violet-600",
+  extra_large: "bg-violet-600 dark:bg-violet-500",
+  giant: "bg-violet-700 dark:bg-violet-400",
+};
+
+function SizeMix({ mix, unbanded, dogs }: {
+  mix: Partial<Record<DogSizeBand, number>>;
+  unbanded: number;
+  dogs: number;
+}) {
+  if (dogs === 0) return null;
+  const parts = SIZE_BAND_IDS
+    .map((band) => ({ band, n: mix[band] ?? 0 }))
+    .filter((p) => p.n > 0);
+  const title = [
+    ...parts.map((p) => `${p.n} ${sizeBandLabel(p.band)}`),
+    unbanded > 0 ? `${unbanded} with no size recorded` : null,
+  ].filter(Boolean).join(", ");
+
+  return (
+    <span className="flex items-center gap-1.5" title={title}>
+      <span className="flex h-2 w-24 overflow-hidden rounded-full bg-muted" aria-hidden>
+        {parts.map((p) => (
+          <span key={p.band} className={BAND_SHADE[p.band]} style={{ width: `${(p.n / dogs) * 100}%` }} />
+        ))}
+        {unbanded > 0 && (
+          <span className="bg-muted-foreground/25" style={{ width: `${(unbanded / dogs) * 100}%` }} />
+        )}
+      </span>
+      <span className="text-xs text-muted-foreground tabular-nums">{dogs} dogs</span>
+    </span>
+  );
+}
 
 /**
  * What each groomer is expected to bring in, against what they have.
@@ -128,6 +175,8 @@ export function RevenueTargets() {
                 />
                 <span className="min-w-0 basis-full truncate text-sm font-medium sm:basis-0 sm:flex-1">{row.name}</span>
 
+                <SizeMix mix={row.sizeMix} unbanded={row.unbandedDogs} dogs={row.dogs} />
+
                 <span className="text-sm tabular-nums">{money(row.actual)}</span>
 
                 {row.target === null ? (
@@ -167,6 +216,21 @@ export function RevenueTargets() {
                 </Button>
               </div>
             ))}
+          </div>
+        )}
+
+        {!isLoading && rows.some((r) => r.dogs > 0) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 text-[11px] text-muted-foreground">
+            <span>Size mix:</span>
+            {SIZE_BAND_IDS.map((band) => (
+              <span key={band} className="flex items-center gap-1">
+                <span className={`h-2 w-2 rounded-sm ${BAND_SHADE[band]}`} aria-hidden />
+                {sizeBandLabel(band)}
+              </span>
+            ))}
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-sm bg-muted-foreground/25" aria-hidden /> no size recorded
+            </span>
           </div>
         )}
 

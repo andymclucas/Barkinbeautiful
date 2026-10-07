@@ -102,3 +102,44 @@ export const SIZE_BAND_IDS: readonly DogSizeBand[] = MEMBERSHIP_WEIGHT_BANDS.map
 export function sizeBandLabel(band: DogSizeBand): string {
   return MEMBERSHIP_WEIGHT_BANDS.find((b) => b.id === band)?.label ?? band;
 }
+
+/**
+ * Where the band came from, best first.
+ *
+ * An import only ever overwrites a band it derived itself. A weight a
+ * groomer recorded, or a band they picked, is better evidence than a
+ * service name typed into MoeGo years ago, and re-running the import must
+ * not undo it.
+ */
+export const SIZE_BAND_SOURCES = ["manual", "weighed", "moego_service"] as const;
+export type SizeBandSource = (typeof SIZE_BAND_SOURCES)[number];
+
+export function sizeBandSourceIsHuman(source: string | null | undefined): boolean {
+  return source === "manual" || source === "weighed";
+}
+
+export const SIZE_BAND_SOURCE_LABELS: Record<SizeBandSource, string> = {
+  manual: "set by hand",
+  weighed: "from the recorded weight",
+  moego_service: "from the MoeGo service",
+};
+
+/**
+ * The band an actual weight falls in.
+ *
+ * Used when somebody records a weight, which is better evidence than any
+ * service name. The gap between the bands — nothing covers 35 kg, because
+ * extra large stops at 34 and giant starts at 36 — is closed upwards: a
+ * 35 kg dog is a giant to groom, not an extra large.
+ */
+export function bandForWeight(kg: number | string | null | undefined): DogSizeBand | null {
+  if (kg === null || kg === undefined || String(kg).trim() === "") return null;
+  const value = typeof kg === "number" ? kg : Number(kg);
+  if (!Number.isFinite(value) || value <= 0) return null;
+
+  for (const band of MEMBERSHIP_WEIGHT_BANDS) {
+    if (value <= band.maxKg) return band.id;
+  }
+  // Heavier than the largest band still grooms like the largest band.
+  return MEMBERSHIP_WEIGHT_BANDS[MEMBERSHIP_WEIGHT_BANDS.length - 1].id;
+}

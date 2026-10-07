@@ -18,12 +18,13 @@ import { z } from "zod";
 import { and, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { router, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
-import { appointmentAddOns, appointments, staff } from "../../drizzle/schema";
+import { appointmentAddOns, appointments, pets, staff } from "../../drizzle/schema";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
 import {
   TARGET_PERIODS, type TargetPeriod,
   daysInRange, targetForDays, targetProgress,
 } from "@shared/revenueTargets";
+import { SIZE_BAND_IDS, type DogSizeBand } from "@shared/dogSizeBand";
 
 const REVENUE_TARGETS_DENIED =
   "Revenue targets are visible to the salon owner only.";
@@ -117,8 +118,45 @@ export const revenueTargetsRouter = router({
         ))
         .groupBy(appointments.staffId);
 
+      // The size of the dogs each person actually did. Revenue alone says
+      // Charlotte and Megs had similar weeks; it does not say one of them
+      // spent it on giants. That is the whole reason the bands exist.
+      const sizes = ids.length === 0 ? [] : await db
+        .select({
+          staffId: appointments.staffId,
+          sizeBand: pets.sizeBand,
+          n: sql<number>`COUNT(*)`,
+        })
+        .from(appointments)
+        .innerJoin(pets, eq(pets.id, appointments.petId))
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          inArray(appointments.staffId, ids),
+          eq(appointments.workflowState, "complete"),
+          ne(appointments.status, "cancelled"),
+          gte(appointments.scheduledStart, start),
+          lt(appointments.scheduledStart, endExclusive),
+        ))
+        .groupBy(appointments.staffId, pets.sizeBand);
+
       const priceBy = new Map(earned.map((r: any) => [Number(r.staffId), Number(r.price ?? 0)]));
       const extraBy = new Map(extras.map((r: any) => [Number(r.staffId), Number(r.total ?? 0)]));
+      const sizeBy = new Map<number, { bands: Record<string, number>; unknown: number; dogs: number }>();
+      for (const row of sizes as any[]) {
+        const key = Number(row.staffId);
+        if (!sizeBy.has(key)) sizeBy.set(key, { bands: {}, unknown: 0, dogs: 0 });
+        const entry = sizeBy.get(key)!;
+        const count = Number(row.n ?? 0);
+        entry.dogs += count;
+        // A dog with no band is counted separately, never folded into the
+        // smallest — 199 active dogs have no band and calling them all
+        // small would flatter whoever grooms them.
+        if (row.sizeBand && (SIZE_BAND_IDS as readonly string[]).includes(row.sizeBand)) {
+          entry.bands[row.sizeBand] = (entry.bands[row.sizeBand] ?? 0) + count;
+        } else {
+          entry.unknown += count;
+        }
+      }
 
       return {
         days,
@@ -132,6 +170,7 @@ export const revenueTargetsRouter = router({
             days,
             start,
           );
+          const size = sizeBy.get(member.id) ?? { bands: {}, unknown: 0, dogs: 0 };
           return {
             id: member.id,
             name: member.name,
@@ -140,6 +179,9 @@ export const revenueTargetsRouter = router({
             rostered: member.rostered,
             storedTarget: member.revenueTarget,
             storedPeriod: member.revenueTargetPeriod as TargetPeriod,
+            dogs: size.dogs,
+            sizeMix: size.bands as Partial<Record<DogSizeBand, number>>,
+            unbandedDogs: size.unknown,
             ...targetProgress(actual, target),
           };
         }),

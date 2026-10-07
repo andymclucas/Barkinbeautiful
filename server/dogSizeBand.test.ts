@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { bandFromServiceText, extractKgRanges, bandForRange, sizeBandLabel } from "@shared/dogSizeBand";
+import {
+  bandFromServiceText, extractKgRanges, bandForRange, sizeBandLabel,
+  bandForWeight, sizeBandSourceIsHuman,
+} from "@shared/dogSizeBand";
 
 const band = (text: string) => {
   const result = bandFromServiceText(text);
@@ -98,5 +101,46 @@ describe("band ranges", () => {
   it("labels for display come from the salon's own band list", () => {
     expect(sizeBandLabel("small")).toBe("Small (0–10 kg)");
     expect(sizeBandLabel("giant")).toBe("Giant (36–80 kg)");
+  });
+});
+
+describe("the band a recorded weight falls in", () => {
+  it("places a dog in its band", () => {
+    expect(bandForWeight(6)).toBe("small");
+    expect(bandForWeight(10)).toBe("small");
+    expect(bandForWeight(12)).toBe("small_medium");
+    expect(bandForWeight(15)).toBe("medium");
+    expect(bandForWeight(22)).toBe("large");
+    expect(bandForWeight(30)).toBe("extra_large");
+    expect(bandForWeight(42)).toBe("giant");
+  });
+
+  it("closes the gap between extra large and giant upwards", () => {
+    // Nothing covers 35 kg: extra large stops at 34, giant starts at 36.
+    // A 35 kg dog grooms like a giant, not an extra large.
+    expect(bandForWeight(35)).toBe("giant");
+    expect(bandForWeight(34.5)).toBe("giant");
+  });
+
+  it("still bands a dog heavier than the largest band", () => {
+    expect(bandForWeight(90)).toBe("giant");
+  });
+
+  it("accepts the decimal strings the database stores", () => {
+    expect(bandForWeight("22.00")).toBe("large");
+    expect(bandForWeight("7.50")).toBe("small");
+  });
+
+  it("has nothing to say about a missing or nonsense weight", () => {
+    for (const value of [null, undefined, "", 0, -5, "heavy"]) {
+      expect(bandForWeight(value as any)).toBeNull();
+    }
+  });
+
+  it("protects a human's band from the import", () => {
+    expect(sizeBandSourceIsHuman("manual")).toBe(true);
+    expect(sizeBandSourceIsHuman("weighed")).toBe(true);
+    expect(sizeBandSourceIsHuman("moego_service")).toBe(false);
+    expect(sizeBandSourceIsHuman(null)).toBe(false);
   });
 });

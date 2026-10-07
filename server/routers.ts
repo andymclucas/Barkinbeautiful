@@ -56,6 +56,8 @@ import { getPricingAmountValidationError, normalisePricingCode } from "../shared
 import { getAppBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
 import { withoutRevenueTarget } from "@shared/staffRecord";
+import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
+import { petWeightUpdate } from "@shared/petWeight";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
 import { normaliseAustralianMobile } from "./inboundSms";
@@ -2336,6 +2338,8 @@ const clientsRouter = router({
           gender: pets.gender,
           weightKg: pets.weightKg,
           weight: pets.weight,
+          sizeBand: pets.sizeBand,
+          sizeBandSource: pets.sizeBandSource,
           coatType: pets.coatType,
           colour: pets.colour,
           desexed: pets.desexed,
@@ -2545,9 +2549,47 @@ const petsRouter = router({
         .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!pet) throw new Error("Pet not found");
-      const recordedWeight = input.weightKg === null ? null : input.weightKg.toFixed(1);
-      await db.update(pets).set({ weightKg: recordedWeight, weight: recordedWeight }).where(eq(pets.id, pet.id));
-      return { success: true, weightKg: recordedWeight };
+      // What this writes — both weight columns, and the band when there is
+      // one — is decided in shared/petWeight.ts and tested there.
+      const update = petWeightUpdate(input.weightKg);
+      await db.update(pets).set(update).where(eq(pets.id, pet.id));
+      return { success: true, weightKg: update.weightKg, sizeBand: update.sizeBand ?? null };
+    }),
+
+  /**
+   * Set a dog's size band by hand.
+   *
+   * operationalProcedure: a groomer who has just had the dog on the table
+   * knows its size better than a service name does, and this is the one
+   * place that knowledge can be recorded without weighing it.
+   *
+   * Marked "manual", which the MoeGo import never overwrites.
+   */
+  updateSizeBand: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      petId: z.number(),
+      sizeBand: z.enum(SIZE_BAND_IDS as unknown as [string, ...string[]]).nullable(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
+        throw new Error("This pet is not available to your salon staff profile");
+      }
+      const [pet] = await db.select({ id: pets.id })
+        .from(pets)
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
+        .limit(1);
+      if (!pet) throw new Error("Pet not found");
+      await db.update(pets)
+        .set({
+          sizeBand: input.sizeBand as any,
+          sizeBandSource: input.sizeBand === null ? null : "manual",
+        })
+        .where(eq(pets.id, pet.id));
+      return { success: true, sizeBand: input.sizeBand };
     }),
 
   markDeparted: adminProcedure

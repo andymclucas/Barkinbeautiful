@@ -1,4 +1,5 @@
 import { AlertTriangle, Dog, ShieldAlert, ShieldCheck } from "lucide-react";
+import { sizeBandLabel, type DogSizeBand } from "@shared/dogSizeBand";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,8 @@ type AsidePet = {
   name: string;
   breed?: string | null;
   weightKg?: string | number | null;
+  sizeBand?: string | null;
+  sizeBandSource?: string | null;
   weight?: string | null;
   status?: string | null;
   alertLevel?: string | null;
@@ -44,6 +47,11 @@ export function ClientPetsAside({ clientId, pets }: { clientId: number; pets: As
           const records = paperwork?.find(entry => entry.petId === pet.id)?.records ?? [];
           const expired = records.filter(record => record.expired);
           const weight = pet.weightKg ?? pet.weight;
+          // The band is shown even when a weight is, because they answer
+          // different questions: the weight is what the dog weighed, the
+          // band is what it grooms like. Most dogs here have a band and no
+          // weight at all — MoeGo never gave us one.
+          const band = pet.sizeBand ? sizeBandLabel(pet.sizeBand as DogSizeBand) : null;
           const notes = [pet.behaviourNotes, pet.groomingNotes].filter(Boolean) as string[];
 
           return (
@@ -53,7 +61,7 @@ export function ClientPetsAside({ clientId, pets }: { clientId: number; pets: As
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{pet.name}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {[pet.breed, weight ? `${weight} kg` : null].filter(Boolean).join(" · ") || "No details recorded"}
+                    {[pet.breed, weight ? `${weight} kg` : null, band].filter(Boolean).join(" · ") || "No details recorded"}
                   </p>
                 </div>
                 {/* The enum is ok | caution | danger, and all but two of

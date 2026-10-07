@@ -32,13 +32,14 @@
  *    filing one dog under the other's size is worse than leaving both blank.
  *  - A dog whose bands disagree across its history takes its MOST RECENT,
  *    and the disagreement is reported. Dogs grow, and the salon reclassifies.
- *  - Never overwrites a band a human set (size_band_source = 'manual').
+ *  - Never overwrites a band a human set, or one derived from a weight
+ *    they recorded (size_band_source 'manual' or 'weighed').
  */
 import { execFileSync } from "node:child_process";
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import { parseSharedStrings, parseSheet } from "../shared/xlsxReader.ts";
-import { bandFromServiceText, type DogSizeBand } from "../shared/dogSizeBand.ts";
+import { bandFromServiceText, sizeBandSourceIsHuman, type DogSizeBand } from "../shared/dogSizeBand.ts";
 
 dotenv.config({ quiet: true });
 
@@ -209,7 +210,9 @@ for (const [key, decision] of decided) {
   if (!hits || hits.length === 0) { noMatch++; continue; }
   if (hits.length > 1) { ambiguousMatch++; continue; }
   const pet = hits[0];
-  if (pet.source === "manual") { manual++; continue; }
+  // Never undo a band a groomer set, or one derived from a weight they
+  // recorded. Both are better evidence than a MoeGo service name.
+  if (sizeBandSourceIsHuman(pet.source)) { manual++; continue; }
   if (pet.band === decision.band) { alreadySame++; continue; }
   toWrite.push({ id: pet.id, band: decision.band });
 }
@@ -217,7 +220,7 @@ for (const [key, decision] of decided) {
 console.log(`\nAgainst Groomigo:`);
 console.log(`  would set a band on:   ${toWrite.length} dogs`);
 console.log(`  already correct:       ${alreadySame}`);
-console.log(`  set by hand, left:     ${manual}`);
+console.log(`  human-set, left alone: ${manual}`);
 console.log(`  no matching dog:       ${noMatch}`);
 console.log(`  more than one match:   ${ambiguousMatch}`);
 
@@ -257,7 +260,8 @@ try {
   for (const row of toWrite) {
     const [res] = (await db.execute(
       `UPDATE pets SET size_band = ?, size_band_source = 'moego_service'
-       WHERE id = ? AND tenant_id = 1 AND (size_band_source IS NULL OR size_band_source <> 'manual')`,
+       WHERE id = ? AND tenant_id = 1
+         AND (size_band_source IS NULL OR size_band_source NOT IN ('manual', 'weighed'))`,
       [row.band, row.id],
     )) as any;
     if (res.affectedRows !== 1) throw new Error(`pet ${row.id}: expected 1 row, touched ${res.affectedRows}`);

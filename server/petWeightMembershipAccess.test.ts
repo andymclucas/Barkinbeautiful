@@ -16,7 +16,11 @@ describe("recorded pet weight and controlled staff membership setup", () => {
     // procedures moved to taking the tenant from the authenticated caller
     // — a strictly stronger guarantee than the one it was guarding.
     expect(petsSection).toContain("and(eq(pets.id, input.petId), eq(pets.tenantId,");
-    expect(petsSection).toContain("set({ weightKg: recordedWeight, weight: recordedWeight })");
+    // What the update WRITES is no longer grepped from here. It moved to
+    // shared/petWeight.ts and is asserted as behaviour in petWeight.test.ts
+    // — this line used to pin the literal source text and broke when the
+    // call gained a line, while the app worked perfectly.
+    expect(petsSection).toContain("petWeightUpdate(input.weightKg)");
   });
 
   it("provides an accessible inline profile editor that can clear a recorded weight without changing memberships", () => {
