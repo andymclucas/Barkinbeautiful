@@ -55,6 +55,7 @@ import { parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
+import { withoutRevenueTarget } from "@shared/staffRecord";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
 import { normaliseAustralianMobile } from "./inboundSms";
@@ -2796,7 +2797,10 @@ const staffRouter = router({
         };
       });
       return {
-        ...member,
+        // Stripped: adminProcedure is six people here, four of them
+        // groomers. Revenue targets leave the server only through
+        // revenueTargets.list, which checks canAdministerStaff.
+        ...withoutRevenueTarget(member),
         stats,
         timingAnalytics: {
           range: { startDate: rangeStartDateKey, endDate: rangeEndDateKey, days: rangeDays },
@@ -3299,7 +3303,9 @@ const staffRouter = router({
           sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
         ))
         .orderBy(asc(appointments.scheduledStart));
-      return { staff: member, appointments: todaysAppointments };
+      // A restricted staff account reading its own record. Their target is
+      // not theirs to see either — owner only, as asked.
+      return { staff: withoutRevenueTarget(member), appointments: todaysAppointments };
     }),
 
   getTimesheets: protectedProcedure
