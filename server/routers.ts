@@ -56,6 +56,9 @@ import { getPricingAmountValidationError, normalisePricingCode } from "../shared
 import { getAppBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
 import { withoutRevenueTarget } from "@shared/staffRecord";
+import { requireSalonOwner, isSalonOwner } from "./tenantOwner";
+import { isUsableSenderNumber } from "@shared/senderNumber";
+import { forgetNumberTenant } from "./tenantByNumber";
 import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
@@ -5652,6 +5655,74 @@ const settingsRouter = router({
         .where(eq(tenants.id, tenantOf(ctx, input)))
         .limit(1);
       return t ?? null;
+    }),
+
+  /**
+   * The number this salon's texts send from.
+   *
+   * Read separately from getTenantInfo because it is owner-only and that
+   * one is operational — every groomer calls it for the salon name.
+   */
+  getSmsNumber: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input) ?? 1;
+      if (!(await isSalonOwner(db, ctx.user, tenantId))) {
+        // Not an error: the Settings page simply does not show the card.
+        return { canEdit: false as const, number: null, usingSharedNumber: false };
+      }
+      const [row] = await db.select({ number: tenants.twilioNumber })
+        .from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+      const number = row?.number ?? null;
+      return {
+        canEdit: true as const,
+        number,
+        // With none of its own a salon falls back to the platform's shared
+        // number. That works, and is what Barkin' Beautiful does today.
+        usingSharedNumber: !isUsableSenderNumber(number),
+      };
+    }),
+
+  /** Set or clear it. Null goes back to the shared number. */
+  setSmsNumber: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      number: z.string().trim().max(30).nullable(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input) ?? 1;
+      await requireSalonOwner(db, ctx.user, tenantId);
+
+      const wanted = input.number === null || input.number === "" ? null : input.number.trim();
+      // The check that was missing when "+61..." was typed straight into
+      // the database and every text for a day and a half came back
+      // "Invalid From Number (caller ID)".
+      if (wanted !== null && !isUsableSenderNumber(wanted)) {
+        throw new Error(
+          "That is not a number Twilio can send from. Use the full international form, like +61412345678.",
+        );
+      }
+
+      try {
+        await db.update(tenants).set({ twilioNumber: wanted }).where(eq(tenants.id, tenantId));
+      } catch (error: any) {
+        // There is a unique index on this column: two salons cannot share a
+        // number, or an inbound message could not be attributed to either.
+        if (String(error?.code ?? "").includes("DUP") || String(error?.message ?? "").includes("Duplicate")) {
+          throw new Error("Another salon is already using that number.");
+        }
+        throw error;
+      }
+
+      // Inbound routing caches number -> tenant for a minute. Without this
+      // a just-changed number keeps resolving to the old salon until the
+      // cache ages out.
+      forgetNumberTenant();
+      return { success: true, number: wanted };
     }),
 
   updateTenantInfo: protectedProcedure

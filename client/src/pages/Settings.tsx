@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { SalonSmsNumber } from "@/components/SalonSmsNumber";
 import { StaffNotificationSetting } from "@/components/StaffNotificationSetting";
 import { SmsUsageCard } from "@/components/SmsUsageCard";
 import { StripeConnectCard } from "@/components/StripeConnectCard";
@@ -100,6 +101,10 @@ export default function Settings() {
                 <Button onClick={() => toast.success("Settings saved")}>Save Changes</Button>
               </CardContent>
             </Card>
+
+            {/* Renders nothing for anyone but the salon owner — the server
+                decides, and the card simply does not appear. */}
+            <SalonSmsNumber />
           </TabsContent>
 
           <TabsContent value="branding" className="mt-4">
