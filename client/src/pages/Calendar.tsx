@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { trpc } from "@/lib/trpc";
 import { resolveCalendarStaffColumns } from "@/lib/calendarStaffColumns";
 import {
@@ -81,11 +82,19 @@ const SERVICE_COLOURS: Record<string, { bg: string; border: string; text: string
   other:         { bg: "#f1f5f9", border: "#94a3b8", text: "#475569" },
 };
 
+// All twelve, in workflow order. The three waiting states used to be
+// missing, so a dog actually sitting in one — six of them right now —
+// opened this dialog with a BLANK status, and saving from there was a
+// guess. They are set from the workflow board, so they have to be
+// readable here.
 const WORKFLOW_COLOURS: Record<string, string> = {
   scheduled:  "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300",
   checked_in: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
+  waiting_for_bath: "bg-slate-100 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300",
   bathing:    "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300",
+  waiting_for_dry: "bg-slate-100 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300",
   drying:     "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300",
+  waiting_for_groom: "bg-slate-100 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300",
   grooming:   "bg-violet-100 dark:bg-violet-950/50 text-violet-800 dark:text-violet-300",
   ready:      "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
   complete:   "bg-muted text-muted-foreground",
@@ -284,7 +293,7 @@ function ApptBlock({
 
   if (top > containerHeight || top + height < 0) return null;
 
-  const wfLabel = appt.workflowState.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const wfLabel = workflowStateLabel(appt.workflowState);
   const sharedPetAppointments = (siblings && siblings.length > 0 ? [appt, ...siblings] : [appt])
     .sort((left, right) => left.id - right.id);
   const sharedAppointmentLabel = formatSharedAppointmentName({
@@ -2632,7 +2641,7 @@ export default function Calendar() {
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {Object.keys(WORKFLOW_COLOURS).map(s => (
-                          <SelectItem key={s} value={s}>{s.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())}</SelectItem>
+                          <SelectItem key={s} value={s}>{workflowStateLabel(s)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

@@ -61,7 +61,12 @@ const S = (
 const STAGES: Record<string, ClientFacingStage> = {
   scheduled: S(0, false, "Booked", "The appointment is confirmed."),
   checked_in: S(1, false, "Checked in", "Your dog has arrived and is settling in."),
-  waiting_for_bath: S(1, true, "Waiting for a bath", "Settled in and next up for a bath."),
+  // "Bath prep", not "waiting": the dog is having its nails, pads and
+  // sanitary done before the bath. Telling an owner their dog is waiting,
+  // when somebody is in fact working on it, undersells the salon and reads
+  // as a delay. Staff call this stage Bath Prep too — see
+  // shared/workflowStateLabels.ts.
+  waiting_for_bath: S(1, true, "Bath prep", "Having their nails, pads and tidy-up done before the bath."),
   bathing: S(2, false, "Having a bath", "Your dog is being washed."),
   waiting_for_dry: S(2, true, "Waiting to be dried", "Bathed, and waiting for the dryer."),
   drying: S(3, false, "Being dried", "Your dog is being dried off."),

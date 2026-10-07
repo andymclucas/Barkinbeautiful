@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
@@ -18,7 +19,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 const STAGES = [
   { key: "scheduled", label: "Waiting", colour: "#94a3b8" },
   { key: "checked_in", label: "Checked in", colour: "#06b6d4" },
-  { key: "waiting_for_bath", label: "Wait Bath", colour: "#64748b" },
+  { key: "waiting_for_bath", label: workflowStateLabel("waiting_for_bath"), colour: "#64748b" },
   { key: "bathing", label: "Bath", colour: "#3b82f6" },
   { key: "waiting_for_dry", label: "Wait Dry", colour: "#7c3aed" },
   { key: "drying", label: "Dry", colour: "#8b5cf6" },

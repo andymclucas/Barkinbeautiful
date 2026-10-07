@@ -1,4 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { workflowStateLabel, workflowStateShortLabel } from "@shared/workflowStateLabels";
 import { PetAvatar } from "@/components/PetAvatar";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workflowStageTimer";
@@ -80,7 +81,7 @@ export function formatDuration(minutes: number | null) {
 export const STAGES = [
   { key: "scheduled",   label: "Waiting",    short: "WAIT",  colour: "#94a3b8" },
   { key: "checked_in",  label: "Checked In", short: "IN",    colour: "#06b6d4" },
-  { key: "waiting_for_bath", label: "Wait for Bath", short: "WAIT BATH", colour: "#64748b" },
+  { key: "waiting_for_bath", label: workflowStateLabel("waiting_for_bath"), short: workflowStateShortLabel("waiting_for_bath"), colour: "#64748b" },
   { key: "bathing",     label: "Bath",       short: "BATH",  colour: "#3b82f6" },
   { key: "waiting_for_dry", label: "Wait for Dry", short: "WAIT DRY", colour: "#7c3aed" },
   { key: "drying",      label: "Drying",     short: "DRY",   colour: "#8b5cf6" },
