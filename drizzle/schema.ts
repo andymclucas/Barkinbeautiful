@@ -321,6 +321,16 @@ export const pets = mysqlTable("pets", {
   species: mysqlEnum("species", ["dog", "cat", "other"]).default("dog").notNull(),
   breed: varchar("breed", { length: 100 }),
   weightKg: decimal("weight_kg", { precision: 5, scale: 2 }),
+  /**
+   * Size band, as distinct from a measured weight.
+   *
+   * Derived from the service MoeGo booked the dog under, because MoeGo puts
+   * no weight in any export we can reach. Ids match MEMBERSHIP_WEIGHT_BANDS
+   * so the salon has one size vocabulary, not two.
+   */
+  sizeBand: mysqlEnum("size_band", ["small", "small_medium", "medium", "large", "extra_large", "giant"]),
+  /** "moego_service" or "manual". An import never overwrites "manual". */
+  sizeBandSource: varchar("size_band_source", { length: 32 }),
   coatType: varchar("coat_type", { length: 100 }),
   colour: varchar("colour", { length: 100 }),
   dateOfBirth: timestamp("date_of_birth"),
