@@ -2,6 +2,7 @@ import twilio from "twilio";
 import { getAppBaseUrl } from "./appUrl";
 import { checkSmsAllowance } from "./smsUsage";
 import { fromNumberForTenant } from "./tenantByNumber";
+import { isUsableSenderNumber, NO_SENDER_MESSAGE } from "@shared/senderNumber";
 
 let _client: ReturnType<typeof twilio> | null = null;
 
@@ -36,9 +37,18 @@ export async function sendSms(
   const from = options.tenantId !== undefined
     ? await fromNumberForTenant(options.tenantId)
     : process.env.TWILIO_FROM_NUMBER ?? null;
-  if (!client || !from) {
+  if (!client) {
     console.warn("[SMS] Twilio not configured — skipping SMS to", to);
     return { success: false, error: "Twilio not configured" };
+  }
+  // Checked before Twilio sees it. On 06/10/2026 this was the string
+  // "+61..." — a placeholder typed into the salon's number field — and
+  // every message for a day and a half came back "Invalid From Number
+  // (caller ID)". Twilio's rejection is accurate but arrives per message
+  // and says nothing about where the bad value came from.
+  if (!isUsableSenderNumber(from)) {
+    console.error(`[SMS] refusing to send: sender "${from ?? "(none)"}" is not a usable number. ${NO_SENDER_MESSAGE}`);
+    return { success: false, error: NO_SENDER_MESSAGE };
   }
 
   // The allowance check is soft by default — see checkSmsAllowance. It

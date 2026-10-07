@@ -17,6 +17,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "./db";
 import { tenants } from "../drizzle/schema";
 import { normaliseAustralianMobile } from "./inboundSms";
+import { isUsableSenderNumber, pickSenderNumber } from "@shared/senderNumber";
 
 const CACHE_TTL_MS = 60_000;
 const cache = new Map<string, { tenantId: number | null; at: number }>();
@@ -59,17 +60,26 @@ export async function tenantIdForCalledNumber(rawTo: string | null | undefined):
 
 /** The number a salon should text FROM, falling back to the shared one. */
 export async function fromNumberForTenant(tenantId: number): Promise<string | null> {
+  let stored: string | null = null;
   try {
     const db = await getDb();
     if (db) {
       const [row] = await db.select({ number: tenants.twilioNumber }).from(tenants)
         .where(eq(tenants.id, tenantId)).limit(1);
-      if (row?.number) return row.number;
+      stored = row?.number ?? null;
     }
   } catch (error) {
     console.error("[twilio] from-number lookup failed for tenant", tenantId, error);
   }
-  return process.env.TWILIO_FROM_NUMBER ?? null;
+  // The salon's own number first, then the shared one — but SKIPPING a
+  // stored value that cannot send rather than stopping at it. Stopping at
+  // the first non-empty value is exactly what broke the salon's SMS on
+  // 06/10/2026: the column held "+61..." and the working shared number was
+  // never reached.
+  if (stored !== null && !isUsableSenderNumber(stored)) {
+    console.error(`[twilio] tenant ${tenantId} has an unusable twilio_number ("${stored}") — using the shared number instead`);
+  }
+  return pickSenderNumber(stored, process.env.TWILIO_FROM_NUMBER);
 }
 
 export function forgetNumberTenant(rawTo?: string | null) {
