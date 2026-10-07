@@ -17,6 +17,7 @@ import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialo
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { StaffAdminRightsDialog, type StaffRightsTarget } from "@/components/StaffAdminRightsDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
+import { RevenueTargets } from "@/components/RevenueTargets";
 import { describeGrant } from "@shared/staffPermissions";
 import {
   Phone, Mail, MapPin, User, UserCog, Plus, Pencil, X,
@@ -782,6 +783,11 @@ export default function Staff() {
           </div>
           <Button onClick={() => setAddOpen(true)} className="gap-1.5"><Plus className="h-4 w-4" /> Add Staff Member</Button>
         </div>
+
+        {/* Owner-only. The server refuses the data to anyone else; not
+            rendering the card means nobody has to see a permission error to
+            learn the figures exist. */}
+        {ownerView && <RevenueTargets />}
 
         <OnlineBookingControls />
 

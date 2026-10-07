@@ -139,6 +139,18 @@ export const staff = mysqlTable("staff", {
    * Andy administers the system and does not groom.
    */
   rostered: boolean("rostered").default(true).notNull(),
+  /**
+   * What this person is expected to bring in. NULL means no target has been
+   * set — which is not the same as a target of zero, and is why this is
+   * nullable rather than defaulting to 0.00.
+   */
+  revenueTarget: decimal("revenue_target", { precision: 10, scale: 2 }),
+  /**
+   * What the amount above is EXPRESSED in, not how it is viewed. The staff
+   * tab scales one stored target across a day, week, month or quarter, so
+   * the salon maintains one number per person rather than four.
+   */
+  revenueTargetPeriod: mysqlEnum("revenue_target_period", ["daily", "weekly", "monthly", "quarterly"]).default("weekly").notNull(),
   xeroEmployeeId: varchar("xero_employee_id", { length: 100 }),
   onlineBookable: boolean("online_bookable").default(false).notNull(),
   onlineProfilePhotoUrl: text("online_profile_photo_url"),

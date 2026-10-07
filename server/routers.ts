@@ -70,6 +70,7 @@ import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appoint
 import { stripeConnectRouter } from "./routers/stripeConnect";
 import { salonSignupRouter } from "./routers/salonSignup";
 import { trialRouter } from "./routers/trial";
+import { revenueTargetsRouter } from "./routers/revenueTargets";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import {
   requireApprovedStaffTenant,
@@ -8511,6 +8512,7 @@ export const appRouter = router({
   stripeConnect: stripeConnectRouter,
   salonSignup: salonSignupRouter,
   trial: trialRouter,
+  revenueTargets: revenueTargetsRouter,
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,
