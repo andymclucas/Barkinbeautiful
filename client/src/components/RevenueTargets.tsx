@@ -80,13 +80,23 @@ const money = (n: number) =>
   n.toLocaleString("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 });
 
 export function RevenueTargets() {
-  const [period, setPeriod] = useState<TargetPeriod>("daily");
+  /**
+   * null means "each person over their own target period", which is the
+   * default and the honest one: a monthly target runs from the first of
+   * the month and does not go back to zero until the month does. The old
+   * default was a single daily window for everybody, so every target
+   * appeared to reset at breakfast whatever period it was set for.
+   */
+  const [period, setPeriod] = useState<TargetPeriod | null>(null);
   const today = brisbaneToday();
-  const range = useMemo(() => rangeForPeriod(period, today), [period, today]);
+  const range = useMemo(
+    () => (period === null ? null : rangeForPeriod(period, today)),
+    [period, today],
+  );
 
   const utils = trpc.useUtils();
   const { data, isLoading } = trpc.revenueTargets.list.useQuery(
-    { from: range.from, to: range.to },
+    range ? { from: range.from, to: range.to } : {},
     { staleTime: 60 * 1000, refetchOnWindowFocus: true },
   );
 
@@ -126,6 +136,19 @@ export function RevenueTargets() {
             </span>
           </CardTitle>
           <div className="flex rounded-lg border bg-muted/40 p-0.5">
+            <button
+              type="button"
+              onClick={() => setPeriod(null)}
+              title="Measure everyone over their own target period"
+              className={
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors " +
+                (period === null
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground")
+              }
+            >
+              Each target
+            </button>
             {TARGET_PERIODS.map((p) => (
               <button
                 key={p}
@@ -144,9 +167,11 @@ export function RevenueTargets() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          {range.from === range.to
-            ? `Today, ${range.to}`
-            : `${range.from} to ${range.to} — ${data?.days ?? 0} days so far`}
+          {range === null
+            ? "Each person measured over their own target period, to date"
+            : range.from === range.to
+              ? `Today, ${range.to}`
+              : `${range.from} to ${range.to}`}
           {totalTarget > 0 && (
             <> · salon {money(totalActual)} of {money(totalTarget)}</>
           )}
@@ -174,6 +199,15 @@ export function RevenueTargets() {
                   aria-hidden
                 />
                 <span className="min-w-0 basis-full truncate text-sm font-medium sm:basis-0 sm:flex-1">{row.name}</span>
+
+                {range === null && row.storedTarget !== null && (
+                  <span
+                    className="text-[11px] text-muted-foreground"
+                    title={`${row.window.from} to ${row.window.to}`}
+                  >
+                    {TARGET_PERIOD_LABELS[row.storedPeriod].toLowerCase()}, day {row.window.days}
+                  </span>
+                )}
 
                 <SizeMix mix={row.sizeMix} unbanded={row.unbandedDogs} dogs={row.dogs} />
 

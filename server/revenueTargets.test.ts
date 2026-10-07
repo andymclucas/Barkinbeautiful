@@ -167,3 +167,52 @@ describe("the salon's today", () => {
     expect(brisbaneToday(new Date("2026-10-07T14:00:00Z"))).toBe("2026-10-08");
   });
 });
+
+describe("a target does not go back to zero until its own period does", () => {
+  // Andy, 08/10/2026: targets must not reset "unless set to weekly and the
+  // week ticks over", and must carry on for month and quarter. The card
+  // used to put everybody on one daily window, so every target appeared to
+  // reset at breakfast whatever period it was set for.
+
+  it("runs a monthly target from the first of the month, all month", () => {
+    for (const day of ["2026-10-01", "2026-10-08", "2026-10-20", "2026-10-31"]) {
+      expect(rangeForPeriod("monthly", day).from).toBe("2026-10-01");
+    }
+  });
+
+  it("only restarts a monthly target when the month does", () => {
+    expect(rangeForPeriod("monthly", "2026-10-31").from).toBe("2026-10-01");
+    expect(rangeForPeriod("monthly", "2026-11-01").from).toBe("2026-11-01");
+  });
+
+  it("runs a quarterly target across all three of its months", () => {
+    for (const day of ["2026-10-01", "2026-11-15", "2026-12-31"]) {
+      expect(rangeForPeriod("quarterly", day).from).toBe("2026-10-01");
+    }
+    expect(rangeForPeriod("quarterly", "2027-01-01").from).toBe("2027-01-01");
+  });
+
+  it("does restart a weekly target when the week ticks over", () => {
+    // The one case Andy named as correct.
+    expect(rangeForPeriod("weekly", "2026-10-11").from).toBe("2026-10-05"); // Sunday
+    expect(rangeForPeriod("weekly", "2026-10-12").from).toBe("2026-10-12"); // Monday
+  });
+
+  it("accumulates: later in the period covers more days", () => {
+    const early = rangeForPeriod("monthly", "2026-10-02");
+    const late = rangeForPeriod("monthly", "2026-10-30");
+    expect(daysInRange(d(early.from), d(early.to))).toBe(2);
+    expect(daysInRange(d(late.from), d(late.to))).toBe(30);
+  });
+
+  it("scales the target to the days elapsed, so mid-period is comparable", () => {
+    // A whole month's target against eight days of takings would read as
+    // behind all month; eight days of target against eight days of takings
+    // is a fair question.
+    const win = rangeForPeriod("monthly", "2026-10-08");
+    const elapsed = daysInRange(d(win.from), d(win.to));
+    expect(elapsed).toBe(8);
+    // $8,000 across a 31-day October is ~$2,064 by the 8th.
+    expect(targetForDays("8000.00", "monthly", elapsed, d("2026-10-01"))).toBe(2064.52);
+  });
+});

@@ -22,7 +22,7 @@ import { appointmentAddOns, appointments, pets, staff } from "../../drizzle/sche
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
 import {
   TARGET_PERIODS, type TargetPeriod,
-  daysInRange, targetForDays, targetProgress,
+  daysInRange, targetForDays, targetProgress, rangeForPeriod, brisbaneToday,
 } from "@shared/revenueTargets";
 import { SIZE_BAND_IDS, type DogSizeBand } from "@shared/dogSizeBand";
 import {
@@ -54,8 +54,20 @@ export const revenueTargetsRouter = router({
   list: protectedProcedure
     .input(z.object({
       tenantId: z.number().int().positive().default(1),
-      from: dateString,
-      to: dateString,
+      /**
+       * An explicit window. Leave both out and every staff member is
+       * measured over THEIR OWN target period to date instead — a monthly
+       * target runs from the first of the month, a quarterly one from the
+       * start of the quarter, and neither goes back to zero until that
+       * period actually ends.
+       *
+       * The staff profile panel passes a window because it shows revenue
+       * beside timing analytics for the same days. The targets card does
+       * not, because "has Megs hit her week?" is a question about Megs's
+       * week, not about whichever button was last pressed.
+       */
+      from: dateString.optional(),
+      to: dateString.optional(),
     }))
     .query(async ({ input, ctx }) => {
       requireOwner(ctx.user);
@@ -63,10 +75,19 @@ export const revenueTargetsRouter = router({
       if (!db) return { staff: [], days: 0 };
       const tenantId = tenantOf(ctx, input) ?? 1;
 
-      const start = brisbaneMidnightUtc(input.from);
+      const today = brisbaneToday();
+      const explicit = input.from && input.to ? { from: input.from, to: input.to } : null;
+
+      /** The window one staff member is measured over. */
+      const windowFor = (period: TargetPeriod) =>
+        explicit ?? rangeForPeriod(period, today);
+
+      // Widest window anyone could need, so one pair of queries covers
+      // everybody however their own periods differ.
+      const widest = explicit ?? rangeForPeriod("quarterly", today);
+      const start = brisbaneMidnightUtc(widest.from);
       // Exclusive end: the day AFTER the last day the salon counts.
-      const endExclusive = new Date(brisbaneMidnightUtc(input.to).getTime() + 86_400_000);
-      const days = daysInRange(new Date(`${input.from}T00:00:00Z`), new Date(`${input.to}T00:00:00Z`));
+      const endExclusive = new Date(brisbaneMidnightUtc(widest.to).getTime() + 86_400_000);
 
       const members = await db
         .select({
@@ -83,16 +104,19 @@ export const revenueTargetsRouter = router({
         .where(and(eq(staff.tenantId, tenantId), eq(staff.isActive, true)));
 
       const ids = members.map((m) => m.id);
-      const earned = ids.length === 0 ? [] : await db
+
+      // Rows, not totals. Each staff member is measured over their own
+      // period, so the grouping cannot happen in SQL — it happens below,
+      // once each person's window is known.
+      const groomRows = ids.length === 0 ? [] : await db
         .select({
           staffId: appointments.staffId,
-          // The groom itself. A membership groom is 0.00 on purpose — its
-          // revenue arrives through the weekly membership payment, not the
-          // appointment — so it contributes nothing here, same as every
-          // other revenue figure in the app.
-          price: sql<string>`COALESCE(SUM(${appointments.price}), 0)`,
+          at: appointments.scheduledStart,
+          price: appointments.price,
+          sizeBand: pets.sizeBand,
         })
         .from(appointments)
+        .leftJoin(pets, eq(pets.id, appointments.petId))
         .where(and(
           eq(appointments.tenantId, tenantId),
           inArray(appointments.staffId, ids),
@@ -100,14 +124,14 @@ export const revenueTargetsRouter = router({
           ne(appointments.status, "cancelled"),
           gte(appointments.scheduledStart, start),
           lt(appointments.scheduledStart, endExclusive),
-        ))
-        .groupBy(appointments.staffId);
+        ));
 
-      // Extras are revenue too, and they belong to whoever did the groom.
-      const extras = ids.length === 0 ? [] : await db
+      const extraRows = ids.length === 0 ? [] : await db
         .select({
           staffId: appointments.staffId,
-          total: sql<string>`COALESCE(SUM(${appointmentAddOns.unitPrice} * GREATEST(${appointmentAddOns.quantity}, 1)), 0)`,
+          at: appointments.scheduledStart,
+          unitPrice: appointmentAddOns.unitPrice,
+          quantity: appointmentAddOns.quantity,
         })
         .from(appointmentAddOns)
         .innerJoin(appointments, eq(appointments.id, appointmentAddOns.appointmentId))
@@ -118,29 +142,7 @@ export const revenueTargetsRouter = router({
           ne(appointments.status, "cancelled"),
           gte(appointments.scheduledStart, start),
           lt(appointments.scheduledStart, endExclusive),
-        ))
-        .groupBy(appointments.staffId);
-
-      // The size of the dogs each person actually did. Revenue alone says
-      // Charlotte and Megs had similar weeks; it does not say one of them
-      // spent it on giants. That is the whole reason the bands exist.
-      const sizes = ids.length === 0 ? [] : await db
-        .select({
-          staffId: appointments.staffId,
-          sizeBand: pets.sizeBand,
-          n: sql<number>`COUNT(*)`,
-        })
-        .from(appointments)
-        .innerJoin(pets, eq(pets.id, appointments.petId))
-        .where(and(
-          eq(appointments.tenantId, tenantId),
-          inArray(appointments.staffId, ids),
-          eq(appointments.workflowState, "complete"),
-          ne(appointments.status, "cancelled"),
-          gte(appointments.scheduledStart, start),
-          lt(appointments.scheduledStart, endExclusive),
-        ))
-        .groupBy(appointments.staffId, pets.sizeBand);
+        ));
 
       // What each size of dog actually earns the salon, over a trailing
       // year. Computed rather than hardcoded: the day the salon reprices, a
@@ -178,42 +180,76 @@ export const revenueTargetsRouter = router({
       }
       const salonRate = salonHours > 0 ? salonRevenue / salonHours : null;
 
-      const priceBy = new Map(earned.map((r: any) => [Number(r.staffId), Number(r.price ?? 0)]));
-      const extraBy = new Map(extras.map((r: any) => [Number(r.staffId), Number(r.total ?? 0)]));
-      const sizeBy = new Map<number, { bands: Record<string, number>; unknown: number; dogs: number }>();
-      for (const row of sizes as any[]) {
+      /** Brisbane calendar date of an appointment, as YYYY-MM-DD. */
+      const dateKey = (at: Date | string) =>
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(new Date(at));
+
+      const groomsByStaff = new Map<number, Array<{ day: string; price: number; band: string | null }>>();
+      for (const row of groomRows as any[]) {
         const key = Number(row.staffId);
-        if (!sizeBy.has(key)) sizeBy.set(key, { bands: {}, unknown: 0, dogs: 0 });
-        const entry = sizeBy.get(key)!;
-        const count = Number(row.n ?? 0);
-        entry.dogs += count;
-        // A dog with no band is counted separately, never folded into the
-        // smallest — 199 active dogs have no band and calling them all
-        // small would flatter whoever grooms them.
-        if (row.sizeBand && (SIZE_BAND_IDS as readonly string[]).includes(row.sizeBand)) {
-          entry.bands[row.sizeBand] = (entry.bands[row.sizeBand] ?? 0) + count;
-        } else {
-          entry.unknown += count;
-        }
+        if (!groomsByStaff.has(key)) groomsByStaff.set(key, []);
+        groomsByStaff.get(key)!.push({
+          day: dateKey(row.at),
+          price: Number(row.price ?? 0),
+          band: row.sizeBand ?? null,
+        });
+      }
+      const extrasByStaff = new Map<number, Array<{ day: string; amount: number }>>();
+      for (const row of extraRows as any[]) {
+        const key = Number(row.staffId);
+        if (!extrasByStaff.has(key)) extrasByStaff.set(key, []);
+        extrasByStaff.get(key)!.push({
+          day: dateKey(row.at),
+          amount: Number(row.unitPrice ?? 0) * Math.max(1, Number(row.quantity ?? 1)),
+        });
       }
 
       return {
-        days,
-        from: input.from,
-        to: input.to,
+        // The window the CARD was asked for, when it asked for one. With no
+        // explicit window each row carries its own — see `window` below.
+        from: explicit?.from ?? null,
+        to: explicit?.to ?? null,
+        followsEachTarget: explicit === null,
         staff: members.map((member) => {
-          const actual = (priceBy.get(member.id) ?? 0) + (extraBy.get(member.id) ?? 0);
+          const period = member.revenueTargetPeriod as TargetPeriod;
+          // The heart of this: a monthly target is measured from the first
+          // of the month and a quarterly one from the start of the quarter.
+          // Neither goes back to zero until that period actually ends.
+          const win = windowFor(period);
+          const days = daysInRange(
+            new Date(`${win.from}T00:00:00Z`),
+            new Date(`${win.to}T00:00:00Z`),
+          );
+          const inWindow = (day: string) => day >= win.from && day <= win.to;
+
+          const grooms = (groomsByStaff.get(member.id) ?? []).filter((g) => inWindow(g.day));
+          const extrasIn = (extrasByStaff.get(member.id) ?? []).filter((e) => inWindow(e.day));
+          const actual =
+            grooms.reduce((sum, g) => sum + g.price, 0) +
+            extrasIn.reduce((sum, e) => sum + e.amount, 0);
+
+          const bands: Record<string, number> = {};
+          let unknown = 0;
+          for (const g of grooms) {
+            // A dog with no band is counted separately, never folded into
+            // the smallest — calling an unsized dog small would flatter
+            // whoever grooms them.
+            if (g.band && (SIZE_BAND_IDS as readonly string[]).includes(g.band)) {
+              bands[g.band] = (bands[g.band] ?? 0) + 1;
+            } else {
+              unknown += 1;
+            }
+          }
+
           const target = targetForDays(
             member.revenueTarget,
-            member.revenueTargetPeriod as TargetPeriod,
+            period,
             days,
-            start,
+            brisbaneMidnightUtc(win.from),
           );
-          const size = sizeBy.get(member.id) ?? { bands: {}, unknown: 0, dogs: 0 };
-          // The target, moved for the book they were actually given. Null
-          // when they have no target, or when nothing they did falls in a
-          // band with enough history to rate.
-          const weighted = weightTargetForMix(target, size.bands as any, bandStats, salonRate);
+          const weighted = weightTargetForMix(target, bands as any, bandStats, salonRate);
           return {
             id: member.id,
             name: member.name,
@@ -221,15 +257,14 @@ export const revenueTargetsRouter = router({
             colourHex: member.colourHex,
             rostered: member.rostered,
             storedTarget: member.revenueTarget,
-            storedPeriod: member.revenueTargetPeriod as TargetPeriod,
-            dogs: size.dogs,
-            sizeMix: size.bands as Partial<Record<DogSizeBand, number>>,
-            unbandedDogs: size.unknown,
+            storedPeriod: period,
+            /** The days this row is measured over, and how far through. */
+            window: { from: win.from, to: win.to, days },
+            dogs: grooms.length,
+            sizeMix: bands as Partial<Record<DogSizeBand, number>>,
+            unbandedDogs: unknown,
             weightedTarget: weighted,
             difficultyNote: describeDifficulty(weighted),
-            // Progress is measured against the ADJUSTED target when there is
-            // one. Showing "behind" against a figure their book could not
-            // reach is the problem this set out to fix.
             ...targetProgress(actual, weighted ? weighted.adjusted : target),
           };
         }),
