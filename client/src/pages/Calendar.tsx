@@ -45,6 +45,7 @@ import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
+import { liveSiblings } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
@@ -1325,11 +1326,25 @@ export default function Calendar() {
     return map;
   }, [weekAppts]);
 
-  // For a given appointment, return its siblings (other pets in same session)
+  /**
+   * The other pets sharing this booking — live ones only.
+   *
+   * A session keeps holding a dog after it is cancelled, which is right for
+   * history and wrong for the block on the calendar: the card builds its
+   * name and its price from the siblings, so one cancelled dog made a
+   * one-dog booking read "Murphy & Eddie smithson · 2 DOGS".
+   *
+   * Seen on 09/10/2026, where it looked like a duplicate booking. The two
+   * smithson dogs were in DIFFERENT sessions, each session also holding the
+   * other dog cancelled, so the calendar drew two two-dog blocks for what
+   * was one two-dog booking.
+   *
+   * A cancelled dog is also shown on its own rather than borrowing the
+   * names of the dogs still coming in.
+   */
   const getSiblings = (appt: Appt): Appt[] => {
     if (!appt.sessionId) return [];
-    const all = sessionMap.get(appt.sessionId) ?? [];
-    return all.filter(a => a.id !== appt.id);
+    return liveSiblings(appt, sessionMap.get(appt.sessionId) ?? []);
   };
 
   const selectedClientPets = trpc.pets.listByClient.useQuery(
