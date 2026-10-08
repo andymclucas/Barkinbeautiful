@@ -5,6 +5,7 @@ import {
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { shouldActOnSignal } from "@shared/openOnSignal";
 import { parsePetCodes } from "@shared/petCodes";
+import { describePetCode, petCodeMeaning } from "@shared/petCodeMeanings";
 import { canChargeOffSession } from "@shared/stripeBilling";
 import { AddMembershipButton, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
 import {
@@ -969,15 +970,26 @@ export default function ClientDetail() {
                         const codes = parsePetCodes(pet.moegoCodeLabels);
                         if (codes.length === 0) return null;
                         return (
-                          <div className="flex flex-wrap items-center gap-1" aria-label={`MoeGo codes: ${codes.join(", ")}`}>
-                            {codes.map(code => (
-                              <span
-                                key={code}
-                                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
-                              >
-                                {code}
-                              </span>
-                            ))}
+                          <div className="flex flex-wrap items-center gap-1" aria-label={`MoeGo codes: ${codes.map(describePetCode).join(", ")}`}>
+                            {codes.map(code => {
+                              // On the record there is room to say what the
+                              // shorthand means. "Ner" on its own tells a new
+                              // groomer nothing; "Ner · Nervous" tells them
+                              // everything they need before they start.
+                              const meaning = petCodeMeaning(code);
+                              return (
+                                <span
+                                  key={code}
+                                  title={describePetCode(code)}
+                                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                                >
+                                  {code}
+                                  {meaning && (
+                                    <span className="font-normal opacity-75">· {meaning}</span>
+                                  )}
+                                </span>
+                              );
+                            })}
                           </div>
                         );
                       })()}

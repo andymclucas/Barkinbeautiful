@@ -6,6 +6,7 @@ import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workfl
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { collectByStatus } from "@shared/collectBy";
 import { parsePetCodes } from "@shared/petCodes";
+import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
 import { AlertTriangle, CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
 import { useState } from "react";
@@ -577,8 +578,8 @@ export function WorkflowBoardTable({
                             return (
                               <span
                                 className="mt-0.5 flex flex-wrap items-center gap-0.5"
-                                title={codes.join(", ")}
-                                aria-label={`MoeGo codes: ${codes.join(", ")}`}
+                                title={codes.map(describePetCode).join("\n")}
+                                aria-label={`MoeGo codes: ${codes.map(describePetCode).join(", ")}`}
                               >
                                 {codes.map((code) => (
                                   <span
