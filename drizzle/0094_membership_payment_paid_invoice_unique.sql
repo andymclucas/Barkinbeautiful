@@ -7,29 +7,30 @@
 -- and both inserted. One $1 charge, two payment rows and two ledger
 -- entries. Revenue silently overstated, intermittently, with nothing wrong
 -- on screen. The same pair on 30/09/2026 arrived far enough apart to be
--- caught, which is what makes it so easy to miss.
+-- caught, which is what makes it easy to miss.
 --
--- Why a generated column rather than a plain unique index on
--- stripe_invoice_id: FAILED rows carry an invoice id too
--- (`invoice.payment_failed` writes one), and Stripe resends that event
--- across its retry schedule, so the same invoice legitimately produces
--- several failed rows. Constraining the raw column would reject them. The
--- invariant that is actually true is "at most one PAID row per invoice", and
--- this expresses exactly that: the key is NULL for anything not paid, and
--- MySQL lets NULLs repeat freely in a unique index.
+-- Why a separate column rather than a unique index on stripe_invoice_id:
+-- FAILED rows carry an invoice id too (`invoice.payment_failed` writes
+-- one), and Stripe resends that event across its retry schedule, so one
+-- invoice legitimately produces several failed rows. Constraining the raw
+-- column would reject them. The invariant that is actually true is "at most
+-- one PAID row per invoice", and this column holds the invoice id only for
+-- the row that booked the money. NULL everywhere else, and MySQL lets NULLs
+-- repeat freely in a unique index.
 --
--- DO NOT ADD paid_invoice_key TO drizzle/schema.ts. Drizzle names every
--- declared column in every insert(), and MySQL rejects an insert that names
--- a generated column. Leaving it out of the schema means the app never
--- mentions it while the database still enforces it.
+-- Why not a GENERATED column, which could not drift: TiDB documents that
+-- ALTER TABLE cannot add a STORED generated column to an existing table
+-- (its ADD COLUMN page says otherwise, so the behaviour is genuinely
+-- uncertain on v8.5.3). A migration that may fail halfway on a live
+-- database is not worth the elegance. The application sets this column on
+-- the one path that books a Stripe invoice.
 --
 -- Both statements are in ONE ALTER on purpose: MySQL/TiDB DDL is not
 -- transactional, so two statements can leave the first applied, the
 -- migration unrecorded, and a re-run failing on "Duplicate column name".
 --
--- This will FAIL if duplicates already exist. Run
+-- This FAILS if duplicates already exist. Run
 -- scripts/dedupe-membership-payments.ts --apply first.
 ALTER TABLE `membership_payments`
-  ADD COLUMN `paid_invoice_key` VARCHAR(255)
-    GENERATED ALWAYS AS (CASE WHEN `status` = 'paid' THEN `stripe_invoice_id` END) STORED,
+  ADD COLUMN `paid_invoice_key` VARCHAR(255) NULL,
   ADD UNIQUE INDEX `uniq_membership_payments_paid_invoice` (`paid_invoice_key`);

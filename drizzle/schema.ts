@@ -547,6 +547,14 @@ export const membershipPayments = mysqlTable("membership_payments", {
   gatewayPaymentId: varchar("gateway_payment_id", { length: 255 }),
   stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
   stripeInvoiceId: varchar("stripe_invoice_id", { length: 255 }),
+  /**
+   * The Stripe invoice this row BOOKED, set only on a paid row, NULL
+   * otherwise. A unique index on it is what stops one charge being booked
+   * twice when Stripe's `invoice.paid` and `invoice.payment_succeeded`
+   * arrive together — see migration 0094. It is deliberately not the same
+   * as stripeInvoiceId, which failed rows also carry and may repeat.
+   */
+  paidInvoiceKey: varchar("paid_invoice_key", { length: 255 }),
   failureReason: text("failure_reason"),
   paidAt: timestamp("paid_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

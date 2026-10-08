@@ -288,6 +288,9 @@ export async function processStripeEvent(event: Stripe.Event) {
           amount: String(amount),
           status: "paid",
           stripeInvoiceId: invoice.id ?? null,
+          // The unique half. Set only here, on the row that books the
+          // money, so the second of two simultaneous events collides.
+          paidInvoiceKey: invoice.id ?? null,
           paidAt: new Date(),
         });
         await db.insert(membershipLedgerEntries).values({
