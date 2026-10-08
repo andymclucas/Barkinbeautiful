@@ -1341,6 +1341,8 @@ const workflowRouter = router({
           petWarnings: pets.warnings,
           petFamilyGroupId: pets.familyGroupId,
           petMoeGoPetCodes: pets.moeGoPetCodes,
+          /** MoeGo's own tags — "✂5f, #7f, No cologne, SENSITIVE". */
+          petMoegoCodeLabels: pets.moegoCodeLabels,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           staffName: staff.name,
@@ -2407,6 +2409,8 @@ const clientsRouter = router({
           groomingNotes: pets.groomingNotes,
           alertLevel: pets.alertLevel,
           warnings: pets.warnings,
+          /** MoeGo's own tags — "✂5f, #7f, No cologne, SENSITIVE". */
+          moegoCodeLabels: pets.moegoCodeLabels,
           familyGroupId: pets.familyGroupId,
           dateOfBirth: pets.dateOfBirth,
           createdAt: pets.createdAt,

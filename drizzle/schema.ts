@@ -348,6 +348,12 @@ export const pets = mysqlTable("pets", {
   preferredGroomerId: int("preferred_groomer_id").references(() => staff.id),
   moegoClientId: varchar("moego_pet_id", { length: 100 }),
   moeGoPetCodes: json("moego_pet_codes"),
+  /**
+   * The tags MoeGo shows beside a dog's name, raw: "✂5f, #7f, No cologne,
+   * SENSITIVE". Distinct from moeGoPetCodes above, which holds MoeGo's
+   * internal numeric code IDs. Parsed for display by shared/petCodes.ts.
+   */
+  moegoCodeLabels: text("moego_code_labels"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
   alertLevel: mysqlEnum("alert_level", ["ok", "caution", "danger"]).default("ok").notNull(),

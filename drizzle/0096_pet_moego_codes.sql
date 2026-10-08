@@ -1,0 +1,21 @@
+-- The tags MoeGo shows beside a dog's name: "✂5f, #7f, No cologne, SENSITIVE".
+--
+-- 1,463 of the salon's dogs carry them, 93 distinct codes in all, and they are
+-- a mix of things staff read at a glance before touching the dog: clip specs
+-- (✂5f, #7f, #16mm), style shorthand (Char Do, Megs do), handling rules
+-- (No cologne, PLUCK EARS, Dont shave groin / bum) and genuine safety flags
+-- (SENSITIVE, DOG AGGRESSIVE, muzzle, SEDATED, FREAKS @ DRYER).
+--
+-- Stored as the raw comma-separated string exactly as MoeGo holds it, not as
+-- parsed tags. Two reasons: the vocabulary is the salon's own shorthand and
+-- not ours to normalise, and the display is a faithful copy of the MoeGo card
+-- rather than a reinterpretation. Splitting for display is the client's job
+-- and costs nothing.
+--
+-- NOT the same column as the existing moego_pet_codes, which holds MoeGo's
+-- internal numeric code IDs (["28407359","29451356"]) and is written by
+-- routers.ts. That one is left alone.
+--
+-- Nullable with no default, so existing inserts stay valid and the app can
+-- ship before or after this lands.
+ALTER TABLE `pets` ADD COLUMN `moego_code_labels` TEXT NULL;

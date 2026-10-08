@@ -4,6 +4,7 @@ import {
 } from "@shared/membershipBillingState";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { shouldActOnSignal } from "@shared/openOnSignal";
+import { parsePetCodes } from "@shared/petCodes";
 import { canChargeOffSession } from "@shared/stripeBilling";
 import { AddMembershipButton, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
 import {
@@ -961,6 +962,25 @@ export default function ClientDetail() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="px-4 pb-4 space-y-1.5 text-sm">
+                      {(() => {
+                        // MoeGo's own tags, shown as MoeGo shows them. Kept
+                        // verbatim and unclassified: "PLUCK EARS" and "DONT
+                        // PLUCK EARS" are both real codes here.
+                        const codes = parsePetCodes(pet.moegoCodeLabels);
+                        if (codes.length === 0) return null;
+                        return (
+                          <div className="flex flex-wrap items-center gap-1" aria-label={`MoeGo codes: ${codes.join(", ")}`}>
+                            {codes.map(code => (
+                              <span
+                                key={code}
+                                className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                              >
+                                {code}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       <div className="flex items-start gap-2 overflow-x-auto pb-1">
                         {(photosByPet[pet.id] ?? []).slice(0, 6).map(photo => (
                           <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer" className="block shrink-0 group" title={photo.caption ?? "View groom photo"}>

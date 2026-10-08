@@ -5,6 +5,7 @@ import { StaffAvatar } from "@/components/StaffAvatar";
 import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workflowStageTimer";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { collectByStatus } from "@shared/collectBy";
+import { parsePetCodes } from "@shared/petCodes";
 import { formatAestTime } from "@shared/auditTimestamp";
 import { AlertTriangle, CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
 import { useState } from "react";
@@ -562,6 +563,34 @@ export function WorkflowBoardTable({
                               <AlertTriangle className="h-2.5 w-2.5" /> CAUTION{appt.petWarnings ? ` — ${appt.petWarnings.slice(0, 15)}` : ""}
                             </span>
                           )}
+                          {(() => {
+                            // MoeGo's own tags for this dog, shown exactly as
+                            // MoeGo shows them: "✂5f, #7f, No cologne,
+                            // SENSITIVE". They mix clip specs, style shorthand
+                            // and genuine safety flags, and are deliberately
+                            // not classified — "PLUCK EARS" and "DONT PLUCK
+                            // EARS" are both real codes, one word apart, so a
+                            // parser deciding what matters would eventually
+                            // get one of them backwards. A human reads them.
+                            const codes = parsePetCodes(appt.petMoegoCodeLabels);
+                            if (codes.length === 0) return null;
+                            return (
+                              <span
+                                className="mt-0.5 flex flex-wrap items-center gap-0.5"
+                                title={codes.join(", ")}
+                                aria-label={`MoeGo codes: ${codes.join(", ")}`}
+                              >
+                                {codes.map((code) => (
+                                  <span
+                                    key={code}
+                                    className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold leading-tight bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                                  >
+                                    {code}
+                                  </span>
+                                ))}
+                              </span>
+                            );
+                          })()}
                           {(() => {
                             // When the dog has to be gone by, and whether it
                             // is going to make it. Beside the caution badge
