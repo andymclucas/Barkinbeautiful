@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentValidation";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { trpc } from "@/lib/trpc";
 import { resolveCalendarStaffColumns } from "@/lib/calendarStaffColumns";
@@ -1361,6 +1362,23 @@ export default function Calendar() {
     setNewAppt(current => current.scheduledEnd === endStr ? current : { ...current, scheduledEnd: endStr });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newAppt.scheduledStart, newAppt.serviceType, selectedAppointmentPetIds.join(","), selectedClientPets.data]);
+  // A client with exactly one dog has already told us which dog. The chip
+  // is a toggle and an untapped one looks like a label, so a groomer
+  // reasonably read "Quinnie (Cavoodle)" as chosen, hit Create, and got
+  // told to select a pet she thought she had.
+  //
+  // Only when nothing is chosen yet — never overriding a deliberate
+  // deselection, and never guessing between two dogs.
+  useEffect(() => {
+    const pets = selectedClientPets.data;
+    if (!newAppt.clientId || !pets) return;
+    setNewAppt(current => {
+      if (current.petIds.length > 0) return current;
+      const auto = autoSelectedPetIds(pets.map(pet => pet.id));
+      return auto.length === 0 ? current : { ...current, petIds: auto };
+    });
+  }, [newAppt.clientId, selectedClientPets.data]);
+
   const familyBookingCompanions = useMemo(() => {
     const selectedIds = new Set(newAppt.petIds);
     const selectedFamilyGroups = new Set((selectedClientPets.data ?? [])
@@ -1406,9 +1424,8 @@ export default function Calendar() {
   });
 
   const handleCreate = () => {
-    if (!newAppt.clientId || newAppt.petIds.length === 0 || !newAppt.scheduledStart || !newAppt.scheduledEnd) {
-      toast.error("Please select a client, at least one pet, and the appointment times"); return;
-    }
+    const missing = newAppointmentError(newAppt);
+    if (missing) { toast.error(missing); return; }
     if (repeatForm.enabled) {
       if (!repeatForm.untilDate) {
         toast.error("Please choose a date to repeat until"); return;
@@ -2350,11 +2367,14 @@ export default function Calendar() {
                             "px-3 py-1.5 rounded-full text-sm border transition-all",
                             selected
                               ? "bg-primary text-primary-foreground border-primary font-medium"
-                              : "bg-background text-foreground border-border hover:border-primary hover:text-primary",
+                              // Dashed and muted, so an unchosen dog looks
+                              // like something waiting to be tapped rather
+                              // than a label stating a fact.
+                              : "border-dashed bg-background text-muted-foreground border-muted-foreground/40 hover:border-primary hover:text-primary",
                           ].join(" ")}
                         >
                           {pet.name}{pet.breed ? ` (${pet.breed})` : ""}
-                          {selected && <span className="ml-1.5 opacity-70">✓</span>}
+                          <span className="ml-1.5 opacity-70">{selected ? "✓" : "+"}</span>
                         </button>
                       );
                     })}
