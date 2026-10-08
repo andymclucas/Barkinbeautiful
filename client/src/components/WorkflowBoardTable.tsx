@@ -799,8 +799,17 @@ export function WorkflowBoardTable({
                           }}
                           disabled={updateStage.isPending}
                         >
+                          {/* Carries the stage's own colour, the same one the
+                              summary bar and the legend use above. A board of
+                              identical white dropdowns made you read every row
+                              to find the dogs actually being worked on; now the
+                              waiting greys and the in-progress blues, purples
+                              and ambers separate at a glance. Colours come from
+                              STAGES, so the bar, the legend, the advance button
+                              and this control cannot drift apart. */}
                           <SelectTrigger
-                            className="h-7 w-[116px] border-border bg-card px-2 text-[10px] font-semibold text-foreground shadow-sm hover:border-primary/50"
+                            className="h-7 w-[116px] border-0 px-2 text-[10px] font-semibold text-white shadow-sm hover:opacity-90 focus:ring-2 focus:ring-offset-1"
+                            style={{ background: stageColour(appt.workflowState) }}
                             aria-label={`Manually change ${appt.petName ?? "pet"} workflow stage`}
                             title="Change stage, pause between stages, or record a cancelled or no-show outcome. Timing is updated automatically."
                           >
@@ -809,7 +818,17 @@ export function WorkflowBoardTable({
                           <SelectContent>
                             {ALL_STAGE_OPTIONS.map((option) => (
                               <SelectItem key={option.key} value={option.key} className="text-xs">
-                                {option.label}
+                                <span className="flex items-center gap-1.5">
+                                  {/* The same swatch as the legend, so picking
+                                      a stage from the list matches what the
+                                      row will turn. */}
+                                  <span
+                                    className="inline-block h-2 w-2 shrink-0 rounded-full"
+                                    style={{ background: option.colour }}
+                                    aria-hidden="true"
+                                  />
+                                  {option.label}
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
