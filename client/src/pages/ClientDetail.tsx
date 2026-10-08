@@ -4,6 +4,7 @@ import {
 } from "@shared/membershipBillingState";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { shouldActOnSignal } from "@shared/openOnSignal";
+import { canChargeOffSession } from "@shared/stripeBilling";
 import { AddMembershipButton, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
 import {
   SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
@@ -505,6 +506,10 @@ export default function ClientDetail() {
   );
 
   const { client, pets, memberships, appointments, payments, photos } = data;
+  // Whether Stripe could actually charge this client off-session. Same
+  // predicate the server uses before starting a subscription, so the button
+  // offered here and the call it makes cannot disagree.
+  const clientHasCardOnFile = canChargeOffSession(client);
   const additionalContacts = data.contacts ?? [];
   const petMembershipEvents = data.petMembershipEvents ?? [];
   const activePets = pets.filter(pet => pet.status !== "departed");
@@ -1357,7 +1362,14 @@ export default function ClientDetail() {
                 // Whether Groomigo can actually charge this, not just what
                 // the status column says. Every one of the salon's
                 // memberships read "✓ Active" while Groomigo charged none.
-                const hasCardOnFile = (m as { hasCardOnFile?: boolean }).hasCardOnFile ?? false;
+                // From the CLIENT, not the membership. The card is a property
+                // of the person, and getProfile never put one on a membership
+                // row — so this read false for everybody, including clients
+                // with a card. That made Set Weekly Billing take the "no card"
+                // path and write a date instead of creating the Stripe
+                // subscription: marked as billing, charging nobody, which is
+                // the exact failure the button exists to fix.
+                const hasCardOnFile = clientHasCardOnFile;
                 const billing = membershipBillingState({
                   status: m.status,
                   nextBillingDate: m.nextBillingDate,
@@ -1420,8 +1432,12 @@ export default function ClientDetail() {
                           <p className="text-xs text-muted-foreground flex-1 min-w-[12rem]">
                             {billingStateHint(billing)}
                           </p>
-                          {!hasCardOnFile && isAdmin && (
-                            <SendCardLinkButton clientId={clientId} clientEmail={client.email} hasCardOnFile={false} />
+                          {isAdmin && (
+                            <SendCardLinkButton
+                              clientId={clientId}
+                              clientEmail={client.email}
+                              hasCardOnFile={hasCardOnFile}
+                            />
                           )}
                           {/* A failing payment is already billing — starting it
                               again would bill twice or do nothing. */}
