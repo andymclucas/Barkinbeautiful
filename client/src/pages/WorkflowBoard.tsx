@@ -265,8 +265,19 @@ export default function WorkflowBoard() {
     ? `Hi ${selectedPickupRecipient.name.split(" ")[0] || "there"}! ${pickupMessageAppointment.petName} is all done and looking fabulous at Barkin' Beautiful. Come pick them up whenever you're ready! 🐾✨`
     : null;
 
+  // Everyone the query returns is rostered — it filters on that — so the
+  // only question left is which job a given person does.
+  //
+  // Lauren, 08/10/2026: "I can't select myself still for bathing and
+  // drying." Her salon role is `owner`, and bathers used to require
+  // `bather` or `groomer`, so the person who owns the place could not be
+  // put down as having washed a dog she had just washed.
   const groomers = staffList?.filter(s => s.role !== "bather") ?? [];
-  const bathers = staffList?.filter(s => s.role === "bather" || s.role === "groomer") ?? [];
+  // Anyone on the roster can bathe or dry. In a salon this size the owner
+  // and the groomers do it constantly, and a list that excludes them means
+  // the work goes unrecorded — which then skews the timing analytics that
+  // are built on who did what.
+  const bathers = staffList ?? [];
 
   const performanceSnapshot = useMemo(() => {
     type Metric = { total: number; count: number; reviews: number };

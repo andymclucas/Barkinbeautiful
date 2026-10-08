@@ -1786,9 +1786,21 @@ const workflowRouter = router({
       if (!db) return [];
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This staff directory is not available to your salon staff profile");
-      return db.select({ id: staff.id, name: staff.name, role: staff.role, colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl })
+      // Rostered only, and `rostered` is returned so the board does not have
+      // to infer who takes dogs from their job title. Andy and Christie are
+      // managers who administer the system and never groom; without this
+      // they appear in the groomer picker on every row.
+      return db.select({
+        id: staff.id, name: staff.name, role: staff.role,
+        rostered: staff.rostered,
+        colourHex: staff.colourHex, photoUrl: staff.onlineProfilePhotoUrl,
+      })
         .from(staff)
-        .where(and(eq(staff.tenantId, tenantOf(ctx, input)), eq(staff.isActive, true)))
+        .where(and(
+          eq(staff.tenantId, tenantOf(ctx, input)),
+          eq(staff.isActive, true),
+          eq(staff.rostered, true),
+        ))
         .orderBy(asc(staff.name));
     }),
 });

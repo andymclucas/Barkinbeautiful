@@ -828,6 +828,7 @@ export default function Calendar() {
   // Identifies whose filter this is. auth.me is already fetched and cached
   // by the dashboard shell, so this costs nothing.
   const { user } = useAuth();
+  const utils = trpc.useUtils();
   const [weekStart, setWeekStart]   = useState(() => getWeekStart(getTodayAEST()));
   const [showNewAppt, setShowNewAppt] = useState(false);
   const [editAppt, setEditAppt]     = useState<Appt | null>(null);
@@ -1144,7 +1145,17 @@ export default function Calendar() {
     onError: (e) => toast.error(e.message),
   });
   const workflowMutation = trpc.calendar.updateWorkflowState.useMutation({
-    onSuccess: () => { toast.success("Status updated"); refetch(); },
+    // The board is a different query, and it was never told. It polls every
+    // five seconds so it caught up on its own, but "I set it to bathing and
+    // the workflow did not change" is what that looks like to somebody who
+    // walks straight over and looks. StaffPortal already did this; the
+    // calendar did not.
+    onSuccess: () => {
+      toast.success("Status updated");
+      refetch();
+      utils.workflow.getBoard.invalidate();
+      utils.workflow.getTodayBoard.invalidate();
+    },
     onError: (e) => toast.error(e.message),
   });
   const undoDeleteAppointmentMutation = trpc.calendar.undoDeleteAppointment.useMutation({
