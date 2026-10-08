@@ -666,6 +666,13 @@
       "when": 1791457108069,
       "tag": "0094_membership_payment_paid_invoice_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "5",
+      "when": 1791458789800,
+      "tag": "0095_membership_payment_paid_invoice_index",
+      "breakpoints": true
     }
   ]
 }

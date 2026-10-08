@@ -1,4 +1,5 @@
--- One PAID payment row per Stripe invoice, enforced by the database.
+-- The column half of "one PAID payment row per Stripe invoice".
+-- The unique index over it is migration 0095, which must follow this one.
 --
 -- Stripe emits both `invoice.paid` and `invoice.payment_succeeded` for a
 -- single successful charge. The webhook checked for an existing row before
@@ -19,18 +20,14 @@
 -- repeat freely in a unique index.
 --
 -- Why not a GENERATED column, which could not drift: TiDB documents that
--- ALTER TABLE cannot add a STORED generated column to an existing table
--- (its ADD COLUMN page says otherwise, so the behaviour is genuinely
--- uncertain on v8.5.3). A migration that may fail halfway on a live
--- database is not worth the elegance. The application sets this column on
--- the one path that books a Stripe invoice.
+-- ALTER TABLE cannot add a STORED generated column to an existing table,
+-- while its ADD COLUMN page says otherwise. A migration that may fail
+-- part-way against the live salon is not worth the elegance.
 --
--- Both statements are in ONE ALTER on purpose: MySQL/TiDB DDL is not
--- transactional, so two statements can leave the first applied, the
--- migration unrecorded, and a re-run failing on "Duplicate column name".
---
--- This FAILS if duplicates already exist. Run
--- scripts/dedupe-membership-payments.ts --apply first.
-ALTER TABLE `membership_payments`
-  ADD COLUMN `paid_invoice_key` VARCHAR(255) NULL,
-  ADD UNIQUE INDEX `uniq_membership_payments_paid_invoice` (`paid_invoice_key`);
+-- Why this is split from the index: TiDB refuses to index a column added in
+-- the same ALTER — "column does not exist: paid_invoice_key". It validates
+-- the whole statement first, so that attempt applied nothing, but two
+-- statements in one migration could have left the column added and the
+-- migration unrecorded. One statement per migration means a failure is
+-- always recorded truthfully.
+ALTER TABLE `membership_payments` ADD COLUMN `paid_invoice_key` VARCHAR(255) NULL;
