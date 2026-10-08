@@ -18,6 +18,58 @@ describe("family Workflow grouping", () => {
     expect(rows[1]?.scheduledStart).toBe(at("18:00"));
   });
 
+  it("groups a family booked for the same minute even when only some of them share a session", () => {
+    // The Phillips schnauzers, 09/10/2026: all family 630007, all 8:00am,
+    // but Trinnie and Pheobe shared a booking session and Zelda did not. The
+    // key used to be "session if present, else time", so Zelda could never
+    // match them and an unrelated dog sorted between them on the board.
+    const rows = groupFamilyWorkflowRows([
+      { id: 10, scheduledStart: at("08:00"), petFamilyGroupId: 630007, sessionId: "8ofOC8nWJGOp1Gh2" }, // Pheobe
+      { id: 11, scheduledStart: at("08:00"), petFamilyGroupId: null, sessionId: null },                  // Buddy, unrelated
+      { id: 12, scheduledStart: at("08:00"), petFamilyGroupId: 630007, sessionId: "8ofOC8nWJGOp1Gh2" }, // Trinnie
+      { id: 13, scheduledStart: at("08:00"), petFamilyGroupId: 630007, sessionId: null },                // Zelda
+    ]);
+
+    const order = rows.map(row => row.id);
+    const phillips = [10, 12, 13].map(id => order.indexOf(id)).sort((a, b) => a - b);
+    expect(phillips[2] - phillips[0]).toBe(2); // the three are consecutive
+    expect(order.indexOf(11)).not.toBeGreaterThan(phillips[0]);
+  });
+
+  it("connects a family transitively — session to one dog, shared time to another", () => {
+    // A is tied to B by their session, B to C by the clock. C belongs with
+    // both even though it shares nothing directly with A.
+    const rows = groupFamilyWorkflowRows([
+      { id: 1, scheduledStart: at("08:00"), petFamilyGroupId: 42, sessionId: "s1" },
+      { id: 2, scheduledStart: at("09:00"), petFamilyGroupId: null, sessionId: null },
+      { id: 3, scheduledStart: at("10:00"), petFamilyGroupId: 42, sessionId: "s1" },
+      { id: 4, scheduledStart: at("10:00"), petFamilyGroupId: 42, sessionId: null },
+    ]);
+
+    expect(rows.map(row => row.id)).toEqual([1, 3, 4, 2]);
+  });
+
+  it("still leaves a family's genuinely separate bookings apart", () => {
+    // Nothing shared: different sessions, different times. A morning dog and
+    // an evening dog must not be yanked together just because of the link.
+    const rows = groupFamilyWorkflowRows([
+      { id: 1, scheduledStart: at("08:00"), petFamilyGroupId: 42, sessionId: "morning" },
+      { id: 2, scheduledStart: at("12:00"), petFamilyGroupId: null, sessionId: null },
+      { id: 3, scheduledStart: at("18:00"), petFamilyGroupId: 42, sessionId: "evening" },
+    ]);
+
+    expect(rows.map(row => row.id)).toEqual([1, 2, 3]);
+  });
+
+  it("does not move a lone family dog out of time order", () => {
+    const rows = groupFamilyWorkflowRows([
+      { id: 1, scheduledStart: at("09:00"), petFamilyGroupId: 42, sessionId: "only-one" },
+      { id: 2, scheduledStart: at("08:00"), petFamilyGroupId: null, sessionId: null },
+    ]);
+
+    expect(rows.map(row => row.id)).toEqual([2, 1]);
+  });
+
   it("does not group separate appointments merely because their pets share a family link", () => {
     const rows = groupFamilyWorkflowRows([
       { id: 1, scheduledStart: at("08:00"), petFamilyGroupId: 42, sessionId: null },
