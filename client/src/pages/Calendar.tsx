@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentValidation";
+import { formatCollectBy } from "@shared/collectBy";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { trpc } from "@/lib/trpc";
 import { resolveCalendarStaffColumns } from "@/lib/calendarStaffColumns";
@@ -212,6 +213,7 @@ type Appt = {
   scheduledStart: Date;
   scheduledEnd: Date;
   workflowState: string;
+  collectBy?: string | Date | null;
   status: string;
   serviceType: string;
   notes: string | null;
@@ -847,6 +849,7 @@ export default function Calendar() {
   const [apptSearchOpen, setApptSearchOpen] = useState(false);
   const [apptSearchTerm, setApptSearchTerm] = useState("");
 
+  const [collectByDraft, setCollectByDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   // The day board's own width, so the staff columns can be sized to fit it
   // instead of always taking 320px each and pushing the salon off-screen.
@@ -1142,6 +1145,14 @@ export default function Calendar() {
       toast.success(added > 0 ? `${added} family ${added === 1 ? "dog" : "dogs"} added to this booking` : "Those dogs are already in this booking");
       setAdditionalFamilyPetIds([]);
       refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const collectByMutation = trpc.workflow.setCollectBy.useMutation({
+    onSuccess: () => {
+      toast.success("Collection time saved");
+      refetch();
+      utils.workflow.getBoard.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -1472,6 +1483,7 @@ export default function Calendar() {
       price:          appt.price ?? "",
       workflowState:  appt.workflowState,
     });
+    setCollectByDraft(formatCollectBy(appt.collectBy) ?? "");
   };
 
   const handleSaveEdit = async () => {
@@ -2676,6 +2688,32 @@ export default function Calendar() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {/* A deadline the client gave us — "she has to be home
+                        by twelve". It shows on the workflow board so the
+                        bathers can order the queue around it, which is no
+                        use once the dog is already late. */}
+                    <Label htmlFor={`collect-by-${editAppt.id}`} className="pt-1 text-xs text-muted-foreground">
+                      Must go home by
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id={`collect-by-${editAppt.id}`}
+                        type="time"
+                        className="h-8 w-28 text-sm"
+                        value={collectByDraft}
+                        onChange={e => setCollectByDraft(e.target.value)}
+                      />
+                      <Button
+                        type="button" size="sm" variant="outline" className="h-8 text-xs"
+                        disabled={collectByMutation.isPending}
+                        onClick={() => collectByMutation.mutate({
+                          appointmentId: editAppt.id,
+                          time: collectByDraft === "" ? null : collectByDraft,
+                        })}
+                      >
+                        {collectByDraft === "" ? "Clear" : "Save"}
+                      </Button>
+                    </div>
                   </div>
                   {/* A discount decided at booking time, not only at the
                       counter. price becomes the net figure, so the family
