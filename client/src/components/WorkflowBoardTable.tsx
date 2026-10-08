@@ -6,9 +6,10 @@ import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workfl
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { collectByStatus } from "@shared/collectBy";
 import { parsePetCodes } from "@shared/petCodes";
+import { PetAlertButton } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
-import { AlertTriangle, CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
+import { CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -554,16 +555,10 @@ export function WorkflowBoardTable({
                             )}
                           </button>
                           <p className="text-[11px] text-muted-foreground truncate">{appt.clientLastName}</p>
-                          {appt.petAlertLevel === "danger" && (
-                            <span className="inline-flex items-center gap-0.5 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white" title={appt.petWarnings ?? "Danger alert"} aria-label={`Danger alert${appt.petWarnings ? `: ${appt.petWarnings}` : ""}`}>
-                              <AlertTriangle className="h-2.5 w-2.5" /> DANGER{appt.petWarnings ? ` — ${appt.petWarnings.slice(0, 20)}` : ""}
-                            </span>
-                          )}
-                          {appt.petAlertLevel === "caution" && (
-                            <span className="inline-flex items-center gap-0.5 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white" title={appt.petWarnings ?? "Caution alert"} aria-label={`Caution alert${appt.petWarnings ? `: ${appt.petWarnings}` : ""}`}>
-                              <AlertTriangle className="h-2.5 w-2.5" /> CAUTION{appt.petWarnings ? ` — ${appt.petWarnings.slice(0, 15)}` : ""}
-                            </span>
-                          )}
+                          <PetAlertButton
+                            pet={{ alertLevel: appt.petAlertLevel, warnings: appt.petWarnings }}
+                            petName={appt.petName}
+                          />
                           {(() => {
                             // MoeGo's own tags for this dog, shown exactly as
                             // MoeGo shows them: "✂5f, #7f, No cologne,

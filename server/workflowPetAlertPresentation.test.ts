@@ -1,18 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
+import { petAlertTone, petAlertText } from "../shared/petAlert";
 
+/**
+ * This used to grep WorkflowBoard source for the inline badge markup. The
+ * badge moved into PetAlertButton on 09/10/2026, so the greps broke while
+ * the behaviour was fine — the failure mode CLAUDE.md warns about. It now
+ * asserts the rules themselves.
+ */
 describe("workflow pet-alert presentation", () => {
-  it("shows only actionable alert levels and supplies accessible warning context", () => {
-    const workflowSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
-      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
-
+  it("still treats 'ok' and junk as no alert", () => {
     expect(normalizePetAlertLevel("ok")).toBeNull();
+    expect(normalizePetAlertLevel("")).toBeNull();
+    expect(normalizePetAlertLevel(undefined)).toBeNull();
     expect(normalizePetAlertLevel("caution")).toBe("caution");
     expect(normalizePetAlertLevel("danger")).toBe("danger");
-    expect(workflowSource).toContain('appt.petAlertLevel === "danger"');
-    expect(workflowSource).toContain('appt.petAlertLevel === "caution"');
-    expect(workflowSource).toContain("aria-label={`Danger alert");
-    expect(workflowSource).not.toContain('appt.petAlertLevel === "ok"');
+  });
+
+  it("drives the board flag off the same rule", () => {
+    expect(petAlertTone({ alertLevel: "ok" })).toBeNull();
+    expect(petAlertTone({ alertLevel: "danger" })).toBe("danger");
+    expect(petAlertTone({ alertLevel: "caution" })).toBe("caution");
+  });
+
+  it("gives an accessible description with the warning in full", () => {
+    const warning = "MoeGo source alert (20 Aug 2026): allergy to beef and green ants.";
+    expect(petAlertText({ alertLevel: "caution", warnings: warning })).toBe(warning);
   });
 });
