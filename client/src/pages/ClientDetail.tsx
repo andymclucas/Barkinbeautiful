@@ -3,6 +3,7 @@ import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
 import { canAdministerStaff } from "@shared/staffAdministrators";
+import { shouldActOnSignal } from "@shared/openOnSignal";
 import { AddMembershipButton, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
 import {
   SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
@@ -35,7 +36,7 @@ import {
 } from "lucide-react";
 import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe } from "lucide-react";
 import { Link } from "wouter";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { HeartCrack, History, Replace, Unlink } from "lucide-react";
 import { getDepartedMembershipBillingImpact, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
@@ -130,11 +131,22 @@ function StoreCreditCard({ clientId, externalOpenSignal }: { clientId: number; e
   const [note, setNote] = useState("");
 
   // Lets the "Add Store Credit" item in the top Quick Actions dropdown open
-  // this same dialog without needing its own separate implementation \u2014
-  // bumping externalOpenSignal (any change in value) triggers it.
+  // this same dialog without needing its own separate implementation —
+  // bumping externalOpenSignal triggers it.
+  //
+  // Only on a CHANGE. The old version opened whenever the signal was not
+  // undefined, and the parent always passes a number, so the very first
+  // run — on mount — matched. Opening the Payments tab mounts this card,
+  // so the dialog appeared every time anyone looked at a client's
+  // payments, with nobody having asked for it.
+  //
+  // Comparing against the mounted value rather than testing for 0 means a
+  // parent that starts the counter anywhere cannot bring this back.
+  const lastOpenSignal = useRef(externalOpenSignal);
   useEffect(() => {
-    if (externalOpenSignal !== undefined) setAddOpen(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!shouldActOnSignal(externalOpenSignal, lastOpenSignal.current)) return;
+    lastOpenSignal.current = externalOpenSignal;
+    setAddOpen(true);
   }, [externalOpenSignal]);
 
   const utils = trpc.useUtils();
