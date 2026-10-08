@@ -8,9 +8,12 @@ describe("resolveCalendarStaffColumns", () => {
       { id: 9, name: "Former staff", colourHex: "#111111", isActive: false },
     ], []);
 
-    expect(columns).toEqual([
-      { id: 2, name: "Megs", colourHex: "#059669", isActive: true },
-    ]);
+    // The fields this function is responsible for, rather than its whole
+    // shape: it gained dailyClipCapacity when the calendar started showing
+    // clips booked against a groomer's day, and a strict deep-equal here
+    // fails on every such addition while the function keeps working.
+    expect(columns).toHaveLength(1);
+    expect(columns[0]).toMatchObject({ id: 2, name: "Megs", colourHex: "#059669", isActive: true });
   });
 
   it("recovers assigned columns from appointment joins when the staff query is empty", () => {

@@ -2697,6 +2697,9 @@ const staffRouter = router({
         colourHex: staff.colourHex,
         photoUrl: staff.onlineProfilePhotoUrl,
         isActive: staff.isActive,
+        // So the calendar column can show clips booked against what this
+        // groomer said they can do.
+        dailyClipCapacity: staff.dailyClipCapacity,
         // Inactive staff are off the roster, so they get no calendar column
         // and cannot be assigned work. Christie and Nathan are on the
         // platform to watch it, not to groom.

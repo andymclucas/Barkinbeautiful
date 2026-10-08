@@ -144,6 +144,12 @@ export const staff = mysqlTable("staff", {
    * set — which is not the same as a target of zero, and is why this is
    * nullable rather than defaulting to 0.00.
    */
+  /**
+   * Clips this person can do in a day — classic and styled grooms only.
+   * Desheds go to the bathers and do not count against a groomer's day.
+   * NULL means nobody has said, which is not the same as zero.
+   */
+  dailyClipCapacity: int("daily_clip_capacity"),
   revenueTarget: decimal("revenue_target", { precision: 10, scale: 2 }),
   /**
    * What the amount above is EXPRESSED in, not how it is viewed. The staff

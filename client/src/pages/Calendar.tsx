@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { groomerDayLoad, isClip, overbookingWarning } from "@shared/groomerCapacity";
 import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentValidation";
 import { formatCollectBy } from "@shared/collectBy";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
@@ -1437,6 +1438,25 @@ export default function Calendar() {
   const handleCreate = () => {
     const missing = newAppointmentError(newAppt);
     if (missing) { toast.error(missing); return; }
+
+    // Warn, never block. The salon squeezes dogs in for good reasons, and a
+    // system that refused would simply be worked around — but nobody should
+    // go over a groomer's day without noticing they have.
+    const bookingGroomer = activeStaff.find(member => String(member.id) === newAppt.staffId);
+    const capacity = (bookingGroomer as { dailyClipCapacity?: number | null } | undefined)?.dailyClipCapacity ?? null;
+    if (bookingGroomer && capacity && isClip(newAppt.serviceType) && newAppt.scheduledStart) {
+      const dayKey = newAppt.scheduledStart.slice(0, 10);
+      const alreadyBooked = filteredAppts.filter(a =>
+        a.staffId === bookingGroomer.id
+        && isClip(a.serviceType)
+        && aestDateKey(new Date(a.scheduledStart)) === dayKey).length;
+      const warning = overbookingWarning(
+        groomerDayLoad(alreadyBooked, capacity),
+        bookingGroomer.name,
+        newAppt.petIds.length || 1,
+      );
+      if (warning) toast.warning(warning, { duration: 6000 });
+    }
     if (repeatForm.enabled) {
       if (!repeatForm.untilDate) {
         toast.error("Please choose a date to repeat until"); return;
@@ -1697,9 +1717,35 @@ export default function Calendar() {
                         <StaffAvatar photoUrl={(s as { photoUrl?: string | null }).photoUrl} name={s.name} colourHex={s.colourHex} className="h-7 w-7" />
                         <span className="text-xs font-semibold truncate">{s.name.split(" ")[0]}</span>
                       </div>
-                      <div className="mt-1 inline-flex rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                        {filteredAppts.filter(a => a.staffId === s.id && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate)).length} appts
-                      </div>
+                      {(() => {
+                        const mine = filteredAppts.filter(a =>
+                          a.staffId === s.id && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate));
+                        // Clips against what this groomer said they can do.
+                        // Shown here because this is the column somebody is
+                        // looking at when they decide where to put a dog —
+                        // four future days were already over before anyone
+                        // had a way to see it.
+                        const load = groomerDayLoad(
+                          mine.filter(a => isClip(a.serviceType)).length,
+                          (s as { dailyClipCapacity?: number | null }).dailyClipCapacity ?? null,
+                        );
+                        const tone =
+                          load.state === "over" ? "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
+                          : load.state === "full" ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
+                          : "bg-muted text-muted-foreground";
+                        const title =
+                          load.state === "unknown" ? `${mine.length} appointments. No clip capacity set for ${s.name}.`
+                          : load.state === "over" ? `${load.label} clips — ${Math.abs(load.remaining ?? 0)} over a ${load.capacity}-dog day`
+                          : load.state === "full" ? `${load.label} clips — full`
+                          : `${load.label} clips — room for ${load.remaining} more`;
+                        return (
+                          <div className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${tone}`} title={title}>
+                            {load.state === "unknown"
+                              ? `${mine.length} appts`
+                              : `${load.label} clips`}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>

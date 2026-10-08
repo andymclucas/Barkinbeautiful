@@ -652,6 +652,13 @@
       "when": 1791419066036,
       "tag": "0092_appointment_collect_by",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "5",
+      "when": 1791419695025,
+      "tag": "0093_staff_daily_clip_capacity",
+      "breakpoints": true
     }
   ]
 }

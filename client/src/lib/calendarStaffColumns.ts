@@ -4,6 +4,8 @@ export type CalendarStaffColumn = {
   colourHex: string | null;
   isActive: boolean | number;
   role?: string | null;
+  /** Clips a day, for the column header. Null when nobody has said. */
+  dailyClipCapacity?: number | null;
 };
 
 export type AssignedCalendarAppointment = {
@@ -40,6 +42,7 @@ export function resolveCalendarStaffColumns(
       colourHex: member.colourHex || FALLBACK_COLOUR,
       isActive: member.isActive,
       role: member.role,
+      dailyClipCapacity: member.dailyClipCapacity ?? null,
     });
   }
 

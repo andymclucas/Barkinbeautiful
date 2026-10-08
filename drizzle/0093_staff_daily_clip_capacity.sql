@@ -1,0 +1,11 @@
+-- How many clips a groomer can do in a day.
+--
+-- Lauren asked the girls on 08/10/2026: Charlotte and Megs 8, Brooklyn and
+-- Zakaria 6, Ashleigh 5. Clips only — classic and styled grooms. Desheds go
+-- to the bathers and do not count against a groomer's day.
+--
+-- NULL means nobody has said, which is every bather and manager and any
+-- future salon's staff on day one. Null is not zero: a groomer with no
+-- stated capacity is not a groomer who can do no dogs, so the board shows
+-- them a count with nothing to compare it against rather than a warning.
+ALTER TABLE `staff` ADD COLUMN `daily_clip_capacity` int NULL;
