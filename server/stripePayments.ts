@@ -8,6 +8,8 @@ import { chargesOnConnectedAccount, platformFeeCents } from "../shared/stripeCon
 import { attachPaymentMethodToClient } from "./stripeCards";
 import { notifyOwner } from "./ownerNotification";
 import { classifyFailure, fromStripeCents, planAfterFailure } from "@shared/stripeBilling";
+import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
+import { isDuplicateEntryError } from "./dbErrors";
 
 export type StripeCheckoutRequest = {
   invoiceId: number;
@@ -261,32 +263,42 @@ export async function processStripeEvent(event: Stripe.Event) {
           .limit(1)
       : [];
 
-    // Keep the Next Billing column honest as each cycle is paid. The field
-    // sat on the invoice in older API versions and on its lines in newer
-    // ones, so read both rather than leaving it blank.
-    const nextPeriodEnd =
-      (invoice as unknown as { period_end?: number }).period_end ??
-      (invoice.lines?.data?.[0] as unknown as { period?: { end?: number } } | undefined)?.period?.end;
-    if (typeof nextPeriodEnd === "number" && Number.isFinite(nextPeriodEnd)) {
+    // Keep the Next Billing column honest as each cycle is paid. The
+    // subscription period lives on the LINE, not on the invoice's own
+    // window — shared/stripeInvoicePeriod.ts says what reading the wrong one
+    // did. Null means leave the stored date alone.
+    const nextBilling = nextBillingDateFromInvoice(invoice as unknown as InvoicePeriodSource);
+    if (nextBilling) {
       await db.update(memberships)
-        .set({ nextBillingDate: new Date(nextPeriodEnd * 1000) })
+        .set({ nextBillingDate: nextBilling })
         .where(eq(memberships.id, membership.id));
     }
 
     if (!alreadyBooked) {
-      await db.insert(membershipPayments).values({
-        membershipId: membership.id,
-        amount: String(amount),
-        status: "paid",
-        stripeInvoiceId: invoice.id ?? null,
-        paidAt: new Date(),
-      });
-      await db.insert(membershipLedgerEntries).values({
-        tenantId: membership.tenantId ?? 1, membershipId: membership.id, invoiceId: null,
-        entryType: "payment", amount: String(amount), source: "stripe",
-        note: "Stripe subscription payment",
-        externalReference: invoice.id ?? null,
-      });
+      // The check above is a fast path, not a guarantee. Stripe sends
+      // `invoice.paid` and `invoice.payment_succeeded` for one charge and
+      // they can arrive together: on 08/10/2026 both handlers selected,
+      // neither saw the other, and both inserted — one $1 booked twice, in
+      // the same second. The unique index on the paid invoice is what makes
+      // this safe; the loser of the race lands here as a duplicate-key
+      // error, which means "already booked" and nothing more.
+      try {
+        await db.insert(membershipPayments).values({
+          membershipId: membership.id,
+          amount: String(amount),
+          status: "paid",
+          stripeInvoiceId: invoice.id ?? null,
+          paidAt: new Date(),
+        });
+        await db.insert(membershipLedgerEntries).values({
+          tenantId: membership.tenantId ?? 1, membershipId: membership.id, invoiceId: null,
+          entryType: "payment", amount: String(amount), source: "stripe",
+          note: "Stripe subscription payment",
+          externalReference: invoice.id ?? null,
+        });
+      } catch (error) {
+        if (!isDuplicateEntryError(error)) throw error;
+      }
     }
     // A successful charge clears the whole failure state, including a retry
     // that had been scheduled and any booking suspension it caused.
