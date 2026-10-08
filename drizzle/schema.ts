@@ -370,6 +370,12 @@ export const appointments = mysqlTable("appointments", {
   trackerToken: varchar("tracker_token", { length: 64 }).unique(),
   trackerSmsSent: boolean("tracker_sms_sent").default(false).notNull(),
   estimatedPickupAt: timestamp("estimated_pickup_at"),
+  /**
+   * When the dog HAS to be gone by, because the client said so. Distinct
+   * from estimatedPickupAt, which is when we think the groom will finish.
+   * Null for almost every booking.
+   */
+  collectBy: timestamp("collect_by"),
   notes: text("notes"),
   membershipId: int("membership_id").references(() => memberships.id),
   /**

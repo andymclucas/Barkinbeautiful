@@ -1308,6 +1308,10 @@ const workflowRouter = router({
           tagNumber: appointments.tagNumber,
           bathStaffId: appointments.bathStaffId,
           bathPriority: appointments.bathPriority,
+          collectBy: appointments.collectBy,
+          // Needed to judge the deadline: how long a dog still takes depends
+          // on its size — see shared/collectBy.ts.
+          petSizeBand: pets.sizeBand,
           bathQueueOrder: appointments.bathQueueOrder,
           bathGroupId: appointments.bathGroupId,
           dryStaffId: appointments.dryStaffId,
@@ -1564,6 +1568,45 @@ const workflowRouter = router({
         }
       }
       return { success: true, linkedCompleted: linkedCompleteIds.length };
+    }),
+
+  /**
+   * When this dog has to be gone by.
+   *
+   * operationalProcedure: whoever is on the floor takes the call that says
+   * "she needs to be home by twelve", and it is no use if only an owner can
+   * record it.
+   */
+  setCollectBy: operationalProcedure
+    .input(z.object({
+      appointmentId: z.number(),
+      /** Brisbane wall-clock time, "12:00", or null to clear it. */
+      time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      const [appointment] = await db.select({
+        id: appointments.id, scheduledStart: appointments.scheduledStart,
+      }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+      if (!appointment) throw new Error("Appointment not found");
+
+      let collectBy: Date | null = null;
+      if (input.time) {
+        // The deadline is on the day of the appointment, in Brisbane. The
+        // salon says "by twelve", never "by 2026-10-08T02:00Z".
+        const day = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(new Date(appointment.scheduledStart));
+        const [year, month, date] = day.split("-").map(Number);
+        const [hour, minute] = input.time.split(":").map(Number);
+        // Brisbane is UTC+10 and has no daylight saving, so this is exact.
+        collectBy = new Date(Date.UTC(year, month - 1, date, hour - 10, minute));
+      }
+
+      await db.update(appointments).set({ collectBy }).where(eq(appointments.id, appointment.id));
+      return { success: true, collectBy };
     }),
 
   setBathPriority: operationalProcedure

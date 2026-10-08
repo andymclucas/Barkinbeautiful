@@ -4,6 +4,7 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workflowStageTimer";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, isBathPriorityMutable } from "@shared/bathPriorityQueue";
+import { collectByStatus } from "@shared/collectBy";
 import { formatAestTime } from "@shared/auditTimestamp";
 import { AlertTriangle, CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
 import { useState } from "react";
@@ -561,6 +562,36 @@ export function WorkflowBoardTable({
                               <AlertTriangle className="h-2.5 w-2.5" /> CAUTION{appt.petWarnings ? ` — ${appt.petWarnings.slice(0, 15)}` : ""}
                             </span>
                           )}
+                          {(() => {
+                            // When the dog has to be gone by, and whether it
+                            // is going to make it. Beside the caution badge
+                            // because that is where a bather already looks.
+                            const status = collectByStatus({
+                              collectBy: appt.collectBy,
+                              workflowState: appt.workflowState,
+                              sizeBand: appt.petSizeBand ?? null,
+                            });
+                            if (status.risk === "none") return null;
+                            const tone =
+                              status.risk === "overdue" ? "bg-red-600 text-white"
+                              : status.risk === "at_risk" ? "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
+                              : status.risk === "tight" ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
+                              : "bg-slate-100 text-slate-700 dark:bg-slate-900/60 dark:text-slate-300";
+                            const why =
+                              status.risk === "overdue" ? "Past the time this dog had to leave"
+                              : status.risk === "at_risk" ? `About ${status.minutesNeeded} min of work left and ${status.minutesLeft} min to do it in`
+                              : status.risk === "tight" ? `About ${status.minutesNeeded} min of work left, ${status.minutesLeft} min to go`
+                              : "Has a collection time, comfortably on track";
+                            return (
+                              <span
+                                className={`inline-flex items-center gap-0.5 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${tone}`}
+                                title={why}
+                                aria-label={`${status.label}. ${why}`}
+                              >
+                                <Clock className="h-2.5 w-2.5" /> {status.label}
+                              </span>
+                            );
+                          })()}
                           {(() => {
                             const petCodes = (appt as any).petMoeGoPetCodes as Array<{ codeId: string; abbreviation: string; color?: string; description?: string }> | null | undefined;
                             if (!Array.isArray(petCodes) || petCodes.length === 0) return null;
