@@ -1,5 +1,8 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import {
+  membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention,
+} from "@shared/membershipBillingState";
+import {
   SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
   type DogSizeBand, type SizeBandSource,
 } from "@shared/dogSizeBand";
@@ -1339,14 +1342,31 @@ export default function ClientDetail() {
                             </p>
                           </div>
                         </div>
-                        <Badge className={
-                          m.status === "active" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
-                          m.status === "pending_payment" ? "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900/50" :
-                          m.status === "cancelled" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/50" :
-                          "bg-muted text-muted-foreground"
-                        }>
-                          {m.status === "active" ? "✓ Active" : m.status === "pending_payment" ? "⚠ Payment Due" : m.status}
-                        </Badge>
+                        {(() => {
+                          // Whether Groomigo can actually charge this, not
+                          // just what the status column says. Every one of
+                          // the salon's memberships read "✓ Active" while
+                          // Groomigo charged none of them.
+                          const billing = membershipBillingState({
+                            status: m.status,
+                            nextBillingDate: m.nextBillingDate,
+                            stripeSubscriptionId: (m as { stripeSubscriptionId?: string | null }).stripeSubscriptionId ?? null,
+                            gatewaySubscriptionId: (m as { gatewaySubscriptionId?: string | null }).gatewaySubscriptionId ?? null,
+                            hasCardOnFile: (m as { hasCardOnFile?: boolean }).hasCardOnFile ?? false,
+                          });
+                          const tone =
+                            billing === "live" ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50" :
+                            billing === "needs_migration" ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50" :
+                            billing === "added_not_live" ? "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900/60 dark:text-slate-300" :
+                            billing === "ended" ? "bg-red-100 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300" :
+                            "bg-muted text-muted-foreground";
+                          return (
+                            <Badge className={tone} title={billingStateHint(billing) ?? undefined}>
+                              {billing === "live" ? "✓ " : needsAttention(billing) ? "⚠ " : ""}
+                              {BILLING_STATE_LABEL[billing]}
+                            </Badge>
+                          );
+                        })()}
                       </div>
                       <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                         <div>

@@ -2449,6 +2449,11 @@ const clientsRouter = router({
           pricePerCycle: memberships.pricePerCycle,
           billingCycleWeeks: memberships.billingCycleWeeks,
           nextBillingDate: memberships.nextBillingDate,
+          // So the badge can say whether Groomigo can actually charge this,
+          // rather than trusting the status column — see
+          // shared/membershipBillingState.ts.
+          stripeSubscriptionId: memberships.stripeSubscriptionId,
+          gatewaySubscriptionId: memberships.gatewaySubscriptionId,
           bookingSuspended: memberships.bookingSuspended,
           startedAt: memberships.startedAt,
           cancelledAt: memberships.cancelledAt,
@@ -3734,6 +3739,68 @@ const membershipsRouter = router({
       return { items, total: Number(countRow?.total ?? 0) };
     }),
 
+  /**
+   * Start the weekly charge on a membership that was added but not made live.
+   *
+   * The deliberate second step. Adding the arrangement is salon-floor work —
+   * it happens while the client is on the phone — but starting to take money
+   * weekly is not, which is the same line memberships.create already draws
+   * when it refuses a payment gateway or a billing date to restricted staff.
+   *
+   * It does NOT create a Stripe subscription. None of the salon's 154
+   * memberships has one: every row is gateway "other" with no subscription
+   * and no billing date, and $4,101 a week is collected outside this system.
+   * Writing a date here records the arrangement as live; it does not make a
+   * card get charged, and pretending otherwise would be worse than useless.
+   */
+  setWeeklyBilling: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      membershipId: z.number(),
+      /** First charge date, YYYY-MM-DD. Defaults to today. */
+      nextBillingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      paymentGateway: z.enum(["square", "stripe", "cash", "other"]).default("other"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      requireStaffAdministrator(ctx.user);
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input) ?? 1;
+
+      const [membership] = await db.select({
+        id: memberships.id, status: memberships.status, name: memberships.name,
+        pricePerCycle: memberships.pricePerCycle,
+      }).from(memberships)
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantId)))
+        .limit(1);
+      if (!membership) throw new Error("Membership not found");
+      if (membership.status === "cancelled" || membership.status === "expired") {
+        throw new Error("That membership has ended. Add a new one rather than restarting this.");
+      }
+      if (membership.status === "active") {
+        throw new Error("That membership is already billing weekly.");
+      }
+
+      const day = input.nextBillingDate
+        ?? new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(new Date());
+      const [year, month, date] = day.split("-").map(Number);
+      // Brisbane midnight, as the instant it happens. No daylight saving.
+      const nextBillingDate = new Date(Date.UTC(year, month - 1, date, -10, 0, 0));
+
+      await db.update(memberships)
+        .set({ status: "active", nextBillingDate, paymentGateway: input.paymentGateway })
+        .where(eq(memberships.id, membership.id));
+
+      return {
+        success: true,
+        name: membership.name,
+        pricePerCycle: membership.pricePerCycle,
+        nextBillingDate,
+      };
+    }),
+
   getPackageOptions: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -3753,10 +3820,21 @@ const membershipsRouter = router({
         tenantId: pets.tenantId,
         weightKg: pets.weightKg,
         weight: pets.weight,
+        sizeBand: pets.sizeBand,
+        sizeBandSource: pets.sizeBandSource,
       }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!pet || pet.clientId !== input.clientId) throw new Error("Pet does not belong to the selected client");
       const recordedWeight = pet.weightKg ?? pet.weight;
       const weightBand = getMembershipWeightBand(recordedWeight);
+      // 333 active dogs have a size band and no weight. Offering them the
+      // whole price list and asking staff to pick a band by hand, when the
+      // band is already on the record, is a worse answer than suggesting
+      // it — but only a suggestion: the band sets the weekly price, and a
+      // band derived from an old MoeGo service name is an inference, not a
+      // measurement. The UI preselects it and says where it came from.
+      const suggestedBand = weightBand
+        ? null
+        : MEMBERSHIP_WEIGHT_BANDS.find((band) => band.id === pet.sizeBand) ?? null;
       // The salon's own plans, offered alongside the built-ins. Until now
       // membership_plans was a price list nobody read: a plan created on
       // the Pricing screen never appeared here, so a bespoke membership —
@@ -3770,6 +3848,9 @@ const membershipsRouter = router({
       return {
         recordedWeight,
         weightBand,
+        suggestedBand,
+        /** "weighed" | "breed" | "moego_service" — how much to trust it. */
+        suggestedBandSource: suggestedBand ? pet.sizeBandSource : null,
         packages: assignablePackagesFor(
           weightBand ? getMembershipPackagesForWeight(recordedWeight) : MEMBERSHIP_PACKAGES,
           customPlans,
@@ -3790,6 +3871,15 @@ const membershipsRouter = router({
       paymentGateway: z.enum(["square", "stripe", "cash", "other"]).default("cash"),
       nextBillingDate: z.string().optional(),
       isTest: z.boolean().default(false),
+      /**
+       * Add the arrangement without starting the weekly charge.
+       *
+       * Andy, 08/10/2026: the membership goes on the client's record while
+       * they are still on the phone, and somebody presses Set Weekly
+       * Billing afterwards. Defaults false so every existing caller behaves
+       * exactly as it did.
+       */
+      startPending: z.boolean().default(false),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -3847,6 +3937,10 @@ const membershipsRouter = router({
       if (!tierCheck.ok) throw new Error(tierCheck.reason);
 
       const [result] = await db.insert(memberships).values({
+        // pending_payment is already in the enum and nothing bills on it:
+        // the retry job selects on failedPaymentCount > 0, and a new row
+        // has none. So a pending membership cannot take a client's money.
+        ...(input.startPending ? { status: "pending_payment" as const } : {}),
         tenantId: tenantOf(ctx, input),
         clientId: input.clientId,
         petId: input.petId,
