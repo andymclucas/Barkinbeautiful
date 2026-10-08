@@ -22,6 +22,7 @@ export type MembershipBillingState =
   | "live"              // billing weekly in Groomigo
   | "needs_migration"   // says active, but nothing here can charge it
   | "added_not_live"    // deliberately added without starting billing
+  | "payment_failing"   // billing, but the last charge did not go through
   | "paused"
   | "ended";
 
@@ -37,12 +38,20 @@ export type MembershipBillingInput = {
 export function membershipBillingState(m: MembershipBillingInput): MembershipBillingState {
   if (m.status === "cancelled" || m.status === "expired") return "ended";
   if (m.status === "paused") return "paused";
-  // Added on the phone and not yet made live. The deliberate version of
-  // "not billing", as distinct from the accidental one below.
-  if (m.status === "pending_payment") return "added_not_live";
 
   const hasSubscription = Boolean(m.stripeSubscriptionId || m.gatewaySubscriptionId);
   const hasSchedule = Boolean(m.nextBillingDate);
+
+  // "pending_payment" is written in two completely different situations and
+  // the row alone does not say which: by memberships.create when a
+  // membership is added on the phone before billing starts, and by the
+  // charge path when a payment fails. The subscription separates them. A
+  // membership with a live Stripe subscription whose card declined is NOT
+  // "added — not billing yet"; somebody needs to ring the client.
+  if (m.status === "pending_payment") {
+    return hasSubscription ? "payment_failing" : "added_not_live";
+  }
+
   // A subscription charges on its own. Without one, Groomigo needs both a
   // date to charge on and a card to charge — either alone takes no money.
   if (hasSubscription) return "live";
@@ -57,6 +66,7 @@ export const BILLING_STATE_LABEL: Record<MembershipBillingState, string> = {
   live: "Billing weekly",
   needs_migration: "In MoeGo only — needs migration",
   added_not_live: "Added — not billing yet",
+  payment_failing: "Payment failed",
   paused: "Paused",
   ended: "Ended",
 };
@@ -68,6 +78,8 @@ export function billingStateHint(state: MembershipBillingState): string | null {
       return "MoeGo is still charging this client. Groomigo is not. Press Set Weekly Billing and add a card to move it across.";
     case "added_not_live":
       return "Nothing is being charged yet. Press Set Weekly Billing when the client is ready.";
+    case "payment_failing":
+      return "The weekly charge did not go through. Check the card on file, then charge it again.";
     default:
       return null;
   }
@@ -75,5 +87,16 @@ export function billingStateHint(state: MembershipBillingState): string | null {
 
 /** True when somebody should act on this. Drives the count on the tab. */
 export function needsAttention(state: MembershipBillingState): boolean {
+  return state === "needs_migration" || state === "added_not_live" || state === "payment_failing";
+}
+
+/**
+ * True when pressing "Set Weekly Billing" is the right next move.
+ *
+ * Not the same as needsAttention: a failing payment is already billing, and
+ * offering to start it again would create a second subscription or do
+ * nothing. That one needs the card looked at, not the button pressed.
+ */
+export function canStartBilling(state: MembershipBillingState): boolean {
   return state === "needs_migration" || state === "added_not_live";
 }

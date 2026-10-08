@@ -5,7 +5,7 @@ import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE } from "@shared/portalChat";
 import { clientFacingStage, isGroomInProgress, GROOMING_STEPS } from "@shared/groomingStage";
-import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle } from "lucide-react";
+import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle, CreditCard, Loader2, TriangleAlert, Lock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +62,117 @@ function portalDateTime(value: Date | string) {
  * bookings, anything health-related — comes back as a promise that a person
  * will reply. See shared/portalChat.ts.
  */
+/**
+ * The client's own card, managed by the client.
+ *
+ * Andy, 08/10/2026: "add the 'Add Payment Details' section in the client
+ * portal for a client to be able to do this themselves manually at anytime
+ * if they were to change a card. Their card could be expired, lost, stolen
+ * etc." Without this the only route to a new card is ringing the salon and
+ * waiting for somebody to send a link.
+ *
+ * The button goes to Stripe's own hosted page. No card number is typed into
+ * Groomigo, here or anywhere else, which is what keeps the salon out of PCI
+ * scope — and it means this screen can say so honestly, which is most of
+ * what makes a client willing to use it.
+ */
+function PortalPaymentMethodCard({ token, readOnly }: { token?: string; readOnly?: boolean }) {
+  const status = trpc.clientPortal.getMyPaymentMethod.useQuery(
+    { token },
+    { enabled: !readOnly, retry: false },
+  );
+  const link = trpc.clientPortal.createMyCardSetupLink.useMutation({
+    onSuccess: ({ url }) => {
+      // Remember where to come back to: Stripe returns everyone to
+      // /portal/card-saved, which for a link-only client is otherwise a
+      // dead end at the sign-in page.
+      try {
+        sessionStorage.setItem("portalReturnTo", window.location.pathname + window.location.search);
+      } catch { /* private window, or storage blocked — the result page copes */ }
+      window.location.href = url;
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const card = status.data;
+  const needsCard = Boolean(card && (!card.hasCard || card.expired));
+
+  return (
+    <Card className={needsCard ? "border-amber-300 dark:border-amber-900/60" : undefined}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <CreditCard className="h-5 w-5 text-primary" /> Payment details
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {readOnly && (
+          <p className="text-sm text-muted-foreground">
+            The client manages their own card here. Not available in preview.
+          </p>
+        )}
+
+        {!readOnly && status.isLoading && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Checking your payment details…
+          </p>
+        )}
+
+        {!readOnly && card && (
+          <>
+            {card.hasCard ? (
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">{card.description ?? "A card is saved"}</p>
+                {card.expired ? (
+                  <p className="flex items-start gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    This card has expired. Please add a new one so your grooming visits aren&rsquo;t interrupted.
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    This is the card we use for your membership.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {card.hasMembership
+                  ? "You don't have a card saved with us yet. Adding one keeps your membership running without anyone having to chase a payment."
+                  : "You don't have a card saved with us yet."}
+              </p>
+            )}
+
+            <Button
+              onClick={() => link.mutate({ token })}
+              disabled={link.isPending}
+              variant={card.hasCard && !card.expired ? "outline" : "default"}
+              className="w-full gap-2 sm:w-auto"
+            >
+              {link.isPending
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening secure page…</>
+                : <><Lock className="h-4 w-4" /> {card.hasCard ? "Update your card" : "Add payment details"}</>}
+            </Button>
+
+            <p className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span>
+                You&rsquo;ll be taken to Stripe, our payment provider, to enter your card on their secure page.
+                Barkin&rsquo; Beautiful never sees or stores your full card number. Nothing is charged when you
+                save a card.
+              </span>
+            </p>
+          </>
+        )}
+
+        {!readOnly && status.error && (
+          <p className="text-sm text-muted-foreground">
+            We couldn&rsquo;t load your payment details just now. Please refresh, or give the salon a call.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string; readOnly?: boolean; clientFirstName?: string }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -731,6 +842,8 @@ export default function ClientPortal() {
     </Card>
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Heart className="h-5 w-5 text-primary" /> Memberships</CardTitle></CardHeader><CardContent className="space-y-3">{data.memberships.length ? data.memberships.map(membership => <div key={membership.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-3 last:border-0 last:pb-0"><div><p className="font-semibold">{membership.name}</p><p className="text-sm text-muted-foreground">{membership.status === "active" && membership.nextBillingDate ? `Next renewal: ${portalDate(membership.nextBillingDate)}` : "Please contact the salon for account details."}</p></div><Badge variant="outline" className="capitalize">{membership.tier}</Badge></div>) : <p className="text-sm text-muted-foreground">No memberships are currently shown.</p>}</CardContent></Card>
+
+    <PortalPaymentMethodCard token={token ?? undefined} readOnly={isPreview} />
 
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><Scissors className="h-5 w-5 text-primary" /> Grooming cards</CardTitle></CardHeader>

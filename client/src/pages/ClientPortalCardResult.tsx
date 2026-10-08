@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { CreditCard, PawPrint, ShieldCheck, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  * to look up and nothing a stranger could learn by guessing the URL.
  */
 export default function ClientPortalCardResult({ saved }: { saved: boolean }) {
+  // Where the client was before Stripe, if they started from inside the
+  // portal. A client on a link has no login, so "Go to client sign in" is a
+  // dead end for them; this puts them back where they were. Read once on
+  // mount because sessionStorage can throw in a private window.
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("portalReturnTo");
+      // Only ever a path on this site, never a host somebody could have put there.
+      if (stored && stored.startsWith("/portal/") && !stored.startsWith("//")) setReturnTo(stored);
+      sessionStorage.removeItem("portalReturnTo");
+    } catch { /* storage blocked — the sign-in link below still works */ }
+  }, []);
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 px-4 py-10">
       <section className="mx-auto grid max-w-5xl gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-center">
@@ -70,7 +85,9 @@ export default function ClientPortalCardResult({ saved }: { saved: boolean }) {
               </p>
             )}
             <Button asChild variant={saved ? "default" : "outline"} className="w-full">
-              <Link href="/portal/login">Go to client sign in</Link>
+              <Link href={returnTo ?? "/portal/login"}>
+                {returnTo ? "Back to your portal" : "Go to client sign in"}
+              </Link>
             </Button>
           </CardContent>
         </Card>

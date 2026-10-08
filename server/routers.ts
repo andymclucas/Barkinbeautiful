@@ -50,6 +50,8 @@ import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlign
 import { resolveAppointmentMembershipCoverage, type AppointmentService } from "../shared/appointmentMembershipCoverage";
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
 import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
+import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
+import { createCardSetupLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
@@ -8667,6 +8669,84 @@ const clientPortalRouter = router({
       await db.update(portalThreads).set({ clientLastReadAt: new Date() })
         .where(and(eq(portalThreads.clientId, clientId), eq(portalThreads.tenantId, tenantId)));
       return { success: true };
+    }),
+
+  /**
+   * What card the client has on file, as the client themselves sees it.
+   *
+   * Deliberately thin: brand, last four, expiry and whether it still works.
+   * No customer id, no payment-method id, nothing that would help anybody
+   * who got hold of a portal link do more than they already could.
+   */
+  getMyPaymentMethod: publicProcedure
+    .input(z.object({ token: z.string().optional() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+
+      const [client] = await db.select({
+        stripeCustomerId: clients.stripeCustomerId,
+        stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId,
+        stripeCardBrand: clients.stripeCardBrand,
+        stripeCardLast4: clients.stripeCardLast4,
+        stripeCardExpMonth: clients.stripeCardExpMonth,
+        stripeCardExpYear: clients.stripeCardExpYear,
+        stripeCardSavedAt: clients.stripeCardSavedAt,
+      }).from(clients).where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId))).limit(1);
+      if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
+
+      const expired = isCardExpired(client, new Date());
+      // Whether the salon is charging anything at all. A client with a
+      // membership and no card is the case this whole screen exists for.
+      const owing = await db.select({ id: memberships.id })
+        .from(memberships)
+        .where(and(
+          eq(memberships.clientId, clientId),
+          eq(memberships.tenantId, tenantId),
+          inArray(memberships.status, ["active", "pending_payment", "paused"]),
+        ))
+        .limit(1);
+
+      return {
+        description: describeCard(client),
+        hasCard: canChargeOffSession(client),
+        expired,
+        savedAt: client.stripeCardSavedAt,
+        hasMembership: owing.length > 0,
+      };
+    }),
+
+  /**
+   * A Stripe-hosted page where the client types their own card in.
+   *
+   * The client is taken from their portal session or their link token, never
+   * from the request, so this cannot be pointed at somebody else's record.
+   *
+   * Nothing is charged here: Stripe Checkout in `setup` mode saves a card
+   * against the customer and the webhook writes the token back. Groomigo
+   * never sees or stores a card number, which is what keeps the salon out
+   * of PCI scope. Same path as the staff-sent link, so a client replacing a
+   * lost card and a new member joining go through identical plumbing.
+   */
+  createMyCardSetupLink: publicProcedure
+    .input(z.object({ token: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId } = await resolvePortalClient(db, input, ctx.req);
+      try {
+        const link = await createCardSetupLink(clientId);
+        return { url: link.url };
+      } catch (error) {
+        // A missing or misconfigured Stripe key is the salon's problem, not
+        // the client's, and the raw message can name the key.
+        console.error("[portal] card setup link failed", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "We could not open the secure card page just now. Please try again, or call the salon.",
+        });
+      }
     }),
 
   sendChatMessage: publicProcedure

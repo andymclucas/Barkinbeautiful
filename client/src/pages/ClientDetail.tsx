@@ -1,7 +1,9 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import {
-  membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention,
+  membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
+import { canAdministerStaff } from "@shared/staffAdministrators";
+import { AddMembershipButton, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
 import {
   SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
   type DogSizeBand, type SizeBandSource,
@@ -298,6 +300,9 @@ export default function ClientDetail() {
   const [editingWeightPetId, setEditingWeightPetId] = useState<number | null>(null);
   const [weightDraft, setWeightDraft] = useState("");
   const isAdmin = currentUser?.role === "admin";
+  // Six of eight accounts hold role "admin", four of them groomers, so
+  // isAdmin cannot gate money. Matches requireStaffAdministrator server-side.
+  const isOwner = canAdministerStaff(currentUser ?? null);
   const { data: portalAccess } = trpc.clientPortal.getAccessStatus.useQuery(
     { clientId },
     { enabled: isAdmin && Boolean(clientId) },
@@ -1322,10 +1327,39 @@ export default function ClientDetail() {
           {/* ── Memberships tab ── */}
           <TabsContent value="memberships" className="mt-0">
             <div className="space-y-3">
-              {memberships.length === 0 && <p className="text-muted-foreground text-sm">No memberships on file.</p>}
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {memberships.length === 0
+                    ? "No memberships on file."
+                    : `${memberships.length} membership${memberships.length === 1 ? "" : "s"} on file.`}
+                </p>
+                <AddMembershipButton
+                  clientId={clientId}
+                  pets={pets.map(p => ({ id: p.id, name: p.name, breed: p.breed }))}
+                  onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
+                />
+              </div>
               {memberships.map(m => {
                 const colours = TIER_COLOURS[m.tier] ?? TIER_COLOURS.bronze;
                 const icon = TIER_ICONS[m.tier] ?? "🏅";
+                // Whether Groomigo can actually charge this, not just what
+                // the status column says. Every one of the salon's
+                // memberships read "✓ Active" while Groomigo charged none.
+                const hasCardOnFile = (m as { hasCardOnFile?: boolean }).hasCardOnFile ?? false;
+                const billing = membershipBillingState({
+                  status: m.status,
+                  nextBillingDate: m.nextBillingDate,
+                  stripeSubscriptionId: (m as { stripeSubscriptionId?: string | null }).stripeSubscriptionId ?? null,
+                  gatewaySubscriptionId: (m as { gatewaySubscriptionId?: string | null }).gatewaySubscriptionId ?? null,
+                  hasCardOnFile,
+                });
+                const tone =
+                  billing === "live" ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50" :
+                  billing === "needs_migration" ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50" :
+                  billing === "added_not_live" ? "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900/60 dark:text-slate-300" :
+                  billing === "payment_failing" ? "bg-red-100 text-red-800 border-red-300 dark:bg-red-950/50 dark:text-red-300 dark:border-red-900/50" :
+                  billing === "ended" ? "bg-red-100 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300" :
+                  "bg-muted text-muted-foreground";
                 return (
                   <Card key={m.id} className={`border-2 ${colours.border}`}>
                     <CardContent className="p-5">
@@ -1342,31 +1376,10 @@ export default function ClientDetail() {
                             </p>
                           </div>
                         </div>
-                        {(() => {
-                          // Whether Groomigo can actually charge this, not
-                          // just what the status column says. Every one of
-                          // the salon's memberships read "✓ Active" while
-                          // Groomigo charged none of them.
-                          const billing = membershipBillingState({
-                            status: m.status,
-                            nextBillingDate: m.nextBillingDate,
-                            stripeSubscriptionId: (m as { stripeSubscriptionId?: string | null }).stripeSubscriptionId ?? null,
-                            gatewaySubscriptionId: (m as { gatewaySubscriptionId?: string | null }).gatewaySubscriptionId ?? null,
-                            hasCardOnFile: (m as { hasCardOnFile?: boolean }).hasCardOnFile ?? false,
-                          });
-                          const tone =
-                            billing === "live" ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900/50" :
-                            billing === "needs_migration" ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-900/50" :
-                            billing === "added_not_live" ? "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900/60 dark:text-slate-300" :
-                            billing === "ended" ? "bg-red-100 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300" :
-                            "bg-muted text-muted-foreground";
-                          return (
-                            <Badge className={tone} title={billingStateHint(billing) ?? undefined}>
-                              {billing === "live" ? "✓ " : needsAttention(billing) ? "⚠ " : ""}
-                              {BILLING_STATE_LABEL[billing]}
-                            </Badge>
-                          );
-                        })()}
+                        <Badge className={tone} title={billingStateHint(billing) ?? undefined}>
+                          {billing === "live" ? "✓ " : needsAttention(billing) ? "⚠ " : ""}
+                          {BILLING_STATE_LABEL[billing]}
+                        </Badge>
                       </div>
                       <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                         <div>
@@ -1390,6 +1403,29 @@ export default function ClientDetail() {
                           <p className={`font-semibold capitalize ${colours.text}`}>{icon} {m.tier}</p>
                         </div>
                       </div>
+                      {needsAttention(billing) && (
+                        <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">
+                          <p className="text-xs text-muted-foreground flex-1 min-w-[12rem]">
+                            {billingStateHint(billing)}
+                          </p>
+                          {!hasCardOnFile && isAdmin && (
+                            <SendCardLinkButton clientId={clientId} clientEmail={client.email} hasCardOnFile={false} />
+                          )}
+                          {/* A failing payment is already billing — starting it
+                              again would bill twice or do nothing. */}
+                          {isOwner && canStartBilling(billing)
+                            ? <SetWeeklyBillingButton
+                                membership={{ id: m.id, name: m.name, pricePerCycle: m.pricePerCycle, petName: m.petName }}
+                                clientId={clientId}
+                                clientEmail={client.email}
+                                hasCardOnFile={hasCardOnFile}
+                                onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
+                              />
+                            : !isOwner && canStartBilling(billing)
+                              ? <span className="text-xs text-muted-foreground">Lauren or Andy can start the billing.</span>
+                              : null}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );

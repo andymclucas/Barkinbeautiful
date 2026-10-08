@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention,
+  membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
 
 describe("the 154 memberships that read Active and charge nothing", () => {
@@ -81,5 +81,35 @@ describe("memberships that have stopped", () => {
   it("leaves a paused one alone", () => {
     expect(membershipBillingState({ status: "paused", nextBillingDate: null })).toBe("paused");
     expect(needsAttention("paused")).toBe(false);
+  });
+});
+
+describe("a membership whose payment is failing", () => {
+  it("is not confused with one that was simply added and never started", () => {
+    // Both rows read status "pending_payment". The subscription is the only
+    // thing that separates "we never switched it on" from "the card declined".
+    const justAdded = membershipBillingState({
+      status: "pending_payment", nextBillingDate: null,
+    });
+    const declined = membershipBillingState({
+      status: "pending_payment", nextBillingDate: "2026-10-15",
+      stripeSubscriptionId: "sub_123", hasCardOnFile: true,
+    });
+    expect(justAdded).toBe("added_not_live");
+    expect(declined).toBe("payment_failing");
+  });
+
+  it("asks somebody to look, but not to press Set Weekly Billing", () => {
+    // Starting billing again on a live subscription either does nothing or
+    // bills the client twice. Neither is what the button should offer.
+    expect(needsAttention("payment_failing")).toBe(true);
+    expect(canStartBilling("payment_failing")).toBe(false);
+    expect(canStartBilling("needs_migration")).toBe(true);
+    expect(canStartBilling("added_not_live")).toBe(true);
+  });
+
+  it("says what to do about it", () => {
+    expect(billingStateHint("payment_failing")).toMatch(/card on file/i);
+    expect(BILLING_STATE_LABEL.payment_failing).toBe("Payment failed");
   });
 });
