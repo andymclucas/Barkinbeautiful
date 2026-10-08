@@ -221,10 +221,32 @@ through on the first `CREATE TABLE` of a table that already exists.
 This makes **`pnpm run db:push` unsafe**, because it is `generate && migrate`.
 
 - To ADD a migration: write the `.sql` by hand and add its `_journal.json`
-  entry, as `0044`–`0055` all do. Put several `ADD COLUMN`s in **one** `ALTER`:
-  MySQL/TiDB DDL is not transactional, so two statements can leave the first
-  applied, the migration unrecorded, and a re-run failing on "Duplicate column
-  name".
+  entry, as `0044` onwards all do. Put several `ADD COLUMN`s in **one**
+  `ALTER`: MySQL/TiDB DDL is not transactional, so two statements can leave
+  the first applied, the migration unrecorded, and a re-run failing on
+  "Duplicate column name".
+- **That "one `ALTER`" rule is about `ADD COLUMN`s only.** A column and an
+  index on that column cannot go in one statement — TiDB rejects it:
+
+  ```sql
+  ALTER TABLE `membership_payments`
+    ADD COLUMN `paid_invoice_key` VARCHAR(255) NULL,
+    ADD UNIQUE INDEX `uniq_...` (`paid_invoice_key`);
+  -- ERROR: column does not exist: paid_invoice_key
+  ```
+
+  Write **two migrations of one statement each** — not two statements in one
+  migration, which is the trap above. `0094` adds the column, `0095` the
+  index. One statement per migration means a failure is always recorded
+  truthfully in the ledger.
+
+  TiDB validates the whole `ALTER` before applying any of it, so the rejected
+  attempt above changed nothing: column absent, index absent, ledger
+  untouched. A single-statement `ALTER` that errors is safe to fix and re-run.
+- **Avoid `GENERATED` columns here.** There is no precedent for one in this
+  schema, and TiDB's own docs contradict each other on whether `ALTER TABLE`
+  can add a `STORED` one. `0094` wanted a generated key and used a plain
+  nullable column the application maintains instead, for exactly that reason.
 - To APPLY migrations: `corepack pnpm exec drizzle-kit migrate`, but **check
   the ledger first** (below).
 - If `generate` is ever run by accident it leaves a stray `00NN_*.sql`, a
