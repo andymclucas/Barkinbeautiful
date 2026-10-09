@@ -5,7 +5,7 @@ import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE } from "@shared/portalChat";
 import { clientFacingStage, isGroomInProgress, GROOMING_STEPS } from "@shared/groomingStage";
-import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle, CreditCard, Loader2, TriangleAlert, Lock } from "lucide-react";
+import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle, CreditCard, Loader2, TriangleAlert, Lock, ChevronRight } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 type PortalPet = { id: number; name: string; breed: string | null; species: string; status: string };
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
-type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; coatCondition: string | null; skinCondition: string | null; eyeCondition: string | null; earCondition: string | null; nailCondition: string | null; teethCondition: string | null; serviceType: string | null; groomerName: string | null; sentAt: Date | string | null };
+type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; coatCondition: string | null; skinCondition: string | null; eyeCondition: string | null; earCondition: string | null; nailCondition: string | null; teethCondition: string | null; serviceType: string | null; groomerName: string | null; sentAt: Date | string | null; shareToken?: string | null };
 type PortalInvoiceRow = { id: number; invoiceNumber: string | null; total: string | null; status: string | null; paymentMethod: string | null; paidAt: string | Date | null; dueAt: string | Date | null; createdAt: string | Date | null };
 type PortalPaymentRow = { key: string; source: "invoice" | "membership" | "appointment"; amount: number; at: string | Date | number; method: string | null; description: string };
 
@@ -299,6 +299,41 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
         )}
       </Button>
     </>
+  );
+}
+
+/**
+ * A grooming card in the list, as something to tap.
+ *
+ * The portal used to render every card fully expanded and stacked, so a client
+ * with four dogs scrolled past four complete reports to reach their invoices.
+ * These are a summary you tap to open the full card at /card/:token — the same
+ * page the salon texts, so a client sees one thing in both places.
+ *
+ * Needs a token, which a card only has once it has been sent. Anything older
+ * falls back to the inline detail below rather than becoming an unclickable
+ * stub.
+ */
+function GroomingCardLink({ card }: { card: PortalGroomingCard }) {
+  const rating = groomCardRating(card.overallRating);
+  const service = (card.serviceType ?? "").replace(/_/g, " ");
+  return (
+    <a
+      href={`/card/${card.shareToken}`}
+      className="group flex items-center gap-3 rounded-2xl border bg-card p-3 transition hover:border-primary/40 hover:shadow-md"
+    >
+      {card.afterPhotoUrl
+        ? <img src={card.afterPhotoUrl} alt={card.petName} className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+        : <span className="grid h-16 w-16 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Scissors className="h-6 w-6" /></span>}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-bold">{card.petName}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {portalDate(card.appointmentDate)}{service ? ` \u00b7 ${service}` : ""}
+        </span>
+        {rating && <span className="mt-1 inline-block truncate text-xs font-semibold text-primary">{rating}</span>}
+      </span>
+      <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-primary" />
+    </a>
   );
 }
 
@@ -849,7 +884,9 @@ export default function ClientPortal() {
       <CardHeader><CardTitle className="flex items-center gap-2"><Scissors className="h-5 w-5 text-primary" /> Grooming cards</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         {data.groomingCards.length
-          ? data.groomingCards.map(card => <GroomingCardDetail key={card.id} card={card} />)
+          ? data.groomingCards.map(card => card.shareToken
+              ? <GroomingCardLink key={card.id} card={card} />
+              : <GroomingCardDetail key={card.id} card={card} />)
           : <p className="text-sm text-muted-foreground">Approved grooming cards will appear here when the salon shares them.</p>}
       </CardContent>
     </Card>

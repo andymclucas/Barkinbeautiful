@@ -5779,8 +5779,126 @@ const groomingReportsRouter = router({
       await db.update(groomingReports)
         .set({ status: "sent", sentAt: new Date() })
         .where(eq(groomingReports.appointmentId, input.appointmentId));
-      return { sent: true };
+      // Mint the share link now the card is sent, so the portal always has
+      // somewhere to point and the salon can re-send the link later without
+      // regenerating the card. Failing to mint must not fail the send — the
+      // client already has the card in their inbox.
+      let shareUrl: string | null = null;
+      try {
+        const [report] = await db
+          .select({ id: groomingReports.id, tenantId: groomingReports.tenantId })
+          .from(groomingReports)
+          .where(eq(groomingReports.appointmentId, input.appointmentId))
+          .limit(1);
+        if (report) {
+          const { ensureGroomingShareToken } = await import("./groomingShare");
+          const { groomingShareUrl } = await import("@shared/groomingShareToken");
+          const { getAppBaseUrl } = await import("./appUrl");
+          shareUrl = groomingShareUrl(getAppBaseUrl(), await ensureGroomingShareToken(db, report.id, report.tenantId));
+        }
+      } catch (err) {
+        console.error("[emailReport] could not mint share link", err);
+      }
+      return { sent: true, shareUrl };
     }),
+
+  /**
+   * The share link for a card, minted on first ask.
+   *
+   * Staff-side, so operationalProcedure: a groomer finishing a dog should be
+   * able to send the owner the link without an owner having to do it.
+   */
+  ensureShareLink: operationalProcedure
+    .input(z.object({ appointmentId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      const [report] = await db
+        .select({ id: groomingReports.id, tenantId: groomingReports.tenantId })
+        .from(groomingReports)
+        .where(eq(groomingReports.appointmentId, input.appointmentId))
+        .limit(1);
+      if (!report) throw new Error("No grooming card has been started for this appointment");
+      const { ensureGroomingShareToken } = await import("./groomingShare");
+      const token = await ensureGroomingShareToken(db, report.id, report.tenantId);
+      const { getAppBaseUrl } = await import("./appUrl");
+      const { groomingShareUrl } = await import("@shared/groomingShareToken");
+      return { token, url: groomingShareUrl(getAppBaseUrl(), token) };
+    }),
+
+  /**
+   * The card as an unauthenticated holder of the link reads it.
+   *
+   * publicProcedure on purpose - the token IS the authorisation, same as the
+   * Pet Tracker link. Two consequences are deliberate:
+   *
+   *  - `groomerNotes` is NOT selected. It is the salon's internal note on the
+   *    dog ("bites when you do the feet") and must never reach a client, let
+   *    alone an unauthenticated reader. The portal payload omits it for the
+   *    same reason and tests assert it.
+   *  - Only a SENT card resolves. A draft is the groomer still typing, and a
+   *    half-written note is not something to hand a client.
+   */
+  getShared: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(async ({ input }) => {
+      const { isGroomingShareToken } = await import("@shared/groomingShareToken");
+      // Reject nonsense before it reaches the database: a public route gets
+      // hit by crawlers and there is no reason to query for "favicon.ico".
+      if (!isGroomingShareToken(input.token)) throw new Error("This grooming card link is not valid");
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [card] = await db
+        .select({
+          id: groomingReports.id,
+          petName: pets.name,
+          petBreed: pets.breed,
+          appointmentDate: appointments.scheduledStart,
+          overallRating: groomingReports.overallRating,
+          mood: groomingReports.mood,
+          additionalNote: groomingReports.additionalNote,
+          // Keys, not the stored URLs: those point at
+          // /api/grooming-report-photo, which needs a staff session. The
+          // client-facing URLs are built below against the card's own token.
+          beforePhotoKey: groomingReports.beforePhotoKey,
+          afterPhotoKey: groomingReports.afterPhotoKey,
+          recommendedFrequencyWeeks: groomingReports.recommendedFrequencyWeeks,
+          coatCondition: groomingReports.coatCondition,
+          skinCondition: groomingReports.skinCondition,
+          eyeCondition: groomingReports.eyeCondition,
+          earCondition: groomingReports.earCondition,
+          nailCondition: groomingReports.nailCondition,
+          teethCondition: groomingReports.teethCondition,
+          serviceType: appointments.serviceType,
+          groomerName: staff.name,
+          sentAt: groomingReports.sentAt,
+          salonName: tenants.name,
+          salonPhone: tenants.phone,
+        })
+        .from(groomingReports)
+        .innerJoin(appointments, eq(groomingReports.appointmentId, appointments.id))
+        .innerJoin(pets, eq(groomingReports.petId, pets.id))
+        .innerJoin(tenants, eq(groomingReports.tenantId, tenants.id))
+        .leftJoin(staff, eq(appointments.staffId, staff.id))
+        .where(and(
+          eq(groomingReports.shareToken, input.token),
+          eq(groomingReports.status, "sent"),
+        ))
+        .limit(1);
+      if (!card) throw new Error("This grooming card link is not valid");
+      // Belt and braces over the select above: the whitelist is what actually
+      // guarantees `groomerNotes` cannot travel to an unauthenticated reader,
+      // even if someone adds a column here later. See shared/groomingCard.ts.
+      const { toClientSafeGroomCard } = await import("@shared/groomingCard");
+      const { beforePhotoKey, afterPhotoKey, ...rest } = card;
+      return toClientSafeGroomCard({
+        ...rest,
+        beforePhotoUrl: beforePhotoKey ? `/api/card/${input.token}/photo/before` : null,
+        afterPhotoUrl: afterPhotoKey ? `/api/card/${input.token}/photo/after` : null,
+      });
+    }),
+
 });
 
 // ─── Settings (Tenant Info) ─────────────────────────────────────────────────────────────────────────────────
@@ -7871,6 +7989,10 @@ async function buildClientPortalPayload(db: any, access: {
       serviceType: appointments.serviceType,
       groomerName: staff.name,
       sentAt: groomingReports.sentAt,
+      // Lets the portal link each card to its own page. Null on an older card
+      // that was sent before share links existed; the portal falls back to
+      // rendering it inline.
+      shareToken: groomingReports.shareToken,
     })
       .from(groomingReports)
       .innerJoin(appointments, eq(groomingReports.appointmentId, appointments.id))

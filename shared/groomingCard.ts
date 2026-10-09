@@ -83,3 +83,50 @@ export function groomCardRating(rating: string | null | undefined): string | nul
   if (!rating) return null;
   return GROOM_RATING_LABELS[rating] ?? rating;
 }
+
+/**
+ * The fields a client may see on a grooming card.
+ *
+ * A whitelist rather than a convention, because the cost of getting it wrong
+ * is specific: `groomerNotes` is the salon's internal note on the dog — "bites
+ * when you do the feet", "owner is difficult" — and the public card at
+ * /card/:token resolves for anyone holding the link, with no sign-in.
+ *
+ * The portal and the public route both pass their row through this, so a
+ * column added to either select in future cannot leak by being forgotten
+ * about. Defence in depth: the selects already omit it.
+ */
+export const CLIENT_SAFE_GROOM_CARD_FIELDS = [
+  "id",
+  "petId",
+  "petName",
+  "petBreed",
+  "appointmentDate",
+  "overallRating",
+  "mood",
+  "additionalNote",
+  "beforePhotoUrl",
+  "afterPhotoUrl",
+  "recommendedFrequencyWeeks",
+  "coatCondition",
+  "skinCondition",
+  "eyeCondition",
+  "earCondition",
+  "nailCondition",
+  "teethCondition",
+  "serviceType",
+  "groomerName",
+  "sentAt",
+  "shareToken",
+  "salonName",
+  "salonPhone",
+] as const;
+
+/** Strips a report row to the fields above, dropping anything else. */
+export function toClientSafeGroomCard<T extends Record<string, unknown>>(row: T): Partial<T> {
+  const safe: Record<string, unknown> = {};
+  for (const field of CLIENT_SAFE_GROOM_CARD_FIELDS) {
+    if (field in row) safe[field] = row[field];
+  }
+  return safe as Partial<T>;
+}
