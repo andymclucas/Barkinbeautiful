@@ -905,7 +905,7 @@ export default function Calendar() {
   }, [viewMode, dayDate, weekStart]);
 
   const [newAppt, setNewAppt] = useState({
-    clientId: "", petIds: [] as string[], staffId: "", serviceType: "classic_groom",
+    clientId: "", petIds: [] as string[], staffId: "", staffByPetId: {} as Record<string, string>, serviceType: "classic_groom",
     scheduledStart: "", scheduledEnd: "", notes: "", price: "",
   });
   const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
@@ -1046,6 +1046,21 @@ export default function Calendar() {
   // Jumping straight to a date was the old behaviour and looked like nothing
   // happened whenever the match was on the day already shown.
   const [apptListClient, setApptListClient] = useState<{ clientId: number; name: string } | null>(null);
+  // Whether the booking dialog is showing a groomer per dog. Collapsed by
+  // default: most family bookings go to one person.
+  const [splitGroomers, setSplitGroomers] = useState(false);
+
+  // Only the dogs actually being booked, as numbers, and only where a
+  // specific groomer was chosen. Undefined when nothing is split, so the
+  // common booking sends exactly what it always did.
+  const perPetGroomers = useMemo(() => {
+    const entries = newAppt.petIds
+      .filter(petId => newAppt.staffByPetId[petId])
+      .map(petId => [petId, Number(newAppt.staffByPetId[petId])] as const);
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  }, [newAppt.petIds, newAppt.staffByPetId]);
+
+  const splitGroomerCount = perPetGroomers ? Object.keys(perPetGroomers).length : 0;
   const [showPastAppts, setShowPastAppts] = useState(false);
   const { data: clientAppts, isFetching: isClientApptsFetching } = trpc.calendar.appointmentsForClient.useQuery(
     { clientId: apptListClient?.clientId ?? 0 },
@@ -1123,7 +1138,7 @@ export default function Calendar() {
     onSuccess: () => {
       toast.success("Appointment created");
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
       setClientSearch("");
       refetch();
     },
@@ -1432,7 +1447,7 @@ export default function Calendar() {
     onSuccess: (r) => {
       toast.success(`${r.created} appointment${r.created !== 1 ? "s" : ""} created`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
       setClientSearch("");
       refetch();
     },
@@ -1444,7 +1459,7 @@ export default function Calendar() {
       const skippedMsg = r.skipped.length > 0 ? ` (${r.skipped.length} skipped due to a groomer clash)` : "";
       toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created${skippedMsg}`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
       setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });
       setClientSearch("");
       refetch();
@@ -1482,6 +1497,7 @@ export default function Calendar() {
         clientId: parseInt(newAppt.clientId),
         petIds: newAppt.petIds.map(id => parseInt(id)),
         staffId: newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
+        staffByPetId: perPetGroomers,
         serviceType: newAppt.serviceType as "classic_groom",
         scheduledStart: newAppt.scheduledStart,
         scheduledEnd: newAppt.scheduledEnd,
@@ -1496,6 +1512,7 @@ export default function Calendar() {
       clientId: parseInt(newAppt.clientId),
       petIds:   newAppt.petIds.map(id => parseInt(id)),
       staffId:  newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
+      staffByPetId: perPetGroomers,
       serviceType: newAppt.serviceType as "classic_groom",
       scheduledStart: newAppt.scheduledStart,
       scheduledEnd:   newAppt.scheduledEnd,
@@ -2313,7 +2330,7 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
+      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2388,7 +2405,7 @@ export default function Calendar() {
                             role="option"
                             className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
                             onClick={() => {
-                              setNewAppt(p => ({ ...p, clientId: String(c.clientId), petIds: [] }));
+                              setNewAppt(p => ({ ...p, clientId: String(c.clientId), petIds: [], staffByPetId: {} }));
                               setClientSearchOpen(false);
                             }}
                           >
@@ -2432,12 +2449,20 @@ export default function Calendar() {
                         <button
                           key={pet.id}
                           type="button"
-                          onClick={() => setNewAppt(prev => ({
-                            ...prev,
-                            petIds: selected
-                              ? prev.petIds.filter(id => id !== String(pet.id))
-                              : [...prev.petIds, String(pet.id)],
-                          }))}
+                          onClick={() => setNewAppt(prev => {
+                            // Drop the dog's groomer when it is deselected:
+                            // a stale entry would otherwise travel with the
+                            // booking for a dog nobody is bringing.
+                            const nextStaff = { ...prev.staffByPetId };
+                            if (selected) delete nextStaff[String(pet.id)];
+                            return {
+                              ...prev,
+                              staffByPetId: nextStaff,
+                              petIds: selected
+                                ? prev.petIds.filter(id => id !== String(pet.id))
+                                : [...prev.petIds, String(pet.id)],
+                            };
+                          })}
                           className={[
                             "px-3 py-1.5 rounded-full text-sm border transition-all",
                             selected
@@ -2462,7 +2487,7 @@ export default function Calendar() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Groomer</Label>
+                <Label>{newAppt.petIds.length > 1 ? "Groomer (all dogs)" : "Groomer"}</Label>
                 <Select value={newAppt.staffId} onValueChange={v => setNewAppt(p => ({ ...p, staffId: v }))}>
                   <SelectTrigger><SelectValue placeholder="Assign groomer" /></SelectTrigger>
                   <SelectContent>
@@ -2480,6 +2505,58 @@ export default function Calendar() {
                 </Select>
               </div>
             </div>
+            {/* One groomer per dog. Only once there is more than one dog —
+                a single-dog booking has nothing to split, and the salon
+                usually puts the whole family with one person anyway, so this
+                stays out of the way until it is wanted. */}
+            {newAppt.petIds.length > 1 && (
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <button
+                  type="button"
+                  onClick={() => setSplitGroomers(v => !v)}
+                  className="flex w-full items-center justify-between gap-2 text-left"
+                >
+                  <span className="text-sm font-medium">
+                    Different groomer per dog
+                    {splitGroomerCount > 0 && (
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        · {splitGroomerCount} set
+                      </span>
+                    )}
+                  </span>
+                  {splitGroomers ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                </button>
+                {splitGroomers && (
+                  <div className="mt-3 space-y-2">
+                    {newAppt.petIds.map(petId => {
+                      const pet = selectedClientPets.data?.find(candidate => String(candidate.id) === petId);
+                      return (
+                        <div key={petId} className="flex items-center gap-2">
+                          <span className="w-28 shrink-0 truncate text-sm font-medium">{pet?.name ?? `Pet ${petId}`}</span>
+                          <Select
+                            value={newAppt.staffByPetId[petId] ?? ""}
+                            onValueChange={v => setNewAppt(prev => ({
+                              ...prev,
+                              staffByPetId: v === "__same"
+                                ? Object.fromEntries(Object.entries(prev.staffByPetId).filter(([key]) => key !== petId))
+                                : { ...prev.staffByPetId, [petId]: v },
+                            }))}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder={newAppt.staffId ? `Same as booking` : "Assign groomer"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__same">Same as booking</SelectItem>
+                              {activeStaff.map(member => <SelectItem key={member.id} value={String(member.id)}>{member.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Start *</Label>

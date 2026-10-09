@@ -165,6 +165,34 @@ async function getAppointmentMembershipCoverage(db: any, tenantId: number, clien
 }
 
 // ─── Calendar / Appointments ──────────────────────────────────────────────────
+/**
+ * Resolves the groomer for each dog in a booking, and checks every staff
+ * member it refers to belongs to this salon before anything is written.
+ *
+ * The single-groomer path never validated staffId either, so a posted id from
+ * another tenant would have been accepted; this closes both at once.
+ */
+async function resolveGroomerPerPet(
+  db: any,
+  tenantId: number,
+  petIds: number[],
+  defaultStaffId: number | undefined,
+  staffByPetId: Record<string, number> | undefined,
+): Promise<(petId: number) => number | undefined> {
+  const { referencedStaffIds, resolveGroomerAssignments } = await import("@shared/groomerPerPet");
+  const referenced = referencedStaffIds(petIds, defaultStaffId, staffByPetId);
+  if (referenced.length > 0) {
+    const rows = await db.select({ id: staff.id })
+      .from(staff)
+      .where(and(eq(staff.tenantId, tenantId), inArray(staff.id, referenced)));
+    if (rows.length !== referenced.length) {
+      throw new Error("One of the selected groomers is not available to this salon");
+    }
+  }
+  const assignments = resolveGroomerAssignments(petIds, defaultStaffId, staffByPetId);
+  return (petId: number) => assignments.get(petId);
+}
+
 const calendarRouter = router({
   /**
    * Apply or remove a staff discount on an appointment.
@@ -550,6 +578,9 @@ const calendarRouter = router({
       clientId: z.number(),
       petIds: z.array(z.number()).min(1),
       staffId: z.number().optional(),
+      // See createMultiPetAppointment: one groomer per dog, falling back to
+      // staffId. A repeat booking keeps the same split on every occurrence.
+      staffByPetId: z.record(z.string(), z.number()).optional(),
       serviceType: z.enum(SERVICE_TYPES).default("classic_groom"),
       scheduledStart: z.string(), // first occurrence's start
       scheduledEnd: z.string(),   // first occurrence's end
@@ -585,6 +616,14 @@ const calendarRouter = router({
       const skipped: { scheduledStart: Date; reason: string }[] = [];
 
       let occurrenceStart = firstStart;
+      const recurringGroomerForPet = await resolveGroomerPerPet(
+        db, tenantOf(ctx, input), petIds, input.staffId, input.staffByPetId,
+      );
+      // Distinct, and skipping unassigned dogs — there is nothing to clash with.
+      const occurrenceGroomerIds = Array.from(new Set(
+        petIds.map((petId) => recurringGroomerForPet(petId)).filter((id): id is number => typeof id === "number"),
+      ));
+
       let count = 0;
       while (occurrenceStart.getTime() <= until.getTime() && count < maxOccurrences) {
         count++;
@@ -593,20 +632,25 @@ const calendarRouter = router({
         // For a family booking (multiple dogs), a clash for the groomer at this
         // time skips the whole occurrence rather than booking some dogs and not
         // others \u2014 keeps each occurrence's dogs together or not booked at all.
-        if (input.staffId) {
+        // Every groomer this occurrence needs, not just the booking default:
+        // with the dogs split between two people, checking only the default
+        // would book the second groomer straight over an existing appointment.
+        let clash = false;
+        for (const groomerId of occurrenceGroomerIds) {
           const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
-            eq(appointments.staffId, input.staffId),
+            eq(appointments.staffId, groomerId),
             eq(appointments.tenantId, tenantOf(ctx, input)),
             ne(appointments.workflowState, "cancelled"),
             ne(appointments.status, "cancelled"),
             lt(appointments.scheduledStart, occurrenceEnd),
             gt(appointments.scheduledEnd, occurrenceStart),
           )).limit(1);
-          if (conflict) {
-            skipped.push({ scheduledStart: occurrenceStart, reason: "Groomer already booked at this time" });
-            occurrenceStart = new Date(occurrenceStart.getTime() + stepMs);
-            continue;
-          }
+          if (conflict) { clash = true; break; }
+        }
+        if (clash) {
+          skipped.push({ scheduledStart: occurrenceStart, reason: "Groomer already booked at this time" });
+          occurrenceStart = new Date(occurrenceStart.getTime() + stepMs);
+          continue;
         }
 
         const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
@@ -616,7 +660,7 @@ const calendarRouter = router({
             tenantId: tenantOf(ctx, input),
             clientId: input.clientId,
             petId,
-            staffId: input.staffId,
+            staffId: recurringGroomerForPet(petId),
             serviceType: input.serviceType,
             scheduledStart: occurrenceStart,
             scheduledEnd: occurrenceEnd,
@@ -650,6 +694,12 @@ const calendarRouter = router({
       clientId: z.number(),
       petIds: z.array(z.number()).min(1),
       staffId: z.number().optional(),
+      // One groomer per dog. A two-dog family is one booking but two
+      // appointment rows, and the salon routinely splits them — Lola with
+      // Lauren, Poppy with Megs. Keyed by pet id as a string because that is
+      // what JSON gives us. Falls back to staffId for any pet not named here,
+      // so the single-groomer case is unchanged.
+      staffByPetId: z.record(z.string(), z.number()).optional(),
       serviceType: z.enum(SERVICE_TYPES).default("classic_groom"),
       scheduledStart: z.string(),
       scheduledEnd: z.string(),
@@ -668,6 +718,7 @@ const calendarRouter = router({
       if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input))) {
         throw new Error("The selected client and pets are not available to this salon");
       }
+      const groomerForPet = await resolveGroomerPerPet(db, tenantOf(ctx, input), petIds, input.staffId, input.staffByPetId);
       const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
       // Assign a shared sessionId when booking multiple pets together
       const sessionId = petIds.length > 1 ? nanoid(16) : null;
@@ -678,7 +729,7 @@ const calendarRouter = router({
           tenantId: tenantOf(ctx, input),
           clientId: input.clientId,
           petId,
-          staffId: input.staffId,
+          staffId: groomerForPet(petId),
           serviceType: input.serviceType,
           scheduledStart: parseBrisbaneLocalDateTime(input.scheduledStart),
           scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
