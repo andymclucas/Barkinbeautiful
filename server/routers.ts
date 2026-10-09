@@ -5751,7 +5751,13 @@ const groomingReportsRouter = router({
       if (ctx.user.role !== "admin") throw new Error("Only administrators can email grooming cards to clients");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
       const [appointmentRecipient] = await db
-        .select({ email: clients.email })
+        .select({
+          email: clients.email,
+          // Decides which portal line the email carries. Promising a portal to
+          // someone who has no account would send them to a login screen they
+          // cannot get past.
+          portalAccountStatus: clients.portalAccountStatus,
+        })
         .from(appointments)
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .where(eq(appointments.id, input.appointmentId))
@@ -5760,6 +5766,30 @@ const groomingReportsRouter = router({
         throw new Error("The grooming card can only be sent to the appointment client's saved email address");
       }
       const { sendEmail } = await import("./email");
+
+      // Tell the client where every card lives, not just this one. Worded from
+      // what they can actually do: an active portal account gets the sign-in
+      // link, anyone else is invited to ask rather than sent to a login screen
+      // they cannot get past.
+      const { getAppBaseUrl: portalBase } = await import("./appUrl");
+      const hasPortalAccount = appointmentRecipient?.portalAccountStatus === "active";
+      const portalBlock = hasPortalAccount
+        ? `<div style="padding:0 32px 24px">
+             <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;padding:16px 18px">
+               <p style="margin:0 0 10px;color:#4c1d95;font-size:14px;line-height:1.5">
+                 You can view this card &mdash; and every card from ${input.petName}&rsquo;s previous visits &mdash; any time in your client portal.
+               </p>
+               <a href="${portalBase()}/portal/login" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 20px;border-radius:999px">Open your portal</a>
+             </div>
+           </div>`
+        : `<div style="padding:0 32px 24px">
+             <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px">
+               <p style="margin:0;color:#374151;font-size:14px;line-height:1.5">
+                 Want all of ${input.petName}&rsquo;s cards in one place? Just ask us to set up your client portal &mdash; you&rsquo;ll be able to see every visit, your upcoming appointments and your invoices.
+               </p>
+             </div>
+           </div>`;
+
       const subject = `Grooming Report for ${input.petName} 🐾`;
       const html = `
         <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
@@ -5770,6 +5800,7 @@ const groomingReportsRouter = router({
           <div style="padding:24px 32px">
             ${input.reportHtml}
           </div>
+          ${portalBlock}
           <div style="padding:16px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;text-align:center">
             <p style="color:#9ca3af;font-size:11px;margin:0">Sent via Groomigo · Barkin' Beautiful Grooming Studio</p>
           </div>
