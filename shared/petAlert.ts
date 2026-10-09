@@ -34,11 +34,36 @@ export function petAlertTone(pet: PetAlertInput): PetAlertTone | null {
   return pet.warnings && pet.warnings.trim() ? "caution" : null;
 }
 
+/**
+ * Where a warning came from, stripped off the front of the warning itself.
+ *
+ * The import stamped its own provenance into the text, so the board was
+ * reading "MoeGo source alert (20 Aug 2026): allergy to chicken" when the
+ * only part a groomer needs is "Allergy to chicken". Four shapes exist in
+ * the data — "MoeGo source alert", "MoeGo source behaviour", "MoeGo
+ * recovery" and "MoeGo report recovery", each with a date in brackets.
+ *
+ * Andy, 09/10/2026: "remove the MoeGo mention and just have the allergy or
+ * whatever the alert is."
+ *
+ * Stripped for display only. The stored text keeps its provenance, because
+ * knowing an allergy arrived in a bulk import rather than from the owner is
+ * worth something if it is ever questioned.
+ */
+const PROVENANCE_PREFIX = /^MoeGo\b[^():]*\([^)]*\)\s*:\s*/i;
+
+export function stripAlertProvenance(text: string): string {
+  const stripped = text.replace(PROVENANCE_PREFIX, "").trim();
+  if (!stripped) return text.trim();
+  // The remainder usually starts lower case because it was mid-sentence.
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
 /** The full warning text, never truncated, or a sensible stand-in. */
 export function petAlertText(pet: PetAlertInput): string | null {
   const tone = petAlertTone(pet);
   if (!tone) return null;
   const text = (pet.warnings ?? "").trim();
-  if (text) return text;
+  if (text) return stripAlertProvenance(text);
   return tone === "danger" ? "Danger alert on this dog." : "Caution on this dog.";
 }
