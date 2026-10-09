@@ -876,11 +876,16 @@ export const groomingReports = mysqlTable("grooming_reports", {
   // Status
   status: mysqlEnum("status", ["draft", "sent"]).default("draft").notNull(),
   sentAt: timestamp("sent_at"),
+  // The token in the card's public share link. Null until someone first asks
+  // to share the report; see shared/groomingShareToken.ts for why it is long
+  // and unguessable rather than merely unique.
+  shareToken: varchar("share_token", { length: 32 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (t) => [
   index("idx_report_appt").on(t.appointmentId),
   index("idx_report_pet").on(t.petId),
+  uniqueIndex("uniq_grooming_report_share_token").on(t.shareToken),
 ]);
 
 // ─── Client portal chat ───────────────────────────────────────────────────────

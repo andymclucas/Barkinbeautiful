@@ -43,6 +43,7 @@ const Login = lazy(() => import("./pages/Login"));
 const SalonSignup = lazy(() => import("./pages/SalonSignup"));
 const StaffInvitationAccept = lazy(() => import("./pages/StaffInvitationAccept"));
 const ClientPortal = lazy(() => import("./pages/ClientPortal"));
+const GroomingCard = lazy(() => import("./pages/GroomingCard"));
 const ClientPortalLogin = lazy(() => import("./pages/ClientPortalLogin"));
 const ClientPortalSetup = lazy(() => import("./pages/ClientPortalSetup"));
 const ClientPortalCardResult = lazy(() => import("./pages/ClientPortalCardResult"));
@@ -97,6 +98,8 @@ function Router() {
       <Route path="/book" component={OnlineBookingPublic} />
       <Route path="/book/preview" component={OnlineBookingPreview} />
       <Route path="/track/:token" component={PetTracker} />
+      {/* Public grooming card. The token is the authorisation, same as /track. */}
+      <Route path="/card/:token" component={GroomingCard} />
       <Route path="/portal" component={ClientPortal} />
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/setup/:token" component={ClientPortalSetup} />
