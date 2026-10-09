@@ -109,6 +109,41 @@ describe("client portal account login isolation", () => {
     expect(portalRouter).not.toContain("groomerNotes: groomingReports.groomerNotes");
   });
 
+  it("resends a portal link without revoking anything or resetting a password", () => {
+    // The whole reason this procedure exists. Sliced to its own body so the
+    // assertions cannot accidentally pass on a neighbouring procedure: the two
+    // buttons either side of it DO revoke and DO reset.
+    const start = portalRouter.indexOf("resendPortalLink: adminProcedure");
+    expect(start).toBeGreaterThan(-1);
+    const body = portalRouter.slice(start, portalRouter.indexOf("issueAccountSetupLink: adminProcedure", start));
+
+    // Must not revoke a live link — a client who bookmarked the old one keeps it.
+    expect(body).not.toContain('status: "revoked"');
+    // Must not force a new password, or sign them out of every device.
+    expect(body).not.toContain("portalPasswordHash: null");
+    expect(body).not.toContain("portalSessionVersion");
+    // Must not quietly move them between portal states.
+    expect(body).not.toContain('portalAccountStatus: "setup_pending"');
+    expect(body).not.toContain('portalAccountStatus: "revoked"');
+
+    // And it may only ever send to the address already on file.
+    expect(body).toContain("client.portalLoginEmail ?? client.email");
+  });
+
+  it("still has the destructive paths, so this test is comparing against something real", () => {
+    // Guards the test above: if issueAccessLink stopped revoking, the absence
+    // assertions would start passing for the wrong reason.
+    // Ends at resendPortalLink, which now sits between the two — slicing to
+    // issueAccountSetupLink would swallow it and the guard would pass on the
+    // wrong procedure's text.
+    const issue = portalRouter.slice(
+      portalRouter.indexOf("issueAccessLink: adminProcedure"),
+      portalRouter.indexOf("resendPortalLink: adminProcedure"),
+    );
+    expect(issue).toContain('status: "revoked"');
+    expect(portalRouter).toContain("portalPasswordHash: null");
+  });
+
   it("keeps account, setup and legacy portal pages separate from staff navigation, booking and payments", () => {
     for (const pageSource of [portalPageSource, portalLoginPageSource, portalSetupPageSource]) {
       expect(pageSource).not.toContain("DashboardLayout");

@@ -380,6 +380,21 @@ export default function ClientDetail() {
     },
     onError: (error) => toast.error(error.message),
   });
+  // The safe option, and the one staff actually want most of the time: send
+  // the client their link again, changing nothing. The two below both destroy
+  // something — see resendPortalLink's note in routers.ts.
+  const resendPortalLink = trpc.clientPortal.resendPortalLink.useMutation({
+    onSuccess: (result) => {
+      toast.success(
+        result.mode === "account"
+          ? `Sign-in link emailed to ${result.sentTo}. Their password is unchanged.`
+          : `Portal link emailed to ${result.sentTo}. Any link they already had still works.`,
+      );
+      void utils.clientPortal.getAccessStatus.invalidate({ clientId });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const issuePortalLink = trpc.clientPortal.issueAccessLink.useMutation({
     onSuccess: async (result) => {
       setPortalLink(result.portalUrl);
@@ -640,6 +655,29 @@ export default function ClientDetail() {
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader><DialogTitle>Client portal access</DialogTitle></DialogHeader>
             {!portalLink && !portalSetupLink && !portalRevokeConfirm && !portalAccountRevokeConfirm && <div className="space-y-5">
+              {/* First, because it is the one that breaks nothing. Everything
+                  below either revokes a live link or clears a password. */}
+              <div className="rounded-xl border border-primary/25 bg-primary/5 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-semibold">Resend their portal link</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {portalAccount?.portalAccountStatus === "active"
+                        ? "Emails the sign-in page. Their password still works and nothing is reset."
+                        : "Emails a fresh link. Any link they already have keeps working — nothing is revoked."}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={resendPortalLink.isPending}
+                    onClick={() => resendPortalLink.mutate({ clientId })}
+                    title="Sends to the email already on file. Changes no password, revokes no link."
+                  >
+                    <Mail className="mr-1.5 h-4 w-4" />
+                    {resendPortalLink.isPending ? "Sending…" : "Resend link"}
+                  </Button>
+                </div>
+              </div>
               <div className="rounded-xl border bg-muted/30 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">One-time secure link</h3><p className="text-sm text-muted-foreground">{portalAccess?.status === "active" ? `An active link expires ${new Date(portalAccess.expiresAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" })}${portalAccess.lastAccessedAt ? ` and was last opened ${new Date(portalAccess.lastAccessedAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}` : ""}.` : portalAccess ? `The latest link is ${portalAccess.status}. Create a new expiry-bound link when required.` : "No one-time client portal link has been issued yet."}</p></div><Badge variant="outline" className="capitalize">{portalAccess?.status ?? "not issued"}</Badge></div>
                 <div className="mt-3 flex flex-wrap gap-2">{portalAccess?.status === "active" && <Button variant="destructive" size="sm" onClick={() => setPortalRevokeConfirm(true)}>Revoke active link</Button>}<Button size="sm" disabled={issuePortalLink.isPending} onClick={() => issuePortalLink.mutate({ clientId })}>{issuePortalLink.isPending ? "Creating link…" : portalAccess?.status === "active" ? "Create replacement link" : "Create secure link"}</Button></div>

@@ -8316,6 +8316,101 @@ const clientPortalRouter = router({
       };
     }),
 
+  /**
+   * Sends the client their portal link again, changing nothing.
+   *
+   * The two existing buttons are both destructive and that is why this exists:
+   * issueAccessLink revokes the live link before minting a new one, and
+   * issueAccountSetupLink nulls portalPasswordHash and bumps
+   * portalSessionVersion — it forces a password reset and signs them out
+   * everywhere. Neither is what you want when someone simply says "I can't
+   * find the email".
+   *
+   * What it does depends on what the client has, because the raw token is
+   * only ever stored as a hash: a link genuinely cannot be reconstructed and
+   * re-sent.
+   *
+   *  - Portal account   -> email the sign-in page. Their own password still
+   *                        works and nothing is touched at all.
+   *  - Link-only client -> mint an ADDITIONAL token and leave every existing
+   *                        one active. A link the client already bookmarked
+   *                        keeps working, which is the whole point; they
+   *                        expire on their own.
+   */
+  resendPortalLink: adminProcedure
+    .input(z.object({ clientId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [client] = await db.select({
+        id: clients.id,
+        tenantId: clients.tenantId,
+        firstName: clients.firstName,
+        email: clients.email,
+        portalLoginEmail: clients.portalLoginEmail,
+        portalAccountStatus: clients.portalAccountStatus,
+      })
+        .from(clients).where(eq(clients.id, input.clientId)).limit(1);
+      if (!client || client.tenantId !== 1) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
+      }
+
+      // Only ever to the address already on file — a resend must not become a
+      // way to post the portal to a new recipient.
+      const recipient = (client.portalLoginEmail ?? client.email ?? "").trim();
+      if (!recipient) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This client has no email address on file" });
+      }
+
+      const baseUrl = getAppBaseUrl();
+      const greeting = client.firstName ? `Hi ${client.firstName},` : "Hi,";
+      let portalUrl: string;
+      let mode: "account" | "link";
+
+      if (client.portalAccountStatus === "active") {
+        portalUrl = `${baseUrl}/portal/login`;
+        mode = "account";
+      } else {
+        // No revoke, deliberately: see the note above.
+        const access = createClientPortalToken();
+        await db.insert(clientPortalAccess).values({
+          tenantId: client.tenantId,
+          clientId: client.id,
+          tokenHash: access.tokenHash,
+          status: "active",
+          expiresAt: access.expiresAt,
+          issuedByUserId: ctx.user.id,
+        });
+        portalUrl = `${baseUrl}/portal/${access.token}`;
+        mode = "link";
+      }
+
+      const { sendEmail } = await import("./email");
+      const sent = await sendEmail({
+        to: recipient,
+        subject: "Your Barkin' Beautiful client portal",
+        html: `
+        <div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;padding:28px 24px;background:#faf8ff;border-radius:16px">
+          <p style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b7280;margin:0">Barkin' Beautiful</p>
+          <h1 style="margin:10px 0 14px;font-size:24px;color:#111827">Your client portal</h1>
+          <p style="margin:0 0 20px;color:#374151;font-size:15px;line-height:1.6">
+            ${greeting} here's your link again. You can see your upcoming appointments,
+            every grooming card and your invoices.
+          </p>
+          <a href="${portalUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 26px;border-radius:999px">Open your portal</a>
+          <p style="margin:22px 0 0;font-size:12px;color:#9ca3af;word-break:break-all">${portalUrl}</p>
+          ${mode === "account"
+            ? `<p style="margin:16px 0 0;font-size:13px;color:#6b7280">Sign in with your usual password — it hasn't changed.</p>`
+            : ``}
+        </div>`,
+      });
+      if (!sent) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Email could not be sent — check the Resend configuration" });
+      }
+      return { sent: true, mode, sentTo: recipient };
+    }),
+
   issueAccountSetupLink: adminProcedure
     // sendEmail defaults to true so existing callers are unchanged, but the
     // salon can now create a link and hold it — setting a client up ahead of
