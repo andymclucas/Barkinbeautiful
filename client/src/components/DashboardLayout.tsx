@@ -501,6 +501,9 @@ function DashboardLayoutContent({
                       isActive={isActive}
                       onClick={() => setLocation(item.path)}
                       tooltip={item.label}
+                      // Hover motion lives in index.css next to the global
+                      // button rule — see "Sidebar nav". A Tailwind transition
+                      // utility cannot win against that rule.
                       className="h-10 font-medium text-sm group/navitem"
                     >
                       <item.icon

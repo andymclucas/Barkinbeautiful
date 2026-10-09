@@ -575,6 +575,35 @@ button[data-slot="button"]:not(:disabled):hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* ── Sidebar nav ──────────────────────────────────────────────────────────── */
+/*
+ * The global button rule above runs at --dur-fast, which is right for a button
+ * you commit to and too abrupt for a nav item you sweep past. These get the
+ * longer curve, and lift slightly right on hover so the pointer has something
+ * to land on.
+ *
+ * This has to live here rather than as Tailwind utilities on the component.
+ * The `button` rule above is unlayered, and unlayered CSS beats everything in
+ * @layer utilities no matter the specificity — `transition-all duration-200`
+ * on the element was silently ignored, measured as 140ms in the browser.
+ */
+[data-sidebar="menu-button"] {
+  transform-origin: left center;
+  transition:
+    background-color var(--dur-base) var(--ease-out-soft),
+    color var(--dur-base) var(--ease-out-soft),
+    transform var(--dur-base) var(--ease-out-soft);
+}
+/* Only when the rail is open: in icon-only mode there is no room to slide
+   into, and a 32px square would just clip against the edge. */
+[data-state="expanded"] [data-sidebar="menu-button"]:hover {
+  transform: translateX(4px) scale(1.03);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-sidebar="menu-button"] { transition-duration: 1ms; }
+  [data-state="expanded"] [data-sidebar="menu-button"]:hover { transform: none; }
+}
+
 /* ── Inputs ───────────────────────────────────────────────────────────────── */
 input, textarea, select, [data-slot="select-trigger"] {
   transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
