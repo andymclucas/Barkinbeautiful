@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Dog } from "lucide-react";
 
 /**
@@ -15,12 +15,8 @@ import { Dog } from "lucide-react";
  * photo when no profile photo has been set - so a picture taken at the salon
  * reaches the Workflow board without anyone setting it as the profile.
  */
-export function PetAvatar({ petId, petName, className = "h-7 w-7", refreshKey = 0 }: { petId?: number | null; petName?: string | null; className?: string; refreshKey?: number }) {
+export function PetAvatar({ petId, petName, className = "h-7 w-7" }: { petId?: number | null; petName?: string | null; className?: string }) {
   const [errored, setErrored] = useState(false);
-  // A freshly uploaded photo has to beat the browser cache, and `errored` has
-  // to clear too - a dog with no photo yet renders the placeholder only
-  // because the first request 404'd.
-  useEffect(() => { setErrored(false); }, [refreshKey]);
   if (!petId || errored) {
     return (
       <div className={`${className} rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0`}>
@@ -30,7 +26,7 @@ export function PetAvatar({ petId, petName, className = "h-7 w-7", refreshKey = 
   }
   return (
     <img
-      src={`/api/pets/${petId}/photo?v=thumb96${refreshKey ? `&r=${refreshKey}` : ""}`}
+      src={`/api/pets/${petId}/photo?v=thumb96`}
       loading="lazy"
       decoding="async"
       alt={petName ?? "Pet"}

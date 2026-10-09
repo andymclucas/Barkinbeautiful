@@ -1,16 +1,25 @@
 import { useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { PetAvatar } from "@/components/PetAvatar";
 
 /**
- * The dog's avatar with a camera badge: tap it to add a photo without leaving
- * whatever screen you are on.
+ * Tap-to-add-a-photo button for a dog, for use anywhere the pet is already on
+ * screen.
  *
  * This exists because the groomers were going Calendar -> Clients -> search ->
  * client -> Pets tab -> Add photo just to put a face on a dog they had just
  * finished. From an appointment we already know the pet, so the detour is
  * three screens of nothing.
+ *
+ * It deliberately does NOT reuse `PetAvatar`. That component is a quiet little
+ * picture: a dog with no photo yet shows a faint grey initial, which is right
+ * on a crowded board and useless as a button - the first version of this did
+ * reuse it and the control was invisible. So the two states are drawn
+ * differently here:
+ *
+ *   no photo yet -> a dashed camera circle in the accent colour, which reads
+ *                   as "put something here"
+ *   has a photo  -> the photo, with a solid camera badge on the corner
  *
  * It posts to the same `/api/upload/pet-groom-photo` route the client record
  * uses, passing `appointmentId` so the photo is filed against the groom it was
@@ -22,7 +31,7 @@ export function PetPhotoQuickAdd({
   petId,
   petName,
   appointmentId,
-  className = "h-9 w-9",
+  className = "h-10 w-10",
   onUploaded,
 }: {
   petId: number;
@@ -33,6 +42,7 @@ export function PetPhotoQuickAdd({
 }) {
   const [uploading, setUploading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [hasPhoto, setHasPhoto] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const upload = async (file: File) => {
@@ -56,6 +66,9 @@ export function PetPhotoQuickAdd({
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Photo upload failed");
+      // The photo URL is stable and cached for a day, so a fresh upload needs a
+      // new one or the browser keeps serving the old image (or the 404).
+      setHasPhoto(true);
       setRefreshKey((key) => key + 1);
       toast.success(`Photo added to ${petName ?? "this pet"}`);
       onUploaded?.();
@@ -68,21 +81,44 @@ export function PetPhotoQuickAdd({
     }
   };
 
+  const label = hasPhoto
+    ? `Change ${petName ?? "this pet"}'s photo`
+    : `Add a photo of ${petName ?? "this pet"}`;
+
   return (
     <button
       type="button"
       onClick={() => inputRef.current?.click()}
       disabled={uploading}
-      title={`Add a photo of ${petName ?? "this pet"}`}
-      aria-label={`Add a photo of ${petName ?? "this pet"}`}
-      className="relative shrink-0 rounded-full group disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+      title={label}
+      aria-label={label}
+      className="relative shrink-0 rounded-full group disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
-      <PetAvatar petId={petId} petName={petName} className={className} refreshKey={refreshKey} />
-      {/* Sits mostly outside the circle: on a dog that already has a photo this
-          badge would otherwise cover its face. */}
-      <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background transition-transform group-hover:scale-110">
-        {uploading ? <Loader2 className="h-2 w-2 animate-spin" /> : <Camera className="h-2 w-2" />}
-      </span>
+      {hasPhoto ? (
+        <img
+          src={`/api/pets/${petId}/photo?v=thumb96${refreshKey ? `&r=${refreshKey}` : ""}`}
+          loading="lazy"
+          decoding="async"
+          alt={petName ?? "Pet"}
+          onError={() => setHasPhoto(false)}
+          className={`${className} rounded-full object-cover bg-muted ring-2 ring-primary/40 transition group-hover:ring-primary`}
+        />
+      ) : (
+        <span
+          className={`${className} flex items-center justify-center rounded-full border-2 border-dashed border-primary/60 bg-primary/10 text-primary transition group-hover:border-primary group-hover:bg-primary/20`}
+        >
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+        </span>
+      )}
+
+      {/* Corner badge only once there is a photo - the empty state is already a
+          camera, and two cameras reads as clutter. */}
+      {hasPhoto && (
+        <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background shadow-sm transition-transform group-hover:scale-110">
+          {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Camera className="h-3 w-3" />}
+        </span>
+      )}
+
       <input
         ref={inputRef}
         type="file"

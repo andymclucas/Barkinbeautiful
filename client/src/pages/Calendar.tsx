@@ -2625,7 +2625,7 @@ export default function Calendar() {
                         const rStatus = reportStatusMap[p.id];
                         return (
                           <span key={p.id} className="inline-flex items-center gap-1.5 ml-1">
-                            <PetPhotoQuickAdd petId={p.petId} petName={p.petName} appointmentId={p.id} className="h-8 w-8" />
+                            <PetPhotoQuickAdd petId={p.petId} petName={p.petName} appointmentId={p.id} className="h-10 w-10" />
                             <strong>{p.petName}</strong>{p.petBreed ? ` · ${p.petBreed}` : ""}
                             {p.lastAppointmentDate && <span className="text-xs text-muted-foreground">· Last: {new Date(p.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</span>}
                             {rStatus === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 inline" />}
@@ -2637,7 +2637,7 @@ export default function Calendar() {
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <span className="text-muted-foreground">Pet:</span>
-                      <PetPhotoQuickAdd petId={editAppt.petId} petName={editAppt.petName} appointmentId={editAppt.id} className="h-8 w-8" />
+                      <PetPhotoQuickAdd petId={editAppt.petId} petName={editAppt.petName} appointmentId={editAppt.id} className="h-10 w-10" />
                       <strong>{editAppt.petName}</strong>{editAppt.petBreed ? ` · ${editAppt.petBreed}` : ""}
                       {reportStatusMap[editAppt.id] === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
                       {reportStatusMap[editAppt.id] === "draft" && <span className="text-[10px] bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1">Draft</span>}
