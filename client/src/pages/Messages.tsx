@@ -2,6 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { MassTextDialog } from "@/components/MassTextDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
+import { tidyTranscript, extractCallbackNumbers, formatAustralianNumber, worthShowingCallback } from "@shared/voicemailTranscript";
 import { canEditSection } from "@shared/staffPermissions";
 import { ThreadClientContext } from "@/components/ThreadClientContext";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
@@ -476,11 +477,42 @@ export default function Messages() {
                       </span>
                     </div>
                     {(call.clientName as string | null)?.trim() && <p className="text-xs text-muted-foreground">{call.fromNumber}</p>}
-                    <p className="text-sm mt-1">
-                      {call.transcriptionStatus === "completed"
-                        ? `"${call.transcriptText}"`
-                        : <span className="italic text-muted-foreground">No transcript available</span>}
-                    </p>
+                    {(() => {
+                      if (call.transcriptionStatus !== "completed") {
+                        return <p className="text-sm mt-1"><span className="italic text-muted-foreground">No transcript available</span></p>;
+                      }
+                      // Twilio mishears words and this does not pretend to
+                      // fix them. What it fixes is the number: callers say
+                      // "418 double 104 double 5" and drop the leading zero,
+                      // which nobody can dial off the screen.
+                      const tidy = tidyTranscript(call.transcriptText);
+                      const spoken = extractCallbackNumbers(call.transcriptText ?? "");
+                      // Usually the caller recites their own number, which we
+                      // already have. Worth showing only when it is genuinely
+                      // different — or when they withheld caller ID, where it
+                      // is the only way to ring back. A number one digit off
+                      // the caller's own is a mishearing, not a second number.
+                      const worthShowing = spoken.filter(n => worthShowingCallback(n, call.fromNumber));
+                      return (
+                        <>
+                          <p className="text-sm mt-1">{`"${tidy}"`}</p>
+                          {worthShowing.length > 0 && (
+                            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                              <span className="text-muted-foreground">They asked to be called on</span>
+                              {worthShowing.map(digits => (
+                                <a
+                                  key={digits}
+                                  href={`tel:${digits}`}
+                                  className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary hover:bg-primary/20"
+                                >
+                                  {formatAustralianNumber(digits)}
+                                </a>
+                              ))}
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
                     {call.recordingUrl && (
                       <audio
                         className="mt-2 h-8 w-full max-w-sm"
