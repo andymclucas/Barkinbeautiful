@@ -5,6 +5,7 @@ import {
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { shouldActOnSignal } from "@shared/openOnSignal";
 import { parsePetCodes } from "@shared/petCodes";
+import { parseClientTags, clientTagTone } from "@shared/clientTags";
 import { describePetCode, petCodeMeaning } from "@shared/petCodeMeanings";
 import { canChargeOffSession } from "@shared/stripeBilling";
 import { AddMembershipButton, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
@@ -693,6 +694,42 @@ export default function ClientDetail() {
                   </span>
                 )}
               </div>
+
+              {(() => {
+                // MoeGo's client tags. Most are informational, but a few mean
+                // "do not take this booking" — BANNED, DONT BOOK IN, Refuse
+                // new bookings, Owes money, MUST PRE-PAY — and those have to
+                // read differently or they vanish into a row of grey chips.
+                const tags = parseClientTags(client.moegoTags);
+                if (tags.length === 0) return null;
+                return (
+                  <div className="mt-2 flex flex-wrap items-center gap-1">
+                    {tags.map(tag => {
+                      const tone = clientTagTone(tag);
+                      return (
+                        <span
+                          key={tag}
+                          className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-semibold ${
+                            tone === "blocking"
+                              ? "bg-red-600 text-white"
+                              : tone === "caution"
+                                ? "bg-amber-500 text-white"
+                                : "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+                          }`}
+                        >
+                          {tag}
+                        </span>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {client.moegoNotes?.trim() && (
+                <p className="mt-2 whitespace-pre-wrap rounded-md bg-muted/60 px-2.5 py-2 text-xs leading-5 text-foreground">
+                  {client.moegoNotes.trim()}
+                </p>
+              )}
 
               {client.referralSource && (
                 <p className="text-xs text-muted-foreground mt-1.5">Referred via: {client.referralSource}</p>

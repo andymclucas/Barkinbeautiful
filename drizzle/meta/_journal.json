@@ -680,6 +680,13 @@
       "when": 1791500639595,
       "tag": "0096_pet_moego_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "5",
+      "when": 1791508249025,
+      "tag": "0097_client_moego_tags",
+      "breakpoints": true
     }
   ]
 }

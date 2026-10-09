@@ -263,6 +263,13 @@ export const clients = mysqlTable("clients", {
   portalLastSignedInAt: timestamp("portal_last_signed_in_at"),
   portalSessionVersion: int("portal_session_version").default(0).notNull(),
   moegoClientId: varchar("moego_client_id", { length: 100 }),
+  /** MoeGo's client tags, raw: "VIP" or "BANNED, MUST PRE-PAY". See 0097. */
+  moegoTags: text("moego_tags"),
+  /**
+   * MoeGo's free-text client note. Deliberately separate from `notes`,
+   * which carries this app's own merge audit trail.
+   */
+  moegoNotes: text("moego_notes"),
   stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
   // A card the salon may charge off-session - weekly membership billing and
   // the payment retry both need the payment method, not just the customer.
