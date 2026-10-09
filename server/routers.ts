@@ -5858,8 +5858,11 @@ const groomingReportsRouter = router({
           overallRating: groomingReports.overallRating,
           mood: groomingReports.mood,
           additionalNote: groomingReports.additionalNote,
-          beforePhotoUrl: groomingReports.beforePhotoUrl,
-          afterPhotoUrl: groomingReports.afterPhotoUrl,
+          // Keys, not the stored URLs: those point at
+          // /api/grooming-report-photo, which needs a staff session. The
+          // client-facing URLs are built below against the card's own token.
+          beforePhotoKey: groomingReports.beforePhotoKey,
+          afterPhotoKey: groomingReports.afterPhotoKey,
           recommendedFrequencyWeeks: groomingReports.recommendedFrequencyWeeks,
           coatCondition: groomingReports.coatCondition,
           skinCondition: groomingReports.skinCondition,
@@ -5888,7 +5891,12 @@ const groomingReportsRouter = router({
       // guarantees `groomerNotes` cannot travel to an unauthenticated reader,
       // even if someone adds a column here later. See shared/groomingCard.ts.
       const { toClientSafeGroomCard } = await import("@shared/groomingCard");
-      return toClientSafeGroomCard(card);
+      const { beforePhotoKey, afterPhotoKey, ...rest } = card;
+      return toClientSafeGroomCard({
+        ...rest,
+        beforePhotoUrl: beforePhotoKey ? `/api/card/${input.token}/photo/before` : null,
+        afterPhotoUrl: afterPhotoKey ? `/api/card/${input.token}/photo/after` : null,
+      });
     }),
 
 });

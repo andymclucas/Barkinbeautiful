@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
-import { appointments, staff, pets, petPhotos, uploadedImages } from "../drizzle/schema";
+import { appointments, staff, pets, petPhotos, uploadedImages, groomingReports } from "../drizzle/schema";
 import { and, desc, eq, or } from "drizzle-orm";
 import sharp from "sharp";
 
@@ -189,6 +189,52 @@ export function registerUploadRoutes(app: Router) {
     } catch (err: any) {
       console.error("[grooming-report-photo]", err);
       res.status(404).json({ error: "Report photo unavailable" });
+    }
+  });
+
+  // Serves a grooming card's own before/after photo to whoever holds the
+  // card's share link.
+  //
+  // /api/grooming-report-photo above needs a staff session, so without this a
+  // client opening /card/:token saw two broken images — the photos are the
+  // part of the card they actually want.
+  //
+  // Scoped to the card rather than taking a key: the token unlocks THAT
+  // report's two photos and nothing else, so a share link can never be bent
+  // into a reader for the whole uploaded_images table.
+  app.get("/api/card/:token/photo/:which", async (req, res) => {
+    try {
+      const { isGroomingShareToken } = await import("@shared/groomingShareToken");
+      const token = String(req.params.token ?? "");
+      const which = String(req.params.which ?? "");
+      if (!isGroomingShareToken(token) || (which !== "before" && which !== "after")) {
+        res.status(404).json({ error: "Photo unavailable" });
+        return;
+      }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const [report] = await db
+        .select({ beforeKey: groomingReports.beforePhotoKey, afterKey: groomingReports.afterPhotoKey })
+        .from(groomingReports)
+        .where(and(
+          eq(groomingReports.shareToken, token),
+          // Same rule as the card itself: a draft does not resolve.
+          eq(groomingReports.status, "sent"),
+        ))
+        .limit(1);
+      const key = which === "before" ? report?.beforeKey : report?.afterKey;
+      if (!key) { res.status(404).json({ error: "Photo unavailable" }); return; }
+      const [image] = await db
+        .select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!image) { res.status(404).json({ error: "Photo unavailable" }); return; }
+      // Public, because the token already gates it and the card is something
+      // clients re-open and forward.
+      res.set({ "Content-Type": image.photoContentType, "Cache-Control": "public, max-age=86400" });
+      res.send(Buffer.from(image.photoData, "base64"));
+    } catch (err: any) {
+      console.error("[card photo]", err);
+      res.status(404).json({ error: "Photo unavailable" });
     }
   });
 
