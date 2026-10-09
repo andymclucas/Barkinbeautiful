@@ -57,11 +57,20 @@ async function main() {
   // match on the message rather than the status or a bad key reads as a
   // malformed request.
   const rawBody = await res.clone().text();
-  if (res.status === 401 || /api key is invalid/i.test(rawBody)) {
+  if (/api key is invalid/i.test(rawBody)) {
     console.error(`\n✗ Resend rejected the key (${res.status}). It is revoked, truncated, or from another account.`);
     console.error(`  The key here is ${describeKey(KEY)}; a live one is noticeably longer.`);
     console.error("  New key: https://resend.com/api-keys — then set RESEND_API_KEY in .env and re-run this.");
     process.exitCode = 1;
+    return;
+  }
+  // A key scoped to "Sending access" cannot read account config, which is the
+  // correct way to scope it. Listing domains then fails on permissions, and
+  // that is a pass, not a problem — say so rather than crying wolf.
+  if (res.status === 401 || res.status === 403 || /restricted|not allowed|permission/i.test(rawBody)) {
+    console.log("\n✓ Key accepted, and scoped to sending only — it cannot read account config.");
+    console.log("  That is the right scope, so the domain list below is unavailable by design.");
+    console.log(`  To prove sending end to end: --send <email> (from ${FROM || "RESEND_FROM_EMAIL"}).`);
     return;
   }
   if (!res.ok) {
