@@ -24,7 +24,14 @@ describe("workflow pet-alert presentation", () => {
   });
 
   it("gives an accessible description with the warning in full", () => {
-    const warning = "MoeGo source alert (20 Aug 2026): allergy to beef and green ants.";
+    // Never truncated. The import's own provenance prefix IS dropped — see
+    // stripAlertProvenance — so this uses a warning written by the salon.
+    const warning = "Bites for face and feet. Do not muzzle; nails last with a second person holding.";
     expect(petAlertText({ alertLevel: "caution", warnings: warning })).toBe(warning);
+  });
+
+  it("drops the import's provenance prefix from what the board reads out", () => {
+    expect(petAlertText({ alertLevel: "caution", warnings: "MoeGo source alert (20 Aug 2026): allergy to chicken." }))
+      .toBe("Allergy to chicken.");
   });
 });
