@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { CalendarSidebar } from "@/components/CalendarSidebar";
+import { PetPhotoQuickAdd } from "@/components/PetPhotoQuickAdd";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
@@ -49,10 +50,11 @@ import { liveSiblings } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
-  FileDown, Check, CheckCircle2, ImagePlus, Mail, ChevronDown, ChevronUp, Clock,
+  FileDown, Check, CheckCircle2, ImagePlus, Mail, ChevronDown, ChevronUp, Clock, ExternalLink,
 } from "lucide-react";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import { Link } from "wouter";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
@@ -2622,7 +2624,8 @@ export default function Calendar() {
                       {[editAppt, ...editSiblings].map((p) => {
                         const rStatus = reportStatusMap[p.id];
                         return (
-                          <span key={p.id} className="inline-flex items-center gap-1 ml-1">
+                          <span key={p.id} className="inline-flex items-center gap-1.5 ml-1">
+                            <PetPhotoQuickAdd petId={p.petId} petName={p.petName} appointmentId={p.id} className="h-8 w-8" />
                             <strong>{p.petName}</strong>{p.petBreed ? ` · ${p.petBreed}` : ""}
                             {p.lastAppointmentDate && <span className="text-xs text-muted-foreground">· Last: {new Date(p.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</span>}
                             {rStatus === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 inline" />}
@@ -2634,12 +2637,26 @@ export default function Calendar() {
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <span className="text-muted-foreground">Pet:</span>
+                      <PetPhotoQuickAdd petId={editAppt.petId} petName={editAppt.petName} appointmentId={editAppt.id} className="h-8 w-8" />
                       <strong>{editAppt.petName}</strong>{editAppt.petBreed ? ` · ${editAppt.petBreed}` : ""}
                       {reportStatusMap[editAppt.id] === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
                       {reportStatusMap[editAppt.id] === "draft" && <span className="text-[10px] bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1">Draft</span>}
                     </div>
                   )}
-                  <div><span className="text-muted-foreground">Client:</span> {editAppt.clientFirstName} {editAppt.clientLastName}{editAppt.clientPhone ? ` · ${editAppt.clientPhone}` : ""}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">Client:</span>
+                    {/* Straight through to the client record - the groomers were
+                        going out to Clients and searching by name to get here. */}
+                    <Link
+                      href={`/clients/${editAppt.clientId}`}
+                      className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                      title="Open this client's record"
+                    >
+                      {editAppt.clientFirstName} {editAppt.clientLastName}
+                      <ExternalLink className="h-3 w-3" />
+                    </Link>
+                    {editAppt.clientPhone ? <span className="text-muted-foreground">· {editAppt.clientPhone}</span> : null}
+                  </div>
                   {editAppt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appointment:</span> {new Date(editAppt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>}
                 </div>
                 {(() => {
