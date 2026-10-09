@@ -75,9 +75,16 @@ function MembershipBadge({ tier, name, status }: { tier: string; name: string; s
   const colours = TIER_COLOURS[tier] ?? TIER_COLOURS.bronze;
   const icon = TIER_ICONS[tier] ?? "🏅";
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${colours.bg} ${colours.text} ${colours.border}`}>
-      {icon} {name}
-      {status !== "active" && <span className="opacity-60">({status})</span>}
+    // `max-w-full` + a truncating name keeps the pill on one line and inside
+    // its container: tier names run to "Gold VIP Styled - Giant (36-80 kg)",
+    // which overflowed every row it was put in. The full text stays on hover.
+    <span
+      title={name}
+      className={`inline-flex max-w-full items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${colours.bg} ${colours.text} ${colours.border}`}
+    >
+      <span aria-hidden="true">{icon}</span>
+      <span className="truncate">{name}</span>
+      {status !== "active" && <span className="shrink-0 opacity-60">({status})</span>}
     </span>
   );
 }
@@ -980,22 +987,33 @@ export default function ClientDetail() {
                       </div>
                     )}
                     <CardHeader className="pb-2 pt-4 px-4">
-                      <CardTitle className="text-base flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-2">
+                      <CardTitle className="text-base space-y-1.5">
+                        {/* Photo and name own the first line. `pr-10` only when
+                            departed, to clear the memorial icon pinned to the
+                            card's top-right corner. */}
+                        <div className={`flex items-center gap-2 min-w-0 ${pet.status === "departed" ? "pr-10" : ""}`}>
                           {/* Same photo the Workflow board shows, from the
                               same endpoint, so the dog is recognisable in
                               both places rather than a photo existing here
                               and a letter appearing there. */}
                           <PetAvatar petId={pet.id} petName={pet.name} className="h-8 w-8" />
-                          {pet.name}
-                        </span>
-                        {pet.status === "departed" && (
-                          <Badge variant="outline" className="border-amber-400 bg-amber-100 dark:bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
-                            <HeartCrack className="mr-1 h-3 w-3" /> Memorial · Passed away
-                          </Badge>
-                        )}
-                        {activePetMembership && (
-                          <MembershipBadge tier={activePetMembership.tier} name={activePetMembership.name} status={activePetMembership.status} />
+                          <span className="truncate">{pet.name}</span>
+                        </div>
+                        {/* Badges go UNDER the photo and name. They used to sit
+                            beside them in a justify-between row, where a tier
+                            name like "Gold VIP Styled - Giant (36-80 kg)" had
+                            nowhere to go and ran into the dog's name. */}
+                        {(pet.status === "departed" || activePetMembership) && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {pet.status === "departed" && (
+                              <Badge variant="outline" className="border-amber-400 bg-amber-100 dark:bg-amber-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                                <HeartCrack className="mr-1 h-3 w-3" /> Memorial · Passed away
+                              </Badge>
+                            )}
+                            {activePetMembership && (
+                              <MembershipBadge tier={activePetMembership.tier} name={activePetMembership.name} status={activePetMembership.status} />
+                            )}
+                          </div>
                         )}
                       </CardTitle>
                     </CardHeader>
@@ -1168,8 +1186,12 @@ export default function ClientDetail() {
                         <div className="mt-2 pt-2 border-t space-y-1">
                           {pMemberships.map(m => (
                             <div key={m.id} className="flex items-center justify-between gap-2 text-xs">
-                              <MembershipBadge tier={m.tier} name={m.name} status={m.status} />
-                              <div className="flex items-center gap-1.5">
+                              {/* min-w-0 lets the pill truncate instead of
+                                  shoving the price off the row. */}
+                              <div className="min-w-0">
+                                <MembershipBadge tier={m.tier} name={m.name} status={m.status} />
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1.5">
                                 <span className="text-muted-foreground">${m.pricePerCycle}/wk</span>
                                 {isAdmin && pet.status === "departed" && !["cancelled", "expired"].includes(m.status) && (
                                   <Button
