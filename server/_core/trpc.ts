@@ -145,10 +145,41 @@ const requireNonStaffUser = t.middleware(async opts => {
   return next({ ctx: { ...ctx, user: ctx.user } });
 });
 
+/**
+ * Tell every other tab in the salon that something changed.
+ *
+ * One middleware rather than a call in each of the ~33 routers: a broadcast
+ * that has to be remembered is a broadcast that gets forgotten, and the screen
+ * that silently stops updating is the one nobody notices until a dog is
+ * double-booked.
+ *
+ * Only after a mutation SUCCEEDS. A failed write changed nothing, and telling
+ * everyone to refetch for it would be noise at best and a stampede at worst.
+ *
+ * It never fails the request. The mutation has already committed by the time
+ * this runs, so throwing here would report a failure that did not happen and
+ * invite someone to do it twice.
+ */
+const broadcastChange = t.middleware(async opts => {
+  const result = await opts.next();
+  if (opts.type !== "mutation" || !result.ok) return result;
+  try {
+    const { shouldBroadcast, staleTopicsFor, topicForPath } = await import("@shared/realtimeTopics");
+    if (!shouldBroadcast(opts.path)) return result;
+    const tenantId = opts.ctx.tenantId;
+    if (typeof tenantId !== "number") return result;
+    const { emitDataChanged } = await import("../eventBus");
+    emitDataChanged(tenantId, staleTopicsFor(topicForPath(opts.path)), opts.path);
+  } catch (err) {
+    console.error("[realtime] could not broadcast change for", opts.path, err);
+  }
+  return result;
+});
+
 // Restricted staff accounts are deliberately excluded from the general application
 // surface. Only narrowly scoped operational procedures opt into `operationalProcedure`.
-export const protectedProcedure = t.procedure.use(requireNonStaffUser).use(enforceTenant).use(enforceTrial);
-export const operationalProcedure = t.procedure.use(requireUser).use(enforceTenant).use(enforceTrial);
+export const protectedProcedure = t.procedure.use(requireNonStaffUser).use(enforceTenant).use(enforceTrial).use(broadcastChange);
+export const operationalProcedure = t.procedure.use(requireUser).use(enforceTenant).use(enforceTrial).use(broadcastChange);
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
@@ -165,4 +196,4 @@ export const adminProcedure = t.procedure.use(
       },
     });
   }),
-).use(enforceTenant).use(enforceTrial);
+).use(enforceTenant).use(enforceTrial).use(broadcastChange);

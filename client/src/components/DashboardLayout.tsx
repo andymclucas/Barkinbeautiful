@@ -71,6 +71,7 @@ import { canAdministerStaff } from "@shared/staffAdministrators";
 import { parseSections, STAFF_SECTIONS } from "@shared/staffPermissions";
 import { toast } from "sonner";
 import { useSalonDocumentTitle } from "@/hooks/useSalonDocumentTitle";
+import { useRealtimeInvalidation } from "@/hooks/useRealtimeInvalidation";
 
 const menuItems = [
   { icon: CalendarDays,   label: "Appointments",     path: "/calendar" },
@@ -212,6 +213,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // because it reads the tenant, and the portal and tracker pages are opened
   // by clients who have no staff session.
   useSalonDocumentTitle();
+  // Every tab in the salon refetches what it is showing the moment anyone
+  // changes anything. In the staff shell rather than at App level: the portal
+  // and tracker are opened by clients, who have no staff session and would
+  // get a 401 on the stream.
+  useRealtimeInvalidation();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());

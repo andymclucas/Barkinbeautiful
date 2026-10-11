@@ -26,7 +26,8 @@ import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNum
 import { sendSms } from "../sms";
 import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
-import { appEvents, emitNewMessage, emitCallRinging, emitCallEnded, emitMissedCall } from "../eventBus";
+import { eventTransport, emitNewMessage, emitCallRinging, emitCallEnded, emitMissedCall } from "../eventBus";
+import { tenantForUser } from "./context";
 import { sdk } from "./sdk";
 
 /**
@@ -571,12 +572,17 @@ async function startServer() {
   // SMS just arrived) to connected browser tabs, so the notification bell
   // updates instantly instead of waiting for the next poll.
   app.get("/api/events", async (req, res) => {
+    let viewer;
     try {
-      await sdk.authenticateRequest(req);
+      viewer = await sdk.authenticateRequest(req);
     } catch {
       res.sendStatus(401);
       return;
     }
+    // Resolved the same way the tRPC context does it, not read off the user
+    // row: Lauren's users.tenant_id is NULL and her salon is named only on
+    // her staff record, so the simple read would scope her to nothing.
+    const viewerTenantId = await tenantForUser(viewer as any).catch(() => null);
 
     res.set({
       "Content-Type": "text/event-stream",
@@ -590,8 +596,15 @@ async function startServer() {
     };
     send({ type: "connected" });
 
-    const onAppEvent = (event: unknown) => send(event);
-    appEvents.on("app-event", onAppEvent);
+    // Only this caller's salon. Every event carries a tenantId and the stream
+    // used to forward all of them to every authenticated tab — invisible with
+    // one salon on the instance, a cross-tenant leak with two. An event with
+    // no tenantId (the "connected" handshake) is this connection's own.
+    const unsubscribe = eventTransport.subscribe((event) => {
+      const eventTenantId = (event as { tenantId?: number }).tenantId;
+      if (typeof eventTenantId === "number" && viewerTenantId !== null && eventTenantId !== viewerTenantId) return;
+      send(event);
+    });
 
     // Keep the connection alive through proxies/load balancers that would
     // otherwise time out an idle HTTP connection.
@@ -599,7 +612,7 @@ async function startServer() {
 
     req.on("close", () => {
       clearInterval(heartbeat);
-      appEvents.off("app-event", onAppEvent);
+      unsubscribe();
     });
   });
 

@@ -59,7 +59,7 @@ export async function createContext(
  * row would lock her out of her own business. Backfilling that column is
  * worth doing, but the code must not depend on it having been done.
  */
-async function tenantForUser(user: User): Promise<number | null> {
+export async function tenantForUser(user: User): Promise<number | null> {
   const fromUser = resolveTenantId({ userTenantId: user.tenantId });
   if (fromUser !== null) return fromUser;
 
