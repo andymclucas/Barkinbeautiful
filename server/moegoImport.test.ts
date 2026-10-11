@@ -110,4 +110,38 @@ describe("phoneMatchKey", () => {
   it("keeps different numbers apart", () => {
     expect(phoneMatchKey("0412345678")).not.toBe(phoneMatchKey("0498765432"));
   });
+
+  it("matches a landline written with and without its area code", () => {
+    // The bug this fixes. Brisbane's "33969909" and "0733969909" are one
+    // phone; the last nine digits of each are "" and "733969909", so a
+    // landline never matched itself. It left real clients unmatched on the
+    // tags import and inflated "missing clients" from 52 to 307 on the
+    // migration audit.
+    expect(phoneMatchKey("33969909")).toBe(phoneMatchKey("0733969909"));
+    expect(phoneMatchKey("33969909")).toBe(phoneMatchKey("+61733969909"));
+    expect(phoneMatchKey("32098465")).toBe(phoneMatchKey("07 3209 8465"));
+  });
+
+  it("accepts every Australian local prefix, and only those", () => {
+    for (const prefix of ["2", "3", "7", "8", "9"]) {
+      expect(phoneMatchKey(`${prefix}2345678`)).not.toBe("");
+    }
+    // Not a local number: padding these would invent a match.
+    for (const junk of ["12345678", "42345678", "02345678"]) {
+      expect(phoneMatchKey(junk)).toBe("");
+    }
+  });
+
+  it("takes another area code for a salon outside Brisbane", () => {
+    expect(phoneMatchKey("93456789", "03")).toBe(phoneMatchKey("0393456789"));
+    // And the default does not quietly match a Melbourne number to a
+    // Brisbane one.
+    expect(phoneMatchKey("93456789", "03")).not.toBe(phoneMatchKey("93456789", "07"));
+  });
+
+  it("still does not match two unknowns to each other", () => {
+    expect(phoneMatchKey("")).toBe("");
+    expect(phoneMatchKey("1234")).toBe("");
+    expect(phoneMatchKey("")).toBe(phoneMatchKey(null));
+  });
 });

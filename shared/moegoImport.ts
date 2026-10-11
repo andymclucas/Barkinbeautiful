@@ -132,8 +132,34 @@ export function parseMoegoPets(cell: string): MoegoPet[] {
  * Australian numbers arrive as `0412345678`, `+61412345678` and `61412345678`
  * for the same person. Returns "" when there are too few digits to be a real
  * number, so callers never match two unknowns to each other.
+ *
+ * ── Landlines ──────────────────────────────────────────────────────────────
+ * An Australian landline is often written without its area code — Brisbane's
+ * "33969909" is eight digits, and the same phone written in full is
+ * "0733969909". Taking the last nine of each gives "" and "733969909", so a
+ * landline never matched itself and the client read as absent.
+ *
+ * That has now cost this project twice: the client-tags import, where it left
+ * real matches unmatched, and the migration audit on 11/10/2026, where it
+ * inflated "clients missing from Groomigo" from 52 to 307. Both were patched
+ * locally; this is the fix at the source so the next caller does not have to
+ * know.
+ *
+ * An eight-digit local number is genuinely ambiguous — it carries no state —
+ * so one has to be assumed. `areaCode` defaults to Brisbane because that is
+ * where the salon is; pass another for a salon elsewhere. Both sides of a
+ * comparison must use the same default, which they do by calling this.
+ *
+ * Only 2, 3, 7, 8 and 9 begin an Australian local number; a short string of
+ * other digits is still rejected rather than padded into a false match.
  */
-export function phoneMatchKey(value: string | null | undefined): string {
+export function phoneMatchKey(
+  value: string | null | undefined,
+  areaCode = "07",
+): string {
   const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length === 8 && /^[23789]/.test(digits)) {
+    return `${areaCode}${digits}`.slice(-9);
+  }
   return digits.length >= 9 ? digits.slice(-9) : "";
 }

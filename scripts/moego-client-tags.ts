@@ -26,19 +26,6 @@ import mysql from "mysql2/promise";
 import { phoneMatchKey } from "../shared/moegoImport.ts";
 import { looksLikeCardNumber } from "../shared/cardNumberDetect.ts";
 
-/**
- * A Brisbane landline written without its area code.
- *
- * phoneMatchKey needs nine digits and the export gives eight for these
- * ("33960485"), so they matched nothing — and one of them, David and Rita
- * Miles, carries DONT BOOK IN. Prefixing 07 recovers them, and the unique-
- * match rule below still decides whether anything is written.
- */
-function landlineKey(raw: string): string {
-  const digits = String(raw ?? "").replace(/\D/g, "");
-  return digits.length === 8 && /^[23789]/.test(digits) ? phoneMatchKey(`07${digits}`) : "";
-}
-
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
 const file = args.find((a) => !a.startsWith("--"));
@@ -103,7 +90,8 @@ const byEmail = new Map<string, any[]>();
 for (const c of clients) {
   // Groomigo stores these landlines in the same eight-digit form the export
   // uses, so BOTH sides need the area code before they can meet.
-  const pk = phoneMatchKey(c.phone) || landlineKey(c.phone);
+  // phoneMatchKey now pads an area-code-less landline itself.
+  const pk = phoneMatchKey(c.phone);
   if (pk) { const a = byPhone.get(pk) ?? []; a.push(c); byPhone.set(pk, a); }
   const em = (c.email ?? "").trim().toLowerCase();
   if (em) { const a = byEmail.get(em) ?? []; a.push(c); byEmail.set(em, a); }
@@ -114,13 +102,11 @@ const ambiguous: string[] = [], unmatched: string[] = [], cardNotes: string[] = 
 let unchanged = 0;
 
 for (const row of incoming) {
+  // phoneMatchKey pads an area-code-less landline itself now, so there is no
+  // separate landline pass to make.
   const pk = phoneMatchKey(row.phone);
   let hits = pk ? byPhone.get(pk) ?? [] : [];
   let how = "phone";
-  if (hits.length === 0) {
-    const lk = landlineKey(row.phone);
-    if (lk) { hits = byPhone.get(lk) ?? []; how = "landline"; }
-  }
   if (hits.length === 0 && row.email) { hits = byEmail.get(row.email) ?? []; how = "email"; }
   const who = `${row.first} ${row.last}`.trim();
   if (hits.length === 0) { unmatched.push(`${who} (${row.phone || row.email || "no contact"})`); continue; }
