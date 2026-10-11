@@ -93,6 +93,20 @@ you will see zero cancellations and conclude there are none — which loses the
 entire urgent bucket, the one Andy reads first. On 05/10/2026 that was 11 dogs
 on the board who were not coming. Always run `1003` as well.
 
+**It drops `Pending` too, and `Pending` is not a booking.** A request that came
+in through the salon's booking link sits as `Pending` until someone presses
+Schedule, Decline or To waitlist. It is in neither report — not `1001`, because
+it is not Confirmed or Unconfirmed, and not `1003`, because it was never
+cancelled. The only place it appears is the **grooming calendar**, inline with
+the real bookings.
+
+On 11/10/2026 two were sitting there: Snowy (Belinda Smith) for the Thursday
+and Broods (Sarah Naylor) for the Friday, both submitted the day before, both
+still unanswered. Neither was in the export and neither was in Groomigo, so
+the first pass reported them as "bookings the export hides" and nearly created
+them. They are not bookings. See the fifth bucket in §3 — they are reported,
+never imported.
+
 Set the date range on each: **today → today + 14 days** (but see Trap 9 — pull
 wider than you compare), entered as `DD/MM/YYYY`, then press **Run report**.
 
@@ -336,7 +350,7 @@ const mysql = require("mysql2/promise");
 })();'
 ```
 
-The four buckets to report:
+The five buckets to report:
 
 1. **Cancelled in MoeGo, still live in Groomigo** — the urgent one. These dogs
    are on the board and are not coming.
@@ -346,9 +360,30 @@ The four buckets to report:
    Resolve each one against the client's MoeGo record before reporting it as
    unexplained.
 4. **Present in both, fields differ** — date, service or staff changed.
+5. **Requests waiting on the salon** — `Pending` online bookings nobody has
+   accepted or declined yet. **Report these; never import them.**
 
 Give counts first, then the rows. For a fortnight this is a few hundred rows,
 which a person can actually read.
+
+### Bucket 5: requests, not bookings
+
+A `Pending` row is a customer asking. Until someone presses **Schedule** it is
+not a booking, has no Booking ID, and the salon has not agreed to take the dog.
+
+Importing one would put a dog on the board the salon never accepted, leave a
+phantom in Groomigo the moment it is declined, and give the next sync nothing
+to match on — so when it IS accepted it would be created a second time.
+
+So: open each one on the calendar, read off the client, the dog, the requested
+slot and when it was submitted, and put it in the report under **"waiting on
+the salon"**. Then leave it alone. Do not press Schedule, Decline or To
+waitlist — accepting a booking on the salon's behalf is the salon's call, and
+declining one is irreversible and rude.
+
+Lead with these after the cancellations when they are within the coming week.
+Two customers who booked online on a Saturday and have heard nothing by Monday
+is a worse problem than a stale field, and it is invisible in every report.
 
 **Compare per DOG, not per booking.** One MoeGo row is several Groomigo rows
 (Trap 2), so expand MoeGo's `Pet name` before matching or the counts will never
@@ -356,7 +391,7 @@ agree: on 05/10/2026 MoeGo's 193 bookings were 242 dogs, against Groomigo's 242
 appointments. The match key is `(Booking ID, normalised pet name)`.
 
 Sanity-check the result both ways before trusting it. Every genuine difference
-that morning fell into the four buckets, and two apparent ones turned out to be
+that morning fell into a bucket, and two apparent ones turned out to be
 artefacts: Teddy (Trap 5) and Polo (Trap 9).
 
 ## 4. Applying
@@ -418,5 +453,11 @@ State plainly: the window covered, the bucket counts, anything skipped or
 flagged for a human, and whether anything was written. If nothing was written,
 say so in as many words.
 
-Andy reads this on a Monday morning before the salon opens. Lead with the
-number of dogs on the board that are not coming.
+Andy reads this on a Monday morning before the salon opens. Lead with the two
+things that cost him money if they wait:
+
+1. **dogs on the board who are not coming** — staff time held for nobody;
+2. **requests nobody has answered**, if any fall in the coming week — a
+   customer who booked online and has heard nothing books somewhere else.
+
+Everything else can follow in any order.
