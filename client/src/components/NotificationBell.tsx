@@ -1,4 +1,5 @@
 import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare } from "lucide-react";
+import { toast } from "sonner";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -29,6 +30,9 @@ export default function NotificationBell() {
   });
   const clearMissedCall = trpc.sms.clearMissedCall.useMutation({
     onSuccess: () => utils.sms.getUnreadPreview.invalidate(),
+    // Silence here is how a dead button looks. If the dismissal fails, say so
+    // rather than leaving someone clicking an X that appears to do nothing.
+    onError: (error) => toast.error(error.message || "Could not clear that notification"),
   });
   // Failed payments are protectedProcedure, the same level as the unread
   // preview below, so this adds no exposure: restricted staff see neither.

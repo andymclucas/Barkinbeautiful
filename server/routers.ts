@@ -7477,7 +7477,14 @@ const smsRouter = router({
         readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${missedCalls.readByUserId} LIMIT 1)`,
       }).from(missedCalls)
         .leftJoin(clients, eq(missedCalls.clientId, clients.id))
-        .where(eq(missedCalls.tenantId, tenantOf(ctx, input)))
+        // Unread only, matching the messages query above. Without this the X
+        // looked dead: clearMissedCall set read_at correctly, the list
+        // refetched, and the call came straight back because nothing filtered
+        // it out. The badge counted unread while the list did not, so a
+        // dismissed call sat there for good — 55 of the 56 on file were
+        // already read. getMissedCalls (the full page) still shows both, on
+        // purpose.
+        .where(and(eq(missedCalls.tenantId, tenantOf(ctx, input)), isNull(missedCalls.readAt)))
         .orderBy(desc(missedCalls.receivedAt))
         .limit(input.limit);
       const [{ count: callCount }] = await db.select({ count: sql<number>`count(*)` }).from(missedCalls)
