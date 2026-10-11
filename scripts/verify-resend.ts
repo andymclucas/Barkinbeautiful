@@ -28,6 +28,20 @@ function describeKey(key: string) {
   return `${key.slice(0, 3)}… ${key.length} chars`;
 }
 
+// Reachable from BOTH the send-scoped and the full-access path. A key scoped
+// to sending only cannot list domains, and that must not swallow --send: the
+// send is the one check such a key can actually prove.
+async function sendTest(sendTo: string) {
+  const { sendEmail } = await import("../server/email");
+  const sent = await sendEmail({
+    to: sendTo,
+    subject: "Groomigo — Resend check",
+    html: `<p>Outbound email is working.</p><p style="color:#6b7280;font-size:12px">Sent by scripts/verify-resend.ts at ${new Date().toISOString()}.</p>`,
+  });
+  console.log(sent ? `\n✓ Test email sent to ${sendTo}` : `\n✗ sendEmail returned false — see the error above`);
+  if (!sent) process.exitCode = 1;
+}
+
 async function main() {
   const sendIndex = process.argv.indexOf("--send");
   const sendTo = sendIndex === -1 ? null : process.argv[sendIndex + 1];
@@ -70,6 +84,11 @@ async function main() {
   if (res.status === 401 || res.status === 403 || /restricted|not allowed|permission/i.test(rawBody)) {
     console.log("\n✓ Key accepted, and scoped to sending only — it cannot read account config.");
     console.log("  That is the right scope, so the domain list below is unavailable by design.");
+    if (sendTo) {
+      console.log(`  Sending one real email from ${FROM || "RESEND_FROM_EMAIL"} instead — that is the end-to-end proof.`);
+      await sendTest(sendTo);
+      return;
+    }
     console.log(`  To prove sending end to end: --send <email> (from ${FROM || "RESEND_FROM_EMAIL"}).`);
     return;
   }
@@ -106,14 +125,7 @@ async function main() {
     return;
   }
 
-  const { sendEmail } = await import("../server/email");
-  const sent = await sendEmail({
-    to: sendTo,
-    subject: "Groomigo — Resend check",
-    html: `<p>Outbound email is working.</p><p style="color:#6b7280;font-size:12px">Sent by scripts/verify-resend.ts at ${new Date().toISOString()}.</p>`,
-  });
-  console.log(sent ? `\n✓ Test email sent to ${sendTo}` : `\n✗ sendEmail returned false — see the error above`);
-  if (!sent) process.exitCode = 1;
+  await sendTest(sendTo);
 }
 
 main().catch((err) => {
