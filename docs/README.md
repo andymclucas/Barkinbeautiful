@@ -37,6 +37,12 @@ Two naming notes for anyone reading these cold:
 | `groomigo_restricted_staff_access_2026-08-17.md` | The restricted-staff model — background for `operationalProcedure` vs `protectedProcedure` |
 | `andy_staff_workflow_test_2026-08-26.md` | End-to-end restricted-staff walkthrough |
 
+## Product direction
+
+| Note | Subject |
+| --- | --- |
+| `lauren_feature_requests_2026-10-12.md` | Lauren's feature requests, and why the revenue total currently understates |
+
 ## Booking & pricing
 
 | Note | Subject |
