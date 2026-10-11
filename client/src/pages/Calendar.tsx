@@ -6,11 +6,17 @@ import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { trpc } from "@/lib/trpc";
 import { resolveCalendarStaffColumns } from "@/lib/calendarStaffColumns";
 import {
-  toggleCalendarStaffSelection,
   calendarStaffFilterKey,
-  serialiseStaffSelection,
-  parseStoredStaffSelection,
-} from "@/lib/calendarStaffFilter";
+  coversAllStaff,
+  DEFAULT_CALENDAR_STAFF_SELECTION,
+  describeCalendarStaffSelection,
+  parseCalendarStaffSelection,
+  serialiseCalendarStaffSelection,
+  splitCalendarStaff,
+  toggleCalendarStaff,
+  visibleStaffIds as resolveVisibleStaffIds,
+  type CalendarStaffSelection,
+} from "@shared/calendarStaffSelection";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getDayCalendarGridSizing } from "@/lib/calendarGridSizing";
 import { buildAestDragSchedule } from "@/lib/calendarDragSchedule";
@@ -842,7 +848,13 @@ export default function Calendar() {
   const [copySnap, setCopySnap]     = useState<ReportSnapshot | null>(null);
   const [viewMode, setViewMode]     = useState<"week" | "day">("day");
   const [dayDate, setDayDate]       = useState(() => getTodayAEST());
-  const [visibleStaffIds, setVisibleStaffIds] = useState<number[] | null>(null);
+  // The diary opens on the grooming side; the bathing team is opt-in from the
+  // staff menu. Held as an INTENT rather than a list of ids so that a groomer
+  // hired next month appears without anybody reopening the filter — see
+  // shared/calendarStaffSelection.ts.
+  const [staffSelection, setStaffSelection] = useState<CalendarStaffSelection>(
+    DEFAULT_CALENDAR_STAFF_SELECTION,
+  );
   // Which storage key the current selection was restored FROM, or null
   // before anything has been read.
   //
@@ -1282,7 +1294,7 @@ export default function Calendar() {
   //
   // Waits for the staff list, because a stored list is a snapshot of a
   // roster that has since changed and has to be reconciled against who
-  // works here now — see parseStoredStaffSelection. Runs once: after that
+  // works here now — see parseCalendarStaffSelection. Runs once: after that
   // the user's own clicks are the source of truth.
   const staffFilterKey = calendarStaffFilterKey(user?.id);
 
@@ -1297,35 +1309,51 @@ export default function Calendar() {
     // "this selection covers everyone" and quietly wipes the filter.
     if (!staffList || activeStaffIds.length === 0) return;
     try {
-      setVisibleStaffIds(
-        parseStoredStaffSelection(window.localStorage.getItem(staffFilterKey), activeStaffIds),
+      setStaffSelection(
+        parseCalendarStaffSelection(window.localStorage.getItem(staffFilterKey), activeStaff),
       );
     } catch {
       // Private browsing, or storage disabled. A remembered filter is a
       // convenience; losing it must never stop the calendar loading.
-      setVisibleStaffIds(null);
+      setStaffSelection(DEFAULT_CALENDAR_STAFF_SELECTION);
     }
     restoredStaffFilterKey.current = staffFilterKey;
-  }, [activeStaffIds, staffFilterKey, staffList, user]);
+  }, [activeStaff, activeStaffIds, staffFilterKey, staffList, user]);
 
   useEffect(() => {
     // Only write back to the key the current selection actually came from.
     if (restoredStaffFilterKey.current !== staffFilterKey) return;
     try {
-      window.localStorage.setItem(staffFilterKey, serialiseStaffSelection(visibleStaffIds));
+      window.localStorage.setItem(staffFilterKey, serialiseCalendarStaffSelection(staffSelection));
     } catch {
       // As above — a filter that cannot be saved is not worth an error.
     }
-  }, [visibleStaffIds, staffFilterKey]);
+  }, [staffSelection, staffFilterKey]);
 
-  const calendarGroomers = useMemo(() => activeStaff.filter((member) => member.role !== "bather"), [activeStaff]);
-  const calendarBathers = useMemo(() => activeStaff.filter((member) => member.role === "bather"), [activeStaff]);
+  // One source for the grooming/bathing line, shared with the default above:
+  // inlined twice before this, which is how a default and the menu grouping
+  // it is supposed to match drift apart.
+  const { groomers: calendarGroomers, bathers: calendarBathers } = useMemo(
+    () => splitCalendarStaff(activeStaff),
+    [activeStaff],
+  );
+  const visibleStaffIds = useMemo(
+    () => resolveVisibleStaffIds(staffSelection, activeStaff),
+    [staffSelection, activeStaff],
+  );
   const weekDays    = useMemo(() => getWeekDays(weekStart), [weekStart]);
 
   const filteredAppts = useMemo(() => {
     if (!weekAppts) return [];
-    if (visibleStaffIds === null) return weekAppts;
-    return weekAppts.filter((appointment) => appointment.staffId !== null && visibleStaffIds.includes(appointment.staffId));
+    const visible = new Set(visibleStaffIds);
+    // A dog with nobody assigned belongs to no column, so a staff filter has
+    // no opinion on it: it stays in the Unassigned strip under the board and
+    // in the day's count. Dropping it here is how 104 unassigned bookings
+    // would have silently left the diary the moment the default stopped
+    // being "all staff".
+    return weekAppts.filter(
+      (appointment) => appointment.staffId === null || visible.has(appointment.staffId),
+    );
   }, [weekAppts, visibleStaffIds]);
 
   // Build a map of sessionId -> all appointments in that session (from ALL weekAppts, not filtered)
@@ -1702,9 +1730,11 @@ export default function Calendar() {
     const allCols = activeStaff.length > 0
       ? activeStaff
       : [{ id: null as number | null, name: "Unassigned", colourHex: "#94a3b8", isActive: true, role: null }];
-    const cols = visibleStaffIds === null
-      ? allCols
-      : allCols.filter((staffMember) => staffMember.id !== null && visibleStaffIds.includes(staffMember.id));
+    // The "Unassigned" placeholder column only exists when there is no roster
+    // at all, and has to survive the filter when it does.
+    const cols = allCols.filter(
+      (staffMember) => staffMember.id === null || visibleStaffIds.includes(staffMember.id),
+    );
     const groomerCount = cols.filter((member) => member.role !== "bather").length;
     const batherCount = cols.filter((member) => member.role === "bather").length;
 
@@ -2115,27 +2145,35 @@ export default function Calendar() {
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="brand-lift h-9 min-w-40 justify-start gap-1.5 bg-card/80 text-xs shadow-sm" title="Choose the staff columns shown on this calendar">
                   <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-                  {visibleStaffIds === null ? "All staff" : `${visibleStaffIds.length} staff selected`}
+                  {describeCalendarStaffSelection(staffSelection, activeStaff)}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-56 p-2" align="end">
                 <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Visible staff columns</p>
-                <button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setVisibleStaffIds(null)}>
-                  <span className={`flex h-4 w-4 items-center justify-center rounded border ${visibleStaffIds === null ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{visibleStaffIds === null && <Check className="h-3 w-3" />}</span>
+                <button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setStaffSelection({ kind: "all" })}>
+                  <span className={`flex h-4 w-4 items-center justify-center rounded border ${coversAllStaff(staffSelection, activeStaff) ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{coversAllStaff(staffSelection, activeStaff) && <Check className="h-3 w-3" />}</span>
                   All staff
                 </button>
+                {/* Only worth offering when there is a bathing team to leave
+                    out; without one it is the same board as "All staff". */}
+                {calendarBathers.length > 0 && (
+                  <button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setStaffSelection(DEFAULT_CALENDAR_STAFF_SELECTION)}>
+                    <span className={`flex h-4 w-4 items-center justify-center rounded border ${staffSelection.kind === "groomers" ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{staffSelection.kind === "groomers" && <Check className="h-3 w-3" />}</span>
+                    Groomers only
+                  </button>
+                )}
                 {calendarGroomers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">Groomers</p>}
                 {calendarGroomers.map((member) => {
-                  const checked = visibleStaffIds === null || visibleStaffIds.includes(member.id);
-                  return <button key={member.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setVisibleStaffIds(toggleCalendarStaffSelection(visibleStaffIds, activeStaff.map((staffMember) => staffMember.id), member.id))}>
+                  const checked = visibleStaffIds.includes(member.id);
+                  return <button key={member.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setStaffSelection(toggleCalendarStaff(staffSelection, activeStaff, member.id))}>
                     <span className={`flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{checked && <Check className="h-3 w-3" />}</span>
                     <span className="h-2 w-2 rounded-full" style={{ background: member.colourHex ?? "#6366f1" }} />{member.name.split(" ")[0]}
                   </button>;
                 })}
                 {calendarBathers.length > 0 && <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">Bathing team</p>}
                 {calendarBathers.map((member) => {
-                  const checked = visibleStaffIds === null || visibleStaffIds.includes(member.id);
-                  return <button key={member.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setVisibleStaffIds(toggleCalendarStaffSelection(visibleStaffIds, activeStaff.map((staffMember) => staffMember.id), member.id))}>
+                  const checked = visibleStaffIds.includes(member.id);
+                  return <button key={member.id} type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setStaffSelection(toggleCalendarStaff(staffSelection, activeStaff, member.id))}>
                     <span className={`flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{checked && <Check className="h-3 w-3" />}</span>
                     <span className="h-2 w-2 rounded-full" style={{ background: member.colourHex ?? "#6366f1" }} />{member.name.split(" ")[0]}
                   </button>;
