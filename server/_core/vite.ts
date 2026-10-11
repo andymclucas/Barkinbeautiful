@@ -73,7 +73,10 @@ export function serveStatic(app: Express) {
   // year, and a fix to it can never be deployed. That is the classic way
   // to brick a PWA, and it is silent: the app looks fine and the
   // notifications are being handled by last year's code.
-  const alwaysRevalidate = new Set(["index.html", "sw.js", "manifest.webmanifest"]);
+  // voicemail-greeting.wav is here for the same reason as the rest: its name
+  // is fixed, Twilio fetches it on every missed call, and a year of immutable
+  // caching would mean a re-recorded greeting could never reach callers.
+  const alwaysRevalidate = new Set(["index.html", "sw.js", "manifest.webmanifest", "voicemail-greeting.wav"]);
 
   app.use(express.static(distPath, {
     index: false,

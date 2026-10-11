@@ -5,7 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerStorageProxy } from "./storageProxy";
 import { registerUploadRoutes } from "../uploadRoutes";
-import { logAppUrlConfiguration } from "../appUrl";
+import { getAppBaseUrl, logAppUrlConfiguration } from "../appUrl";
 import { startPushFanout } from "../pushFanout";
 import { tenantIdForWebhook } from "../tenantByNumber";
 import { paymentRetryHandler, appointmentReminderHandler } from "../scheduledHandlers";
@@ -457,9 +457,18 @@ async function startServer() {
         console.error("[Twilio] Missed-call auto-text handling errored:", error);
       }
     }
+    // The salon's own recorded greeting, not Twilio's text-to-speech. Served
+    // from client/public, which is public and unauthenticated — Twilio fetches
+    // it as an anonymous client and cannot send a session cookie.
+    //
+    // If the fetch fails Twilio logs the error and moves to the next verb, so
+    // the caller would get the beep with no greeting. That is why the file is
+    // committed with the app rather than kept in the database or a bucket:
+    // it deploys atomically with this code and cannot go missing on its own.
+    const greetingUrl = `${getAppBaseUrl()}/voicemail-greeting.wav`;
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>Thank you for calling Barkin' Beautiful. We're unable to take your call right now. Please leave a message after the tone and we'll get back to you as soon as possible.</Say>
+  <Play>${greetingUrl}</Play>
   <Record maxLength="120" playBeep="true" transcribe="true" transcribeCallback="/api/twilio/voicemail-transcription" />
 </Response>`);
   });
