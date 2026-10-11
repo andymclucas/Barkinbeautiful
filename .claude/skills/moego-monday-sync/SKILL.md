@@ -193,10 +193,35 @@ row per pet. An import must split these, and `moego_appointment_id` is then
 **not unique** in Groomigo — the key is (`moego_appointment_id`, `pet_id`).
 Getting this wrong either drops the second dog or double-books the first.
 
-**Trap 3 — comma-joining is ambiguous.** A pet or service name containing a
-comma cannot be split reliably. Count the split parts against each other; if
-pets, services and staff do not agree, flag the row for a human instead of
-guessing.
+**Trap 3 — the comma-joined columns are NOT positionally aligned with the
+pets, and never were.** An earlier version of this file said to count the
+split parts against each other and flag a row whose pets, services and staff
+disagree. That is right to flag, but the reason given was wrong, and acting on
+the counts when they *do* agree is itself a bug.
+
+Checked against MoeGo's own booking pages on 12/10/2026:
+
+- `Staffs` is the list of **distinct people on the booking**, not one entry per
+  pet. `#133330760` reads `"Megan Graham, Charlotte Purcell"` for three dogs,
+  and MoeGo's booking page says Pepsi→Megan, Ginger→Megan, Coco→Charlotte.
+  Positional alignment hands Charlotte to **Ginger** — the wrong dog.
+- `#109597478` reads the same two names for **four** dogs: Olah→Megan,
+  Teddy→Charlotte, Eevee→Megan, Georgi→Charlotte. The real pattern alternates,
+  so position cannot recover it even in principle.
+- `Service & add ons` splices **add-ons inline**, so it does not align either.
+  `#133330760` has 3 pets and 5 entries, because two dogs have `Anal Glands`.
+- An add-on can be done by a **different person**, which is how one dog ends up
+  with two staff. `#132401819` is a single dog: groom by Zakaria, teeth
+  brushing by Brooklyn. The appointment's groomer is the one on the **main
+  service**; Groomigo has no column for the add-on's staff.
+
+So: **never derive a per-dog groomer by position.** Where the counts agree it
+is a coincidence worth nothing. The only reliable per-dog assignment is the
+client's own **Bookings → Upcoming** page in MoeGo, which prints
+`PetService (by Name)` per line; read it there and nowhere else.
+
+A sync that flags count mismatches and silently trusts matching counts has it
+exactly backwards for a multi-pet booking.
 
 **Trap 4 — workflow state: cancel yes, anything else no.** An earlier version of
 this file said workflow state must *never* be imported. That was too blunt, and

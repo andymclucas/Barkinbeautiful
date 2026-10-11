@@ -7,6 +7,7 @@ import { greetingForHour } from "@shared/greeting";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NetSalesPerformance } from "@/components/NetSalesPerformance";
 import { CalendarDays, Users, CreditCard, TrendingUp, AlertTriangle, Dog, Clock, ArrowRight, MessageSquare, Phone } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
@@ -210,6 +211,13 @@ export default function Dashboard() {
             </Link>
           ))}
         </div>
+
+        {/* Revenue over the month, under the tile that states its total.
+            Deliberately the SAME range the Monthly Revenue tile uses
+            (monthStart → tomorrow), so the number and the shape can never
+            disagree about the same month. The chart owns its own query and
+            its own validated palette; this page just says where it goes. */}
+        <NetSalesPerformance dateFrom={monthStart} dateTo={tomorrow} />
 
         {/* Alerts */}
         {failedPayments && failedPayments.length > 0 && (
