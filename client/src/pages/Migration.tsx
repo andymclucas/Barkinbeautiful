@@ -137,7 +137,7 @@ export default function Migration() {
                     ))}
                   </div>
                 </div>
-                <Button className="w-full gap-2" onClick={() => toast.info("MoeGo extraction requires server-side automation. Contact your GSOS administrator to run this process.")}>
+                <Button className="w-full gap-2" onClick={() => toast.info("MoeGo extraction requires server-side automation. Contact your Groomigo administrator to run this process.")}>
                   <Database className="h-4 w-4" /> Start MoeGo Extract
                 </Button>
               </CardContent>

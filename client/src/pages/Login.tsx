@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Eye, EyeOff, X } from "lucide-react";
+import { GROOMIGO_TAGLINE } from "@shared/salonTitle";
 
 export default function Login() {
   const [, navigate] = useLocation();
@@ -156,7 +157,10 @@ export default function Login() {
             <img src="/groomigo_logo.png" alt="Groomigo" style={{ height: "80px", width: "auto" }} />
           </div>
           <p className="mt-3 text-sm font-medium tracking-widest uppercase" style={{ color: "var(--auth-text-brand-mid)", letterSpacing: "0.2em" }}>
-            Grooming Salon Operating System
+            Groomigo
+          </p>
+          <p className="mt-1.5 text-sm italic" style={{ color: "var(--auth-text-faint)" }}>
+            {GROOMIGO_TAGLINE}
           </p>
         </div>
 
@@ -378,15 +382,7 @@ export default function Login() {
 
         </div>
 
-        {/* Slogan footer — fade+slide-up with 300ms delay */}
-        <div className="text-center mt-10 space-y-1" style={slideStyle(300)}>
-          <p className="text-xs font-semibold tracking-widest uppercase" style={{ color: "var(--auth-text-brand-faint)", letterSpacing: "0.25em" }}>
-            Powered by Groomigo
-          </p>
-          <p className="text-sm italic" style={{ color: "var(--auth-text-faint)" }}>
-            'Your grooming salon's best mate...well, amigo.'
-          </p>
-        </div>
+
       </div>
 
       {/* Forgot Password Modal */}

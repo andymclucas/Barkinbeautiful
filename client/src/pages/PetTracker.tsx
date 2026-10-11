@@ -146,7 +146,7 @@ export default function PetTracker() {
         </div>
 
         <p className="text-center text-xs text-muted-foreground">
-          This page updates automatically every 30 seconds. Powered by GSOS.
+          This page updates automatically every 30 seconds. Powered by Groomigo.
         </p>
       </div>
     </div>

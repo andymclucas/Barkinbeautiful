@@ -70,6 +70,7 @@ import { MyProfileDialog } from "@/components/MyProfileDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { parseSections, STAFF_SECTIONS } from "@shared/staffPermissions";
 import { toast } from "sonner";
+import { useSalonDocumentTitle } from "@/hooks/useSalonDocumentTitle";
 
 const menuItems = [
   { icon: CalendarDays,   label: "Appointments",     path: "/calendar" },
@@ -207,6 +208,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
   const { loading, user } = useAuth();
+  // "Groomigo — <salon>" in the browser tab. Here rather than at App level
+  // because it reads the tenant, and the portal and tracker pages are opened
+  // by clients who have no staff session.
+  useSalonDocumentTitle();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());

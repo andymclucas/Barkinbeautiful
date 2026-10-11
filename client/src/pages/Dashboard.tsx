@@ -127,8 +127,8 @@ export default function Dashboard() {
   if (!isAuthenticated) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-6 bg-background">
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold font-display text-foreground">GSOS</h1>
-        <p className="text-muted-foreground">Grooming Salon Operating System</p>
+        <h1 className="text-3xl font-bold font-display text-foreground">Groomigo</h1>
+        <p className="text-muted-foreground">The best friend for your grooming salon needs</p>
       </div>
       <Link href="/login">
         <Button size="lg" className="gap-2">Sign In to Continue <ArrowRight className="h-4 w-4" /></Button>

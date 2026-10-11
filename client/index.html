@@ -132,7 +132,16 @@
       })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
-    <title>GSOS — Grooming Salon Operating System</title>
+    <!-- The salon's name is appended at runtime once the tenant is known —
+         see useSalonDocumentTitle. This is the pre-auth and public-page
+         fallback, and the title a crawler or a link preview sees. -->
+    <title>Groomigo</title>
+
+    <!-- There was no rel="icon" at all, so browsers fell back to a generated
+         letter tile. The SVG is the real favicon; the PNG is there for the
+         browsers that still ignore SVG icons. -->
+    <link rel="icon" type="image/svg+xml" href="/groomigo_logo.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
 
     <!-- Installable, which on an iPhone is not cosmetic: iOS gives a site
          the Notification API and Web Push ONLY when it has been added to
