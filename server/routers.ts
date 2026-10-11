@@ -5389,6 +5389,91 @@ const analyticsRouter = router({
 
 // ─── Analytics Revenue Time Series ───────────────────────────────────────────
 const analyticsRouterExtended = router({
+  /**
+   * Net sales per day, against a comparison period.
+   *
+   * "Net sales" is deliberately the SAME figure analytics.summary calls
+   * collected — SUM(appointments.price) over completed, non-cancelled
+   * appointments in the range. A second definition of revenue living in a
+   * second query is how two screens come to disagree about the same week.
+   *
+   * Both series are returned bucketed by day and aligned by index, so the
+   * chart can draw them over one axis: day 1 of this period against day 1 of
+   * the comparison, whatever calendar dates those are.
+   */
+  netSalesPerformance: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      dateFrom: z.string(),
+      dateTo: z.string(),
+      comparison: z.enum(["prior_period", "prior_year"]).default("prior_period"),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const { comparisonRange, percentChange } = await import("@shared/comparisonPeriod");
+      const from = new Date(input.dateFrom);
+      const to = new Date(input.dateTo);
+      const prior = comparisonRange(from, to, input.comparison);
+
+      // One row per day, in Brisbane — bucketing on the raw UTC timestamp
+      // would split a day at 10am local and put a morning groom on the
+      // previous date.
+      const dailyNetSales = async (rangeFrom: Date, rangeTo: Date) => {
+        const rows = await db
+          .select({
+            day: sql<string>`DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'))`,
+            net: sql<string>`COALESCE(SUM(${appointments.price}), 0)`,
+          })
+          .from(appointments)
+          .where(and(
+            eq(appointments.tenantId, tenantOf(ctx, input)),
+            eq(appointments.workflowState, "complete"),
+            notInArray(appointments.status, ["cancelled", "no_show"]),
+            gte(appointments.scheduledStart, rangeFrom),
+            lte(appointments.scheduledStart, rangeTo),
+          ))
+          .groupBy(sql`DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'))`);
+        const byDay = new Map<string, number>();
+        for (const r of rows) byDay.set(String(r.day), Number(r.net));
+        // Fill every day in the range: a day with no grooms is a real zero on
+        // the line, not a gap for the chart to interpolate across.
+        const out: { date: string; net: number }[] = [];
+        const cursor = new Date(Date.UTC(rangeFrom.getUTCFullYear(), rangeFrom.getUTCMonth(), rangeFrom.getUTCDate()));
+        const last = new Date(Date.UTC(rangeTo.getUTCFullYear(), rangeTo.getUTCMonth(), rangeTo.getUTCDate()));
+        while (cursor.getTime() <= last.getTime()) {
+          const key = cursor.toISOString().slice(0, 10);
+          out.push({ date: key, net: byDay.get(key) ?? 0 });
+          cursor.setUTCDate(cursor.getUTCDate() + 1);
+        }
+        return out;
+      };
+
+      const [current, previous] = await Promise.all([
+        dailyNetSales(from, to),
+        dailyNetSales(prior.from, prior.to),
+      ]);
+      const sum = (xs: { net: number }[]) => xs.reduce((t, x) => t + x.net, 0);
+      const currentTotal = sum(current);
+      const previousTotal = sum(previous);
+
+      return {
+        comparison: input.comparison,
+        currentRange: { from: current[0]?.date ?? null, to: current.at(-1)?.date ?? null },
+        priorRange: { from: previous[0]?.date ?? null, to: previous.at(-1)?.date ?? null },
+        currentTotal,
+        previousTotal,
+        percentChange: percentChange(currentTotal, previousTotal),
+        // Index-aligned so one X axis serves both lines.
+        points: current.map((c, i) => ({
+          date: c.date,
+          net: c.net,
+          priorDate: previous[i]?.date ?? null,
+          priorNet: previous[i]?.net ?? null,
+        })),
+      };
+    }),
+
   revenueTimeSeries: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), dateFrom: z.string(), dateTo: z.string() }))
     .query(async ({ input, ctx }) => {

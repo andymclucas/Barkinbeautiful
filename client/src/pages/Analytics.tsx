@@ -2,6 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend, type TooltipProps } from "recharts";
+import { NetSalesPerformance } from "@/components/NetSalesPerformance";
 import { TrendingUp, Users, CreditCard, CalendarDays, Scissors, Heart, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
@@ -326,6 +327,10 @@ export default function Analytics() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Net sales against a comparison period — the headline revenue
+            question, so it sits above the breakdown trends below. */}
+        <NetSalesPerformance dateFrom={dateFrom} dateTo={dateTo} />
 
         {/* Revenue Trend Chart */}
         {timeSeries && timeSeries.length > 0 && (
