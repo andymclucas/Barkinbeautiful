@@ -35,7 +35,29 @@ export type AssignableStaff = {
   tenantId: number;
   /** Drizzle gives boolean; a raw mysql2 read can give 0/1 or "0". */
   isActive?: boolean | number | string | null;
+  /** `staff.role` — the salon's own structure, not the platform's. */
+  role?: string | null;
 };
+
+/**
+ * Only the grooming side returns calls and messages.
+ *
+ * The bathing team works the floor and does not ring clients back, so putting
+ * them in the picker offers a handover that will not happen. It also happens
+ * to remove every staff member with no login, which is why the picker no
+ * longer has to explain that an assignment cannot reach them.
+ *
+ * This is a product rule, not a law of grooming: another salon may well have
+ * its bathers answering the phone. When this becomes configurable it belongs
+ * in tenant settings, and this function is the one place that has to change.
+ */
+export function canReturnCalls(role: string | null | undefined): boolean {
+  return !isBatherRole(role);
+}
+
+function isBatherRole(role: string | null | undefined): boolean {
+  return String(role ?? "").trim().toLowerCase() === "bather";
+}
 
 /** What the badges and the unread filter mean by unread. */
 export function isUnread(row: Pick<MessageReadRow, "readAt">): boolean {
@@ -88,6 +110,11 @@ export function canAssignTo(
   const active = staff.isActive;
   if (active === false || active === 0 || active === "0") {
     return { ok: false, reason: "That staff member is no longer active" };
+  }
+  // Enforced here and not only in the picker: a rule that lives in the UI is
+  // not a rule, it is a default.
+  if (!canReturnCalls(staff.role)) {
+    return { ok: false, reason: "The bathing team does not return calls or messages" };
   }
   return { ok: true };
 }

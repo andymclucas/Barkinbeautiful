@@ -2,7 +2,7 @@ import { toast } from "sonner";
 import { UserCheck, UserPlus, BellOff } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
-import { splitCalendarStaff } from "@shared/calendarStaffSelection";
+import { canReturnCalls } from "@shared/messageReadState";
 
 /**
  * Hand a voicemail or a message to someone on the floor.
@@ -43,12 +43,18 @@ export function AssignStaffPicker({
     onError: (error) => toast.error(error.message || "Could not assign that"),
   });
 
-  // Same grooming/bathing split the diary uses, so one directory, one order.
-  const { groomers, bathers } = splitCalendarStaff(
-    (staffList ?? []).filter((member) => member.isActive !== false),
+  // Only the grooming side returns calls and messages, so the bathing team is
+  // not offered at all. The server enforces the same rule in canAssignTo —
+  // this list is the convenience, not the control.
+  //
+  // It also means everyone shown here has a login, since the four staff
+  // without one are all bathers. The struck-through bell below stays as a
+  // safety net for a future groomer who has not been given an account yet.
+  const assignable = (staffList ?? []).filter(
+    (member) => member.isActive !== false && canReturnCalls(member.role),
   );
 
-  const row = (member: (typeof groomers)[number]) => {
+  const row = (member: (typeof assignable)[number]) => {
     const selected = member.id === assignedStaffId;
     const reachable = (member as { hasLogin?: boolean }).hasLogin !== false;
     return (
@@ -101,18 +107,12 @@ export function AssignStaffPicker({
             Unassign
           </button>
         )}
-        {groomers.length > 0 && (
-          <p className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">
-            Groomers
+        {assignable.map(row)}
+        {assignable.length === 0 && (
+          <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+            Nobody is available to take this
           </p>
         )}
-        {groomers.map(row)}
-        {bathers.length > 0 && (
-          <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
-            Bathing team
-          </p>
-        )}
-        {bathers.map(row)}
       </PopoverContent>
     </Popover>
   );

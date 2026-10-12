@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  canAssignTo, describeReadState, isUnread, markReadPatch, markUnreadPatch,
+  canAssignTo, canReturnCalls, describeReadState, isUnread, markReadPatch, markUnreadPatch,
   type MessageReadRow,
 } from "@shared/messageReadState";
 
@@ -53,8 +53,32 @@ describe("markUnreadPatch", () => {
   });
 });
 
+describe("canReturnCalls", () => {
+  it("is the grooming side, and only the grooming side", () => {
+    for (const role of ["owner", "manager", "groomer", "receptionist", null, undefined]) {
+      expect(canReturnCalls(role)).toBe(true);
+    }
+    expect(canReturnCalls("bather")).toBe(false);
+    expect(canReturnCalls("Bather")).toBe(false);
+    expect(canReturnCalls(" bather ")).toBe(false);
+  });
+});
+
 describe("canAssignTo", () => {
-  const staff = { id: 3, tenantId: 1, isActive: true };
+  const staff = { id: 3, tenantId: 1, isActive: true, role: "groomer" };
+
+  it("refuses the bathing team, who do not ring clients back", () => {
+    // Enforced server-side, not only hidden from the picker — otherwise it is
+    // a default rather than a rule.
+    const verdict = canAssignTo({ ...staff, role: "bather" }, 1);
+    expect(verdict.ok).toBe(false);
+    expect(verdict).toHaveProperty("reason");
+  });
+
+  it("allows the owner and managers, who do", () => {
+    expect(canAssignTo({ ...staff, role: "owner" }, 1)).toEqual({ ok: true });
+    expect(canAssignTo({ ...staff, role: "manager" }, 1)).toEqual({ ok: true });
+  });
 
   it("allows an active staff member of the same salon", () => {
     expect(canAssignTo(staff, 1)).toEqual({ ok: true });

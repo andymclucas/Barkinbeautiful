@@ -7796,7 +7796,7 @@ const smsRouter = router({
       const tenantId = tenantOf(ctx, input);
 
       if (input.staffId !== null) {
-        const [member] = await db.select({ id: staff.id, tenantId: staff.tenantId, isActive: staff.isActive })
+        const [member] = await db.select({ id: staff.id, tenantId: staff.tenantId, isActive: staff.isActive, role: staff.role })
           .from(staff).where(eq(staff.id, input.staffId)).limit(1);
         // Tenant is checked here rather than in the WHERE, so a cross-salon
         // attempt gets a clear refusal instead of silently updating nothing.
