@@ -1,4 +1,4 @@
-import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare, UserCheck, RotateCcw } from "lucide-react";
+import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare, UserCheck, RotateCcw, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { trpc } from "@/lib/trpc";
 import { failedPaymentDetail, failedPaymentHeadline, sortFailedPayments } from "@shared/failedPaymentNotice";
 import { notificationForEvent } from "@shared/notificationDelivery";
+import { describeSystemNotification } from "@shared/systemNotifications";
 import { useStaffNotifications } from "@/hooks/useStaffNotifications";
 import { useAppBadge } from "@/hooks/useAppBadge";
 
@@ -52,6 +53,17 @@ export default function NotificationBell() {
     {},
     { refetchInterval: 30_000, refetchOnWindowFocus: true },
   );
+  // Things the salon should know, as opposed to work someone must do.
+  // operationalProcedure, so a restricted groomer sees it too.
+  const { data: systemData } = trpc.sms.getSystemNotifications.useQuery(
+    { limit: 6 },
+    { refetchInterval: 60_000, refetchOnWindowFocus: true },
+  );
+  const markSystemRead = trpc.sms.markSystemNotificationRead.useMutation({
+    onSuccess: () => utils.sms.getSystemNotifications.invalidate(),
+    onError: (error) => toast.error(error.message || "Could not dismiss that"),
+  });
+
   const markUnread = trpc.sms.markNotificationUnread.useMutation({
     onSuccess: () => {
       utils.sms.getUnreadPreview.invalidate();
@@ -82,6 +94,7 @@ export default function NotificationBell() {
         // somebody else's queue by the push.
         if (payload?.type === "data-changed" || payload?.type === "assignment") {
           utils.sms.myAssignments.invalidate();
+          utils.sms.getSystemNotifications.invalidate();
         }
 
         // Ping whoever is signed in. The hook decides between an
@@ -107,7 +120,8 @@ export default function NotificationBell() {
   // Work handed to you personally belongs in your own badge; that is the
   // whole point of assigning it rather than leaving it in the shared pile.
   const assignedCount = mine?.total ?? 0;
-  const unreadCount = messageCount + failedPayments.length + assignedCount;
+  const systemCount = systemData?.unreadCount ?? 0;
+  const unreadCount = messageCount + failedPayments.length + assignedCount + systemCount;
 
   // The same number as the badge on the bell, on the Home Screen icon.
   // Driving it from here rather than its own query means the two cannot
@@ -233,6 +247,53 @@ export default function NotificationBell() {
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{failedPaymentDetail(item)}</p>
                 </button>
               ))}
+            </>
+          )}
+
+          {/* The salon's own events. Not assigned to anybody and nothing to
+              action — but "Jane set up her portal" sitting in the message
+              list would read as a customer waiting for a reply. */}
+          {(systemData?.items.length ?? 0) > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 bg-sky-50 px-4 py-1.5 dark:bg-sky-950/30">
+                <Settings2 className="h-3 w-3 shrink-0 text-sky-700 dark:text-sky-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-300">
+                  System ({systemCount})
+                </span>
+              </div>
+              {(systemData?.items ?? []).map((item: any) => {
+                const { title, detail } = describeSystemNotification(item);
+                return (
+                  <div
+                    key={`sys-${item.id}`}
+                    className={`flex w-full items-start gap-1 border-b px-4 py-3 transition-colors last:border-b-0 hover:bg-accent ${item.readAt ? "opacity-60" : ""}`}
+                  >
+                    <button
+                      className="min-w-0 flex-1 text-left"
+                      onClick={() => {
+                        if (!item.readAt) markSystemRead.mutate({ id: item.id });
+                        if (item.clientId) setLocation(`/clients/${item.clientId}`);
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{title}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(item.createdAt)}</span>
+                      </div>
+                      {detail && <p className="mt-0.5 truncate text-xs text-muted-foreground">{detail}</p>}
+                    </button>
+                    {!item.readAt && (
+                      <button
+                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label="Dismiss"
+                        title="Dismiss"
+                        onClick={(e) => { e.stopPropagation(); markSystemRead.mutate({ id: item.id }); }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </>
           )}
 

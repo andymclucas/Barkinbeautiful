@@ -1134,6 +1134,26 @@ export const appointmentPayments = mysqlTable("appointment_payments", {
 
 export type AppointmentPayment = typeof appointmentPayments.$inferSelect;
 
+// ─── System notifications ─────────────────────────────────────────────────────
+/**
+ * Things the SALON should know, as distinct from work a person must do.
+ *
+ * Deliberately not a column on `clients`: a client finishing their portal
+ * signup is the first of these and the next will not be about a client at
+ * all. `readAt` is salon-wide — once anybody has seen it, the salon has.
+ */
+export const systemNotifications = mysqlTable("system_notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  kind: mysqlEnum("kind", ["client_portal_activated"]).notNull(),
+  clientId: int("client_id"),
+  readAt: timestamp("read_at"),
+  readByUserId: int("read_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("idx_system_notifications_tenant_read").on(t.tenantId, t.readAt)]);
+
+export type SystemNotification = typeof systemNotifications.$inferSelect;
+
 // ─── Client-side error/failure diagnostics ────────────────────────────────────
 // Captures the kinds of failure that are otherwise invisible: a blank page
 // (bundle failed to load/parse before React ever ran, so no in-app error is

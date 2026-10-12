@@ -757,6 +757,20 @@
       "when": 1791791458575,
       "tag": "0107_staff_access_role_changed_event",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "5",
+      "when": 1791801099505,
+      "tag": "0108_system_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "5",
+      "when": 1791801099506,
+      "tag": "0109_system_notifications_index",
+      "breakpoints": true
     }
   ]
 }

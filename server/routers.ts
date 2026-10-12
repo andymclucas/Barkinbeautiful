@@ -13,6 +13,7 @@ import { z } from "zod";
 import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
+  systemNotifications,
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
@@ -7872,6 +7873,67 @@ const smsRouter = router({
    * "Lauren opened this at 9am and did not ring back" survives being marked
    * unread — which is the whole reason the column exists.
    */
+  /**
+   * What the salon should know about, newest first.
+   *
+   * operationalProcedure, unlike the rest of the bell: a client setting up
+   * their portal is not pay-adjacent and a restricted groomer being blind to
+   * it helps nobody. Scoped by tenant, and the pets are read live rather than
+   * stored on the row so a renamed dog reads correctly afterwards.
+   */
+  getSystemNotifications: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(10) }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input ?? {});
+      const rows = await db.select({
+        id: systemNotifications.id,
+        kind: systemNotifications.kind,
+        clientId: systemNotifications.clientId,
+        readAt: systemNotifications.readAt,
+        createdAt: systemNotifications.createdAt,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+      })
+        .from(systemNotifications)
+        .leftJoin(clients, eq(clients.id, systemNotifications.clientId))
+        .where(eq(systemNotifications.tenantId, tenantId))
+        .orderBy(desc(systemNotifications.createdAt))
+        .limit(input?.limit ?? 10);
+
+      const clientIds = rows.map((r) => r.clientId).filter((id): id is number => id !== null);
+      const petRows = clientIds.length
+        ? await db.select({ clientId: pets.clientId, name: pets.name })
+            .from(pets).where(and(inArray(pets.clientId, clientIds), eq(pets.status, "active")))
+        : [];
+      const petsByClient = new Map<number, string[]>();
+      for (const p of petRows) {
+        if (!petsByClient.has(p.clientId)) petsByClient.set(p.clientId, []);
+        petsByClient.get(p.clientId)!.push(p.name);
+      }
+      return {
+        unreadCount: rows.filter((r) => r.readAt === null).length,
+        items: rows.map((r) => ({ ...r, petNames: r.clientId ? (petsByClient.get(r.clientId) ?? []) : [] })),
+      };
+    }),
+
+  /** Salon-wide: once anybody has seen it, the salon has. */
+  markSystemNotificationRead: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await db.update(systemNotifications)
+        .set({ readAt: new Date(), readByUserId: ctx.user.id })
+        .where(and(
+          eq(systemNotifications.id, input.id),
+          eq(systemNotifications.tenantId, tenantOf(ctx, input)),
+          isNull(systemNotifications.readAt),
+        ));
+      return { marked: true };
+    }),
+
   markNotificationUnread: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -9006,6 +9068,15 @@ const clientPortalRouter = router({
       // Andy hit it on 05/10/2026 with a link ten seconds old.
       if (Number((setupResult as any)?.[0]?.affectedRows ?? 0) !== 1) {
         throw new TRPCError({ code: "UNAUTHORIZED", message: "This client portal setup link is invalid or no longer active." });
+      }
+      // Tell the salon. Caught, because a notification must never be the
+      // reason a client cannot finish setting up their own account.
+      try {
+        await db.insert(systemNotifications).values({
+          tenantId: client.tenantId, kind: "client_portal_activated", clientId: client.id,
+        });
+      } catch (err) {
+        console.error("[portal] could not record the portal-activated notification", err);
       }
       await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion + 1 });
       return { success: true, client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail } };
