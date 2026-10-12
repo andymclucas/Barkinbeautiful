@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Bell, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck, Clock3, RotateCcw } from "lucide-react";
+import { Building2, Bell, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck, Clock3, RotateCcw, Star } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
@@ -19,12 +19,17 @@ export default function Settings() {
   const { data: stripeBilling, isLoading: stripeBillingLoading } = trpc.stripeBilling.getStatus.useQuery({});
   const { data: timingReviewSettings, isLoading: timingReviewSettingsLoading } = trpc.workflowReview.getThresholds.useQuery({});
   const [brand, setBrand] = useState({ primary: "#d61572", accent: "#f9d4e7", sidebar: "#2b1830", font: "Inter", logoUrl: "" });
+  // Where a happy client is sent from the grooming card. Separate state from
+  // `brand` because it is saved on its own — a salon pasting a review link
+  // should not have to press "Save branding".
+  const [publicReviewUrl, setPublicReviewUrl] = useState("");
   const [timingScope, setTimingScope] = useState<"default" | "size" | "breed">("default");
   const [timingSize, setTimingSize] = useState("small");
   const [timingBreed, setTimingBreed] = useState("");
   const [timingMinutes, setTimingMinutes] = useState({ bath: "90", dry: "75", groom: "150", total: "240" });
   useEffect(() => {
     if (tenant) setBrand({ primary: tenant.brandPrimary ?? "#d61572", accent: tenant.brandAccent ?? "#f9d4e7", sidebar: tenant.brandSidebar ?? "#2b1830", font: tenant.brandFont ?? "Inter", logoUrl: tenant.logoUrl ?? "" });
+    if (tenant) setPublicReviewUrl((tenant as { publicReviewUrl?: string | null }).publicReviewUrl ?? "");
   }, [tenant]);
   useEffect(() => {
     const scopeKey = timingScope === "default" ? "default" : timingScope === "size" ? `size:${timingSize}` : `breed:${timingBreed.trim().toLocaleLowerCase("en-AU").replace(/\s+/g, " ")}`;
@@ -136,6 +141,42 @@ export default function Settings() {
                   <span className="rounded-lg px-4 py-2 font-semibold" style={{ background: brand.primary }}>Save the look</span>
                 </div>
                 <Button disabled={updateBrand.isPending} onClick={() => updateBrand.mutate({ brandPrimary: brand.primary, brandAccent: brand.accent, brandSidebar: brand.sidebar, brandFont: brand.font as any, logoUrl: brand.logoUrl || undefined })}>{updateBrand.isPending ? "Saving…" : "Save branding"}</Button>
+              </CardContent>
+            </Card>
+
+            <Card className="mt-4">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Star className="h-5 w-5 text-amber-500" /> Public review link
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Every grooming card asks the client how the groom went. Four and five stars are
+                  offered this link; one to three stays with you, so you hear it before it is public.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3 px-4 pb-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="public-review-url">Review page address</Label>
+                  <Input
+                    id="public-review-url"
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://g.page/r/…/review"
+                    value={publicReviewUrl}
+                    onChange={(event) => setPublicReviewUrl(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your Google Business review link. In Google Business Profile, choose{" "}
+                    <strong>Ask for reviews</strong> and copy the short link it gives you. Leave it
+                    empty and happy clients simply get a thank-you — never a broken link.
+                  </p>
+                </div>
+                <Button
+                  disabled={updateBrand.isPending}
+                  onClick={() => updateBrand.mutate({ publicReviewUrl: publicReviewUrl.trim() })}
+                >
+                  {updateBrand.isPending ? "Saving…" : "Save review link"}
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
