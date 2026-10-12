@@ -9,9 +9,29 @@ Barkin' Beautiful still books in MoeGo. Groomigo is being brought up as the sole
 system, and until that switch is complete the two drift apart every week —
 bookings made, moved and cancelled in MoeGo that Groomigo never hears about.
 
-This runs each Monday, over a **two-week forward window**. That window is
-deliberate: small enough for a human to review row by row, wide enough to catch
-the forward bookings that matter.
+This runs each Monday. **Pull and compare the whole three-week range; review
+field changes over the first fortnight.** The two are different jobs and used
+to share one window, which was wrong.
+
+An earlier version of this file ran everything over a two-week window, on the
+reasoning that it was small enough for a human to read row by row. That is a
+good reason to keep *field differences* narrow — they are the rows someone has
+to judge. It is a bad reason to keep **missing and cancelled** bookings narrow,
+because a dog absent from the board is equally wrong at any distance, and there
+is nothing to judge: it is there or it is not.
+
+What the narrow window actually produced was a **rolling blind spot**. A
+booking made for a date more than fourteen days out was invisible until the
+window advanced far enough to reach it. On 12/10/2026 that was **29 dogs**
+between 27/10 and 30/10 — none of them inside the fortnight, all of them real,
+including three of Desiree Mcconnon's four and three of Alisa Luck's four. It
+self-corrects a week later, which is exactly why nobody noticed: the board was
+simply unreliable for anyone looking more than a fortnight ahead, which is the
+horizon used for rostering and for quoting a rebook.
+
+So: **creates and cancellations run over the full pulled range; field
+differences over the first fourteen days.** `scripts/moego-apply-2026-10-12.ts`
+takes `--until YYYY-MM-DD` for this.
 
 ## Status: report by default, apply only with a human present
 
@@ -107,8 +127,15 @@ the first pass reported them as "bookings the export hides" and nearly created
 them. They are not bookings. See the fifth bucket in §3 — they are reported,
 never imported.
 
-Set the date range on each: **today → today + 14 days** (but see Trap 9 — pull
-wider than you compare), entered as `DD/MM/YYYY`, then press **Run report**.
+Set the date range on each: **today → today + 21 days**, entered as
+`DD/MM/YYYY`, then press **Run report**.
+
+Three weeks, not two: the whole range is now compared for missing and
+cancelled bookings (see the top of this file), and the extra week still buys
+what Trap 9 wanted — a short reschedule out of the fortnight resolves itself
+instead of looking like a deletion. Even 21 days is not always enough; on
+12/10/2026 Jersey's replacement booking sat on 05/11, three days past the end
+of the pull.
 
 ### Driving those two reports in the browser
 
@@ -354,7 +381,9 @@ the report.
 
 ## 3. Produce the divergence report
 
-Compare the export against the same window in Groomigo. Report, do not write:
+Compare the export against Groomigo over the **full pulled range** for
+missing and cancelled bookings, and over the **first fourteen days** for field
+differences. Report, do not write:
 
 ```bash
 # Groomigo's view of the same fortnight

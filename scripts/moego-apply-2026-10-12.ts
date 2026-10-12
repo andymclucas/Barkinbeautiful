@@ -19,13 +19,25 @@ import { parseSharedStrings, parseSheet } from "../shared/xlsxReader.ts";
 import { parseMoegoPets } from "../shared/moegoImport.ts";
 dotenv.config({ quiet: true });
 
-const [SCHED, CANX] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const rawArgs = process.argv.slice(2);
+const [SCHED, CANX] = rawArgs.filter((a, i) => !a.startsWith("--") && rawArgs[i - 1] !== "--until");
 const APPLY = process.argv.includes("--apply");
 if (!SCHED || !CANX) { console.error("need both xlsx paths"); process.exit(1); }
 
 const TENANT = 1;
 const TODAY = "2026-10-12";
-const WINDOW_END = "2026-10-26";
+/**
+ * How far out to reconcile. Defaults to the fortnight the skill describes;
+ * `--until YYYY-MM-DD` widens it, up to whatever the export actually covers.
+ *
+ * Creating and cancelling are safe to widen — a missing dog and a cancelled
+ * one are equally wrong at any distance. Field differences are the ones that
+ * need a human to read them row by row, which is the real reason the window
+ * was ever fourteen days.
+ */
+const untilArg = process.argv.indexOf("--until");
+const WINDOW_END = untilArg !== -1 ? String(process.argv[untilArg + 1] ?? "").trim() : "2026-10-26";
+if (!/^\d{4}-\d{2}-\d{2}$/.test(WINDOW_END)) { console.error("--until needs YYYY-MM-DD"); process.exit(1); }
 
 const read = (path: string) => {
   const unzip = (entry: string, optional = false) => {
@@ -52,6 +64,38 @@ const toMinutes = (t: string) => {
 /** Brisbane is UTC+10 with no DST, so the offset is a constant. */
 const brisbaneToUtc = (iso: string, minutes: number) =>
   new Date(Date.parse(`${iso}T00:00:00+10:00`) + minutes * 60_000);
+
+/**
+ * Per-dog groomers for the multi-pet bookings, read from each client's own
+ * MoeGo **Bookings → Upcoming** page on 12/10/2026.
+ *
+ * The export cannot give this. `Staffs` lists the DISTINCT people on a
+ * booking, not one per pet, so position is a guess — and a wrong one: on
+ * #129241895 position happens to get the first three dogs right and then has
+ * nothing left for Teddie, and on #133330760 it hands Charlotte to Ginger
+ * when Charlotte actually has Coco. See Trap 3 in the sync skill.
+ *
+ * Anything not listed here still falls through to the alignment guard and is
+ * held back rather than guessed.
+ */
+const PER_DOG_STAFF: Record<string, Record<string, string>> = {
+  // Desiree Mcconnon, 30/10
+  "109597478": { olah: "Megan Graham", teddy: "Charlotte Purcell", eevee: "Megan Graham", georgi: "Charlotte Purcell" },
+  // Alisa Luck, 28/10
+  "129241895": { beau: "Charlotte Purcell", woody: "Megan Graham", dusty: "Brooklyn Cossey", teddie: "Charlotte Purcell" },
+  // Marcelle Arkadieff, 27/10
+  "127996790": { lilly: "Megan Graham", reggie: "Charlotte Purcell", ruby: "Charlotte Purcell" },
+  // Vorn Reddell, 27/10
+  "124166094": { charlie: "Charlotte Purcell", lola: "Megan Graham", ralph: "Megan Graham" },
+  // Brook Davidson, 23/10
+  "133330760": { pepsi: "Megan Graham", ginger: "Megan Graham", coco: "Charlotte Purcell" },
+  // Joanne Sneeden, 21/10 — one dog; Brooklyn does only the teeth add-on,
+  // and Groomigo has no column for an add-on's staff.
+  "132401819": { chilli: "Zakaria Romari" },
+};
+/** The verified groomer for a dog, or null if nobody has checked this one. */
+const verifiedStaff = (booking: string, pet: string) =>
+  PER_DOG_STAFF[booking]?.[norm(pet)] ?? null;
 
 const STAFF_ALIAS: Record<string, string> = { "megan graham": "megs graham", "bather 1": "steph" };
 const staffKey = (n: string) => STAFF_ALIAS[norm(n)] ?? norm(n);
@@ -154,7 +198,8 @@ const windowDogs = dogs.filter((d) => inWindow(d.iso));
     if (gByKey.has(key(src.booking, src.pet))) continue;
     if (cancelled.has(src.booking)) continue;
     const label = `${src.pet} (${src.who}) ${src.iso}`;
-    if (!src.alignmentOk) { blocked.push(`create ${label}: pet/staff counts disagree (Trap 3)`); continue; }
+    const verified = verifiedStaff(src.booking, src.pet);
+    if (!src.alignmentOk && !verified) { blocked.push(`create ${label}: pet/staff counts disagree and nobody has read this booking in MoeGo (Trap 3)`); continue; }
     if (src.mins === null) { blocked.push(`create ${label}: unreadable time`); continue; }
 
     const [pets] = (await db.query(
@@ -173,8 +218,10 @@ const windowDogs = dogs.filter((d) => inWindow(d.iso));
       [pet.id, src.iso])) as any;
     if (dupes.length) { blocked.push(`create ${label}: already has ${dupes.length} row(s) that day`); continue; }
 
-    const member = resolveStaff(src.staff);
-    if (src.staff && !member) { blocked.push(`create ${label}: unresolved groomer "${src.staff}" (Trap 11)`); continue; }
+    // A verified per-dog groomer beats the export's booking-level list.
+    const staffName = verified ?? src.staff;
+    const member = resolveStaff(staffName);
+    if (staffName && !member) { blocked.push(`create ${label}: unresolved groomer "${staffName}" (Trap 11)`); continue; }
 
     const dur = 60;
     const startAt = brisbaneToUtc(src.iso, src.mins);
@@ -224,11 +271,13 @@ const windowDogs = dogs.filter((d) => inWindow(d.iso));
   for (const d of windowDogs) {
     const g = gByKey.get(key(d.booking, d.pet));
     if (!g || g.workflow_state !== "scheduled") continue;
-    if (!d.alignmentOk) { blocked.push(`${d.pet} #${d.booking}: pet/staff counts disagree (Trap 3)`); continue; }
+    const verifiedDiff = verifiedStaff(d.booking, d.pet);
+    if (!d.alignmentOk && !verifiedDiff) { blocked.push(`${d.pet} #${d.booking}: pet/staff counts disagree and nobody has read this booking in MoeGo (Trap 3)`); continue; }
 
-    if (d.staff && g.staff_name && staffKey(g.staff_name) !== staffKey(d.staff)) {
-      const member = resolveStaff(d.staff);
-      if (!member) { blocked.push(`${d.pet} #${d.booking}: unresolved groomer "${d.staff}" (Trap 11)`); continue; }
+    const wantStaff = verifiedDiff ?? d.staff;
+    if (wantStaff && g.staff_name && staffKey(g.staff_name) !== staffKey(wantStaff)) {
+      const member = resolveStaff(wantStaff);
+      if (!member) { blocked.push(`${d.pet} #${d.booking}: unresolved groomer "${wantStaff}" (Trap 11)`); continue; }
       plan.push({
         why: `STAFF ${d.pet} (${d.who}) ${d.iso}: ${g.staff_name} → ${member.name}`,
         sql: `UPDATE appointments SET staff_id=? WHERE id=? AND workflow_state='scheduled'`,
