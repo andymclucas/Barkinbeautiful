@@ -927,6 +927,9 @@ export default function Calendar() {
     // path, which books one service for the whole family.
     priceByPetId: {} as Record<string, string>,
     addOnsByPetId: {} as Record<string, StagedAddOn[]>,
+    // "Must be finished by". Empty means no deadline, which is most
+    // bookings — this is for the client who says "I need him by twelve".
+    collectByTime: "",
   });
   const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
 
@@ -1186,7 +1189,7 @@ export default function Calendar() {
     onSuccess: () => {
       toast.success("Appointment created");
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {} });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
       refetch();
     },
@@ -1511,7 +1514,7 @@ export default function Calendar() {
     onSuccess: (r) => {
       toast.success(`${r.created} appointment${r.created !== 1 ? "s" : ""} created`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {} });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
       refetch();
     },
@@ -1523,7 +1526,7 @@ export default function Calendar() {
       const skippedMsg = r.skipped.length > 0 ? ` (${r.skipped.length} skipped due to a groomer clash)` : "";
       toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created${skippedMsg}`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {} });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });
       setClientSearch("");
       refetch();
@@ -1583,6 +1586,7 @@ export default function Calendar() {
       notes: newAppt.notes || undefined,
       price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
       priceByPetId: membershipCoverage.data?.fullyCovered ? undefined : newAppt.priceByPetId,
+      collectByTime: newAppt.collectByTime || null,
       // The staged add-ons carry a name and a display price so the dialog
       // can show the line before the appointment exists. The server takes
       // the price from the catalogue, so only the ids travel.
@@ -2436,7 +2440,7 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {} }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
+      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2763,6 +2767,33 @@ export default function Calendar() {
                 })}
               />
             )}
+            {/* Lauren, 13/10: "if a client has to be finished by a certain
+                time it's BOLD and near the groomers box so its clear to
+                everyone including bathers". The board badge, the risk model
+                and the column all already existed — but the only way to set
+                one was buried in the edit dialog, so in 15,643 appointments
+                not a single deadline had ever been recorded. This is the
+                moment the client actually says it. */}
+            <div className="space-y-1.5">
+              <Label>Must be finished by</Label>
+              <Select
+                value={newAppt.collectByTime === "" ? "__none__" : newAppt.collectByTime}
+                onValueChange={v => setNewAppt(p => ({ ...p, collectByTime: v === "__none__" ? "" : v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No deadline</SelectItem>
+                  {buildTimeSlots({ include: newAppt.collectByTime || null }).map(slot => (
+                    <SelectItem key={slot.value} value={slot.value}>{slot.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {newAppt.collectByTime && (
+                <p className="text-[11px] text-muted-foreground">
+                  Shows in bold on the workflow board, and warns the bathers while there is still time to reorder the queue.
+                </p>
+              )}
+            </div>
             {newAppt.petIds.length >= 1 && (
               <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
                 <label className="flex items-center gap-2 cursor-pointer">

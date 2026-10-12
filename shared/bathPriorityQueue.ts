@@ -23,12 +23,43 @@ export type BathPriorityQueueRow = {
 };
 
 export type BathPriorityQueueItem<T extends BathPriorityQueueRow> = {
+  /** What staff set, 1–5. The intent, which does not move on its own. */
   priority: BathPriorityValue;
+  /**
+   * Where this actually sits in the queue right now, counting from 1.
+   *
+   * Lauren, 13/10/2026: "I would like to see it auto update the numbers
+   * for the bathing... so 1 then moves down the line and updates the
+   * others like a countdown on baths."
+   *
+   * Derived, never stored. Bathe the dog at the top and it leaves the
+   * queue, so everything behind it shifts up on the next refresh with
+   * nothing written and no two staff members racing each other. It also
+   * gives a total order where the stored priority does not: two separate
+   * cohorts can both be a 1, and both showing "1" tells a bather nothing
+   * about which to pick up.
+   */
+  position: number;
   rows: T[];
   petNames: string[];
   scheduledStart: T["scheduledStart"];
   isCoordinatedBooking: boolean;
 };
+
+/**
+ * The label and colour for a queue position.
+ *
+ * Positions beyond the fifth are possible — the stored priority is capped
+ * at 5, but several cohorts can share one, so a busy morning can run
+ * deeper than the colours do. Those get a plain ordinal and a neutral
+ * slate, rather than wrapping round and giving a sixth dog the same red
+ * as the one actually going next.
+ */
+export function bathQueuePositionMeta(position: number): { label: string; colour: string; softColour: string } {
+  const known = BATH_PRIORITY_META[position as BathPriorityValue];
+  if (known) return known;
+  return { label: `${position}th in line`, colour: "#475569", softColour: "#f8fafc" };
+}
 
 const BATH_QUEUE_STATES = new Set(["scheduled", "checked_in", "waiting_for_bath", "bathing"]);
 
@@ -78,6 +109,8 @@ export function buildBathPriorityQueue<T extends BathPriorityQueueRow>(rows: T[]
       const petNames = Array.from(new Set(group.map((row) => row.petName?.trim()).filter((name): name is string => Boolean(name))));
       return {
         priority,
+        // Filled in once the whole queue is ordered, below.
+        position: 0,
         rows: group.sort((left, right) => left.id - right.id),
         petNames,
         scheduledStart: first.scheduledStart,
@@ -87,5 +120,9 @@ export function buildBathPriorityQueue<T extends BathPriorityQueueRow>(rows: T[]
     .sort((left, right) => left.priority - right.priority
       || (left.rows[0]!.bathQueueOrder ?? Number.MAX_SAFE_INTEGER) - (right.rows[0]!.bathQueueOrder ?? Number.MAX_SAFE_INTEGER)
       || scheduledTimestamp(left.scheduledStart) - scheduledTimestamp(right.scheduledStart)
-      || left.rows[0]!.id - right.rows[0]!.id);
+      || left.rows[0]!.id - right.rows[0]!.id)
+    // Numbered after sorting, so the top of the list is always 1 whatever
+    // the stored priorities happen to be. Dogs together in one coordinated
+    // booking are one item and so share a position — they go in together.
+    .map((item, index) => ({ ...item, position: index + 1 }));
 }

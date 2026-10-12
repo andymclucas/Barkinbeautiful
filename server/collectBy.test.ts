@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectByStatus, formatCollectBy, RISK_ORDER } from "@shared/collectBy";
+import { brisbaneDay, collectByInstant, collectByStatus, formatCollectBy, RISK_ORDER } from "@shared/collectBy";
 
 /** Midday Brisbane on 8 October 2026, as the instant it happens. */
 const NOON = new Date("2026-10-08T02:00:00Z");
@@ -91,5 +91,46 @@ describe("ordering the board", () => {
     const order = (["none", "comfortable", "tight", "at_risk", "overdue"] as const)
       .slice().sort((a, b) => RISK_ORDER[a] - RISK_ORDER[b]);
     expect(order).toEqual(["overdue", "at_risk", "tight", "comfortable", "none"]);
+  });
+});
+
+describe("collectByInstant", () => {
+  it("reads a Brisbane wall clock as UTC+10", () => {
+    // Midday in Brisbane is 02:00Z the same day.
+    expect(collectByInstant("2026-10-13", "12:00")?.toISOString()).toBe("2026-10-13T02:00:00.000Z");
+    expect(collectByInstant("2026-10-13", "09:30")?.toISOString()).toBe("2026-10-12T23:30:00.000Z");
+  });
+
+  it("holds the offset across a southern-hemisphere DST changeover", () => {
+    // Brisbane does not observe daylight saving, which is the only reason a
+    // fixed offset is safe. A salon in Sydney would need a real library.
+    expect(collectByInstant("2026-01-15", "12:00")?.toISOString()).toBe("2026-01-15T02:00:00.000Z");
+    expect(collectByInstant("2026-07-15", "12:00")?.toISOString()).toBe("2026-07-15T02:00:00.000Z");
+  });
+
+  it("round trips with the formatter staff actually read", () => {
+    const instant = collectByInstant("2026-10-13", "12:00");
+    expect(formatCollectBy(instant)).toBe("12:00");
+  });
+
+  it("clears rather than storing an Invalid Date", () => {
+    expect(collectByInstant(null, "12:00")).toBeNull();
+    expect(collectByInstant("2026-10-13", null)).toBeNull();
+    expect(collectByInstant("2026-10-13", "")).toBeNull();
+    expect(collectByInstant("13/10/2026", "12:00")).toBeNull();
+    expect(collectByInstant("2026-10-13", "25:00")).toBeNull();
+    expect(collectByInstant("2026-10-13", "noon")).toBeNull();
+  });
+});
+
+describe("brisbaneDay", () => {
+  it("gives the salon's own calendar day, not UTC's", () => {
+    // 23:30Z on the 12th is already 09:30 on the 13th in the salon.
+    expect(brisbaneDay(new Date("2026-10-12T23:30:00Z"))).toBe("2026-10-13");
+    expect(brisbaneDay(new Date("2026-10-13T02:00:00Z"))).toBe("2026-10-13");
+  });
+
+  it("returns null for an unreadable value", () => {
+    expect(brisbaneDay("not a date")).toBeNull();
   });
 });

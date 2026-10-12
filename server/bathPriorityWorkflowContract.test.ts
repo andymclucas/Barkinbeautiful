@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { bathQueuePositionMeta } from "@shared/bathPriorityQueue";
 import { readFileSync } from "node:fs";
 
 describe("Workflow bathing priority contract", () => {
@@ -41,6 +42,13 @@ describe("Workflow bathing priority contract", () => {
     expect(boardSource).toContain("data-bath-queue-item");
     expect(boardSource).toContain("Coordinate bathing");
     expect(boardSource).toContain("BATH_PRIORITY_META");
-    expect(displaySource).toContain("BATH_PRIORITY_META");
+    // The read-only display colours by live queue POSITION, not by the
+    // stored priority, so that the number counts down as dogs leave the
+    // bath. Asserted as behaviour rather than as the source text naming a
+    // particular helper — the import name changing while the board still
+    // worked is exactly what broke this test before.
+    expect(displaySource).toContain("bathQueuePositionMeta");
+    expect(bathQueuePositionMeta(1).colour).not.toBe(bathQueuePositionMeta(2).colour);
+    expect(bathQueuePositionMeta(1).label).toBe("Next");
   });
 });

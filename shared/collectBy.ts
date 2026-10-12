@@ -111,3 +111,39 @@ export function collectByStatus(input: {
 export const RISK_ORDER: Record<CollectByRisk, number> = {
   overdue: 0, at_risk: 1, tight: 2, comfortable: 3, none: 4,
 };
+
+/**
+ * The instant a "by 12:00" deadline falls on, for a given salon day.
+ *
+ * The salon says "by twelve", never "by 2026-10-08T02:00Z", so the time is
+ * a Brisbane wall clock and the day comes from the appointment. Brisbane is
+ * UTC+10 and has no daylight saving, which is the only reason a fixed
+ * offset is safe here; anywhere else this would need a real timezone
+ * library, and a second salon in a DST zone will need one.
+ *
+ * Returns null for anything unusable, so a bad input clears the deadline
+ * rather than storing an Invalid Date.
+ */
+export function collectByInstant(
+  dayInBrisbane: string | null | undefined,
+  time: string | null | undefined,
+): Date | null {
+  if (!dayInBrisbane || !time) return null;
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayInBrisbane.trim());
+  const at = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time.trim());
+  if (!day || !at) return null;
+  const instant = new Date(Date.UTC(
+    Number(day[1]), Number(day[2]) - 1, Number(day[3]),
+    Number(at[1]) - 10, Number(at[2]),
+  ));
+  return Number.isNaN(instant.getTime()) ? null : instant;
+}
+
+/** The Brisbane calendar day an instant falls on, as "YYYY-MM-DD". */
+export function brisbaneDay(value: Date | string | number): string | null {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(date);
+}
