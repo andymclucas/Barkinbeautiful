@@ -81,6 +81,22 @@ Baseline: **1 hit**, `server/sms.ts` (Twilio status callback, correctly optional
 are excluded.
 Confirm `VITE_APP_URL` is set in the Render environment.
 
+And the one the grep above does NOT catch — a link built from the request's
+own `Host` header instead of the helper:
+
+```bash
+grep -rn 'req.get("host")\|headers\["host"\]\|x-forwarded-host' \
+  --include="*.ts" server/ | grep -v "\.test\."
+```
+
+Baseline: **0 hits.** This slipped past the check above for a year because it
+reads no env var at all. `issueAccessLink` and `issueAccountSetupLink` both
+built portal links as `${protocol}://${host}`, which is correct for whoever
+is signed in and wrong in the customer's inbox: an admin working from an
+onrender.com URL, a preview deploy or a bare IP mints a link the *client*
+then has to open. Fixed 12/10/2026, the day before three clients went live on
+the portal. Any new hit is a regression.
+
 ### Stray npm lockfile
 
 ```bash

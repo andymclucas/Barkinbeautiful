@@ -8573,10 +8573,13 @@ const clientPortalRouter = router({
         });
       });
 
-      const forwardedProto = ctx.req.headers["x-forwarded-proto"];
-      const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(",")[0]?.trim() || ctx.req.protocol || "https";
-      const host = ctx.req.get("host");
-      const baseUrl = host ? `${protocol}://${host}` : getAppBaseUrl();
+      // Whatever host this admin happens to be signed in on is not where the
+      // client should be sent. A link minted from an onrender.com URL, a
+      // preview deploy or a bare IP still works for whoever made it and is
+      // wrong in the customer's inbox — and it is the client, not the sender,
+      // who has to open it. CLAUDE.md section 8: client-facing links come
+      // from appUrl.ts, which also logs loudly when VITE_APP_URL is unset.
+      const baseUrl = getAppBaseUrl();
       return {
         portalUrl: `${baseUrl}/portal/${access.token}`,
         expiresAt: access.expiresAt,
@@ -8720,10 +8723,13 @@ const clientPortalRouter = router({
         updatedAt: new Date(),
       }).where(eq(clients.id, client.id));
 
-      const forwardedProto = ctx.req.headers["x-forwarded-proto"];
-      const protocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(",")[0]?.trim() || ctx.req.protocol || "https";
-      const host = ctx.req.get("host");
-      const baseUrl = host ? `${protocol}://${host}` : getAppBaseUrl();
+      // Whatever host this admin happens to be signed in on is not where the
+      // client should be sent. A link minted from an onrender.com URL, a
+      // preview deploy or a bare IP still works for whoever made it and is
+      // wrong in the customer's inbox — and it is the client, not the sender,
+      // who has to open it. CLAUDE.md section 8: client-facing links come
+      // from appUrl.ts, which also logs loudly when VITE_APP_URL is unset.
+      const baseUrl = getAppBaseUrl();
       const setupUrl = `${baseUrl}/portal/setup/${setup.token}`;
 
       const { sendEmail } = await import("./email");
