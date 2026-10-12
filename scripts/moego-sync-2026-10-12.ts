@@ -47,7 +47,7 @@ const norm = (s: string) => String(s ?? "").trim().toLowerCase().replace(/\s+/g,
  */
 const STAFF_ALIAS: Record<string, string> = {
   "megan graham": "megs graham",
-  "bather 1": "steph",
+  "bather 1": "stephanie baldwin",
 };
 const staffKey = (name: string) => {
   const n = norm(name);

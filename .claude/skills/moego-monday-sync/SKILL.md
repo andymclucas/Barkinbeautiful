@@ -366,7 +366,26 @@ When you match by phone or email, **backfill `moego_client_id`** so the next
 sync matches by id. Guard it with `AND moego_client_id IS NULL`.
 
 **Trap 11 — the `Staffs` column needs an alias table, and Groomigo may be
-stale.** MoeGo's **"Megan Graham"** is Groomigo's **"Megs Graham"**. Neither
+stale.** The table, as at 12/10/2026:
+
+| MoeGo says | Groomigo holds |
+| --- | --- |
+| `Megan Graham` | `Megs Graham` |
+| `Bather 1` | `Stephanie Baldwin` |
+| `Bather` | `Stephanie Baldwin` |
+
+`Bather 1` appears 383 times across the exports and is the ONLY bathing-team
+name MoeGo uses — Akilah, Sabina and Bailey never appear in it at all, so
+their records can be renamed freely. `Bather` without the number shows up on
+MoeGo's booking-detail pages rather than in the exports; both map to the same
+person.
+
+**Renaming a staff member in Groomigo breaks this table.** The lookup is an
+exact normalised-name match, so when Steph became Stephanie Baldwin on
+12/10/2026 every alias target had to move with her, or 383 bath bookings
+would have been held back as an unresolved groomer.
+
+MoeGo's **"Megan Graham"** is Groomigo's **"Megs Graham"**. Neither
 string contains the other, so a substring match misses it and the dog gets
 filed under nobody. Keep an explicit alias map and **abort on any name that
 does not resolve** rather than inserting a staff-less appointment.

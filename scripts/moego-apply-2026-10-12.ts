@@ -97,7 +97,7 @@ const PER_DOG_STAFF: Record<string, Record<string, string>> = {
 const verifiedStaff = (booking: string, pet: string) =>
   PER_DOG_STAFF[booking]?.[norm(pet)] ?? null;
 
-const STAFF_ALIAS: Record<string, string> = { "megan graham": "megs graham", "bather 1": "steph" };
+const STAFF_ALIAS: Record<string, string> = { "megan graham": "megs graham", "bather 1": "stephanie baldwin" };
 const staffKey = (n: string) => STAFF_ALIAS[norm(n)] ?? norm(n);
 
 // ── Parse MoeGo ──────────────────────────────────────────────────────────────

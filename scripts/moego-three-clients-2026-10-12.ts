@@ -55,12 +55,12 @@ const toMinutes = (t: string) => {
 const brisbane = (iso: string, mins: number) =>
   new Date(Date.parse(`${iso}T00:00:00+10:00`) + mins * 60_000);
 
-// "Bather" joins "Bather 1" as a name MoeGo uses for Steph — confirmed by
+// "Bather" joins "Bather 1" as a name MoeGo uses for Stephanie Baldwin — confirmed by
 // Andy on 12/10/2026. Trap 11: an unresolved name aborts, never guesses.
 const STAFF_ALIAS: Record<string, string> = {
   "megan graham": "megs graham",
-  "bather 1": "steph",
-  "bather": "steph",
+  "bather 1": "stephanie baldwin",
+  "bather": "stephanie baldwin",
 };
 const staffKey = (n: string) => STAFF_ALIAS[norm(n)] ?? norm(n);
 
