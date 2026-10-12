@@ -105,11 +105,11 @@ const sRows = read(SCHED);
 const sHead = sRows[0].map((h) => String(h ?? "").trim());
 const sI = (n: string) => sHead.findIndex((h) => h.toLowerCase() === n.toLowerCase());
 const COL = { booking: sI("Booking ID"), date: sI("Date"), time: sI("Time"), client: sI("Client ID"),
-  first: sI("First name"), last: sI("Last name"), pets: sI("Pet name"),
+  first: sI("First name"), last: sI("Last name"), pets: sI("Pet name"), phone: sI("Primary number"),
   services: sI("Service & add ons"), staffs: sI("Staffs"), status: sI("Status") };
 
 type Dog = { booking: string; iso: string; mins: number | null; who: string; pet: string;
-  service: string; staff: string; alignmentOk: boolean };
+  service: string; staff: string; alignmentOk: boolean; moegoClientId: string; phone: string };
 const dogs: Dog[] = [];
 for (const r of sRows.slice(1)) {
   const booking = String(r[COL.booking] ?? "").trim();
@@ -119,6 +119,8 @@ for (const r of sRows.slice(1)) {
   const staffs = String(r[COL.staffs] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const alignmentOk = pets.length > 0 && (staffs.length === pets.length || staffs.length <= 1);
   pets.forEach((pet, i) => dogs.push({
+    moegoClientId: String(r[COL.client] ?? "").trim(),
+    phone: String(r[COL.phone] ?? "").trim(),
     booking, iso: toIso(String(r[COL.date] ?? "")), mins: toMinutes(String(r[COL.time] ?? "")),
     who: `${String(r[COL.first] ?? "").trim()} ${String(r[COL.last] ?? "").trim()}`.trim(), pet,
     service: services[i] ?? services[0] ?? "",
@@ -202,12 +204,29 @@ const windowDogs = dogs.filter((d) => inWindow(d.iso));
     if (!src.alignmentOk && !verified) { blocked.push(`create ${label}: pet/staff counts disagree and nobody has read this booking in MoeGo (Trap 3)`); continue; }
     if (src.mins === null) { blocked.push(`create ${label}: unreadable time`); continue; }
 
+    // Trap 10, in the documented order: moego id, then phone, then name.
+    // Matching on the concatenated name alone is not safe — MoeGo's export
+    // ships a BLANK First name for some clients, so Ian Turnbull arrives as
+    // " Turnbull" and a name comparison reports a real customer as new. That
+    // is how Adele was held back on 12/10/2026 as a missing client when she
+    // and her owner had been on file all along.
+    const [clientHits] = (await db.query(
+      `SELECT id FROM clients
+       WHERE tenant_id=? AND (
+         (moego_client_id IS NOT NULL AND moego_client_id = ?)
+         OR (? <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone,''), '[^0-9]', ''), 9) = RIGHT(REGEXP_REPLACE(?, '[^0-9]', ''), 9))
+         OR LOWER(CONCAT(first_name,' ',last_name)) = LOWER(?)
+       ) LIMIT 2`,
+      [TENANT, src.moegoClientId, src.phone, src.phone, src.who])) as any;
+    if (clientHits.length !== 1) {
+      blocked.push(`create ${label}: ${clientHits.length === 0 ? "no client matched by MoeGo id, phone or name — needs a real client record first" : "several clients matched — ambiguous, resolve by hand"}`);
+      continue;
+    }
     const [pets] = (await db.query(
-      `SELECT p.id, p.client_id FROM pets p JOIN clients c ON c.id=p.client_id
-       WHERE c.tenant_id=? AND LOWER(p.name)=LOWER(?) AND LOWER(CONCAT(c.first_name,' ',c.last_name))=LOWER(?)`,
-      [TENANT, src.pet, src.who])) as any;
+      `SELECT id, client_id FROM pets WHERE client_id=? AND LOWER(name)=LOWER(?) LIMIT 2`,
+      [clientHits[0].id, src.pet])) as any;
     if (pets.length !== 1) {
-      blocked.push(`create ${label}: ${pets.length === 0 ? "client or pet not on file — needs a real client record first" : `${pets.length} matching pets — ambiguous`}`);
+      blocked.push(`create ${label}: ${pets.length === 0 ? `client ${clientHits[0].id} has no pet named ${src.pet} — never invent one` : `${pets.length} pets named ${src.pet} — ambiguous`}`);
       continue;
     }
     const pet = pets[0];
