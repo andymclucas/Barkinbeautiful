@@ -65,6 +65,7 @@ import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
+import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
 import { getActiveTimeZone } from "@/lib/timezone";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -2083,6 +2084,20 @@ export default function Calendar() {
                       placeholder="Dog name or client name…"
                       value={apptSearchTerm}
                       onChange={e => setApptSearchTerm(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+                        // Only when every match is the same client — see
+                        // soleClientOf. With several clients the list stays
+                        // up to be picked from rather than guessing one.
+                        const sole = soleClientOf(apptSearchResults ?? []);
+                        if (!sole) return;
+                        setApptSearchOpen(false);
+                        // Previous appointments expanded: Enter is the
+                        // "show me everything for this client" gesture.
+                        setShowPastAppts(true);
+                        setApptListClient(sole);
+                      }}
                       className="h-8 pr-9 text-sm"
                     />
                     {apptSearchTerm && (
@@ -2110,8 +2125,13 @@ export default function Calendar() {
                     <p className="text-xs text-muted-foreground text-center py-4" aria-live="polite">Searching…</p>
                   ) : !apptSearchResults || apptSearchResults.length === 0 ? (
                     <p className="text-xs text-muted-foreground text-center py-4" aria-live="polite">No appointments found</p>
-                  ) : (
-                    apptSearchResults.map((r) => (
+                  ) : (<>
+                    <p className="border-b bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground" aria-live="polite">
+                      {soleClientOf(apptSearchResults)
+                        ? <>Press <kbd className="rounded border bg-card px-1 font-sans">Enter</kbd> for everything {soleClientOf(apptSearchResults)!.name} has booked</>
+                        : `${distinctClientCount(apptSearchResults)} clients match — pick one to see their appointments`}
+                    </p>
+                    {apptSearchResults.map((r) => (
                       <button
                         key={r.id}
                         type="button"
@@ -2136,8 +2156,8 @@ export default function Calendar() {
                           {new Date(r.scheduledStart).toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: getActiveTimeZone() })}
                         </span>
                       </button>
-                    ))
-                  )}
+                    ))}
+                  </>)}
                 </div>
               </PopoverContent>
             </Popover>
