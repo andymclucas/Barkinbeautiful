@@ -289,6 +289,10 @@ export default function ClientDetail() {
   // Bookings sub-view. Ten a page, matching MoeGo, so a salon moving
   // across finds the same rows in the same places.
   const [bookingTab, setBookingTab] = useState<BookingBucket>("upcoming");
+  // Deleting a booking is irreversible and takes every pet in a shared
+  // session with it, so it goes through a named confirm rather than a
+  // window.confirm — the same shape the calendar's Delete booking uses.
+  const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string } | null>(null);
   const [bookingPage, setBookingPage] = useState(1);
   const [paymentFilter, setPaymentFilter] = useState("all");
   const BOOKINGS_PER_PAGE = 10;
@@ -334,6 +338,17 @@ export default function ClientDetail() {
     { clientId },
     { enabled: isAdmin && Boolean(clientId) },
   );
+  const deleteAppointment = trpc.calendar.deleteAppointment.useMutation({
+    onSuccess: async () => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      setConfirmDeleteAppt(null);
+      toast.success("Booking deleted");
+    },
+    // A silent failure here looks exactly like success, because the dialog
+    // would close either way.
+    onError: (error) => toast.error(error.message || "Could not delete that booking"),
+  });
+
   const markDeparted = trpc.pets.markDeparted.useMutation({
     onSuccess: async (result) => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -1394,6 +1409,7 @@ export default function ClientDetail() {
                     <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-3 font-medium text-muted-foreground hidden sm:table-cell">Payment</th>
                     <th className="text-right p-3 font-medium text-muted-foreground">Price</th>
+                    <th className="w-10 p-3"><span className="sr-only">Delete</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1444,6 +1460,19 @@ export default function ClientDetail() {
                             : <span className="text-xs text-muted-foreground">—</span>}
                         </td>
                         <td className="p-3 text-right font-medium">{a.price ? `$${parseFloat(a.price).toFixed(2)}` : "—"}</td>
+                        <td className="p-3 text-right">
+                          <button
+                            className="rounded p-1 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                            title="Delete this booking"
+                            aria-label={`Delete ${a.petName}'s booking`}
+                            onClick={() => setConfirmDeleteAppt({
+                              id: a.id,
+                              label: `${a.petName}'s booking on ${new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}`,
+                            })}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -1928,6 +1957,32 @@ export default function ClientDetail() {
               </>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Same warning the calendar gives, because it is the same delete: a
+          shared booking takes every pet in it, and payments survive without
+          their appointment link rather than disappearing. */}
+      <Dialog open={!!confirmDeleteAppt} onOpenChange={open => { if (!open) setConfirmDeleteAppt(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this booking?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete <strong className="text-foreground">{confirmDeleteAppt?.label}</strong>?
+            Any pets in this shared booking will be deleted together. Financial records are
+            retained without the appointment link. This cannot be undone.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmDeleteAppt(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteAppointment.isPending}
+              onClick={() => confirmDeleteAppt && deleteAppointment.mutate({ appointmentId: confirmDeleteAppt.id })}
+            >
+              {deleteAppointment.isPending ? "Deleting…" : "Delete booking"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </DashboardLayout>

@@ -20,6 +20,10 @@ export const MISSED_CALL_AUTO_TEXT =
  * this number has been texted before. Returns null when the caller cannot be
  * texted at all, which is a reason to send nothing rather than to try.
  *
+ * "Cannot be texted" covers three things: not a number at all (withheld caller
+ * ID), not valid E.164, and valid but unreachable by SMS — an Australian
+ * landline or service number.
+ *
  * Twilio delivers withheld numbers as literal words ("anonymous", "unknown",
  * "restricted"); the old code ran those through the mobile normaliser and
  * cheerfully tried to text "+anonymous", which is two of the failed sends in
@@ -44,7 +48,21 @@ export function autoTextPhoneKey(from: string | null | undefined): string | null
 
   // E.164: "+" then 8-15 digits. Anything else (withheld caller ID, SIP URIs,
   // short codes) is not a number we can text.
-  return /^\+\d{8,15}$/.test(withPrefix) ? withPrefix : null;
+  if (!/^\+\d{8,15}$/.test(withPrefix)) return null;
+
+  // Valid E.164 is not the same as reachable by SMS. Only +614… can receive a
+  // text in Australia: +612/3/7/8 are landlines and +6113/+6118 are service
+  // numbers, and Twilio refuses all of them with "'To' number cannot be a
+  // landline". The old code stopped at E.164 and so cheerfully tried to text
+  // 07 3821 5455 on 09/10/2026, which failed and burned that caller's
+  // one-and-only auto-text claim in the process.
+  //
+  // Deliberately scoped to +61. A landline anywhere else is just as untextable
+  // but cannot be told apart from a mobile by prefix, and refusing to guess is
+  // better than silently dropping a real international mobile.
+  if (withPrefix.startsWith("+61") && !withPrefix.startsWith("+614")) return null;
+
+  return withPrefix;
 }
 
 /** Outcome of trying to claim the one-and-only send for a number. */

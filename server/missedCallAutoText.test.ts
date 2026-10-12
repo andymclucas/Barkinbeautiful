@@ -7,6 +7,40 @@ import {
   MISSED_CALL_AUTO_TEXT,
 } from "../shared/missedCallAutoText";
 
+describe("autoTextPhoneKey — numbers that cannot receive a text", () => {
+  it("refuses an Australian landline, however it is written", () => {
+    // 09/10/2026: the auto-reply texted 07 3821 5455 and Twilio refused with
+    // "'To' number cannot be a landline". Valid E.164, still unreachable.
+    for (const n of ["0738215455", "+61738215455", "61738215455", "07 3821 5455"]) {
+      expect(autoTextPhoneKey(n)).toBeNull();
+    }
+  });
+
+  it("refuses landlines in every Australian area code", () => {
+    for (const n of ["+61255512345", "+61355512345", "+61755516955", "+61855512345"]) {
+      expect(autoTextPhoneKey(n)).toBeNull();
+    }
+  });
+
+  it("refuses 13 and 18 service numbers", () => {
+    expect(autoTextPhoneKey("+611300975310")).toBeNull();
+    expect(autoTextPhoneKey("+611800123456")).toBeNull();
+  });
+
+  it("still accepts every Australian mobile", () => {
+    for (const n of ["+61400134013", "+61497068243", "0427030788"]) {
+      expect(autoTextPhoneKey(n)).toMatch(/^\+614\d{8}$/);
+    }
+  });
+
+  it("leaves international numbers alone rather than guessing", () => {
+    // A landline abroad is just as untextable, but cannot be told from a
+    // mobile by prefix — dropping a real one is the worse mistake.
+    expect(autoTextPhoneKey("+14155552671")).toBe("+14155552671");
+    expect(autoTextPhoneKey("+6421555123")).toBe("+6421555123");
+  });
+});
+
 describe("autoTextPhoneKey", () => {
   it("normalises the formats Twilio and the client table actually produce", () => {
     // Twilio hands us E.164; sms_logs holds a mix of both spellings, which is
@@ -46,9 +80,18 @@ describe("autoTextPhoneKey", () => {
     expect(autoTextPhoneKey("+6142703078a")).toBeNull();
   });
 
-  it("keeps landlines - they are real numbers, the send simply fails once", () => {
-    expect(autoTextPhoneKey("+61755516955")).toBe("+61755516955");
-    expect(autoTextPhoneKey("0755516955")).toBe("+61755516955");
+  it("no longer keeps landlines, reversing an earlier decision here", () => {
+    // This test used to assert the opposite: "keeps landlines - they are real
+    // numbers, the send simply fails once". That reasoning did not survive
+    // contact with the claim table. The claim row is written BEFORE the send,
+    // to guarantee at-most-once, so a landline does not merely fail — it
+    // consumes that number's one and only auto-text first. On 09/10/2026
+    // 07 3821 5455 did exactly that.
+    //
+    // It is also a request we know will be refused. Not making it is strictly
+    // better than making it and logging the failure.
+    expect(autoTextPhoneKey("+61755516955")).toBeNull();
+    expect(autoTextPhoneKey("0755516955")).toBeNull();
   });
 });
 
