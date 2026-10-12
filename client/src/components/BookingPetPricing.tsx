@@ -374,6 +374,20 @@ export function BookingPetPricing(props: Props) {
               </p>
             )}
 
+            {/* The list has prices for this dog and this service, but none
+                at this client's tier — a styled groom on a small dog has a
+                new-client and a VIP price and no regular one, which is 105
+                of the upcoming bookings. Saying so beats an empty box that
+                looks like a bug, and borrowing another tier's figure would
+                quietly misprice it. */}
+            {!membershipCovered && options.length > 0
+              && !pickDefaultPriceOption(options, tier)
+              && !props.priceByPetId[key] && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                No {PRICE_TIER_LABELS[tier].toLowerCase()} price is listed for this groom — pick one of the listed prices or type the agreed amount.
+              </p>
+            )}
+
             {/* What this dog had last time, for reference. Repeating is one
                 action for the whole booking, below. */}
             {last && (
