@@ -65,6 +65,7 @@ import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
 import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPricing";
 import { buildTimeSlots, splitLocalDateTime, joinLocalDateTime } from "@shared/bookingTimeSlots";
+import { takePendingBooking } from "@/lib/pendingBooking";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
@@ -928,6 +929,34 @@ export default function Calendar() {
     addOnsByPetId: {} as Record<string, StagedAddOn[]>,
   });
   const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
+
+  /**
+   * A booking handed over from Add Client.
+   *
+   * Adding a client and booking their first groom is one job for the
+   * person at the desk, but the booking form lives here because it owns
+   * the conflict and capacity checks. Add Client stages what it collected
+   * and this opens the dialog already filled in, leaving only the date,
+   * time and groomer.
+   *
+   * Runs once on mount and consumes the entry, so revisiting the diary
+   * later never re-opens a dialog for a client booked half an hour ago.
+   */
+  useEffect(() => {
+    const pending = takePendingBooking();
+    if (!pending) return;
+    setNewAppt(current => ({
+      ...current,
+      clientId: String(pending.clientId),
+      petIds: pending.petIds.map(String),
+      serviceType: pending.serviceType,
+      addOnsByPetId: pending.addOnsByPetId,
+      priceByPetId: {},
+    }));
+    setShowNewAppt(true);
+    if (pending.clientName) toast.success(`Booking ${pending.clientName}'s first groom`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [editForm, setEditForm] = useState({
     staffId: "", serviceType: "", scheduledStart: "", scheduledEnd: "",
     notes: "", price: "", workflowState: "",

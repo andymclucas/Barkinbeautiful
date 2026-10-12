@@ -431,7 +431,7 @@ type AddOnCatalogueEntry = {
 };
 
 /** One row: pick an extra, give it a figure if it is quoted, add it. */
-function AddOnPicker({
+export function AddOnPicker({
   catalogue,
   onAdd,
 }: {

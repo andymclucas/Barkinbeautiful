@@ -2806,11 +2806,30 @@ const petsRouter = router({
       desexed: z.boolean().default(false),
       behaviourNotes: z.string().optional(),
       groomingNotes: z.string().optional(),
+      // The size band a staff member picked while adding the dog. Most
+      // new dogs arrive without a weight — 10,372 of 12,552 on file have
+      // none — and the band is what prices the groom, so capturing it at
+      // intake is the cheapest moment there is.
+      sizeBand: z.enum(SIZE_BAND_IDS as unknown as [string, ...string[]]).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const [result] = await db.insert(pets).values(input);
+      const { sizeBand, weightKg, ...rest } = input;
+      // A recorded weight is better evidence than a picked band, so it
+      // derives the band itself and wins. petWeightUpdate owns that rule
+      // and writes both weight columns, which different screens read.
+      const fromWeight = weightKg !== undefined && weightKg.trim() !== ""
+        ? petWeightUpdate(Number(weightKg))
+        : null;
+      const [result] = await db.insert(pets).values({
+        ...rest,
+        ...(fromWeight
+          ? { weightKg: fromWeight.weightKg, weight: fromWeight.weight, sizeBand: fromWeight.sizeBand as any, sizeBandSource: fromWeight.sizeBandSource }
+          : sizeBand
+            ? { sizeBand: sizeBand as any, sizeBandSource: "manual" }
+            : {}),
+      });
       return { success: true, id: (result as any).insertId as number };
     }),
 
