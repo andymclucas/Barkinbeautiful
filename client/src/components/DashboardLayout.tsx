@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTheme, type ThemeChoice } from "@/contexts/ThemeContext";
 import NotificationBell from "@/components/NotificationBell";
+import SystemNotificationBell from "@/components/SystemNotificationBell";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { TrialBanner } from "@/components/TrialBanner";
 import {
@@ -387,6 +388,7 @@ function DashboardLayoutContent({
       >
         {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
       </button>
+      <SystemNotificationBell />
       <NotificationBell />
       <IncomingCallAlert />
       <div className="mx-1 hidden h-6 w-px bg-accent sm:block" />
