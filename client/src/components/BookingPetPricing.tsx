@@ -86,6 +86,16 @@ export function BookingPetPricing(props: Props) {
    * filling one in while booking is how that number comes down.
    */
   const [localBand, setLocalBand] = useState<Record<string, DogSizeBand>>({});
+
+  /**
+   * Narrow the price list to this dog and this service, or show all of it.
+   *
+   * On by default, as Andy asked: the whole list is 43 rows and nobody
+   * reads that on every booking. Unticking is the escape hatch for the
+   * cases the bands do not describe — a small dog so matted it is charged
+   * as a medium, or a service priced off-label.
+   */
+  const [applicableOnly, setApplicableOnly] = useState(true);
   const setBandMutation = trpc.pets.updateSizeBand.useMutation({
     onSuccess: () => {
       void utils.bookingPricing.context.invalidate();
@@ -105,6 +115,9 @@ export function BookingPetPricing(props: Props) {
     });
   }, [petIds, context?.pets, localBand]);
 
+  // What the default price is worked out from — always this dog and this
+  // service, whatever the dropdown is currently showing. Widening the list
+  // must not change what the box was filled with.
   const optionsByPetId = useMemo(() => {
     const map: Record<string, PriceOption[]> = {};
     for (const row of petRows) {
@@ -112,6 +125,16 @@ export function BookingPetPricing(props: Props) {
     }
     return map;
   }, [petRows, serviceType, catalogue]);
+
+  // What the dropdown lists.
+  const shownOptionsByPetId = useMemo(() => {
+    if (applicableOnly) return optionsByPetId;
+    const map: Record<string, PriceOption[]> = {};
+    for (const row of petRows) {
+      map[String(row.petId)] = groomPriceOptions({ serviceType, sizeBand: row.band, catalogue, scope: "all" });
+    }
+    return map;
+  }, [applicableOnly, optionsByPetId, petRows, serviceType, catalogue]);
 
   /**
    * Re-fill the boxes when the booking genuinely changes shape.
@@ -233,7 +256,18 @@ export function BookingPetPricing(props: Props) {
         <Label className="flex items-center gap-1.5 text-sm">
           <Dog className="h-3.5 w-3.5 text-primary" /> Price per dog
         </Label>
-        <span className="text-sm font-semibold tabular-nums">
+        <span className="flex items-center gap-3 text-sm font-semibold tabular-nums">
+          {!membershipCovered && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-normal text-muted-foreground">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-primary"
+                checked={applicableOnly}
+                onChange={(e) => setApplicableOnly(e.target.checked)}
+              />
+              Only show applicable services
+            </label>
+          )}
           {membershipCovered ? (
             <span className="text-emerald-700 dark:text-emerald-300">Covered by membership</span>
           ) : total.complete ? (
@@ -288,6 +322,7 @@ export function BookingPetPricing(props: Props) {
       {petRows.map((row) => {
         const key = String(row.petId);
         const options = optionsByPetId[key] ?? [];
+        const shownOptions = shownOptionsByPetId[key] ?? [];
         const staged = props.addOnsByPetId[key] ?? [];
         const last = row.pet?.last ?? null;
         const needsBand = !row.band;
@@ -336,13 +371,13 @@ export function BookingPetPricing(props: Props) {
                   onChange={(e) => setPrice(row.petId, e.target.value)}
                 />
               </div>
-              {!membershipCovered && options.length > 0 && (
+              {!membershipCovered && shownOptions.length > 0 && (
                 <div className="min-w-0 flex-1 space-y-1">
                   <Label className="text-[11px] text-muted-foreground">From the price list</Label>
                   <Select
-                    value={options.find((o) => o.priceAud === props.priceByPetId[key])?.id.toString() ?? ""}
+                    value={shownOptions.find((o) => o.priceAud === props.priceByPetId[key])?.id.toString() ?? ""}
                     onValueChange={(v) => {
-                      const option = options.find((o) => String(o.id) === v);
+                      const option = shownOptions.find((o) => String(o.id) === v);
                       if (option?.priceAud) setPrice(row.petId, option.priceAud);
                     }}
                   >
@@ -350,11 +385,16 @@ export function BookingPetPricing(props: Props) {
                       <SelectValue placeholder="Choose a listed price" />
                     </SelectTrigger>
                     <SelectContent>
-                      {options.map((option) => (
+                      {shownOptions.map((option) => (
                         <SelectItem key={option.id} value={String(option.id)}>
                           <span className="flex w-full items-center justify-between gap-3">
+                            {/* Narrowed to this dog and this service, the
+                                tier is the only thing that differs, so that
+                                is what to read. Showing everything, the
+                                full name is the only way to tell rows
+                                apart. */}
                             <span className="truncate">
-                              {option.tier ? PRICE_TIER_LABELS[option.tier] : option.name}
+                              {applicableOnly && option.tier ? PRICE_TIER_LABELS[option.tier] : option.name}
                             </span>
                             <span className="text-muted-foreground">
                               {option.requiresManualPrice ? "quote" : formatPriceAud(option.priceAud)}
@@ -368,7 +408,7 @@ export function BookingPetPricing(props: Props) {
               )}
             </div>
 
-            {!membershipCovered && options.length === 0 && row.band && (
+            {!membershipCovered && shownOptions.length === 0 && row.band && (
               <p className="text-[11px] text-amber-700 dark:text-amber-300">
                 The price list has no {sizeBandLabel(row.band).toLowerCase()} price for this service — enter what was agreed.
               </p>

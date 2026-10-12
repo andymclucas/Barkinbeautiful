@@ -175,8 +175,17 @@ export function groomPriceOptions(input: {
   serviceType: ServiceType | string;
   sizeBand: DogSizeBand | null;
   catalogue: readonly PriceCatalogueItem[];
+  /**
+   * "applicable" (the default) is this dog, this service. "all" is the
+   * whole price list, for the cases the bands do not describe — a small
+   * dog so matted it is priced as a medium, or a service the salon wants
+   * to charge off-label. Staff opt into it with a checkbox; it is not the
+   * default because 43 rows is a list nobody reads on every booking.
+   */
+  scope?: "applicable" | "all";
 }): PriceOption[] {
   const matches = input.catalogue.filter((item) => {
+    if (input.scope === "all") return true;
     if (item.legacyServiceType !== input.serviceType) return false;
     if (!input.sizeBand) return true;
     return bandsFromCatalogueWeightBand(item.weightBand).includes(input.sizeBand);

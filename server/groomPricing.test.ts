@@ -273,3 +273,28 @@ describe("formatPriceAud", () => {
     expect(formatPriceAud("quote")).toBeNull();
   });
 });
+
+describe('groomPriceOptions scope: "all"', () => {
+  it("shows the whole price list, whatever the dog or the service", () => {
+    // The escape hatch behind "Only show applicable services": a small dog
+    // so matted it is charged as a medium, or a service priced off-label.
+    const all = groomPriceOptions({ serviceType: "classic_groom", sizeBand: "small", catalogue: CATALOGUE, scope: "all" });
+    expect(all).toHaveLength(CATALOGUE.length);
+    expect(all.map((o) => o.id)).toContain(50); // nail clipping, a different service
+    expect(all.map((o) => o.id)).toContain(25); // a giant's price, a different band
+  });
+
+  it("still carries tiers and prices through", () => {
+    const all = groomPriceOptions({ serviceType: "fft", sizeBand: "giant", catalogue: CATALOGUE, scope: "all" });
+    const regularSmallClassic = all.find((o) => o.id === 15);
+    expect(regularSmallClassic?.tier).toBe("regular");
+    expect(regularSmallClassic?.priceAud).toBe("125.00");
+  });
+
+  it("defaults to applicable when no scope is given", () => {
+    const withoutScope = groomPriceOptions({ serviceType: "classic_groom", sizeBand: "small", catalogue: CATALOGUE });
+    const explicit = groomPriceOptions({ serviceType: "classic_groom", sizeBand: "small", catalogue: CATALOGUE, scope: "applicable" });
+    expect(withoutScope).toEqual(explicit);
+    expect(withoutScope.length).toBeLessThan(CATALOGUE.length);
+  });
+});
