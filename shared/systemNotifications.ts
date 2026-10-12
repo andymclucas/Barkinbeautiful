@@ -11,7 +11,11 @@
  * her portal up, the salon has seen it.
  */
 
-export const SYSTEM_NOTIFICATION_KINDS = ["client_portal_activated"] as const;
+export const SYSTEM_NOTIFICATION_KINDS = [
+  "client_portal_activated",
+  "staff_invited",
+  "staff_account_created",
+] as const;
 export type SystemNotificationKind = (typeof SYSTEM_NOTIFICATION_KINDS)[number];
 
 export function isSystemNotificationKind(value: unknown): value is SystemNotificationKind {
@@ -23,6 +27,10 @@ export type SystemNotificationRow = {
   clientFirstName?: string | null;
   clientLastName?: string | null;
   petNames?: readonly string[] | null;
+  /** Free text written when the row was created: who, and in what role. */
+  detail?: string | null;
+  /** Who caused it. Null when the actor is not a platform user. */
+  actorName?: string | null;
 };
 
 /** "Rosie and Teddy", "Rosie, Teddy and Tyson", "" for none. */
@@ -57,9 +65,24 @@ export function describeSystemNotification(row: SystemNotificationRow): { title:
                      : "They can now see their appointments, grooming cards and invoices.",
       };
     }
+    case "staff_invited":
+      return {
+        title: row.detail ? `${row.detail} was invited to the platform` : "Someone was invited to the platform",
+        detail: by(row, "They have not accepted yet."),
+      };
+    case "staff_account_created":
+      return {
+        title: row.detail ? `${row.detail} now has a login` : "A new login was created",
+        detail: by(row, "They can sign in from now on."),
+      };
     default:
       // A kind added to the database but not yet to this file should still
       // render as something, rather than a blank row nobody can explain.
       return { title: `${who} — ${String(row.kind).replace(/_/g, " ")}`, detail: "" };
   }
+}
+
+/** "Invited by Lauren Romari." — or the plain sentence when nobody is named. */
+function by(row: SystemNotificationRow, fallback: string): string {
+  return row.actorName ? `Added by ${row.actorName}. ${fallback}` : fallback;
 }

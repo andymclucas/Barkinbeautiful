@@ -191,6 +191,37 @@ async function notifyStaffOfAccessChange(db: any, input: {
   }
 }
 
+const SYSTEM_NOTIFICATIONS_DENIED =
+  "System notifications are visible to the salon owner only.";
+
+/**
+ * Add a row to the owner's System feed.
+ *
+ * Caught, always. These notifications are a record of something that already
+ * happened — failing to write one must never undo it, and a staff member
+ * must never be unable to accept an invitation because a notification could
+ * not be stored.
+ *
+ * Deliberately separate from staff_access_events, which remains the detailed
+ * per-staff audit trail. This table is a feed and carries read state, which
+ * an audit table should not.
+ */
+async function recordSystemNotification(db: any, row: {
+  tenantId: number;
+  kind: "client_portal_activated" | "staff_invited" | "staff_account_created";
+  clientId?: number | null; actorUserId?: number | null; detail?: string | null;
+}) {
+  try {
+    await db.insert(systemNotifications).values({
+      tenantId: row.tenantId, kind: row.kind,
+      clientId: row.clientId ?? null, actorUserId: row.actorUserId ?? null,
+      detail: row.detail ?? null,
+    });
+  } catch (err) {
+    console.error("[system] could not record a system notification", err);
+  }
+}
+
 async function recordStaffAccessEvent(db: any, event: Omit<typeof staffAccessEvents.$inferInsert, "occurredAtMs" | "createdAt">) {
   const occurredAtMs = Date.now();
   await db.insert(staffAccessEvents).values({ ...event, occurredAtMs, createdAt: new Date(occurredAtMs) });
@@ -3260,6 +3291,10 @@ const staffRouter = router({
         eventType: "invited",
         note: `Invitation prepared for ${email}`,
       });
+      await recordSystemNotification(db, {
+        tenantId: member.tenantId, kind: "staff_invited", actorUserId: ctx.user.id,
+        detail: `${member.name} (${member.role})`,
+      });
 
       const invitationLink = `${getAppBaseUrl()}/staff-invite/${invitation.token}`;
       const { sendEmail } = await import("./email");
@@ -3360,6 +3395,12 @@ const staffRouter = router({
         eventType: "accepted",
         note: "Staff account setup completed; awaiting administrator approval",
       });
+      // The moment a login actually exists, which is the one worth telling
+      // the owner about — an invitation can sit unaccepted for weeks.
+      await recordSystemNotification(db, {
+        tenantId: invitation.tenantId, kind: "staff_account_created", actorUserId: accountId,
+        detail: `${member.name} (${member.role})`,
+      });
       return { success: true, approvalRequired: true };
     }),
 
@@ -3410,6 +3451,10 @@ const staffRouter = router({
       await db.update(staff).set({ portalStatus: "approved" }).where(eq(staff.id, member.id));
       await db.update(users).set({ role: "staff" }).where(eq(users.id, member.userId));
       await recordStaffAccessEvent(db, { tenantId: member.tenantId, staffId: member.id, actorUserId: ctx.user.id, eventType: "approved", note: "Previously revoked staff access restored" });
+      await recordSystemNotification(db, {
+        tenantId: member.tenantId, kind: "staff_account_created", actorUserId: ctx.user.id,
+        detail: `${member.name} (${member.role})`,
+      });
       const notified = await notifyStaffOfAccessChange(db, {
         tenantId: member.tenantId, staffId: member.id, actorUserId: ctx.user.id,
         actorName: ctx.user.name ?? null, staffName: member.name,
@@ -7874,16 +7919,22 @@ const smsRouter = router({
    * unread — which is the whole reason the column exists.
    */
   /**
-   * What the salon should know about, newest first.
+   * What the OWNER should know about, newest first.
    *
-   * operationalProcedure, unlike the rest of the bell: a client setting up
-   * their portal is not pay-adjacent and a restricted groomer being blind to
-   * it helps nobody. Scoped by tenant, and the pets are read live rather than
-   * stored on the row so a renamed dog reads correctly afterwards.
+   * Lauren and Andy only, by the same `canAdministerStaff` list the revenue
+   * targets use. `protectedProcedure` would not do it: that means "signed in
+   * and not a restricted staff account", and six of the eight users here hold
+   * users.role = "admin" — four of them groomers who were made admins to get
+   * at the salon floor. Who was given a login, and when, is not their
+   * business.
+   *
+   * Scoped by tenant. Pets are read live rather than copied onto the row, so
+   * a dog renamed afterwards still reads correctly.
    */
-  getSystemNotifications: operationalProcedure
+  getSystemNotifications: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(10) }).optional())
     .query(async ({ input, ctx }) => {
+      if (!canAdministerStaff(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: SYSTEM_NOTIFICATIONS_DENIED });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const tenantId = tenantOf(ctx, input ?? {});
@@ -7893,6 +7944,8 @@ const smsRouter = router({
         clientId: systemNotifications.clientId,
         readAt: systemNotifications.readAt,
         createdAt: systemNotifications.createdAt,
+        detail: systemNotifications.detail,
+        actorName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${systemNotifications.actorUserId} LIMIT 1)`,
         clientFirstName: clients.firstName,
         clientLastName: clients.lastName,
       })
@@ -7918,10 +7971,11 @@ const smsRouter = router({
       };
     }),
 
-  /** Salon-wide: once anybody has seen it, the salon has. */
-  markSystemNotificationRead: operationalProcedure
+  /** Owner-only, same as reading them. Once either of them has seen it, it is seen. */
+  markSystemNotificationRead: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), id: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
+      if (!canAdministerStaff(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: SYSTEM_NOTIFICATIONS_DENIED });
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       await db.update(systemNotifications)
@@ -9071,13 +9125,9 @@ const clientPortalRouter = router({
       }
       // Tell the salon. Caught, because a notification must never be the
       // reason a client cannot finish setting up their own account.
-      try {
-        await db.insert(systemNotifications).values({
-          tenantId: client.tenantId, kind: "client_portal_activated", clientId: client.id,
-        });
-      } catch (err) {
-        console.error("[portal] could not record the portal-activated notification", err);
-      }
+      await recordSystemNotification(db, {
+        tenantId: client.tenantId, kind: "client_portal_activated", clientId: client.id,
+      });
       await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion + 1 });
       return { success: true, client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail } };
     }),

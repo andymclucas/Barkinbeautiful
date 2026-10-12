@@ -60,3 +60,28 @@ describe("isSystemNotificationKind", () => {
     expect(isSystemNotificationKind(null)).toBe(false);
   });
 });
+
+describe("staff kinds", () => {
+  it("names the person invited and who invited them", () => {
+    const n = describeSystemNotification({
+      kind: "staff_invited", detail: "Bailey Clifford (bather)", actorName: "Lauren Romari",
+    });
+    expect(n.title).toBe("Bailey Clifford (bather) was invited to the platform");
+    expect(n.detail).toContain("Lauren Romari");
+    expect(n.detail).toContain("not accepted yet");
+  });
+
+  it("says when a login actually exists, which is the moment that matters", () => {
+    const n = describeSystemNotification({
+      kind: "staff_account_created", detail: "Bailey Clifford (bather)", actorName: null,
+    });
+    expect(n.title).toContain("now has a login");
+    expect(n.detail).toBe("They can sign in from now on.");
+  });
+
+  it("still reads when nobody is named", () => {
+    const n = describeSystemNotification({ kind: "staff_invited" });
+    expect(n.title).toBe("Someone was invited to the platform");
+    expect(n.detail).not.toMatch(/undefined|null/);
+  });
+});

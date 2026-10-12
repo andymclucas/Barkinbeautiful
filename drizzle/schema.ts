@@ -1145,10 +1145,15 @@ export type AppointmentPayment = typeof appointmentPayments.$inferSelect;
 export const systemNotifications = mysqlTable("system_notifications", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull(),
-  kind: mysqlEnum("kind", ["client_portal_activated"]).notNull(),
+  kind: mysqlEnum("kind", ["client_portal_activated", "staff_invited", "staff_account_created"]).notNull(),
   clientId: int("client_id"),
   readAt: timestamp("read_at"),
   readByUserId: int("read_by_user_id"),
+  /** Who caused it. Null when the actor is not a platform user — a client
+   *  setting up their own portal is the obvious case. */
+  actorUserId: int("actor_user_id"),
+  /** One line of context written at the time, e.g. "Bailey Clifford (bather)". */
+  detail: varchar("detail", { length: 500 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [index("idx_system_notifications_tenant_read").on(t.tenantId, t.readAt)]);
 
