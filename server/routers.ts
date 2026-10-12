@@ -18,7 +18,8 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages
+  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
+  appointmentAddOns,
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -48,7 +49,7 @@ import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
-import { buildInvoiceLines, addOnsTotal } from "../shared/appointmentAddOns";
+import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
@@ -80,6 +81,7 @@ import {
 import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
+import { bookingPricingRouter } from "./routers/bookingPricing";
 import { stripeConnectRouter } from "./routers/stripeConnect";
 import { salonSignupRouter } from "./routers/salonSignup";
 import { trialRouter } from "./routers/trial";
@@ -787,6 +789,23 @@ const calendarRouter = router({
       scheduledEnd: z.string(),
       notes: z.string().optional(),
       price: z.string().optional(),
+      // One price per dog. A two-dog family is one booking but two
+      // appointment rows, and the dialog used to offer a single box for
+      // both — so the salon put the whole family's fee on the first dog
+      // and left the sibling NULL. 80 of the 102 unpriced appointments
+      // found on 12/10/2026 are exactly that. Keyed by pet id as a
+      // string, the same shape as staffByPetId. `price` stays as the
+      // fallback for any pet not named here, so an older client and the
+      // recurring path are unchanged.
+      priceByPetId: z.record(z.string(), z.string()).optional(),
+      // Extras chosen while booking rather than added on the day. The
+      // price is taken from the catalogue here, never from the client —
+      // see appointmentAddOns.add, which this mirrors.
+      addOnsByPetId: z.record(z.string(), z.array(z.object({
+        pricingServiceId: z.number().int().positive(),
+        quantity: z.number().int().min(1).max(20).default(1),
+        unitPrice: z.number().min(0).max(10000).optional(),
+      })).max(20)).optional(),
       membershipId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -805,9 +824,51 @@ const calendarRouter = router({
       // Assign a shared sessionId when booking multiple pets together
       const sessionId = petIds.length > 1 ? nanoid(16) : null;
       const created: number[] = [];
+
+      // Every add-on named in the request, looked up once. The catalogue
+      // is the only source of a fixed price: a figure sent by the client
+      // is accepted only for a quoted item, which by definition has none.
+      const requestedAddOnIds = Array.from(new Set(
+        Object.values(input.addOnsByPetId ?? {}).flat().map(addOn => addOn.pricingServiceId),
+      ));
+      const addOnCatalogue = new Map<number, { id: number; name: string; priceMode: string; priceAud: string | null }>();
+      if (requestedAddOnIds.length > 0) {
+        const rows = await db.select({
+          id: pricingServices.id,
+          name: pricingServices.name,
+          priceMode: pricingServices.priceMode,
+          priceAud: pricingServices.priceAud,
+        }).from(pricingServices).where(and(
+          inArray(pricingServices.id, requestedAddOnIds),
+          eq(pricingServices.tenantId, tenantOf(ctx, input)),
+          eq(pricingServices.catalogueType, "add_on"),
+        ));
+        for (const row of rows) addOnCatalogue.set(row.id, row as any);
+        const missing = requestedAddOnIds.filter(id => !addOnCatalogue.has(id));
+        if (missing.length > 0) throw new Error("One of the selected add-ons is not in this salon's catalogue");
+
+        // Every quoted add-on must carry a figure BEFORE anything is
+        // written. There is no transaction around the loop below, so a
+        // throw halfway through would leave some dogs booked, some not,
+        // and the extras lost — with an error on screen that looks like
+        // nothing saved at all.
+        for (const addOn of Object.values(input.addOnsByPetId ?? {}).flat()) {
+          const service = addOnCatalogue.get(addOn.pricingServiceId)!;
+          if (addOnRequiresManualPrice(service.priceMode) && addOn.unitPrice === undefined) {
+            throw new Error(`${service.name} is priced per dog — enter the agreed amount`);
+          }
+        }
+      }
+
       for (const petId of petIds) {
         const token = nanoid(32);
-        await db.insert(appointments).values({
+        // The membership pays for the groom, so the price is zero whatever
+        // the dialog sent. Checked before the per-dog figure so a filled-in
+        // box can never bill a member for a groom they already pay for.
+        const petPrice = coverage.fullyCovered
+          ? "0.00"
+          : (input.priceByPetId?.[String(petId)] ?? input.price);
+        const [result] = await db.insert(appointments).values({
           tenantId: tenantOf(ctx, input),
           clientId: input.clientId,
           petId,
@@ -816,13 +877,33 @@ const calendarRouter = router({
           scheduledStart: parseBrisbaneLocalDateTime(input.scheduledStart),
           scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
           notes: input.notes,
-          price: coverage.fullyCovered ? "0.00" : input.price,
+          price: petPrice,
           membershipId: coverage.membershipByPetId[petId]?.id ?? null,
           trackerToken: token,
           sessionId,
           workflowState: "scheduled",
           status: "confirmed",
         });
+
+        // Extras are charged even on a membership groom — the weekly
+        // payment covers the cut, not the de-matt done on the day.
+        const appointmentId = (result as any)?.insertId as number | undefined;
+        for (const addOn of input.addOnsByPetId?.[String(petId)] ?? []) {
+          const service = addOnCatalogue.get(addOn.pricingServiceId)!;
+          // Already validated above, before any row was written.
+          if (!appointmentId) continue;
+          await db.insert(appointmentAddOns).values({
+            tenantId: tenantOf(ctx, input),
+            appointmentId,
+            pricingServiceId: service.id,
+            // Snapshots, so a later rename or price rise never changes
+            // what this client was quoted today.
+            name: service.name,
+            unitPrice: addOn.unitPrice !== undefined ? addOn.unitPrice.toFixed(2) : (service.priceAud ?? "0.00"),
+            quantity: addOn.quantity,
+            createdByUserId: ctx.user?.id ?? null,
+          });
+        }
         created.push(petId);
       }
       return { success: true, created: created.length, membershipCovered: coverage.fullyCovered };
@@ -9808,6 +9889,7 @@ export const appRouter = router({
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,
+  bookingPricing: bookingPricingRouter,
 });
 
 export type AppRouter = typeof appRouter;
