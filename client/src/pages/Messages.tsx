@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { AssignStaffPicker } from "@/components/AssignStaffPicker";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { MassTextDialog } from "@/components/MassTextDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { tidyTranscript, extractCallbackNumbers, formatAustralianNumber, worthShowingCallback } from "@shared/voicemailTranscript";
@@ -396,6 +397,163 @@ export default function Messages() {
     </>
   );
 
+  // The three panes, named so the wide and narrow layouts below can share
+  // them rather than the markup existing twice.
+  const conversationsCard = (
+        <Card className="lg:flex lg:h-[calc(100vh-13rem)] lg:flex-col lg:overflow-hidden">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-sm font-semibold">
+                Conversations
+                {unreadThreadCount > 0 && (
+                  <span className="ml-2 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                    {unreadThreadCount} unread
+                  </span>
+                )}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {threads?.length ?? 0} open
+                </span>
+              </CardTitle>
+              <div className="flex items-center gap-1">
+                {canMassText && <MassTextDialog />}
+                {unreadThreadCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={markAllRead.isPending}
+                    onClick={() => markAllRead.mutate({})}
+                  >
+                    {markAllRead.isPending ? "Marking…" : "Mark all as read"}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          {/* The card is a fixed-height flex column, so the list inside it
+              has to be the part that scrolls — min-h-0 because a flex child
+              will not shrink below its content without it, which is what left
+              the list clipped with nowhere to scroll. */}
+          <CardContent className="px-4 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            {!threads || threads.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
+            ) : (
+              <div className="divide-y">
+                {[...threads]
+                  .sort((a: any, b: any) => {
+                    // Starred first; everything else keeps the server's
+                    // most-recent-first order.
+                    const sa = starredKeys.has(a.threadKey) ? 1 : 0;
+                    const sb = starredKeys.has(b.threadKey) ? 1 : 0;
+                    return sb - sa;
+                  })
+                  .map((thread: any) => {
+                  const displayName = thread.clientName?.trim() || thread.toNumber;
+                  return (
+                  <div
+                    key={thread.threadKey}
+                    className="group -mx-2 flex w-full items-center gap-2 rounded-xl px-2 transition-colors hover:bg-accent/50"
+                  >
+                    <button
+                      type="button"
+                      className="shrink-0 p-1 text-muted-foreground transition-colors hover:text-amber-500"
+                      aria-label={starredKeys.has(thread.threadKey) ? "Unstar this conversation" : "Star this conversation"}
+                      title={starredKeys.has(thread.threadKey) ? "Starred — shown first" : "Star this conversation"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setStarred.mutate({ threadKey: thread.threadKey, starred: !starredKeys.has(thread.threadKey) });
+                      }}
+                    >
+                      <Star className={`h-4 w-4 ${starredKeys.has(thread.threadKey) ? "fill-amber-400 text-amber-500" : ""}`} />
+                    </button>
+                    <AssignStaffPicker
+                      kind="message"
+                      id={thread.id}
+                      assignedStaffId={thread.assignedStaffId}
+                      assignedStaffName={thread.assignedStaffName}
+                      onAssigned={() => refetchThreads()}
+                    />
+                    <button
+                      className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
+                      onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
+                    >
+                      <span
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
+                        style={{ background: contactColour(thread.threadKey ?? displayName) }}
+                        aria-hidden="true"
+                      >
+                        {contactInitials(thread.clientName, thread.toNumber)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className={`truncate text-[15px] ${thread.unreadCount > 0 ? "font-semibold" : "font-medium"}`}>{displayName}</span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <p className={`min-w-0 flex-1 truncate text-[13px] ${thread.unreadCount > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                            {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
+                          </p>
+                          {thread.readAt && thread.unreadCount === 0 && (
+                            <span className="truncate text-[10px] text-muted-foreground/80">
+                              {thread.readByName
+                                ? `Read by ${thread.readByName}, ${new Date(thread.readAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}`
+                                : "Read"}
+                            </span>
+                          )}
+                          {thread.unreadCount > 0 && (
+                            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                              {thread.unreadCount}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                      disabled={deleteThreadMutation.isPending}
+                      aria-label="Delete conversation"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete this entire conversation with ${thread.clientName?.trim() || thread.toNumber}? This can't be undone.`)) {
+                          deleteThreadMutation.mutate(thread.clientId ? { clientId: thread.clientId } : { toNumber: thread.toNumber });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+  );
+  const readingCard = (
+        <Card className="hidden lg:flex lg:h-[calc(100vh-13rem)] lg:flex-col lg:overflow-hidden">
+          {openThread ? conversationPane : (
+            <div className="flex flex-1 items-center justify-center p-8 text-center">
+              <p className="text-sm text-muted-foreground">Choose a conversation to read it here.</p>
+            </div>
+          )}
+        </Card>
+  );
+  const detailsCard = (
+        <Card className="hidden lg:block lg:h-[calc(100vh-13rem)] lg:overflow-y-auto">
+          {openThread ? (
+            <ThreadClientContext clientId={openThread.clientId ?? null} />
+          ) : (
+            <div className="flex h-full items-center justify-center p-6 text-center">
+              <p className="text-xs text-muted-foreground">Client details appear here.</p>
+            </div>
+          )}
+        </Card>
+  );
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -603,158 +761,37 @@ export default function Messages() {
             talking to sits beside it. Below lg there is no room for three,
             so the list is the page and a tap opens the conversation in a
             dialog — the same markup, not a second implementation. */}
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)_minmax(0,17rem)]">
-        <Card className="lg:flex lg:h-[calc(100vh-13rem)] lg:flex-col lg:overflow-hidden">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="text-sm font-semibold">
-                Conversations
-                {unreadThreadCount > 0 && (
-                  <span className="ml-2 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
-                    {unreadThreadCount} unread
-                  </span>
-                )}
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {threads?.length ?? 0} open
-                </span>
-              </CardTitle>
-              <div className="flex items-center gap-1">
-                {canMassText && <MassTextDialog />}
-                {unreadThreadCount > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    disabled={markAllRead.isPending}
-                    onClick={() => markAllRead.mutate({})}
-                  >
-                    {markAllRead.isPending ? "Marking…" : "Mark all as read"}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          {/* The card is a fixed-height flex column, so the list inside it
-              has to be the part that scrolls — min-h-0 because a flex child
-              will not shrink below its content without it, which is what left
-              the list clipped with nowhere to scroll. */}
-          <CardContent className="px-4 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-            {!threads || threads.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
-            ) : (
-              <div className="divide-y">
-                {[...threads]
-                  .sort((a: any, b: any) => {
-                    // Starred first; everything else keeps the server's
-                    // most-recent-first order.
-                    const sa = starredKeys.has(a.threadKey) ? 1 : 0;
-                    const sb = starredKeys.has(b.threadKey) ? 1 : 0;
-                    return sb - sa;
-                  })
-                  .map((thread: any) => {
-                  const displayName = thread.clientName?.trim() || thread.toNumber;
-                  return (
-                  <div
-                    key={thread.threadKey}
-                    className="group -mx-2 flex w-full items-center gap-2 rounded-xl px-2 transition-colors hover:bg-accent/50"
-                  >
-                    <button
-                      type="button"
-                      className="shrink-0 p-1 text-muted-foreground transition-colors hover:text-amber-500"
-                      aria-label={starredKeys.has(thread.threadKey) ? "Unstar this conversation" : "Star this conversation"}
-                      title={starredKeys.has(thread.threadKey) ? "Starred — shown first" : "Star this conversation"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setStarred.mutate({ threadKey: thread.threadKey, starred: !starredKeys.has(thread.threadKey) });
-                      }}
-                    >
-                      <Star className={`h-4 w-4 ${starredKeys.has(thread.threadKey) ? "fill-amber-400 text-amber-500" : ""}`} />
-                    </button>
-                    <AssignStaffPicker
-                      kind="message"
-                      id={thread.id}
-                      assignedStaffId={thread.assignedStaffId}
-                      assignedStaffName={thread.assignedStaffName}
-                      onAssigned={() => refetchThreads()}
-                    />
-                    <button
-                      className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
-                      onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
-                    >
-                      <span
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
-                        style={{ background: contactColour(thread.threadKey ?? displayName) }}
-                        aria-hidden="true"
-                      >
-                        {contactInitials(thread.clientName, thread.toNumber)}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className={`truncate text-[15px] ${thread.unreadCount > 0 ? "font-semibold" : "font-medium"}`}>{displayName}</span>
-                          <span className="shrink-0 text-[11px] text-muted-foreground">
-                            {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-2">
-                          <p className={`min-w-0 flex-1 truncate text-[13px] ${thread.unreadCount > 0 ? "text-foreground" : "text-muted-foreground"}`}>
-                            {thread.lastDirection === "outbound" ? "You: " : ""}{thread.lastMessage}
-                          </p>
-                          {thread.readAt && thread.unreadCount === 0 && (
-                            <span className="truncate text-[10px] text-muted-foreground/80">
-                              {thread.readByName
-                                ? `Read by ${thread.readByName}, ${new Date(thread.readAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}`
-                                : "Read"}
-                            </span>
-                          )}
-                          {thread.unreadCount > 0 && (
-                            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
-                              {thread.unreadCount}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                      disabled={deleteThreadMutation.isPending}
-                      aria-label="Delete conversation"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Delete this entire conversation with ${thread.clientName?.trim() || thread.toNumber}? This can't be undone.`)) {
-                          deleteThreadMutation.mutate(thread.clientId ? { clientId: thread.clientId } : { toNumber: thread.toNumber });
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Wide screens get three draggable panes. The conversation list was
+            a fixed 22rem, which cut names to "Ashl…" once the Assign control
+            took its share of the row — so the width is the reader's choice
+            now. react-resizable-panels stores the sizes per browser under
+            autoSaveId, so a chosen width survives a reload.
 
-        <Card className="hidden lg:flex lg:h-[calc(100vh-13rem)] lg:flex-col lg:overflow-hidden">
-          {openThread ? conversationPane : (
-            <div className="flex flex-1 items-center justify-center p-8 text-center">
-              <p className="text-sm text-muted-foreground">Choose a conversation to read it here.</p>
-            </div>
-          )}
-        </Card>
-
-        <Card className="hidden lg:block lg:h-[calc(100vh-13rem)] lg:overflow-y-auto">
-          {openThread ? (
-            <ThreadClientContext clientId={openThread.clientId ?? null} />
-          ) : (
-            <div className="flex h-full items-center justify-center p-6 text-center">
-              <p className="text-xs text-muted-foreground">Client details appear here.</p>
-            </div>
-          )}
-        </Card>
-        </div>
+            Narrow screens are unchanged: the list IS the page and a tap opens
+            the conversation in a dialog, so only the list renders. Both
+            layouts use the same three consts rather than a second copy of the
+            markup. */}
+        {isWideScreen ? (
+          <ResizablePanelGroup
+            direction="horizontal"
+            autoSaveId="groomigo-messages-panes"
+            className="items-stretch gap-4"
+          >
+            <ResizablePanel defaultSize={26} minSize={15} maxSize={55} className="min-w-0">
+              {conversationsCard}
+            </ResizablePanel>
+            <ResizableHandle withHandle className="bg-transparent" />
+            <ResizablePanel defaultSize={54} minSize={25} className="min-w-0">
+              {readingCard}
+            </ResizablePanel>
+            <ResizableHandle withHandle className="bg-transparent" />
+            <ResizablePanel defaultSize={20} minSize={12} maxSize={40} className="min-w-0">
+              {detailsCard}
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          <div className="grid gap-4">{conversationsCard}</div>
+        )}
 
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
