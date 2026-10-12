@@ -42,6 +42,7 @@ Two naming notes for anyone reading these cold:
 | Note | Subject |
 | --- | --- |
 | `lauren_feature_requests_2026-10-12.md` | Lauren's feature requests, and why the revenue total currently understates |
+| `moego_feature_gap_analysis_2026-10-12.md` | What MoeGo has that Groomigo doesn't, and what to build first |
 
 ## Booking & pricing
 
