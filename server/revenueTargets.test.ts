@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
+import { targetBreakdown,
   TARGET_PERIODS, isTargetPeriod, daysInRange, periodDays,
   targetForDays, targetProgress, isDerivedView, ON_TRACK_TOLERANCE,
   rangeForPeriod, brisbaneToday,
@@ -214,5 +214,45 @@ describe("a target does not go back to zero until its own period does", () => {
     expect(elapsed).toBe(8);
     // $8,000 across a 31-day October is ~$2,064 by the 8th.
     expect(targetForDays("8000.00", "monthly", elapsed, d("2026-10-01"))).toBe(2064.52);
+  });
+});
+
+describe("targetBreakdown", () => {
+  // A 31-day month inside a 92-day quarter, so the arithmetic is checkable
+  // by hand: August 2026, Q3 is Jul 31 + Aug 31 + Sep 30 = 92.
+  const august = new Date(Date.UTC(2026, 7, 12));
+
+  it("scales a weekly target to the other three", () => {
+    const b = targetBreakdown(2000, "weekly", august)!;
+    expect(b.weekly).toBe(2000);
+    expect(b.daily).toBeCloseTo(2000 / 7, 2);          // 285.71
+    expect(b.monthly).toBeCloseTo((2000 / 7) * 31, 2); // 8857.14
+    expect(b.quarterly).toBeCloseTo((2000 / 7) * 92, 2);
+  });
+
+  it("uses the real length of the month, not 30", () => {
+    // A February target assuming 30 days is 7% wrong every year.
+    const feb = targetBreakdown(700, "weekly", new Date(Date.UTC(2027, 1, 10)))!;
+    expect(feb.monthly).toBeCloseTo(100 * 28, 2);
+    const jan = targetBreakdown(700, "weekly", new Date(Date.UTC(2027, 0, 10)))!;
+    expect(jan.monthly).toBeCloseTo(100 * 31, 2);
+  });
+
+  it("round-trips: converting back gives the number that was typed", () => {
+    const b = targetBreakdown(8671, "monthly", august)!;
+    expect(b.monthly).toBe(8671);
+    expect(targetBreakdown(b.daily, "daily", august)!.monthly).toBeCloseTo(8671, 0);
+  });
+
+  it("is null without a usable amount, never a row of zeroes", () => {
+    // Zeroes read as a real target of nothing, which shows 100% achieved.
+    expect(targetBreakdown(null, "weekly", august)).toBeNull();
+    expect(targetBreakdown("", "weekly", august)).toBeNull();
+    expect(targetBreakdown("abc", "weekly", august)).toBeNull();
+  });
+
+  it("treats an explicit zero as a real figure", () => {
+    expect(targetBreakdown(0, "weekly", august)).not.toBeNull();
+    expect(targetBreakdown(0, "weekly", august)!.monthly).toBe(0);
   });
 });

@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  TARGET_PERIODS, TARGET_PERIOD_LABELS, rangeForPeriod, brisbaneToday,
+  TARGET_PERIODS, TARGET_PERIOD_LABELS, rangeForPeriod, brisbaneToday, targetBreakdown,
   type TargetPeriod,
 } from "@shared/revenueTargets";
 import { SIZE_BAND_IDS, sizeBandLabel, type DogSizeBand } from "@shared/dogSizeBand";
@@ -103,6 +103,11 @@ export function RevenueTargets() {
   const [editing, setEditing] = useState<{ id: number; name: string } | null>(null);
   const [amount, setAmount] = useState("");
   const [storedPeriod, setStoredPeriod] = useState<TargetPeriod>("weekly");
+  // Recomputed as the amount or the period changes, which is the point of it.
+  const preview = useMemo(
+    () => targetBreakdown(amount.replace(/[$,\s]/g, ""), storedPeriod),
+    [amount, storedPeriod],
+  );
 
   const save = trpc.revenueTargets.set.useMutation({
     onSuccess: () => {
@@ -328,6 +333,25 @@ export function RevenueTargets() {
                 </SelectContent>
               </Select>
             </div>
+            {/* What the figure being typed means everywhere else, live.
+                Without it you have to save and then switch views to learn
+                whether $2,000 a week was what you meant. Scaled with the same
+                targetForDays the table uses, so the preview cannot disagree
+                with what appears after saving. */}
+            {preview && (
+              <div className="rounded-lg border bg-muted/40 p-2.5">
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">That works out as</p>
+                <div className="grid grid-cols-4 gap-1.5 text-center">
+                  {TARGET_PERIODS.map((view) => (
+                    <div key={view} className={view === storedPeriod ? "rounded-md bg-card px-1 py-1 shadow-sm" : "px-1 py-1"}>
+                      <p className="text-[10px] text-muted-foreground">{TARGET_PERIOD_LABELS[view]}</p>
+                      <p className="text-[13px] font-semibold tabular-nums">${preview[view].toLocaleString("en-AU", { maximumFractionDigits: 0 })}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">Month and quarter use this month&rsquo;s real length, not 30 and 90 days.</p>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
               One figure is stored per person. The Day, Week, Month and Quarter views above are
               scaled from it, so you only ever keep this one up to date.
@@ -388,6 +412,11 @@ export function StaffRevenueTarget({ staffId, from, to }: { staffId: number; fro
   const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState("");
   const [storedPeriod, setStoredPeriod] = useState<TargetPeriod>("weekly");
+  // Recomputed as the amount or the period changes, which is the point of it.
+  const preview = useMemo(
+    () => targetBreakdown(amount.replace(/[$,\s]/g, ""), storedPeriod),
+    [amount, storedPeriod],
+  );
 
   const save = trpc.revenueTargets.set.useMutation({
     onSuccess: () => {
@@ -475,6 +504,25 @@ export function StaffRevenueTarget({ staffId, from, to }: { staffId: number; fro
                 </SelectContent>
               </Select>
             </div>
+            {/* What the figure being typed means everywhere else, live.
+                Without it you have to save and then switch views to learn
+                whether $2,000 a week was what you meant. Scaled with the same
+                targetForDays the table uses, so the preview cannot disagree
+                with what appears after saving. */}
+            {preview && (
+              <div className="rounded-lg border bg-muted/40 p-2.5">
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">That works out as</p>
+                <div className="grid grid-cols-4 gap-1.5 text-center">
+                  {TARGET_PERIODS.map((view) => (
+                    <div key={view} className={view === storedPeriod ? "rounded-md bg-card px-1 py-1 shadow-sm" : "px-1 py-1"}>
+                      <p className="text-[10px] text-muted-foreground">{TARGET_PERIOD_LABELS[view]}</p>
+                      <p className="text-[13px] font-semibold tabular-nums">${preview[view].toLocaleString("en-AU", { maximumFractionDigits: 0 })}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">Month and quarter use this month&rsquo;s real length, not 30 and 90 days.</p>
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" size="sm" disabled={save.isPending}

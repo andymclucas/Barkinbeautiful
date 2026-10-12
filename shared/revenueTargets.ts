@@ -80,6 +80,32 @@ export function targetForDays(
   return round2((value / perPeriod) * Math.max(1, days));
 }
 
+/**
+ * The same target expressed every way, for showing while somebody types it.
+ *
+ * Exists so the editor can answer "what does $2,000 a week actually mean"
+ * before it is saved, rather than making someone save and then switch views
+ * to find out. Built on targetForDays so the preview and the table can never
+ * disagree — if they could, the preview would be a second implementation of
+ * the maths and would drift.
+ *
+ * Returns null for every period when there is no usable amount, so the caller
+ * shows nothing rather than a row of $0.00, which reads as a real target.
+ */
+export function targetBreakdown(
+  amount: string | number | null | undefined,
+  period: TargetPeriod,
+  reference: Date = new Date(),
+): Record<TargetPeriod, number> | null {
+  const probe = targetForDays(amount, period, 1, reference);
+  if (probe === null) return null;
+  const out = {} as Record<TargetPeriod, number>;
+  for (const view of TARGET_PERIODS) {
+    out[view] = targetForDays(amount, period, periodDays(view, reference), reference) ?? 0;
+  }
+  return out;
+}
+
 /** Whether the viewed figure is the number somebody typed, or scaled from it. */
 export function isDerivedView(period: TargetPeriod, viewing: TargetPeriod): boolean {
   return period !== viewing;
