@@ -522,6 +522,7 @@ Custom agents in `.claude/agents/` and skills in `.claude/skills/`:
 | Push a branch to GitHub / diagnose a failed push          | `/github-push`             |
 | Test a feature for real against the live system           | `/test-on-andys-account`   |
 | Blocked on approval or permission — branch it, don't wait | `/branch-when-blocked`     |
+| Question a new feature against scale before building it   | `/build-for-scale`         |
 | Using Andy's Chrome without wrecking his sessions         | `/leave-the-browser-alone` |
 | Ship and verify unattended while Andy is asleep           | `/unattended-deploy`       |
 | Find things inside the `routers.ts` monolith             | `router-navigator` agent   |
