@@ -35,7 +35,7 @@ import { resolveAppointmentDeletionIds } from "../shared/appointmentDeletion";
 import { consumeAppointmentDeletionUndo, createAppointmentDeletionUndo, getAppointmentDeletionUndo, type AppointmentDeletionSnapshot } from "./appointmentDeletionUndo";
 import { getNewSharedSessionPetIds } from "../shared/appointmentSession";
 import { canAssignTo, markUnreadPatch } from "../shared/messageReadState";
-import { buildAdminRightsEmail, describeAdminRightsChange, diffAdminRights } from "../shared/staffAdminNotice";
+import { buildAdminRightsEmail, buildPortalAccessEmail, buildRoleChangeEmail, describeAdminRightsChange, diffAdminRights } from "../shared/staffAdminNotice";
 import { PRODUCT_NAME } from "../shared/salonTitle";
 import { getReplacementWeightBand, isEligibleMembershipReplacement } from "../shared/departedPetMembership";
 import { getStripePrototypeStatus } from "../shared/stripeMembershipReconciliation";
@@ -144,6 +144,52 @@ async function requireSection(db: any, user: { id: number; role: string; email?:
 function requireStaffAdministrator(user: { id: number; role: string; email?: string | null }) {
   if (!canAdministerStaff(user)) throw new Error(STAFF_ADMIN_DENIED_MESSAGE);
 }
+/**
+ * Record an access change and tell the person it happened to.
+ *
+ * Everything here is best-effort and caught. An access change that already
+ * succeeded must never be undone because an email provider was unreachable or
+ * because somebody has no address on file — so this returns whether they were
+ * told rather than throwing, and the caller hands that back so the UI can say
+ * "saved, but we could not email them".
+ */
+async function notifyStaffOfAccessChange(db: any, input: {
+  tenantId: number; staffId: number; actorUserId: number; actorName: string | null;
+  staffName: string; recipient: string | null | undefined;
+  eventType?: "admin_rights_changed" | "role_changed"; note?: string | null;
+  skipAudit?: boolean;
+  email: (ctx: { staffName: string; salonName: string; productName: string; actorName: string | null; signInUrl: string }) => { subject: string; html: string };
+}): Promise<boolean> {
+  if (!input.skipAudit && input.eventType) {
+    try {
+      await recordStaffAccessEvent(db, {
+        tenantId: input.tenantId, staffId: input.staffId,
+        actorUserId: input.actorUserId, eventType: input.eventType, note: input.note ?? null,
+      });
+    } catch (err) {
+      console.error("[staff] could not record the access audit row", err);
+    }
+  }
+  const to = (input.recipient ?? "").trim();
+  if (!to) return false;
+  try {
+    const [tenant] = await db.select({ name: tenants.name })
+      .from(tenants).where(eq(tenants.id, input.tenantId)).limit(1);
+    const { subject, html } = input.email({
+      staffName: input.staffName,
+      salonName: tenant?.name ?? "your salon",
+      productName: PRODUCT_NAME,
+      actorName: input.actorName,
+      signInUrl: getAppBaseUrl(),
+    });
+    const { sendEmail } = await import("./email");
+    return await sendEmail({ to, subject, html });
+  } catch (err) {
+    console.error("[staff] access notification failed to send", err);
+    return false;
+  }
+}
+
 async function recordStaffAccessEvent(db: any, event: Omit<typeof staffAccessEvents.$inferInsert, "occurredAtMs" | "createdAt">) {
   const occurredAtMs = Date.now();
   await db.insert(staffAccessEvents).values({ ...event, occurredAtMs, createdAt: new Date(occurredAtMs) });
@@ -3034,8 +3080,33 @@ const staffRouter = router({
       if (fields.onlineServices !== undefined) updateData.onlineServices = fields.onlineServices;
       if (fields.onlineMaxDogsPerSlot !== undefined) updateData.onlineMaxDogsPerSlot = fields.onlineMaxDogsPerSlot;
       if (fields.onlineMaxDogsPerDay !== undefined) updateData.onlineMaxDogsPerDay = fields.onlineMaxDogsPerDay;
+
+      // The role is the one field here the person themselves should hear
+      // about: it is how the salon describes them, and at invitation time
+      // "groomer" is what grants platform admin. Read before the write so the
+      // old value is still there to name in the email.
+      const [beforeMember] = await db.select({
+        name: staff.name, email: staff.email, role: staff.role, tenantId: staff.tenantId,
+      }).from(staff).where(eq(staff.id, staffId)).limit(1);
+      if (!beforeMember) throw new Error("Staff member not found");
+      if (beforeMember.tenantId !== tenantOf(ctx, {})) throw new Error("That staff member belongs to another salon");
+
       await db.update(staff).set(updateData as Parameters<typeof db.update>[0] extends infer T ? any : any).where(eq(staff.id, staffId));
-      return { success: true };
+
+      let notified = false;
+      const roleChanged = fields.role !== undefined && fields.role !== beforeMember.role;
+      if (roleChanged) {
+        notified = await notifyStaffOfAccessChange(db, {
+          tenantId: beforeMember.tenantId, staffId, actorUserId: ctx.user.id,
+          actorName: ctx.user.name ?? null, staffName: beforeMember.name,
+          recipient: beforeMember.email, eventType: "role_changed",
+          note: `Role changed from ${beforeMember.role} to ${fields.role}`,
+          email: (ctx2) => buildRoleChangeEmail({
+            ...ctx2, fromRole: beforeMember.role, toRole: fields.role as string,
+          }),
+        });
+      }
+      return { success: true, roleChanged, notified };
     }),
 
   /**
@@ -3085,36 +3156,15 @@ const staffRouter = router({
         isAdmin: input.isAdmin,
         adminSections: input.sections !== undefined ? parseSections(input.sections) : member.adminSections,
       });
-      let notified = false;
-      if (change.changed) {
-        try {
-          await recordStaffAccessEvent(db, {
+      const notified = change.changed
+        ? await notifyStaffOfAccessChange(db, {
             tenantId: member.tenantId, staffId: member.id, actorUserId: ctx.user.id,
-            eventType: "admin_rights_changed", note: describeAdminRightsChange(change),
-          });
-        } catch (err) {
-          console.error("[staff] could not record the admin-rights audit row", err);
-        }
-        const recipient = (member.email ?? "").trim();
-        if (recipient) {
-          try {
-            const [tenant] = await db.select({ name: tenants.name })
-              .from(tenants).where(eq(tenants.id, member.tenantId)).limit(1);
-            const { subject, html } = buildAdminRightsEmail({
-              staffName: member.name,
-              salonName: tenant?.name ?? "your salon",
-              productName: PRODUCT_NAME,
-              actorName: ctx.user.name ?? null,
-              change,
-              signInUrl: getAppBaseUrl(),
-            });
-            const { sendEmail } = await import("./email");
-            notified = await sendEmail({ to: recipient, subject, html });
-          } catch (err) {
-            console.error("[staff] admin-rights notification failed to send", err);
-          }
-        }
-      }
+            actorName: ctx.user.name ?? null, staffName: member.name,
+            recipient: member.email, eventType: "admin_rights_changed",
+            note: describeAdminRightsChange(change),
+            email: (ctx2) => buildAdminRightsEmail({ ...ctx2, change }),
+          })
+        : false;
       // Returned so the UI can say "saved, but we could not email them"
       // rather than implying the person has been told.
       return { success: true, isAdmin: input.isAdmin, changed: change.changed, notified };
@@ -3333,10 +3383,19 @@ const staffRouter = router({
       if (!db) throw new Error("DB unavailable");
       const [member] = await db.select().from(staff).where(eq(staff.id, input.staffId)).limit(1);
       if (!member) throw new Error("Staff member not found");
+      if (member.tenantId !== tenantOf(ctx, {})) throw new Error("That staff member belongs to another salon");
       await db.update(staff).set({ portalStatus: "revoked" }).where(eq(staff.id, member.id));
       await db.update(staffInvitations).set({ status: "revoked" }).where(and(eq(staffInvitations.staffId, member.id), eq(staffInvitations.status, "approved")));
       await recordStaffAccessEvent(db, { tenantId: member.tenantId, staffId: member.id, actorUserId: ctx.user.id, eventType: "revoked", note: input.note ?? null });
-      return { success: true };
+      // Told after the fact, deliberately: losing access must not depend on
+      // an email provider being reachable.
+      const notified = await notifyStaffOfAccessChange(db, {
+        tenantId: member.tenantId, staffId: member.id, actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? null, staffName: member.name,
+        recipient: member.email, skipAudit: true,
+        email: (ctx2) => buildPortalAccessEmail({ ...ctx2, action: "revoked", note: input.note ?? null }),
+      });
+      return { success: true, notified };
     }),
 
   restorePortalAccess: adminProcedure
@@ -3346,10 +3405,17 @@ const staffRouter = router({
       if (!db) throw new Error("DB unavailable");
       const [member] = await db.select().from(staff).where(eq(staff.id, input.staffId)).limit(1);
       if (!member?.userId || member.portalStatus !== "revoked") throw new Error("This staff account cannot be restored");
+      if (member.tenantId !== tenantOf(ctx, {})) throw new Error("That staff member belongs to another salon");
       await db.update(staff).set({ portalStatus: "approved" }).where(eq(staff.id, member.id));
       await db.update(users).set({ role: "staff" }).where(eq(users.id, member.userId));
       await recordStaffAccessEvent(db, { tenantId: member.tenantId, staffId: member.id, actorUserId: ctx.user.id, eventType: "approved", note: "Previously revoked staff access restored" });
-      return { success: true };
+      const notified = await notifyStaffOfAccessChange(db, {
+        tenantId: member.tenantId, staffId: member.id, actorUserId: ctx.user.id,
+        actorName: ctx.user.name ?? null, staffName: member.name,
+        recipient: member.email, skipAudit: true,
+        email: (ctx2) => buildPortalAccessEmail({ ...ctx2, action: "restored", note: null }),
+      });
+      return { success: true, notified };
     }),
 
   listPortalInvitations: adminProcedure

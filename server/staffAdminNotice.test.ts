@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildAdminRightsEmail, describeAdminRightsChange, diffAdminRights,
+  buildAdminRightsEmail, buildPortalAccessEmail, buildRoleChangeEmail,
+  describeAdminRightsChange, diffAdminRights, staffRoleLabel,
 } from "@shared/staffAdminNotice";
 
 const grant = (isAdmin: boolean, sections: string[] = []) => ({ isAdmin, adminSections: sections });
@@ -112,5 +113,80 @@ describe("buildAdminRightsEmail", () => {
       change: diffAdminRights(grant(false), grant(true, ["clients"])) });
     expect(mail.html).not.toContain("<img");
     expect(mail.html).toContain("&lt;img");
+  });
+});
+
+describe("staffRoleLabel", () => {
+  it("uses the salon's words, not the database's", () => {
+    expect(staffRoleLabel("receptionist")).toBe("Receptionist");
+    expect(staffRoleLabel("bather")).toBe("Bather");
+  });
+
+  it("passes an unknown role through rather than blanking it", () => {
+    // A role added later should read as itself, not vanish from the email.
+    expect(staffRoleLabel("apprentice")).toBe("apprentice");
+    expect(staffRoleLabel(null)).toBe("");
+  });
+});
+
+describe("buildRoleChangeEmail", () => {
+  const base = { staffName: "Steph", salonName: "Barkin Beautiful", productName: "Groomigo",
+    actorName: "Lauren Romari", signInUrl: "https://staff.example.com" };
+
+  it("names both the old and the new role", () => {
+    const mail = buildRoleChangeEmail({ ...base, fromRole: "bather", toRole: "groomer" });
+    expect(mail.subject).toBe("Your role at Barkin Beautiful is now Groomer");
+    expect(mail.html).toContain("Bather");
+    expect(mail.html).toContain("Groomer");
+  });
+
+  it("copes when there was no previous role", () => {
+    const mail = buildRoleChangeEmail({ ...base, fromRole: null, toRole: "manager" });
+    expect(mail.html).toContain("You are now");
+    expect(mail.html).not.toMatch(/undefined|null/);
+  });
+
+  it("says plainly that a role is not the same as admin rights", () => {
+    // The two are separate grants and get separate emails; saying so stops
+    // "I was made a manager, why can't I edit pricing".
+    const mail = buildRoleChangeEmail({ ...base, fromRole: "groomer", toRole: "manager" });
+    expect(mail.html).toMatch(/separate from admin rights/i);
+  });
+
+  it("takes the salon name from the caller", () => {
+    const mail = buildRoleChangeEmail({ ...base, salonName: "Another Salon", fromRole: "bather", toRole: "groomer" });
+    expect(mail.subject).toContain("Another Salon");
+    expect(mail.html).not.toContain("Barkin");
+  });
+});
+
+describe("buildPortalAccessEmail", () => {
+  const base = { staffName: "Steph", salonName: "Barkin Beautiful", productName: "Groomigo",
+    actorName: "Lauren Romari", signInUrl: "https://staff.example.com" };
+
+  it("tells a revoked person they cannot sign in, and that nothing was deleted", () => {
+    // Somebody whose login stops working assumes the system is broken.
+    const mail = buildPortalAccessEmail({ ...base, action: "revoked" });
+    expect(mail.subject).toMatch(/turned off/i);
+    expect(mail.html).toMatch(/will not be able to sign in/i);
+    expect(mail.html).toMatch(/nothing has been deleted/i);
+  });
+
+  it("passes the salon's note through, escaped", () => {
+    const mail = buildPortalAccessEmail({ ...base, action: "revoked", note: '<b>left</b> on 1 Oct' });
+    expect(mail.html).toContain("&lt;b&gt;left&lt;/b&gt;");
+    expect(mail.html).not.toContain("<b>left</b>");
+  });
+
+  it("omits the note line entirely when there is none", () => {
+    const mail = buildPortalAccessEmail({ ...base, action: "revoked", note: null });
+    expect(mail.html).not.toMatch(/Note from the salon/);
+  });
+
+  it("tells a restored person how to get back in", () => {
+    const mail = buildPortalAccessEmail({ ...base, action: "restored" });
+    expect(mail.subject).toMatch(/restored/i);
+    expect(mail.html).toMatch(/usual email and password/i);
+    expect(mail.html).toMatch(/forgotten-password/i);
   });
 });

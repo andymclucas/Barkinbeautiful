@@ -750,6 +750,13 @@
       "when": 1791790893749,
       "tag": "0106_staff_access_admin_rights_event",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "5",
+      "when": 1791791458575,
+      "tag": "0107_staff_access_role_changed_event",
+      "breakpoints": true
     }
   ]
 }
