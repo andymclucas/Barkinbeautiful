@@ -25,6 +25,12 @@ export const tenants = mysqlTable("tenants", {
   email: varchar("email", { length: 320 }),
   address: text("address"),
   logoUrl: text("logo_url"),
+  /**
+   * Where a happy client is sent to leave a PUBLIC review — usually a Google
+   * Business link. Null means the salon has not set one up, and the card
+   * thanks them and stops rather than offering a broken link.
+   */
+  publicReviewUrl: varchar("public_review_url", { length: 500 }),
   brandFont: varchar("brand_font", { length: 80 }).default("Inter").notNull(),
   brandPrimary: varchar("brand_primary", { length: 16 }).default("#d61572").notNull(),
   brandAccent: varchar("brand_accent", { length: 16 }).default("#f9d4e7").notNull(),
@@ -1257,7 +1263,19 @@ export const clientReviews = mysqlTable("client_reviews", {
   appointmentId: int("appointment_id"),
   rating: int("rating").notNull(),
   comment: text("comment"),
-  source: mysqlEnum("source", ["portal", "staff_entered", "imported"]).default("staff_entered").notNull(),
+  source: mysqlEnum("source", ["portal", "staff_entered", "imported", "grooming_card"]).default("staff_entered").notNull(),
+  /**
+   * The groomer this review is ABOUT, captured when it is written rather than
+   * derived from the appointment later — a booking can be reassigned, and the
+   * review should stay with whoever actually did the dog.
+   */
+  staffId: int("staff_id"),
+  /**
+   * They clicked through to leave a PUBLIC review. It cannot know whether
+   * they finished — Google does not tell us — so it is named for what it
+   * actually observes.
+   */
+  publicReviewOpenedAt: timestamp("public_review_opened_at"),
   published: boolean("published").default(false).notNull(),
   recordedByUserId: int("recorded_by_user_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "wouter";
 import { Scissors, Sparkles, PawPrint, CalendarClock, Phone } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { CardReviewPrompt } from "@/components/CardReviewPrompt";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 
@@ -222,6 +223,10 @@ export default function GroomingCard() {
               <p className="text-xl font-black text-primary">{card.recommendedFrequencyWeeks} weeks</p>
             </section>
           ) : null}
+
+          {/* Asked here because this is the moment they are looking at their
+              freshly groomed dog. Anywhere else is a worse moment. */}
+          <CardReviewPrompt token={token} petName={petName} />
 
           <footer className="pt-2 text-center">
             <p className="text-sm font-semibold">Thanks for trusting us with {petName} 🐾</p>

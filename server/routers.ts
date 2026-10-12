@@ -14,6 +14,7 @@ import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, notIn
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   systemNotifications,
+  clientReviews,
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
@@ -6233,6 +6234,123 @@ const groomingReportsRouter = router({
       });
     }),
 
+  /**
+   * Has this card already been reviewed, and is there a public page to send a
+   * happy client to?
+   *
+   * Public, by the card's own token. It returns no review TEXT — only whether
+   * one exists — because the card is a link anyone holding it can open, and
+   * what a client said about their groomer is not for whoever finds the
+   * link.
+   */
+  getCardReviewState: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(async ({ input }) => {
+      const { isGroomingShareToken } = await import("@shared/groomingShareToken");
+      if (!isGroomingShareToken(input.token)) throw new Error("This grooming card link is not valid");
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [card] = await db.select({
+        reportId: groomingReports.id,
+        appointmentId: groomingReports.appointmentId,
+        salonName: tenants.name,
+        publicReviewUrl: tenants.publicReviewUrl,
+      })
+        .from(groomingReports)
+        .innerJoin(tenants, eq(groomingReports.tenantId, tenants.id))
+        .where(and(eq(groomingReports.shareToken, input.token), eq(groomingReports.status, "sent")))
+        .limit(1);
+      if (!card) throw new Error("This grooming card link is not valid");
+      const [existing] = await db.select({ rating: clientReviews.rating })
+        .from(clientReviews)
+        .where(eq(clientReviews.appointmentId, card.appointmentId))
+        .limit(1);
+      return {
+        alreadyReviewed: !!existing,
+        rating: existing?.rating ?? null,
+        salonName: card.salonName,
+        hasPublicReviewPage: !!(card.publicReviewUrl ?? "").trim(),
+      };
+    }),
+
+  /**
+   * Leave a review from the card.
+   *
+   * Public, by token, because the client has no login — the token IS the
+   * authorisation, exactly as it is for viewing the card.
+   *
+   * One review per appointment. A second submission is ignored rather than
+   * refused: somebody double-tapping a star should not get an error, and
+   * letting the link be re-submitted would let anyone holding it bury a bad
+   * rating under a good one.
+   */
+  submitCardReview: publicProcedure
+    .input(z.object({
+      token: z.string(),
+      rating: z.number().int().min(1).max(5),
+      comment: z.string().max(2000).optional().nullable(),
+    }))
+    .mutation(async ({ input }) => {
+      const { isGroomingShareToken } = await import("@shared/groomingShareToken");
+      const { normaliseComment, reviewRouting } = await import("@shared/reviewRequest");
+      if (!isGroomingShareToken(input.token)) throw new Error("This grooming card link is not valid");
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const [card] = await db.select({
+        tenantId: groomingReports.tenantId,
+        appointmentId: groomingReports.appointmentId,
+        clientId: appointments.clientId,
+        staffId: appointments.staffId,
+        salonName: tenants.name,
+        publicReviewUrl: tenants.publicReviewUrl,
+      })
+        .from(groomingReports)
+        .innerJoin(appointments, eq(groomingReports.appointmentId, appointments.id))
+        .innerJoin(tenants, eq(groomingReports.tenantId, tenants.id))
+        .where(and(eq(groomingReports.shareToken, input.token), eq(groomingReports.status, "sent")))
+        .limit(1);
+      if (!card) throw new Error("This grooming card link is not valid");
+
+      const [existing] = await db.select({ id: clientReviews.id })
+        .from(clientReviews).where(eq(clientReviews.appointmentId, card.appointmentId)).limit(1);
+
+      if (!existing) {
+        await db.insert(clientReviews).values({
+          tenantId: card.tenantId,
+          clientId: card.clientId,
+          appointmentId: card.appointmentId,
+          staffId: card.staffId ?? null,
+          rating: input.rating,
+          comment: normaliseComment(input.comment),
+          source: "grooming_card",
+          // Never auto-published. A salon decides what goes on its own site.
+          published: false,
+        });
+      }
+      return reviewRouting(input.rating, card.publicReviewUrl, card.salonName);
+    }),
+
+  /** They clicked through to the public page. Best-effort; never blocks them. */
+  markPublicReviewOpened: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(async ({ input }) => {
+      const { isGroomingShareToken } = await import("@shared/groomingShareToken");
+      if (!isGroomingShareToken(input.token)) return { marked: false };
+      const db = await getDb();
+      if (!db) return { marked: false };
+      try {
+        const [card] = await db.select({ appointmentId: groomingReports.appointmentId })
+          .from(groomingReports).where(eq(groomingReports.shareToken, input.token)).limit(1);
+        if (!card) return { marked: false };
+        await db.update(clientReviews).set({ publicReviewOpenedAt: new Date() })
+          .where(and(eq(clientReviews.appointmentId, card.appointmentId), isNull(clientReviews.publicReviewOpenedAt)));
+        return { marked: true };
+      } catch {
+        return { marked: false };
+      }
+    }),
+
 });
 
 // ─── Settings (Tenant Info) ─────────────────────────────────────────────────────────────────────────────────
@@ -6255,6 +6373,8 @@ const settingsRouter = router({
           brandPrimary: tenants.brandPrimary,
           brandAccent: tenants.brandAccent,
           brandSidebar: tenants.brandSidebar,
+          /** Where a happy client is sent to leave a public review. */
+          publicReviewUrl: tenants.publicReviewUrl,
           // The salon's own zone. A user who has not chosen one falls back to
           // it, so a salon outside Brisbane behaves correctly out of the box.
           timezone: tenants.timezone,
@@ -6337,6 +6457,8 @@ const settingsRouter = router({
 
   updateTenantInfo: protectedProcedure
     .input(z.object({
+      /** Where a happy client goes to leave a public review. */
+      publicReviewUrl: z.string().trim().url().max(500).optional().nullable().or(z.literal("")),
       tenantId: z.number().default(1),
       phone: z.string().optional(),
       email: z.string().optional(),
@@ -6361,6 +6483,11 @@ const settingsRouter = router({
         brandPrimary: input.brandPrimary,
         brandAccent: input.brandAccent,
         brandSidebar: input.brandSidebar,
+        // Empty string clears it, which is how a salon turns the public
+        // review prompt off: the card then thanks a happy client and stops.
+        ...(input.publicReviewUrl === undefined
+          ? {}
+          : { publicReviewUrl: (input.publicReviewUrl ?? "").trim() || null }),
       }).where(eq(tenants.id, tenantOf(ctx, input)));
       return { success: true };
   }),
