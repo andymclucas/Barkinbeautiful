@@ -1,4 +1,4 @@
-import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare } from "lucide-react";
+import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare, UserCheck, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
@@ -44,6 +44,21 @@ export default function NotificationBell() {
     { limit: 6 },
     { refetchInterval: 20000, refetchOnWindowFocus: true }
   );
+  // What has been handed to THIS person. operationalProcedure and scoped to
+  // the caller's own staff row, so unlike the two queries above a restricted
+  // groomer can actually read it — which matters, because they are the people
+  // most likely to be handed a callback.
+  const { data: mine } = trpc.sms.myAssignments.useQuery(
+    {},
+    { refetchInterval: 30_000, refetchOnWindowFocus: true },
+  );
+  const markUnread = trpc.sms.markNotificationUnread.useMutation({
+    onSuccess: () => {
+      utils.sms.getUnreadPreview.invalidate();
+      utils.sms.myAssignments.invalidate();
+    },
+    onError: (error) => toast.error(error.message || "Could not mark that unread"),
+  });
 
   // Real-time push: the moment a new inbound SMS or missed-call voicemail
   // transcript arrives, the server pushes an event over this connection and
@@ -61,6 +76,12 @@ export default function NotificationBell() {
           utils.sms.getLogs.invalidate();
         } else if (payload?.type === "missed-call") {
           utils.sms.getUnreadPreview.invalidate();
+        }
+        // A data-changed event carries topics, never rows, so refetching here
+        // goes back through myAssignments as this user — nobody is handed
+        // somebody else's queue by the push.
+        if (payload?.type === "data-changed" || payload?.type === "assignment") {
+          utils.sms.myAssignments.invalidate();
         }
 
         // Ping whoever is signed in. The hook decides between an
@@ -83,7 +104,10 @@ export default function NotificationBell() {
   const failedPayments = sortFailedPayments(failedPaymentsRaw ?? []);
   // Money that did not arrive belongs in the badge: it is the whole reason
   // for giving payments their own section rather than burying them.
-  const unreadCount = messageCount + failedPayments.length;
+  // Work handed to you personally belongs in your own badge; that is the
+  // whole point of assigning it rather than leaving it in the shared pile.
+  const assignedCount = mine?.total ?? 0;
+  const unreadCount = messageCount + failedPayments.length + assignedCount;
 
   // The same number as the badge on the bell, on the Home Screen icon.
   // Driving it from here rather than its own query means the two cannot
@@ -130,7 +154,58 @@ export default function NotificationBell() {
           </p>
         </div>
         <div className="overflow-y-auto flex-1 min-h-0">
-          {/* Payments first, deliberately. A failed payment sitting under six
+          {/* Yours first. Everything below this is the salon's shared pile;
+              this section is the only part that was handed to you by name. */}
+          {assignedCount > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 bg-violet-50 px-4 py-1.5 dark:bg-violet-950/30">
+                <UserCheck className="h-3 w-3 shrink-0 text-violet-700 dark:text-violet-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-300">
+                  Assigned to you ({assignedCount})
+                </span>
+              </div>
+              {(mine?.calls ?? []).map((call: any) => (
+                <button
+                  key={`mine-call-${call.id}`}
+                  className="w-full border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-accent"
+                  onClick={() => setLocation(call.clientId ? `/clients/${call.clientId}` : "/messages")}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
+                      <Phone className="h-3 w-3 shrink-0 text-violet-600 dark:text-violet-400" />
+                      {call.callerName || call.fromNumber}
+                    </span>
+                    {call.assignedAt && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(call.assignedAt)}</span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {call.transcriptText || "Voicemail"}
+                  </p>
+                </button>
+              ))}
+              {(mine?.messages ?? []).map((msg: any) => (
+                <button
+                  key={`mine-msg-${msg.id}`}
+                  className="w-full border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-accent"
+                  onClick={() => setLocation(msg.clientId ? `/messages?clientId=${msg.clientId}` : "/messages")}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5 truncate text-sm font-medium">
+                      <MessageSquare className="h-3 w-3 shrink-0 text-violet-600 dark:text-violet-400" />
+                      {msg.toNumber}
+                    </span>
+                    {msg.assignedAt && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(msg.assignedAt)}</span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{msg.body}</p>
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Payments next, deliberately. A failed payment sitting under six
               voicemails is a payment nobody chases. */}
           {failedPayments.length > 0 && (
             <>
@@ -197,6 +272,22 @@ export default function NotificationBell() {
                     </p>
                   )}
                 </button>
+                {/* Back in the queue. Shown only on something already read,
+                    and it leaves the read history above intact — the line
+                    still says who opened it and when. */}
+                {item.readAt && (
+                  <button
+                    className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Mark as unread"
+                    title="Mark as unread"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      markUnread.mutate({ kind: item.kind, id: item.id });
+                    }}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 {item.kind === "missed_call" && (
                   <button
                     className="shrink-0 h-5 w-5 mt-0.5 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"

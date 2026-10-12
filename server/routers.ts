@@ -34,6 +34,7 @@ import { resolveLastAppointmentDates } from "./lastAppointment";
 import { resolveAppointmentDeletionIds } from "../shared/appointmentDeletion";
 import { consumeAppointmentDeletionUndo, createAppointmentDeletionUndo, getAppointmentDeletionUndo, type AppointmentDeletionSnapshot } from "./appointmentDeletionUndo";
 import { getNewSharedSessionPetIds } from "../shared/appointmentSession";
+import { canAssignTo, markUnreadPatch } from "../shared/messageReadState";
 import { getReplacementWeightBand, isEligibleMembershipReplacement } from "../shared/departedPetMembership";
 import { getStripePrototypeStatus } from "../shared/stripeMembershipReconciliation";
 import { calculateMembershipAccount } from "../shared/membershipAccountsReceivable";
@@ -7612,9 +7613,16 @@ const smsRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const now = new Date();
 
+      // COALESCE, not a read-then-write: the first reader is whoever gets
+      // there first, and two tabs opening the same voicemail must not race.
+      // This is markReadPatch() from shared/messageReadState.ts, in SQL.
       if (input.kind === "missed_call") {
         await db.update(missedCalls)
-          .set({ readAt: now, readByUserId: ctx.user.id })
+          .set({
+            readAt: now, readByUserId: ctx.user.id,
+            firstReadAt: sql`COALESCE(${missedCalls.firstReadAt}, ${now})`,
+            firstReadByUserId: sql`COALESCE(${missedCalls.firstReadByUserId}, ${ctx.user.id})`,
+          })
           .where(and(
             eq(missedCalls.id, input.id),
             eq(missedCalls.tenantId, tenantOf(ctx, input)),
@@ -7622,7 +7630,11 @@ const smsRouter = router({
           ));
       } else {
         await db.update(smsLogs)
-          .set({ readAt: now, readByUserId: ctx.user.id })
+          .set({
+            readAt: now, readByUserId: ctx.user.id,
+            firstReadAt: sql`COALESCE(${smsLogs.firstReadAt}, ${now})`,
+            firstReadByUserId: sql`COALESCE(${smsLogs.firstReadByUserId}, ${ctx.user.id})`,
+          })
           .where(and(
             eq(smsLogs.id, input.id),
             eq(smsLogs.tenantId, tenantOf(ctx, input)),
@@ -7691,10 +7703,139 @@ const smsRouter = router({
       // staff actually use on the Missed Calls list, and it recorded only
       // the time — so 32 of the 34 voicemails marked read carry no reader,
       // and nobody could say who had listened to one.
+      const clearedAt = new Date();
       await db.update(missedCalls)
-        .set({ readAt: new Date(), readByUserId: ctx.user?.id ?? null })
+        .set({
+          readAt: clearedAt, readByUserId: ctx.user?.id ?? null,
+          firstReadAt: sql`COALESCE(${missedCalls.firstReadAt}, ${clearedAt})`,
+          firstReadByUserId: sql`COALESCE(${missedCalls.firstReadByUserId}, ${ctx.user?.id ?? null})`,
+        })
         .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, tenantOf(ctx, input))));
       return { success: true };
+    }),
+
+  /**
+   * Put it back in the queue.
+   *
+   * Clears only the live flag. `firstReadAt` is deliberately untouched, so
+   * "Lauren opened this at 9am and did not ring back" survives being marked
+   * unread — which is the whole reason the column exists.
+   */
+  markNotificationUnread: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      kind: z.enum(["message", "missed_call"]),
+      id: z.number().int().positive(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const patch = markUnreadPatch();
+      const table = input.kind === "missed_call" ? missedCalls : smsLogs;
+      await db.update(table as never)
+        .set(patch as never)
+        .where(and(
+          eq((table as typeof missedCalls).id, input.id),
+          eq((table as typeof missedCalls).tenantId, tenantOf(ctx, input)),
+        ) as never);
+      return { marked: true };
+    }),
+
+  /**
+   * Hand a call or a message to someone on the floor.
+   *
+   * `operationalProcedure`, not `protectedProcedure`: reassigning a voicemail
+   * is salon-floor work, and `protectedProcedure` rejects restricted staff
+   * outright. Passing `staffId: null` hands it back to nobody.
+   */
+  assignNotification: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      kind: z.enum(["message", "missed_call"]),
+      id: z.number().int().positive(),
+      staffId: z.number().int().positive().nullable(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+
+      if (input.staffId !== null) {
+        const [member] = await db.select({ id: staff.id, tenantId: staff.tenantId, isActive: staff.isActive })
+          .from(staff).where(eq(staff.id, input.staffId)).limit(1);
+        // Tenant is checked here rather than in the WHERE, so a cross-salon
+        // attempt gets a clear refusal instead of silently updating nothing.
+        const verdict = canAssignTo(member, tenantId);
+        if (!verdict.ok) throw new TRPCError({ code: "BAD_REQUEST", message: verdict.reason });
+      }
+
+      const patch = {
+        assignedStaffId: input.staffId,
+        assignedAt: input.staffId === null ? null : new Date(),
+        assignedByUserId: input.staffId === null ? null : ctx.user.id,
+      };
+      if (input.kind === "missed_call") {
+        await db.update(missedCalls).set(patch)
+          .where(and(eq(missedCalls.id, input.id), eq(missedCalls.tenantId, tenantId)));
+      } else {
+        await db.update(smsLogs).set(patch)
+          .where(and(eq(smsLogs.id, input.id), eq(smsLogs.tenantId, tenantId)));
+      }
+      return { assigned: input.staffId };
+    }),
+
+  /**
+   * What is waiting for the person asking — and nobody else.
+   *
+   * `operationalProcedure` so a restricted groomer can read their own queue.
+   * It takes no staff id: the caller's own `staff` row is resolved from their
+   * user, so there is no parameter to tamper with and no way to read somebody
+   * else's list. A staff member with no login never calls this at all.
+   */
+  myAssignments: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1) }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input ?? {});
+
+      const [me] = await db.select({ id: staff.id, name: staff.name })
+        .from(staff)
+        .where(and(eq(staff.userId, ctx.user.id), eq(staff.tenantId, tenantId)))
+        .limit(1);
+      // Not an error: plenty of logins are not a staff member at all.
+      if (!me) return { staffId: null, calls: [], messages: [], total: 0 };
+
+      const calls = await db.select({
+        id: missedCalls.id, fromNumber: missedCalls.fromNumber,
+        callerName: missedCalls.callerName, clientId: missedCalls.clientId,
+        transcriptText: missedCalls.transcriptText, receivedAt: missedCalls.receivedAt,
+        assignedAt: missedCalls.assignedAt, readAt: missedCalls.readAt,
+      })
+        .from(missedCalls)
+        .where(and(
+          eq(missedCalls.tenantId, tenantId),
+          eq(missedCalls.assignedStaffId, me.id),
+          isNull(missedCalls.readAt),
+        ))
+        .orderBy(desc(missedCalls.assignedAt))
+        .limit(20);
+
+      const messages = await db.select({
+        id: smsLogs.id, body: smsLogs.body, clientId: smsLogs.clientId,
+        toNumber: smsLogs.toNumber, sentAt: smsLogs.sentAt,
+        assignedAt: smsLogs.assignedAt, readAt: smsLogs.readAt,
+      })
+        .from(smsLogs)
+        .where(and(
+          eq(smsLogs.tenantId, tenantId),
+          eq(smsLogs.assignedStaffId, me.id),
+          isNull(smsLogs.readAt),
+        ))
+        .orderBy(desc(smsLogs.assignedAt))
+        .limit(20);
+
+      return { staffId: me.id, staffName: me.name, calls, messages, total: calls.length + messages.length };
     }),
 
   deleteMissedCall: protectedProcedure

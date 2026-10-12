@@ -701,6 +701,48 @@
       "when": 1791517416989,
       "tag": "0099_grooming_report_share_token_index",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "5",
+      "when": 1791776394330,
+      "tag": "0100_message_read_and_assignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "5",
+      "when": 1791776394331,
+      "tag": "0101_sms_read_and_assignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "5",
+      "when": 1791776394332,
+      "tag": "0102_missed_calls_assigned_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "5",
+      "when": 1791776394333,
+      "tag": "0103_sms_logs_assigned_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "5",
+      "when": 1791776394334,
+      "tag": "0104_backfill_missed_call_first_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "5",
+      "when": 1791776394335,
+      "tag": "0105_backfill_sms_first_read",
+      "breakpoints": true
     }
   ]
 }

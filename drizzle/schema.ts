@@ -977,11 +977,26 @@ export const smsLogs = mysqlTable("sms_logs", {
   readAt: timestamp("read_at"),
   /** Who opened it. Distinct from processedByUserId, which is who actioned a review. */
   readByUserId: int("read_by_user_id"),
+  /**
+   * FIRST read — written once, never cleared. Marking unread resets `readAt`
+   * above; this is what survives it, so "who opened this and did not return
+   * it" is still answerable afterwards.
+   */
+  firstReadAt: timestamp("first_read_at"),
+  firstReadByUserId: int("first_read_by_user_id"),
+  /**
+   * Handed to a person on the salon floor. Points at `staff`, not `users`:
+   * four of the bathing team have no login at all, and `staff.role` is the
+   * salon's structure while `users.role` is the platform's.
+   */
+  assignedStaffId: int("assigned_staff_id"),
+  assignedAt: timestamp("assigned_at"),
+  assignedByUserId: int("assigned_by_user_id"),
   reviewAction: mysqlEnum("review_action", ["confirm", "cancel"]),
   processedByUserId: int("processed_by_user_id").references(() => users.id),
   errorMessage: text("error_message"),
   sentAt: timestamp("sent_at").defaultNow().notNull(),
-}, (t) => [index("idx_sms_tenant").on(t.tenantId), index("idx_sms_client").on(t.clientId)]);
+}, (t) => [index("idx_sms_tenant").on(t.tenantId), index("idx_sms_client").on(t.clientId), index("idx_sms_logs_assigned").on(t.tenantId, t.assignedStaffId)]);
 
 export type SmsLog = typeof smsLogs.$inferSelect;
 
@@ -1048,8 +1063,23 @@ export const missedCalls = mysqlTable("missed_calls", {
   readAt: timestamp("read_at"),
   /** Who opened it — accountability for a voicemail looked at but not returned. */
   readByUserId: int("read_by_user_id"),
+  /**
+   * FIRST read — written once, never cleared. Marking unread resets `readAt`
+   * above; this is what survives it, so "who opened this and did not return
+   * it" is still answerable afterwards.
+   */
+  firstReadAt: timestamp("first_read_at"),
+  firstReadByUserId: int("first_read_by_user_id"),
+  /**
+   * Handed to a person on the salon floor. Points at `staff`, not `users`:
+   * four of the bathing team have no login at all, and `staff.role` is the
+   * salon's structure while `users.role` is the platform's.
+   */
+  assignedStaffId: int("assigned_staff_id"),
+  assignedAt: timestamp("assigned_at"),
+  assignedByUserId: int("assigned_by_user_id"),
   receivedAt: timestamp("received_at").defaultNow().notNull(),
-}, (t) => [index("idx_missed_calls_tenant").on(t.tenantId), index("idx_missed_calls_client").on(t.clientId)]);
+}, (t) => [index("idx_missed_calls_tenant").on(t.tenantId), index("idx_missed_calls_client").on(t.clientId), index("idx_missed_calls_assigned").on(t.tenantId, t.assignedStaffId)]);
 
 export type MissedCall = typeof missedCalls.$inferSelect;
 
