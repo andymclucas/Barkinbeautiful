@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { AssignStaffPicker } from "@/components/AssignStaffPicker";
 import { MassTextDialog } from "@/components/MassTextDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { tidyTranscript, extractCallbackNumbers, formatAustralianNumber, worthShowingCallback } from "@shared/voicemailTranscript";
@@ -15,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp, Star, Loader2 } from "lucide-react";
+import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp, Star, Loader2, RotateCcw } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { EmojiPicker } from "@/components/EmojiPicker";
 import { calculateSmsCost } from "@shared/smsSegments";
@@ -92,6 +93,11 @@ export default function Messages() {
   });
   const { data: missedCallsList, refetch: refetchMissedCalls } = trpc.sms.getMissedCalls.useQuery({ limit: 100 });
   const clearMissedCall = trpc.sms.clearMissedCall.useMutation({ onSuccess: () => refetchMissedCalls() });
+  // Back in the queue. Clears only the live flag — the "first read by" line
+  // below each row is written once and survives this.
+  const markUnread = trpc.sms.markNotificationUnread.useMutation({
+    onSuccess: () => { refetchMissedCalls(); refetchThreads(); },
+  });
   const deleteMissedCall = trpc.sms.deleteMissedCall.useMutation({ onSuccess: () => { toast.success("Missed call removed"); refetchMissedCalls(); } });
   const { data: clientResults } = trpc.memberships.searchClients.useQuery(
     { search: clientSearch },
@@ -523,6 +529,13 @@ export default function Messages() {
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
+                    <AssignStaffPicker
+                      kind="missed_call"
+                      id={call.id}
+                      assignedStaffId={(call as { assignedStaffId?: number | null }).assignedStaffId}
+                      assignedStaffName={(call as { assignedStaffName?: string | null }).assignedStaffName}
+                      onAssigned={() => refetchMissedCalls()}
+                    />
                     {!call.readAt && (
                       <button
                         className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"
@@ -530,6 +543,15 @@ export default function Messages() {
                         onClick={() => clearMissedCall.mutate({ id: call.id })}
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    {call.readAt && (
+                      <button
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted-foreground/20 text-muted-foreground"
+                        title="Mark as unread"
+                        onClick={() => markUnread.mutate({ kind: "missed_call", id: call.id })}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
                       </button>
                     )}
                     {/* Only allow deletion when there is no voicemail recording */}
@@ -648,6 +670,13 @@ export default function Messages() {
                     >
                       <Star className={`h-4 w-4 ${starredKeys.has(thread.threadKey) ? "fill-amber-400 text-amber-500" : ""}`} />
                     </button>
+                    <AssignStaffPicker
+                      kind="message"
+                      id={thread.id}
+                      assignedStaffId={thread.assignedStaffId}
+                      assignedStaffName={thread.assignedStaffName}
+                      onAssigned={() => refetchThreads()}
+                    />
                     <button
                       className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
                       onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}

@@ -2760,6 +2760,10 @@ const staffRouter = router({
         colourHex: staff.colourHex,
         photoUrl: staff.onlineProfilePhotoUrl,
         isActive: staff.isActive,
+        // Whether assigning to them can ever reach them. Four of the bathing
+        // team have no login, so a bell is impossible for them and the assign
+        // picker must say so rather than looking like it worked.
+        hasLogin: sql<boolean>`${staff.userId} IS NOT NULL`,
         // So the calendar column can show clips booked against what this
         // groomer said they can do.
         dailyClipCapacity: staff.dailyClipCapacity,
@@ -7244,6 +7248,10 @@ const smsRouter = router({
         id: smsLogs.id, toNumber: smsLogs.toNumber, body: smsLogs.body,
         direction: smsLogs.direction, sentAt: smsLogs.sentAt, readAt: smsLogs.readAt,
         readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${smsLogs.readByUserId} LIMIT 1)`,
+        firstReadAt: smsLogs.firstReadAt,
+        firstReadByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${smsLogs.firstReadByUserId} LIMIT 1)`,
+        assignedStaffId: smsLogs.assignedStaffId,
+        assignedStaffName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.id = ${smsLogs.assignedStaffId} LIMIT 1)`,
         clientId: smsLogs.clientId,
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
       }).from(smsLogs)
@@ -7259,6 +7267,19 @@ const smsRouter = router({
         // Who opened the most recent inbound message, and when. Null on
         // anything read before read_by_user_id existed — we cannot invent it.
         readByName: string | null; readAt: Date | null;
+        /**
+         * Assignment is stored per MESSAGE, and this list is per thread, so
+         * the two have to be reconciled here.
+         *
+         * `id` is the newest message — what a fresh assignment is written to.
+         * `assignedStaffId` is taken from the newest message that carries
+         * one, so a handover stays visible when the client texts again
+         * instead of appearing to vanish. Re-assigning then moves it to the
+         * newest row. If this ever needs to be properly thread-level it wants
+         * its own table rather than more reconciliation here.
+         */
+        id: number;
+        assignedStaffId: number | null; assignedStaffName: string | null;
       }>();
       for (const row of rows) {
         const key = row.clientId ? `client:${row.clientId}` : `number:${row.toNumber}`;
@@ -7269,9 +7290,18 @@ const smsRouter = router({
             threadKey: key, clientId: row.clientId, clientName: (row.clientName as string) ?? null, toNumber: row.toNumber,
             lastMessage: row.body, lastDirection: row.direction, lastAt: row.sentAt, unreadCount: unread ? 1 : 0,
           readByName: (row.readByName as string) ?? null, readAt: row.readAt ?? null,
+            id: row.id,
+            assignedStaffId: row.assignedStaffId ?? null,
+            assignedStaffName: (row.assignedStaffName as string) ?? null,
           });
         } else {
           if (unread) existing.unreadCount += 1;
+          // Rows arrive newest first, so the first one holding an assignment
+          // is the most recent one.
+          if (existing.assignedStaffId === null && row.assignedStaffId != null) {
+            existing.assignedStaffId = row.assignedStaffId;
+            existing.assignedStaffName = (row.assignedStaffName as string) ?? null;
+          }
         }
       }
       // Who read it is for Lauren and Andy. Stripped on the server, not in
@@ -7660,6 +7690,11 @@ const smsRouter = router({
         recordingUrl: missedCalls.recordingUrl,
         readAt: missedCalls.readAt,
         readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${missedCalls.readByUserId} LIMIT 1)`,
+        // Survives the row being marked unread, which is the point of it.
+        firstReadAt: missedCalls.firstReadAt,
+        firstReadByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${missedCalls.firstReadByUserId} LIMIT 1)`,
+        assignedStaffId: missedCalls.assignedStaffId,
+        assignedStaffName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.id = ${missedCalls.assignedStaffId} LIMIT 1)`,
         receivedAt: missedCalls.receivedAt,
       }).from(missedCalls)
         .leftJoin(clients, eq(missedCalls.clientId, clients.id))
