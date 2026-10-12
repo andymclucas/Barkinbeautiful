@@ -743,6 +743,13 @@
       "when": 1791776394335,
       "tag": "0105_backfill_sms_first_read",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "5",
+      "when": 1791790893749,
+      "tag": "0106_staff_access_admin_rights_event",
+      "breakpoints": true
     }
   ]
 }

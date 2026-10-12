@@ -228,7 +228,7 @@ export const staffAccessEvents = mysqlTable("staff_access_events", {
   staffId: int("staff_id").notNull().references(() => staff.id),
   invitationId: int("invitation_id").references(() => staffInvitations.id),
   actorUserId: int("actor_user_id").references(() => users.id),
-  eventType: mysqlEnum("event_type", ["invited", "accepted", "approved", "revoked", "workflow_updated", "bath_priority_updated", "grooming_card_uploaded"]).notNull(),
+  eventType: mysqlEnum("event_type", ["invited", "accepted", "approved", "revoked", "workflow_updated", "bath_priority_updated", "grooming_card_uploaded", "admin_rights_changed"]).notNull(),
   note: text("note"),
   appointmentId: int("appointment_id"),
   workflowFromState: varchar("workflow_from_state", { length: 32 }),

@@ -35,6 +35,8 @@ import { resolveAppointmentDeletionIds } from "../shared/appointmentDeletion";
 import { consumeAppointmentDeletionUndo, createAppointmentDeletionUndo, getAppointmentDeletionUndo, type AppointmentDeletionSnapshot } from "./appointmentDeletionUndo";
 import { getNewSharedSessionPetIds } from "../shared/appointmentSession";
 import { canAssignTo, markUnreadPatch } from "../shared/messageReadState";
+import { buildAdminRightsEmail, describeAdminRightsChange, diffAdminRights } from "../shared/staffAdminNotice";
+import { PRODUCT_NAME } from "../shared/salonTitle";
 import { getReplacementWeightBand, isEligibleMembershipReplacement } from "../shared/departedPetMembership";
 import { getStripePrototypeStatus } from "../shared/stripeMembershipReconciliation";
 import { calculateMembershipAccount } from "../shared/membershipAccountsReceivable";
@@ -3054,9 +3056,15 @@ const staffRouter = router({
       requireStaffAdministrator(ctx.user);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const [member] = await db.select({ id: staff.id, name: staff.name, userId: staff.userId })
-        .from(staff).where(eq(staff.id, input.staffId)).limit(1);
+      const [member] = await db.select({
+        id: staff.id, name: staff.name, userId: staff.userId, email: staff.email,
+        tenantId: staff.tenantId, isAdmin: staff.isAdmin, adminSections: staff.adminSections,
+      }).from(staff).where(eq(staff.id, input.staffId)).limit(1);
       if (!member) throw new Error("Staff member not found");
+      // Tenancy, checked before the write rather than left to the WHERE: a
+      // cross-salon attempt should be refused out loud, not silently update
+      // nothing. See .claude/skills/build-for-scale.
+      if (member.tenantId !== tenantOf(ctx, {})) throw new Error("That staff member belongs to another salon");
       if (input.isAdmin && !member.userId) {
         // Rights are useless without a way in, and silently granting them
         // would look like it worked.
@@ -3064,10 +3072,52 @@ const staffRouter = router({
       }
       // Sections are kept when rights are revoked, so restoring someone
       // brings back what they had; canEditSection requires both anyway.
+      const before = { isAdmin: member.isAdmin, adminSections: member.adminSections };
       const updates: Record<string, unknown> = { isAdmin: input.isAdmin };
       if (input.sections !== undefined) updates.adminSections = parseSections(input.sections);
       await db.update(staff).set(updates).where(eq(staff.id, member.id));
-      return { success: true, isAdmin: input.isAdmin };
+
+      // Access changing silently is the thing worth avoiding: somebody finds
+      // a menu missing and assumes the app is broken, or keeps rights nobody
+      // meant them to have. Both the audit row and the email are best-effort
+      // — neither may undo a grant that already succeeded.
+      const change = diffAdminRights(before, {
+        isAdmin: input.isAdmin,
+        adminSections: input.sections !== undefined ? parseSections(input.sections) : member.adminSections,
+      });
+      let notified = false;
+      if (change.changed) {
+        try {
+          await recordStaffAccessEvent(db, {
+            tenantId: member.tenantId, staffId: member.id, actorUserId: ctx.user.id,
+            eventType: "admin_rights_changed", note: describeAdminRightsChange(change),
+          });
+        } catch (err) {
+          console.error("[staff] could not record the admin-rights audit row", err);
+        }
+        const recipient = (member.email ?? "").trim();
+        if (recipient) {
+          try {
+            const [tenant] = await db.select({ name: tenants.name })
+              .from(tenants).where(eq(tenants.id, member.tenantId)).limit(1);
+            const { subject, html } = buildAdminRightsEmail({
+              staffName: member.name,
+              salonName: tenant?.name ?? "your salon",
+              productName: PRODUCT_NAME,
+              actorName: ctx.user.name ?? null,
+              change,
+              signInUrl: getAppBaseUrl(),
+            });
+            const { sendEmail } = await import("./email");
+            notified = await sendEmail({ to: recipient, subject, html });
+          } catch (err) {
+            console.error("[staff] admin-rights notification failed to send", err);
+          }
+        }
+      }
+      // Returned so the UI can say "saved, but we could not email them"
+      // rather than implying the person has been told.
+      return { success: true, isAdmin: input.isAdmin, changed: change.changed, notified };
     }),
 
   /**
