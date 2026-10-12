@@ -63,6 +63,9 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
+import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPricing";
+import { buildTimeSlots, splitLocalDateTime, joinLocalDateTime } from "@shared/bookingTimeSlots";
+import { takePendingBooking } from "@/lib/pendingBooking";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
@@ -920,8 +923,40 @@ export default function Calendar() {
   const [newAppt, setNewAppt] = useState({
     clientId: "", petIds: [] as string[], staffId: "", staffByPetId: {} as Record<string, string>, serviceType: "classic_groom",
     scheduledStart: "", scheduledEnd: "", notes: "", price: "",
+    // A figure per dog. The single `price` above stays for the recurring
+    // path, which books one service for the whole family.
+    priceByPetId: {} as Record<string, string>,
+    addOnsByPetId: {} as Record<string, StagedAddOn[]>,
   });
   const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
+
+  /**
+   * A booking handed over from Add Client.
+   *
+   * Adding a client and booking their first groom is one job for the
+   * person at the desk, but the booking form lives here because it owns
+   * the conflict and capacity checks. Add Client stages what it collected
+   * and this opens the dialog already filled in, leaving only the date,
+   * time and groomer.
+   *
+   * Runs once on mount and consumes the entry, so revisiting the diary
+   * later never re-opens a dialog for a client booked half an hour ago.
+   */
+  useEffect(() => {
+    const pending = takePendingBooking();
+    if (!pending) return;
+    setNewAppt(current => ({
+      ...current,
+      clientId: String(pending.clientId),
+      petIds: pending.petIds.map(String),
+      serviceType: pending.serviceType,
+      addOnsByPetId: pending.addOnsByPetId,
+      priceByPetId: {},
+    }));
+    setShowNewAppt(true);
+    if (pending.clientName) toast.success(`Booking ${pending.clientName}'s first groom`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [editForm, setEditForm] = useState({
     staffId: "", serviceType: "", scheduledStart: "", scheduledEnd: "",
     notes: "", price: "", workflowState: "",
@@ -1151,7 +1186,7 @@ export default function Calendar() {
     onSuccess: () => {
       toast.success("Appointment created");
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {} });
       setClientSearch("");
       refetch();
     },
@@ -1476,7 +1511,7 @@ export default function Calendar() {
     onSuccess: (r) => {
       toast.success(`${r.created} appointment${r.created !== 1 ? "s" : ""} created`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {} });
       setClientSearch("");
       refetch();
     },
@@ -1488,7 +1523,7 @@ export default function Calendar() {
       const skippedMsg = r.skipped.length > 0 ? ` (${r.skipped.length} skipped due to a groomer clash)` : "";
       toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created${skippedMsg}`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {} });
       setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });
       setClientSearch("");
       refetch();
@@ -1547,6 +1582,19 @@ export default function Calendar() {
       scheduledEnd:   newAppt.scheduledEnd,
       notes: newAppt.notes || undefined,
       price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
+      priceByPetId: membershipCoverage.data?.fullyCovered ? undefined : newAppt.priceByPetId,
+      // The staged add-ons carry a name and a display price so the dialog
+      // can show the line before the appointment exists. The server takes
+      // the price from the catalogue, so only the ids travel.
+      addOnsByPetId: Object.fromEntries(
+        Object.entries(newAppt.addOnsByPetId)
+          .filter(([, addOns]) => addOns.length > 0)
+          .map(([petId, addOns]) => [petId, addOns.map(addOn => ({
+            pricingServiceId: addOn.pricingServiceId,
+            quantity: addOn.quantity,
+            ...(addOn.unitPrice !== undefined ? { unitPrice: addOn.unitPrice } : {}),
+          }))]),
+      ),
     });
   };
 
@@ -2388,7 +2436,7 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
+      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {} }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2615,14 +2663,51 @@ export default function Calendar() {
                 )}
               </div>
             )}
+            {/* A date and a half-hour slot, rather than one datetime-local
+                whose time half is a spinner you scroll to the minute.
+                Lauren, booking all day: "the time clock is set to time
+                slots - not having to scroll to a time... at least make it
+                half hour blocks." The end time still follows automatically
+                from the dogs' size, so this is usually the only field
+                touched. */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start *</Label>
-                <Input type="datetime-local" value={newAppt.scheduledStart} onChange={e => setNewAppt(p => ({ ...p, scheduledStart: e.target.value }))} />
+                <Label>Date *</Label>
+                <Input
+                  type="date"
+                  value={splitLocalDateTime(newAppt.scheduledStart).date}
+                  onChange={e => setNewAppt(p => ({
+                    ...p,
+                    scheduledStart: joinLocalDateTime(e.target.value, splitLocalDateTime(p.scheduledStart).time || "09:00"),
+                  }))}
+                />
               </div>
               <div className="space-y-1.5">
-                <Label>End *</Label>
+                <Label>Start time *</Label>
+                <Select
+                  value={splitLocalDateTime(newAppt.scheduledStart).time}
+                  onValueChange={v => setNewAppt(p => {
+                    const { date } = splitLocalDateTime(p.scheduledStart);
+                    // Picking a time before a date is a reasonable order to
+                    // work in; default to today rather than dropping it.
+                    const day = date || new Date().toLocaleDateString("en-CA", { timeZone: getActiveTimeZone() });
+                    return { ...p, scheduledStart: joinLocalDateTime(day, v) };
+                  })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Pick a time" /></SelectTrigger>
+                  <SelectContent>
+                    {buildTimeSlots({ include: splitLocalDateTime(newAppt.scheduledStart).time }).map(slot => (
+                      <SelectItem key={slot.value} value={slot.value}>{slot.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Ends</Label>
                 <Input type="datetime-local" value={newAppt.scheduledEnd} onChange={e => setNewAppt(p => ({ ...p, scheduledEnd: e.target.value }))} />
+                <p className="text-[11px] text-muted-foreground">Suggested from the dogs' size — change it for a known-quick or a difficult groom.</p>
               </div>
             </div>
             {(() => {
@@ -2645,13 +2730,39 @@ export default function Calendar() {
               }
               return null;
             })()}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Price ($)</Label>
-                <Input aria-describedby={membershipCoverage.data?.fullyCovered ? "membership-covered-price-note" : undefined} placeholder="0.00" value={newAppt.price} disabled={membershipCoverage.data?.fullyCovered} onChange={e => setNewAppt(p => ({ ...p, price: e.target.value }))} />
-                {membershipCoverage.data?.fullyCovered && <p id="membership-covered-price-note" className="text-xs text-emerald-700 dark:text-emerald-300">Set to $0.00 because the selected dogs are covered by active weekly memberships.</p>}
-              </div>
-            </div>
+            {membershipCoverage.data?.fullyCovered && (
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                Set to $0.00 because the selected dogs are covered by active weekly memberships.
+              </p>
+            )}
+            {newAppt.clientId && selectedAppointmentPetIds.length > 0 && (
+              <BookingPetPricing
+                clientId={Number(newAppt.clientId)}
+                petIds={selectedAppointmentPetIds}
+                serviceType={newAppt.serviceType}
+                membershipCovered={Boolean(membershipCoverage.data?.fullyCovered)}
+                priceByPetId={newAppt.priceByPetId}
+                onPricesChange={next => setNewAppt(p => ({ ...p, priceByPetId: next }))}
+                addOnsByPetId={newAppt.addOnsByPetId}
+                onAddOnsChange={next => setNewAppt(p => ({ ...p, addOnsByPetId: next }))}
+                onServiceTypeChange={v => setNewAppt(p => ({ ...p, serviceType: v }))}
+                onRepeatLast={last => setNewAppt(p => {
+                  const next = { ...p };
+                  // Only fill a groomer nobody has chosen yet — repeating
+                  // last time must not undo a deliberate pick.
+                  if (last.staffId && !p.staffId) next.staffId = String(last.staffId);
+                  if (last.durationMinutes && p.scheduledStart) {
+                    const start = new Date(p.scheduledStart);
+                    if (!Number.isNaN(start.getTime())) {
+                      const end = new Date(start.getTime() + last.durationMinutes * 60000);
+                      const pad = (n: number) => String(n).padStart(2, "0");
+                      next.scheduledEnd = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
+                    }
+                  }
+                  return next;
+                })}
+              />
+            )}
             {newAppt.petIds.length >= 1 && (
               <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
                 <label className="flex items-center gap-2 cursor-pointer">

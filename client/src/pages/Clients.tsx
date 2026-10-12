@@ -18,6 +18,11 @@ import {
   ChevronLeft, ChevronRight, Download, Dog, Calendar,
 } from "lucide-react";
 import { useState, useCallback } from "react";
+import { useLocation } from "wouter";
+import { AddOnPicker, type StagedAddOn } from "@/components/BookingPetPricing";
+import { stagePendingBooking } from "@/lib/pendingBooking";
+import { SIZE_BAND_IDS, sizeBandLabel } from "@shared/dogSizeBand";
+import { addOnsTotal } from "@shared/appointmentAddOns";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getClientPreviewSide } from "../lib/clientPreviewPosition";
@@ -206,11 +211,21 @@ export default function Clients() {
     firstName: "", lastName: "", email: "", phone: "",
     address: "", notes: "", referralSource: "",
   });
-  const [petForm, setPetForm] = useState({
+  const PET_FORM_BLANK = {
     name: "", breed: "", species: "dog", gender: "unknown",
     weightKg: "", coatType: "", colour: "", desexed: false,
     behaviourNotes: "", groomingNotes: "",
-  });
+    // What prices the first groom. A weight is better evidence and wins
+    // on the server, so this is for the usual case: a new dog arriving
+    // with no weight on file.
+    sizeBand: "", serviceType: "classic_groom",
+    addOns: [] as StagedAddOn[],
+  };
+  const [petForm, setPetForm] = useState(PET_FORM_BLANK);
+  const [, navigate] = useLocation();
+  const { data: addOnCatalogue } = trpc.appointmentAddOns.catalogue.useQuery({});
+  /** Set when the staff member chose to go straight on and book. */
+  const [bookAfterSave, setBookAfterSave] = useState(false);
 
   const handleSearch = useCallback((val: string) => {
     setSearch(val);
@@ -267,13 +282,29 @@ export default function Clients() {
 
   const [addAnotherPet, setAddAnotherPet] = useState(false);
   const createPetMutation = trpc.pets.create.useMutation({
-    onSuccess: (_, vars) => {
+    onSuccess: (result, vars) => {
       setSavedPets(prev => [...prev, { name: vars.name, breed: vars.breed ?? "" }]);
       if (addAnotherPet) {
         // Stay on step 2, clear form for next pet
-        setPetForm({ name: "", breed: "", species: "dog", gender: "unknown", weightKg: "", coatType: "", colour: "", desexed: false, behaviourNotes: "", groomingNotes: "" });
+        setPetForm(PET_FORM_BLANK);
         setAddAnotherPet(false);
         toast.success(`Pet added! Add another or click Done.`);
+      } else if (bookAfterSave && newClientId && result?.id) {
+        stagePendingBooking({
+          clientId: newClientId,
+          petIds: [result.id],
+          serviceType: petForm.serviceType,
+          addOnsByPetId: petForm.addOns.length > 0 ? { [String(result.id)]: petForm.addOns } : {},
+          clientName: `${form.firstName} ${form.lastName}`.trim(),
+        });
+        setShowAdd(false);
+        setAddStep(1);
+        setNewClientId(null);
+        setSavedPets([]);
+        setBookAfterSave(false);
+        setForm({ firstName: "", lastName: "", email: "", phone: "", address: "", notes: "", referralSource: "" });
+        setPetForm(PET_FORM_BLANK);
+        navigate("/calendar");
       } else {
         toast.success("Client and pets saved");
         setShowAdd(false);
@@ -282,7 +313,7 @@ export default function Clients() {
         setSavedPets([]);
         refetch();
         setForm({ firstName: "", lastName: "", email: "", phone: "", address: "", notes: "", referralSource: "" });
-        setPetForm({ name: "", breed: "", species: "dog", gender: "unknown", weightKg: "", coatType: "", colour: "", desexed: false, behaviourNotes: "", groomingNotes: "" });
+        setPetForm(PET_FORM_BLANK);
       }
     },
     onError: (e) => toast.error(e.message),
@@ -565,6 +596,63 @@ export default function Clients() {
                 <div className="space-y-1.5"><Label>Weight (kg)</Label><Input type="number" step="0.1" placeholder="e.g. 8.5" value={petForm.weightKg} onChange={e => setPetForm(p => ({ ...p, weightKg: e.target.value }))} /></div>
                 <div className="space-y-1.5"><Label>Coat Type</Label><Input placeholder="e.g. Curly, Straight" value={petForm.coatType} onChange={e => setPetForm(p => ({ ...p, coatType: e.target.value }))} /></div>
               </div>
+              {/* What the first groom will cost. Most new dogs arrive with
+                  no weight — 10,372 of 12,552 on file have none — and the
+                  size band is what prices the groom, so asking here is the
+                  cheapest moment there is. A weight, if one is given, is
+                  better evidence and overrides this on the server. */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Size category</Label>
+                  <Select value={petForm.sizeBand} onValueChange={v => setPetForm(p => ({ ...p, sizeBand: v }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={petForm.weightKg ? "Worked out from the weight" : "Pick a size to price the groom"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SIZE_BAND_IDS.map(band => (
+                        <SelectItem key={band} value={band}>{sizeBandLabel(band)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>First groom</Label>
+                  <Select value={petForm.serviceType} onValueChange={v => setPetForm(p => ({ ...p, serviceType: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(SERVICE_LABELS).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Add-ons</Label>
+                {petForm.addOns.length > 0 && (
+                  <div className="space-y-1">
+                    {petForm.addOns.map((addOn, index) => (
+                      <div key={`${addOn.pricingServiceId}-${index}`} className="flex items-center gap-2 rounded bg-muted/50 px-2 py-1 text-xs">
+                        <span className="min-w-0 flex-1 truncate">{addOn.name}</span>
+                        <span className="shrink-0 font-medium tabular-nums">${addOn.displayPrice}</span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                          title={`Remove ${addOn.name}`}
+                          onClick={() => setPetForm(p => ({ ...p, addOns: p.addOns.filter((_, i) => i !== index) }))}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground">Extras: ${addOnsTotal(petForm.addOns.map(a => ({ name: a.name, unitPrice: a.displayPrice, quantity: a.quantity })))}</p>
+                  </div>
+                )}
+                <AddOnPicker
+                  catalogue={addOnCatalogue ?? []}
+                  onAdd={addOn => setPetForm(p => ({ ...p, addOns: [...p.addOns, addOn] }))}
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Colour</Label><Input placeholder="e.g. Apricot, Black" value={petForm.colour} onChange={e => setPetForm(p => ({ ...p, colour: e.target.value }))} /></div>
                 <div className="space-y-1.5 flex flex-col justify-end">
@@ -589,9 +677,10 @@ export default function Clients() {
                 >
                   Skip pet for now
                 </Button>
-                <Button
-                  onClick={() => {
+                {(() => {
+                  const savePet = (thenBook: boolean) => {
                     if (!petForm.name.trim()) { toast.error("Pet name is required"); return; }
+                    setBookAfterSave(thenBook);
                     createPetMutation.mutate({
                       clientId: newClientId!,
                       name: petForm.name.trim(),
@@ -603,12 +692,23 @@ export default function Clients() {
                       desexed: petForm.desexed,
                       behaviourNotes: petForm.behaviourNotes || undefined,
                       groomingNotes: petForm.groomingNotes || undefined,
+                      sizeBand: petForm.sizeBand || undefined,
                     });
-                  }}
-                  disabled={createPetMutation.isPending}
-                >
-                  {createPetMutation.isPending ? "Saving…" : "Save Client & Pet"}
-                </Button>
+                  };
+                  return (
+                    <>
+                      <Button variant="outline" onClick={() => savePet(false)} disabled={createPetMutation.isPending}>
+                        {createPetMutation.isPending && !bookAfterSave ? "Saving…" : "Save Client & Pet"}
+                      </Button>
+                      {/* The diary owns the conflict and capacity checks, so
+                          booking happens there rather than being rebuilt
+                          here. This hands over what was collected. */}
+                      <Button onClick={() => savePet(true)} disabled={createPetMutation.isPending}>
+                        {createPetMutation.isPending && bookAfterSave ? "Saving…" : "Save & Book First Groom →"}
+                      </Button>
+                    </>
+                  );
+                })()}
               </DialogFooter>
             </div>
           )}
