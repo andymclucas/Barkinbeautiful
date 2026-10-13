@@ -70,6 +70,7 @@ import { forgetNumberTenant } from "./tenantByNumber";
 import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
+import { priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
@@ -650,7 +651,7 @@ const calendarRouter = router({
         scheduledStart: parseBrisbaneLocalDateTime(input.scheduledStart),
         scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
         notes: input.notes,
-        price: coverage.fullyCovered ? "0.00" : input.price,
+        price: priceForCoveredAppointment(coverage.fullyCovered, input.price),
         membershipId: coveredMembership?.id ?? null,
         trackerToken: token,
         workflowState: "scheduled",
@@ -752,7 +753,7 @@ const calendarRouter = router({
             scheduledStart: occurrenceStart,
             scheduledEnd: occurrenceEnd,
             notes: input.notes,
-            price: coverage.fullyCovered ? "0.00" : input.price,
+            price: priceForCoveredAppointment(coverage.fullyCovered, input.price),
             membershipId: coverage.membershipByPetId[petId]?.id ?? null,
             trackerToken: nanoid(32),
             sessionId,
@@ -875,9 +876,10 @@ const calendarRouter = router({
         // The membership pays for the groom, so the price is zero whatever
         // the dialog sent. Checked before the per-dog figure so a filled-in
         // box can never bill a member for a groom they already pay for.
-        const petPrice = coverage.fullyCovered
-          ? "0.00"
-          : (input.priceByPetId?.[String(petId)] ?? input.price);
+        const petPrice = priceForCoveredAppointment(
+          coverage.fullyCovered,
+          input.priceByPetId?.[String(petId)] ?? input.price,
+        );
         const [result] = await db.insert(appointments).values({
           tenantId: tenantOf(ctx, input),
           clientId: input.clientId,
