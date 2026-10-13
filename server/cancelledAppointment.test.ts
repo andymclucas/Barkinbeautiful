@@ -73,9 +73,11 @@ describe("the rule has one copy", () => {
     const calendar = readFileSync(
       new URL("../client/src/pages/Calendar.tsx", import.meta.url), "utf8");
     expect(calendar).not.toMatch(/status === "cancelled" \|\|[^\n]*workflowState === "cancelled"/);
-    // Two call sites: the appointment card and the day-grid cell. The
-    // import carries no paren so it does not count.
-    expect(calendar.split("isCancelledAppointment(").length - 1).toBe(2);
+    // Three call sites: the appointment card, the day-grid cell, and the
+    // Unassigned strip under the board. The strip was the one place a
+    // cancelled dog looked exactly like a live one, because it did not ask.
+    // The import carries no paren so it does not count.
+    expect(calendar.split("isCancelledAppointment(").length - 1).toBe(3);
     expect(calendar).toContain("preservesOriginalSchedule(editAppt, editForm.workflowState)");
   });
 });

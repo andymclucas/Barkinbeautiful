@@ -65,3 +65,58 @@ export function resolveCalendarStaffColumns(
     return group(a) - group(b) || a.name.localeCompare(b.name);
   });
 }
+
+/**
+ * The column a dog with nobody against it sits in.
+ *
+ * Not a staff member, so it carries a null id — which is also what makes the
+ * day grid's `appointment.staffId === column.id` test match it without any
+ * special case, and what makes a drop onto it unassign the dog.
+ */
+export const UNASSIGNED_COLUMN: CalendarStaffColumn = {
+  id: null as unknown as number,
+  name: "Unassigned",
+  colourHex: "#94a3b8",
+  isActive: true,
+  role: null,
+};
+
+/**
+ * Append the Unassigned column when, and only when, the day being looked at
+ * actually has a dog with nobody against it.
+ *
+ * Before this the day grid drew staff columns only, so an unassigned dog
+ * matched no column and was never drawn — 107 forward bookings, nearly all
+ * baths off the MoeGo import, existed on the board only as a chip in the
+ * strip underneath it. Showing the column unconditionally would put an empty
+ * grey column on every normal day, so it is conditional.
+ *
+ * With no roster at all the Unassigned column is the whole board, which is
+ * the behaviour the day view already had.
+ */
+export function withUnassignedColumn(
+  staffColumns: CalendarStaffColumn[],
+  hasUnassigned: boolean,
+): CalendarStaffColumn[] {
+  if (staffColumns.length === 0) return [UNASSIGNED_COLUMN];
+  return hasUnassigned ? [...staffColumns, UNASSIGNED_COLUMN] : staffColumns;
+}
+
+/**
+ * How many columns sit under each banner across the top of the day grid.
+ *
+ * The spans have to add up to the number of columns or the header row stops
+ * lining up with the board. Unassigned is its own group: it has no role, and
+ * counting "not a bather" as a groomer would file it under Groomers.
+ */
+export function calendarColumnGroups(columns: CalendarStaffColumn[]): {
+  groomers: number;
+  bathers: number;
+  unassigned: number;
+} {
+  return {
+    groomers: columns.filter((c) => c.id !== null && c.role !== "bather").length,
+    bathers: columns.filter((c) => c.id !== null && c.role === "bather").length,
+    unassigned: columns.filter((c) => c.id === null).length,
+  };
+}

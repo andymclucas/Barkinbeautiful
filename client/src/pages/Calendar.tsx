@@ -4,7 +4,11 @@ import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentV
 import { formatCollectBy } from "@shared/collectBy";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { trpc } from "@/lib/trpc";
-import { resolveCalendarStaffColumns } from "@/lib/calendarStaffColumns";
+import {
+  calendarColumnGroups,
+  resolveCalendarStaffColumns,
+  withUnassignedColumn,
+} from "@/lib/calendarStaffColumns";
 import {
   calendarStaffFilterKey,
   coversAllStaff,
@@ -1837,16 +1841,26 @@ export default function Calendar() {
 
   // ── Day view ──────────────────────────────────────────────────────────────
   const renderDayView = () => {
-    const allCols = activeStaff.length > 0
-      ? activeStaff
-      : [{ id: null as number | null, name: "Unassigned", colourHex: "#94a3b8", isActive: true, role: null }];
-    // The "Unassigned" placeholder column only exists when there is no roster
-    // at all, and has to survive the filter when it does.
+    // A dog with nobody against it matches no staff column, so the day grid
+    // never drew it at all — it existed on the board only as a chip in the
+    // strip underneath. It gets a column of its own on the days that need
+    // one, so the dog sits at its booked time like every other dog. Dropping
+    // onto that column unassigns, which handleDropOnColumn already does with
+    // a null staff id.
+    const hasUnassignedToday = filteredAppts.some(
+      (a) => !a.staffId && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate),
+    );
+    const allCols = withUnassignedColumn(activeStaff, hasUnassignedToday);
+    // The Unassigned column is not a staff member, so the staff filter has no
+    // opinion on it and it always survives.
     const cols = allCols.filter(
       (staffMember) => staffMember.id === null || visibleStaffIds.includes(staffMember.id),
     );
-    const groomerCount = cols.filter((member) => member.role !== "bather").length;
-    const batherCount = cols.filter((member) => member.role === "bather").length;
+    const {
+      groomers: groomerCount,
+      bathers: batherCount,
+      unassigned: unassignedCount,
+    } = calendarColumnGroups(cols);
 
     return (
       <div className="min-h-[500px] flex-1 bg-card rounded-2xl border border-white/90 shadow-xl shadow-[color-mix(in_oklch,var(--brand-primary)_10%,transparent)] flex flex-col overflow-hidden lg:min-h-0">
@@ -1870,11 +1884,12 @@ export default function Calendar() {
             // scrolling.
             return (
               <div className="flex min-h-0 flex-1 flex-col" style={{ width: totalWidth, minWidth: totalWidth }}>
-                {(groomerCount > 0 || batherCount > 0) && (
+                {(groomerCount > 0 || batherCount > 0 || unassignedCount > 0) && (
                   <div className="grid border-b bg-muted/80 shrink-0" style={{ gridTemplateColumns: colTemplate }}>
                     <div className="border-r" />
                     {groomerCount > 0 && <div className="px-3 py-2 border-r text-[10px] font-bold uppercase tracking-[0.16em] text-violet-800 dark:text-violet-300 bg-gradient-to-r from-violet-100/90 dark:from-violet-950/90 to-violet-50/50 dark:to-violet-950/50" style={{ gridColumn: `span ${groomerCount}` }}>Groomers</div>}
-                    {batherCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800 dark:text-blue-300 bg-gradient-to-r from-blue-100/90 dark:from-blue-950/90 to-blue-50/50 dark:to-blue-950/50" style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
+                    {batherCount > 0 && <div className={`px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800 dark:text-blue-300 bg-gradient-to-r from-blue-100/90 dark:from-blue-950/90 to-blue-50/50 dark:to-blue-950/50 ${unassignedCount > 0 ? "border-r" : ""}`} style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
+                    {unassignedCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300 bg-gradient-to-r from-slate-200/90 dark:from-slate-800/90 to-slate-100/50 dark:to-slate-800/50" style={{ gridColumn: `span ${unassignedCount}` }}>Nobody assigned</div>}
                   </div>
                 )}
                 {/* Sticky header */}
@@ -2375,16 +2390,27 @@ export default function Calendar() {
                   petNames: [appt, ...getSiblings(appt as Appt)].map((pet) => pet.petName),
                   surname: appt.clientLastName,
                 });
+                // A cancelled dog used to look exactly like a live one here,
+                // so the slot read as still needing somebody. It is marked the
+                // same way the cards are — faded, dashed spine, the same
+                // neutral badge — because cancelled bookings are meant to
+                // recede, not shout. In week view the chip also carried a time
+                // and no day, so a week of these could not be read at all.
+                const cancelled = isCancelledAppointment(appt);
                 return (
                   <div
                     key={appt.id}
-                    className="bg-muted rounded-lg px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted/80 transition-colors"
+                    className={`rounded-lg px-2.5 py-1.5 text-xs cursor-pointer transition-colors ${cancelled
+                      ? "bg-muted/50 opacity-60 hover:opacity-100 hover:bg-muted/70"
+                      : "bg-muted hover:bg-muted/80"}`}
+                    style={cancelled ? { borderLeft: "4px dashed #cbd5e1" } : undefined}
                     onClick={() => openEdit(appt as Appt)}
                   >
-                    <span className="font-medium">{sharedAppointmentLabel}</span>
+                    {cancelled && <span className="mr-1.5 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</span>}
+                    <span className={`font-medium ${cancelled ? "line-through text-muted-foreground" : ""}`}>{sharedAppointmentLabel}</span>
                     <span className="text-muted-foreground ml-1">
                       · {appt.clientFirstName} {appt.clientLastName}
-                      · {fmtTime(new Date(appt.scheduledStart))}
+                      · {viewMode === "week" ? `${fmtDateShort(new Date(appt.scheduledStart))}, ` : ""}{fmtTime(new Date(appt.scheduledStart))}
                     </span>
                   </div>
                 );
