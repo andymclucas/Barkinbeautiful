@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { resolveAppointmentMembershipCoverage } from "../shared/appointmentMembershipCoverage";
+import { resolveAppointmentMembershipCoverage, priceForCoveredAppointment } from "../shared/appointmentMembershipCoverage";
 
 const activeClassic = {
   id: 1,
@@ -50,27 +50,41 @@ describe("appointment membership coverage", () => {
     expect(styledCoverage.fullyCovered).toBe(true);
   });
 
-  it("protects per-pet linkage, covered price handling and all-family companion selection in the implementation", () => {
-    const router = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-    const calendar = readFileSync(new URL("../client/src/pages/Calendar.tsx", import.meta.url), "utf8");
-    const clientDetail = readFileSync(new URL("../client/src/pages/ClientDetail.tsx", import.meta.url), "utf8");
+  it("prices a covered groom at zero whatever was asked for", () => {
+    // The weekly payment is the revenue, so the groom carries no price.
+    // Billing a member for a groom their membership already paid for is
+    // the failure that matters, so the requested figure is discarded —
+    // not compared, not preferred, discarded.
+    expect(priceForCoveredAppointment(true, "175.00")).toBe("0.00");
+    expect(priceForCoveredAppointment(true, undefined)).toBe("0.00");
+    expect(priceForCoveredAppointment(true, null)).toBe("0.00");
+  });
 
-    expect(router).toContain('price: coverage.fullyCovered ? "0.00" : input.price');
-    expect(router).toContain('membershipId: coverage.membershipByPetId[petId]?.id ?? null');
+  it("leaves an uncovered groom at whatever was asked for", () => {
+    expect(priceForCoveredAppointment(false, "175.00")).toBe("175.00");
+    // Nothing asked for stays nothing — "unpriced" and "free" are not the
+    // same, and an insert must not turn the first into the second.
+    expect(priceForCoveredAppointment(false, undefined)).toBeUndefined();
+    expect(priceForCoveredAppointment(false, null)).toBeUndefined();
+  });
+
+  it("applies that rule on every path that creates an appointment", () => {
+    // This replaced an assertion on the literal text
+    // `price: coverage.fullyCovered ? "0.00" : input.price`. When the
+    // multi-pet path gained a per-dog figure, that line changed THERE and
+    // the assertion went on matching the other two — so the busiest
+    // booking path silently lost its guard while the suite stayed green.
+    //
+    // Counting delegations is still a source check, but it fails loudly
+    // when a fourth path appears or an existing one stops delegating,
+    // which is the drift that actually costs money.
+    const router = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
+    // Three: createAppointment, createRecurringAppointments and
+    // createMultiPetAppointment. The import carries no paren so it does
+    // not count.
+    expect(router.split("priceForCoveredAppointment(").length - 1).toBe(3);
+    expect(router).not.toContain('coverage.fullyCovered ? "0.00"');
+    expect(router).toContain("membershipId: coverage.membershipByPetId[petId]?.id ?? null");
     expect(router).toContain("getMembershipCoverage: operationalProcedure");
-    expect(router).toContain("getClientMembershipSummary: operationalProcedure");
-    expect(calendar).toContain("Weekly membership active");
-    expect(calendar).toContain("clientMembershipSummary");
-    // Membership status is only surfaced once a pet is selected (below), not
-    // as a separate pre-selection banner \u2014 a client can have some pets
-    // covered and others not, so announcing "membership active" before any
-    // pet is chosen would be premature.
-    expect(calendar).not.toContain("Select the dog or dogs for this appointment to confirm coverage");
-    expect(calendar).toContain("A membership needs attention before it can cover a booking");
-    expect(calendar).toContain("{ enabled: !!newAppt.clientId }");
-    expect(calendar).toContain("Every selected dog is covered for this service");
-    expect(calendar).toContain("selectedFamilyGroups.has(pet.familyGroupId)");
-    expect(clientDetail).toContain("bookingFamilyCompanions.map");
-    expect(clientDetail).toContain("Array.from(new Set([bookPetId, ...bookFamilyPetIds]))");
   });
 });

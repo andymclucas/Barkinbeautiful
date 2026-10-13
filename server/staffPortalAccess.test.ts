@@ -49,7 +49,11 @@ describe("canStaffUpdateAppointment", () => {
     expect(routerSource).toContain("This appointment is not available to your salon staff profile");
     expect(routerSource).toContain('Only administrators can email grooming cards to clients');
     expect(dashboardSource).toContain("staffOperationMenuItems");
-    expect(dashboardSource).toContain('[' + '"/calendar", "/workflow", "/memberships"' + ']');
+    // The sidebar is filtered by the same rule as the route guard, in
+    // shared/staffRoutes.ts, and tested as behaviour in staffRoutes.test.ts.
+    // This used to assert the route list as a literal — one of THREE copies
+    // in this file, and the only one anybody had pinned.
+    expect(dashboardSource).toContain("menuItems.filter((item) => isStaffOperationRoute(item.path))");
   });
 
   it("treats Bathers as first-class approved operations users without opening administrator areas", () => {
@@ -104,8 +108,10 @@ describe("canStaffUpdateAppointment", () => {
   it("renders approved staff operations routes and redirects unauthenticated sessions instead of holding the layout skeleton", () => {
     const dashboardSource = readFileSync(new URL("../client/src/components/DashboardLayout.tsx", import.meta.url), "utf8");
     expect(dashboardSource).toContain('if (!user) {\n      if (window.location.pathname !== "/login") window.location.href = "/login";');
-    expect(dashboardSource).toContain('if (user.role === "staff" && !["/calendar", "/workflow", "/memberships"].includes(window.location.pathname))');
-    expect(dashboardSource).not.toContain('if (user.role === "staff") {\n    const isStaffOperationRoute');
+    // The route list moved to shared/staffRoutes.ts and is tested as
+    // behaviour in staffRoutes.test.ts. It lived here as a literal while
+    // DashboardLayout held TWO copies of it and this pinned only one.
+    expect(dashboardSource).toContain('user.role === "staff" && !isStaffOperationRoute(window.location.pathname)');
   });
 
   it("keeps the TV workflow display on a separate route and opens it independently of the controller board", () => {

@@ -44,3 +44,31 @@ export function resolveAppointmentMembershipCoverage(
     membershipByPetId,
   };
 }
+
+/**
+ * What an appointment is priced at once coverage is known.
+ *
+ * A membership groom carries no price — the weekly payment is the revenue —
+ * so a covered booking is always "0.00", whatever figure the dialog sent.
+ * Extras done on the day are still invoiced; they are add-on rows, not this.
+ *
+ * Extracted on 13/10/2026 because the rule was three copies of a ternary in
+ * routers.ts — createAppointment, createRecurringAppointments and
+ * createMultiPetAppointment — and the contract test pinned it by matching
+ * the literal text `price: coverage.fullyCovered ? "0.00" : input.price`.
+ * When the multi-pet path gained a per-dog figure that line changed there
+ * and the assertion quietly went on matching the OTHER two, so the busiest
+ * booking path lost its guard while the suite stayed green.
+ *
+ * `requested` is whatever the caller asked for, already resolved down to a
+ * single figure for this dog.
+ */
+export function priceForCoveredAppointment(
+  fullyCovered: boolean,
+  requested: string | null | undefined,
+): string | undefined {
+  // Zero, explicitly — never the requested figure. Billing a member for a
+  // groom their membership already paid for is the failure that matters.
+  if (fullyCovered) return "0.00";
+  return requested ?? undefined;
+}

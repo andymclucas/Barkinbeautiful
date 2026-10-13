@@ -1,4 +1,5 @@
 import { useTimezoneSync } from "@/lib/timezone";
+import { isStaffOperationRoute } from "@shared/staffRoutes";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTheme, type ThemeChoice } from "@/contexts/ThemeContext";
@@ -90,7 +91,9 @@ const menuItems = [
 
 const sectionPath = (key: string): string => STAFF_SECTIONS.find((s) => s.key === key)?.path ?? "";
 
-const staffOperationMenuItems = menuItems.filter((item) => ["/calendar", "/workflow", "/memberships"].includes(item.path));
+// The sidebar a restricted staff account sees. Same rule as the route
+// guard: a link to a page they would be bounced off is worse than no link.
+const staffOperationMenuItems = menuItems.filter((item) => isStaffOperationRoute(item.path));
 
 
 /** Perceived luminance 0–1 for a #rrggbb hex colour. */
@@ -230,8 +233,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (window.location.pathname !== "/login") window.location.href = "/login";
       return;
     }
-    const isStaffOperationRoute = ["/calendar", "/workflow", "/memberships"].includes(window.location.pathname);
-    if (user.role === "staff" && !isStaffOperationRoute) {
+    if (user.role === "staff" && !isStaffOperationRoute(window.location.pathname)) {
       window.location.href = "/calendar";
     }
   }, [loading, user]);
@@ -242,7 +244,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return <DashboardLayoutSkeleton />;
   }
 
-  if (user.role === "staff" && !["/calendar", "/workflow", "/memberships"].includes(window.location.pathname)) {
+  if (user.role === "staff" && !isStaffOperationRoute(window.location.pathname)) {
     return <DashboardLayoutSkeleton />;
   }
 
