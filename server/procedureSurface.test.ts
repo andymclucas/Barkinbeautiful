@@ -108,6 +108,11 @@ const OPERATIONAL = [
   "calendarRouter.updateWorkflowState",
   "clientsRouter.create",
   "clientsRouter.list",
+  // Who may be rung about a client. operationalProcedure on purpose: the
+  // groomer deciding who to call is the one who needs it, and getProfile,
+  // which carries the same contacts, rejects staff outright. Contact
+  // details only — not a way around getProfile.
+  "clientsRouter.listContacts",
   "clientsRouter.quickPreview",
   "clientsRouter.updateDetails",
   "familyRouter.linkPets",
@@ -177,7 +182,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(295);
+    expect(surface).toHaveLength(296);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -188,7 +193,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(89);
+    expect(OPERATIONAL).toHaveLength(90);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

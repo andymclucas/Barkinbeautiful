@@ -386,6 +386,12 @@ export const appointments = mysqlTable("appointments", {
   clientId: int("client_id").notNull().references(() => clients.id),
   petId: int("pet_id").notNull().references(() => pets.id),
   staffId: int("staff_id").references(() => staff.id),
+  /**
+   * Who to ring about THIS booking. Null means the client themselves, which
+   * is the default and the truth for every appointment made before contacts
+   * existed. See clientContacts.
+   */
+  contactId: int("contact_id"),
   serviceType: mysqlEnum("service_type", ["classic_groom", "styled_groom", "bath_only", "fft", "nail_trim", "daycare", "deshed", "other"]).default("classic_groom").notNull(),
   scheduledStart: timestamp("scheduled_start").notNull(),
   scheduledEnd: timestamp("scheduled_end").notNull(),

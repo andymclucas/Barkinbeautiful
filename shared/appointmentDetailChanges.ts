@@ -21,18 +21,22 @@ export type AppointmentDetailChanges = {
   serviceType?: string;
   notes?: string | null;
   price?: string | null;
+  /** null means the client themselves. */
+  contactId?: number | null;
 };
 
 export type AppointmentDetailCurrent = {
   serviceType?: string | null;
   notes?: string | null;
   price?: string | null;
+  contactId?: number | null;
 };
 
 export type AppointmentDetailDraft = {
   serviceType?: string;
   notes?: string;
   price?: string;
+  contactId?: number | null;
 };
 
 export function appointmentDetailChanges(
@@ -49,6 +53,11 @@ export function appointmentDetailChanges(
   }
   if (next.price !== undefined && next.price !== (current.price ?? "")) {
     changes.price = next.price || null;
+  }
+  // null is a real value here, not "unset": it means the client themselves.
+  // Only `undefined` means the caller is not editing the contact.
+  if (next.contactId !== undefined && (next.contactId ?? null) !== (current.contactId ?? null)) {
+    changes.contactId = next.contactId ?? null;
   }
   return changes;
 }

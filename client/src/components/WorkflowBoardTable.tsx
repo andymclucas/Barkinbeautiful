@@ -6,6 +6,7 @@ import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workfl
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { collectByStatus } from "@shared/collectBy";
 import { parsePetCodes } from "@shared/petCodes";
+import { joinedContactBadge } from "@shared/appointmentContact";
 import { PetAlertButton } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
@@ -555,6 +556,27 @@ export function WorkflowBoardTable({
                             )}
                           </button>
                           <p className="text-[11px] text-muted-foreground truncate">{appt.clientLastName}</p>
+                          {(() => {
+                            // "Tx + Rochelle" in green marker on the
+                            // whiteboard, now on the card. Only when it is
+                            // NOT the owner, or every row would repeat the
+                            // name directly above it.
+                            const contact = joinedContactBadge(appt as {
+                              contactId?: number | null;
+                              contactName?: string | null;
+                              contactRelationship?: string | null;
+                            });
+                            if (!contact) return null;
+                            const phone = (appt as { contactPhone?: string | null }).contactPhone;
+                            return (
+                              <p
+                                className="text-[11px] font-semibold text-violet-700 dark:text-violet-300 truncate"
+                                title={phone ? `Contact ${contact} on ${phone}` : `Contact ${contact} — no number on file`}
+                              >
+                                ☎ {contact}
+                              </p>
+                            );
+                          })()}
                           <PetAlertButton
                             pet={{ alertLevel: appt.petAlertLevel, warnings: appt.petWarnings }}
                             petName={appt.petName}

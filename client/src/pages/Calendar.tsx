@@ -37,6 +37,12 @@ import {
   hasAppointmentDetailChanges,
 } from "@shared/appointmentDetailChanges";
 import {
+  contactBadgeLabel,
+  contactChoiceIsStale,
+  contactOptions,
+  resolveAppointmentContact,
+} from "@shared/appointmentContact";
+import {
   EMPTY_STYLE_NOTE_DRAFT,
   activeStylePetId,
   styleDraftFromNote,
@@ -258,6 +264,16 @@ type Appt = {
   staffId: number | null;
   clientId: number;
   petId: number;
+  /**
+   * Who to ring about this booking. Null is the client themselves, which is
+   * the default and what every appointment made before contacts existed
+   * means. The joined name comes with it so the board can show it without a
+   * request per card.
+   */
+  contactId?: number | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactRelationship?: string | null;
   membershipId: number | null;
   clientFirstName: string | null;
   clientLastName: string | null;
@@ -989,6 +1005,8 @@ export default function Calendar() {
   const [editForm, setEditForm] = useState({
     staffId: "", serviceType: "", scheduledStart: "", scheduledEnd: "",
     notes: "", price: "", workflowState: "",
+    // Who to ring about this booking. null is the client themselves.
+    contactId: null as number | null,
   });
   const preservesCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
   // Per-pet groomer overrides for multi-pet sessions: { [appointmentId]: staffId }
@@ -1069,6 +1087,24 @@ export default function Calendar() {
     onSuccess: () => { toast.success("Blockout removed"); refetchBlockouts(); },
     onError: (e) => toast.error(e.message),
   });
+
+  // Who may be rung about the client whose dialog is open. operational, so
+  // a groomer sees it too — they are the ones deciding who to call.
+  const editContacts = trpc.clients.listContacts.useQuery(
+    { clientId: editAppt?.clientId ?? 0 },
+    { enabled: !!editAppt?.clientId },
+  );
+  const editContactOptions = useMemo(
+    () => contactOptions(
+      {
+        firstName: editAppt?.clientFirstName,
+        lastName: editAppt?.clientLastName,
+        phone: editAppt?.clientPhone,
+      },
+      editContacts.data ?? [],
+    ),
+    [editAppt, editContacts.data],
+  );
 
   const styleNotes = trpc.groomNotes.listByPet.useQuery(
     { petId: styleTargetPetId ?? 0 },
@@ -1652,6 +1688,7 @@ export default function Calendar() {
       notes:          appt.notes ?? "",
       price:          appt.price ?? "",
       workflowState:  appt.workflowState,
+      contactId:      appt.contactId ?? null,
     });
     setCollectByDraft(formatCollectBy(appt.collectBy) ?? "");
   };
@@ -1722,6 +1759,7 @@ export default function Calendar() {
       serviceType: effectivePrimaryService,
       notes: editForm.notes,
       price: effectivePrimaryPrice,
+      contactId: editForm.contactId,
     });
     if (hasAppointmentDetailChanges(primaryChanges)) {
       promises.push(updateDetailsMutation.mutateAsync({
@@ -1729,6 +1767,21 @@ export default function Calendar() {
         ...primaryChanges,
         serviceType: primaryChanges.serviceType as "classic_groom" | undefined,
       }));
+    }
+    // One person collects the whole family, so the siblings follow the
+    // primary dog's contact — but ONLY when the contact was actually
+    // changed in this save. Gated on that rather than on "something
+    // changed": inside the block above, editing just a note on one dog
+    // silently rewrote every sibling's contact to match this one's.
+    if ("contactId" in primaryChanges) {
+      for (const sib of getSiblings(editAppt)) {
+        if ((sib.contactId ?? null) !== (editForm.contactId ?? null)) {
+          promises.push(updateDetailsMutation.mutateAsync({
+            appointmentId: sib.id,
+            contactId: editForm.contactId,
+          }));
+        }
+      }
     }
     // Per-dog price and service overrides for the other dogs in the family.
     for (const sib of siblings) {
@@ -3075,6 +3128,46 @@ export default function Calendar() {
                     </Link>
                     {editAppt.clientPhone ? <span className="text-muted-foreground">· {editAppt.clientPhone}</span> : null}
                   </div>
+                  {/* Who to ring about THIS booking. The salon was writing
+                      "Tx + Rochelle" on the whiteboard in green marker
+                      because there was nowhere in here to put it, so the
+                      fact died when the board was wiped. The client is
+                      always the first option and the default. */}
+                  {editContactOptions.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground shrink-0">Contact:</span>
+                      <Select
+                        value={editForm.contactId === null ? "__primary__" : String(editForm.contactId)}
+                        onValueChange={(v) => setEditForm(prev => ({ ...prev, contactId: v === "__primary__" ? null : Number(v) }))}
+                      >
+                        <SelectTrigger className="h-7 text-xs flex-1" aria-label="Who to contact about this appointment">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {editContactOptions.map((option) => (
+                            <SelectItem
+                              key={option.id ?? "primary"}
+                              value={option.id === null ? "__primary__" : String(option.id)}
+                            >
+                              {option.name}
+                              <span className="text-muted-foreground">
+                                {" · "}{option.relationship}
+                                {option.phone ? ` · ${option.phone}` : " · no number"}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {/* The booking points at somebody who is no longer on the
+                      client's record. Said out loud rather than silently
+                      falling back, so it gets fixed. */}
+                  {editContacts.data && contactChoiceIsStale(editContactOptions, editForm.contactId) && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      The contact saved on this booking is no longer on the client’s record. It will fall back to {editAppt.clientFirstName} {editAppt.clientLastName}.
+                    </p>
+                  )}
                   {editAppt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appointment:</span> {new Date(editAppt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>}
                 </div>
                 {(() => {

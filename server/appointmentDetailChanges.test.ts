@@ -93,3 +93,67 @@ describe("a family where the two dogs want different things", () => {
     expect(hasAppointmentDetailChanges(changes)).toBe(false);
   });
 });
+
+describe("the contact person", () => {
+  const WITH_CONTACT = { serviceType: "classic_groom", price: "125.00", contactId: 7 };
+
+  it("sends the new contact when it changes", () => {
+    expect(appointmentDetailChanges(WITH_CONTACT, { contactId: 9 })).toEqual({ contactId: 9 });
+  });
+
+  it("treats null as a real choice, not as 'leave it alone'", () => {
+    // Clearing the picker back to the client is a change that must be saved.
+    // If null were read as "not editing", the booking would keep texting
+    // Rochelle after somebody deliberately set it back to the owner.
+    expect(appointmentDetailChanges(WITH_CONTACT, { contactId: null })).toEqual({ contactId: null });
+  });
+
+  it("says nothing when the picker was not touched", () => {
+    expect(appointmentDetailChanges(WITH_CONTACT, { price: "125.00" })).toEqual({});
+  });
+
+  it("does not resend the same contact", () => {
+    expect(appointmentDetailChanges(WITH_CONTACT, { contactId: 7 })).toEqual({});
+  });
+
+  it("treats a booking with no contact as equal to null", () => {
+    // Every appointment made before contacts existed has contactId null;
+    // opening one and saving must not look like a change.
+    const noContact = { serviceType: "classic_groom", price: "125.00", contactId: null };
+    expect(appointmentDetailChanges(noContact, { contactId: null })).toEqual({});
+  });
+
+  it("never drags the price along with a contact change", () => {
+    // Same discount hazard as the rest: a price in the payload wipes it.
+    const changes = appointmentDetailChanges(WITH_CONTACT, { contactId: 9, price: "125.00" });
+    expect(changes).toEqual({ contactId: 9 });
+    expect("price" in changes).toBe(false);
+  });
+});
+
+describe("the sibling-propagation gate", () => {
+  // The dialog pushes the primary dog's contact onto its siblings. That has
+  // to key on "the contact changed", not on "something changed" — gated on
+  // the latter, editing a note on one dog silently rewrote every sibling's
+  // contact to match this one's.
+  const GUS = { serviceType: "classic_groom", notes: "Nervous", price: "125.00", contactId: null };
+
+  it("does not fire when only the notes changed", () => {
+    const changes = appointmentDetailChanges(GUS, { notes: "Nervous, muzzle on", contactId: null });
+    expect("contactId" in changes).toBe(false);
+  });
+
+  it("does not fire when only the price changed", () => {
+    const changes = appointmentDetailChanges(GUS, { price: "140.00", contactId: null });
+    expect("contactId" in changes).toBe(false);
+  });
+
+  it("fires when the contact changed", () => {
+    expect("contactId" in appointmentDetailChanges(GUS, { contactId: 7 })).toBe(true);
+  });
+
+  it("fires when the contact is cleared back to the client", () => {
+    const withContact = { ...GUS, contactId: 7 };
+    expect("contactId" in appointmentDetailChanges(withContact, { contactId: null })).toBe(true);
+  });
+});
