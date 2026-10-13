@@ -79,10 +79,15 @@ export function tierFromCatalogueName(name: string | null | undefined): PriceTie
  * Per DOG, not per client: memberships hang off the pet, so one household
  * can have a Gold poodle and an unenrolled schnauzer.
  *
- * Silver sits with Diamond and Gold deliberately. MoeGo's label is "up to
- * 6wks" and silver's interval is exactly 6 weeks, so it is inside that
- * band — 124 of the upcoming membership bookings are silver, which makes
- * this the most consequential line in the function.
+ * Silver sits with Diamond and Gold deliberately, and this is the most
+ * consequential line in the function — 124 of the upcoming membership
+ * bookings are silver. Confirmed against MoeGo on 13/10/2026 rather than
+ * assumed: MoeGo's service label is "Diamond - Gold (up to 6wks)" and
+ * silver's appointment interval is exactly 6 weeks, so it is inside that
+ * band. The interval comes from MEMBERSHIP_WEIGHT_BANDS' sibling table in
+ * membershipPackages.ts, which is itself verified — its bronze weekly
+ * prices ([15, 19, 24, 27, 30, 34]) match MoeGo's Bronze VIP Classic plans
+ * on all six bands, and silver's ([17, 22, 27, 31, 40, 44]) match too.
  *
  * Most member bookings never reach a price at all: when the membership
  * covers that groom the dialog forces $0.00 before this matters. This
