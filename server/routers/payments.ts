@@ -24,7 +24,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { router, operationalProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointmentAddOns, appointmentPayments, appointments, clients, pets } from "../../drizzle/schema";
-import { billableTotalsByAppointment } from "@shared/appointmentAddOns";
+import { billableTotalsByAppointment, addOnsTotal, isUsableBilledOverride } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import {
   PAYMENT_METHODS,
@@ -62,6 +62,13 @@ export interface BookingAppointmentPayments {
   discountPercent: number | null;
   discountReason: string | null;
   total: number | null;
+  /** The groom on its own, before extras — for the breakdown. */
+  servicePrice: number | null;
+  /** This dog's OWN extras, added up. */
+  addOnsTotal: number;
+  /** Set when a person typed the figure instead of it being worked out. */
+  billedTotalOverride: number | null;
+  billedOverrideReason: string | null;
   paid: number;
   outstanding: number | null;
   status: "unpaid" | "partial" | "paid" | null;
@@ -180,7 +187,11 @@ async function loadBillableTotals(db: any, appointmentIds: number[]) {
   if (appointmentIds.length === 0) return new Map<number, string | null>();
 
   const rows = await db
-    .select({ id: appointments.id, price: appointments.price })
+    .select({
+      id: appointments.id,
+      price: appointments.price,
+      billedTotalOverride: appointments.billedTotalOverride,
+    })
     .from(appointments)
     .where(inArray(appointments.id, appointmentIds));
 
@@ -195,6 +206,62 @@ async function loadBillableTotals(db: any, appointmentIds: number[]) {
     .where(inArray(appointmentAddOns.appointmentId, appointmentIds));
 
   return billableTotalsByAppointment(rows, addOns);
+}
+
+/**
+ * The parts behind each dog's figure: the groom, its own extras, and any
+ * typed-in override.
+ *
+ * Separate from loadBillableTotals because only the panel needs it — the
+ * other two callers are deriving a status and validating an amount, and
+ * neither cares how the number was arrived at.
+ *
+ * It exists because a correct total read as wrong. On 13/10/2026 Louie and
+ * Lollie were $110 each with a $65 teeth clean each, so $350 was right; but
+ * the edit dialog showed only the dog being edited, so the sibling's $65 was
+ * invisible and the booking looked overcharged by $65.
+ */
+async function loadBillingBreakdown(db: any, appointmentIds: number[]) {
+  const breakdown = new Map<number, {
+    servicePrice: number | null;
+    addOnsTotal: number;
+    billedTotalOverride: number | null;
+    billedOverrideReason: string | null;
+  }>();
+  if (appointmentIds.length === 0) return breakdown;
+
+  const rows = await db
+    .select({
+      id: appointments.id,
+      price: appointments.price,
+      billedTotalOverride: appointments.billedTotalOverride,
+      billedOverrideReason: appointments.billedOverrideReason,
+    })
+    .from(appointments)
+    .where(inArray(appointments.id, appointmentIds));
+
+  const addOns = await db
+    .select({
+      appointmentId: appointmentAddOns.appointmentId,
+      name: appointmentAddOns.name,
+      unitPrice: appointmentAddOns.unitPrice,
+      quantity: appointmentAddOns.quantity,
+    })
+    .from(appointmentAddOns)
+    .where(inArray(appointmentAddOns.appointmentId, appointmentIds));
+
+  const num = (value: any) =>
+    value === null || value === undefined || String(value).trim() === "" ? null : Number(value);
+
+  for (const row of rows) {
+    breakdown.set(row.id, {
+      servicePrice: num(row.price),
+      addOnsTotal: Number(addOnsTotal(addOns.filter((a: any) => a.appointmentId === row.id))),
+      billedTotalOverride: num(row.billedTotalOverride),
+      billedOverrideReason: row.billedOverrideReason ?? null,
+    });
+  }
+  return breakdown;
 }
 
 export const paymentsRouter = router({
@@ -212,6 +279,7 @@ export const paymentsRouter = router({
       const { rows } = await loadBookingAppointments(db, input.appointmentId);
       const lines = await loadLines(db, rows.map((r: any) => r.id));
       const totals = await loadBillableTotals(db, rows.map((r: any) => r.id));
+      const breakdown = await loadBillingBreakdown(db, rows.map((r: any) => r.id));
       const petRows = rows.some((r: any) => r.petId)
         ? await db
             .select({ id: pets.id, name: pets.name })
@@ -232,6 +300,10 @@ export const paymentsRouter = router({
           preDiscountPrice: row.preDiscountPrice ?? null,
           discountPercent: row.discountPercent ?? null,
           discountReason: row.discountReason ?? null,
+          servicePrice: breakdown.get(row.id)?.servicePrice ?? null,
+          addOnsTotal: breakdown.get(row.id)?.addOnsTotal ?? 0,
+          billedTotalOverride: breakdown.get(row.id)?.billedTotalOverride ?? null,
+          billedOverrideReason: breakdown.get(row.id)?.billedOverrideReason ?? null,
           ...summarisePayments(totals.get(row.id) ?? null, own),
           lines: own,
         };
@@ -248,6 +320,77 @@ export const paymentsRouter = router({
         bookingPaid: perAppointment.reduce((sum, a) => sum + a.paid, 0),
         bookingOutstanding: priced.reduce((sum, a) => sum + (a.outstanding ?? 0), 0),
       };
+    }),
+
+  /**
+   * Type in what this dog is actually being charged.
+   *
+   * Andy, 13/10/2026: "Need to be able to change the payments section if
+   * incorrect... manual overide always needed."
+   *
+   * The computed figure is right nearly always, but a price agreed at the
+   * counter does not always decompose into a catalogue price and a list of
+   * extras — goodwill, a job far worse than booked, an old quote honoured.
+   * Staff were left reverse-engineering which component to edit until the
+   * total came out right.
+   *
+   * Set, this REPLACES the computed total. The add-ons stay on the invoice
+   * as the record of what was done; they just stop driving the figure.
+   *
+   * operationalProcedure: the person at the counter settling up is the
+   * receptionist or the groomer, and protectedProcedure would reject a
+   * restricted staff account and leave them unable to take the money.
+   */
+  setBilledOverride: operationalProcedure
+    .input(z.object({
+      appointmentId: z.number(),
+      /** Dollars. Null clears it and goes back to the worked-out figure. */
+      amount: z.string().trim().max(20).nullable(),
+      /** Why. Required when setting one — this overrides the price list. */
+      reason: z.string().trim().max(255).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+
+      const clearing = input.amount === null || input.amount.trim() === "";
+      if (!clearing && !isUsableBilledOverride(input.amount)) {
+        // A negative bill is a typo, not a refund. Refunds are a negative
+        // PAYMENT, which `record` already handles and which leaves a line
+        // on the booking saying what happened.
+        throw new Error("Enter an amount of zero or more. To refund, record a negative payment instead.");
+      }
+      const reason = input.reason?.trim() ?? "";
+      if (!clearing && reason === "") {
+        // The reason is the whole audit trail. An override with no reason
+        // is indistinguishable from a mis-key a year later.
+        throw new Error("Say why the price is being changed");
+      }
+
+      const [appointment] = await db
+        .select({ id: appointments.id, tenantId: appointments.tenantId })
+        .from(appointments)
+        .where(eq(appointments.id, input.appointmentId))
+        .limit(1);
+      if (!appointment) throw new Error("Appointment not found");
+
+      await db.update(appointments).set(clearing ? {
+        billedTotalOverride: null,
+        billedOverrideReason: null,
+        billedOverrideByUserId: null,
+        billedOverrideAt: null,
+      } : {
+        billedTotalOverride: Number(input.amount).toFixed(2),
+        billedOverrideReason: reason,
+        billedOverrideByUserId: ctx.user?.id ?? null,
+        billedOverrideAt: new Date(),
+      }).where(eq(appointments.id, appointment.id));
+
+      // Paid-in-full may have just become partial, or the reverse, so the
+      // badge on the booking has to be recomputed from the new figure.
+      await refreshPaymentStatus(db, appointment.id);
+      return { success: true, cleared: clearing };
     }),
 
   record: operationalProcedure

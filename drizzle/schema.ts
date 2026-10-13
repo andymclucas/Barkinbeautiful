@@ -429,6 +429,24 @@ export const appointments = mysqlTable("appointments", {
   preDiscountPrice: decimal("pre_discount_price", { precision: 10, scale: 2 }),
   discountAppliedByUserId: int("discount_applied_by_user_id"),
   discountAppliedAt: timestamp("discount_applied_at"),
+  /**
+   * What this dog is actually being charged, when the worked-out figure
+   * is wrong.
+   *
+   * The bill is normally price + this dog's own add-ons, which is right
+   * nearly always. But a figure agreed at the counter does not always
+   * decompose into a catalogue price and a list of extras — goodwill, a
+   * job far worse than booked, an old quote honoured. Set, this replaces
+   * the computed total outright; null means compute it as usual.
+   *
+   * A discount still applies on top: the override is what the work came
+   * to, the discount is what the client is forgiven.
+   */
+  billedTotalOverride: decimal("billed_total_override", { precision: 10, scale: 2 }),
+  /** Why. Required whenever the override is set; enforced in shared/. */
+  billedOverrideReason: varchar("billed_override_reason", { length: 255 }),
+  billedOverrideByUserId: int("billed_override_by_user_id"),
+  billedOverrideAt: timestamp("billed_override_at"),
   /** Whether the money arrived, per MoeGo. Null where MoeGo has no view. */
   paymentStatus: mysqlEnum("payment_status", ["unpaid", "partial", "paid"]),
   status: mysqlEnum("status", ["confirmed", "pending", "cancelled", "no_show"]).default("confirmed").notNull(),
