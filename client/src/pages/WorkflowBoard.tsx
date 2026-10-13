@@ -718,7 +718,7 @@ export default function WorkflowBoard() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>Send ready-for-pickup message</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">{pickupMessageAppointment?.petName ?? "This dog"} has been marked complete. Choose a saved client contact, review the SMS and send it only when ready.</p>
+            <p className="text-sm text-muted-foreground">{pickupMessageAppointment?.petName ?? "This dog"} is ready for pickup. Choose a saved client contact, review the SMS and send it only when ready.</p>
             {pickupRecipientsLoading && <p className="py-5 text-center text-sm text-muted-foreground">Loading saved contacts…</p>}
             {!pickupRecipientsLoading && pickupRecipientsError && <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{pickupRecipientsError.message}</p>}
             {!pickupRecipientsLoading && !pickupRecipientsError && pickupRecipients?.recipients.length === 0 && <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">No saved mobile contacts are available. Add a mobile number to the client profile before sending.</p>}

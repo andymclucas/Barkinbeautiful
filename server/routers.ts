@@ -69,6 +69,7 @@ import { isUsableSenderNumber } from "@shared/senderNumber";
 import { forgetNumberTenant } from "./tenantByNumber";
 import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
+import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
@@ -7542,7 +7543,7 @@ const smsRouter = router({
         .limit(1);
       if (!appointment) throw new Error("Appointment not found");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, appointment.id);
-      if (appointment.workflowState !== "complete") throw new Error("Pickup messages are available after the dog is marked complete");
+      if (!canSendPickupMessage(appointment.workflowState)) throw new Error(PICKUP_MESSAGE_TOO_EARLY);
       const [client] = await db.select({ firstName: clients.firstName, lastName: clients.lastName, phone: clients.phone })
         .from(clients)
         .where(and(eq(clients.id, appointment.clientId), eq(clients.tenantId, appointment.tenantId)))
@@ -7576,7 +7577,7 @@ const smsRouter = router({
         .limit(1);
       if (!appointment) throw new Error("Appointment not found");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, appointment.id);
-      if (appointment.workflowState !== "complete") throw new Error("Pickup messages are available after the dog is marked complete");
+      if (!canSendPickupMessage(appointment.workflowState)) throw new Error(PICKUP_MESSAGE_TOO_EARLY);
       const [client] = await db.select({ firstName: clients.firstName, lastName: clients.lastName, phone: clients.phone })
         .from(clients)
         .where(and(eq(clients.id, appointment.clientId), eq(clients.tenantId, appointment.tenantId)))

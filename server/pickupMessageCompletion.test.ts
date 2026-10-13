@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { canSendPickupMessage } from "@shared/pickupMessage";
 
 /**
  * NOTE ON APPROACH — these are source-text assertions, not behavioural tests.
@@ -31,10 +32,17 @@ describe("completed Workflow pickup messaging", () => {
     expect(routerSource).toContain("requireApprovedStaffAppointmentAccess(db, ctx.user, appointment.id)");
   });
 
-  it("allows a pickup message only after completion and only through the explicit send route", () => {
+  it("allows a pickup message once the dog is ready, and only through the explicit send route", () => {
     const pickupStart = routerSource.indexOf("getPickupRecipients: operationalProcedure");
     const pickupSection = routerSource.slice(pickupStart, routerSource.indexOf("getLogs: protectedProcedure", pickupStart));
-    expect(pickupSection.split("Pickup messages are available after the dog is marked complete").length - 1).toBe(2);
+    // Both procedures must defer to the shared rule rather than carrying
+    // their own copy of it. Two copies of that line are what let the guard
+    // drift from the board: the prompt moved to `ready` in 16bf5e3 and
+    // these kept demanding `complete`, so the dialog opened and the Send
+    // button was dead every single time. This file even asserted BOTH at
+    // once — see the `ready` test below — and stayed green for the lot.
+    expect(pickupSection.split("canSendPickupMessage(appointment.workflowState)").length - 1).toBe(2);
+    expect(pickupSection).not.toContain('workflowState !== "complete"');
     // Anchored WITHOUT the closing bracket on purpose. The previous
     // version broke the moment sendSms gained a tenantId argument for SMS
     // metering, while the behaviour it guards — this section texts the
@@ -94,5 +102,43 @@ describe("completed Workflow pickup messaging", () => {
     expect(routerSource).toContain("removeContact: adminProcedure");
     expect(clientProfileSource).toContain("Pickup contacts");
     expect(clientProfileSource).toContain("Additional pickup contact saved");
+  });
+});
+
+/**
+ * The rule itself, tested as behaviour rather than as source text — which
+ * is what the note at the top of this file asks for, and what would have
+ * caught the bug Lauren reported on 13/10/2026.
+ */
+describe("canSendPickupMessage", () => {
+  it("allows the text once the dog is ready", () => {
+    // `ready` is the state the message is ABOUT: done, waiting to be
+    // collected. It is also when the board opens the dialog.
+    expect(canSendPickupMessage("ready")).toBe(true);
+  });
+
+  it("still allows it after the dog is marked out", () => {
+    // So a text can go late if nobody got to it at the time.
+    expect(canSendPickupMessage("complete")).toBe(true);
+  });
+
+  it("refuses every stage before the dog is finished", () => {
+    for (const state of [
+      "scheduled", "checked_in", "waiting_for_bath", "bathing",
+      "waiting_for_dry", "drying", "waiting_for_groom", "grooming",
+    ]) {
+      expect(canSendPickupMessage(state), `${state} must not allow a pickup text`).toBe(false);
+    }
+  });
+
+  it("refuses a dog that never arrived", () => {
+    expect(canSendPickupMessage("cancelled")).toBe(false);
+    expect(canSendPickupMessage("no_show")).toBe(false);
+  });
+
+  it("refuses nothing at all rather than throwing", () => {
+    expect(canSendPickupMessage(null)).toBe(false);
+    expect(canSendPickupMessage(undefined)).toBe(false);
+    expect(canSendPickupMessage("")).toBe(false);
   });
 });
