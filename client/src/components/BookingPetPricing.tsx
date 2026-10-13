@@ -75,7 +75,10 @@ export function BookingPetPricing(props: Props) {
 
   const catalogue = useMemo(() => catalogueQuery.data ?? [], [catalogueQuery.data]);
   const context = contextQuery.data;
-  const tier: PriceTier = context?.tier ?? "regular";
+  // A dog not yet loaded is assumed to be a non-member, which is the
+  // commonest case and the dearer of the two — an empty box is better than
+  // one briefly showing a members' rate to somebody who is not a member.
+  const DEFAULT_TIER: PriceTier = "new";
 
   /**
    * A band the staff member has chosen in this dialog but not yet saved.
@@ -111,7 +114,9 @@ export function BookingPetPricing(props: Props) {
     return petIds.map((petId) => {
       const pet = byId.get(petId);
       const band = (localBand[String(petId)] ?? pet?.sizeBand ?? null) as DogSizeBand | null;
-      return { petId, pet, band };
+      // The rate follows this dog's own membership, not the household's.
+      const tier = (pet?.tier ?? DEFAULT_TIER) as PriceTier;
+      return { petId, pet, band, tier };
     });
   }, [petIds, context?.pets, localBand]);
 
@@ -150,7 +155,7 @@ export function BookingPetPricing(props: Props) {
    * leave a wrong number in a box that looks filled in.
    */
   const signatureFor = (service: string) =>
-    `${service}|${petRows.map((r) => `${r.petId}:${r.band ?? ""}`).join(",")}|${catalogue.length}|${tier}`;
+    `${service}|${petRows.map((r) => `${r.petId}:${r.band ?? ""}:${r.tier}`).join(",")}|${catalogue.length}`;
   const signature = signatureFor(serviceType);
   const lastSignature = useRef<string>("");
 
@@ -160,7 +165,7 @@ export function BookingPetPricing(props: Props) {
     lastSignature.current = signature;
     const next: Record<string, string> = {};
     for (const row of petRows) {
-      const option = pickDefaultPriceOption(optionsByPetId[String(row.petId)] ?? [], tier);
+      const option = pickDefaultPriceOption(optionsByPetId[String(row.petId)] ?? [], row.tier);
       // No catalogue price for this size and service leaves the box empty
       // rather than borrowing another tier's figure. Quoting a first-timer
       // the members' rate loses $35 a groom and nobody would notice.
@@ -220,8 +225,11 @@ export function BookingPetPricing(props: Props) {
     // tapped — every dog priced at its own size and added up. It is blank
     // when any dog has no listed price, rather than borrowing a figure from
     // a size none of them are.
-    () => serviceQuickPicks({ sizeBands: petRows.map((row) => row.band), tier, catalogue }),
-    [petRows, tier, catalogue],
+    () => serviceQuickPicks({
+      dogs: petRows.map((row) => ({ sizeBand: row.band, tier: row.tier })),
+      catalogue,
+    }),
+    [petRows, catalogue],
   );
 
   const prices = petIds.map((petId) =>
@@ -418,10 +426,10 @@ export function BookingPetPricing(props: Props) {
                 looks like a bug, and borrowing another tier's figure would
                 quietly misprice it. */}
             {!membershipCovered && options.length > 0
-              && !pickDefaultPriceOption(options, tier)
+              && !pickDefaultPriceOption(options, row.tier)
               && !props.priceByPetId[key] && (
               <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                No {PRICE_TIER_LABELS[tier].toLowerCase()} price is listed for this groom — pick one of the listed prices or type the agreed amount.
+                No {PRICE_TIER_LABELS[row.tier].toLowerCase()} price is listed for this groom — pick one of the listed prices or type the agreed amount.
               </p>
             )}
 
