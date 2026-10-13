@@ -141,6 +141,21 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
               </p>
             )}
 
+            {/* Each dog's price is changed on its own row.
+                It used to sit under the payment picker further down, which
+                acts on whichever dog is selected there — so with Louie
+                picked there was no way to see that Lollie's price was
+                editable at all. Andy, 13/10: "Why isn't Lollie's price able
+                to be adjusted?" It was; it just said Louie. */}
+            <BilledOverrideRow
+              appointmentId={entry.appointmentId}
+              petName={entry.petName}
+              current={entry.billedTotalOverride}
+              currentReason={entry.billedOverrideReason}
+              computed={entry.total}
+              onSaved={() => utils.payments.forBooking.invalidate()}
+            />
+
             {entry.lines.length > 0 && (
               <ul className="mt-1.5 space-y-1 border-t pt-1.5">
                 {entry.lines.map((line) => (
@@ -240,22 +255,6 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
           </div>
         )}
 
-        {/* Typing the figure outright, for the prices that do not decompose
-            into a catalogue price plus extras. Distinct from a discount: a
-            discount is what the client is forgiven, this is what the work
-            came to. */}
-        {selected && (
-          <BilledOverrideRow
-            key={selected.appointmentId}
-            appointmentId={selected.appointmentId}
-            petName={selected.petName}
-            current={selected.billedTotalOverride}
-            currentReason={selected.billedOverrideReason}
-            computed={selected.total}
-            onSaved={() => utils.payments.forBooking.invalidate()}
-          />
-        )}
-
         {/* One tap for the two amounts anyone actually types. */}
         <div className="flex flex-wrap items-center gap-1.5">
           {selected?.outstanding != null && selected.outstanding > 0 && (
@@ -326,42 +325,40 @@ function BilledOverrideRow({
   const parsed = Number(amount);
   const canSave = amount.trim() !== "" && Number.isFinite(parsed) && parsed >= 0 && reason.trim() !== "";
 
+  // Collapsed: just the action. The line above this already says where
+  // the figure came from, and repeating it on every dog of a booking
+  // turns a two-dog panel into a wall of text.
   if (!open) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-        <span className="text-xs text-muted-foreground">
-          {current !== null
-            ? <>Price for {petName} set by hand{currentReason ? ` — ${currentReason}` : ""}</>
-            : <>{petName} is priced from the groom and its extras</>}
-        </span>
-        <div className="flex gap-1.5">
-          {current !== null && (
-            <Button
-              size="sm" variant="ghost" className="h-7 text-[11px]"
-              disabled={save.isPending}
-              onClick={() => save.mutate({ appointmentId, amount: null })}
-            >
-              Use worked-out price
-            </Button>
-          )}
-          <Button
-            size="sm" variant="outline" className="h-7 text-[11px]"
-            onClick={() => {
-              setAmount(current !== null ? current.toFixed(2) : computed !== null ? computed.toFixed(2) : "");
-              setReason(currentReason ?? "");
-              setOpen(true);
-            }}
+      <div className="mt-1 flex gap-2">
+        <button
+          type="button"
+          className="text-[10px] font-medium text-primary underline-offset-2 hover:underline"
+          onClick={() => {
+            setAmount(current !== null ? current.toFixed(2) : computed !== null ? computed.toFixed(2) : "");
+            setReason(currentReason ?? "");
+            setOpen(true);
+          }}
+        >
+          {current !== null ? `Change ${petName}'s price` : `Set ${petName}'s price by hand`}
+        </button>
+        {current !== null && (
+          <button
+            type="button"
+            className="text-[10px] text-muted-foreground underline-offset-2 hover:underline disabled:opacity-50"
+            disabled={save.isPending}
+            onClick={() => save.mutate({ appointmentId, amount: null })}
           >
-            {current !== null ? "Change price" : "Set price by hand"}
-          </Button>
-        </div>
+            Use worked-out price
+          </button>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="space-y-2 rounded-lg border bg-muted/30 px-3 py-2">
-      <p className="text-xs font-medium">What is {petName} actually being charged?</p>
+    <div className="mt-1.5 space-y-2 rounded-md bg-muted/50 px-2 py-2">
+      <p className="text-[11px] font-medium">What is {petName} actually being charged?</p>
       <div className="flex flex-wrap items-center gap-2">
         <Input
           className="h-8 w-24 text-xs tabular-nums" inputMode="decimal" placeholder="0.00"
