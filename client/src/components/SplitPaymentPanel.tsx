@@ -121,6 +121,26 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
               </span>
             </div>
 
+            {/* Where the figure comes from. Each dog on a booking carries its
+                OWN extras, and the edit dialog shows only the dog being
+                edited — so two dogs each with a $65 teeth clean read as one
+                $65 and the booking looked overcharged. Spelling it out costs
+                a line and removes the doubt. */}
+            {entry.total !== null && (
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                {entry.billedTotalOverride !== null ? (
+                  <>
+                    Price set by hand
+                    {entry.billedOverrideReason ? ` — ${entry.billedOverrideReason}` : ""}
+                  </>
+                ) : entry.addOnsTotal > 0 ? (
+                  <>{money(entry.servicePrice ?? 0)} groom + {money(entry.addOnsTotal)} extras</>
+                ) : (
+                  <>{money(entry.servicePrice ?? 0)} groom</>
+                )}
+              </p>
+            )}
+
             {entry.lines.length > 0 && (
               <ul className="mt-1.5 space-y-1 border-t pt-1.5">
                 {entry.lines.map((line) => (
@@ -220,6 +240,22 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
           </div>
         )}
 
+        {/* Typing the figure outright, for the prices that do not decompose
+            into a catalogue price plus extras. Distinct from a discount: a
+            discount is what the client is forgiven, this is what the work
+            came to. */}
+        {selected && (
+          <BilledOverrideRow
+            key={selected.appointmentId}
+            appointmentId={selected.appointmentId}
+            petName={selected.petName}
+            current={selected.billedTotalOverride}
+            currentReason={selected.billedOverrideReason}
+            computed={selected.total}
+            onSaved={() => utils.payments.forBooking.invalidate()}
+          />
+        )}
+
         {/* One tap for the two amounts anyone actually types. */}
         <div className="flex flex-wrap items-center gap-1.5">
           {selected?.outstanding != null && selected.outstanding > 0 && (
@@ -245,5 +281,111 @@ function QuickAmount({ label, onClick }: { label: string; onClick: () => void })
     >
       {label}
     </button>
+  );
+}
+
+/**
+ * Type in what this dog is actually being charged.
+ *
+ * Andy, 13/10/2026: "Need to be able to change the payments section if
+ * incorrect... manual overide always needed."
+ *
+ * The worked-out figure is right nearly always, but a price agreed at the
+ * counter does not always decompose into a catalogue price and a list of
+ * extras. Staff were otherwise left editing the groom price, or deleting an
+ * add-on that genuinely happened, until the total came out right — which
+ * makes the invoice lie about what was done.
+ *
+ * A reason is required. This overrides the salon's own price list, so a
+ * year later the difference between a deliberate call and a mis-key has to
+ * be readable.
+ */
+function BilledOverrideRow({
+  appointmentId, petName, current, currentReason, computed, onSaved,
+}: {
+  appointmentId: number;
+  petName: string;
+  current: number | null;
+  currentReason: string | null;
+  computed: number | null;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState(current !== null ? current.toFixed(2) : "");
+  const [reason, setReason] = useState(currentReason ?? "");
+
+  const save = trpc.payments.setBilledOverride.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.cleared ? `${petName} back to the worked-out price` : `${petName} set to $${Number(amount).toFixed(2)}`);
+      setOpen(false);
+      onSaved();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const parsed = Number(amount);
+  const canSave = amount.trim() !== "" && Number.isFinite(parsed) && parsed >= 0 && reason.trim() !== "";
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+        <span className="text-xs text-muted-foreground">
+          {current !== null
+            ? <>Price for {petName} set by hand{currentReason ? ` — ${currentReason}` : ""}</>
+            : <>{petName} is priced from the groom and its extras</>}
+        </span>
+        <div className="flex gap-1.5">
+          {current !== null && (
+            <Button
+              size="sm" variant="ghost" className="h-7 text-[11px]"
+              disabled={save.isPending}
+              onClick={() => save.mutate({ appointmentId, amount: null })}
+            >
+              Use worked-out price
+            </Button>
+          )}
+          <Button
+            size="sm" variant="outline" className="h-7 text-[11px]"
+            onClick={() => {
+              setAmount(current !== null ? current.toFixed(2) : computed !== null ? computed.toFixed(2) : "");
+              setReason(currentReason ?? "");
+              setOpen(true);
+            }}
+          >
+            {current !== null ? "Change price" : "Set price by hand"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/30 px-3 py-2">
+      <p className="text-xs font-medium">What is {petName} actually being charged?</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          className="h-8 w-24 text-xs tabular-nums" inputMode="decimal" placeholder="0.00"
+          value={amount} onChange={(e) => setAmount(e.target.value)}
+        />
+        <Input
+          className="h-8 min-w-0 flex-1 text-xs" placeholder="Why — e.g. quoted before the coat matted"
+          value={reason} onChange={(e) => setReason(e.target.value)}
+        />
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        This replaces the worked-out figure. The extras stay on the invoice as a record of what was done.
+      </p>
+      <div className="flex justify-end gap-1.5">
+        <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button
+          size="sm" className="h-7 gap-1 text-[11px]"
+          disabled={!canSave || save.isPending}
+          onClick={() => save.mutate({ appointmentId, amount, reason: reason.trim() })}
+        >
+          {save.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
+          Save price
+        </Button>
+      </div>
+    </div>
   );
 }

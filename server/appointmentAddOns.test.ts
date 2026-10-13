@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   toCents, centsToAmount, addOnRequiresManualPrice,
   buildInvoiceLines, appointmentTotal, addOnsTotal, billableTotal,
-  billableTotalsByAppointment,
-} from "@shared/appointmentAddOns";
+  billableTotalsByAppointment, isUsableBilledOverride } from "@shared/appointmentAddOns";
 
 describe("money arrives as decimal strings and must stay exact", () => {
   it("converts both strings and numbers", () => {
@@ -254,5 +253,61 @@ describe("the invoice a membership client gets for extras", () => {
     expect(itemised.subtotal).toBe("210.00");
     expect(itemised.lines[0].description).toBe("Millie — Styled Groom");
     expect(itemised.lines[0].lineTotal).toBe("145.00");
+  });
+});
+
+describe("billableTotal with a manual override", () => {
+  it("replaces the computed figure outright", () => {
+    // Andy, 13/10: "This is thr wrong price - manual overide always needed."
+    // The override is what the dog is charged, not an adjustment to it.
+    expect(billableTotal("110.00", [{ name: "Teeth Ultra Clean", unitPrice: "65.00" }])).toBe("175.00");
+    expect(billableTotal("110.00", [{ name: "Teeth Ultra Clean", unitPrice: "65.00" }], "150.00")).toBe("150.00");
+  });
+
+  it("keeps a zero override, because that is a decision somebody made", () => {
+    // "This one is on us" must not be mistaken for a missing value.
+    expect(billableTotal("110.00", [], 0)).toBe("0.00");
+    expect(billableTotal("110.00", [], "0.00")).toBe("0.00");
+    expect(isUsableBilledOverride(0)).toBe(true);
+  });
+
+  it("prices an otherwise unpriced dog", () => {
+    // Without an override this is null — nobody has priced it. With one,
+    // somebody has.
+    expect(billableTotal(null, [])).toBeNull();
+    expect(billableTotal(null, [], "90.00")).toBe("90.00");
+  });
+
+  it("ignores a figure that is not usable rather than storing nonsense", () => {
+    const addOns = [{ name: "Teeth Ultra Clean", unitPrice: "65.00" }];
+    expect(billableTotal("110.00", addOns, null)).toBe("175.00");
+    expect(billableTotal("110.00", addOns, "")).toBe("175.00");
+    expect(billableTotal("110.00", addOns, "abc")).toBe("175.00");
+    // A negative bill is a typo, not a refund; it must never become money
+    // owed back to a client.
+    expect(billableTotal("110.00", addOns, "-50")).toBe("175.00");
+    expect(isUsableBilledOverride("-50")).toBe(false);
+  });
+
+  it("rounds to cents rather than carrying a float", () => {
+    expect(billableTotal(null, [], 150.005)).toBe("150.01");
+    expect(billableTotal(null, [], "99.999")).toBe("100.00");
+  });
+
+  it("overrides one dog of a booking without touching its sibling", () => {
+    // Louie and Lollie, 13/10: both $110 with their own $65 teeth clean,
+    // so $175 each is correct. Overriding one must leave the other alone.
+    const totals = billableTotalsByAppointment(
+      [
+        { id: 1200134, price: "110.00", billedTotalOverride: "150.00" },
+        { id: 2130003, price: "110.00" },
+      ],
+      [
+        { appointmentId: 1200134, name: "Teeth Ultra Clean", unitPrice: "65.00" },
+        { appointmentId: 2130003, name: "Teeth Ultra Clean", unitPrice: "65.00" },
+      ],
+    );
+    expect(totals.get(1200134)).toBe("150.00");
+    expect(totals.get(2130003)).toBe("175.00");
   });
 });

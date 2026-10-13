@@ -150,11 +150,41 @@ export function addOnsTotal(addOns: AddOnLine[]): string {
 export function billableTotal(
   servicePrice: string | number | null | undefined,
   addOns: AddOnLine[],
+  /**
+   * What a person said this dog is actually being charged.
+   *
+   * When set it replaces the computed figure outright rather than
+   * adjusting it — the whole point is the cases that do not decompose
+   * into a price and a list of extras. The add-ons stay on the invoice
+   * as a record of what was done; they just stop driving the total.
+   *
+   * Zero is a real override and must survive: "this one is on us" is a
+   * decision somebody made, not a missing value.
+   */
+  billedTotalOverride?: string | number | null,
 ): string | null {
+  const override = parseOverride(billedTotalOverride);
+  if (override !== null) return centsToAmount(override);
+
   const hasPrice =
     servicePrice !== null && servicePrice !== undefined && String(servicePrice).trim() !== "";
   if (!hasPrice && addOns.length === 0) return null;
   return appointmentTotal(hasPrice ? servicePrice : 0, addOns);
+}
+
+/** An override in whole cents, or null when there isn't a usable one. */
+function parseOverride(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const amount = typeof value === "number" ? value : Number(value);
+  // A negative bill is not a refund, it is a typo. Ignored rather than
+  // stored, so it can never turn into money owed back to a client.
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return Math.round(amount * 100);
+}
+
+/** Whether a figure would actually be used as an override. */
+export function isUsableBilledOverride(value: string | number | null | undefined): boolean {
+  return parseOverride(value) !== null;
 }
 
 /**
@@ -166,13 +196,17 @@ export function billableTotal(
  * for its own extras, which is also how the split-payment panel settles up.
  */
 export function billableTotalsByAppointment(
-  appointments: ReadonlyArray<{ id: number; price: string | number | null | undefined }>,
+  appointments: ReadonlyArray<{
+    id: number;
+    price: string | number | null | undefined;
+    billedTotalOverride?: string | number | null;
+  }>,
   addOns: ReadonlyArray<AddOnLine & { appointmentId: number }>,
 ): Map<number, string | null> {
   const totals = new Map<number, string | null>();
   for (const appointment of appointments) {
     const own = addOns.filter((addOn) => addOn.appointmentId === appointment.id);
-    totals.set(appointment.id, billableTotal(appointment.price, own));
+    totals.set(appointment.id, billableTotal(appointment.price, own, appointment.billedTotalOverride));
   }
   return totals;
 }
