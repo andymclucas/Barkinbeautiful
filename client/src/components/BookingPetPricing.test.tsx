@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 
@@ -40,20 +41,22 @@ const extra = (name: string, displayPrice: string): StagedAddOn => ({
   pricingServiceId: 52, quantity: 1, name, displayPrice,
 });
 
-function renderPricing(over: Record<string, unknown> = {}) {
-  const props = {
+type PricingProps = ComponentProps<typeof BookingPetPricing>;
+
+function renderPricing(over: Partial<PricingProps> = {}) {
+  const props: PricingProps = {
     clientId: 1,
     petIds: [100],
     serviceType: "classic_groom",
     membershipCovered: false,
     priceByPetId: { "100": "145.00" },
     onPricesChange: vi.fn(),
-    addOnsByPetId: {} as Record<string, StagedAddOn[]>,
+    addOnsByPetId: {},
     onAddOnsChange: vi.fn(),
     onServiceTypeChange: vi.fn(),
     ...over,
   };
-  return { props, ...render(<BookingPetPricing {...(props as never)} />) };
+  return { props, ...render(<BookingPetPricing {...props} />) };
 }
 
 describe("BookingPetPricing", () => {
