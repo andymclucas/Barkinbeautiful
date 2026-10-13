@@ -1192,7 +1192,12 @@ export type SystemNotification = typeof systemNotifications.$inferSelect;
 // top-level ErrorBoundary — see client/src/main.tsx and ErrorBoundary.tsx.
 export const clientErrorLogs = mysqlTable("client_error_logs", {
   id: int("id").autoincrement().primaryKey(),
-  kind: mysqlEnum("kind", ["stuck_loading", "window_error", "unhandled_rejection", "react_error_boundary"]).notNull(),
+  /**
+   * Appended only, never reordered: MySQL and TiDB store an enum as the
+   * ordinal of its position, so inserting a value in the middle silently
+   * relabels every existing row.
+   */
+  kind: mysqlEnum("kind", ["stuck_loading", "window_error", "unhandled_rejection", "react_error_boundary", "trpc_query_error", "trpc_mutation_error"]).notNull(),
   message: text("message"),
   stack: text("stack"),
   url: varchar("url", { length: 512 }),

@@ -41,7 +41,7 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
   const { resolvedTheme } = useTheme();
   const colours = resolvedTheme === "dark" ? SERIES.dark : SERIES.light;
 
-  const { data, isLoading } = trpc.analyticsExt.netSalesPerformance.useQuery({
+  const { data, isLoading, isError } = trpc.analyticsExt.netSalesPerformance.useQuery({
     dateFrom: dateFrom.toISOString(),
     dateTo: dateTo.toISOString(),
     comparison,
@@ -85,6 +85,13 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
       <CardContent className="px-4 pb-4">
         {isLoading ? (
           <p className="py-16 text-center text-sm text-muted-foreground">Loading…</p>
+        ) : isError ? (
+          /* Not the same as no sales, and saying so matters: this chart read
+             "No sales in this period" for months while its query was being
+             rejected by the database on every single load. */
+          <p className="py-16 text-center text-sm text-amber-700 dark:text-amber-300" role="alert">
+            Sales could not be loaded. This is not an empty month — something went wrong fetching it.
+          </p>
         ) : points.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">No sales in this period.</p>
         ) : (
