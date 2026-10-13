@@ -289,10 +289,10 @@ Until then, treat `generate` as unavailable.
 corepack pnpm test
 ```
 
-103 files, 641 tests, in about 4 seconds. (104 `*.test.ts` files exist; one is
-an integration test excluded from the default run — see below.) **The suite is
-fully green and must stay that way.** It is hermetic: no secrets, no network,
-no database. A failure is a real failure.
+170 files, 1,533 tests, in about 6 seconds. (One further integration test is
+excluded from the default run — see below.) **The suite is fully green and
+must stay that way.** It is hermetic: no secrets, no network, no database. A
+failure is a real failure.
 
 ### Live-network tests are separated
 
@@ -308,25 +308,53 @@ corepack pnpm run test:integration   # needs RESEND_API_KEY; makes real API call
 wire this into CI** without deciding deliberately that CI should hold live
 credentials and call third-party APIs.
 
-### Why tests are shaped oddly
+### Component tests: jsdom + Testing Library (added 13/10/2026)
 
-`vitest.config.ts` includes **only** `server/**/*.test.ts`. There is no jsdom
-environment and no client test setup. So client behaviour is currently "tested"
-by reading `.tsx` **source text** and asserting on substrings:
+`vitest.config.ts` runs `server/**` in node and `client/**` in jsdom, chosen
+by `environmentMatchGlobs`. Component tests live beside the component, as
+`*.test.tsx`. `client/src/test/setup.ts` registers the jest-dom matchers and
+unmounts between tests — all of it behind a `typeof document` guard and
+dynamically imported, because loading Testing Library into the 169 node test
+files put 16 seconds on the suite for machinery none of them use.
 
-```ts
-const workflowSource = readFileSync(/* WorkflowBoard.tsx */, "utf8");
-expect(completionHandler).toContain("onSuccess: () => {");
-```
+`client/src/components/WorkflowBoardTable.test.tsx` is the worked example.
+That component is the right shape for this: plain props, no tRPC, no
+context. Anything that calls `trpc.*` needs a provider and a mocked client,
+which does not exist yet — write that helper when the first such test needs
+it rather than guessing at it now.
 
-These break on any refactor while the app still works — which is exactly what
-happened when the pickup-SMS prompt moved from `complete` to `ready` (`16bf5e3`)
-and `server/pickupMessageCompletion.test.ts` went stale. Such tests assert
-formatting, not behaviour.
+### The source-grep tests, and why they are being retired
 
-**Guidance:** do not add more source-grep tests. Put the logic in `shared/` as a
-pure function and test that. The durable fix is to add a jsdom environment plus
-Testing Library and test components properly; until then, prefer extraction.
+Before jsdom there was no way to render anything, so client behaviour was
+"tested" by reading `.tsx` **source text** and asserting on substrings. 25
+files did this. They are being converted as they are touched; several
+remain.
+
+They are worse than weak — they can assert a contradiction and stay green:
+
+- `pickupMessageCompletion.test.ts` asserted BOTH that the pickup prompt
+  opens on `ready` AND that sending requires `complete`. Those cannot both
+  be right. The Send button was dead for every dog from `16bf5e3` until
+  13/10/2026, and the suite was green throughout.
+- `appointmentMembershipCoverage.test.ts` pinned the literal
+  `price: coverage.fullyCovered ? "0.00" : input.price`. When the multi-pet
+  booking path changed, the assertion went on matching the other two copies,
+  so the busiest path lost its guard silently.
+- `staffPortalAccess.test.ts` pinned the restricted-staff route list, which
+  existed in `DashboardLayout` **three times**. Only one copy was pinned.
+
+**Guidance, in order of preference:**
+
+1. A rule that is not about rendering goes in `shared/` as a pure function
+   with a colocated unit test. If it is duplicated across call sites,
+   extracting it is the fix — the duplication is what drifts.
+2. Rendering and interaction go in a `*.test.tsx` beside the component.
+3. A structural check is acceptable only to prove *delegation* — that every
+   call site uses the shared rule — and should count occurrences so it fails
+   when one stops. See `procedureSurface.test.ts`, which pins all 295 tRPC
+   procedures by builder rather than spot-checking twelve of them.
+
+Do not add a new assertion that greps source for behaviour.
 
 ---
 
