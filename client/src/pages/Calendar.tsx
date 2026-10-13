@@ -11,6 +11,9 @@ import {
 } from "@/lib/calendarStaffColumns";
 import {
   calendarStaffFilterKey,
+  calendarUnassignedColumnKey,
+  parseShowUnassignedColumn,
+  serialiseShowUnassignedColumn,
   coversAllStaff,
   DEFAULT_CALENDAR_STAFF_SELECTION,
   describeCalendarStaffSelection,
@@ -898,6 +901,11 @@ export default function Calendar() {
   // remount cannot have the previous person's selection written under their
   // name — which is the leak the per-user key exists to prevent.
   const restoredStaffFilterKey = useRef<string | null>(null);
+  // The Unassigned column is a column but not a staff member, so it gets
+  // its own tick rather than a sentinel id inside the staff selection.
+  // Shown by default: it only appears on days that have a dog with nobody
+  // against them, and those are exactly the ones worth seeing.
+  const [showUnassignedColumn, setShowUnassignedColumn] = useState(true);
   const [apptSearchOpen, setApptSearchOpen] = useState(false);
   const [apptSearchTerm, setApptSearchTerm] = useState("");
 
@@ -1407,6 +1415,9 @@ export default function Calendar() {
       setStaffSelection(
         parseCalendarStaffSelection(window.localStorage.getItem(staffFilterKey), activeStaff),
       );
+      setShowUnassignedColumn(
+        parseShowUnassignedColumn(window.localStorage.getItem(calendarUnassignedColumnKey(user.id))),
+      );
     } catch {
       // Private browsing, or storage disabled. A remembered filter is a
       // convenience; losing it must never stop the calendar loading.
@@ -1420,10 +1431,14 @@ export default function Calendar() {
     if (restoredStaffFilterKey.current !== staffFilterKey) return;
     try {
       window.localStorage.setItem(staffFilterKey, serialiseCalendarStaffSelection(staffSelection));
+      window.localStorage.setItem(
+        calendarUnassignedColumnKey(user?.id),
+        serialiseShowUnassignedColumn(showUnassignedColumn),
+      );
     } catch {
       // As above — a filter that cannot be saved is not worth an error.
     }
-  }, [staffSelection, staffFilterKey]);
+  }, [staffSelection, staffFilterKey, showUnassignedColumn, user]);
 
   // One source for the grooming/bathing line, shared with the default above:
   // inlined twice before this, which is how a default and the menu grouping
@@ -1903,7 +1918,7 @@ export default function Calendar() {
     const hasUnassignedToday = filteredAppts.some(
       (a) => !a.staffId && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate),
     );
-    const allCols = withUnassignedColumn(activeStaff, hasUnassignedToday);
+    const allCols = withUnassignedColumn(activeStaff, hasUnassignedToday && showUnassignedColumn);
     // The Unassigned column is not a staff member, so the staff filter has no
     // opinion on it and it always survives.
     const cols = allCols.filter(
@@ -2375,6 +2390,19 @@ export default function Calendar() {
                     <span className="h-2 w-2 rounded-full" style={{ background: member.colourHex ?? "#6366f1" }} />{member.name.split(" ")[0]}
                   </button>;
                 })}
+                {/* Not a staff member, so it sits apart from the two teams.
+                    The column still only appears on days that actually have
+                    a dog with nobody against them — this hides it on the
+                    days it would otherwise show. */}
+                <p className="px-2 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-400">Other</p>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+                  onClick={() => setShowUnassignedColumn((shown) => !shown)}
+                >
+                  <span className={`flex h-4 w-4 items-center justify-center rounded border ${showUnassignedColumn ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{showUnassignedColumn && <Check className="h-3 w-3" />}</span>
+                  <span className="h-2 w-2 rounded-full" style={{ background: "#94a3b8" }} />Unassigned
+                </button>
               </PopoverContent>
             </Popover>
             {/* View toggle */}
