@@ -340,9 +340,30 @@ export function formatPriceAud(price: string | number | null | undefined): strin
  */
 export function bookingTotal(
   prices: ReadonlyArray<string | number | null | undefined>,
+  /**
+   * Every extra on the booking, across all dogs.
+   *
+   * Omitting these is how the dialog showed "Total $145.00" above three
+   * add-ons worth $180 — the figure staff read out to the client was short
+   * by the whole of the extras. Andy, 13/10/2026: "the price needs to auto
+   * calculate when adding in those extras so the total shows the true and
+   * correct total value."
+   *
+   * They never affect `complete`. An extra always carries a figure — a
+   * quote-priced one cannot be added without typing the agreed amount —
+   * so it can add to the total but can never make the booking unpriced.
+   * A membership groom is $0.00 and its extras are still charged, which
+   * falls out of this correctly.
+   */
+  extras: ReadonlyArray<string | number | null | undefined> = [],
 ): { total: string; complete: boolean } {
   let cents = 0;
   let complete = true;
+  for (const extra of extras) {
+    if (extra === null || extra === undefined || String(extra).trim() === "") continue;
+    const value = typeof extra === "number" ? extra : Number(extra);
+    if (Number.isFinite(value)) cents += Math.round(value * 100);
+  }
   for (const price of prices) {
     if (price === null || price === undefined || String(price).trim() === "") {
       complete = false;

@@ -99,6 +99,15 @@ export function BookingPetPricing(props: Props) {
    * as a medium, or a service priced off-label.
    */
   const [applicableOnly, setApplicableOnly] = useState(true);
+
+  /** Which dog a newly added extra attaches to. First dog by default. */
+  const [addOnTargetPetId, setAddOnTargetPetId] = useState<number>(petIds[0] ?? 0);
+  useEffect(() => {
+    // Keep the target on a dog that is actually on the booking: removing
+    // the selected dog would otherwise strand extras on a pet id that is
+    // no longer there, and they would be sent on create.
+    if (!petIds.includes(addOnTargetPetId)) setAddOnTargetPetId(petIds[0] ?? 0);
+  }, [petIds, addOnTargetPetId]);
   const setBandMutation = trpc.pets.updateSizeBand.useMutation({
     onSuccess: () => {
       void utils.bookingPricing.context.invalidate();
@@ -235,7 +244,14 @@ export function BookingPetPricing(props: Props) {
   const prices = petIds.map((petId) =>
     membershipCovered ? "0.00" : props.priceByPetId[String(petId)] ?? null,
   );
-  const total = bookingTotal(prices);
+  // Every extra on the booking, whichever dog it belongs to. The total is
+  // what staff read out to the client, so it has to be the real figure.
+  const extras = petIds.flatMap((petId) =>
+    (props.addOnsByPetId[String(petId)] ?? []).map(
+      (addOn) => Number(addOn.displayPrice) * Math.max(1, addOn.quantity),
+    ),
+  );
+  const total = bookingTotal(prices, extras);
   const addOnCatalogue = addOnCatalogueQuery.data ?? [];
 
   const setPrice = (petId: number, value: string) =>
@@ -321,6 +337,37 @@ export function BookingPetPricing(props: Props) {
           >
             <RotateCcw className="h-3 w-3" /> Book again
           </Button>
+        )}
+      </div>
+
+      {/* Andy, 13/10: "Move the 'add an extra' drop down up underneath the
+          Service drop down". It was at the bottom of each dog's card, below
+          the price list and the last-time line, which is a long way from
+          where the conversation about extras actually happens. The extras
+          themselves still show against the dog they belong to. */}
+      <div className="flex items-end gap-2 rounded-md bg-muted/40 p-2">
+        <div className="min-w-0 flex-1">
+          <AddOnPicker
+            catalogue={addOnCatalogue}
+            onAdd={(addOn) => addStagedAddOn(addOnTargetPetId, addOn)}
+          />
+        </div>
+        {/* An extra belongs to ONE dog — a de-matt is not shared — so with
+            more than one on the booking it has to say which. With a single
+            dog there is nothing to ask. */}
+        {petRows.length > 1 && (
+          <Select value={String(addOnTargetPetId)} onValueChange={(v) => setAddOnTargetPetId(Number(v))}>
+            <SelectTrigger className="h-7 w-28 shrink-0 text-[11px]" aria-label="Which dog the extra is for">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {petRows.map((row) => (
+                <SelectItem key={row.petId} value={String(row.petId)}>
+                  {row.pet?.name ?? `Pet ${row.petId}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
 
@@ -463,10 +510,6 @@ export function BookingPetPricing(props: Props) {
               </div>
             )}
 
-            <AddOnPicker
-              catalogue={addOnCatalogue}
-              onAdd={(addOn) => addStagedAddOn(row.petId, addOn)}
-            />
           </div>
         );
       })}

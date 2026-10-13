@@ -316,6 +316,40 @@ describe("bookingTotal", () => {
   it("is complete and zero for no dogs at all", () => {
     expect(bookingTotal([])).toEqual({ total: "0.00", complete: true });
   });
+
+  it("counts the extras", () => {
+    // The dialog showed "Total $145.00" above three add-ons worth $180.
+    // The figure staff read out to the client was short by the whole of
+    // the extras. Teddy: $145 groom + $35 + $65 + $80 = $325.
+    expect(bookingTotal(["145.00"], ["35.00", "65.00", "80.00"]))
+      .toEqual({ total: "325.00", complete: true });
+  });
+
+  it("counts extras across several dogs", () => {
+    expect(bookingTotal(["125.00", "162.50"], ["35.00"]))
+      .toEqual({ total: "322.50", complete: true });
+  });
+
+  it("charges extras on a membership groom", () => {
+    // The weekly payment covers the cut, not the de-matt done on the day.
+    expect(bookingTotal(["0.00", "0.00"], ["35.00"]))
+      .toEqual({ total: "35.00", complete: true });
+  });
+
+  it("never lets an extra make the booking look priced", () => {
+    // A dog with no price is still unpriced, however many extras it has —
+    // otherwise the panel would show a total as if it were settled.
+    expect(bookingTotal([null], ["35.00"]))
+      .toEqual({ total: "35.00", complete: false });
+  });
+
+  it("sums extras in cents too", () => {
+    expect(bookingTotal(["0.10"], ["0.20"]).total).toBe("0.30");
+  });
+
+  it("ignores an unreadable extra rather than counting it as zero-ish", () => {
+    expect(bookingTotal(["145.00"], ["abc", "35.00"]).total).toBe("180.00");
+  });
 });
 
 describe("formatPriceAud", () => {
