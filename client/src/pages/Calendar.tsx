@@ -25,6 +25,12 @@ import { arrivalLabel, hasArrivedOnSite } from "@shared/appointmentArrival";
 import { buildSharedAppointmentPriceBreakdown } from "@shared/sharedAppointmentPricing";
 import { buildCalendarDragTargetMinutes, formatCalendarDragTargetTime } from "@shared/calendarDragTarget";
 import { formatSharedAppointmentName, formatAppointmentHeading } from "@shared/appointmentDisplay";
+import {
+  EMPTY_STYLE_NOTE_DRAFT,
+  activeStylePetId,
+  styleDraftFromNote,
+  type StyleNoteDraft,
+} from "@shared/styleNoteDraft";
 import { formatAestDate, formatAestDateTime } from "@shared/auditTimestamp";
 import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
 import { Button } from "@/components/ui/button";
@@ -973,12 +979,25 @@ export default function Calendar() {
   const [siblingGroomers, setSiblingGroomers] = useState<Record<number, string>>({});
   // Per-pet price overrides for multi-pet sessions: { [appointmentId]: price string }
   const [siblingPrices, setSiblingPrices] = useState<Record<number, string>>({});
-  const [styleNoteForm, setStyleNoteForm] = useState({
-    note: "", serviceType: "", bladeSize: "", combSize: "", bodyLength: "", headStyle: "", faceStyle: "", earStyle: "", legStyle: "", tailStyle: "", warnings: "", alertLevel: "", photoUrl: "", photoKey: "",
-  });
+  const [styleNoteForm, setStyleNoteForm] = useState<StyleNoteDraft>({ ...EMPTY_STYLE_NOTE_DRAFT });
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [selectedStylePetId, setSelectedStylePetId] = useState<number | null>(null);
+  /**
+   * The dog the style draft is for. A draft belongs to exactly one dog, so
+   * it is dropped the moment this changes — closing the dialog, or switching
+   * dogs inside it. Without this, Lauren opened Maisie's box and found
+   * Teddy's blade sizes and Teddy's photo under Maisie's name, and saving
+   * there would have written them to Maisie. See shared/styleNoteDraft.
+   */
+  const styleTargetPetId = activeStylePetId({
+    selectedStylePetId,
+    appointmentPetId: editAppt?.petId ?? null,
+  });
+  useEffect(() => {
+    setStyleNoteForm({ ...EMPTY_STYLE_NOTE_DRAFT });
+    setPhotoPreview(null);
+  }, [styleTargetPetId]);
   const [additionalFamilyPetIds, setAdditionalFamilyPetIds] = useState<number[]>([]);
 
   const weekEnd = useMemo(() => {
@@ -1032,12 +1051,12 @@ export default function Calendar() {
   });
 
   const styleNotes = trpc.groomNotes.listByPet.useQuery(
-    { petId: selectedStylePetId ?? editAppt?.petId ?? 0 },
-    { enabled: !!(selectedStylePetId ?? editAppt?.petId) }
+    { petId: styleTargetPetId ?? 0 },
+    { enabled: styleTargetPetId !== null }
   );
   const lastCompletedStyle = trpc.groomNotes.getLastCompletedStyle.useQuery(
-    { petId: selectedStylePetId ?? editAppt?.petId ?? 0 },
-    { enabled: !!(selectedStylePetId ?? editAppt?.petId) }
+    { petId: styleTargetPetId ?? 0 },
+    { enabled: styleTargetPetId !== null }
   );
   const sessionReports = trpc.groomingReports.getSessionReports.useQuery(
     { sessionId: editAppt?.sessionId ?? "" },
@@ -1054,7 +1073,7 @@ export default function Calendar() {
   const createStyleNote = trpc.groomNotes.create.useMutation({
     onSuccess: () => {
       toast.success("Style note saved");
-      setStyleNoteForm({ note: "", serviceType: "", bladeSize: "", combSize: "", bodyLength: "", headStyle: "", faceStyle: "", earStyle: "", legStyle: "", tailStyle: "", warnings: "", alertLevel: "", photoUrl: "", photoKey: "" });
+      setStyleNoteForm({ ...EMPTY_STYLE_NOTE_DRAFT });
       setPhotoPreview(null);
       styleNotes.refetch();
     },
@@ -1067,22 +1086,7 @@ export default function Calendar() {
   const loadLastCompletedStyle = () => {
     const last = lastCompletedStyle.data;
     if (!last) { toast.error("No completed groom style found"); return; }
-    setStyleNoteForm({
-      note: last.note ?? "",
-      serviceType: last.serviceType ?? "",
-      bladeSize: last.bladeSize ?? "",
-      combSize: last.combSize ?? "",
-      bodyLength: last.bodyLength ?? "",
-      headStyle: last.headStyle ?? "",
-      faceStyle: last.faceStyle ?? "",
-      earStyle: last.earStyle ?? "",
-      legStyle: last.legStyle ?? "",
-      tailStyle: last.tailStyle ?? "",
-      warnings: last.warnings ?? "",
-      alertLevel: last.alertLevel ?? "",
-      photoUrl: last.photoUrl ?? "",
-      photoKey: "",
-    });
+    setStyleNoteForm(styleDraftFromNote(last));
     setPhotoPreview(last.photoUrl ?? null);
     toast.success("Last completed style loaded. Review and save as a new style when ready.");
   };
@@ -3207,7 +3211,7 @@ export default function Calendar() {
                           key={pet.id}
                           onClick={() => setSelectedStylePetId(pet.petId)}
                           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                            (selectedStylePetId ?? editAppt.petId) === pet.petId
+                            styleTargetPetId === pet.petId
                               ? "bg-primary text-primary-foreground"
                               : "bg-muted text-muted-foreground hover:bg-muted/80"
                           }`}
@@ -3336,7 +3340,7 @@ export default function Calendar() {
                   </div>
                   <Button size="sm" className="w-full" disabled={createStyleNote.isPending || photoUploading}
                     onClick={() => createStyleNote.mutate({
-                      petId: selectedStylePetId ?? editAppt.petId,
+                      petId: styleTargetPetId ?? editAppt.petId,
                       appointmentId: (() => { if (!selectedStylePetId || selectedStylePetId === editAppt.petId) return editAppt.id; const sib = editSiblings.find(s => s.petId === selectedStylePetId); return sib?.id ?? editAppt.id; })(),
                       note: styleNoteForm.note,
                       serviceType: styleNoteForm.serviceType || undefined,
@@ -3370,7 +3374,7 @@ export default function Calendar() {
                           {(n as any).alertLevel === "caution" && <span className="bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1.5 py-0.5 font-semibold">⚠ Caution</span>}
                         </div>
                         <div className="flex items-center gap-1">
-                          <button className="text-xs text-primary hover:underline" onClick={() => { setStyleNoteForm({ note: n.note ?? "", serviceType: (n as any).serviceType ?? "", bladeSize: n.bladeSize ?? "", combSize: (n as any).combSize ?? "", bodyLength: n.bodyLength ?? "", headStyle: (n as any).headStyle ?? "", faceStyle: n.faceStyle ?? "", earStyle: n.earStyle ?? "", legStyle: (n as any).legStyle ?? "", tailStyle: n.tailStyle ?? "", warnings: (n as any).warnings ?? "", alertLevel: (n as any).alertLevel ?? "", photoUrl: n.photoUrl ?? "", photoKey: "" }); toast.success("Style loaded — edit and save as new"); }}>↩ Use</button>
+                          <button className="text-xs text-primary hover:underline" onClick={() => { setStyleNoteForm(styleDraftFromNote(n)); setPhotoPreview(n.photoUrl ?? null); toast.success("Style loaded — edit and save as new"); }}>↩ Use</button>
                           <button className="text-muted-foreground hover:text-red-500 ml-1" onClick={() => setConfirmDelete({ type: "styleNote", id: n.id, label: new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" }) })}><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
                       </div>
@@ -3394,7 +3398,7 @@ export default function Calendar() {
                   <div className="flex justify-end pt-1">
                     <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => {
                       const notes = styleNotes.data ?? [];
-                      const activePetId = selectedStylePetId ?? editAppt.petId;
+                      const activePetId = styleTargetPetId ?? editAppt.petId;
                       const allPets = [editAppt, ...editSiblings];
                       const activePet = allPets.find(p => p.petId === activePetId);
                       const petName = activePet?.petName ?? editAppt.petName ?? "Pet";
