@@ -64,6 +64,7 @@ import { Link } from "wouter";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
 import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPricing";
+import { NewClientQuickAdd } from "@/components/NewClientQuickAdd";
 import { buildTimeSlots, splitLocalDateTime, joinLocalDateTime } from "@shared/bookingTimeSlots";
 import { takePendingBooking } from "@/lib/pendingBooking";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
@@ -932,6 +933,8 @@ export default function Calendar() {
     collectByTime: "",
   });
   const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
+  /** The "+ New client" form, open inside the client picker. */
+  const [addingClient, setAddingClient] = useState(false);
 
   /**
    * A booking handed over from Add Client.
@@ -2440,7 +2443,7 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
+      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setAddingClient(false); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2492,6 +2495,34 @@ export default function Calendar() {
                         )}
                       </div>
                     </div>
+                    {/* Andy, 13/10: "Need a 'New Client' button featured when
+                        booking a new appointment." Above the results, as MoeGo
+                        has it — the moment you discover somebody is new is
+                        while you are looking at an empty result list. */}
+                    {addingClient ? (
+                      <NewClientQuickAdd
+                        onCancel={() => setAddingClient(false)}
+                        onCreated={({ clientId, petId }) => {
+                          setAddingClient(false);
+                          setClientSearch("");
+                          setNewAppt(p => ({
+                            ...p,
+                            clientId: String(clientId),
+                            petIds: [String(petId)],
+                            priceByPetId: {},
+                            addOnsByPetId: {},
+                          }));
+                        }}
+                      />
+                    ) : (
+                    <>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs font-semibold text-primary hover:bg-muted"
+                      onClick={() => setAddingClient(true)}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> New client
+                    </button>
                     <div
                       className="max-h-[min(52dvh,20rem)] overflow-y-auto overscroll-contain touch-pan-y pb-2 [-webkit-overflow-scrolling:touch]"
                       style={{ WebkitOverflowScrolling: "touch" }}
@@ -2536,6 +2567,8 @@ export default function Calendar() {
                         ))
                       )}
                     </div>
+                    </>
+                    )}
                   </PopoverContent>
                 </Popover>
               </div>

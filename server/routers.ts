@@ -5750,10 +5750,30 @@ const analyticsRouterExtended = router({
       // One row per day, in Brisbane — bucketing on the raw UTC timestamp
       // would split a day at 10am local and put a morning groom on the
       // previous date.
+      /**
+       * The Brisbane calendar day of an appointment, as "YYYY-MM-DD".
+       *
+       * Written once and used verbatim in both SELECT and GROUP BY, with
+       * the table qualified BY HAND rather than through
+       * `${appointments.scheduledStart}`. Drizzle renders a column
+       * reference unqualified in a select list and qualified in a group
+       * by; under TiDB's only_full_group_by the two expressions must match
+       * as text, and they did not. The query returned
+       * ER_WRONG_FIELD_WITH_GROUP, the procedure 500'd, and the chart said
+       * "No sales in this period" for every range since it shipped.
+       *
+       * DATE_FORMAT rather than DATE for the second half of the same bug:
+       * mysql2 hands a DATE column back as a JS Date, so `String(row.day)`
+       * was "Tue Sep 30 2026 00:00:00 GMT+1000 (AEST)" and never matched
+       * the "2026-09-30" keys the fill loop builds. Even with the SQL
+       * fixed, every day would have charted as zero.
+       */
+      const brisbaneDay = sql<string>`DATE_FORMAT(CONVERT_TZ(\`appointments\`.\`scheduled_start\`, '+00:00', '+10:00'), '%Y-%m-%d')`;
+
       const dailyNetSales = async (rangeFrom: Date, rangeTo: Date) => {
         const rows = await db
           .select({
-            day: sql<string>`DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'))`,
+            day: brisbaneDay,
             net: sql<string>`COALESCE(SUM(${appointments.price}), 0)`,
           })
           .from(appointments)
@@ -5764,7 +5784,7 @@ const analyticsRouterExtended = router({
             gte(appointments.scheduledStart, rangeFrom),
             lte(appointments.scheduledStart, rangeTo),
           ))
-          .groupBy(sql`DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'))`);
+          .groupBy(brisbaneDay);
         const byDay = new Map<string, number>();
         for (const r of rows) byDay.set(String(r.day), Number(r.net));
         // Fill every day in the range: a day with no grooms is a real zero on
