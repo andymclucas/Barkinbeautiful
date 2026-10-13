@@ -1,3 +1,4 @@
+import { describePets } from "@shared/pickupGroup";
 import twilio from "twilio";
 import { getAppBaseUrl } from "./appUrl";
 import { checkSmsAllowance } from "./smsUsage";
@@ -136,13 +137,23 @@ export function buildPetTrackerSms(opts: {
   return `Hi ${opts.clientFirstName}! ${opts.petName} has checked in at ${salon}. Follow their grooming progress here: ${opts.trackerUrl}`;
 }
 
+/**
+ * The ready-for-pickup text.
+ *
+ * Takes every dog being collected, not one. Lauren, 13/10/2026: "it's a
+ * double dog family so best to have both dogs names and just text once."
+ * The verb agrees — "Coco and Bella ARE all done" — because "is" there
+ * reads as a machine wrote it, and this goes to a paying customer.
+ */
 export function buildReadyForPickupSms(opts: {
   clientFirstName: string;
-  petName: string;
+  /** One name, or every dog on the booking. */
+  petNames: string[];
   salonName?: string;
 }) {
   const salon = opts.salonName ?? "Barkin' Beautiful";
-  return `Hi ${opts.clientFirstName}! ${opts.petName} is all done and looking fabulous at ${salon}. Come pick them up whenever you're ready! 🐾✨`;
+  const { subject, verb } = describePets(opts.petNames);
+  return `Hi ${opts.clientFirstName}! ${subject} ${verb} all done and looking fabulous at ${salon}. Come pick them up whenever you're ready! 🐾✨`;
 }
 
 export function buildMembershipPaymentFailedSms(opts: {

@@ -70,6 +70,7 @@ import { forgetNumberTenant } from "./tenantByNumber";
 import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
+import { pickupPrompt } from "@shared/pickupGroup";
 import { priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
@@ -7548,6 +7549,46 @@ const emailCampaignsRouter = router({
 });
 
 // ─── SMS Router ──────────────────────────────────────────────────────────────
+/**
+ * Every dog this client has on the board the same day, with whether a
+ * pickup text has already gone out for it.
+ *
+ * The owner collects the family together, so the text is about the family.
+ * Scoped to the Brisbane calendar day of the appointment: the same client
+ * may well be back next week, and that booking has nothing to do with this
+ * collection.
+ */
+async function loadPickupSiblings(db: any, appointment: { id: number; tenantId: number; clientId: number; scheduledStart: Date }) {
+  const day = brisbaneDay(appointment.scheduledStart);
+  const rows = await db
+    .select({
+      appointmentId: appointments.id,
+      petName: pets.name,
+      workflowState: appointments.workflowState,
+        scheduledStart: appointments.scheduledStart,
+    })
+    .from(appointments)
+    .leftJoin(pets, eq(appointments.petId, pets.id))
+    .where(and(
+      eq(appointments.tenantId, appointment.tenantId),
+      eq(appointments.clientId, appointment.clientId),
+      sql`DATE_FORMAT(CONVERT_TZ(\`appointments\`.\`scheduled_start\`, '+00:00', '+10:00'), '%Y-%m-%d') = ${day}`,
+    ))
+    .orderBy(asc(appointments.scheduledStart), asc(appointments.id));
+
+  const ids = rows.map((r: any) => r.appointmentId);
+  const texted = ids.length === 0 ? [] : await db
+    .select({ appointmentId: smsLogs.appointmentId })
+    .from(smsLogs)
+    .where(and(
+      eq(smsLogs.type, "ready_pickup"),
+      inArray(smsLogs.appointmentId, ids),
+      ne(smsLogs.status, "failed"),
+    ));
+  const textedIds = new Set(texted.map((t: any) => t.appointmentId));
+  return rows.map((r: any) => ({ ...r, alreadyTexted: textedIds.has(r.appointmentId) }));
+}
+
 const smsRouter = router({
   getPickupRecipients: operationalProcedure
     .input(z.object({ appointmentId: z.number() }))
@@ -7559,6 +7600,7 @@ const smsRouter = router({
         tenantId: appointments.tenantId,
         clientId: appointments.clientId,
         workflowState: appointments.workflowState,
+        scheduledStart: appointments.scheduledStart,
         petName: pets.name,
       }).from(appointments)
         .leftJoin(pets, eq(appointments.petId, pets.id))
@@ -7580,7 +7622,17 @@ const smsRouter = router({
         ...(client.phone ? [{ id: 0, type: "primary" as const, name: `${client.firstName} ${client.lastName}`.trim(), phone: client.phone, relationship: "Primary contact" }] : []),
         ...additionalContacts.map(contact => ({ id: contact.id, type: "additional" as const, name: contact.name, phone: contact.phone, relationship: contact.relationship ?? "Additional contact" })),
       ];
-      return { appointment: { id: appointment.id, petName: appointment.petName ?? "your dog" }, recipients };
+      // The preview names every dog being collected, so what staff review
+      // is what the owner receives.
+      const siblings = await loadPickupSiblings(db, appointment);
+      const group = pickupPrompt(siblings);
+      const petNames = group.petNames.length > 0 ? group.petNames : [appointment.petName ?? "your dog"];
+      return {
+        appointment: { id: appointment.id, petName: appointment.petName ?? "your dog" },
+        petNames,
+        appointmentIds: group.appointmentIds.length > 0 ? group.appointmentIds : [appointment.id],
+        recipients,
+      };
     }),
 
   sendPickupMessage: operationalProcedure
@@ -7593,6 +7645,7 @@ const smsRouter = router({
         tenantId: appointments.tenantId,
         clientId: appointments.clientId,
         workflowState: appointments.workflowState,
+        scheduledStart: appointments.scheduledStart,
         petName: pets.name,
       }).from(appointments)
         .leftJoin(pets, eq(appointments.petId, pets.id))
@@ -7617,10 +7670,22 @@ const smsRouter = router({
         recipient = contact ?? null;
       }
       if (!recipient?.phone) throw new Error("The selected contact does not have a phone number");
-      const body = buildReadyForPickupSms({ clientFirstName: recipient.name.split(" ")[0] || "there", petName: appointment.petName ?? "your dog" });
+      // One text for the family, naming every dog being collected.
+      const siblings = await loadPickupSiblings(db, appointment);
+      const group = pickupPrompt(siblings);
+      const petNames = group.petNames.length > 0 ? group.petNames : [appointment.petName ?? "your dog"];
+      const covered = group.appointmentIds.length > 0 ? group.appointmentIds : [appointment.id];
+
+      const body = buildReadyForPickupSms({ clientFirstName: recipient.name.split(" ")[0] || "there", petNames });
       const result = await sendSms(recipient.phone, body, { tenantId: appointment.tenantId });
-      await db.insert(smsLogs).values({ tenantId: appointment.tenantId, clientId: appointment.clientId, appointmentId: appointment.id, toNumber: recipient.phone, body, twilioSid: result.sid, status: result.success ? "sent" : "failed", type: "ready_pickup", direction: "outbound", errorMessage: result.error });
-      return { ...result, recipientName: recipient.name, body };
+      // Logged against EVERY dog the text covers, not just the one whose
+      // button was pressed. That record is what stops a second prompt when
+      // the sibling is marked ready, and what makes the client's SMS
+      // history show the text against both dogs.
+      for (const appointmentId of covered) {
+        await db.insert(smsLogs).values({ tenantId: appointment.tenantId, clientId: appointment.clientId, appointmentId, toNumber: recipient.phone, body, twilioSid: result.sid, status: result.success ? "sent" : "failed", type: "ready_pickup", direction: "outbound", errorMessage: result.error });
+      }
+      return { ...result, recipientName: recipient.name, body, petNames, covered };
     }),
 
   send: protectedProcedure
@@ -7672,7 +7737,7 @@ const smsRouter = router({
       }
       let body = "";
       if (input.templateType === "ready_pickup") {
-        body = buildReadyForPickupSms({ clientFirstName: client.firstName ?? "there", petName });
+        body = buildReadyForPickupSms({ clientFirstName: client.firstName ?? "there", petNames: [petName] });
       } else if (input.templateType === "custom" && input.customMessage) {
         body = buildCustomSms({ clientFirstName: client.firstName ?? "there", petName, message: input.customMessage });
       } else if (input.templateType === "reminder") {
