@@ -130,3 +130,30 @@ describe("the contact person", () => {
     expect("price" in changes).toBe(false);
   });
 });
+
+describe("the sibling-propagation gate", () => {
+  // The dialog pushes the primary dog's contact onto its siblings. That has
+  // to key on "the contact changed", not on "something changed" — gated on
+  // the latter, editing a note on one dog silently rewrote every sibling's
+  // contact to match this one's.
+  const GUS = { serviceType: "classic_groom", notes: "Nervous", price: "125.00", contactId: null };
+
+  it("does not fire when only the notes changed", () => {
+    const changes = appointmentDetailChanges(GUS, { notes: "Nervous, muzzle on", contactId: null });
+    expect("contactId" in changes).toBe(false);
+  });
+
+  it("does not fire when only the price changed", () => {
+    const changes = appointmentDetailChanges(GUS, { price: "140.00", contactId: null });
+    expect("contactId" in changes).toBe(false);
+  });
+
+  it("fires when the contact changed", () => {
+    expect("contactId" in appointmentDetailChanges(GUS, { contactId: 7 })).toBe(true);
+  });
+
+  it("fires when the contact is cleared back to the client", () => {
+    const withContact = { ...GUS, contactId: 7 };
+    expect("contactId" in appointmentDetailChanges(withContact, { contactId: null })).toBe(true);
+  });
+});

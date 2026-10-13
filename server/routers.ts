@@ -565,12 +565,17 @@ const calendarRouter = router({
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .leftJoin(clientContacts, and(
           eq(appointments.contactId, clientContacts.id),
-          // Belt and braces. updateDetails already refuses a contact that is
-          // not on this booking's client, but this join prints a name and a
-          // phone number onto the board, and a stray id arriving by any
-          // other route — a direct write, an import — must not be able to
-          // surface another salon's contact details.
+          // Belt and braces. updateDetails already refuses a contact that
+          // is not on this booking's client, but this join prints a name and
+          // a phone number onto the board, and a stray id arriving by any
+          // other route — a direct write, an import — must not surface it.
+          // The CLIENT matters as much as the tenant: without it another
+          // client's contact in the same salon would render here while the
+          // pickup dialog, which only offers this client's own contacts,
+          // quietly preselected the owner — the board and the text then
+          // disagreeing about who is being rung.
           eq(clientContacts.tenantId, appointments.tenantId),
+          eq(clientContacts.clientId, appointments.clientId),
         ))
         .where(and(...conditions))
         .orderBy(asc(appointments.scheduledStart));
@@ -1056,6 +1061,10 @@ const calendarRouter = router({
         clientId: source.clientId,
         petId,
         staffId: source.staffId,
+        // A dog added to a family booking is collected by the same person
+        // as the rest of it. Without this it reverted to the owner, which
+        // would split one family's pickup text two ways.
+        contactId: source.contactId,
         serviceType: source.serviceType,
         scheduledStart: source.scheduledStart,
         scheduledEnd: source.scheduledEnd,
@@ -1279,7 +1288,7 @@ const calendarRouter = router({
       price: z.string().optional().nullable(),
       // null clears it back to the client. Omitted leaves it alone — the
       // same only-send-what-changed contract the price relies on.
-      contactId: z.number().optional().nullable(),
+      contactId: z.number().int().positive().optional().nullable(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -1625,7 +1634,6 @@ const workflowRouter = router({
           petMoegoCodeLabels: pets.moegoCodeLabels,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
-          clientPhone: clients.phone,
           // Who to ring about this dog. Null is the client themselves. On
           // the board because the person doing the collecting is what a
           // groomer needs at the point the dog is ready, and it used to
@@ -1643,12 +1651,17 @@ const workflowRouter = router({
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .leftJoin(clientContacts, and(
           eq(appointments.contactId, clientContacts.id),
-          // Belt and braces. updateDetails already refuses a contact that is
-          // not on this booking's client, but this join prints a name and a
-          // phone number onto the board, and a stray id arriving by any
-          // other route — a direct write, an import — must not be able to
-          // surface another salon's contact details.
+          // Belt and braces. updateDetails already refuses a contact that
+          // is not on this booking's client, but this join prints a name and
+          // a phone number onto the board, and a stray id arriving by any
+          // other route — a direct write, an import — must not surface it.
+          // The CLIENT matters as much as the tenant: without it another
+          // client's contact in the same salon would render here while the
+          // pickup dialog, which only offers this client's own contacts,
+          // quietly preselected the owner — the board and the text then
+          // disagreeing about who is being rung.
           eq(clientContacts.tenantId, appointments.tenantId),
+          eq(clientContacts.clientId, appointments.clientId),
         ))
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
@@ -2880,14 +2893,26 @@ const clientsRouter = router({
         .where(and(eq(clientContacts.id, input.contactId), eq(clientContacts.clientId, input.clientId)))
         .limit(1);
       if (!contact) throw new Error("Contact not found for this client");
-      // Release any booking pointing at this contact first. There is no FK,
-      // so without this the appointment keeps a dangling id and the card
-      // quietly falls back to the owner — which is safe, but leaves a
-      // booking claiming a contact that no longer exists.
-      await db.update(appointments)
-        .set({ contactId: null, updatedAt: new Date() })
-        .where(eq(appointments.contactId, contact.id));
-      await db.delete(clientContacts).where(eq(clientContacts.id, contact.id));
+      // Release FUTURE bookings pointing at this contact. There is no FK,
+      // so without this an upcoming appointment keeps a dangling id.
+      //
+      // Deliberately not past ones. Clearing those would rewrite history: a
+      // finished groom would read as "the client" when somebody else
+      // actually collected the dog, and nothing else records who. A
+      // dangling id on a past booking is tolerated by the read helpers — it
+      // falls back to the client, and the card says the contact is gone.
+      //
+      // One transaction, because an UPDATE and a DELETE that are not atomic
+      // can leave bookings cleared with the contact still on file.
+      await db.transaction(async (tx) => {
+        await tx.update(appointments)
+          .set({ contactId: null, updatedAt: new Date() })
+          .where(and(
+            eq(appointments.contactId, contact.id),
+            gte(appointments.scheduledStart, new Date()),
+          ));
+        await tx.delete(clientContacts).where(eq(clientContacts.id, contact.id));
+      });
       return { success: true };
     }),
 
@@ -2906,20 +2931,30 @@ const clientsRouter = router({
    * tenant id with another salon's clientId.
    */
   listContacts: operationalProcedure
-    .input(z.object({ clientId: z.number() }))
+    .input(z.object({ clientId: z.number().int().positive() }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
+      // The role guard runs BEFORE the client lookup. The other way round a
+      // caller whose role is refused gets [] for an id that does not exist
+      // and an error for one that does, which is a client-id oracle.
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      // Checked against the tenant on the SESSION, not against portalStaff.
+      // requireApprovedStaffTenant returns null for every unrestricted role,
+      // so a check written as `portalStaff && ...` is skipped for admins
+      // entirely — and salonSignup.create is public, so the admin of a
+      // self-registered trial salon could have read this salon's contacts.
+      // Fails closed: no tenant on the session means no contacts.
+      const callerTenantId = ctx.tenantId ?? null;
+      if (callerTenantId === null) return [];
+      if (portalStaff && portalStaff.tenantId !== callerTenantId) return [];
       const [client] = await db
         .select({ tenantId: clients.tenantId })
         .from(clients)
         .where(eq(clients.id, input.clientId))
         .limit(1);
-      if (!client) return [];
-      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
-      if (portalStaff && client.tenantId !== portalStaff.tenantId) {
-        throw new Error("This client is not available to your salon staff profile");
-      }
+      // Silent rather than an error, for the same oracle reason.
+      if (!client || client.tenantId !== callerTenantId) return [];
       return db
         .select({
           id: clientContacts.id,
@@ -2930,7 +2965,7 @@ const clientsRouter = router({
         .from(clientContacts)
         .where(and(
           eq(clientContacts.clientId, input.clientId),
-          eq(clientContacts.tenantId, client.tenantId),
+          eq(clientContacts.tenantId, callerTenantId),
         ))
         .orderBy(asc(clientContacts.name));
     }),

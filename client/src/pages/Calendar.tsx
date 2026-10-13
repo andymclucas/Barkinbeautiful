@@ -1752,8 +1752,13 @@ export default function Calendar() {
         ...primaryChanges,
         serviceType: primaryChanges.serviceType as "classic_groom" | undefined,
       }));
-      // The whole family is collected by the same person, so the siblings
-      // follow the primary rather than each needing the picker set.
+    }
+    // One person collects the whole family, so the siblings follow the
+    // primary dog's contact — but ONLY when the contact was actually
+    // changed in this save. Gated on that rather than on "something
+    // changed": inside the block above, editing just a note on one dog
+    // silently rewrote every sibling's contact to match this one's.
+    if ("contactId" in primaryChanges) {
       for (const sib of getSiblings(editAppt)) {
         if ((sib.contactId ?? null) !== (editForm.contactId ?? null)) {
           promises.push(updateDetailsMutation.mutateAsync({
