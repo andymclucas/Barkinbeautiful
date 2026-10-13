@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -180,8 +181,36 @@ export default function WorkflowBoard() {
         // becomes ready — not after they've already been marked OUT, since
         // by then they may already be gone.
         if (fields.workflowState === "ready") {
-          setPickupMessageAppointment({ id: appointmentId, petName: options?.petName ?? "this dog" });
-          setSelectedPickupRecipientId("");
+          // One text per family. Lauren, 13/10: "it's a double dog family
+          // so best to have both dogs names and just text once." Prompting
+          // on the first dog would tell the owner to come while the second
+          // was still on the table.
+          //
+          // Decided with the same shared function the server uses, from
+          // the board rows already in hand — this dog's new state is
+          // applied locally because boardData has not refetched yet.
+          const rows = boardData ?? [];
+          const justReady = rows.find(row => row.id === appointmentId);
+          const siblings = rows
+            .filter(row => justReady && row.clientId === justReady.clientId)
+            .map(row => ({
+              appointmentId: row.id,
+              petName: row.petName,
+              workflowState: row.id === appointmentId ? "ready" : row.workflowState,
+            }));
+          const group = siblings.length > 0
+            ? pickupPrompt(siblings)
+            : { prompt: true, appointmentIds: [appointmentId], petNames: [options?.petName ?? "this dog"], waitingFor: [] };
+
+          if (group.prompt) {
+            setPickupMessageAppointment({ id: appointmentId, petName: joinPetNames(group.petNames) });
+            setSelectedPickupRecipientId("");
+          } else if (group.waitingFor.length > 0) {
+            toast.info(
+              `${options?.petName ?? "This dog"} is ready`,
+              { description: `Holding the pickup text until ${joinPetNames(group.waitingFor)} ${group.waitingFor.length === 1 ? "is" : "are"} done, so the family gets one message.` },
+            );
+          }
         }
       },
     });
@@ -718,7 +747,7 @@ export default function WorkflowBoard() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>Send ready-for-pickup message</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">{pickupMessageAppointment?.petName ?? "This dog"} is ready for pickup. Choose a saved client contact, review the SMS and send it only when ready.</p>
+            <p className="text-sm text-muted-foreground">{pickupRecipients?.petNames?.length ? joinPetNames(pickupRecipients.petNames) : (pickupMessageAppointment?.petName ?? "This dog")} {(pickupRecipients?.petNames?.length ?? 1) === 1 ? "is" : "are"} ready for pickup. One text covers the whole family. Choose a saved client contact, review the SMS and send it only when ready.</p>
             {pickupRecipientsLoading && <p className="py-5 text-center text-sm text-muted-foreground">Loading saved contacts…</p>}
             {!pickupRecipientsLoading && pickupRecipientsError && <p className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{pickupRecipientsError.message}</p>}
             {!pickupRecipientsLoading && !pickupRecipientsError && pickupRecipients?.recipients.length === 0 && <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">No saved mobile contacts are available. Add a mobile number to the client profile before sending.</p>}
