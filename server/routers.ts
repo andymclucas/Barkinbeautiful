@@ -73,6 +73,7 @@ import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMe
 import { priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
+import { fillDailySeries } from "@shared/dailySeries";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
 import { normaliseAustralianMobile } from "./inboundSms";
@@ -5768,12 +5769,12 @@ const analyticsRouterExtended = router({
        * the "2026-09-30" keys the fill loop builds. Even with the SQL
        * fixed, every day would have charted as zero.
        */
-      const brisbaneDay = sql<string>`DATE_FORMAT(CONVERT_TZ(\`appointments\`.\`scheduled_start\`, '+00:00', '+10:00'), '%Y-%m-%d')`;
+      const brisbaneDayExpr = sql<string>`DATE_FORMAT(CONVERT_TZ(\`appointments\`.\`scheduled_start\`, '+00:00', '+10:00'), '%Y-%m-%d')`;
 
       const dailyNetSales = async (rangeFrom: Date, rangeTo: Date) => {
         const rows = await db
           .select({
-            day: brisbaneDay,
+            day: brisbaneDayExpr,
             net: sql<string>`COALESCE(SUM(${appointments.price}), 0)`,
           })
           .from(appointments)
@@ -5784,20 +5785,19 @@ const analyticsRouterExtended = router({
             gte(appointments.scheduledStart, rangeFrom),
             lte(appointments.scheduledStart, rangeTo),
           ))
-          .groupBy(brisbaneDay);
+          .groupBy(brisbaneDayExpr);
         const byDay = new Map<string, number>();
         for (const r of rows) byDay.set(String(r.day), Number(r.net));
-        // Fill every day in the range: a day with no grooms is a real zero on
-        // the line, not a gap for the chart to interpolate across.
-        const out: { date: string; net: number }[] = [];
-        const cursor = new Date(Date.UTC(rangeFrom.getUTCFullYear(), rangeFrom.getUTCMonth(), rangeFrom.getUTCDate()));
-        const last = new Date(Date.UTC(rangeTo.getUTCFullYear(), rangeTo.getUTCMonth(), rangeTo.getUTCDate()));
-        while (cursor.getTime() <= last.getTime()) {
-          const key = cursor.toISOString().slice(0, 10);
-          out.push({ date: key, net: byDay.get(key) ?? 0 });
-          cursor.setUTCDate(cursor.getUTCDate() + 1);
-        }
-        return out;
+        // Fill every day in the range, on the SALON'S days. The buckets
+        // above are Brisbane calendar days; building the axis from the UTC
+        // date of the bounds started it on 30 Sep — a day that can never
+        // hold a bucket, so always zero — and stopped a day short at the
+        // other end, plotting every point against the wrong label.
+        return fillDailySeries(
+          brisbaneDay(rangeFrom) ?? "",
+          brisbaneDay(rangeTo) ?? "",
+          byDay,
+        );
       };
 
       const [current, previous] = await Promise.all([
