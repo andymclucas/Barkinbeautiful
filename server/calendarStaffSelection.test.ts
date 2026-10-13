@@ -11,6 +11,9 @@ import {
   toggleCalendarStaff,
   visibleStaffIds,
   type CalendarStaffSelection,
+  calendarUnassignedColumnKey,
+  parseShowUnassignedColumn,
+  serialiseShowUnassignedColumn,
 } from "@shared/calendarStaffSelection";
 
 /** The real shape of the salon: owner + 2 managers + 5 groomers, 4 bathers. */
@@ -230,5 +233,42 @@ describe("calendarStaffFilterKey", () => {
 
   it("still gives a signed-out reader a key", () => {
     expect(calendarStaffFilterKey(null)).toContain("anon");
+  });
+});
+
+describe("the Unassigned column toggle", () => {
+  it("is shown when nothing has been stored", () => {
+    // The column only appears on days that have a dog with nobody against
+    // it. Defaulting those to hidden is how 107 bookings stayed invisible.
+    expect(parseShowUnassignedColumn(null)).toBe(true);
+    expect(parseShowUnassignedColumn(undefined)).toBe(true);
+    expect(parseShowUnassignedColumn("")).toBe(true);
+  });
+
+  it("is hidden only on an explicit no", () => {
+    expect(parseShowUnassignedColumn("0")).toBe(false);
+    expect(parseShowUnassignedColumn(" 0 ")).toBe(false);
+  });
+
+  it("survives a round trip", () => {
+    expect(parseShowUnassignedColumn(serialiseShowUnassignedColumn(false))).toBe(false);
+    expect(parseShowUnassignedColumn(serialiseShowUnassignedColumn(true))).toBe(true);
+  });
+
+  it("falls back to shown rather than hidden on nonsense", () => {
+    // A corrupt value must not silently empty the board of unassigned dogs.
+    expect(parseShowUnassignedColumn("{}")).toBe(true);
+    expect(parseShowUnassignedColumn("false")).toBe(true);
+  });
+
+  it("is kept per user, like the staff filter", () => {
+    // The salon shares machines; Lauren hiding it must not hide it for
+    // whoever signs in next.
+    expect(calendarUnassignedColumnKey(7)).not.toBe(calendarUnassignedColumnKey(9));
+    expect(calendarUnassignedColumnKey(null)).toContain("anon");
+  });
+
+  it("uses a different key from the staff filter", () => {
+    expect(calendarUnassignedColumnKey(7)).not.toBe(calendarStaffFilterKey(7));
   });
 });

@@ -197,3 +197,32 @@ export function parseCalendarStaffSelection(
 export function calendarStaffFilterKey(userId: number | string | null | undefined): string {
   return `groomigo_calendar_staff_v2_${userId ?? "anon"}`;
 }
+
+/**
+ * Whether the Unassigned column is shown, remembered separately from the
+ * staff selection.
+ *
+ * Deliberately NOT folded into CalendarStaffSelection. That union is about
+ * WHO works here, and every path through it reconciles ids against the
+ * current roster. "Nobody" is not a staff member and has no id to
+ * reconcile, so putting it in there would mean a sentinel id that narrow(),
+ * visibleStaffIds() and parse() would each have to know to spare — three
+ * chances to filter the column out of existence. A second key is duller and
+ * cannot be got wrong.
+ *
+ * Defaults to SHOWN. The column only appears on days that actually have a
+ * dog with nobody against it, and defaulting those to hidden is how 107
+ * bookings stayed invisible on the board in the first place.
+ */
+export function calendarUnassignedColumnKey(userId: number | string | null | undefined): string {
+  return `groomigo_calendar_unassigned_v1_${userId ?? "anon"}`;
+}
+
+export function serialiseShowUnassignedColumn(show: boolean): string {
+  return show ? "1" : "0";
+}
+
+/** Anything that is not an explicit "0" means shown, including nothing. */
+export function parseShowUnassignedColumn(raw: string | null | undefined): boolean {
+  return String(raw ?? "").trim() !== "0";
+}
