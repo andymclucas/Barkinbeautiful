@@ -26,6 +26,10 @@ import { buildSharedAppointmentPriceBreakdown } from "@shared/sharedAppointmentP
 import { buildCalendarDragTargetMinutes, formatCalendarDragTargetTime } from "@shared/calendarDragTarget";
 import { formatSharedAppointmentName, formatAppointmentHeading } from "@shared/appointmentDisplay";
 import {
+  appointmentDetailChanges,
+  hasAppointmentDetailChanges,
+} from "@shared/appointmentDetailChanges";
+import {
   EMPTY_STYLE_NOTE_DRAFT,
   activeStylePetId,
   styleDraftFromNote,
@@ -979,6 +983,10 @@ export default function Calendar() {
   const [siblingGroomers, setSiblingGroomers] = useState<Record<number, string>>({});
   // Per-pet price overrides for multi-pet sessions: { [appointmentId]: price string }
   const [siblingPrices, setSiblingPrices] = useState<Record<number, string>>({});
+  // Per-pet service overrides for multi-pet sessions: { [appointmentId]: serviceType }
+  // One dog in a family can have a classic groom while the other has a styled
+  // cut; the service is not a property of the booking.
+  const [siblingServices, setSiblingServices] = useState<Record<number, string>>({});
   const [styleNoteForm, setStyleNoteForm] = useState<StyleNoteDraft>({ ...EMPTY_STYLE_NOTE_DRAFT });
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -1647,6 +1655,7 @@ export default function Calendar() {
     setSelectedStylePetId(null);
     setSiblingGroomers({});
     setSiblingPrices({});
+    setSiblingServices({});
     setAdditionalFamilyPetIds([]);
     // Drives "Copy to all", which overwrites every field of a grooming report,
     // before and after photos included. Left set, it would apply itself to the
@@ -1679,25 +1688,40 @@ export default function Calendar() {
         }));
       }
     }
-    // For multi-pet sessions, per-dog prices come from siblingPrices; single-pet uses editForm.price
+    // For multi-pet sessions, per-dog price and service come from the sibling
+    // maps; a single-pet booking uses editForm.
     const effectivePrimaryPrice = (siblings.length > 0 && siblingPrices[editAppt.id] !== undefined)
       ? siblingPrices[editAppt.id]
       : editForm.price;
-    if (editForm.serviceType !== editAppt.serviceType || editForm.notes !== (editAppt.notes ?? "") || effectivePrimaryPrice !== (editAppt.price ?? "")) {
+    const effectivePrimaryService = siblings.length > 0
+      ? (siblingServices[editAppt.id] ?? editAppt.serviceType)
+      : editForm.serviceType;
+    // Send only what changed. The server clears the discount whenever a price
+    // arrives, so re-sending an unchanged price silently wipes a discount
+    // somebody applied on purpose — editing only the notes used to be enough.
+    const primaryChanges = appointmentDetailChanges(editAppt, {
+      serviceType: effectivePrimaryService,
+      notes: editForm.notes,
+      price: effectivePrimaryPrice,
+    });
+    if (hasAppointmentDetailChanges(primaryChanges)) {
       promises.push(updateDetailsMutation.mutateAsync({
         appointmentId: editAppt.id,
-        serviceType:   editForm.serviceType as "classic_groom",
-        notes:         editForm.notes || null,
-        price:         effectivePrimaryPrice || null,
+        ...primaryChanges,
+        serviceType: primaryChanges.serviceType as "classic_groom" | undefined,
       }));
     }
-    // Save per-dog price overrides for siblings
+    // Per-dog price and service overrides for the other dogs in the family.
     for (const sib of siblings) {
-      const newPrice = siblingPrices[sib.id];
-      if (newPrice !== undefined && newPrice !== (sib.price ?? "")) {
+      const sibChanges = appointmentDetailChanges(sib, {
+        serviceType: siblingServices[sib.id],
+        price: siblingPrices[sib.id],
+      });
+      if (hasAppointmentDetailChanges(sibChanges)) {
         promises.push(updateDetailsMutation.mutateAsync({
           appointmentId: sib.id,
-          price: newPrice || null,
+          ...sibChanges,
+          serviceType: sibChanges.serviceType as "classic_groom" | undefined,
         }));
       }
     }
@@ -3055,14 +3079,37 @@ export default function Calendar() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Service</Label>
-                    <Select value={editForm.serviceType} onValueChange={v => setEditForm(p => ({ ...p, serviceType: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(SERVICE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    {editSiblings.length > 0 ? (
+                      <div className="space-y-2">
+                        {[editAppt, ...editSiblings].map(pet => (
+                          <div key={pet.id} className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground w-16 shrink-0 truncate">{pet.petName}:</span>
+                            <Select
+                              value={siblingServices[pet.id] ?? pet.serviceType}
+                              onValueChange={v => setSiblingServices(prev => ({ ...prev, [pet.id]: v }))}
+                            >
+                              <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(SERVICE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <Select value={editForm.serviceType} onValueChange={v => setEditForm(p => ({ ...p, serviceType: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(SERVICE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                 </div>
+                {/* Extras done on the day. Each one becomes its own line on
+                    the invoice rather than disappearing into the price. Sits
+                    with the service it belongs to, above the times. */}
+                {editAppt && <AppointmentAddOns appointmentId={editAppt.id} />}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Start</Label>
@@ -3171,10 +3218,6 @@ export default function Calendar() {
                     )}
                   </div>
                 </div>
-
-                {/* Extras done on the day. Each one becomes its own line on
-                    the invoice rather than disappearing into the price. */}
-                {editAppt && <AppointmentAddOns appointmentId={editAppt.id} />}
 
                 <div className="space-y-1.5">
                   <Label>Notes</Label>
