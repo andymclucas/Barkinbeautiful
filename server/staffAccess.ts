@@ -13,13 +13,15 @@
  */
 import { eq } from "drizzle-orm";
 import { appointments, pets, staff } from "../drizzle/schema";
+import { platformAccess, isApprovedStaffProfile, canCreateFamilyLinks } from "@shared/staffAccessRules";
 
 export async function requireApprovedStaffTenant(db: any, user: { id: number; role: string }) {
-  if (user.role === "admin") return null;
-  if (user.role !== "staff") throw new Error("Only approved staff can access salon operations");
+  const access = platformAccess(user.role);
+  if (access.kind === "unrestricted") return null;
+  if (access.kind === "denied") throw new Error(access.reason);
   const [portalStaff] = await db.select({ id: staff.id, tenantId: staff.tenantId, role: staff.role, portalStatus: staff.portalStatus })
     .from(staff).where(eq(staff.userId, user.id)).limit(1);
-  if (!portalStaff || portalStaff.portalStatus !== "approved") {
+  if (!portalStaff || !isApprovedStaffProfile(portalStaff.portalStatus)) {
     throw new Error("Your staff access is awaiting administrator approval");
   }
   return portalStaff;
@@ -28,7 +30,7 @@ export async function requireApprovedStaffTenant(db: any, user: { id: number; ro
 export async function requireApprovedFamilyLinkStaff(db: any, user: { id: number; role: string }) {
   const portalStaff = await requireApprovedStaffTenant(db, user);
   if (!portalStaff) return null;
-  if (portalStaff.role !== "groomer" && portalStaff.role !== "bather") {
+  if (!canCreateFamilyLinks(portalStaff.role)) {
     throw new Error("Only approved Groomers and Bathers can create family links from Workflow");
   }
   return portalStaff;

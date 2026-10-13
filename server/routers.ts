@@ -74,6 +74,7 @@ import { priceForCoveredAppointment } from "@shared/appointmentMembershipCoverag
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
 import { fillDailySeries } from "@shared/dailySeries";
+import { actualEndFor } from "@shared/appointmentActualTimes";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
 import { normaliseAustralianMobile } from "./inboundSms";
@@ -1077,7 +1078,7 @@ const calendarRouter = router({
         status: nextStatus,
         estimatedPickupAt: input.estimatedPickupAt ? new Date(input.estimatedPickupAt) : undefined,
         actualStart: input.newState === "checked_in" ? new Date(now) : appt.actualStart,
-        actualEnd: input.newState === "complete" ? new Date(now) : appt.workflowState === "complete" ? null : appt.actualEnd,
+        actualEnd: actualEndFor({ newState: input.newState, previousState: appt.workflowState, currentActualEnd: appt.actualEnd, now: new Date(now) }),
         ...timingUpdates,
       }).where(eq(appointments.id, input.appointmentId));
       await db.insert(workflowLogs).values({

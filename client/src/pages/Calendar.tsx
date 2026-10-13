@@ -67,6 +67,7 @@ import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPric
 import { NewClientQuickAdd } from "@/components/NewClientQuickAdd";
 import { buildTimeSlots, splitLocalDateTime, joinLocalDateTime } from "@shared/bookingTimeSlots";
 import { takePendingBooking } from "@/lib/pendingBooking";
+import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
@@ -306,8 +307,8 @@ function ApptBlock({
   const leftPct   = col * widthPct;
   const compact   = height < 44;
   const showService = height >= 58;
-  const isCancelled = appt.status === "cancelled" || appt.workflowState === "cancelled";
-  const canDrag = Boolean(onDragStart) && !isCancelled;
+  const isCancelled = isCancelledAppointment(appt);
+  const canDrag = canDragAppointment(appt, Boolean(onDragStart));
 
   if (top > containerHeight || top + height < 0) return null;
 
@@ -967,7 +968,7 @@ export default function Calendar() {
     staffId: "", serviceType: "", scheduledStart: "", scheduledEnd: "",
     notes: "", price: "", workflowState: "",
   });
-  const preservesCancelledSchedule = editAppt?.status === "cancelled" || editAppt?.workflowState === "cancelled" || editForm.workflowState === "cancelled";
+  const preservesCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
   // Per-pet groomer overrides for multi-pet sessions: { [appointmentId]: staffId }
   const [siblingGroomers, setSiblingGroomers] = useState<Record<number, string>>({});
   // Per-pet price overrides for multi-pet sessions: { [appointmentId]: price string }
@@ -1627,7 +1628,7 @@ export default function Calendar() {
   const handleSaveEdit = async () => {
     if (!editAppt) return;
     const promises: Promise<unknown>[] = [];
-    const keepOriginalCancelledSchedule = editAppt.status === "cancelled" || editAppt.workflowState === "cancelled" || editForm.workflowState === "cancelled";
+    const keepOriginalCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
     if (!keepOriginalCancelledSchedule) {
       promises.push(rescheduleMutation.mutateAsync({
         appointmentId:  editAppt.id,
@@ -1746,7 +1747,7 @@ export default function Calendar() {
                 ) : (
                   dayAppts.map(appt => {
                     const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
-                    const isCancelled = appt.status === "cancelled" || appt.workflowState === "cancelled";
+                    const isCancelled = isCancelledAppointment(appt);
                     const sharedAppointmentLabel = formatSharedAppointmentName({
                       petNames: [appt, ...getSiblings(appt as Appt)].map((pet) => pet.petName),
                       surname: appt.clientLastName,

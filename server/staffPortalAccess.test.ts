@@ -65,7 +65,10 @@ describe("canStaffUpdateAppointment", () => {
     // Reachability is pinned exhaustively by procedureSurface.test.ts, which
     // compares ALL 295 procedures by router and name. These were twelve
     // one-way substring checks that said nothing about the other 283.
-    expect(routerSource).not.toContain('portalStaff.role === "groomer"');
+    // The salon-role rules moved to shared/staffAccessRules.ts and are
+    // tested as behaviour in staffAccessRules.test.ts. They used to be
+    // asserted against routers.ts and staffAccess.ts CONCATENATED, so a
+    // passing assertion could not say which file held the rule.
     expect(staffSource).toContain("Bathers and groomers have the same approved operational access to appointment details and Workflow.");
   });
 
@@ -76,7 +79,7 @@ describe("canStaffUpdateAppointment", () => {
     // compares ALL 295 procedures by router and name. These were twelve
     // one-way substring checks that said nothing about the other 283.
     expect(routerSource).toContain("requireApprovedFamilyLinkStaff(db, ctx.user)");
-    expect(routerSource).toContain('portalStaff.role !== "groomer" && portalStaff.role !== "bather"');
+
     expect(routerSource).toContain("Family links are limited to dogs in your salon");
     expect(routerSource).toContain("eq(pets.tenantId, portalStaff.tenantId)");
     expect(routerSource).toContain("tenantId, name: input.groupName ?? null");
@@ -253,7 +256,11 @@ describe("canStaffUpdateAppointment", () => {
     expect(displaySource).toContain("onRestoreCompleted={restoreCompletedDog}");
     expect(readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8"))
       .toContain('{restorePending ? "…" : "Undo"}');
-    expect(routerSource).toContain('actualEnd: input.newState === "complete" ? new Date(now) : appt.workflowState === "complete" ? null : appt.actualEnd');
+    // The actual-start/finish rule moved to shared/appointmentActualTimes.ts
+    // and is tested as behaviour in appointmentActualTimes.test.ts — including
+    // that coming back OUT of complete clears the finish time, which the
+    // timing analytics depend on and a source grep could never show.
+    expect(routerSource).toContain("actualEndFor({");
   });
 
   it("renders a scannable TV display QR shortcut without bypassing sign-in", () => {
