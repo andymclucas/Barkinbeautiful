@@ -139,7 +139,11 @@ export default function WorkflowBoard() {
   useEffect(() => {
     if (!pickupRecipients?.recipients.length) return;
     if (!pickupRecipients.recipients.some(recipient => String(recipient.id) === selectedPickupRecipientId)) {
-      setSelectedPickupRecipientId(String(pickupRecipients.recipients[0]!.id));
+      // Default to whoever the appointment card says to ring, falling back
+      // to the owner. Without this, picking Rochelle on the booking changed
+      // nothing at the moment it mattered.
+      const preferred = pickupRecipients.chosenRecipientId;
+      setSelectedPickupRecipientId(String(preferred ?? pickupRecipients.recipients[0]!.id));
     }
   }, [pickupRecipients, selectedPickupRecipientId]);
 

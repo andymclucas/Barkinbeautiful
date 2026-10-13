@@ -1,0 +1,25 @@
+-- Which of the client's contacts this particular booking is for.
+--
+-- `client_contacts` already existed and the pickup dialog already let staff
+-- choose one AT SEND TIME. What was missing is recording the choice on the
+-- appointment, so the board can show who to ring before anybody reaches for
+-- the phone. The salon was doing it in green marker on the whiteboard —
+-- "Tx + Rochelle" — which means the fact died when the board was wiped.
+--
+-- NULL means the client themselves. That is the default, and the truth for
+-- every one of the ~12,000 appointments that already exist. Nullable with no
+-- default so existing inserts stay valid while the old code is still
+-- running, and so this migration can be applied before the code ships.
+--
+-- One statement, in its own migration: MySQL/TiDB DDL is not transactional,
+-- so a second statement that fails would leave the first applied and the
+-- migration unrecorded, and the re-run would then die on "Duplicate column
+-- name".
+--
+-- No FOREIGN KEY. `clients.removeContact` hard-deletes, so a constraint
+-- would either block a deletion the salon asked for or cascade a change
+-- into historical bookings. Instead the application clears the reference
+-- when a contact is removed, and a booking that still points at a missing
+-- contact falls back to the client and says so on the card — see
+-- shared/appointmentContact.ts.
+ALTER TABLE `appointments` ADD COLUMN `contact_id` INT NULL;

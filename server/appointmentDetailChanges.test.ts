@@ -93,3 +93,40 @@ describe("a family where the two dogs want different things", () => {
     expect(hasAppointmentDetailChanges(changes)).toBe(false);
   });
 });
+
+describe("the contact person", () => {
+  const WITH_CONTACT = { serviceType: "classic_groom", price: "125.00", contactId: 7 };
+
+  it("sends the new contact when it changes", () => {
+    expect(appointmentDetailChanges(WITH_CONTACT, { contactId: 9 })).toEqual({ contactId: 9 });
+  });
+
+  it("treats null as a real choice, not as 'leave it alone'", () => {
+    // Clearing the picker back to the client is a change that must be saved.
+    // If null were read as "not editing", the booking would keep texting
+    // Rochelle after somebody deliberately set it back to the owner.
+    expect(appointmentDetailChanges(WITH_CONTACT, { contactId: null })).toEqual({ contactId: null });
+  });
+
+  it("says nothing when the picker was not touched", () => {
+    expect(appointmentDetailChanges(WITH_CONTACT, { price: "125.00" })).toEqual({});
+  });
+
+  it("does not resend the same contact", () => {
+    expect(appointmentDetailChanges(WITH_CONTACT, { contactId: 7 })).toEqual({});
+  });
+
+  it("treats a booking with no contact as equal to null", () => {
+    // Every appointment made before contacts existed has contactId null;
+    // opening one and saving must not look like a change.
+    const noContact = { serviceType: "classic_groom", price: "125.00", contactId: null };
+    expect(appointmentDetailChanges(noContact, { contactId: null })).toEqual({});
+  });
+
+  it("never drags the price along with a contact change", () => {
+    // Same discount hazard as the rest: a price in the payload wipes it.
+    const changes = appointmentDetailChanges(WITH_CONTACT, { contactId: 9, price: "125.00" });
+    expect(changes).toEqual({ contactId: 9 });
+    expect("price" in changes).toBe(false);
+  });
+});

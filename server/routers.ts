@@ -540,6 +540,13 @@ const calendarRouter = router({
           staffId: appointments.staffId,
           clientId: appointments.clientId,
           petId: appointments.petId,
+          // Who to ring about this one. Null is the client themselves.
+          // Joined here rather than fetched per card so the workflow board
+          // can show it without a request per dog.
+          contactId: appointments.contactId,
+          contactName: clientContacts.name,
+          contactPhone: clientContacts.phone,
+          contactRelationship: clientContacts.relationship,
           membershipId: appointments.membershipId,
           sessionId: appointments.sessionId,
           reminderSentAt: appointments.reminderSentAt,
@@ -556,6 +563,15 @@ const calendarRouter = router({
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .leftJoin(pets, eq(appointments.petId, pets.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
+        .leftJoin(clientContacts, and(
+          eq(appointments.contactId, clientContacts.id),
+          // Belt and braces. updateDetails already refuses a contact that is
+          // not on this booking's client, but this join prints a name and a
+          // phone number onto the board, and a stray id arriving by any
+          // other route — a direct write, an import — must not be able to
+          // surface another salon's contact details.
+          eq(clientContacts.tenantId, appointments.tenantId),
+        ))
         .where(and(...conditions))
         .orderBy(asc(appointments.scheduledStart));
 
@@ -1261,6 +1277,9 @@ const calendarRouter = router({
       serviceType: z.enum(SERVICE_TYPES).optional(),
       notes: z.string().optional().nullable(),
       price: z.string().optional().nullable(),
+      // null clears it back to the client. Omitted leaves it alone — the
+      // same only-send-what-changed contract the price relies on.
+      contactId: z.number().optional().nullable(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -1269,6 +1288,34 @@ const calendarRouter = router({
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       if (input.serviceType !== undefined) updates.serviceType = input.serviceType;
       if (input.notes !== undefined) updates.notes = input.notes;
+      if (input.contactId !== undefined) {
+        // The contact has to belong to THIS booking's client. Nothing else
+        // checks it: requireApprovedStaffAppointmentAccess guards the
+        // appointment and enforceTenant guards the tenantId field, but a
+        // request pairing its own appointment with a contact id belonging
+        // to another client — or another salon — would be stored happily,
+        // and the board joins on that id to print a name and a phone
+        // number. That is somebody else's contact details on screen.
+        if (input.contactId !== null) {
+          const [target] = await db
+            .select({ clientId: appointments.clientId, tenantId: appointments.tenantId })
+            .from(appointments)
+            .where(eq(appointments.id, input.appointmentId))
+            .limit(1);
+          if (!target) throw new Error("Appointment not found");
+          const [contact] = await db
+            .select({ id: clientContacts.id })
+            .from(clientContacts)
+            .where(and(
+              eq(clientContacts.id, input.contactId),
+              eq(clientContacts.clientId, target.clientId),
+              eq(clientContacts.tenantId, target.tenantId),
+            ))
+            .limit(1);
+          if (!contact) throw new Error("That contact is not on this client's record");
+        }
+        updates.contactId = input.contactId;
+      }
       if (input.price !== undefined) {
         updates.price = input.price;
         // A hand-typed price replaces whatever the discount produced, so
@@ -1578,6 +1625,15 @@ const workflowRouter = router({
           petMoegoCodeLabels: pets.moegoCodeLabels,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
+          clientPhone: clients.phone,
+          // Who to ring about this dog. Null is the client themselves. On
+          // the board because the person doing the collecting is what a
+          // groomer needs at the point the dog is ready, and it used to
+          // live in green marker on the whiteboard.
+          contactId: appointments.contactId,
+          contactName: clientContacts.name,
+          contactPhone: clientContacts.phone,
+          contactRelationship: clientContacts.relationship,
           staffName: staff.name,
           staffColour: staff.colourHex,
         })
@@ -1585,6 +1641,15 @@ const workflowRouter = router({
         .leftJoin(pets, eq(appointments.petId, pets.id))
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
+        .leftJoin(clientContacts, and(
+          eq(appointments.contactId, clientContacts.id),
+          // Belt and braces. updateDetails already refuses a contact that is
+          // not on this booking's client, but this join prints a name and a
+          // phone number onto the board, and a stray id arriving by any
+          // other route — a direct write, an import — must not be able to
+          // surface another salon's contact details.
+          eq(clientContacts.tenantId, appointments.tenantId),
+        ))
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, dayStart),
@@ -2815,8 +2880,59 @@ const clientsRouter = router({
         .where(and(eq(clientContacts.id, input.contactId), eq(clientContacts.clientId, input.clientId)))
         .limit(1);
       if (!contact) throw new Error("Contact not found for this client");
+      // Release any booking pointing at this contact first. There is no FK,
+      // so without this the appointment keeps a dangling id and the card
+      // quietly falls back to the owner — which is safe, but leaves a
+      // booking claiming a contact that no longer exists.
+      await db.update(appointments)
+        .set({ contactId: null, updatedAt: new Date() })
+        .where(eq(appointments.contactId, contact.id));
       await db.delete(clientContacts).where(eq(clientContacts.id, contact.id));
       return { success: true };
+    }),
+
+  /**
+   * The people who may be rung about this client, for the appointment
+   * card's picker and the workflow board.
+   *
+   * operationalProcedure, unlike getProfile which carries the same data:
+   * getProfile is protectedProcedure and so rejects staff outright, and a
+   * groomer on the floor deciding who to ring is exactly the person who
+   * needs this. It returns contact details and nothing else about the
+   * client, so it is not a way around getProfile.
+   *
+   * The client is checked against the caller's own salon. enforceTenant
+   * guards the tenantId FIELD, but nothing stops a request pairing its own
+   * tenant id with another salon's clientId.
+   */
+  listContacts: operationalProcedure
+    .input(z.object({ clientId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const [client] = await db
+        .select({ tenantId: clients.tenantId })
+        .from(clients)
+        .where(eq(clients.id, input.clientId))
+        .limit(1);
+      if (!client) return [];
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && client.tenantId !== portalStaff.tenantId) {
+        throw new Error("This client is not available to your salon staff profile");
+      }
+      return db
+        .select({
+          id: clientContacts.id,
+          name: clientContacts.name,
+          phone: clientContacts.phone,
+          relationship: clientContacts.relationship,
+        })
+        .from(clientContacts)
+        .where(and(
+          eq(clientContacts.clientId, input.clientId),
+          eq(clientContacts.tenantId, client.tenantId),
+        ))
+        .orderBy(asc(clientContacts.name));
     }),
 });
 
@@ -7599,6 +7715,7 @@ const smsRouter = router({
         id: appointments.id,
         tenantId: appointments.tenantId,
         clientId: appointments.clientId,
+        contactId: appointments.contactId,
         workflowState: appointments.workflowState,
         scheduledStart: appointments.scheduledStart,
         petName: pets.name,
@@ -7627,11 +7744,18 @@ const smsRouter = router({
       const siblings = await loadPickupSiblings(db, appointment);
       const group = pickupPrompt(siblings);
       const petNames = group.petNames.length > 0 ? group.petNames : [appointment.petName ?? "your dog"];
+      // Whoever the appointment card says to ring. The picker defaults to
+      // this rather than to the owner, so choosing Rochelle on the booking
+      // is what actually happens when the dog is ready — otherwise the
+      // choice is decoration and somebody still texts the wrong person.
+      // 0 is the primary, matching the recipient ids built above.
+      const chosenRecipientId = appointment.contactId ?? 0;
       return {
         appointment: { id: appointment.id, petName: appointment.petName ?? "your dog" },
         petNames,
         appointmentIds: group.appointmentIds.length > 0 ? group.appointmentIds : [appointment.id],
         recipients,
+        chosenRecipientId: recipients.some((r) => r.id === chosenRecipientId) ? chosenRecipientId : null,
       };
     }),
 
