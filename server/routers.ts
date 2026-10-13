@@ -69,6 +69,7 @@ import { isUsableSenderNumber } from "@shared/senderNumber";
 import { forgetNumberTenant } from "./tenantByNumber";
 import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
+import { collectByInstant, brisbaneDay } from "@shared/collectBy";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
 import { normaliseAustralianMobile } from "./inboundSms";
@@ -798,6 +799,13 @@ const calendarRouter = router({
       // fallback for any pet not named here, so an older client and the
       // recurring path are unchanged.
       priceByPetId: z.record(z.string(), z.string()).optional(),
+      // "Must be finished by", as a Brisbane wall clock. Lauren, 13/10:
+      // "if a client has to be finished by a certain time it's BOLD and
+      // near the groomers box so its clear to everyone including bathers".
+      // The column, the risk model and the board badge all already
+      // existed; nothing set it, because the only input was buried in the
+      // edit dialog. Zero of 15,643 appointments had one.
+      collectByTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
       // Extras chosen while booking rather than added on the day. The
       // price is taken from the catalogue here, never from the client —
       // see appointmentAddOns.add, which this mirrors.
@@ -878,6 +886,10 @@ const calendarRouter = router({
           scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
           notes: input.notes,
           price: petPrice,
+          // Every dog on the booking shares the deadline: the client is
+          // collecting them together, so one dog making it and the other
+          // not is no use to anybody.
+          collectBy: collectByInstant(brisbaneDay(parseBrisbaneLocalDateTime(input.scheduledStart)), input.collectByTime ?? null),
           membershipId: coverage.membershipByPetId[petId]?.id ?? null,
           trackerToken: token,
           sessionId,
@@ -1810,18 +1822,9 @@ const workflowRouter = router({
       }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
       if (!appointment) throw new Error("Appointment not found");
 
-      let collectBy: Date | null = null;
-      if (input.time) {
-        // The deadline is on the day of the appointment, in Brisbane. The
-        // salon says "by twelve", never "by 2026-10-08T02:00Z".
-        const day = new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
-        }).format(new Date(appointment.scheduledStart));
-        const [year, month, date] = day.split("-").map(Number);
-        const [hour, minute] = input.time.split(":").map(Number);
-        // Brisbane is UTC+10 and has no daylight saving, so this is exact.
-        collectBy = new Date(Date.UTC(year, month - 1, date, hour - 10, minute));
-      }
+      // The deadline is on the day of the appointment, in Brisbane. The
+      // salon says "by twelve", never "by 2026-10-08T02:00Z".
+      const collectBy = collectByInstant(brisbaneDay(appointment.scheduledStart), input.time);
 
       await db.update(appointments).set({ collectBy }).where(eq(appointments.id, appointment.id));
       return { success: true, collectBy };

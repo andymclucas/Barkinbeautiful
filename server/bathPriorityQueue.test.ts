@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BATH_PRIORITY_META, buildBathPriorityQueue, isBathPriorityEligible, isBathPriorityMutable } from "../shared/bathPriorityQueue";
+import { BATH_PRIORITY_META, bathQueuePositionMeta, buildBathPriorityQueue, isBathPriorityEligible, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 
 describe("buildBathPriorityQueue", () => {
   it("orders active bathing work from priority one to five and keeps same-session dogs together", () => {
@@ -52,5 +52,89 @@ describe("buildBathPriorityQueue", () => {
   it("defines a distinct accessible colour treatment for every controlled priority", () => {
     expect(Object.keys(BATH_PRIORITY_META)).toEqual(["1", "2", "3", "4", "5"]);
     expect(new Set(Object.values(BATH_PRIORITY_META).map((priority) => priority.colour)).size).toBe(5);
+  });
+});
+
+describe("queue positions renumber themselves", () => {
+  const at = (id: number, bathPriority: number, workflowState: string, petName: string) => ({
+    id, bathPriority, petName, workflowState,
+    scheduledStart: new Date("2026-10-13T23:00:00Z"),
+  });
+
+  it("numbers the queue from 1 whatever the stored priorities are", () => {
+    // Nobody is a 1: the dog that was has already gone to the dryer.
+    const queue = buildBathPriorityQueue([
+      at(1, 3, "waiting_for_bath", "Cosi"),
+      at(2, 5, "waiting_for_bath", "Millie"),
+      at(3, 4, "waiting_for_bath", "Ralph"),
+    ]);
+    expect(queue.map((item) => item.position)).toEqual([1, 2, 3]);
+    expect(queue.map((item) => item.petNames[0])).toEqual(["Cosi", "Ralph", "Millie"]);
+    // The stored intent is untouched — position is derived, not written.
+    expect(queue.map((item) => item.priority)).toEqual([3, 4, 5]);
+  });
+
+  it("counts down as the dog at the top leaves the queue", () => {
+    // This is the behaviour Lauren asked for: bathe the top dog and
+    // everything behind it moves up a place by itself.
+    const rows = [
+      at(1, 1, "waiting_for_bath", "Cosi"),
+      at(2, 2, "waiting_for_bath", "Millie"),
+      at(3, 3, "waiting_for_bath", "Ralph"),
+    ];
+    expect(buildBathPriorityQueue(rows).map((i) => [i.petNames[0], i.position]))
+      .toEqual([["Cosi", 1], ["Millie", 2], ["Ralph", 3]]);
+
+    const afterCosiIsBathed = [{ ...rows[0], workflowState: "waiting_for_dry" }, rows[1], rows[2]];
+    expect(buildBathPriorityQueue(afterCosiIsBathed).map((i) => [i.petNames[0], i.position]))
+      .toEqual([["Millie", 1], ["Ralph", 2]]);
+  });
+
+  it("keeps a dog in the bath at the top rather than skipping it", () => {
+    // A dog being washed right now is still the current one; it leaves the
+    // queue when it moves to drying, which is what makes the count go down.
+    const queue = buildBathPriorityQueue([
+      at(1, 1, "bathing", "Cosi"),
+      at(2, 2, "waiting_for_bath", "Millie"),
+    ]);
+    expect(queue.map((i) => [i.petNames[0], i.position])).toEqual([["Cosi", 1], ["Millie", 2]]);
+  });
+
+  it("gives two cohorts on the same priority different positions", () => {
+    // Both showing "1" tells a bather nothing about which to pick up.
+    const queue = buildBathPriorityQueue([
+      at(7, 1, "waiting_for_bath", "Ralph"),
+      at(2, 1, "waiting_for_bath", "Beau"),
+    ]);
+    expect(queue.map((i) => i.position)).toEqual([1, 2]);
+    expect(queue.map((i) => i.priority)).toEqual([1, 1]);
+  });
+
+  it("gives dogs booked in together one shared position", () => {
+    const queue = buildBathPriorityQueue([
+      { ...at(1, 1, "waiting_for_bath", "Cosi"), sessionId: "s1" },
+      { ...at(2, 1, "waiting_for_bath", "Millie"), sessionId: "s1" },
+      at(3, 2, "waiting_for_bath", "Ralph"),
+    ]);
+    expect(queue).toHaveLength(2);
+    expect(queue[0].position).toBe(1);
+    expect(queue[0].petNames).toEqual(["Cosi", "Millie"]);
+    expect(queue[1].position).toBe(2);
+  });
+});
+
+describe("bathQueuePositionMeta", () => {
+  it("names the first five places the way the salon says them", () => {
+    expect(bathQueuePositionMeta(1).label).toBe("Next");
+    expect(bathQueuePositionMeta(2).label).toBe("After next");
+    expect(bathQueuePositionMeta(5).label).toBe("Fifth");
+  });
+
+  it("does not reuse the going-next colour deeper down the queue", () => {
+    // The stored priority caps at 5, but several cohorts can share one, so
+    // a busy morning runs deeper than the colours do.
+    const sixth = bathQueuePositionMeta(6);
+    expect(sixth.label).toBe("6th in line");
+    expect(sixth.colour).not.toBe(bathQueuePositionMeta(1).colour);
   });
 });
