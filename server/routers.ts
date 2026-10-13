@@ -69,6 +69,7 @@ import { isUsableSenderNumber } from "@shared/senderNumber";
 import { forgetNumberTenant } from "./tenantByNumber";
 import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
+import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
@@ -2314,7 +2315,22 @@ const workflowReviewRouter = router({
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 const clientsRouter = router({
-  list: protectedProcedure
+  /**
+   * The client list.
+   *
+   * operationalProcedure since 13/10/2026: adding a client is reached from
+   * this page, so leaving the list owner-only would have handed groomers a
+   * button on a screen that refuses to load.
+   *
+   * exportCsv below stays protectedProcedure on purpose. Pulling 10,093
+   * clients' names, phones and emails into a file that leaves the building
+   * is a different act from looking one up at the desk, and it is not
+   * needed in order to add a client.
+   *
+   * getById stays protectedProcedure too: the full profile carries billing
+   * history and account notes, and none of that is needed to create.
+   */
+  list: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
       search: z.string().optional(),
@@ -2358,7 +2374,7 @@ const clientsRouter = router({
         .from(clients)
         .where(and(...conditions));
       const total = Number(countRow?.count ?? 0);
-      const rows = await db.select().from(clients)
+      const rows = await db.select(CLIENT_PUBLIC_COLUMNS).from(clients)
         .where(and(...conditions))
         .orderBy(orderExpr, secondaryExpr)
         .limit(input.pageSize).offset(offset);
@@ -2370,7 +2386,7 @@ const clientsRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
-      const [client] = await db.select().from(clients).where(eq(clients.id, input.id)).limit(1);
+      const [client] = await db.select(CLIENT_PUBLIC_COLUMNS).from(clients).where(eq(clients.id, input.id)).limit(1);
       if (!client) return null;
       const clientPets = await db.select().from(pets).where(eq(pets.clientId, input.id));
       const clientMemberships = await db.select().from(memberships).where(eq(memberships.clientId, input.id));
@@ -2413,7 +2429,21 @@ const clientsRouter = router({
       return { success: true };
     }),
 
-  create: protectedProcedure
+  /**
+   * Add a client.
+   *
+   * operationalProcedure since 13/10/2026, on Andy's instruction: "let
+   * staff create clients and pets". It used to be protectedProcedure AND
+   * requireStaffAdministrator, which is a far tighter gate than it looks —
+   * only Lauren and Andy passed it, so the groomer taking a new enquiry on
+   * the phone could not put the client on the system at all.
+   *
+   * Cross-tenant creation is refused centrally by enforceTenant, which
+   * every operationalProcedure carries. The tenant is taken from the
+   * session rather than the request body regardless, so a caller cannot
+   * file a client under another salon by editing a number.
+   */
+  create: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
       firstName: z.string(),
@@ -2425,10 +2455,12 @@ const clientsRouter = router({
       referralSource: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      requireStaffAdministrator(ctx.user);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const [result] = await db.insert(clients).values(input);
+      const [result] = await db.insert(clients).values({
+        ...input,
+        tenantId: tenantOf(ctx, input),
+      });
       return { success: true, id: (result as any).insertId as number };
     }),
 
@@ -2486,7 +2518,8 @@ const clientsRouter = router({
       };
     }),
 
-  quickPreview: protectedProcedure
+  /** The hover card on the list above, so it opens for staff too. */
+  quickPreview: operationalProcedure
     .input(z.object({ clientId: z.number() }))
     .query(async ({ input }) => {
       const db = await getDb();
@@ -2602,7 +2635,7 @@ const clientsRouter = router({
       if (!db) return null;
       // Client details
       const [client] = await db
-        .select()
+        .select(CLIENT_PUBLIC_COLUMNS)
         .from(clients)
         .where(eq(clients.id, input.clientId))
         .limit(1);
@@ -2796,7 +2829,21 @@ const petsRouter = router({
       return db.select().from(pets).where(eq(pets.clientId, input.clientId));
     }),
 
-  create: protectedProcedure
+  /**
+   * Add a dog to a client.
+   *
+   * operationalProcedure since 13/10/2026, same instruction as
+   * clients.create: the person taking the booking is the one who has the
+   * dog's name and weight in front of them.
+   *
+   * The client is checked against the caller's own salon. enforceTenant
+   * guards the `tenantId` FIELD, but nothing stopped a request pairing
+   * its own tenant id with another salon's clientId — which would have
+   * attached a dog to a stranger's record and filed it under the wrong
+   * salon. Latent while this was owner-only and one tenant; not something
+   * to leave behind when opening it to every groomer.
+   */
+  create: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
       clientId: z.number(),
@@ -2815,9 +2862,18 @@ const petsRouter = router({
       // intake is the cheapest moment there is.
       sizeBand: z.enum(SIZE_BAND_IDS as unknown as [string, ...string[]]).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const [owner] = await db
+        .select({ id: clients.id, tenantId: clients.tenantId })
+        .from(clients)
+        .where(eq(clients.id, input.clientId))
+        .limit(1);
+      if (!owner || owner.tenantId !== tenantId) {
+        throw new Error("That client is not available to your salon");
+      }
       const { sizeBand, weightKg, ...rest } = input;
       // A recorded weight is better evidence than a picked band, so it
       // derives the band itself and wins. petWeightUpdate owns that rule
@@ -2827,6 +2883,7 @@ const petsRouter = router({
         : null;
       const [result] = await db.insert(pets).values({
         ...rest,
+        tenantId,
         ...(fromWeight
           ? { weightKg: fromWeight.weightKg, weight: fromWeight.weight, sizeBand: fromWeight.sizeBand as any, sizeBandSource: fromWeight.sizeBandSource }
           : sizeBand
