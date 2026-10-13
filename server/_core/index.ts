@@ -206,7 +206,11 @@ async function startServer() {
       const db = await getDb();
       if (db) {
         const { kind, message, stack, url, userAgent, connectionType, msSincePageLoad } = req.body ?? {};
-        const validKinds = ["stuck_loading", "window_error", "unhandled_rejection", "react_error_boundary"] as const;
+        // A kind not on this list is DROPPED, silently. That is why
+        // failed tRPC requests never reached the log: they had nowhere to
+        // go, so a query that 500'd showed the component's empty state and
+        // left no trace anywhere. Keep this in step with the enum.
+        const validKinds = ["stuck_loading", "window_error", "unhandled_rejection", "react_error_boundary", "trpc_query_error", "trpc_mutation_error"] as const;
         if (typeof kind === "string" && (validKinds as readonly string[]).includes(kind)) {
           await db.insert(clientErrorLogs).values({
             kind: kind as typeof validKinds[number],

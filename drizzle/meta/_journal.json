@@ -813,6 +813,13 @@
       "when": 1791834787529,
       "tag": "0115_appointment_billed_override",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "5",
+      "when": 1791834787530,
+      "tag": "0116_client_error_logs_trpc_kinds",
+      "breakpoints": true
     }
   ]
 }

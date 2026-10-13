@@ -1,5 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { COOKIE_NAME, UNAUTHED_ERR_MSG } from '@shared/const';
+import { failureNotice, shouldAnnounce } from "@shared/queryFailure";
+import { toast } from "sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -65,11 +67,46 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   }
 };
 
+/**
+ * Make a failed request visible.
+ *
+ * It used to go to console.error, where nobody looks. Meanwhile 115 of the
+ * app's 123 useQuery call sites never check isError, so a query that 500s
+ * renders the component's empty state — "No sales in this period", "No
+ * conversations yet" — and reads as a quiet day. The Net sales chart did
+ * exactly that from the day it shipped.
+ *
+ * Two things now happen instead: the person sees one line saying the thing
+ * failed rather than that it is empty, and the failure is posted to the
+ * same client_error_logs table the window error handler already uses, so
+ * it can be found later without anybody having mentioned it.
+ */
+const announcedFailures = new Map<string, number>();
+
+const reportQueryFailure = (error: unknown, kind: "query" | "mutation") => {
+  if (!(error instanceof TRPCClientError)) return;
+  const data = (error as { data?: { path?: string; httpStatus?: number } }).data;
+  const notice = failureNotice(
+    { message: error.message, path: data?.path, httpStatus: data?.httpStatus },
+    UNAUTHED_ERR_MSG,
+  );
+  if (!notice.report) return;
+  if (!shouldAnnounce(announcedFailures, notice.key, Date.now())) return;
+
+  toast.error(notice.message);
+  // path and httpStatus fold into `message`: client_error_logs has no
+  // column for them, and a row saying only "Failed query" is not something
+  // anybody can act on six weeks later.
+  window.__gsosReportClientError?.(`trpc_${kind}_error`, {
+    message: `${data?.path ?? "unknown"} (${data?.httpStatus ?? "?"}): ${error.message}`,
+  });
+};
+
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
-    console.error("[API Query Error]", error);
+    reportQueryFailure(error, "query");
   }
 });
 
@@ -77,7 +114,9 @@ queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
-    console.error("[API Mutation Error]", error);
+    // A mutation already surfaces its own onError toast at most call
+    // sites, so this is only the server-side record.
+    reportQueryFailure(error, "mutation");
   }
 });
 
