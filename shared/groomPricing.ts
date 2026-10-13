@@ -251,7 +251,19 @@ export function pickDefaultPriceOption(
 export type ServiceSuggestion = {
   serviceType: ServiceType;
   label: string;
-  option: PriceOption | null;
+  /**
+   * What the WHOLE booking comes to if this is tapped, or null when any
+   * dog on it has no listed price at this client's tier.
+   *
+   * Null rather than a figure drawn from some other dog's size. The first
+   * version showed the cheapest listed price for the service and labelled
+   * it "from", which on Kim Dahl's two small dogs read "Styled Cut from
+   * $250.00" — $250 being the LARGE regular price, the only styled
+   * regular price that exists. Tapping it set both dogs to $0.00, because
+   * neither has a regular styled price. The button promised a number the
+   * app could not produce.
+   */
+  total: string | null;
 };
 
 export const QUICK_PICK_SERVICES: ReadonlyArray<{ serviceType: ServiceType; label: string }> = [
@@ -260,17 +272,24 @@ export const QUICK_PICK_SERVICES: ReadonlyArray<{ serviceType: ServiceType; labe
 ];
 
 export function serviceQuickPicks(input: {
-  sizeBand: DogSizeBand | null;
+  /** One entry per dog on the booking, in order. */
+  sizeBands: ReadonlyArray<DogSizeBand | null>;
   tier: PriceTier;
   catalogue: readonly PriceCatalogueItem[];
 }): ServiceSuggestion[] {
   return QUICK_PICK_SERVICES.map(({ serviceType, label }) => {
-    const options = groomPriceOptions({
+    const prices = input.sizeBands.map((sizeBand) =>
+      pickDefaultPriceOption(
+        groomPriceOptions({ serviceType, sizeBand, catalogue: input.catalogue }),
+        input.tier,
+      )?.priceAud ?? null,
+    );
+    const { total, complete } = bookingTotal(prices);
+    return {
       serviceType,
-      sizeBand: input.sizeBand,
-      catalogue: input.catalogue,
-    });
-    return { serviceType, label, option: pickDefaultPriceOption(options, input.tier) };
+      label,
+      total: input.sizeBands.length > 0 && complete ? total : null,
+    };
   });
 }
 

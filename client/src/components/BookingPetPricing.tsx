@@ -215,12 +215,14 @@ export function BookingPetPricing(props: Props) {
   };
   const repeatablePets = petRows.filter((row) => row.pet?.last);
 
-  const quickPicks = useMemo(() => {
-    // With one dog the figure is exact; with several the sizes differ, so
-    // the button shows the cheapest and says "from".
-    const bands = petRows.map((row) => row.band);
-    return serviceQuickPicks({ sizeBand: bands.length === 1 ? bands[0] : null, tier, catalogue });
-  }, [petRows, tier, catalogue]);
+  const quickPicks = useMemo(
+    // The figure on each button is what the booking TOTAL becomes if it is
+    // tapped — every dog priced at its own size and added up. It is blank
+    // when any dog has no listed price, rather than borrowing a figure from
+    // a size none of them are.
+    () => serviceQuickPicks({ sizeBands: petRows.map((row) => row.band), tier, catalogue }),
+    [petRows, tier, catalogue],
+  );
 
   const prices = petIds.map((petId) =>
     membershipCovered ? "0.00" : props.priceByPetId[String(petId)] ?? null,
@@ -295,12 +297,7 @@ export function BookingPetPricing(props: Props) {
             onClick={() => props.onServiceTypeChange(pick.serviceType)}
           >
             {pick.label}
-            {pick.option?.priceAud && (
-              <span className="opacity-80">
-                {petRows.length === 1 ? "" : "from "}
-                {formatPriceAud(pick.option.priceAud)}
-              </span>
-            )}
+            {pick.total && <span className="opacity-80">{formatPriceAud(pick.total)}</span>}
           </Button>
         ))}
         {/* Offered on a membership booking too — those are the clients who

@@ -210,20 +210,47 @@ describe("pickDefaultPriceOption", () => {
 });
 
 describe("serviceQuickPicks", () => {
-  it("offers Classic and Styled with each one's price for this dog", () => {
-    const picks = serviceQuickPicks({ sizeBand: "small", tier: "new", catalogue: CATALOGUE });
+  it("shows what the booking total becomes, not one dog's price", () => {
+    // Kim Dahl's two dogs on 13/10: Beau 9 kg and Ralph 11 kg, both
+    // classic, regular client. $125.00 + $162.50 is what the panel shows
+    // as the total, so that is what the button has to promise.
+    const picks = serviceQuickPicks({ sizeBands: ["small", "small_medium"], tier: "regular", catalogue: CATALOGUE });
     expect(picks.map((p) => p.label)).toEqual(["Classic Cut", "Styled Cut"]);
-    expect(picks[0].option?.priceAud).toBe("145.00");
-    expect(picks[1].option?.priceAud).toBe("163.00");
+    expect(picks[0].total).toBe("287.50");
   });
 
-  it("still offers both when the salon prices only one of them for that size", () => {
-    // The quick pick must not disappear — staff still book a styled groom on
-    // a giant, they just have to type the figure.
-    const picks = serviceQuickPicks({ sizeBand: "giant", tier: "vip", catalogue: CATALOGUE });
+  it("is exact for a single dog", () => {
+    const picks = serviceQuickPicks({ sizeBands: ["small"], tier: "new", catalogue: CATALOGUE });
+    expect(picks[0].total).toBe("145.00");
+    expect(picks[1].total).toBe("163.00");
+  });
+
+  it("shows no figure when any dog has no listed price at this tier", () => {
+    // The bug this replaced: the button read "Styled Cut from $250.00" on
+    // two small dogs, $250 being the LARGE regular price — the only styled
+    // regular price that exists. Tapping it set both dogs to $0.00.
+    const picks = serviceQuickPicks({ sizeBands: ["small", "small_medium"], tier: "regular", catalogue: CATALOGUE });
+    expect(picks[1].serviceType).toBe("styled_groom");
+    expect(picks[1].total).toBeNull();
+  });
+
+  it("shows no figure when one dog of several is unpriced", () => {
+    // A giant has no regular classic price, so the booking total is not
+    // knowable and the button must not imply it is.
+    const picks = serviceQuickPicks({ sizeBands: ["small", "giant"], tier: "regular", catalogue: CATALOGUE });
+    expect(picks[0].total).toBeNull();
+  });
+
+  it("offers both services even when neither can be priced", () => {
+    // Staff still book a styled groom on a giant; they just type the figure.
+    const picks = serviceQuickPicks({ sizeBands: ["giant"], tier: "regular", catalogue: CATALOGUE });
     expect(picks).toHaveLength(2);
-    expect(picks[0].option?.priceAud).toBe("290.00");
-    expect(picks[1].option).toBeNull();
+    expect(picks.every((p) => p.total === null)).toBe(true);
+  });
+
+  it("shows no figure before any dog is chosen", () => {
+    const picks = serviceQuickPicks({ sizeBands: [], tier: "regular", catalogue: CATALOGUE });
+    expect(picks.every((p) => p.total === null)).toBe(true);
   });
 });
 
