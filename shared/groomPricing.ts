@@ -61,21 +61,46 @@ export function tierFromCatalogueName(name: string | null | undefined): PriceTie
 }
 
 /**
- * Which tier this client should be quoted.
+ * Which rate this DOG should be quoted, from its membership.
  *
- * A dog on an active membership is handled before this is ever reached —
- * the weekly payment is the revenue and the groom carries no price, so the
- * booking dialog forces $0.00. This decides only between a first-timer and
- * a returning client, and "first visit" means exactly that: no groom has
- * been completed for them yet.
+ * The three tiers are MoeGo's, and all three are membership facts rather
+ * than loyalty ones:
  *
- * VIP is never chosen automatically. It is the members' rate and members
- * pay nothing per groom, so picking it here would quote a discount to
- * somebody who is not on a membership. Staff can still select it by hand
- * for the cases the salon honours it.
+ *   Casual / NEW customer        -> "new"      — not a member
+ *   Bronze (8wks)                -> "regular"  — the 8-weekly membership
+ *   Diamond - Gold (up to 6wks)  -> "vip"      — every shorter interval
+ *
+ * It used to key on whether the client had ever had a groom finished,
+ * which made every returning client a Bronze member for pricing purposes —
+ * 703 of 963 upcoming bookings were being quoted a members' rate, around
+ * $20 a dog under the casual price. Andy, 13/10/2026: "Only actual members
+ * get Bronze, everyone else pays Casual."
+ *
+ * Per DOG, not per client: memberships hang off the pet, so one household
+ * can have a Gold poodle and an unenrolled schnauzer.
+ *
+ * Silver sits with Diamond and Gold deliberately, and this is the most
+ * consequential line in the function — 124 of the upcoming membership
+ * bookings are silver. Confirmed against MoeGo on 13/10/2026 rather than
+ * assumed: MoeGo's service label is "Diamond - Gold (up to 6wks)" and
+ * silver's appointment interval is exactly 6 weeks, so it is inside that
+ * band. The interval comes from MEMBERSHIP_WEIGHT_BANDS' sibling table in
+ * membershipPackages.ts, which is itself verified — its bronze weekly
+ * prices ([15, 19, 24, 27, 30, 34]) match MoeGo's Bronze VIP Classic plans
+ * on all six bands, and silver's ([17, 22, 27, 31, 40, 44]) match too.
+ *
+ * Most member bookings never reach a price at all: when the membership
+ * covers that groom the dialog forces $0.00 before this matters. This
+ * decides what a member pays for a groom their membership does NOT cover —
+ * a Classic member booking a styled cut, say.
  */
-export function clientPriceTier(input: { hasCompletedAppointment: boolean }): PriceTier {
-  return input.hasCompletedAppointment ? "regular" : "new";
+export const BRONZE_MEMBERSHIP_TIER = "bronze";
+
+export function clientPriceTier(input: { membershipTier?: string | null }): PriceTier {
+  const tier = (input.membershipTier ?? "").trim().toLowerCase();
+  if (tier === "") return "new";
+  if (tier === BRONZE_MEMBERSHIP_TIER) return "regular";
+  return "vip";
 }
 
 /**
@@ -272,23 +297,27 @@ export const QUICK_PICK_SERVICES: ReadonlyArray<{ serviceType: ServiceType; labe
 ];
 
 export function serviceQuickPicks(input: {
-  /** One entry per dog on the booking, in order. */
-  sizeBands: ReadonlyArray<DogSizeBand | null>;
-  tier: PriceTier;
+  /**
+   * One entry per dog on the booking, in order — each with its OWN tier,
+   * because a membership belongs to the pet. A household can have a Gold
+   * poodle beside an unenrolled schnauzer, and the two are not on the same
+   * price list.
+   */
+  dogs: ReadonlyArray<{ sizeBand: DogSizeBand | null; tier: PriceTier }>;
   catalogue: readonly PriceCatalogueItem[];
 }): ServiceSuggestion[] {
   return QUICK_PICK_SERVICES.map(({ serviceType, label }) => {
-    const prices = input.sizeBands.map((sizeBand) =>
+    const prices = input.dogs.map(({ sizeBand, tier }) =>
       pickDefaultPriceOption(
         groomPriceOptions({ serviceType, sizeBand, catalogue: input.catalogue }),
-        input.tier,
+        tier,
       )?.priceAud ?? null,
     );
     const { total, complete } = bookingTotal(prices);
     return {
       serviceType,
       label,
-      total: input.sizeBands.length > 0 && complete ? total : null,
+      total: input.dogs.length > 0 && complete ? total : null,
     };
   });
 }

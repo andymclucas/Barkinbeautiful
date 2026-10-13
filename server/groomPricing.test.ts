@@ -103,19 +103,37 @@ describe("tierFromCatalogueName", () => {
 });
 
 describe("clientPriceTier", () => {
-  it("quotes a first visit at the new-client rate", () => {
-    expect(clientPriceTier({ hasCompletedAppointment: false })).toBe("new");
+  it("quotes a non-member the casual rate", () => {
+    // Andy, 13/10/2026: "Only actual members get Bronze, everyone else
+    // pays Casual." This used to key on whether the household had been
+    // here before, which made 703 of 963 upcoming bookings a members'
+    // rate — about $20 a dog under the casual price.
+    expect(clientPriceTier({})).toBe("new");
+    expect(clientPriceTier({ membershipTier: null })).toBe("new");
+    expect(clientPriceTier({ membershipTier: "" })).toBe("new");
+    expect(clientPriceTier({ membershipTier: "   " })).toBe("new");
   });
 
-  it("quotes a returning client at the regular rate", () => {
-    expect(clientPriceTier({ hasCompletedAppointment: true })).toBe("regular");
+  it("quotes a Bronze member the Bronze rate", () => {
+    expect(clientPriceTier({ membershipTier: "bronze" })).toBe("regular");
+    expect(clientPriceTier({ membershipTier: "Bronze" })).toBe("regular");
+    expect(clientPriceTier({ membershipTier: " BRONZE " })).toBe("regular");
   });
 
-  it("never chooses VIP on its own", () => {
-    // VIP is the members' rate and a membership groom carries no price at
-    // all, so auto-selecting it would discount somebody who is not a member.
-    expect(clientPriceTier({ hasCompletedAppointment: true })).not.toBe("vip");
-    expect(clientPriceTier({ hasCompletedAppointment: false })).not.toBe("vip");
+  it("puts every shorter interval on the Diamond-Gold rate", () => {
+    // MoeGo's label is "Diamond - Gold (up to 6wks)". Silver's interval is
+    // exactly 6 weeks so it belongs inside that band, and silver is the
+    // biggest group of them — 124 of the upcoming membership bookings.
+    for (const tier of ["diamond", "platinum", "gold", "silver"]) {
+      expect(clientPriceTier({ membershipTier: tier })).toBe("vip");
+    }
+  });
+
+  it("treats an unrecognised tier as a member rather than a casual", () => {
+    // A tier this code has not heard of is still somebody paying weekly.
+    // Quoting them the casual rate would charge a member the dearest
+    // price; the members' rate is the safer side of an unknown.
+    expect(clientPriceTier({ membershipTier: "titanium" })).toBe("vip");
   });
 });
 
@@ -210,47 +228,60 @@ describe("pickDefaultPriceOption", () => {
 });
 
 describe("serviceQuickPicks", () => {
+  const dog = (sizeBand: any, tier: any = "new") => ({ sizeBand, tier });
+
   it("shows what the booking total becomes, not one dog's price", () => {
-    // Kim Dahl's two dogs on 13/10: Beau 9 kg and Ralph 11 kg, both
-    // classic, regular client. $125.00 + $162.50 is what the panel shows
-    // as the total, so that is what the button has to promise.
-    const picks = serviceQuickPicks({ sizeBands: ["small", "small_medium"], tier: "regular", catalogue: CATALOGUE });
+    const picks = serviceQuickPicks({
+      dogs: [dog("small", "regular"), dog("small_medium", "regular")],
+      catalogue: CATALOGUE,
+    });
     expect(picks.map((p) => p.label)).toEqual(["Classic Cut", "Styled Cut"]);
     expect(picks[0].total).toBe("287.50");
   });
 
-  it("is exact for a single dog", () => {
-    const picks = serviceQuickPicks({ sizeBands: ["small"], tier: "new", catalogue: CATALOGUE });
-    expect(picks[0].total).toBe("145.00");
-    expect(picks[1].total).toBe("163.00");
+  it("prices each dog on its OWN membership", () => {
+    // A household can have a Bronze poodle beside an unenrolled one. The
+    // total is $125 (Bronze small) + $145 (casual small) = $270.
+    const picks = serviceQuickPicks({
+      dogs: [dog("small", "regular"), dog("small", "new")],
+      catalogue: CATALOGUE,
+    });
+    expect(picks[0].total).toBe("270.00");
   });
 
-  it("shows no figure when any dog has no listed price at this tier", () => {
-    // The bug this replaced: the button read "Styled Cut from $250.00" on
-    // two small dogs, $250 being the LARGE regular price — the only styled
-    // regular price that exists. Tapping it set both dogs to $0.00.
-    const picks = serviceQuickPicks({ sizeBands: ["small", "small_medium"], tier: "regular", catalogue: CATALOGUE });
+  it("is exact for a single dog", () => {
+    expect(serviceQuickPicks({ dogs: [dog("small", "new")], catalogue: CATALOGUE })[0].total).toBe("145.00");
+    expect(serviceQuickPicks({ dogs: [dog("small", "regular")], catalogue: CATALOGUE })[0].total).toBe("125.00");
+    expect(serviceQuickPicks({ dogs: [dog("small", "vip")], catalogue: CATALOGUE })[0].total).toBe("110.00");
+  });
+
+  it("shows no figure when any dog has no listed price at its tier", () => {
+    // The bug this replaced read "Styled Cut from $250.00" on two small
+    // dogs — $250 being the LARGE regular price — and set both to $0.00.
+    const picks = serviceQuickPicks({
+      dogs: [dog("small", "regular"), dog("small_medium", "regular")],
+      catalogue: CATALOGUE,
+    });
     expect(picks[1].serviceType).toBe("styled_groom");
     expect(picks[1].total).toBeNull();
   });
 
   it("shows no figure when one dog of several is unpriced", () => {
-    // A giant has no regular classic price, so the booking total is not
-    // knowable and the button must not imply it is.
-    const picks = serviceQuickPicks({ sizeBands: ["small", "giant"], tier: "regular", catalogue: CATALOGUE });
+    const picks = serviceQuickPicks({
+      dogs: [dog("small", "regular"), dog("giant", "regular")],
+      catalogue: CATALOGUE,
+    });
     expect(picks[0].total).toBeNull();
   });
 
   it("offers both services even when neither can be priced", () => {
-    // Staff still book a styled groom on a giant; they just type the figure.
-    const picks = serviceQuickPicks({ sizeBands: ["giant"], tier: "regular", catalogue: CATALOGUE });
+    const picks = serviceQuickPicks({ dogs: [dog("giant", "regular")], catalogue: CATALOGUE });
     expect(picks).toHaveLength(2);
     expect(picks.every((p) => p.total === null)).toBe(true);
   });
 
   it("shows no figure before any dog is chosen", () => {
-    const picks = serviceQuickPicks({ sizeBands: [], tier: "regular", catalogue: CATALOGUE });
-    expect(picks.every((p) => p.total === null)).toBe(true);
+    expect(serviceQuickPicks({ dogs: [], catalogue: CATALOGUE }).every((p) => p.total === null)).toBe(true);
   });
 });
 

@@ -23,7 +23,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
-import { appointments, appointmentAddOns, clients, pets, pricingServices } from "../../drizzle/schema";
+import { appointments, appointmentAddOns, clients, memberships, pets, pricingServices } from "../../drizzle/schema";
 import { requireApprovedStaffTenant } from "../staffAccess";
 import { clientPriceTier } from "../../shared/groomPricing";
 
@@ -125,20 +125,28 @@ export const bookingPricingRouter = router({
       const petIds = Array.from(new Set(input.petIds));
       await assertClientPets(db, tenantId, input.clientId, petIds);
 
-      // "Has this client ever had a groom finished?" decides new vs regular.
-      // One row is enough to answer it, so this never scans their history.
-      const completed = await db
-        .select({ id: appointments.id })
-        .from(appointments)
-        .where(
-          and(
-            eq(appointments.tenantId, tenantId),
-            eq(appointments.clientId, input.clientId),
-            eq(appointments.workflowState, "complete"),
-          ),
-        )
-        .limit(1);
-      const hasCompletedAppointment = completed.length > 0;
+      // The rate a dog is quoted comes from ITS OWN membership, not from
+      // whether the household has been here before. Andy, 13/10/2026:
+      // "Only actual members get Bronze, everyone else pays Casual."
+      // Per pet, because a membership hangs off the pet — one client can
+      // have a Gold poodle and an unenrolled schnauzer.
+      const membershipRows =
+        petIds.length === 0
+          ? []
+          : await db
+              .select({ petId: memberships.petId, tier: memberships.tier })
+              .from(memberships)
+              .where(
+                and(
+                  eq(memberships.tenantId, tenantId),
+                  inArray(memberships.petId, petIds),
+                  eq(memberships.status, "active"),
+                ),
+              );
+      const membershipByPetId = new Map<number, string>();
+      for (const row of membershipRows) {
+        if (row.petId !== null) membershipByPetId.set(row.petId, row.tier);
+      }
 
       const petRows =
         petIds.length === 0
@@ -205,8 +213,6 @@ export const bookingPricingRouter = router({
               );
 
       return {
-        tier: clientPriceTier({ hasCompletedAppointment }),
-        hasCompletedAppointment,
         pets: petRows.map((pet: any) => {
           const last = lastByPetId.get(pet.id) ?? null;
           const minutes =
@@ -216,6 +222,7 @@ export const bookingPricingRouter = router({
                     60000,
                 )
               : null;
+          const membershipTier = membershipByPetId.get(pet.id) ?? null;
           return {
             petId: pet.id,
             name: pet.name,
@@ -223,6 +230,8 @@ export const bookingPricingRouter = router({
             weightKg: pet.weightKg,
             sizeBand: pet.sizeBand,
             sizeBandSource: pet.sizeBandSource,
+            membershipTier,
+            tier: clientPriceTier({ membershipTier }),
             last: last
               ? {
                   appointmentId: last.id,
