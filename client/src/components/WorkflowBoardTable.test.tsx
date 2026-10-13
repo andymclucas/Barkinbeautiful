@@ -157,3 +157,45 @@ describe("WorkflowBoardTable", () => {
     expect(actions.completeAppointment).not.toHaveBeenCalled();
   });
 });
+
+describe("the contact person", () => {
+  const withContact = row({
+    contactId: 7,
+    contactName: "Christie McLucas",
+    contactRelationship: "Wife",
+    contactPhone: "0407576731",
+  });
+
+  it("names who to ring on the staff board", () => {
+    // Lauren was writing "Tx + Rochelle" on the whiteboard because there
+    // was nowhere in here to put it.
+    renderBoard({ showContact: true }, [withContact]);
+    expect(screen.getByText(/Christie McLucas \(Wife\)/)).toBeInTheDocument();
+  });
+
+  it("hides it by default, which is what the wall screens get", () => {
+    // WorkflowDisplay and the board's tvMode hang above the waiting area.
+    // A client's wife's name does not belong on them, and the default has
+    // to be private so a new surface is safe without anyone remembering.
+    renderBoard({}, [withContact]);
+    expect(screen.queryByText(/Christie McLucas/)).not.toBeInTheDocument();
+  });
+
+  it("stays quiet for a booking that is for the owner", () => {
+    // The owner's surname is already on the row above; repeating it on
+    // every card would be noise.
+    renderBoard({ showContact: true }, [row({ contactId: null })]);
+    expect(screen.queryByText(/☎/)).not.toBeInTheDocument();
+  });
+
+  it("stays quiet when the contact has been deleted from the record", () => {
+    // contactId set, join found nothing. A bare phone icon would be worse.
+    renderBoard({ showContact: true }, [row({ contactId: 7, contactName: null })]);
+    expect(screen.queryByText(/☎/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the owner's name visible either way", () => {
+    renderBoard({}, [withContact]);
+    expect(screen.getByText("Tulley-Smith")).toBeInTheDocument();
+  });
+});

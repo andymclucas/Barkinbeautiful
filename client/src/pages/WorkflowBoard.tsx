@@ -605,6 +605,8 @@ export default function WorkflowBoard() {
 
         {/* Main whiteboard table */}
         <WorkflowBoardTable
+            // The staff board is the one surface not hanging on a wall.
+            showContact
             rows={rows}
             now={now}
             bathers={bathers}
