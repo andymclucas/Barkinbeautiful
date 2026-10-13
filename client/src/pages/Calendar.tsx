@@ -1204,7 +1204,7 @@ export default function Calendar() {
     onError: (e) => toast.error(e.message),
   });
   const rescheduleMutation = trpc.calendar.reschedule.useMutation({
-    onSuccess: () => { toast.success("Appointment updated"); setEditAppt(null); refetch(); },
+    onSuccess: () => { toast.success("Appointment updated"); closeEditDialog(); refetch(); },
     onError: (e) => toast.error(e.message),
   });
   const updateDetailsMutation = trpc.calendar.updateDetails.useMutation({
@@ -1265,7 +1265,7 @@ export default function Calendar() {
         },
       });
       setConfirmDelete(null);
-      setEditAppt(null);
+      closeEditDialog();
       refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -1629,6 +1629,31 @@ export default function Calendar() {
     setCollectByDraft(formatCollectBy(appt.collectBy) ?? "");
   };
 
+  /**
+   * Everything the appointment dialog holds that belongs to ONE appointment.
+   *
+   * It all lives in this page component, which never unmounts, so nothing
+   * clears it on its own. The Grooming Report panels get away without a list
+   * like this because their state sits inside DialogContent, which Radix
+   * destroys on close — that difference is the whole reason a style draft
+   * once followed Teddy into Maisie's box.
+   *
+   * The style draft is not here on purpose: it is owned by the effect keyed
+   * on styleTargetPetId, which fires when editAppt goes null. Anything else
+   * per-appointment added to this component belongs in this list.
+   */
+  const closeEditDialog = () => {
+    setEditAppt(null);
+    setSelectedStylePetId(null);
+    setSiblingGroomers({});
+    setSiblingPrices({});
+    setAdditionalFamilyPetIds([]);
+    // Drives "Copy to all", which overwrites every field of a grooming report,
+    // before and after photos included. Left set, it would apply itself to the
+    // next dog opened.
+    setCopySnap(null);
+  };
+
   const handleSaveEdit = async () => {
     if (!editAppt) return;
     const promises: Promise<unknown>[] = [];
@@ -1685,7 +1710,7 @@ export default function Calendar() {
     try {
       await Promise.all(promises);
       toast.success("Appointment updated");
-      setEditAppt(null);
+      closeEditDialog();
       refetch();
     } catch { /* individual errors already toasted */ }
   };
@@ -2888,7 +2913,7 @@ export default function Calendar() {
       </Dialog>
 
       {/* ── Edit Appointment Dialog ── */}
-      <Dialog open={!!editAppt} onOpenChange={open => { if (!open) { setEditAppt(null); setSelectedStylePetId(null); setSiblingGroomers({}); setSiblingPrices({}); setAdditionalFamilyPetIds([]); } }}>
+      <Dialog open={!!editAppt} onOpenChange={open => { if (!open) closeEditDialog(); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             {/* The dog and the owner carry the heading. "Edit appointment"
@@ -3121,7 +3146,7 @@ export default function Calendar() {
                       currentPercent={editAppt.discountPercent}
                       currentReason={editAppt.discountReason}
                       sessionHasOtherPets={editSiblings.length > 0}
-                      onApplied={() => { setEditAppt(null); refetch(); }}
+                      onApplied={() => { closeEditDialog(); refetch(); }}
                     />
                   </div>
 
@@ -3193,7 +3218,7 @@ export default function Calendar() {
                       </Button>
                     );
                   })()}
-                  <Button variant="outline" onClick={() => setEditAppt(null)}>Cancel</Button>
+                  <Button variant="outline" onClick={closeEditDialog}>Cancel</Button>
                   <Button onClick={handleSaveEdit} disabled={rescheduleMutation.isPending || workflowMutation.isPending}>
                     {rescheduleMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
