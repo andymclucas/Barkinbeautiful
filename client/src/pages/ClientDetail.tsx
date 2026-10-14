@@ -1275,7 +1275,7 @@ export default function ClientDetail() {
                             disabled={setPetTestFlag.isPending}
                             onChange={(e) => setPetTestFlag.mutate({ petId: pet.id, isTest: e.target.checked })}
                           />
-                          <span className="text-muted-foreground">Test dog \u2014 keep out of the salon\u2019s figures</span>
+                          <span className="text-muted-foreground">Test dog — keep out of the salon’s figures</span>
                         </label>
                       )}
                       {(pet as { isTest?: boolean }).isTest && (
