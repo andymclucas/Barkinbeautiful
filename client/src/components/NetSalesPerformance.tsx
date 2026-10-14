@@ -1,12 +1,14 @@
 import { useState } from "react";
 import {
-  CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { trpc } from "@/lib/trpc";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { COMPARISON_LABELS, type ComparisonMode } from "@shared/comparisonPeriod";
+import { CHART_MARKS, chartSeriesColours } from "@shared/chartStyle";
+import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
 
 /**
  * Net sales over the selected range, against a comparison period.
@@ -25,11 +27,6 @@ import { COMPARISON_LABELS, type ComparisonMode } from "@shared/comparisonPeriod
  * chroma, colour-blind separation, and contrast). The amber holds in both;
  * only the violet changes step.
  */
-const SERIES = {
-  light: { current: "#7c3aed", prior: "#d97706" },
-  dark: { current: "#8b5cf6", prior: "#d97706" },
-};
-
 const money = (n: number) =>
   `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -39,7 +36,9 @@ const shortDate = (iso: string) =>
 export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; dateTo: Date }) {
   const [comparison, setComparison] = useState<ComparisonMode>("prior_period");
   const { resolvedTheme } = useTheme();
-  const colours = resolvedTheme === "dark" ? SERIES.dark : SERIES.light;
+  const colours = chartSeriesColours(resolvedTheme);
+  // Opens as a trend: this chart's question is the shape of the period.
+  const { style, choose } = useChartStyle("netSales", "trend");
 
   const { data, isLoading, isError } = trpc.analyticsExt.netSalesPerformance.useQuery({
     dateFrom: dateFrom.toISOString(),
@@ -71,6 +70,8 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
               </p>
             )}
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <ChartStyleToggle style={style} onChange={choose} label="Net sales chart style" />
           <Select value={comparison} onValueChange={(v) => setComparison(v as ComparisonMode)}>
             <SelectTrigger className="h-8 w-[15rem] text-xs">
               <SelectValue />
@@ -80,6 +81,7 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
               <SelectItem value="prior_year">{COMPARISON_LABELS.prior_year}</SelectItem>
             </SelectContent>
           </Select>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4">
@@ -97,7 +99,12 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
         ) : (
           <>
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={points} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+              <ComposedChart
+                data={points}
+                margin={{ top: 8, right: 16, left: 0, bottom: 4 }}
+                barGap={CHART_MARKS.barGap}
+                barCategoryGap={CHART_MARKS.barCategoryGap}
+              >
                 {/* Recessive grid and axes: the lines are the content. */}
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis
@@ -149,29 +156,59 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
                     mounted in a background tab stays blank at dasharray "0px,
                     604px" instead of drawing. A revenue screen should be
                     readable the instant it renders anyway. */}
-                <Line
-                  type="monotone"
-                  dataKey="priorNet"
-                  name="priorNet"
-                  stroke={colours.prior}
-                  strokeWidth={2}
-                  strokeDasharray="5 4"
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="net"
-                  name="net"
-                  stroke={colours.current}
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 5 }}
-                  isAnimationActive={false}
-                />
-              </LineChart>
+                {/* The comparison is drawn first in both forms, so the
+                    legend reads in the same order whichever is on screen.
+                    Rendered as separate conditionals rather than a fragment:
+                    recharts inspects its children to find the axes, and a
+                    fragment hides them from it. */}
+                {style === "line" && (
+                  <Line
+                    type="monotone"
+                    dataKey="priorNet"
+                    name="priorNet"
+                    stroke={colours.prior}
+                    strokeWidth={CHART_MARKS.lineWidth}
+                    strokeDasharray="5 4"
+                    dot={false}
+                    activeDot={{ r: CHART_MARKS.dotRadius }}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                  />
+                )}
+                {style === "line" && (
+                  <Line
+                    type="monotone"
+                    dataKey="net"
+                    name="net"
+                    stroke={colours.current}
+                    strokeWidth={CHART_MARKS.lineWidth}
+                    dot={false}
+                    activeDot={{ r: CHART_MARKS.activeDotRadius }}
+                    isAnimationActive={false}
+                  />
+                )}
+                {/* The radius rounds the data END only. A bar rounded on the
+                    baseline no longer starts at zero, so it misreads the
+                    value it is drawing. */}
+                {style === "bar" && (
+                  <Bar
+                    dataKey="priorNet"
+                    name="priorNet"
+                    fill={colours.prior}
+                    radius={CHART_MARKS.barRadius}
+                    isAnimationActive={false}
+                  />
+                )}
+                {style === "bar" && (
+                  <Bar
+                    dataKey="net"
+                    name="net"
+                    fill={colours.current}
+                    radius={CHART_MARKS.barRadius}
+                    isAnimationActive={false}
+                  />
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
             {data?.priorRange?.from && (
               <p className="mt-1 text-center text-[11px] text-muted-foreground">

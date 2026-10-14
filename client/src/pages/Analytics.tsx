@@ -1,13 +1,20 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend, type TooltipProps } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, Legend, type TooltipProps } from "recharts";
+import { CHART_MARKS, chartMeasureColours } from "@shared/chartStyle";
+import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
+import { useTheme } from "@/contexts/ThemeContext";
 import { NetSalesPerformance } from "@/components/NetSalesPerformance";
 import { TrendingUp, Users, CreditCard, CalendarDays, Scissors, Heart, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
 
 export default function Analytics() {
+  const { resolvedTheme } = useTheme();
+  const trendColours = chartMeasureColours(resolvedTheme);
+  // Revenue over a run of weeks is a trend, so it opens as a line.
+  const { style: trendStyle, choose: chooseTrendStyle } = useChartStyle("analyticsTrend", "trend");
   // The period, the controls and the Brisbane day boundaries all live in
   // one place now, shared with the Reporting page so the two cannot drift
   // apart again.
@@ -336,19 +343,43 @@ export default function Analytics() {
         {timeSeries && timeSeries.length > 0 && (
           <Card>
             <CardHeader className="pb-2 pt-4 px-4">
-              <CardTitle className="text-sm font-semibold">Revenue Trends — Appointment vs Membership</CardTitle>
+              {/* The form picker sits with the title because this card has
+                  no other filters — everything that changes what the chart
+                  shows stays in one row. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-sm font-semibold">Revenue Trends — Appointment vs Membership</CardTitle>
+                <ChartStyleToggle style={trendStyle} onChange={chooseTrendStyle} label="Revenue trend chart style" />
+              </div>
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={timeSeries} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                <ComposedChart
+                  data={timeSeries}
+                  margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
+                  barGap={CHART_MARKS.barGap}
+                  barCategoryGap={CHART_MARKS.barCategoryGap}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${v}`} />
                   <Tooltip formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
                   <Legend formatter={(v: string) => v === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"} />
-                  <Line type="monotone" dataKey="apptRevenue" stroke="#3b82f6" strokeWidth={2} dot={false} name="apptRevenue" />
-                  <Line type="monotone" dataKey="memberRevenue" stroke="#f59e0b" strokeWidth={2} dot={false} name="memberRevenue" />
-                </LineChart>
+                  {/* Separate conditionals rather than a fragment: recharts
+                      inspects its children to find the axes, and a fragment
+                      hides them from it. */}
+                  {trendStyle === "line" && (
+                    <Line type="monotone" dataKey="apptRevenue" stroke={trendColours.primary} strokeWidth={CHART_MARKS.lineWidth} dot={false} activeDot={{ r: CHART_MARKS.activeDotRadius }} name="apptRevenue" isAnimationActive={false} />
+                  )}
+                  {trendStyle === "line" && (
+                    <Line type="monotone" dataKey="memberRevenue" stroke={trendColours.secondary} strokeWidth={CHART_MARKS.lineWidth} dot={false} activeDot={{ r: CHART_MARKS.activeDotRadius }} name="memberRevenue" isAnimationActive={false} />
+                  )}
+                  {trendStyle === "bar" && (
+                    <Bar dataKey="apptRevenue" fill={trendColours.primary} radius={CHART_MARKS.barRadius} name="apptRevenue" isAnimationActive={false} />
+                  )}
+                  {trendStyle === "bar" && (
+                    <Bar dataKey="memberRevenue" fill={trendColours.secondary} radius={CHART_MARKS.barRadius} name="memberRevenue" isAnimationActive={false} />
+                  )}
+                </ComposedChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
