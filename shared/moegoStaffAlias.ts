@@ -23,6 +23,15 @@
  *      neither "Megan Graham" nor "Megs Graham" contains the other, so it
  *      misses the real case, and a loose match on a salon with an Ashleigh
  *      and an Ash would eventually file a dog under the wrong person.
+ *
+ * The aliases themselves are DATA, passed in, not a constant here. They are
+ * one salon's staff — "bather 1" is Barkin' Beautiful's Stephanie and
+ * means nothing anywhere else — and they live in `moego_staff_aliases`,
+ * one row per tenant per MoeGo name.
+ *
+ * Each row points at a staff ID, not at another name. The old map was
+ * name-to-name, so renaming Steph to Stephanie Baldwin on 12/10/2026 meant
+ * moving the alias target by hand or 383 bath bookings stopped resolving.
  */
 
 export type MoegoStaffMember = {
@@ -40,31 +49,32 @@ export type MoegoStaffResolution =
   /** Resolved to somebody who has left. Stop rather than book them. */
   | { ok: false; kind: "inactive"; raw: string; staffName: string };
 
-/**
- * MoeGo's name for a person → the Groomigo name it means.
- *
- * "Bather 1" and "Bather" are both Stephanie Baldwin, confirmed by Andy on
- * 12/10/2026. They are MoeGo's generic bathing logins rather than a person,
- * which is exactly why the baths were the bookings that lost their staff.
- *
- * Keys and values are normalised form. Renaming somebody in Groomigo moves
- * the alias — it is matched on the name, not an id.
- */
-export const MOEGO_STAFF_ALIASES: Readonly<Record<string, string>> = {
-  "megan graham": "megs graham",
-  "bather 1": "stephanie baldwin",
-  "bather": "stephanie baldwin",
+/** One row of `moego_staff_aliases`. */
+export type MoegoStaffAlias = {
+  /** Normalised MoeGo name. See normaliseStaffName. */
+  moegoName: string;
+  staffId: number;
 };
+
+/** Index a tenant's aliases for lookup. */
+export function aliasIndex(aliases: ReadonlyArray<MoegoStaffAlias>): Map<string, number> {
+  return new Map(aliases.map((a) => [normaliseStaffName(a.moegoName), a.staffId]));
+}
 
 /** Case, padding and double spaces are not differences. */
 export function normaliseStaffName(name: string | null | undefined): string {
   return String(name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-/** The name a MoeGo string means, after aliasing. */
+/**
+ * The key a MoeGo string compares on.
+ *
+ * Aliases now resolve to an id rather than a name, so this is simply the
+ * normalised form. Kept because the sync scripts compare two MoeGo-side
+ * names to each other, where no roster is involved.
+ */
 export function moegoStaffKey(name: string | null | undefined): string {
-  const normalised = normaliseStaffName(name);
-  return MOEGO_STAFF_ALIASES[normalised] ?? normalised;
+  return normaliseStaffName(name);
 }
 
 function isActive(member: MoegoStaffMember): boolean {
@@ -80,17 +90,24 @@ function isActive(member: MoegoStaffMember): boolean {
 export function resolveMoegoStaff(
   raw: string | null | undefined,
   roster: ReadonlyArray<MoegoStaffMember>,
+  aliases: ReadonlyArray<MoegoStaffAlias> = [],
 ): MoegoStaffResolution {
   const text = String(raw ?? "").trim();
   if (text === "") return { ok: false, kind: "absent", raw: text };
 
   const normalised = normaliseStaffName(text);
-  const key = MOEGO_STAFF_ALIASES[normalised] ?? normalised;
-  const match = roster.find((member) => normaliseStaffName(member.name) === key);
-  if (!match) return { ok: false, kind: "unknown", raw: text, normalised: key };
+
+  // An alias wins over a name match: it exists precisely because the MoeGo
+  // name is not the Groomigo one.
+  const aliasedId = aliasIndex(aliases).get(normalised);
+  const match = aliasedId !== undefined
+    ? roster.find((member) => member.id === aliasedId)
+    : roster.find((member) => normaliseStaffName(member.name) === normalised);
+
+  if (!match) return { ok: false, kind: "unknown", raw: text, normalised };
   if (!isActive(match)) return { ok: false, kind: "inactive", raw: text, staffName: match.name };
 
-  return { ok: true, staffId: match.id, staffName: match.name, viaAlias: key !== normalised, raw: text };
+  return { ok: true, staffId: match.id, staffName: match.name, viaAlias: aliasedId !== undefined, raw: text };
 }
 
 /**
@@ -108,6 +125,7 @@ export function resolveMoegoStaffForPets(
   rawStaffs: string | null | undefined,
   petCount: number,
   roster: ReadonlyArray<MoegoStaffMember>,
+  aliases: ReadonlyArray<MoegoStaffAlias> = [],
 ): { ok: true; perPet: MoegoStaffResolution[] } | { ok: false; kind: "mismatch"; names: string[]; petCount: number } {
   const names = String(rawStaffs ?? "").split(",").map((part) => part.trim()).filter((part) => part !== "");
 
@@ -116,12 +134,12 @@ export function resolveMoegoStaffForPets(
     return { ok: true, perPet: Array.from({ length: petCount }, () => ({ ok: false, kind: "absent", raw: "" }) as MoegoStaffResolution) };
   }
   if (names.length === 1) {
-    const one = resolveMoegoStaff(names[0], roster);
+    const one = resolveMoegoStaff(names[0], roster, aliases);
     return { ok: true, perPet: Array.from({ length: petCount }, () => one) };
   }
   if (names.length !== petCount) return { ok: false, kind: "mismatch", names, petCount };
 
-  return { ok: true, perPet: names.map((name) => resolveMoegoStaff(name, roster)) };
+  return { ok: true, perPet: names.map((name) => resolveMoegoStaff(name, roster, aliases)) };
 }
 
 /** A line for the run's report, so an unresolved name is readable. */

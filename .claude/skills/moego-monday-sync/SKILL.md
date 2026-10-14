@@ -368,13 +368,32 @@ sync matches by id. Guard it with `AND moego_client_id IS NULL`.
 **Trap 11 — the `Staffs` column needs an alias table, and Groomigo may be
 stale.**
 
-**Use `shared/moegoStaffAlias.ts`. Do not write the table out in your
-script.** `resolveMoegoStaff(name, roster)` and
-`resolveMoegoStaffForPets(staffsColumn, petCount, roster)` are the only
-things that should touch MoeGo staff names, and both return a RESULT rather
-than a staff id — so an unresolved name cannot be turned into a null and
-inserted. `server/moegoStaffAlias.test.ts` fails the build if a script
-defines its own `STAFF_ALIAS` or `staffKey` again.
+**The aliases are DATA now, in `moego_staff_aliases`.** Load the tenant's
+rows and pass them in:
+
+```sql
+SELECT moego_name AS moegoName, staff_id AS staffId
+  FROM moego_staff_aliases WHERE tenant_id = 1;
+```
+
+**Use `shared/moegoStaffAlias.ts` to resolve them, and do not write a map
+out in your script.** `resolveMoegoStaff(name, roster, aliases)` and
+`resolveMoegoStaffForPets(staffsColumn, petCount, roster, aliases)` are the
+only things that should touch MoeGo staff names, and both return a RESULT
+rather than a staff id — so an unresolved name cannot be turned into a
+null and inserted. `server/moegoStaffAlias.test.ts` fails the build if a
+script defines its own `STAFF_ALIAS` or `staffKey`, or if the shared module
+hardcodes a salon's staff names again.
+
+**Each row points at a staff ID, not a name**, so renaming somebody no
+longer breaks the alias — which it did on 12/10/2026, when Steph became
+Stephanie Baldwin and the target had to be moved by hand or 383 bath
+bookings would have stopped resolving.
+
+**If the table is empty, nothing resolves.** That is the same condition
+that put 107 bookings on the board with nobody against them, so check it
+has rows before trusting a run: tenant 1 was seeded with three on
+14/10/2026 by `scripts/seed-moego-staff-aliases-2026-10-14.ts`.
 
 **This is not hypothetical tidiness.** By 14/10/2026 the map had been copied
 into THREE run scripts and two of them never knew `Bather`. The result was

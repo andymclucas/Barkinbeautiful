@@ -331,6 +331,28 @@ export const clientPortalAccess = mysqlTable("client_portal_access", {
   index("idx_client_portal_access_tenant_status").on(t.tenantId, t.status),
 ]);
 
+/**
+ * What MoeGo calls each member of staff, per salon.
+ *
+ * Points at a staff ID rather than a name: the map used to be name-to-name,
+ * so renaming Steph to Stephanie Baldwin on 12/10/2026 meant moving the
+ * alias target by hand or 383 bath bookings stopped resolving.
+ *
+ * `moegoName` is stored normalised — trimmed, lower case, whitespace
+ * collapsed — because that is the only form the lookup uses.
+ */
+export const moegoStaffAliases = mysqlTable("moego_staff_aliases", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  /** Normalised. See shared/moegoStaffAlias.ts. */
+  moegoName: varchar("moego_name", { length: 200 }).notNull(),
+  staffId: int("staff_id").notNull().references(() => staff.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_moego_staff_alias_name").on(t.tenantId, t.moegoName),
+  index("idx_moego_staff_alias_tenant").on(t.tenantId),
+]);
+
 // ─── Pets ─────────────────────────────────────────────────────────────────────
 export const pets = mysqlTable("pets", {
   id: int("id").autoincrement().primaryKey(),
