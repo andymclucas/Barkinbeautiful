@@ -12,6 +12,7 @@ import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import { parseSharedStrings, parseSheet } from "../shared/xlsxReader.ts";
 import { parseMoegoPets } from "../shared/moegoImport.ts";
+import { moegoStaffKey } from "../shared/moegoStaffAlias.ts";
 dotenv.config({ quiet: true });
 
 const [SCHED, CANX] = process.argv.slice(2);
@@ -37,22 +38,10 @@ const read = (path: string) => {
 
 const norm = (s: string) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 
-/**
- * MoeGo's name for a person → Groomigo's (Trap 11).
- *
- * Neither string contains the other, so a substring match misses both and
- * every dog they touch reads as a reassignment. Unmapped names are compared
- * literally, so a genuinely new name still shows up rather than being
- * silently absorbed.
- */
-const STAFF_ALIAS: Record<string, string> = {
-  "megan graham": "megs graham",
-  "bather 1": "stephanie baldwin",
-};
-const staffKey = (name: string) => {
-  const n = norm(name);
-  return STAFF_ALIAS[n] ?? n;
-};
+// The alias map used to be written out here, and in
+// moego-three-clients-2026-10-12.ts, and the two had already drifted — this
+// copy never knew "Bather". That is what left 107 imported bookings with
+// nobody against them. One copy now, in shared/moegoStaffAlias.ts.
 /** MoeGo writes 30/10/2026; we compare on ISO. */
 const toIso = (d: string) => {
   const m = String(d ?? "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -170,7 +159,7 @@ for (const r of cRows.slice(1)) {
     const diffs: string[] = [];
     if (g.d !== d.dateIso) diffs.push(`date ${g.d} → ${d.dateIso}`);
     if (d.time && norm(g.t) !== norm(d.time)) diffs.push(`time ${g.t} → ${d.time}`);
-    if (d.staff && g.staff_name && staffKey(g.staff_name) !== staffKey(d.staff)) {
+    if (d.staff && g.staff_name && moegoStaffKey(g.staff_name) !== moegoStaffKey(d.staff)) {
       diffs.push(`staff ${g.staff_name} → ${d.staff}`);
     }
     if (diffs.length) bucket4.push(`  ${d.pet} (${d.who}) #${d.booking}: ${diffs.join("; ")}`);
