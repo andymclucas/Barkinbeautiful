@@ -49,7 +49,12 @@ async function main() {
        FROM pets p
        LEFT JOIN clients c ON c.id = p.client_id
       WHERE p.tenant_id = ? AND p.preferred_groomer_id IS NULL
-        AND (p.status IS NULL OR p.status <> 'departed')`,
+        AND (p.status IS NULL OR p.status <> 'departed')
+        -- A test dog's fixture grooms are not evidence about anybody. Link
+        -- was skipped only because one groom is under the three-groom
+        -- floor; a couple more preview tests and this would have written a
+        -- confident preference out of fiction.
+        AND p.is_test = FALSE`,
     [TENANT_ID],
   );
 
@@ -59,7 +64,8 @@ async function main() {
   const [grooms] = await db.query<any[]>(
     `SELECT pet_id, staff_id, scheduled_start
        FROM appointments
-      WHERE tenant_id = ? AND staff_id IS NOT NULL AND workflow_state = 'complete'`,
+      WHERE tenant_id = ? AND staff_id IS NOT NULL AND workflow_state = 'complete'
+        AND pet_id NOT IN (SELECT id FROM pets WHERE is_test = TRUE)`,
     [TENANT_ID],
   );
   const byPet = new Map<number, { staffId: number; at: Date }[]>();

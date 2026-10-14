@@ -379,6 +379,13 @@ export default function ClientDetail() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const setPetTestFlag = trpc.pets.setTestFlag.useMutation({
+    onSuccess: async (result) => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      toast.success(result.isTest ? "Marked as a test dog" : "No longer a test dog");
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const updatePreferredGroomer = trpc.pets.updatePreferredGroomer.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -1254,6 +1261,28 @@ export default function ClientDetail() {
                           </SelectContent>
                         </Select>
                       </div>
+                      {/* A dog that is not a real customer's. Owner-only,
+                          because taking a dog out of the salon's figures is
+                          not a groomer's call. It does NOT hide him from the
+                          calendar — the point of a test dog is seeing him
+                          while testing. */}
+                      {isAdmin && (
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 accent-violet-700"
+                            checked={Boolean((pet as { isTest?: boolean }).isTest)}
+                            disabled={setPetTestFlag.isPending}
+                            onChange={(e) => setPetTestFlag.mutate({ petId: pet.id, isTest: e.target.checked })}
+                          />
+                          <span className="text-muted-foreground">Test dog \u2014 keep out of the salon\u2019s figures</span>
+                        </label>
+                      )}
+                      {(pet as { isTest?: boolean }).isTest && (
+                        <span className="inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                          Test
+                        </span>
+                      )}
                       {pet.coatType && <p><span className="text-muted-foreground">Coat:</span> {pet.coatType}</p>}
                       {pet.colour && <p><span className="text-muted-foreground">Colour:</span> {pet.colour}</p>}
                       {(pet.alertLevel === "danger" || pet.alertLevel === "caution") && (
