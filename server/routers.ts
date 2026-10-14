@@ -4,6 +4,7 @@ import { applyDiscount, validateDiscount, fromCents, toCents } from "@shared/app
 import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
+import { excludeTestPets } from "./testPets";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
@@ -2738,6 +2739,8 @@ const clientsRouter = router({
           sizeBandSource: pets.sizeBandSource,
           /** The groomer this dog usually goes to. */
           preferredGroomerId: pets.preferredGroomerId,
+          /** Not a real customer's dog — kept out of the salon's figures. */
+          isTest: pets.isTest,
           coatType: pets.coatType,
           colour: pets.colour,
           desexed: pets.desexed,
@@ -3189,6 +3192,35 @@ const petsRouter = router({
         .set({ preferredGroomerId: input.preferredGroomerId })
         .where(eq(pets.id, pet.id));
       return { success: true, preferredGroomerId: input.preferredGroomerId };
+    }),
+
+  /**
+   * Mark a dog as not a real customer's.
+   *
+   * adminProcedure: saying a dog is a fixture takes it out of the salon's
+   * figures, which is an owner's call rather than a groomer's.
+   *
+   * It does NOT hide the dog from the calendar or the board — the point of
+   * a test dog is being able to see him while testing. What it stops is his
+   * fixture grooms counting as somebody's work, or an inference script
+   * reading them as evidence about a real customer.
+   */
+  setTestFlag: adminProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      petId: z.number().int().positive(),
+      isTest: z.boolean(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const [pet] = await db.select({ id: pets.id })
+        .from(pets)
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
+        .limit(1);
+      if (!pet) throw new Error("Pet not found");
+      await db.update(pets).set({ isTest: input.isTest }).where(eq(pets.id, pet.id));
+      return { success: true, isTest: input.isTest };
     }),
 
   markDeparted: adminProcedure
@@ -5611,6 +5643,7 @@ const analyticsRouter = router({
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
+          excludeTestPets(appointments.petId),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ));
       const [apptCount] = await db
@@ -5619,6 +5652,7 @@ const analyticsRouter = router({
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
+          excludeTestPets(appointments.petId),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ));
       const [membershipCount] = await db
@@ -5641,6 +5675,7 @@ const analyticsRouter = router({
           notInArray(appointments.status, ["cancelled", "no_show"]),
           isNull(appointments.price),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
+          excludeTestPets(appointments.petId),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ));
       return {
@@ -5667,6 +5702,7 @@ const analyticsRouter = router({
         eq(appointments.workflowState, "complete"),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
+        excludeTestPets(appointments.petId),
         lte(appointments.scheduledStart, new Date(input.dateTo)),
       ];
 
@@ -5717,6 +5753,7 @@ const analyticsRouter = router({
         eq(appointments.workflowState, "complete"),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
+        excludeTestPets(appointments.petId),
         lte(appointments.scheduledStart, new Date(input.dateTo)),
         isNotNull(appointments.checkedInAt),
       ));
@@ -5827,6 +5864,7 @@ const analyticsRouter = router({
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
+          excludeTestPets(appointments.petId),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ))
         .groupBy(staff.id, staff.name, staff.colourHex)
@@ -5851,6 +5889,7 @@ const analyticsRouter = router({
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
+          excludeTestPets(appointments.petId),
           lte(appointments.scheduledStart, dateTo),
           sql`${appointments.price} > 0`
         ));
@@ -5875,6 +5914,7 @@ const analyticsRouter = router({
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
+          excludeTestPets(appointments.petId),
           lte(appointments.scheduledStart, dateTo)
         ));
 
@@ -6016,6 +6056,7 @@ const analyticsRouterExtended = router({
             eq(appointments.workflowState, "complete"),
             notInArray(appointments.status, ["cancelled", "no_show"]),
             gte(appointments.scheduledStart, rangeFrom),
+            excludeTestPets(appointments.petId),
             lte(appointments.scheduledStart, rangeTo),
           ))
           .groupBy(brisbaneDayExpr);
@@ -6075,6 +6116,7 @@ const analyticsRouterExtended = router({
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
+          excludeTestPets(appointments.petId),
           lte(appointments.scheduledStart, dateTo),
           sql`${appointments.price} > 0`
         ));

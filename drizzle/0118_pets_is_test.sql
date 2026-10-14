@@ -1,0 +1,23 @@
+-- Marking a dog that is not a real customer.
+--
+-- `memberships` has carried `is_test` since 0051, and six analytics queries
+-- exclude it, because a test membership that entered the salon's revenue
+-- figures would be a lie about money. Nothing equivalent protects a pet.
+--
+-- Link (pet 1574) is Andy's own dog and never gets groomed here. He exists
+-- so that testing has somewhere to land that is not a paying customer. But
+-- his fixture appointments are indistinguishable from real ones: the
+-- grooming-card test on 05/10/2026 forced one to `complete`, and it counts
+-- to this day as a completed groom for Charlotte Purcell.
+--
+-- It nearly cost more than that. The backfill that reads a dog's usual
+-- groomer out of its history treats completed grooms as evidence. Link was
+-- skipped only because one groom is under the three-groom floor — a couple
+-- more preview tests and it would have written a confident preference out
+-- of fiction. Catching that depended on somebody remembering whose dog he
+-- is, which is not a mechanism.
+--
+-- NOT NULL with a default, so every existing row becomes false in place and
+-- the column needs no backfill. Safe to apply before the code ships: the
+-- old code never names it.
+ALTER TABLE `pets` ADD `is_test` boolean NOT NULL DEFAULT false;

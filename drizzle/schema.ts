@@ -359,6 +359,19 @@ export const pets = mysqlTable("pets", {
   behaviourNotes: text("behaviour_notes"),
   groomingNotes: text("grooming_notes"),
   preferredGroomerId: int("preferred_groomer_id").references(() => staff.id),
+  /**
+   * Not a real customer's dog.
+   *
+   * Link (1574) is Andy's own, kept so that testing has somewhere to land
+   * that is not a paying client. Without this his fixture appointments are
+   * indistinguishable from real ones — one of them has counted as a
+   * completed groom for Charlotte Purcell since 05/10/2026, and the
+   * usual-groomer backfill treats completed grooms as evidence.
+   *
+   * Excluded from figures and from inference, NOT from the board: the
+   * point of a test dog is being able to see him while testing.
+   */
+  isTest: boolean("is_test").default(false).notNull(),
   moegoClientId: varchar("moego_pet_id", { length: 100 }),
   moeGoPetCodes: json("moego_pet_codes"),
   /**
