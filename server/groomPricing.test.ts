@@ -9,6 +9,7 @@ import {
   bookingTotal,
   formatPriceAud,
   type PriceCatalogueItem,
+  MEMBERSHIP_PRICE_TIERS,
 } from "@shared/groomPricing";
 
 /**
@@ -388,5 +389,61 @@ describe('groomPriceOptions scope: "all"', () => {
     const explicit = groomPriceOptions({ serviceType: "classic_groom", sizeBand: "small", catalogue: CATALOGUE, scope: "applicable" });
     expect(withoutScope).toEqual(explicit);
     expect(withoutScope.length).toBeLessThan(CATALOGUE.length);
+  });
+});
+
+describe("the membership tier ladder", () => {
+  it("prices every tier the salon actually uses", () => {
+    // All five enum values are in use: 88 silver, 31 gold, 26 bronze,
+    // 5 diamond, 3 platinum on 14/10/2026. None may fall through.
+    for (const tier of ["diamond", "platinum", "gold", "silver", "bronze"]) {
+      expect(MEMBERSHIP_PRICE_TIERS[tier]).toBeDefined();
+    }
+  });
+
+  it("keeps bronze on the regular rate", () => {
+    // MoeGo's "Bronze (8wks)" is Groomigo's Regular Client.
+    expect(clientPriceTier({ membershipTier: "bronze" })).toBe("regular");
+  });
+
+  it("keeps diamond, platinum and gold on VIP", () => {
+    // MoeGo's "Diamond - Gold (up to 6wks)".
+    for (const tier of ["diamond", "platinum", "gold"]) {
+      expect(clientPriceTier({ membershipTier: tier })).toBe("vip");
+    }
+  });
+
+  it("treats no membership as a new client", () => {
+    expect(clientPriceTier({ membershipTier: "" })).toBe("new");
+    expect(clientPriceTier({ membershipTier: null })).toBe("new");
+    expect(clientPriceTier({})).toBe("new");
+  });
+
+  it("keeps an unmapped tier on the members' rate", () => {
+    // Deliberate, and older than this map: holding a tier value at all
+    // means the client IS a paying member, so the casual rate would charge
+    // a member the dearest price in the book. Pinned by its own test
+    // above, which caught an attempt to reverse it on 14/10/2026.
+    expect(clientPriceTier({ membershipTier: "titanium" })).toBe("vip");
+  });
+
+  it("lets a salon choose where its own unmapped tiers land", () => {
+    expect(clientPriceTier({ membershipTier: "titanium", unmapped: "new" })).toBe("new");
+  });
+
+  it("lets another salon bring its own ladder", () => {
+    // The map is policy, not a fact. A second salon's silver may be its
+    // regular rate; inheriting this one's would be a pricing decision
+    // nobody made.
+    const policy = { silver: "regular" as const, gold: "vip" as const };
+    expect(clientPriceTier({ membershipTier: "silver", policy })).toBe("regular");
+    expect(clientPriceTier({ membershipTier: "gold", policy })).toBe("vip");
+    // A tier absent from THEIR policy takes the unmapped fallback, not
+    // this salon's mapping for it.
+    expect(clientPriceTier({ membershipTier: "bronze", policy })).toBe("vip");
+  });
+
+  it("is forgiving about case and padding", () => {
+    expect(clientPriceTier({ membershipTier: "  BRONZE " })).toBe("regular");
   });
 });
