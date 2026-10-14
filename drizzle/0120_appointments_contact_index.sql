@@ -1,0 +1,26 @@
+-- An index for releasing a contact's future bookings.
+--
+-- `clients.removeContact` clears `contact_id` on upcoming appointments
+-- before deleting the contact row, filtering on
+-- `contact_id = ? AND scheduled_start >= NOW()`. With no index on
+-- contact_id that is a full scan of `appointments` — 15,642 rows today,
+-- which is milliseconds, but it grows with the whole platform rather than
+-- with the salon, and removeContact is the only thing that reads the
+-- column this way.
+--
+-- Composite, in this order, because the query is an equality on
+-- contact_id and a RANGE on scheduled_start: the equality column has to
+-- lead or the range cannot be used to narrow what follows.
+--
+-- Not (tenant_id, contact_id): contact ids are globally unique primary
+-- keys and removeContact deliberately carries no tenant predicate, since
+-- it is cleaning up after one specific row.
+--
+-- Its own migration, one statement. The column went in with 0117; TiDB
+-- refuses a column and an index on that column in the same ALTER, and
+-- splitting them across migrations is what keeps the ledger truthful
+-- about which half ran.
+--
+-- Mostly NULL today — no appointment carries a contact yet — so the index
+-- is small, and the lookups that matter are all on non-null values.
+ALTER TABLE `appointments` ADD INDEX `idx_appt_contact` (`contact_id`, `scheduled_start`);

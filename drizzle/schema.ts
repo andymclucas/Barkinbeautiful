@@ -523,6 +523,12 @@ export const appointments = mysqlTable("appointments", {
   index("idx_appt_tenant_date").on(t.tenantId, t.scheduledStart),
   index("idx_appt_staff").on(t.staffId),
   index("idx_appt_pet").on(t.petId),
+  /**
+   * For releasing a contact's future bookings in clients.removeContact,
+   * which filters contactId = ? AND scheduledStart >= now(). Equality
+   * column leads so the range can narrow what follows.
+   */
+  index("idx_appt_contact").on(t.contactId, t.scheduledStart),
 ]);
 
 // ─── Workflow Logs (Pet Tracker history) ──────────────────────────────────────
