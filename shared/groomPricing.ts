@@ -96,11 +96,63 @@ export function tierFromCatalogueName(name: string | null | undefined): PriceTie
  */
 export const BRONZE_MEMBERSHIP_TIER = "bronze";
 
-export function clientPriceTier(input: { membershipTier?: string | null }): PriceTier {
+/**
+ * Which membership tier earns which price tier.
+ *
+ * This is salon POLICY, not a fact about the data. `memberships.tier` is a
+ * fixed five-value enum, but what each one is worth is a commercial
+ * decision — so the map is total and explicit, and a second salon passes
+ * its own rather than inheriting Barkin' Beautiful's ladder.
+ *
+ * It used to be `if bronze then regular else vip`, and the else was the
+ * problem: ANY tier the code did not recognise fell through to VIP, the
+ * cheapest rate. A salon whose tiers are named differently would have
+ * priced every client at its biggest discount, silently, on every booking.
+ *
+ * `silver` is marked because it is NOT established. MoeGo prices by
+ * "Diamond - Gold (up to 6wks)" and "Bronze (8wks)", and silver sits in
+ * neither. It is mapped to vip here only because that is what the old
+ * catch-all did, and changing it would reprice 114 upcoming bookings for
+ * 88 members without anybody deciding to. See the four unpriced
+ * combinations in the pricing notes — same kind of open question.
+ */
+export const MEMBERSHIP_PRICE_TIERS: Readonly<Record<string, PriceTier>> = {
+  diamond: "vip",
+  platinum: "vip",
+  gold: "vip",
+  /** UNVERIFIED — inherited from the old catch-all, not from MoeGo. */
+  silver: "vip",
+  bronze: "regular",
+};
+
+/**
+ * Where a tier nobody has mapped lands.
+ *
+ * "vip", deliberately, and not my first instinct — holding a tier value at
+ * all means the client IS a paying member, so quoting them the casual rate
+ * would charge a member the dearest price in the book. The members' rate
+ * is the safer side of an unknown. That reasoning predates this map and is
+ * pinned by its own test.
+ *
+ * It is a parameter so a salon whose ladder runs the other way can choose
+ * differently, not so this one can drift.
+ */
+export const DEFAULT_UNMAPPED_TIER: PriceTier = "vip";
+
+export function clientPriceTier(input: {
+  membershipTier?: string | null;
+  /** A salon's own ladder. Omitted, Barkin' Beautiful's is used. */
+  policy?: Readonly<Record<string, PriceTier>>;
+  /** Where an unmapped tier lands. See DEFAULT_UNMAPPED_TIER. */
+  unmapped?: PriceTier;
+}): PriceTier {
   const tier = (input.membershipTier ?? "").trim().toLowerCase();
+  // No membership is not an unmapped membership: it is a new client.
   if (tier === "") return "new";
-  if (tier === BRONZE_MEMBERSHIP_TIER) return "regular";
-  return "vip";
+
+  return (input.policy ?? MEMBERSHIP_PRICE_TIERS)[tier]
+    ?? input.unmapped
+    ?? DEFAULT_UNMAPPED_TIER;
 }
 
 /**
