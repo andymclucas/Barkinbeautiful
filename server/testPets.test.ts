@@ -19,7 +19,7 @@ describe("test dogs stay out of the figures", () => {
     // query gains a range and not the predicate, this drops below the
     // count and says so.
     const ranges = routers.match(/gte\(appointments\.scheduledStart/g) ?? [];
-    const guards = routers.match(/excludeTestPets\(appointments\.petId\)/g) ?? [];
+    const guards = routers.match(/excludeTestPets\(appointments\.petId/g) ?? [];
     expect(guards.length).toBeGreaterThanOrEqual(10);
     expect(guards.length).toBeLessThanOrEqual(ranges.length);
   });
@@ -27,8 +27,25 @@ describe("test dogs stay out of the figures", () => {
   it("reaches the predicate through the shared helper", () => {
     // Written out inline, a copy would drift from the column name the way
     // the MoeGo staff alias map did.
-    const inline = routers.match(/NOT IN \(SELECT id FROM pets WHERE is_test/g) ?? [];
+    const inline = routers.match(/NOT IN \(SELECT id FROM pets WHERE/g) ?? [];
     expect(inline).toEqual([]);
+  });
+
+  it("scopes the subquery to one salon", () => {
+    // Unscoped it reads every tenant's pets, so the cost grows with the
+    // PLATFORM rather than with the salon asking. It also cannot use
+    // idx_pets_tenant. Required rather than defaulted, so the compiler
+    // asks at a new call site instead of the next person remembering.
+    const helper = readFileSync(new URL("../server/testPets.ts", import.meta.url), "utf8");
+    expect(helper).toContain("tenant_id = ${tenantId}");
+    expect(helper).toMatch(/tenantId: number\s*\)/);
+
+    // Every call site passes a tenant. The import line carries no paren,
+    // so it is not counted either way.
+    const scoped = routers.match(/excludeTestPets\(appointments\.petId, tenantOf\(ctx, input\)\)/g) ?? [];
+    const all = routers.match(/excludeTestPets\(/g) ?? [];
+    expect(all.length).toBeGreaterThan(0);
+    expect(scoped.length).toBe(all.length);
   });
 
   it("does not filter the calendar or the board", () => {

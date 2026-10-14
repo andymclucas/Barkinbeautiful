@@ -5643,7 +5643,7 @@ const analyticsRouter = router({
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
-          excludeTestPets(appointments.petId),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ));
       const [apptCount] = await db
@@ -5652,7 +5652,7 @@ const analyticsRouter = router({
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
-          excludeTestPets(appointments.petId),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ));
       const [membershipCount] = await db
@@ -5675,7 +5675,7 @@ const analyticsRouter = router({
           notInArray(appointments.status, ["cancelled", "no_show"]),
           isNull(appointments.price),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
-          excludeTestPets(appointments.petId),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ));
       return {
@@ -5702,7 +5702,7 @@ const analyticsRouter = router({
         eq(appointments.workflowState, "complete"),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
-        excludeTestPets(appointments.petId),
+        excludeTestPets(appointments.petId, tenantOf(ctx, input)),
         lte(appointments.scheduledStart, new Date(input.dateTo)),
       ];
 
@@ -5753,7 +5753,7 @@ const analyticsRouter = router({
         eq(appointments.workflowState, "complete"),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(input.dateFrom)),
-        excludeTestPets(appointments.petId),
+        excludeTestPets(appointments.petId, tenantOf(ctx, input)),
         lte(appointments.scheduledStart, new Date(input.dateTo)),
         isNotNull(appointments.checkedInAt),
       ));
@@ -5864,7 +5864,7 @@ const analyticsRouter = router({
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
-          excludeTestPets(appointments.petId),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
           lte(appointments.scheduledStart, new Date(input.dateTo))
         ))
         .groupBy(staff.id, staff.name, staff.colourHex)
@@ -5889,7 +5889,7 @@ const analyticsRouter = router({
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
-          excludeTestPets(appointments.petId),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
           lte(appointments.scheduledStart, dateTo),
           sql`${appointments.price} > 0`
         ));
@@ -5914,7 +5914,7 @@ const analyticsRouter = router({
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
-          excludeTestPets(appointments.petId),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
           lte(appointments.scheduledStart, dateTo)
         ));
 
@@ -6056,7 +6056,7 @@ const analyticsRouterExtended = router({
             eq(appointments.workflowState, "complete"),
             notInArray(appointments.status, ["cancelled", "no_show"]),
             gte(appointments.scheduledStart, rangeFrom),
-            excludeTestPets(appointments.petId),
+            excludeTestPets(appointments.petId, tenantOf(ctx, input)),
             lte(appointments.scheduledStart, rangeTo),
           ))
           .groupBy(brisbaneDayExpr);
@@ -6116,7 +6116,7 @@ const analyticsRouterExtended = router({
           eq(appointments.workflowState, "complete"),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           gte(appointments.scheduledStart, dateFrom),
-          excludeTestPets(appointments.petId),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
           lte(appointments.scheduledStart, dateTo),
           sql`${appointments.price} > 0`
         ));
