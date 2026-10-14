@@ -97,8 +97,15 @@ describe("completed Workflow pickup messaging", () => {
     expect(workflowSource).toContain("Not now");
   });
 
-  it("keeps alternate pickup contact management administrator-only in the client profile", () => {
-    expect(routerSource).toContain("addContact: adminProcedure");
+  it("keeps DELETING a pickup contact administrator-only", () => {
+    // Adding one went operational on 14/10/2026 — whoever is on the desk
+    // is who learns that the daughter does the pickup, and routing it via
+    // an owner means it goes on the whiteboard instead. Deleting did not:
+    // it clears the contact off future bookings and destroys the only
+    // record of the name and number.
+    //
+    // addContact's own level is pinned properly in procedureSurface.test.ts
+    // rather than asserted as source text here.
     expect(routerSource).toContain("removeContact: adminProcedure");
     expect(clientProfileSource).toContain("Pickup contacts");
     expect(clientProfileSource).toContain("Additional pickup contact saved");

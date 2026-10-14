@@ -106,6 +106,9 @@ const OPERATIONAL = [
   "calendarRouter.undoDeleteAppointment",
   "calendarRouter.updateDetails",
   "calendarRouter.updateWorkflowState",
+  // Whoever is on the desk is the one who learns that somebody else
+  // collects the dog. Tenant-checked against the session, not the client.
+  "clientsRouter.addContact",
   "clientsRouter.create",
   "clientsRouter.list",
   // Who may be rung about a client. operationalProcedure on purpose: the
@@ -193,7 +196,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(90);
+    expect(OPERATIONAL).toHaveLength(91);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
