@@ -18,6 +18,7 @@ import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import { parseSharedStrings, parseSheet } from "../shared/xlsxReader.ts";
 import { parseMoegoPets } from "../shared/moegoImport.ts";
+import { moegoStaffKey } from "../shared/moegoStaffAlias.ts";
 dotenv.config({ quiet: true });
 
 const SCHED = process.argv.find((a) => a.endsWith(".xlsx"));
@@ -55,14 +56,8 @@ const toMinutes = (t: string) => {
 const brisbane = (iso: string, mins: number) =>
   new Date(Date.parse(`${iso}T00:00:00+10:00`) + mins * 60_000);
 
-// "Bather" joins "Bather 1" as a name MoeGo uses for Stephanie Baldwin — confirmed by
-// Andy on 12/10/2026. Trap 11: an unresolved name aborts, never guesses.
-const STAFF_ALIAS: Record<string, string> = {
-  "megan graham": "megs graham",
-  "bather 1": "stephanie baldwin",
-  "bather": "stephanie baldwin",
-};
-const staffKey = (n: string) => STAFF_ALIAS[norm(n)] ?? norm(n);
+// The alias map lives in shared/moegoStaffAlias.ts. It used to be written
+// out here and in moego-sync-2026-10-12.ts, and the two had drifted.
 
 /**
  * Service type and length, from MoeGo's service text.
@@ -117,7 +112,7 @@ for (const r of rows.slice(1)) {
   });
   const [staffRows] = (await db.query(
     `SELECT id, name, tenant_id tenantId, is_active isActive, role FROM staff WHERE tenant_id=?`, [TENANT])) as any;
-  const staffByKey = new Map<string, any>(staffRows.map((s: any) => [staffKey(s.name), s]));
+  const staffByKey = new Map<string, any>(staffRows.map((s: any) => [moegoStaffKey(s.name), s]));
 
   const [existing] = (await db.query(`
     SELECT a.id, a.moego_appointment_id b, p.name pet, p.client_id,
@@ -149,7 +144,7 @@ for (const r of rows.slice(1)) {
       blocked.push(`${label}: already has a booking that day — left alone`);
       continue;
     }
-    const member = staffByKey.get(staffKey(w.staff));
+    const member = staffByKey.get(moegoStaffKey(w.staff));
     if (w.staff && !member) { blocked.push(`${label}: unresolved groomer "${w.staff}" (Trap 11)`); continue; }
     // Tenant and active, checked directly. canAssignTo() next door answers a
     // different question — who returns phone calls — and borrowing it here

@@ -366,7 +366,24 @@ When you match by phone or email, **backfill `moego_client_id`** so the next
 sync matches by id. Guard it with `AND moego_client_id IS NULL`.
 
 **Trap 11 — the `Staffs` column needs an alias table, and Groomigo may be
-stale.** The table, as at 12/10/2026:
+stale.**
+
+**Use `shared/moegoStaffAlias.ts`. Do not write the table out in your
+script.** `resolveMoegoStaff(name, roster)` and
+`resolveMoegoStaffForPets(staffsColumn, petCount, roster)` are the only
+things that should touch MoeGo staff names, and both return a RESULT rather
+than a staff id — so an unresolved name cannot be turned into a null and
+inserted. `server/moegoStaffAlias.test.ts` fails the build if a script
+defines its own `STAFF_ALIAS` or `staffKey` again.
+
+**This is not hypothetical tidiness.** By 14/10/2026 the map had been copied
+into THREE run scripts and two of them never knew `Bather`. The result was
+**107 forward bookings on the board with nobody against them**, every one
+imported from MoeGo, 101 of them baths — imported bookings were unassigned
+49% of the time against 3% for ones made in Groomigo. The dogs were real and
+booked; they simply appeared on no column.
+
+The table, as at 14/10/2026:
 
 | MoeGo says | Groomigo holds |
 | --- | --- |

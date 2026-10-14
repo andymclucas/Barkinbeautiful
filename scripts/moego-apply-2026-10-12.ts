@@ -17,6 +17,7 @@ import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 import { parseSharedStrings, parseSheet } from "../shared/xlsxReader.ts";
 import { parseMoegoPets } from "../shared/moegoImport.ts";
+import { moegoStaffKey } from "../shared/moegoStaffAlias.ts";
 dotenv.config({ quiet: true });
 
 const rawArgs = process.argv.slice(2);
@@ -97,8 +98,8 @@ const PER_DOG_STAFF: Record<string, Record<string, string>> = {
 const verifiedStaff = (booking: string, pet: string) =>
   PER_DOG_STAFF[booking]?.[norm(pet)] ?? null;
 
-const STAFF_ALIAS: Record<string, string> = { "megan graham": "megs graham", "bather 1": "stephanie baldwin" };
-const staffKey = (n: string) => STAFF_ALIAS[norm(n)] ?? norm(n);
+// Third copy of the alias map, and the second one that never knew
+// "Bather". See shared/moegoStaffAlias.ts — one copy now.
 
 // ── Parse MoeGo ──────────────────────────────────────────────────────────────
 const sRows = read(SCHED);
@@ -138,8 +139,8 @@ const windowDogs = dogs.filter((d) => inWindow(d.iso));
 
   const [staffRows] = (await db.query(
     `SELECT id, name, role FROM staff WHERE tenant_id=? AND is_active=1`, [TENANT])) as any;
-  const staffByKey = new Map<string, any>(staffRows.map((s: any) => [staffKey(s.name), s]));
-  const resolveStaff = (moegoName: string) => staffByKey.get(staffKey(moegoName)) ?? null;
+  const staffByKey = new Map<string, any>(staffRows.map((s: any) => [moegoStaffKey(s.name), s]));
+  const resolveStaff = (moegoName: string) => staffByKey.get(moegoStaffKey(moegoName)) ?? null;
 
   const [gRows] = (await db.query(`
     SELECT a.id, a.moego_appointment_id AS booking, a.pet_id, a.client_id, a.staff_id,
@@ -294,7 +295,7 @@ const windowDogs = dogs.filter((d) => inWindow(d.iso));
     if (!d.alignmentOk && !verifiedDiff) { blocked.push(`${d.pet} #${d.booking}: pet/staff counts disagree and nobody has read this booking in MoeGo (Trap 3)`); continue; }
 
     const wantStaff = verifiedDiff ?? d.staff;
-    if (wantStaff && g.staff_name && staffKey(g.staff_name) !== staffKey(wantStaff)) {
+    if (wantStaff && g.staff_name && moegoStaffKey(g.staff_name) !== moegoStaffKey(wantStaff)) {
       const member = resolveStaff(wantStaff);
       if (!member) { blocked.push(`${d.pet} #${d.booking}: unresolved groomer "${wantStaff}" (Trap 11)`); continue; }
       plan.push({
