@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { groomerDayLoad, isClip, overbookingWarning } from "@shared/groomerCapacity";
 import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentValidation";
+import { preferredGroomerDefaults } from "@shared/preferredGroomerDefaults";
 import { formatCollectBy } from "@shared/collectBy";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { trpc } from "@/lib/trpc";
@@ -1579,6 +1580,28 @@ export default function Calendar() {
       return auto.length === 0 ? current : { ...current, petIds: auto };
     });
   }, [newAppt.clientId, selectedClientPets.data]);
+
+  // The dog's file says who usually grooms it, so the booking opens with
+  // that already chosen — the red "Char" on the whiteboard, applied. It
+  // only ever fills a gap: a groomer picked by hand wins, a split already
+  // started wins, a preference naming somebody who has left is ignored,
+  // and one dog's preference is never spread onto a dog that has none.
+  // See shared/preferredGroomerDefaults.
+  useEffect(() => {
+    const clientPets = selectedClientPets.data;
+    if (!clientPets) return;
+    setNewAppt(current => {
+      const next = preferredGroomerDefaults({
+        petIds: current.petIds,
+        draft: { staffId: current.staffId, staffByPetId: current.staffByPetId },
+        pets: clientPets,
+        rosterIds: activeStaffIds,
+      });
+      // null means nothing to fill; returning `current` lets React bail out
+      // rather than re-rendering on every pass.
+      return next ? { ...current, ...next } : current;
+    });
+  }, [selectedClientPets.data, activeStaffIds, newAppt.petIds]);
 
   const familyBookingCompanions = useMemo(() => {
     const selectedIds = new Set(newAppt.petIds);
