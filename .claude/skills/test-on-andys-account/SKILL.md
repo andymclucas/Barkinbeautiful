@@ -19,20 +19,55 @@ real client because their data happens to suit the test.**
 | Platform user | **30001** | `mclucas.andy@gmail.com`, `users.role = admin` |
 | Staff record | **60001** | "Andy McLucas", `staff.role = manager` |
 | Client | **1162** | Andy McLucas, `mclucas.andy@gmail.com`, 0427030788 |
-| Pet | **1574** | Link, Mastiff X, 42 kg |
-| Membership | **120002** | Gold VIP Styled – Giant (36–80 kg), **`is_test = 1`** |
+| Pet | **1574** | Link, Mastiff X, 42 kg — **`is_test = 1`**, see below |
+| Membership | — | **Gone.** 120002 no longer exists; client 1162 has no membership at all (checked 14/10/2026). Create one if a test needs it, with `is_test = 1`. |
 | Stripe customer | `cus_VMJI1Z2f8YFgMd` | real, live-mode |
-| Payment method | `pm_1ULaidAwaBS2YIYS6raOHoWn` | a Stripe **Link** method, so it carries no brand or last4 |
+| Payment method | `pm_1UO6h2AwaBS2YIYSU1ko1ReS` | as at 14/10/2026 — it has changed before, read it rather than trusting this |
 
 Andy is also one of the two staff administrators
 (`shared/staffAdministrators.ts`), so his login sees owner-only surfaces —
 useful for testing those, and a reason not to assume a groomer sees the
 same thing.
 
-`is_test = 1` on membership 120002 is load-bearing. Six analytics and
-revenue queries exclude it (`server/routers.ts`, search `memberships.isTest`),
-and the Memberships row shows a TEST badge. **Any membership created for
-testing must carry it**, or it silently enters the salon's revenue figures.
+## Link is not a customer's dog, and his history is fiction
+
+**Link has never been groomed here.** He is Andy's own dog, and every
+appointment on his record is a fixture somebody created while testing.
+
+This matters because nothing about those rows says so. Appointment
+**210003** reads as a completed classic groom by Charlotte Purcell on
+19/08/2026. It was an online-booking preview test, forced to `complete` by
+a script on 05/10/2026 to set up a grooming-card test — and until
+14/10/2026 it counted as one of Charlotte's completed grooms in the staff
+figures.
+
+It nearly cost more. The usual-groomer backfill
+(`scripts/backfill-preferred-groomers-2026-10-14.ts`) reads completed
+grooms as evidence of who normally does a dog. Link was skipped only
+because one groom is under its three-groom floor. A few more preview tests
+and it would have written a confident preference out of fiction.
+
+So **`pets.is_test = 1` on Link since 14/10/2026** (migration 0118). It
+excludes him from the ten appointment date-range conditions behind the
+analytics and reporting figures, and from the backfill's view of history.
+It deliberately does NOT hide him from the calendar or the workflow board,
+because the point of a test dog is being able to watch him while testing.
+
+**Set it on any pet created for testing**, the same way `is_test = 1` goes
+on a test membership. Owner-only: the tick is on the dog's file under the
+weight, below "Usually".
+
+**And the general lesson, which cost an hour on 14/10/2026:** the database
+cannot tell a fixture from a real groom, so neither can you by reading it.
+A row being present is not evidence that it happened. On that day a
+preferred groomer was set on Link and justified as "accurate — she did
+groom him", which was true of the data and false of the salon.
+
+`is_test = 1` on a test MEMBERSHIP is load-bearing for the same reason. Six
+analytics and revenue queries exclude it (`server/routers.ts`, search
+`memberships.isTest`), and the Memberships row shows a TEST badge. **Any
+membership created for testing must carry it**, or it silently enters the
+salon's revenue figures.
 
 ## Before you touch anything
 
@@ -43,7 +78,7 @@ and the price in particular has been moved about.
 node -e 'require("dotenv").config({quiet:true});const m=require("mysql2/promise");
 (async()=>{const c=await m.createConnection({uri:process.env.DATABASE_URL,ssl:{minVersion:"TLSv1.2",rejectUnauthorized:true}});
 const [cl]=await c.query("SELECT id,portal_account_status,stripe_customer_id,stripe_default_payment_method_id,stripe_card_last4 FROM clients WHERE id=1162");
-const [mm]=await c.query("SELECT id,status,price_per_cycle,payment_gateway,stripe_subscription_id,failed_payment_count,booking_suspended,is_test FROM memberships WHERE id=120002");
+const [mm]=await c.query("SELECT id,status,price_per_cycle,payment_gateway,stripe_subscription_id,failed_payment_count,booking_suspended,is_test FROM memberships WHERE client_id=1162");
 console.table(cl); console.table(mm); await c.end();})()'
 ```
 
@@ -54,11 +89,17 @@ produced one wrong diagnosis of a "timezone bug" that did not exist.
 
 ## Setting up the common states
 
+**The membership states below need a membership, and there is not one.**
+120002 is gone and client 1162 has none (checked 14/10/2026). Create one
+first through Memberships → Andy McLucas, set `is_test = 1` on it
+immediately, and use its id in place of 120002 throughout this section.
+A test membership without that flag enters the salon's revenue figures.
+
 ### A failed payment, to see the notification
 
 ```sql
 UPDATE memberships SET failed_payment_count = 2, last_failed_payment_at = NOW()
-WHERE id = 120002 AND is_test = 1;
+WHERE id = <the test membership> AND is_test = 1;
 ```
 
 Add `booking_suspended = 1` to see the "bookings suspended" variant. Clear
@@ -74,7 +115,7 @@ Set the price to something trivial **first** — it has been left at $51
 before, and starting billing charges immediately:
 
 ```sql
-UPDATE memberships SET price_per_cycle = '1.00' WHERE id = 120002 AND is_test = 1;
+UPDATE memberships SET price_per_cycle = '1.00' WHERE id = <the test membership> AND is_test = 1;
 ```
 
 Then Memberships → Andy McLucas → **Set Weekly Billing**. This creates a
@@ -103,6 +144,14 @@ existing one.
   card. Keep test amounts at $1 and refund in Stripe if a mistake lands.
 - **Say what you changed.** Report the ids touched and the state left
   behind, so the next session is not surprised by a test artefact.
+- **Flag what you create.** `is_test = 1` on a test pet as well as a test
+  membership. A fixture that is not flagged is indistinguishable from a
+  real customer's row the moment you stop looking at it, and the next
+  person to read it will believe it — including you, a week later.
+- **This file goes stale.** Two of its ids were wrong on 14/10/2026: a
+  membership that no longer existed, and a payment method that had been
+  replaced. Read the current state before trusting any id here, and fix
+  the line when it is wrong rather than working around it.
 
 ## Why this exists
 
