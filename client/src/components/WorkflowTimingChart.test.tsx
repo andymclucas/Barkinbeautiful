@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { cloneElement } from "react";
 
@@ -13,6 +13,7 @@ vi.mock("recharts", async () => {
   };
 });
 vi.mock("@/contexts/ThemeContext", () => ({ useTheme: () => ({ resolvedTheme: "light" }) }));
+vi.mock("@/_core/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: 1 } }) }));
 
 import { WorkflowTimingChart } from "./WorkflowTimingChart";
 
@@ -24,7 +25,10 @@ const STAGES = [
   { key: "total", label: "Total", avgMinutes: 186, sampleSize: 125 },
 ];
 
+const STYLE_KEY = "groomigo_chart_style_v1_reportingTiming_1";
+
 describe("WorkflowTimingChart", () => {
+  beforeEach(() => window.localStorage.clear());
   it("draws one bar per stage", () => {
     const { container } = render(<WorkflowTimingChart stages={STAGES} sampleSize={125} />);
     expect(container.querySelectorAll(".recharts-bar-rectangle").length).toBe(4);
@@ -81,5 +85,45 @@ describe("WorkflowTimingChart", () => {
     );
     expect(container.querySelectorAll(".recharts-bar-rectangle").length).toBe(4);
     expect(screen.queryByText("Nails")).not.toBeInTheDocument();
+  });
+});
+
+describe("the form picker", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("opens on bars, because the question is which stage is longest", () => {
+    const { container } = render(<WorkflowTimingChart stages={STAGES} sampleSize={125} />);
+    expect(container.querySelectorAll(".recharts-bar-rectangle").length).toBe(4);
+    expect(container.querySelectorAll(".recharts-line").length).toBe(0);
+  });
+
+  it("offers both forms", () => {
+    render(<WorkflowTimingChart stages={STAGES} sampleSize={125} />);
+    expect(screen.getByRole("group", { name: "Workflow timing chart style" })).toBeInTheDocument();
+  });
+
+  it("draws a line when line is chosen", () => {
+    window.localStorage.setItem(STYLE_KEY, "line");
+    const { container } = render(<WorkflowTimingChart stages={STAGES} sampleSize={125} />);
+    expect(container.querySelectorAll(".recharts-line").length).toBe(1);
+    expect(container.querySelectorAll(".recharts-bar-rectangle").length).toBe(0);
+  });
+
+  it("turns the chart the right way up for the line", () => {
+    // A line reads left to right. Drawn down a sideways axis it is
+    // unreadable, so choosing it puts the stages along the bottom — which
+    // is why the long names have to be angled, and why bars are default.
+    window.localStorage.setItem(STYLE_KEY, "line");
+    const { container } = render(<WorkflowTimingChart stages={STAGES} sampleSize={125} />);
+    const tick = container.querySelector(".recharts-xAxis .recharts-cartesian-axis-tick text");
+    expect(tick?.getAttribute("transform") ?? "").toContain("rotate");
+  });
+
+  it("keeps the total out of the plot in either form", () => {
+    window.localStorage.setItem(STYLE_KEY, "line");
+    render(<WorkflowTimingChart stages={STAGES} sampleSize={125} />);
+    // Still a headline, not a point on the line.
+    expect(screen.getByText("3h 6m")).toBeInTheDocument();
+    expect(screen.queryByText("Total")).not.toBeInTheDocument();
   });
 });
