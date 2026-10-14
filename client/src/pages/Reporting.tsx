@@ -6,6 +6,7 @@ import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
+import { WorkflowTimingChart } from "@/components/WorkflowTimingChart";
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -251,29 +252,7 @@ export default function Reporting() {
                 No workflow timing data for this period.
               </div>
             ) : (
-              <div className="space-y-3">
-                {timing.stages.map((s: any) => {
-                  const maxMinutes = Math.max(...timing.stages.map((x: any) => x.avgMinutes), 1);
-                  const pct = (s.avgMinutes / maxMinutes) * 100;
-                  const isTotal = s.key === "total";
-                  return (
-                    <div key={s.key} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className={isTotal ? "font-semibold" : "font-medium"}>{s.label}</span>
-                        <div className="flex items-center gap-3 text-muted-foreground text-xs">
-                          <span>{s.sampleSize} samples</span>
-                          <span className="font-medium text-foreground">
-                            {s.avgMinutes > 0 ? `${Math.floor(s.avgMinutes / 60) > 0 ? `${Math.floor(s.avgMinutes / 60)}h ` : ""}${Math.round(s.avgMinutes % 60)}m` : "—"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${isTotal ? "bg-primary" : "bg-violet-500"}`} style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <WorkflowTimingChart stages={timing.stages} sampleSize={timing.sampleSize} />
             )}
           </CardContent>
         </Card>
