@@ -379,6 +379,13 @@ export default function ClientDetail() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const updatePreferredGroomer = trpc.pets.updatePreferredGroomer.useMutation({
+    onSuccess: async () => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      toast.success("Usual groomer saved");
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const updatePetSizeBand = trpc.pets.updateSizeBand.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -1216,6 +1223,36 @@ export default function ClientDetail() {
                             {SIZE_BAND_SOURCE_LABELS[pet.sizeBandSource as SizeBandSource] ?? pet.sizeBandSource}
                           </span>
                         )}
+                      </div>
+                      {/* The groomer this dog usually goes to.
+                          Kept on the whiteboard in red marker until now
+                          ("Char", "Ash"), which meant it was also what the
+                          MoeGo import had nothing to fall back on when it
+                          could not resolve a staff name — 107 forward
+                          bookings landed on no column for want of it. */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-muted-foreground text-sm">Usually:</span>
+                        <Select
+                          value={pet.preferredGroomerId ? String(pet.preferredGroomerId) : "none"}
+                          onValueChange={(value) =>
+                            updatePreferredGroomer.mutate({
+                              petId: pet.id,
+                              preferredGroomerId: value === "none" ? null : Number(value),
+                            })
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-[200px] text-sm" aria-label={`Usual groomer for ${pet.name}`}>
+                            <SelectValue placeholder="No preference" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No preference</SelectItem>
+                            {(staffList ?? [])
+                              .filter((member: { isActive?: boolean | number }) => member.isActive !== false && member.isActive !== 0)
+                              .map((member: { id: number; name: string }) => (
+                                <SelectItem key={member.id} value={String(member.id)}>{member.name}</SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       {pet.coatType && <p><span className="text-muted-foreground">Coat:</span> {pet.coatType}</p>}
                       {pet.colour && <p><span className="text-muted-foreground">Colour:</span> {pet.colour}</p>}
