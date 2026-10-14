@@ -166,13 +166,23 @@ export const membershipSignupRouter = router({
       const tenantId = tenantOf(ctx, input);
       await requireSignupEnabled(db, tenantId);
 
-      const groomers = await db.select({ id: staff.id, name: staff.name, role: staff.role })
+      // The SAME filter listGroomerProfiles uses, not a guess at it.
+      // Filtering "not a receptionist" by hand offered a client every
+      // bather and both managers — twelve names where the salon means
+      // five. staff.onlineBookable is the flag the salon already
+      // maintains for exactly this question, and it is per person rather
+      // than per role, so a bather who does take grooms can be offered.
+      const groomers = await db.select({ id: staff.id, name: staff.name, photoUrl: staff.onlineProfilePhotoUrl })
         .from(staff)
-        .where(and(eq(staff.tenantId, tenantId), eq(staff.isActive, true)))
+        .where(and(
+          eq(staff.tenantId, tenantId),
+          eq(staff.isActive, true),
+          eq(staff.onlineBookable, true),
+        ))
         .orderBy(asc(staff.name));
 
       return {
-        groomers: groomers.filter((g: any) => g.role !== "receptionist"),
+        groomers,
         maxDogs: MAX_SIGNUP_DOGS,
         monthsAhead: DEFAULT_MONTHS_AHEAD,
       };

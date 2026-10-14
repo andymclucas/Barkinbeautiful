@@ -148,13 +148,14 @@ export default function MembershipSignup() {
   );
   const priced = quote.data?.ok ? quote.data : null;
 
-  // The slot list is the salon's real availability, the same one the guest
-  // booking page reads. The heaviest dog sets the length: a visit has to
-  // fit the dog that takes longest.
+  // The salon's real availability, through the same capacity engine the
+  // guest booking page uses — but gated on the membership-sign-up switch
+  // rather than the public-booking one, which is off here. The heaviest
+  // dog sets the length: a visit has to fit the dog that takes longest.
   const heaviest = Math.max(0, ...dogs.map((d) => Number(d.weightKg) || 0));
   const serviceType = priced?.lines[0]?.serviceType === "styled" ? "styled_groom" : "classic_groom";
   const canLoadSlots = Boolean(staffId && selectedDate && heaviest > 0 && priced);
-  const slots = trpc.onlineBooking.listAvailableSlots.useQuery(
+  const slots = trpc.onlineBooking.listMembershipSignupSlots.useQuery(
     { staffId: Number(staffId), serviceType: serviceType as any, petWeightKg: heaviest, date: selectedDate },
     { enabled: canLoadSlots },
   );
