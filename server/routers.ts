@@ -2736,6 +2736,8 @@ const clientsRouter = router({
           weight: pets.weight,
           sizeBand: pets.sizeBand,
           sizeBandSource: pets.sizeBandSource,
+          /** The groomer this dog usually goes to. */
+          preferredGroomerId: pets.preferredGroomerId,
           coatType: pets.coatType,
           colour: pets.colour,
           desexed: pets.desexed,
@@ -3132,6 +3134,61 @@ const petsRouter = router({
         })
         .where(eq(pets.id, pet.id));
       return { success: true, sizeBand: input.sizeBand };
+    }),
+
+  /**
+   * The groomer this dog usually goes to.
+   *
+   * The column has existed since the schema was written and nothing has
+   * ever read or set it — 0 of 12,552 pets. The salon has been keeping the
+   * fact in red marker on the whiteboard instead ("Char", "Ash"), which
+   * means it is also the fact the MoeGo import had nothing to fall back on
+   * when it could not resolve a staff name. 107 forward bookings landed
+   * with nobody against them for want of it.
+   *
+   * operationalProcedure: a groomer knows which dogs are theirs, and the
+   * person taking the booking is who hears "can we have Charlotte again".
+   *
+   * null clears it, which is a real choice — a dog with no preference is
+   * not the same as one whose preference nobody has recorded, but the
+   * salon can only express the former.
+   */
+  updatePreferredGroomer: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      petId: z.number().int().positive(),
+      preferredGroomerId: z.number().int().positive().nullable(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
+        throw new Error("This pet is not available to your salon staff profile");
+      }
+      const [pet] = await db.select({ id: pets.id })
+        .from(pets)
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
+        .limit(1);
+      if (!pet) throw new Error("Pet not found");
+      // The groomer has to work at this salon. Without this a request could
+      // point a dog at another tenant's staff id, and the booking dialog
+      // would then offer somebody who does not work here — the same hole
+      // that addContact and listContacts had.
+      if (input.preferredGroomerId !== null) {
+        const [member] = await db.select({ id: staff.id })
+          .from(staff)
+          .where(and(
+            eq(staff.id, input.preferredGroomerId),
+            eq(staff.tenantId, tenantOf(ctx, input)),
+          ))
+          .limit(1);
+        if (!member) throw new Error("That groomer is not on this salon's team");
+      }
+      await db.update(pets)
+        .set({ preferredGroomerId: input.preferredGroomerId })
+        .where(eq(pets.id, pet.id));
+      return { success: true, preferredGroomerId: input.preferredGroomerId };
     }),
 
   markDeparted: adminProcedure
