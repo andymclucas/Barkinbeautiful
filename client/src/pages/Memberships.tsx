@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, TrendingDown, FileText, CheckCircle, XCircle, RefreshCw, Landmark } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { MembershipAccountsReceivable } from "@/components/MembershipAccountsReceivable";
+import { MembershipSignupRequests } from "@/components/MembershipSignupRequests";
 import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -974,6 +975,7 @@ export default function Memberships() {
           </Select>
         </div>
 
+        <MembershipSignupRequests />
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           {/* Tabs are an inline-flex row: on a phone they ran past the
               right edge and took the page with them. Scroll instead. */}

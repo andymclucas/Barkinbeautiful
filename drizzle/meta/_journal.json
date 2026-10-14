@@ -869,6 +869,13 @@
       "when": 1791834787538,
       "tag": "0123_system_notification_membership_signup",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "5",
+      "when": 1791834787539,
+      "tag": "0124_tenant_membership_signup_enabled",
+      "breakpoints": true
     }
   ]
 }

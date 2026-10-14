@@ -39,6 +39,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 // Pages — Public (no auth)
 const PetTracker = lazy(() => import("./pages/PetTracker"));
 const OnlineBooking = lazy(() => import("./pages/OnlineBooking"));
+const MembershipSignup = lazy(() => import("./pages/MembershipSignup"));
 const Login = lazy(() => import("./pages/Login"));
 const SalonSignup = lazy(() => import("./pages/SalonSignup"));
 const StaffInvitationAccept = lazy(() => import("./pages/StaffInvitationAccept"));
@@ -96,6 +97,7 @@ function Router() {
       <Route path="/signup" component={SalonSignup} />
       <Route path="/staff-invite/:token" component={StaffInvitationAccept} />
       <Route path="/book" component={OnlineBookingPublic} />
+      <Route path="/join" component={MembershipSignup} />
       <Route path="/book/preview" component={OnlineBookingPreview} />
       <Route path="/track/:token" component={PetTracker} />
       {/* Public grooming card. The token is the authorisation, same as /track. */}

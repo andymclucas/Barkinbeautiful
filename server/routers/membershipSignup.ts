@@ -72,13 +72,16 @@ async function activePlans(db: any, tenantId: number) {
 }
 
 /**
- * Sign-up rides on the salon's online-booking switch rather than a flag of
- * its own. A salon that has not opened its diary to strangers has not
- * agreed to take memberships from them either, and a second switch is a
- * second thing to forget.
+ * Its own switch, not the online-booking one.
+ *
+ * Sharing a flag looked tidy and was wrong. Public online booking opens
+ * every free slot to anybody who finds the page; membership sign-up is a
+ * link the salon sends to a particular client. Barkin' Beautiful has
+ * online booking OFF and wants the second thing, so the shared switch
+ * made this unreachable for the salon that asked for it.
  */
 async function requireSignupEnabled(db: any, tenantId: number) {
-  const [row] = await db.select({ enabled: tenants.onlineBookingEnabled })
+  const [row] = await db.select({ enabled: tenants.membershipSignupEnabled })
     .from(tenants).where(eq(tenants.id, tenantId)).limit(1);
   if (!row?.enabled) {
     throw new TRPCError({
