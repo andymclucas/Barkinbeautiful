@@ -413,6 +413,15 @@ describe("the membership tier ladder", () => {
     }
   });
 
+  it("keeps silver on VIP, which is right even though it looks wrong", () => {
+    // MoeGo carries no silver service, its VIP band is named "Diamond -
+    // Gold", and silver's weekly rate sits nearer Bronze than Gold. All
+    // three point at Regular, and all three are wrong: Andy confirmed on
+    // 14/10/2026 that the pricing is correct as it stands. Pinned so the
+    // next person to notice the oddity does not act on it.
+    expect(clientPriceTier({ membershipTier: "silver" })).toBe("vip");
+  });
+
   it("treats no membership as a new client", () => {
     expect(clientPriceTier({ membershipTier: "" })).toBe("new");
     expect(clientPriceTier({ membershipTier: null })).toBe("new");

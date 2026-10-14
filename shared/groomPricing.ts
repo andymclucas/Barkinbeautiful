@@ -109,18 +109,23 @@ export const BRONZE_MEMBERSHIP_TIER = "bronze";
  * cheapest rate. A salon whose tiers are named differently would have
  * priced every client at its biggest discount, silently, on every booking.
  *
- * `silver` is marked because it is NOT established. MoeGo prices by
- * "Diamond - Gold (up to 6wks)" and "Bronze (8wks)", and silver sits in
- * neither. It is mapped to vip here only because that is what the old
- * catch-all did, and changing it would reprice 114 upcoming bookings for
- * 88 members without anybody deciding to. See the four unpriced
- * combinations in the pricing notes — same kind of open question.
+ * `silver` looks odd and is correct. MoeGo prices by
+ * "Diamond - Gold (up to 6wks)" and "Bronze (8wks)", and silver is named
+ * in neither band — MoeGo carries no silver service at all, checked
+ * against the live Settings page on 14/10/2026. Its weekly rate ($17 at
+ * Small) also sits nearer Bronze ($15) than Gold ($22), which makes it
+ * look like it belongs on the Regular rate.
+ *
+ * It does not. Andy confirmed on 14/10/2026 that Groomigo's pricing is
+ * right as it stands. Do not "fix" this by moving silver to regular: it
+ * would raise 114 upcoming bookings for 88 members, the largest cohort of
+ * the five, on an inference from a price ladder rather than a figure.
  */
 export const MEMBERSHIP_PRICE_TIERS: Readonly<Record<string, PriceTier>> = {
   diamond: "vip",
   platinum: "vip",
   gold: "vip",
-  /** UNVERIFIED — inherited from the old catch-all, not from MoeGo. */
+  /** Confirmed correct 14/10/2026, despite MoeGo pricing no silver. */
   silver: "vip",
   bronze: "regular",
 };
