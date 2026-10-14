@@ -4864,24 +4864,49 @@ const membershipsRouter = router({
           sql`${memberships.status} IN ('active', 'paused', 'pending_payment')`
         ));
 
-      // For each membership, count paid cycles and completed grooms
-      const results = await Promise.all(activeMemberships.map(async (m) => {
-        const [paidRow] = await db
-          .select({ count: sql<number>`COUNT(*)` })
-          .from(membershipPayments)
-          .where(and(
-            eq(membershipPayments.membershipId, m.id),
-            eq(membershipPayments.status, "paid")
-          ));
-        const [groomRow] = await db
-          .select({ count: sql<number>`COUNT(*)` })
-          .from(appointments)
-          .where(and(
-            eq(appointments.membershipId, m.id),
-            sql`${appointments.workflowState} IN ('complete', 'ready')`
-          ));
-        const paidCycles = Number(paidRow?.count ?? 0);
-        const groomsDelivered = Number(groomRow?.count ?? 0);
+      if (activeMemberships.length === 0) return [];
+
+      // Two grouped queries, not two per membership.
+      //
+      // This was a Promise.all firing a pair of COUNT(*)s for every active
+      // membership: 153 of them on 15/10/2026, so 306 round trips down one
+      // mysql2 connection, which serialises them. Neither
+      // appointments.membership_id nor membership_payments.membership_id
+      // is indexed, so each one was a full scan as well. Measured end to
+      // end it took 64.5 seconds and the page gave up before it returned —
+      // "Debt summary could not be loaded".
+      //
+      // The same answer as two GROUP BYs takes 0.42 seconds. Scoped by the
+      // membership ids already fetched, so it stays inside this tenant by
+      // construction rather than by remembering a predicate.
+      const membershipIds = activeMemberships.map((m) => m.id);
+
+      const paidRows = await db
+        .select({ membershipId: membershipPayments.membershipId, count: sql<number>`COUNT(*)` })
+        .from(membershipPayments)
+        .where(and(
+          inArray(membershipPayments.membershipId, membershipIds),
+          eq(membershipPayments.status, "paid"),
+        ))
+        .groupBy(membershipPayments.membershipId);
+
+      const groomRows = await db
+        .select({ membershipId: appointments.membershipId, count: sql<number>`COUNT(*)` })
+        .from(appointments)
+        .where(and(
+          inArray(appointments.membershipId, membershipIds),
+          sql`${appointments.workflowState} IN ('complete', 'ready')`,
+        ))
+        .groupBy(appointments.membershipId);
+
+      const paidByMembership = new Map(paidRows.map((r: any) => [Number(r.membershipId), Number(r.count)]));
+      const groomsByMembership = new Map(groomRows.map((r: any) => [Number(r.membershipId), Number(r.count)]));
+
+      const results = activeMemberships.map((m) => {
+        // A membership with no rows is absent from the grouped result, not
+        // a zero in it — which is the whole reason for the ?? 0.
+        const paidCycles = paidByMembership.get(m.id) ?? 0;
+        const groomsDelivered = groomsByMembership.get(m.id) ?? 0;
         const debtGrooms = Math.max(0, paidCycles - groomsDelivered);
         const debtAmount = debtGrooms * parseFloat(m.pricePerCycle ?? "0");
         return {
@@ -4891,7 +4916,7 @@ const membershipsRouter = router({
           debtGrooms,
           debtAmount,
         };
-      }));
+      });
       return results.filter(r => r.debtGrooms > 0 || r.paidCycles > 0);
     }),
 
