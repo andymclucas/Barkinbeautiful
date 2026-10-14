@@ -906,6 +906,13 @@ export default function Calendar() {
   // Shown by default: it only appears on days that have a dog with nobody
   // against them, and those are exactly the ones worth seeing.
   const [showUnassignedColumn, setShowUnassignedColumn] = useState(true);
+  // Adding a contact from the appointment, because the client record is
+  // where the "Pickup contacts" form lives and /clients/:id is not a
+  // staff-reachable route — so for a groomer that form may as well not
+  // exist. The moment somebody learns that the daughter collects the dog
+  // is the moment they are looking at the booking.
+  const [addingContact, setAddingContact] = useState(false);
+  const [newContact, setNewContact] = useState({ name: "", phone: "", relationship: "" });
   const [apptSearchOpen, setApptSearchOpen] = useState(false);
   const [apptSearchTerm, setApptSearchTerm] = useState("");
 
@@ -1105,6 +1112,18 @@ export default function Calendar() {
     ),
     [editAppt, editContacts.data],
   );
+
+  const addClientContact = trpc.clients.addContact.useMutation({
+    onSuccess: (created) => {
+      toast.success("Contact added");
+      setAddingContact(false);
+      setNewContact({ name: "", phone: "", relationship: "" });
+      // Select the person who was just added — that is why they were added.
+      setEditForm((prev) => ({ ...prev, contactId: created.id }));
+      editContacts.refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const styleNotes = trpc.groomNotes.listByPet.useQuery(
     { petId: styleTargetPetId ?? 0 },
@@ -1717,6 +1736,11 @@ export default function Calendar() {
     // before and after photos included. Left set, it would apply itself to the
     // next dog opened.
     setCopySnap(null);
+    // Half-typed contact details belong to the client whose dialog was
+    // open, exactly like the style draft. Left behind they would appear
+    // under the next client's name — the bug Lauren reported on 13/10.
+    setAddingContact(false);
+    setNewContact({ name: "", phone: "", relationship: "" });
   };
 
   const handleSaveEdit = async () => {
@@ -3138,7 +3162,10 @@ export default function Calendar() {
                       <span className="text-muted-foreground shrink-0">Contact:</span>
                       <Select
                         value={editForm.contactId === null ? "__primary__" : String(editForm.contactId)}
-                        onValueChange={(v) => setEditForm(prev => ({ ...prev, contactId: v === "__primary__" ? null : Number(v) }))}
+                        onValueChange={(v) => {
+                          if (v === "__add__") { setAddingContact(true); return; }
+                          setEditForm(prev => ({ ...prev, contactId: v === "__primary__" ? null : Number(v) }));
+                        }}
                       >
                         <SelectTrigger className="h-7 text-xs flex-1" aria-label="Who to contact about this appointment">
                           <SelectValue />
@@ -3156,8 +3183,72 @@ export default function Calendar() {
                               </span>
                             </SelectItem>
                           ))}
+                          <SelectItem value="__add__">➕ Add someone else…</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                  )}
+                  {/* Inline, because the "Pickup contacts" form lives on the
+                      client record and /clients/:id is not open to a
+                      restricted staff account — so for a groomer that form
+                      does not exist. This is where they already are. */}
+                  {addingContact && (
+                    <div className="rounded-md border bg-card p-2 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          className="h-7 text-xs"
+                          placeholder="Name"
+                          aria-label="New contact name"
+                          value={newContact.name}
+                          onChange={(e) => setNewContact(c => ({ ...c, name: e.target.value }))}
+                        />
+                        <Input
+                          className="h-7 text-xs"
+                          placeholder="Mobile"
+                          aria-label="New contact mobile"
+                          value={newContact.phone}
+                          onChange={(e) => setNewContact(c => ({ ...c, phone: e.target.value }))}
+                        />
+                      </div>
+                      <Input
+                        className="h-7 text-xs"
+                        placeholder="How the salon knows them — daughter, neighbour…"
+                        aria-label="New contact relationship"
+                        value={newContact.relationship}
+                        onChange={(e) => setNewContact(c => ({ ...c, relationship: e.target.value }))}
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={
+                            addClientContact.isPending
+                            || newContact.name.trim().length < 1
+                            || newContact.phone.trim().length < 6
+                          }
+                          onClick={() => addClientContact.mutate({
+                            clientId: editAppt.clientId,
+                            name: newContact.name.trim(),
+                            phone: newContact.phone.trim(),
+                            relationship: newContact.relationship.trim() || undefined,
+                          })}
+                        >
+                          {addClientContact.isPending ? "Saving…" : "Save contact"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => { setAddingContact(false); setNewContact({ name: "", phone: "", relationship: "" }); }}
+                        >
+                          Cancel
+                        </Button>
+                        {/* Matches the server's own minimum, so the reason
+                            the button is dead is visible rather than guessed. */}
+                        {newContact.phone.trim().length > 0 && newContact.phone.trim().length < 6 && (
+                          <span className="text-[11px] text-muted-foreground">Mobile looks too short</span>
+                        )}
+                      </div>
                     </div>
                   )}
                   {/* The booking points at somebody who is no longer on the

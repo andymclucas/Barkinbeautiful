@@ -2865,13 +2865,36 @@ const clientsRouter = router({
       return { client, contacts: additionalContacts, pets: clientPets, memberships: clientMemberships, appointments: clientAppointments, payments, photos: clientPhotos, petMembershipEvents: clientPetMembershipEvents };
     }),
 
-  addContact: adminProcedure
-    .input(z.object({ clientId: z.number(), name: z.string().trim().min(1).max(255), phone: z.string().trim().min(6).max(30), email: z.string().email().optional().or(z.literal("")), relationship: z.string().trim().max(100).optional() }))
-    .mutation(async ({ input }) => {
+  /**
+   * Add somebody else who may be rung about this client.
+   *
+   * operationalProcedure since 14/10/2026, same instruction as
+   * clients.create and pets.create: the person who learns that the
+   * daughter does the pickup is whoever is on the desk, and routing it
+   * through an owner means it goes on the whiteboard instead.
+   *
+   * removeContact stays admin-only. Adding a contact is additive and
+   * harmless; deleting one clears it off future bookings and destroys the
+   * only record of the name and number.
+   */
+  addContact: operationalProcedure
+    .input(z.object({ clientId: z.number().int().positive(), name: z.string().trim().min(1).max(255), phone: z.string().trim().min(6).max(30), email: z.string().email().optional().or(z.literal("")), relationship: z.string().trim().max(100).optional() }))
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
+      // The role guard first, then the caller's own salon. This wrote
+      // `tenantId: client.tenantId` with no check on who was asking, so an
+      // admin of another salon could already file a contact against a
+      // Barkin' Beautiful client. Latent while this was owner-only; not
+      // something to leave behind when opening it to every groomer.
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      const callerTenantId = ctx.tenantId ?? null;
+      if (callerTenantId === null) throw new Error("No salon on this session");
+      if (portalStaff && portalStaff.tenantId !== callerTenantId) {
+        throw new Error("This client is not available to your salon staff profile");
+      }
       const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId }).from(clients).where(eq(clients.id, input.clientId)).limit(1);
-      if (!client) throw new Error("Client not found");
+      if (!client || client.tenantId !== callerTenantId) throw new Error("Client not found");
       const [result] = await db.insert(clientContacts).values({
         tenantId: client.tenantId,
         clientId: client.id,
