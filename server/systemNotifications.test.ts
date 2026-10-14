@@ -84,4 +84,25 @@ describe("staff kinds", () => {
     expect(n.title).toBe("Someone was invited to the platform");
     expect(n.detail).not.toMatch(/undefined|null/);
   });
+
+  it("says a membership sign-up is waiting on somebody, not that it happened", () => {
+    // Every other kind in this feed is news. This one is a client waiting,
+    // and copy that reads like the others gets scrolled past.
+    const n = describeSystemNotification({
+      kind: "membership_signup_requested",
+      clientFirstName: "Julie", clientLastName: "Noy",
+      petNames: ["Rosie", "Teddy"],
+      detail: "Silver + \u2014 $96.00 a week.",
+    });
+    expect(n.title).toBe("Julie Noy asked to join a membership");
+    expect(n.detail).toContain("Rosie and Teddy");
+    expect(n.detail).toContain("Silver +");
+    expect(n.detail).toContain("Nothing is charged");
+  });
+
+  it("does not dangle a sentence for a sign-up with no dogs named", () => {
+    const n = describeSystemNotification({ kind: "membership_signup_requested" });
+    expect(n.title).toBe("A client asked to join a membership");
+    expect(n.detail).not.toMatch(/undefined|null|For \./);
+  });
 });

@@ -1,0 +1,18 @@
+-- Membership sign-up gets its own switch.
+--
+-- It was first wired to `online_booking_enabled` on the reasoning that a
+-- salon which has not opened its diary to strangers has not agreed to
+-- take memberships from them either. That is one decision too few.
+--
+-- The two are genuinely different. Public online booking opens every free
+-- slot to anybody who finds the page; membership sign-up is a link a
+-- salon sends to a particular client — Lauren sending Julie Noy a page to
+-- fill in while they move her across from MoeGo. Barkin' Beautiful has
+-- `online_booking_enabled` set to FALSE and wants the second thing, so
+-- the shared switch made the feature unreachable for the salon that
+-- asked for it.
+--
+-- Default FALSE: a flag that turns on a public route by itself, on every
+-- existing tenant, during a deploy nobody connected to it, is the kind of
+-- default that is only noticed afterwards.
+ALTER TABLE `tenants` ADD COLUMN `membership_signup_enabled` BOOLEAN NOT NULL DEFAULT FALSE;

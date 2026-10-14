@@ -129,3 +129,32 @@ export function blockoutCovers(row: BlockoutRow, slot: BlockoutSlot): boolean {
 export function findBlockingBlockout(rows: BlockoutRow[], slot: BlockoutSlot): BlockoutRow | null {
   return rows.find((row) => blockoutCovers(row, slot)) ?? null;
 }
+
+/**
+ * A blockout as an instant range, for anything that reasons in Dates.
+ *
+ * The rest of this file compares a blockout against a slot already
+ * expressed as a date key and minutes-from-midnight, which is what the
+ * calendar and the booking checks have. Planning a year of membership
+ * grooms works in instants instead — it is laying appointments down, not
+ * validating one — so it needs the same rules in the other currency.
+ *
+ * Brisbane is UTC+10 year-round, the same constant assumption
+ * parseBrisbaneLocalDateTime and the slot builder already make.
+ *
+ * Unreadable or inverted times become a FULL day, exactly as
+ * blockoutCovers treats them: somebody recorded that they are away, and
+ * the safe failure is a groom not booked rather than a dog arriving to
+ * an empty chair.
+ */
+export function blockoutBusyInterval(row: BlockoutRow): { start: Date; end: Date } {
+  const dateKey = blockoutDateKey(row.blockoutDate);
+  const midnight = Date.parse(`${dateKey}T00:00:00+10:00`);
+
+  const from = row.isFullDay ? null : timeToMinutes(row.startTime);
+  const to = row.isFullDay ? null : timeToMinutes(row.endTime);
+  if (from === null || to === null || to <= from) {
+    return { start: new Date(midnight), end: new Date(midnight + 86_400_000) };
+  }
+  return { start: new Date(midnight + from * 60_000), end: new Date(midnight + to * 60_000) };
+}

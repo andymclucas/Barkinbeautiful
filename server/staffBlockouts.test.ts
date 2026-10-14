@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   blockoutDateKey, blockoutDateValue, expandDateRange, rangeLengthInDays,
-  timeToMinutes, blockoutCovers, findBlockingBlockout,
+  timeToMinutes, blockoutCovers, findBlockingBlockout, blockoutBusyInterval,
   BLOCKOUT_REASONS, MAX_BLOCKOUT_DAYS,
 } from "@shared/staffBlockouts";
 
@@ -124,5 +124,37 @@ describe("whether a blockout stops a booking", () => {
 describe("the reasons offered", () => {
   it("are the three asked for, in order", () => {
     expect(BLOCKOUT_REASONS).toEqual(["Annual leave", "Personal leave", "Other"]);
+  });
+});
+
+describe("blockoutBusyInterval", () => {
+  const fullDay = { staffId: 3, blockoutDate: "2027-01-12T00:00:00.000Z", isFullDay: true };
+
+  it("covers a whole Brisbane day, not a whole UTC one", () => {
+    // The row is a date LABEL stored at midnight UTC. Reading it as an
+    // instant puts the blocked window ten hours out, which leaves the
+    // morning of a groomer's leave day bookable.
+    const interval = blockoutBusyInterval(fullDay);
+    expect(interval.start.toISOString()).toBe("2027-01-11T14:00:00.000Z"); // midnight Brisbane
+    expect(interval.end.toISOString()).toBe("2027-01-12T14:00:00.000Z");
+  });
+
+  it("narrows to the hours of a part-day blockout", () => {
+    const interval = blockoutBusyInterval({ ...fullDay, isFullDay: false, startTime: "09:00", endTime: "12:30" });
+    expect(interval.start.toISOString()).toBe("2027-01-11T23:00:00.000Z"); // 9am Brisbane
+    expect(interval.end.toISOString()).toBe("2027-01-12T02:30:00.000Z");   // 12:30 Brisbane
+  });
+
+  it("falls back to the whole day when the times make no sense", () => {
+    // Same rule blockoutCovers uses: a recorded absence with unreadable
+    // hours blocks the day rather than nothing.
+    for (const times of [
+      { startTime: null, endTime: "12:00" },
+      { startTime: "nonsense", endTime: "12:00" },
+      { startTime: "14:00", endTime: "09:00" },
+    ]) {
+      const interval = blockoutBusyInterval({ ...fullDay, isFullDay: false, ...times });
+      expect(interval.end.getTime() - interval.start.getTime()).toBe(86_400_000);
+    }
   });
 });

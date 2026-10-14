@@ -95,6 +95,7 @@ import { salonSignupRouter } from "./routers/salonSignup";
 import { trialRouter } from "./routers/trial";
 import { revenueTargetsRouter } from "./routers/revenueTargets";
 import { stripeCardsRouter } from "./routers/stripeCards";
+import { membershipSignupRouter } from "./routers/membershipSignup";
 import {
   requireApprovedStaffTenant,
   requireApprovedFamilyLinkStaff,
@@ -7113,12 +7114,26 @@ function brisbaneMinutesOfDay(instant: Date, asEnd = false): number {
   return asEnd && minutes === 0 ? 24 * 60 : minutes;
 }
 
-async function checkOnlineCapacity(input: { tenantId: number; staffId: number; serviceType: keyof typeof ONLINE_SERVICE_MINUTES; scheduledStart: Date; petWeightKg?: number }, options: { preview?: boolean } = {}) {
+/**
+ * `forMembershipSignup` swaps WHICH tenant switch is consulted; it never
+ * skips one. Membership sign-up has its own flag precisely because a
+ * salon can want it without opening the public diary, and reusing this
+ * helper unchanged made every slot unavailable whenever online booking
+ * was off — which is the state the salon that asked for the feature is
+ * actually in. Every other rule below (groomer bookable, lead time,
+ * leave, slot and daily limits, large-dog capacity) still applies.
+ */
+async function checkOnlineCapacity(input: { tenantId: number; staffId: number; serviceType: keyof typeof ONLINE_SERVICE_MINUTES; scheduledStart: Date; petWeightKg?: number }, options: { preview?: boolean; forMembershipSignup?: boolean } = {}) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [tenant] = await db.select({ enabled: tenants.onlineBookingEnabled, bathLimit: tenants.onlineBathOnlyDailyLimit, bathCapacity: tenants.onlineBathCapacityPerSlot, leadHours: tenants.onlineBookingLeadHours })
+  const [tenant] = await db.select({ enabled: tenants.onlineBookingEnabled, signupEnabled: tenants.membershipSignupEnabled, bathLimit: tenants.onlineBathOnlyDailyLimit, bathCapacity: tenants.onlineBathCapacityPerSlot, leadHours: tenants.onlineBookingLeadHours })
     .from(tenants).where(eq(tenants.id, input.tenantId)).limit(1);
-  if (!Boolean(Number(tenant?.enabled)) && !options.preview) return { available: false, reason: "Online booking is not enabled yet" } as const;
+  const gateOpen = options.forMembershipSignup
+    ? Boolean(Number(tenant?.signupEnabled))
+    : Boolean(Number(tenant?.enabled));
+  if (!gateOpen && !options.preview) {
+    return { available: false, reason: options.forMembershipSignup ? "Membership sign-up is not enabled yet" : "Online booking is not enabled yet" } as const;
+  }
   const [groomer] = await db.select({ onlineBookable: staff.onlineBookable, isActive: staff.isActive, slotLimit: staff.onlineMaxDogsPerSlot, dailyLimit: staff.onlineMaxDogsPerDay, services: staff.onlineServices })
     .from(staff).where(and(eq(staff.id, input.staffId), eq(staff.tenantId, input.tenantId))).limit(1);
   if (!groomer?.isActive || !groomer.onlineBookable) return { available: false, reason: "This groomer is not available for online booking" } as const;
@@ -7140,7 +7155,16 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   const staffAppointments = await db.select({ id: appointments.id, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd })
     .from(appointments).where(and(eq(appointments.tenantId, input.tenantId), eq(appointments.staffId, input.staffId), gte(appointments.scheduledStart, start), lte(appointments.scheduledStart, end), inArray(appointments.status, activeStatuses as any)));
   const overlappingBookings = countOverlappingBookings(staffAppointments, input.scheduledStart, scheduledEnd);
-  if (!isOnlineSlotAvailable({ overlappingBookings, slotLimit: groomer.slotLimit, bookingsToday: staffAppointments.length, dailyLimit: groomer.dailyLimit })) {
+  // A membership sign-up is not held to the daily ONLINE cap. That number
+  // rations how much of the diary strangers may take; every groomer here
+  // runs 7-10 dogs a day against a cap of 6, so applying it to a weekly
+  // paying member showed an empty picker on every date, for ever. The
+  // per-slot limit still applies, because one groomer cannot groom two
+  // dogs at once, and nothing is booked by picking a slot anyway — the
+  // request goes to a person who sees the whole year before approving.
+  // 0 is isOnlineSlotAvailable's existing "no daily cap" value.
+  const dailyLimit = options.forMembershipSignup ? 0 : groomer.dailyLimit;
+  if (!isOnlineSlotAvailable({ overlappingBookings, slotLimit: groomer.slotLimit, bookingsToday: staffAppointments.length, dailyLimit })) {
     const reason = overlappingBookings >= Math.max(1, groomer.slotLimit) ? "That groomer’s time slot is full" : "That groomer has reached their daily online booking limit";
     return { available: false, reason } as const;
   }
@@ -7197,7 +7221,7 @@ type OnlineSlotListInput = {
   date: string;
 };
 
-async function listAvailableOnlineSlots(input: OnlineSlotListInput, options: { preview?: boolean } = {}) {
+async function listAvailableOnlineSlots(input: OnlineSlotListInput, options: { preview?: boolean; forMembershipSignup?: boolean } = {}) {
   if (!isEligibleOnlineBookingService(input.serviceType, input.petWeightKg)) {
     throw new Error("Select a valid dog weight to see eligible booking services");
   }
@@ -7269,10 +7293,10 @@ const onlineBookingRouter = router({
   getSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
-    const [tenant] = await db.select({ onlineBookingEnabled: tenants.onlineBookingEnabled, onlineBathOnlyDailyLimit: tenants.onlineBathOnlyDailyLimit, onlineBathCapacityPerSlot: tenants.onlineBathCapacityPerSlot, onlineBookingSlotMinutes: tenants.onlineBookingSlotMinutes, onlineBookingLeadHours: tenants.onlineBookingLeadHours }).from(tenants).where(eq(tenants.id, tenantOf(ctx, input))).limit(1);
+    const [tenant] = await db.select({ onlineBookingEnabled: tenants.onlineBookingEnabled, membershipSignupEnabled: tenants.membershipSignupEnabled, onlineBathOnlyDailyLimit: tenants.onlineBathOnlyDailyLimit, onlineBathCapacityPerSlot: tenants.onlineBathCapacityPerSlot, onlineBookingSlotMinutes: tenants.onlineBookingSlotMinutes, onlineBookingLeadHours: tenants.onlineBookingLeadHours }).from(tenants).where(eq(tenants.id, tenantOf(ctx, input))).limit(1);
     return tenant;
   }),
-  updateSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1), onlineBookingEnabled: z.boolean().optional(), onlineBathOnlyDailyLimit: z.number().int().min(0).max(30).optional(), onlineBathCapacityPerSlot: z.number().int().min(1).max(20).optional(), onlineBookingSlotMinutes: z.number().int().min(15).max(120).optional(), onlineBookingLeadHours: z.number().int().min(0).max(336).optional() })).mutation(async ({ input, ctx }) => {
+  updateSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1), onlineBookingEnabled: z.boolean().optional(), membershipSignupEnabled: z.boolean().optional(), onlineBathOnlyDailyLimit: z.number().int().min(0).max(30).optional(), onlineBathCapacityPerSlot: z.number().int().min(1).max(20).optional(), onlineBookingSlotMinutes: z.number().int().min(15).max(120).optional(), onlineBookingLeadHours: z.number().int().min(0).max(336).optional() })).mutation(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
     const { tenantId, ...settings } = input; await db.update(tenants).set(settings).where(eq(tenants.id, tenantId)); return { success: true };
@@ -7290,6 +7314,17 @@ const onlineBookingRouter = router({
   }),
   listAvailableSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
     return listAvailableOnlineSlots(input);
+  }),
+  /**
+   * Slots for the membership sign-up page.
+   *
+   * Lives here rather than in routers/membershipSignup.ts because the
+   * capacity helpers are module-local to this file, and importing them
+   * the other way round would make the two files circular. Gated on the
+   * membership-sign-up switch, not the public-booking one.
+   */
+  listMembershipSignupSlots: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
+    return listAvailableOnlineSlots(input, { forMembershipSignup: true });
   }),
   listPreviewAvailableSlots: protectedProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
@@ -10363,6 +10398,7 @@ export const appRouter = router({
   workflowReview: workflowReviewRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,
+  membershipSignup: membershipSignupRouter,
   bookingPricing: bookingPricingRouter,
 });
 
