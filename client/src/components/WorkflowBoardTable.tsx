@@ -65,6 +65,16 @@ export type WorkflowBoardTableProps = {
   hasReviewAppointmentFocus?: boolean;
   reviewAppointmentId?: number | null;
   readOnly?: boolean;
+  /**
+   * Show who to ring about the dog.
+   *
+   * Off by default, deliberately. Two of the three surfaces using this
+   * table are screens on a wall — WorkflowDisplay and the board's tvMode —
+   * and a client's daughter's name hanging over the waiting area is not
+   * something to have to opt OUT of. The interactive staff board opts in;
+   * anything added later is private until somebody decides otherwise.
+   */
+  showContact?: boolean;
   actions?: BoardActions;
   /**
    * Lets a read-only surface put a completed dog back to `ready`. The wall
@@ -315,6 +325,7 @@ export function WorkflowBoardTable({
   hasReviewAppointmentFocus = false,
   reviewAppointmentId = null,
   readOnly = false,
+  showContact = false,
   actions,
   onRestoreCompleted,
   restorePending = false,
@@ -561,6 +572,7 @@ export function WorkflowBoardTable({
                             // whiteboard, now on the card. Only when it is
                             // NOT the owner, or every row would repeat the
                             // name directly above it.
+                            if (!showContact) return null;
                             const contact = joinedContactBadge(appt as {
                               contactId?: number | null;
                               contactName?: string | null;
