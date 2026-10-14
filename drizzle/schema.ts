@@ -1216,7 +1216,7 @@ export type AppointmentPayment = typeof appointmentPayments.$inferSelect;
 export const systemNotifications = mysqlTable("system_notifications", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull(),
-  kind: mysqlEnum("kind", ["client_portal_activated", "staff_invited", "staff_account_created"]).notNull(),
+  kind: mysqlEnum("kind", ["client_portal_activated", "staff_invited", "staff_account_created", "membership_signup_requested"]).notNull(),
   clientId: int("client_id"),
   readAt: timestamp("read_at"),
   readByUserId: int("read_by_user_id"),
@@ -1542,3 +1542,62 @@ export const signupVerifications = mysqlTable("signup_verifications", {
 ]);
 
 export type SignupVerification = typeof signupVerifications.$inferSelect;
+
+/**
+ * A membership a client asked for through the portal, awaiting approval.
+ *
+ * Nothing is charged and no slot is taken while this is `pending`. See
+ * drizzle/0121_membership_signup_requests.sql for why the approval step
+ * exists at all.
+ */
+export const membershipSignupRequests = mysqlTable("membership_signup_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  clientId: int("client_id").notNull().references(() => clients.id),
+  status: mysqlEnum("status", ["pending", "approved", "declined", "withdrawn"]).default("pending").notNull(),
+  /** The groomer the client asked for. Null means no preference. */
+  staffId: int("staff_id"),
+  /** The slot they picked. The rest of the year is planned from it. */
+  firstScheduledStart: timestamp("first_scheduled_start").notNull(),
+  durationMinutes: int("duration_minutes").notNull(),
+  /** Shared by every dog on the request — one household, one visit. */
+  intervalWeeks: int("interval_weeks").notNull(),
+  monthsAhead: int("months_ahead").default(12).notNull(),
+  /** The quote the client agreed to; approval re-derives and compares. */
+  weeklyTotal: decimal("weekly_total", { precision: 10, scale: 2 }).notNull(),
+  clientNote: varchar("client_note", { length: 500 }),
+  decidedByUserId: int("decided_by_user_id"),
+  decidedAt: timestamp("decided_at"),
+  decidedReason: varchar("decided_reason", { length: 500 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_msr_tenant_status").on(t.tenantId, t.status),
+  index("idx_msr_client").on(t.clientId),
+]);
+
+/** One dog on a sign-up request, with the membership it was quoted at. */
+export const membershipSignupRequestPets = mysqlTable("membership_signup_request_pets", {
+  id: int("id").autoincrement().primaryKey(),
+  requestId: int("request_id").notNull().references(() => membershipSignupRequests.id),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  petId: int("pet_id").notNull().references(() => pets.id),
+  /** What the CLIENT typed. It chose the price band, so it is kept as given. */
+  weightKg: decimal("weight_kg", { precision: 5, scale: 2 }).notNull(),
+  /** A built-in id, or "plan:<row id>" for one the salon wrote. */
+  packageId: varchar("package_id", { length: 64 }).notNull(),
+  packageName: varchar("package_name", { length: 255 }).notNull(),
+  tier: varchar("tier", { length: 32 }).notNull(),
+  serviceType: varchar("service_type", { length: 32 }).notNull(),
+  weeklyPrice: decimal("weekly_price", { precision: 10, scale: 2 }).notNull(),
+  intervalWeeks: int("interval_weeks").notNull(),
+  /** Null until approval. Set is what makes a second approval a no-op. */
+  membershipId: int("membership_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_msrp_request").on(t.requestId),
+  index("idx_msrp_tenant").on(t.tenantId),
+]);
+
+export type MembershipSignupRequest = typeof membershipSignupRequests.$inferSelect;
+export type MembershipSignupRequestPet = typeof membershipSignupRequestPets.$inferSelect;

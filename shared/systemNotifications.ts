@@ -15,6 +15,15 @@ export const SYSTEM_NOTIFICATION_KINDS = [
   "client_portal_activated",
   "staff_invited",
   "staff_account_created",
+  /**
+   * The one kind here that is WORK, not news.
+   *
+   * Everything else in this feed is something that already happened and
+   * needs nobody. A sign-up request is a client waiting: no money moves
+   * and no slot is held until somebody approves it, so the copy says so
+   * plainly rather than reading like another thing already dealt with.
+   */
+  "membership_signup_requested",
 ] as const;
 export type SystemNotificationKind = (typeof SYSTEM_NOTIFICATION_KINDS)[number];
 
@@ -63,6 +72,20 @@ export function describeSystemNotification(row: SystemNotificationRow): { title:
         title: `${who} set up their client portal`,
         detail: dogs ? `They can now see ${dogs}'s appointments, grooming cards and invoices.`
                      : "They can now see their appointments, grooming cards and invoices.",
+      };
+    }
+    case "membership_signup_requested": {
+      const dogs = listNames(row.petNames);
+      return {
+        title: `${who} asked to join a membership`,
+        // The detail line carries the plan and the weekly figure, written
+        // at request time — whoever opens the bell should be able to
+        // decide whether to look without opening the request.
+        detail: [
+          dogs ? `For ${dogs}.` : null,
+          row.detail,
+          "Nothing is charged and no appointments are held until you approve it.",
+        ].filter(Boolean).join(" "),
       };
     }
     case "staff_invited":
