@@ -119,3 +119,10 @@ package-lock.json
 
 # Manus dev-time browser log collector output (vite.config.ts)
 .manus-logs/
+
+# macOS/iCloud duplicate artefacts: "foo 2.ts" beside "foo.ts". Three were
+# swept into a commit by `git add -A` on 14/10/2026. The SPACE is what makes
+# the pattern safe: scripts/moego-sync-2026-10-12.ts must stay tracked.
+* [0-9].ts
+* [0-9].tsx
+* [0-9].md
