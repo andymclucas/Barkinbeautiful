@@ -6,7 +6,8 @@ import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
-import { parseMessageSearch, likePattern } from "@shared/messageSearch";
+import { parseMessageSearch } from "@shared/messageSearch";
+import { messageSearchFilter } from "./messageSearchFilter";
 import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
 import { agreementsRouter, clientReviewsRouter, packagesRouter, petPaperworkRouter, clientNotesRouter } from "./routers/clientRecord";
@@ -8138,21 +8139,8 @@ const smsRouter = router({
       // last texted in August was told the conversation did not exist.
       const search = parseMessageSearch(input.search);
       const filters = [eq(smsLogs.tenantId, tenantOf(ctx, input))];
-      if (search.active) {
-        const like = likePattern(search.text);
-        const digits = search.phoneDigits;
-        filters.push(sql`(
-          ${smsLogs.body} LIKE ${like} ESCAPE '\\'
-          OR ${clients.firstName} LIKE ${like} ESCAPE '\\'
-          OR ${clients.lastName} LIKE ${like} ESCAPE '\\'
-          OR CONCAT(${clients.firstName}, ' ', ${clients.lastName}) LIKE ${like} ESCAPE '\\'
-          OR EXISTS (SELECT 1 FROM pets p WHERE p.client_id = ${clients.id} AND p.name LIKE ${like} ESCAPE '\\')
-          ${digits
-            ? sql`OR REPLACE(REPLACE(REPLACE(${smsLogs.toNumber}, ' ', ''), '-', ''), '+', '') LIKE ${`%${digits}%`}
-                  OR REPLACE(REPLACE(REPLACE(${clients.phone}, ' ', ''), '-', ''), '+', '') LIKE ${`%${digits}%`}`
-            : sql``}
-        )`);
-      }
+      const searchFilter = messageSearchFilter(search);
+      if (searchFilter) filters.push(searchFilter);
 
       const rows = await db.select({
         id: smsLogs.id, toNumber: smsLogs.toNumber, body: smsLogs.body,
