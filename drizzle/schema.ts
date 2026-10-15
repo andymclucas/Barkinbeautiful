@@ -1603,3 +1603,58 @@ export const membershipSignupRequestPets = mysqlTable("membership_signup_request
 
 export type MembershipSignupRequest = typeof membershipSignupRequests.$inferSelect;
 export type MembershipSignupRequestPet = typeof membershipSignupRequestPets.$inferSelect;
+
+/**
+ * A link texted to a client so they can send a photo in.
+ *
+ * SMS cannot carry one here. See
+ * drizzle/0125_client_photo_requests.sql for why this exists.
+ */
+export const clientPhotoRequests = mysqlTable("client_photo_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  clientId: int("client_id").notNull().references(() => clients.id),
+  /** Null when the photo is not about a particular dog. */
+  petId: int("pet_id"),
+  /** SHA-256 only. The link travels by SMS and lingers in a thread. */
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  /** What staff asked for, shown back to the client on the page. */
+  reason: varchar("reason", { length: 255 }),
+  requestedByUserId: int("requested_by_user_id"),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  revokedByUserId: int("revoked_by_user_id"),
+  /** Incremented in SQL, never read-then-written. */
+  uploadCount: int("upload_count").default(0).notNull(),
+  lastUploadAt: timestamp("last_upload_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_client_photo_request_token").on(t.tokenHash),
+  index("idx_cpr_tenant_client").on(t.tenantId, t.clientId),
+]);
+
+/**
+ * A photo a client sent in. The bytes live in `uploaded_images`; this is
+ * the record of whose it is, which that table does not carry.
+ *
+ * Deliberately NOT pet_photos: those are the salon's groom photos and
+ * appear on the grooming card and in the portal gallery. A picture of an
+ * injury must never land in a portfolio.
+ */
+export const clientPhotos = mysqlTable("client_photos", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  clientId: int("client_id").notNull().references(() => clients.id),
+  requestId: int("request_id").notNull().references(() => clientPhotoRequests.id),
+  petId: int("pet_id"),
+  storageKey: varchar("storage_key", { length: 255 }).notNull(),
+  contentType: varchar("content_type", { length: 50 }).notNull(),
+  byteSize: int("byte_size").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_client_photos_client").on(t.tenantId, t.clientId, t.createdAt),
+  index("idx_client_photos_request").on(t.requestId),
+]);
+
+export type ClientPhotoRequest = typeof clientPhotoRequests.$inferSelect;
+export type ClientPhoto = typeof clientPhotos.$inferSelect;

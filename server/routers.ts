@@ -96,6 +96,7 @@ import { trialRouter } from "./routers/trial";
 import { revenueTargetsRouter } from "./routers/revenueTargets";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import { membershipSignupRouter } from "./routers/membershipSignup";
+import { clientPhotosRouter } from "./routers/clientPhotos";
 import {
   requireApprovedStaffTenant,
   requireApprovedFamilyLinkStaff,
@@ -10399,6 +10400,7 @@ export const appRouter = router({
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,
   membershipSignup: membershipSignupRouter,
+  clientPhotos: clientPhotosRouter,
   bookingPricing: bookingPricingRouter,
 });
 
