@@ -125,8 +125,26 @@ export function assignablePackagesFor(
   // So a plan is offered only when it is genuinely something new. Matched
   // on tier, service and weight band rather than on name, because a salon
   // renaming a seeded plan has not created a different membership.
+  //
+  // The CADENCE is part of that identity, and leaving it out broke the one
+  // case this whole file exists for. memberships.tier is an enum, so a
+  // five-weekly silver plan must store tier "silver" — which is exactly
+  // what the comment above STORABLE_TIERS tells a salon to do. That plan
+  // then matched silver/styled/small and was dropped as a duplicate of a
+  // SIX-weekly built-in. Lauren's "Silver +" could not be offered to
+  // anybody, however it was entered.
+  //
+  // The tests missed it because their fixture used tier "silver-plus",
+  // which is not storable and therefore collided with nothing.
+  //
+  // Price is deliberately NOT part of it: a salon repricing a membership
+  // it already has has not invented a second one, and comparing on price
+  // would show both the built-in rate and theirs.
   const duplicatesBuiltIn = (p: AssignablePackage) => offered.some(b =>
-    b.tier === p.tier && b.serviceType === p.serviceType && b.weightClass === p.weightClass);
+    b.tier === p.tier
+    && b.serviceType === p.serviceType
+    && b.weightClass === p.weightClass
+    && b.appointmentIntervalWeeks === p.appointmentIntervalWeeks);
 
   const custom = plans
     .filter(p => p.isActive !== false)

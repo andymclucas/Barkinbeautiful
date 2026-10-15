@@ -148,4 +148,39 @@ describe("not offering the same membership twice", () => {
     const offered = assignablePackagesFor(smallBuiltIns, [silverPlus, mirrorOfABuiltIn], "small");
     expect(offered.filter(p => p.custom).map(p => p.name)).toEqual(["Silver +"]);
   });
+
+  // The fixture above uses tier "silver-plus", which validatePlanForAssignment
+  // REFUSES — memberships.tier is an enum of five. So it collided with
+  // nothing and the dedupe was never really tested. A plan a salon can
+  // actually store looks like this one, and it is the real Silver +.
+  const storableSilverPlus = {
+    id: 13, name: "Silver +", tier: "silver", serviceVariant: "styled",
+    weightBand: "small", weeklyPriceAud: "48.00", appointmentIntervalWeeks: 5, isActive: true,
+  };
+
+  it("offers a plan that differs only in how often the dog comes in", () => {
+    // silver/styled/small IS a built-in — at six weeks. This one is five,
+    // which is the entire reason a salon writes its own. Dropping it as a
+    // duplicate made the custom-plan feature unable to express the case it
+    // was built for, and the live "Silver +" row was invisible because of it.
+    expect(validatePlanForAssignment(fromPlan(storableSilverPlus))).toEqual({ ok: true });
+
+    const offered = assignablePackagesFor(smallBuiltIns, [storableSilverPlus], "small");
+    expect(offered.filter(p => p.custom).map(p => p.appointmentIntervalWeeks)).toEqual([5]);
+    // And the six-weekly built-in it shadows is still there beside it.
+    expect(offered.some(p => !p.custom && p.id === "silver-styled-small")).toBe(true);
+  });
+
+  it("still drops a plan that matches a built-in on cadence too", () => {
+    // Same tier, service, band AND interval: this is the seeded mirror,
+    // and all 48 of those must stay hidden.
+    const sixWeekly = { ...storableSilverPlus, appointmentIntervalWeeks: 6 };
+    expect(assignablePackagesFor(smallBuiltIns, [sixWeekly], "small").filter(p => p.custom)).toHaveLength(0);
+  });
+
+  it("does not treat a repriced membership as a new one", () => {
+    // A salon changing its own rate has not invented a second membership.
+    const repriced = { ...mirrorOfABuiltIn, weeklyPriceAud: "60.00" };
+    expect(assignablePackagesFor(smallBuiltIns, [repriced], "small").filter(p => p.custom)).toHaveLength(0);
+  });
 });
