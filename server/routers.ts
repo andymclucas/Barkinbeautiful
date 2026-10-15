@@ -6,6 +6,7 @@ import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
+import { parseMessageSearch, likePattern } from "@shared/messageSearch";
 import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
 import { agreementsRouter, clientReviewsRouter, packagesRouter, petPaperworkRouter, clientNotesRouter } from "./routers/clientRecord";
@@ -8120,10 +8121,39 @@ const smsRouter = router({
   // Conversation threads: one row per client/number, with their most recent
   // message and how many inbound messages from them are still unread.
   getThreads: protectedProcedure
-    .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(50) }))
+    .input(z.object({
+      tenantId: z.number().default(1),
+      limit: z.number().default(50),
+      /**
+       * Number, first or last name, dog name, or anything said in a
+       * message. Empty searches nothing and the list behaves as before.
+       */
+      search: z.string().max(100).optional(),
+    }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) return [];
+      if (!db) return { threads: [], total: 0, searching: false };
+      // A search reaches the whole table, not the window below. The list
+      // shows 50 threads of 117, and somebody looking for a client who
+      // last texted in August was told the conversation did not exist.
+      const search = parseMessageSearch(input.search);
+      const filters = [eq(smsLogs.tenantId, tenantOf(ctx, input))];
+      if (search.active) {
+        const like = likePattern(search.text);
+        const digits = search.phoneDigits;
+        filters.push(sql`(
+          ${smsLogs.body} LIKE ${like} ESCAPE '\\'
+          OR ${clients.firstName} LIKE ${like} ESCAPE '\\'
+          OR ${clients.lastName} LIKE ${like} ESCAPE '\\'
+          OR CONCAT(${clients.firstName}, ' ', ${clients.lastName}) LIKE ${like} ESCAPE '\\'
+          OR EXISTS (SELECT 1 FROM pets p WHERE p.client_id = ${clients.id} AND p.name LIKE ${like} ESCAPE '\\')
+          ${digits
+            ? sql`OR REPLACE(REPLACE(REPLACE(${smsLogs.toNumber}, ' ', ''), '-', ''), '+', '') LIKE ${`%${digits}%`}
+                  OR REPLACE(REPLACE(REPLACE(${clients.phone}, ' ', ''), '-', ''), '+', '') LIKE ${`%${digits}%`}`
+            : sql``}
+        )`);
+      }
+
       const rows = await db.select({
         id: smsLogs.id, toNumber: smsLogs.toNumber, body: smsLogs.body,
         direction: smsLogs.direction, sentAt: smsLogs.sentAt, readAt: smsLogs.readAt,
@@ -8136,9 +8166,9 @@ const smsRouter = router({
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
       }).from(smsLogs)
         .leftJoin(clients, eq(smsLogs.clientId, clients.id))
-        .where(eq(smsLogs.tenantId, tenantOf(ctx, input)))
+        .where(and(...filters))
         .orderBy(desc(smsLogs.sentAt))
-        .limit(1000);
+        .limit(search.active ? 5000 : 1000);
 
       // Group in memory by a stable thread key (clientId if known, else the raw number).
       const threads = new Map<string, {
@@ -8188,10 +8218,17 @@ const smsRouter = router({
       // the UI — hiding it client-side would still ship every groomer the
       // names.
       const canSeeReaders = canAdministerStaff(ctx.user);
-      return Array.from(threads.values())
-        .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())
-        .slice(0, input.limit)
-        .map((t) => (canSeeReaders ? t : { ...t, readByName: null }));
+      const all = Array.from(threads.values()).sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
+      return {
+        threads: all.slice(0, input.limit).map((t) => (canSeeReaders ? t : { ...t, readByName: null })),
+        /**
+         * How many there actually are. The list silently showed 50 of
+         * 117 and gave no sign it had stopped — which is how a thread
+         * comes to look like it does not exist.
+         */
+        total: all.length,
+        searching: search.active,
+      };
     }),
 
   markThreadRead: protectedProcedure

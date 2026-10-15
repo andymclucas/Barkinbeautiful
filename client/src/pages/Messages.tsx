@@ -83,7 +83,23 @@ export default function Messages() {
   const [sending, setSending] = useState(false);
 
   const { data: logs, refetch } = trpc.sms.getLogs.useQuery({ limit: 100 });
-  const { data: threads, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({ limit: 50 });
+  // Typed into the box above the list; debounced so a search is one query
+  // per pause rather than one per keystroke.
+  const [threadSearch, setThreadSearch] = useState("");
+  const [threadSearchDebounced, setThreadSearchDebounced] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setThreadSearchDebounced(threadSearch), 250);
+    return () => clearTimeout(timer);
+  }, [threadSearch]);
+
+  const { data: threadData, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({
+    limit: 50,
+    search: threadSearchDebounced.trim() || undefined,
+  });
+  const threads = threadData?.threads;
+  /** How many exist, not how many are shown — the two differ at 117. */
+  const threadTotal = threadData?.total ?? 0;
+  const threadSearching = threadData?.searching ?? false;
   const markAllRead = trpc.sms.markAllThreadsRead.useMutation({
     onSuccess: () => {
       toast.success("All conversations marked as read");
@@ -423,8 +439,15 @@ export default function Messages() {
                     {unreadThreadCount} unread
                   </span>
                 )}
+                {/* "50 open" was a lie by omission when there were 117:
+                    the list stopped and said nothing, so a thread that
+                    existed looked like it did not. */}
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {threads?.length ?? 0} open
+                  {threadSearching
+                    ? `${threads?.length ?? 0} found`
+                    : (threads?.length ?? 0) < threadTotal
+                      ? `showing ${threads?.length ?? 0} of ${threadTotal} \u2014 search to find the rest`
+                      : `${threads?.length ?? 0} open`}
                 </span>
               </CardTitle>
               <div className="flex items-center gap-1">
@@ -442,6 +465,29 @@ export default function Messages() {
                 )}
               </div>
             </div>
+            {/* Searches the whole table, not the 50 threads on screen:
+                number, first or last name, dog name, or anything said in
+                a message. */}
+            <div className="relative mt-2">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={threadSearch}
+                onChange={(e) => setThreadSearch(e.target.value)}
+                placeholder="Search name, number, dog or message…"
+                className="h-8 pl-8 pr-8 text-sm"
+                aria-label="Search conversations"
+              />
+              {threadSearch && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setThreadSearch("")}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </CardHeader>
           {/* The card is a fixed-height flex column, so the list inside it
               has to be the part that scrolls — min-h-0 because a flex child
@@ -449,7 +495,11 @@ export default function Messages() {
               the list clipped with nowhere to scroll. */}
           <CardContent className="px-4 pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
             {!threads || threads.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-2">No conversations yet.</p>
+              <p className="text-sm text-muted-foreground py-2">
+                {threadSearching
+                  ? `Nothing matches "${threadSearch.trim()}".`
+                  : "No conversations yet."}
+              </p>
             ) : (
               <div className="divide-y">
                 {[...threads]
