@@ -876,6 +876,20 @@
       "when": 1791834787539,
       "tag": "0124_tenant_membership_signup_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "5",
+      "when": 1791834787540,
+      "tag": "0125_client_photo_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "5",
+      "when": 1791834787541,
+      "tag": "0126_client_photos",
+      "breakpoints": true
     }
   ]
 }

@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { AskForPhotoButton, ClientPhotoStrip } from "@/components/ClientPhotoBar";
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp, Star, Loader2, RotateCcw } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { EmojiPicker } from "@/components/EmojiPicker";
@@ -352,7 +353,12 @@ export default function Messages() {
               thread and launch the compose dialog, which closed over the
               page and left nothing selected when it was dismissed — two
               clicks to answer "I'm on my way". */}
-          <div className="flex items-end gap-2 border-t bg-background px-3 py-2.5">
+          <div className="border-t bg-background px-3 py-2.5">
+            {/* What the client has already sent, above the box they are
+                answering in — a photo of a cut belongs beside the message
+                reporting it, not on another screen. */}
+            <ClientPhotoStrip clientId={openThread?.clientId ?? null} />
+          <div className="flex items-end gap-2">
             <Button
               variant="ghost"
               size="icon"
@@ -368,6 +374,12 @@ export default function Messages() {
             >
               <Trash2 className="h-4 w-4" />
             </Button>
+            {/* SMS cannot carry a picture to this number, so the salon
+                sends a link instead. See shared/clientPhotoRequest.ts. */}
+            <AskForPhotoButton
+              clientId={openThread?.clientId ?? null}
+              clientName={openThread?.clientName}
+            />
             <Textarea
               rows={1}
               value={replyBody}
@@ -393,6 +405,7 @@ export default function Messages() {
             >
               {replySending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
+          </div>
           </div>
     </>
   );

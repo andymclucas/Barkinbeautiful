@@ -40,6 +40,10 @@ const PUBLIC = [
   "authRouter.logout",
   "authRouter.me",
   "authRouter.requestPasswordReset",
+  // The client's own photo-upload page, reached by a token texted to
+  // them and nothing else. Returns a first name and the reason and stops
+  // there — SMS cannot carry a picture here, so the link is the way in.
+  "clientPhotosRouter.getByToken",
   "clientPortalRouter.cancelAppointment",
   "clientPortalRouter.completeSetup",
   "clientPortalRouter.createMyCardSetupLink",
@@ -121,6 +125,13 @@ const OPERATIONAL = [
   "calendarRouter.updateWorkflowState",
   // Whoever is on the desk is the one who learns that somebody else
   // collects the dog. Tenant-checked against the session, not the client.
+  // Asking a client for a photo and reading what they sent is salon-floor
+  // work: the groomer who did the groom and whoever takes the call both
+  // need it, so restricted staff are not locked out.
+  "clientPhotosRouter.listForClient",
+  "clientPhotosRouter.listOpenRequests",
+  "clientPhotosRouter.request",
+  "clientPhotosRouter.revoke",
   "clientsRouter.addContact",
   "clientsRouter.create",
   "clientsRouter.list",
@@ -202,18 +213,18 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(307);
+    expect(surface).toHaveLength(312);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
   it("exposes exactly these procedures without authentication", () => {
     expect(idsOfKind(surface, "public")).toEqual(PUBLIC);
-    expect(PUBLIC).toHaveLength(44);
+    expect(PUBLIC).toHaveLength(45);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(92);
+    expect(OPERATIONAL).toHaveLength(96);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

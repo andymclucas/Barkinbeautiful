@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
-import { appointments, staff, pets, petPhotos, uploadedImages, groomingReports } from "../drizzle/schema";
-import { and, desc, eq, or } from "drizzle-orm";
+import { appointments, staff, pets, petPhotos, uploadedImages, groomingReports, clientPhotoRequests, clientPhotos } from "../drizzle/schema";
+import { and, desc, eq, or, sql } from "drizzle-orm";
+import { hashClientPhotoToken, photoRequestState } from "@shared/clientPhotoRequest";
+import { requireApprovedStaffTenant } from "./staffAccess";
 import sharp from "sharp";
 
 // TiDB rejects a single row/entry over ~6 MB (a TiKV-level limit, not
@@ -551,6 +553,109 @@ export function registerUploadRoutes(app: Router) {
       res.send(buffer);
     } catch (err: any) {
       console.error("[pet-photos/:id/image]", err);
+      res.status(500).json({ error: err.message ?? "Failed to load photo" });
+    }
+  });
+
+  // POST /api/upload/client-photo?token=<32 hex>
+  //
+  // The one upload route with no login behind it. The token IS the
+  // authority: it was texted to one client, it expires in a week, it can
+  // be revoked, and it stops accepting after MAX_PHOTOS_PER_REQUEST. The
+  // client holding it is on their phone with no account and no intention
+  // of making one, which is the entire reason the feature exists.
+  //
+  // Nothing from the request decides whose photo it is. The client, the
+  // tenant and the dog all come off the stored row, so a token cannot be
+  // pointed at somebody else's record by adding a query parameter.
+  app.post("/api/upload/client-photo", async (req, res) => {
+    try {
+      const token = typeof req.query.token === "string" ? req.query.token : "";
+      if (!/^[0-9a-f]{32}$/.test(token)) { res.status(400).json({ error: "This photo link is not valid." }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+
+      const [request] = await db.select({
+        id: clientPhotoRequests.id,
+        tenantId: clientPhotoRequests.tenantId,
+        clientId: clientPhotoRequests.clientId,
+        petId: clientPhotoRequests.petId,
+        expiresAt: clientPhotoRequests.expiresAt,
+        revokedAt: clientPhotoRequests.revokedAt,
+        uploadCount: clientPhotoRequests.uploadCount,
+      }).from(clientPhotoRequests)
+        .where(eq(clientPhotoRequests.tokenHash, hashClientPhotoToken(token)))
+        .limit(1);
+      // An unknown token and a dead one read the same, so this cannot be
+      // used to find out which links are live.
+      if (!request) { res.status(404).json({ error: "This photo link is not valid. Please ask the salon for a new one." }); return; }
+      const state = photoRequestState(request);
+      if (!state.ok) { res.status(410).json({ error: state.message }); return; }
+
+      const contentType = req.headers["content-type"] ?? "image/jpeg";
+      if (!String(contentType).startsWith("image/")) { res.status(400).json({ error: "Please choose a photo." }); return; }
+      const buffer: Buffer = req.body;
+      if (!buffer?.length) { res.status(400).json({ error: "That file was empty - please try again." }); return; }
+      if (buffer.length > 20 * 1024 * 1024) { res.status(413).json({ error: "That photo is too large (max 20 MB)." }); return; }
+
+      const compressed = await compressForStorage(buffer, String(contentType));
+      const ext = compressed.contentType.split("/")[1]?.split(";")[0] ?? "jpg";
+      const key = `client-photos/${request.tenantId}/${request.clientId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+
+      await db.insert(uploadedImages).values({
+        storageKey: key,
+        photoData: compressed.buffer.toString("base64"),
+        photoContentType: compressed.contentType,
+      });
+      await db.insert(clientPhotos).values({
+        tenantId: request.tenantId, clientId: request.clientId,
+        requestId: request.id, petId: request.petId,
+        storageKey: key, contentType: compressed.contentType, byteSize: compressed.buffer.length,
+      });
+      // In SQL, not read-then-written: two photos sent at once must not
+      // both see the same count and slip past the ceiling.
+      await db.update(clientPhotoRequests).set({
+        uploadCount: sql`${clientPhotoRequests.uploadCount} + 1`,
+        lastUploadAt: new Date(),
+      }).where(eq(clientPhotoRequests.id, request.id));
+
+      res.json({ ok: true, remaining: Math.max(0, state.remaining - 1) });
+    } catch (err: any) {
+      console.error("[upload/client-photo]", err);
+      res.status(500).json({ error: "We could not save that photo. Please try again." });
+    }
+  });
+
+  // GET /api/client-photo?key=... — staff only, and only their own salon's.
+  app.get("/api/client-photo", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const key = typeof req.query.key === "string" ? req.query.key : "";
+      if (!key.startsWith("client-photos/")) { res.status(400).json({ error: "Invalid photo" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+
+      // Tenant comes off the photo row, then is checked against the
+      // viewer. A key alone must not be enough to read another salon's
+      // client photos, however it was come by.
+      const [photo] = await db.select({ tenantId: clientPhotos.tenantId })
+        .from(clientPhotos).where(eq(clientPhotos.storageKey, key)).limit(1);
+      if (!photo) { res.status(404).json({ error: "Photo not found" }); return; }
+      const portalStaff = await requireApprovedStaffTenant(db, user as any);
+      if (portalStaff && portalStaff.tenantId !== photo.tenantId) {
+        res.status(403).json({ error: "This photo is not available to your salon profile" }); return;
+      }
+
+      const [image] = await db.select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!image) { res.status(404).json({ error: "Photo not found" }); return; }
+      res.setHeader("Content-Type", image.photoContentType);
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      res.send(Buffer.from(image.photoData, "base64"));
+    } catch (err: any) {
+      console.error("[client-photo]", err);
       res.status(500).json({ error: err.message ?? "Failed to load photo" });
     }
   });
