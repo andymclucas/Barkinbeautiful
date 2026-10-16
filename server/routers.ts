@@ -8124,7 +8124,9 @@ const smsRouter = router({
   getThreads: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
-      limit: z.number().default(50),
+      /** 50 by default, expanded a page at a time. Bounded so a crafted
+       *  request cannot ask the server to group the entire table. */
+      limit: z.number().int().min(1).max(500).default(50),
       /**
        * Number, first or last name, dog name, or anything said in a
        * message. Empty searches nothing and the list behaves as before.
@@ -8156,7 +8158,11 @@ const smsRouter = router({
         .leftJoin(clients, eq(smsLogs.clientId, clients.id))
         .where(and(...filters))
         .orderBy(desc(smsLogs.sentAt))
-        .limit(search.active ? 5000 : 1000);
+        // Threads are grouped from these rows, so the window has to be
+        // wide enough to contain the number of threads being asked for.
+        // A flat 1000 was fine at 117 threads and would quietly stop
+        // finding them at a few thousand messages.
+        .limit(search.active ? 5000 : Math.max(1000, input.limit * 25));
 
       // Group in memory by a stable thread key (clientId if known, else the raw number).
       const threads = new Map<string, {
