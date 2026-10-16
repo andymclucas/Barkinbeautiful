@@ -354,20 +354,33 @@ export function BookingPetPricing(props: Props) {
         </div>
         {/* An extra belongs to ONE dog — a de-matt is not shared — so with
             more than one on the booking it has to say which. With a single
-            dog there is nothing to ask. */}
+            dog there is nothing to ask.
+            
+            Andy, 17/10: the picker stays here rather than moving back into
+            the dog cards, but WHICH dog has to be unmissable. A de-matt
+            added to the wrong dog because the selector was still on the
+            previous one is a real charge on a real invoice. So it is
+            labelled "for", wide enough to read at a glance, and the dog it
+            will land on is ringed in the list below. */}
         {petRows.length > 1 && (
-          <Select value={String(addOnTargetPetId)} onValueChange={(v) => setAddOnTargetPetId(Number(v))}>
-            <SelectTrigger className="h-7 w-28 shrink-0 text-[11px]" aria-label="Which dog the extra is for">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {petRows.map((row) => (
-                <SelectItem key={row.petId} value={String(row.petId)}>
-                  {row.pet?.name ?? `Pet ${row.petId}`}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className="text-[11px] font-medium text-muted-foreground">for</span>
+            <Select value={String(addOnTargetPetId)} onValueChange={(v) => setAddOnTargetPetId(Number(v))}>
+              <SelectTrigger
+                className="h-7 w-36 shrink-0 border-violet-400 bg-card text-[11px] font-semibold text-violet-700 dark:border-violet-600 dark:text-violet-300"
+                aria-label="Which dog the extra is for"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {petRows.map((row) => (
+                  <SelectItem key={row.petId} value={String(row.petId)}>
+                    {row.pet?.name ?? `Pet ${row.petId}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
       </div>
 
@@ -384,10 +397,27 @@ export function BookingPetPricing(props: Props) {
           row.band ? sizeBandLabel(row.band) : null,
         ].filter(Boolean);
 
+        // The dog the extras picker above is pointed at. Ringed so the
+        // answer to "which dog am I about to charge" is visible without
+        // reading the dropdown.
+        const isAddOnTarget = petRows.length > 1 && row.petId === addOnTargetPetId;
+
         return (
-          <div key={key} className="space-y-2 rounded-md border bg-muted/20 p-2.5">
+          <div
+            key={key}
+            className={`space-y-2 rounded-md border bg-muted/20 p-2.5 ${
+              isAddOnTarget ? "border-violet-400 ring-2 ring-violet-400/40 dark:border-violet-600" : ""
+            }`}
+          >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-sm font-semibold">{row.pet?.name ?? `Pet ${row.petId}`}</span>
+              <span className="truncate text-sm font-semibold">
+                {row.pet?.name ?? `Pet ${row.petId}`}
+                {isAddOnTarget && (
+                  <span className="ml-2 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
+                    extras go here
+                  </span>
+                )}
+              </span>
               {facts.length > 0 && (
                 <span className="shrink-0 truncate text-xs text-muted-foreground">{facts.join(" · ")}</span>
               )}
