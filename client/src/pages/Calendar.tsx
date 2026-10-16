@@ -81,7 +81,9 @@ import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
   FileDown, Check, CheckCircle2, ImagePlus, Mail, ChevronDown, ChevronUp, Clock, ExternalLink,
+  Clock3,
 } from "lucide-react";
+import { WaitlistPanel } from "@/components/WaitlistPanel";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -1010,6 +1012,11 @@ export default function Calendar() {
     if (pending.clientName) toast.success(`Booking ${pending.clientName}'s first groom`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const [showWaitlist, setShowWaitlist] = useState(false);
+  // Polled with everything else on this page, so a claim that arrives
+  // while the calendar is open shows on the button without a reload.
+  const waitlistClaims = trpc.waitlist.listClaims.useQuery({});
+  const waitlistClaimCount = waitlistClaims.data?.length ?? 0;
   const [editForm, setEditForm] = useState({
     staffId: "", serviceType: "", scheduledStart: "", scheduledEnd: "",
     notes: "", price: "", workflowState: "",
@@ -2473,6 +2480,20 @@ export default function Calendar() {
               size="sm" className="brand-lift gap-1.5 bg-card/80 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-700 dark:hover:text-red-300">
               <Ban className="h-4 w-4" /> Block Out
             </Button>
+            {/* Beside Block Out and New Appointment because it belongs to
+                the same moment: a booking is cancelled here, and the
+                waitlist is who else wanted that time. A dialog rather
+                than a panel — this page is a fixed-height flex column
+                and anything inserted into it fights the calendar. */}
+            <Button variant="outline" size="sm" className="brand-lift gap-1.5 bg-card/80"
+              onClick={() => setShowWaitlist(true)}>
+              <Clock3 className="h-4 w-4" /> Waitlist
+              {waitlistClaimCount > 0 && (
+                <span className="ml-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                  {waitlistClaimCount}
+                </span>
+              )}
+            </Button>
             <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
               <Plus className="h-4 w-4" /> New Appointment
             </Button>
@@ -2648,6 +2669,15 @@ export default function Calendar() {
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setApptListClient(null)}>Close</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showWaitlist} onOpenChange={setShowWaitlist}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Waitlist</DialogTitle>
+          </DialogHeader>
+          <WaitlistPanel />
         </DialogContent>
       </Dialog>
 

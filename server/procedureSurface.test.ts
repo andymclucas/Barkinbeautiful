@@ -91,6 +91,11 @@ const PUBLIC = [
   "staffRouter.acceptInvitation",
   "staffRouter.getInvitation",
   "trackerRouter.getByToken",
+  // A waitlisted client taking a slot that came free, from a texted
+  // link. getOffer shows them the time; claim is a REQUEST — the same
+  // slot goes to several people and staff decide between them.
+  "waitlistRouter.claim",
+  "waitlistRouter.getOffer",
 ];
 
 /**
@@ -198,6 +203,17 @@ const OPERATIONAL = [
   "staffRouter.updateMyPhoto",
   "staffRouter.updateMyProfile",
   "trialRouter.get",
+  // Putting a client on the waitlist, seeing who is waiting and offering
+  // a freed slot are salon-floor work — whoever takes the call needs
+  // them, so restricted staff are not locked out.
+  "waitlistRouter.approveClaim",
+  "waitlistRouter.declineClaim",
+  "waitlistRouter.join",
+  "waitlistRouter.listClaims",
+  "waitlistRouter.listEntries",
+  "waitlistRouter.matchesForSlot",
+  "waitlistRouter.offer",
+  "waitlistRouter.remove",
   "workflowReviewRouter.getBoardThresholds",
   "workflowRouter.getBoard",
   "workflowRouter.getStaff",
@@ -213,18 +229,18 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(312);
+    expect(surface).toHaveLength(322);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
   it("exposes exactly these procedures without authentication", () => {
     expect(idsOfKind(surface, "public")).toEqual(PUBLIC);
-    expect(PUBLIC).toHaveLength(45);
+    expect(PUBLIC).toHaveLength(47);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(96);
+    expect(OPERATIONAL).toHaveLength(104);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
