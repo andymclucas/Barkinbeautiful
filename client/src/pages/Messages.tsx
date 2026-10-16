@@ -18,6 +18,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { AskForPhotoButton, ClientPhotoStrip } from "@/components/ClientPhotoBar";
+
+/** 50, then 100, 150, 200 — the list grows a page at a time. */
+const THREAD_PAGE_SIZE = 50;
+/** Matches the server's ceiling; past this, search is the answer. */
+const MAX_THREAD_LIMIT = 500;
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp, Star, Loader2, RotateCcw } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { EmojiPicker } from "@/components/EmojiPicker";
@@ -91,9 +96,16 @@ export default function Messages() {
     const timer = setTimeout(() => setThreadSearchDebounced(threadSearch), 250);
     return () => clearTimeout(timer);
   }, [threadSearch]);
+  // Searching starts the list over. Keeping an expanded limit across a
+  // new search asks the server for 200 matches of a term that has three.
+  useEffect(() => { setThreadLimit(THREAD_PAGE_SIZE); }, [threadSearchDebounced]);
 
+  // Fifty to start with, expanded in steps. A salon with 117
+  // conversations should not be handed all of them on a phone, but it
+  // must be able to get to them.
+  const [threadLimit, setThreadLimit] = useState(THREAD_PAGE_SIZE);
   const { data: threadData, refetch: refetchThreads } = trpc.sms.getThreads.useQuery({
-    limit: 50,
+    limit: threadLimit,
     search: threadSearchDebounced.trim() || undefined,
   });
   const threads = threadData?.threads;
@@ -446,7 +458,7 @@ export default function Messages() {
                   {threadSearching
                     ? `${threads?.length ?? 0} found`
                     : (threads?.length ?? 0) < threadTotal
-                      ? `showing ${threads?.length ?? 0} of ${threadTotal} \u2014 search to find the rest`
+                      ? `showing ${threads?.length ?? 0} of ${threadTotal}`
                       : `${threads?.length ?? 0} open`}
                 </span>
               </CardTitle>
@@ -591,6 +603,31 @@ export default function Messages() {
                   </div>
                   );
                 })}
+              </div>
+            )}
+            {/* Only when there is genuinely more. The count comes from
+                the server, so this cannot offer to expand into nothing. */}
+            {threads && threads.length < threadTotal && (
+              <div className="flex flex-wrap items-center justify-center gap-2 border-t pt-3 mt-1">
+                <span className="text-xs text-muted-foreground">
+                  Showing {threads.length} of {threadTotal}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setThreadLimit((n) => n + THREAD_PAGE_SIZE)}
+                >
+                  Show {Math.min(THREAD_PAGE_SIZE, threadTotal - threads.length)} more
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setThreadLimit(Math.min(threadTotal, MAX_THREAD_LIMIT))}
+                >
+                  Show all {threadTotal}
+                </Button>
               </div>
             )}
           </CardContent>
