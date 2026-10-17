@@ -5369,6 +5369,13 @@ const membershipPlanInput = z.object({
   weeklyPriceAud: z.coerce.number().finite().min(0).max(100000),
   billingCycleWeeks: z.coerce.number().int().positive().max(104).default(1),
   appointmentIntervalWeeks: z.coerce.number().int().positive().max(104),
+  /**
+   * How many dogs the weekly price covers. 1 for everything except the
+   * salon's "X2" plans, where one row is priced for two. Capped at the
+   * same number self-serve sign-up allows, since a plan for more dogs
+   * than a sign-up can carry cannot be used.
+   */
+  coversPets: z.coerce.number().int().min(1).max(6).default(1),
   description: z.string().trim().max(2000).optional(),
   isActive: z.boolean().default(true),
   sortOrder: z.coerce.number().int().min(0).max(100000).default(0),

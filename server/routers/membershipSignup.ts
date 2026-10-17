@@ -496,9 +496,33 @@ export const membershipSignupRouter = router({
       const recurringGroupId = nanoid(24);
       const createdMembershipIds: number[] = [];
 
+      /**
+       * A plan priced for several dogs is ONE membership, charged once.
+       *
+       * The salon writes these as "...Small (0-10kg) X2" at $34, which is
+       * two dogs at $17. A row per dog would create two Stripe
+       * subscriptions and bill the family twice for one membership.
+       *
+       * Both dogs' appointments then point at that single membership,
+       * which is better than the 21 migrated X2 rows manage — those link
+       * one dog and leave the other attached to nothing at all.
+       */
+      const coversPets = quote.lines[0]?.coversPets ?? 1;
+      const oneMembershipForAll = coversPets > 1;
+
       for (let index = 0; index < lines.length; index++) {
         const line = lines[index];
         const quoted = quote.lines[index];
+
+        if (oneMembershipForAll && index > 0) {
+          // Already covered by the row made for the first dog.
+          createdMembershipIds.push(createdMembershipIds[0]);
+          await db.update(membershipSignupRequestPets)
+            .set({ membershipId: createdMembershipIds[0] })
+            .where(eq(membershipSignupRequestPets.id, line.id));
+          continue;
+        }
+
         const [created] = await db.insert(memberships).values({
           tenantId, clientId: request.clientId, petId: line.petId,
           name: quoted.packageName,
@@ -506,7 +530,9 @@ export const membershipSignupRouter = router({
           serviceType: quoted.serviceType as any,
           billingCycleWeeks: 1,
           appointmentIntervalWeeks: quoted.appointmentIntervalWeeks,
-          pricePerCycle: quoted.weeklyPrice.toFixed(2),
+          // The quote's total, not the per-dog figure: for a multi-dog
+          // plan they are the same number, and this is what gets billed.
+          pricePerCycle: (oneMembershipForAll ? quote.weeklyTotal : quoted.weeklyPrice).toFixed(2),
           // Not active until Stripe says the money is set up. The weekly
           // charge is the membership; a row marked active with no
           // subscription behind it reads as a paying client who is not.
@@ -563,7 +589,9 @@ export const membershipSignupRouter = router({
       // startMembershipSubscription already has. Two dogs means two weekly
       // line items on one card, which is how every membership here bills.
       const billingProblems: string[] = [];
-      for (const membershipId of createdMembershipIds) {
+      // Distinct: a multi-dog plan put the same membership id against
+      // every dog, and starting its subscription twice bills twice.
+      for (const membershipId of Array.from(new Set(createdMembershipIds))) {
         try {
           await startMembershipSubscription(membershipId);
         } catch (err) {
@@ -574,7 +602,7 @@ export const membershipSignupRouter = router({
 
       return {
         success: true,
-        membershipIds: createdMembershipIds,
+        membershipIds: Array.from(new Set(createdMembershipIds)),
         recurringGroupId,
         appointmentsBooked: bookedCount * lines.length,
         visitsBooked: bookedCount,

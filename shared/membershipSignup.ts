@@ -22,6 +22,7 @@
 
 import {
   assignablePackagesFor,
+  nameLooksMultiDog,
   validatePlanForAssignment,
   visitsPerYearFor,
   type AssignablePackage,
@@ -60,6 +61,8 @@ export type SignupQuoteLine = {
   /** From the catalogue. Never from the request. */
   weeklyPrice: number;
   appointmentIntervalWeeks: number;
+  /** Dogs this one weekly price covers. See the multi-dog rules below. */
+  coversPets: number;
   custom: boolean;
 };
 
@@ -163,6 +166,17 @@ export function quoteMembershipSignup(input: {
       continue;
     }
 
+    // The name says two dogs and the column says one. Refuse rather than
+    // pick a side: one reading double-charges the family, the other
+    // halves the salon's revenue, and only a person knows which is true.
+    if (chosen.coversPets === 1 && nameLooksMultiDog(chosen.name)) {
+      problems.push(
+        `"${chosen.name}" looks like it covers more than one dog but is not set up that way. `
+        + `Please call us — we'll sort the price out.`,
+      );
+      continue;
+    }
+
     lines.push({
       petName: name,
       weightKg: dog.weightKg,
@@ -172,6 +186,7 @@ export function quoteMembershipSignup(input: {
       serviceType: chosen.serviceType,
       weeklyPrice: chosen.weeklyPrice,
       appointmentIntervalWeeks: chosen.appointmentIntervalWeeks,
+      coversPets: chosen.coversPets,
       custom: chosen.custom,
     });
   }
@@ -194,6 +209,38 @@ export function quoteMembershipSignup(input: {
   }
 
   const intervalWeeks = intervals[0]!;
+
+  // A plan priced for several dogs is charged ONCE. The salon writes
+  // these as "Silver VIP Classic - Small (0-10kg) X2" at $34, which is
+  // two dogs at $17 — and summing it per dog quotes $68 for a family
+  // whose membership costs $34.
+  const multiDog = lines.filter((line) => line.coversPets > 1);
+  if (multiDog.length > 0) {
+    const plan = multiDog[0];
+    if (lines.some((line) => line.packageId !== plan.packageId)) {
+      return {
+        ok: false,
+        problems: [`"${plan.packageName}" covers all your dogs together, so every dog has to be on it.`],
+      };
+    }
+    if (lines.length !== plan.coversPets) {
+      return {
+        ok: false,
+        problems: [
+          `"${plan.packageName}" is for ${plan.coversPets} dogs and you have ${lines.length}. `
+          + `Please call us and we'll find the right membership.`,
+        ],
+      };
+    }
+    return {
+      ok: true,
+      lines,
+      weeklyTotal: Math.round(plan.weeklyPrice * 100) / 100,
+      intervalWeeks,
+      visitsPerYear: visitsPerYearFor(intervalWeeks),
+    };
+  }
+
   return {
     ok: true,
     lines,

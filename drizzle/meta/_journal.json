@@ -904,6 +904,13 @@
       "when": 1791834787543,
       "tag": "0128_waitlist_offers",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "5",
+      "when": 1791834787544,
+      "tag": "0129_membership_plan_covers_pets",
+      "breakpoints": true
     }
   ]
 }
