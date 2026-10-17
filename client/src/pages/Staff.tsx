@@ -102,9 +102,9 @@ function australianDateKey(timestamp: number | string | Date | null | undefined)
 function OnlineBookingControls() {
   const utils = trpc.useUtils();
   const { data } = trpc.onlineBooking.getSettings.useQuery({});
-  const [form, setForm] = useState({ enabled: false, membershipSignup: false, bathLimit: "3", bathCapacity: "3", slotMinutes: "30", leadHours: "24" });
+  const [form, setForm] = useState({ enabled: false, membershipSignup: false, waitlistSignup: false, bathLimit: "3", bathCapacity: "3", slotMinutes: "30", leadHours: "24" });
   useEffect(() => {
-    if (data) setForm({ enabled: data.onlineBookingEnabled, membershipSignup: data.membershipSignupEnabled, bathLimit: String(data.onlineBathOnlyDailyLimit), bathCapacity: String(data.onlineBathCapacityPerSlot), slotMinutes: String(data.onlineBookingSlotMinutes), leadHours: String(data.onlineBookingLeadHours) });
+    if (data) setForm({ enabled: data.onlineBookingEnabled, membershipSignup: data.membershipSignupEnabled, waitlistSignup: data.waitlistSignupEnabled, bathLimit: String(data.onlineBathOnlyDailyLimit), bathCapacity: String(data.onlineBathCapacityPerSlot), slotMinutes: String(data.onlineBookingSlotMinutes), leadHours: String(data.onlineBookingLeadHours) });
   }, [data]);
   const save = trpc.onlineBooking.updateSettings.useMutation({
     onSuccess: () => { toast.success("Online booking controls saved"); utils.onlineBooking.getSettings.invalidate({}); },
@@ -117,12 +117,16 @@ function OnlineBookingControls() {
       {/* Separate from public booking on purpose: this one is a link you
           send a client, not an open diary. It turns on /join. */}
       <label className="flex items-center gap-2 rounded-lg border bg-card/80 px-3 py-2 text-sm font-medium cursor-pointer" title="Lets clients join a membership from /join. Every sign-up still needs approving on the Memberships page before anything is charged or booked."><input type="checkbox" checked={form.membershipSignup} onChange={e => setForm(p => ({ ...p, membershipSignup: e.target.checked }))} className="h-4 w-4 accent-violet-600" /> Enable membership sign-up</label>
+      {/* A third switch because it is a third decision: this one takes no
+          slot and moves no money, but it does create a client record
+          from a public form. It turns on /waitlist. */}
+      <label className="flex items-center gap-2 rounded-lg border bg-card/80 px-3 py-2 text-sm font-medium cursor-pointer" title="Lets clients add themselves to the waitlist from /waitlist. Nothing is booked or charged — you still choose who to offer a freed slot to."><input type="checkbox" checked={form.waitlistSignup} onChange={e => setForm(p => ({ ...p, waitlistSignup: e.target.checked }))} className="h-4 w-4 accent-violet-600" /> Enable waitlist sign-up</label>
       <div><Label>Bath-only online cap/day</Label><Input className="mt-1 bg-card" type="number" min="0" max="30" value={form.bathLimit} onChange={e => setForm(p => ({ ...p, bathLimit: e.target.value }))} /></div>
       <div><Label>Bath stations per slot</Label><Input className="mt-1 bg-card" type="number" min="1" max="20" value={form.bathCapacity} onChange={e => setForm(p => ({ ...p, bathCapacity: e.target.value }))} /></div>
       <div><Label>Slot interval (minutes)</Label><Input className="mt-1 bg-card" type="number" min="15" step="15" value={form.slotMinutes} onChange={e => setForm(p => ({ ...p, slotMinutes: e.target.value }))} /></div>
       <div><Label>Minimum notice (hours)</Label><Input className="mt-1 bg-card" type="number" min="0" value={form.leadHours} onChange={e => setForm(p => ({ ...p, leadHours: e.target.value }))} /></div>
     </div>
-    <div className="mt-4 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Set each groomer’s profile, services and capacity in their Staff profile before switching public booking on.</p><Button size="sm" onClick={() => save.mutate({ onlineBookingEnabled: form.enabled, membershipSignupEnabled: form.membershipSignup, onlineBathOnlyDailyLimit: Math.max(0, Number(form.bathLimit) || 0), onlineBathCapacityPerSlot: Math.max(1, Number(form.bathCapacity) || 1), onlineBookingSlotMinutes: Math.max(15, Number(form.slotMinutes) || 30), onlineBookingLeadHours: Math.max(0, Number(form.leadHours) || 0) })} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save controls"}</Button></div>
+    <div className="mt-4 flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Set each groomer’s profile, services and capacity in their Staff profile before switching public booking on.</p><Button size="sm" onClick={() => save.mutate({ onlineBookingEnabled: form.enabled, membershipSignupEnabled: form.membershipSignup, waitlistSignupEnabled: form.waitlistSignup, onlineBathOnlyDailyLimit: Math.max(0, Number(form.bathLimit) || 0), onlineBathCapacityPerSlot: Math.max(1, Number(form.bathCapacity) || 1), onlineBookingSlotMinutes: Math.max(15, Number(form.slotMinutes) || 30), onlineBookingLeadHours: Math.max(0, Number(form.leadHours) || 0) })} disabled={save.isPending}>{save.isPending ? "Saving…" : "Save controls"}</Button></div>
   </section>;
 }
 

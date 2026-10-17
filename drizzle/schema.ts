@@ -47,6 +47,8 @@ export const tenants = mysqlTable("tenants", {
   onlineBookingEnabled: boolean("online_booking_enabled").default(false).notNull(),
   /** Separate from online booking: a link sent to one client, not an open diary. */
   membershipSignupEnabled: boolean("membership_signup_enabled").default(false).notNull(),
+  /** Clients asking to be told when a slot frees. Takes no slot, moves no money. */
+  waitlistSignupEnabled: boolean("waitlist_signup_enabled").default(false).notNull(),
   onlineBathOnlyDailyLimit: int("online_bath_only_daily_limit").default(3).notNull(),
   onlineBathCapacityPerSlot: int("online_bath_capacity_per_slot").default(3).notNull(),
   onlineBookingSlotMinutes: int("online_booking_slot_minutes").default(30).notNull(),

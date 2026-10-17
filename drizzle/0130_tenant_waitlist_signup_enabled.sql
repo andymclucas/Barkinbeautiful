@@ -1,0 +1,22 @@
+-- Clients putting themselves on the waitlist.
+--
+-- A third switch, and deliberately not one of the two that exist.
+--
+--   online_booking_enabled opens every free slot to anyone who finds the
+--   page. Barkin' Beautiful has it OFF.
+--   membership_signup_enabled is a link sent to a particular client who
+--   is joining a membership. ON.
+--
+-- Asking to be told when something comes up is neither. It takes no
+-- slot, moves no money, and is the one thing a salon with a full diary
+-- most wants to hear — but it does create a client record from a public
+-- form, which is a decision a salon should make on purpose.
+--
+-- Sharing a flag was tried once already: membership sign-up rode on
+-- online_booking_enabled and was unreachable for the salon that asked
+-- for it, because the two decisions are not the same decision.
+--
+-- DEFAULT FALSE. A flag that opens a public route by itself, on every
+-- tenant, during an unrelated deploy is the kind of default nobody
+-- notices until afterwards.
+ALTER TABLE `tenants` ADD COLUMN `waitlist_signup_enabled` BOOLEAN NOT NULL DEFAULT FALSE;
