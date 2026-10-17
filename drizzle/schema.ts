@@ -1658,3 +1658,67 @@ export const clientPhotos = mysqlTable("client_photos", {
 
 export type ClientPhotoRequest = typeof clientPhotoRequests.$inferSelect;
 export type ClientPhoto = typeof clientPhotos.$inferSelect;
+
+/**
+ * A client waiting for a slot that does not exist yet.
+ *
+ * Dates are YYYY-MM-DD strings, not timestamps: these are Brisbane
+ * calendar dates, and staff_blockouts carries a long warning about what
+ * happens when a date label is stored as an instant.
+ */
+export const waitlistEntries = mysqlTable("waitlist_entries", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  clientId: int("client_id").notNull().references(() => clients.id),
+  petId: int("pet_id").notNull().references(() => pets.id),
+  serviceType: varchar("service_type", { length: 40 }),
+  /** A preference, not a filter — see shared/waitlist.ts. */
+  preferredStaffId: int("preferred_staff_id"),
+  earliestDate: varchar("earliest_date", { length: 10 }).notNull(),
+  latestDate: varchar("latest_date", { length: 10 }).notNull(),
+  timeOfDay: mysqlEnum("time_of_day", ["any", "morning", "afternoon"]).default("any").notNull(),
+  note: varchar("note", { length: 500 }),
+  status: mysqlEnum("status", ["active", "fulfilled", "cancelled", "expired"]).default("active").notNull(),
+  /** Null when the client added themselves rather than a staff member. */
+  createdByUserId: int("created_by_user_id"),
+  fulfilledAppointmentId: int("fulfilled_appointment_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("idx_waitlist_tenant_status").on(t.tenantId, t.status),
+  index("idx_waitlist_client").on(t.clientId),
+]);
+
+/**
+ * One freed slot put in front of one waiting client.
+ *
+ * The slot is its own columns rather than a pointer at the cancelled
+ * appointment: that row can be edited or reinstated, and an offer has to
+ * keep meaning what it meant when it was sent.
+ */
+export const waitlistOffers = mysqlTable("waitlist_offers", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  entryId: int("entry_id").notNull().references(() => waitlistEntries.id),
+  staffId: int("staff_id"),
+  scheduledStart: timestamp("scheduled_start").notNull(),
+  durationMinutes: int("duration_minutes").notNull(),
+  serviceType: varchar("service_type", { length: 40 }),
+  /** SHA-256 only. The link travels by SMS and lingers in the thread. */
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["offered", "claimed", "approved", "declined", "withdrawn"]).default("offered").notNull(),
+  offeredByUserId: int("offered_by_user_id"),
+  expiresAt: timestamp("expires_at").notNull(),
+  claimedAt: timestamp("claimed_at"),
+  decidedByUserId: int("decided_by_user_id"),
+  decidedAt: timestamp("decided_at"),
+  appointmentId: int("appointment_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_waitlist_offer_token").on(t.tokenHash),
+  index("idx_waitlist_offers_entry").on(t.entryId),
+  index("idx_waitlist_offers_slot").on(t.tenantId, t.scheduledStart, t.status),
+]);
+
+export type WaitlistEntryRow = typeof waitlistEntries.$inferSelect;
+export type WaitlistOfferRow = typeof waitlistOffers.$inferSelect;

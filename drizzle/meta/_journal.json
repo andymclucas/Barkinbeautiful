@@ -890,6 +890,20 @@
       "when": 1791834787541,
       "tag": "0126_client_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "5",
+      "when": 1791834787542,
+      "tag": "0127_waitlist_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "5",
+      "when": 1791834787543,
+      "tag": "0128_waitlist_offers",
+      "breakpoints": true
     }
   ]
 }
