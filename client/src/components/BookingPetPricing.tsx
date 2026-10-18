@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { SIZE_BAND_IDS, sizeBandLabel, type DogSizeBand } from "@shared/dogSizeBand";
+import { SIZE_BAND_IDS, SIZE_BAND_SOURCE_LABELS, sizeBandLabel, type DogSizeBand, type SizeBandSource } from "@shared/dogSizeBand";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { addOnRequiresManualPrice } from "@shared/appointmentAddOns";
 import {
   bookingTotal,
@@ -262,6 +263,27 @@ export function BookingPetPricing(props: Props) {
     setBandMutation.mutate({ petId, sizeBand: band });
   };
 
+  /**
+   * Overriding a size the dog already has.
+   *
+   * Picking a band when there is none is just filling a blank, and goes
+   * straight through. Changing one that is already set is different: it
+   * overwrites the dog's record for every future booking, not only this
+   * one, and when the band came from a recorded weight it also puts the
+   * two in open disagreement. That is sometimes exactly right — a
+   * heavily matted dog grooms like the band above — but it should be a
+   * decision somebody makes, not a dropdown they brush past.
+   */
+  const [editingBandFor, setEditingBandFor] = useState<number | null>(null);
+  const [pendingBand, setPendingBand] = useState<{ petId: number; band: DogSizeBand } | null>(null);
+  const pendingRow = pendingBand ? petRows.find((r) => r.petId === pendingBand.petId) : null;
+
+  const requestBandChange = (petId: number, band: DogSizeBand, currentBand: DogSizeBand | null) => {
+    if (!currentBand) { chooseBand(petId, band); return; }
+    if (band === currentBand) { setEditingBandFor(null); return; }
+    setPendingBand({ petId, band });
+  };
+
   const addStagedAddOn = (petId: number, addOn: StagedAddOn) =>
     props.onAddOnsChange({
       ...props.addOnsByPetId,
@@ -419,18 +441,38 @@ export function BookingPetPricing(props: Props) {
                 )}
               </span>
               {facts.length > 0 && (
-                <span className="shrink-0 truncate text-xs text-muted-foreground">{facts.join(" · ")}</span>
+                <span className="flex shrink-0 items-baseline gap-1.5 text-xs text-muted-foreground">
+                  <span className="truncate">{facts.join(" · ")}</span>
+                  {/* Only when there is a size to override. With none, the
+                      picker below is already showing. */}
+                  {row.band && (
+                    <button
+                      type="button"
+                      className="shrink-0 underline underline-offset-2 hover:text-foreground"
+                      onClick={() => setEditingBandFor(editingBandFor === row.petId ? null : row.petId)}
+                    >
+                      {editingBandFor === row.petId ? "cancel" : "change size"}
+                    </button>
+                  )}
+                </span>
               )}
             </div>
 
             {/* 10,372 of 12,552 dogs have no recorded weight, so this is the
                 normal path, not a fallback. Choosing here prices the groom
                 and fills the dog's record in at the same time. */}
-            {needsBand && (
+            {(needsBand || editingBandFor === row.petId) && (
               <div className="space-y-1">
-                <Select value="" onValueChange={(v) => chooseBand(row.petId, v as DogSizeBand)}>
+                <Select
+                  value=""
+                  onValueChange={(v) => requestBandChange(row.petId, v as DogSizeBand, row.band)}
+                >
                   <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="No weight on file — pick a size to price it" />
+                    <SelectValue placeholder={
+                      needsBand
+                        ? "No weight on file — pick a size to price it"
+                        : `Currently ${sizeBandLabel(row.band!)} — pick a different size`
+                    } />
                   </SelectTrigger>
                   <SelectContent>
                     {SIZE_BAND_IDS.map((band) => (
@@ -551,6 +593,62 @@ export function BookingPetPricing(props: Props) {
           The groom is covered by the membership. Anything added above is still invoiced.
         </p>
       )}
+
+      {/* The accept step for a size override. It names what is recorded,
+          where that came from, and what changing it does beyond this
+          booking — because pets.size_band is the dog's record, not a
+          field on this appointment. */}
+      <Dialog open={pendingBand !== null} onOpenChange={(open) => { if (!open) setPendingBand(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Change {pendingRow?.pet?.name ?? "this dog"}&rsquo;s size?
+            </DialogTitle>
+          </DialogHeader>
+
+          {pendingBand && pendingRow && (
+            <div className="space-y-3 py-1 text-sm">
+              <p>
+                Recorded as{" "}
+                <span className="font-semibold">{sizeBandLabel(pendingRow.band!)}</span>
+                {pendingRow.pet?.weightKg ? ` from ${Number(pendingRow.pet.weightKg)} kg on file` : ""}
+                {pendingRow.pet?.sizeBandSource
+                  ? ` (${SIZE_BAND_SOURCE_LABELS[pendingRow.pet.sizeBandSource as SizeBandSource]
+                      ?? pendingRow.pet.sizeBandSource})`
+                  : ""}
+                .
+              </p>
+              <p>
+                Changing it to{" "}
+                <span className="font-semibold">{sizeBandLabel(pendingBand.band)}</span>{" "}
+                reprices this groom and updates {pendingRow.pet?.name ?? "the dog"}&rsquo;s record for
+                every future booking.
+              </p>
+              {/* Worth saying out loud: the weight is NOT changed, so the
+                  two will disagree afterwards and the card will show both. */}
+              {pendingRow.pet?.weightKg && (
+                <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  The recorded weight of {Number(pendingRow.pet.weightKg)} kg stays as it is, so the
+                  size and the weight will no longer agree.
+                </p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPendingBand(null)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (pendingBand) chooseBand(pendingBand.petId, pendingBand.band);
+                setPendingBand(null);
+                setEditingBandFor(null);
+              }}
+            >
+              Change size
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
