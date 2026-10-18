@@ -28,7 +28,7 @@
  * a token and nothing else.
  */
 import { z } from "zod";
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
@@ -42,12 +42,25 @@ import { getAppBaseUrl } from "../appUrl";
 import { nanoid } from "nanoid";
 import { brisbaneDateKey } from "@shared/localDateTime";
 import {
+  MAX_ACTIVE_ENTRIES_PER_CLIENT,
   MAX_WAITLIST_WINDOW_DAYS,
   createWaitlistToken, hashWaitlistToken, matchesSlot, offerState,
   rankMatches, waitlistOfferSms, waitlistOfferUrl, windowLengthDays,
 } from "@shared/waitlist";
 
 const DATE_KEY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** Clients may only add themselves where the salon has switched it on. */
+async function requireWaitlistSignupEnabled(db: any, tenantId: number) {
+  const [row] = await db.select({ enabled: tenants.waitlistSignupEnabled })
+    .from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+  if (!row?.enabled) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Our online waitlist isn't open just now. Please give us a call and we'll add you.",
+    });
+  }
+}
 
 async function assertTenant(db: any, ctx: any, tenantId: number) {
   const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
@@ -122,6 +135,136 @@ export const waitlistRouter = router({
         createdByUserId: ctx.user.id,
       });
       return { entryId: (created as any).insertId as number, petName: pet.name };
+    }),
+
+
+  /**
+   * Whether a client may add themselves, and who they can ask for.
+   *
+   * Its own switch, not the membership or online-booking one: asking to
+   * be told when something comes up takes no slot and moves no money,
+   * but it does create a client record from a public form.
+   */
+  publicOptions: publicProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      await requireWaitlistSignupEnabled(db, tenantId);
+
+      const groomers = await db.select({ id: staff.id, name: staff.name })
+        .from(staff)
+        .where(and(eq(staff.tenantId, tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true)))
+        .orderBy(asc(staff.name));
+
+      return { groomers, maxWindowDays: MAX_WAITLIST_WINDOW_DAYS };
+    }),
+
+  /**
+   * A client putting themselves on the list.
+   *
+   * Creates nothing a staff member would not have created on the phone:
+   * the client record if they are new, the dog if it is not on file, and
+   * one entry. No slot is held and nothing is charged — the salon still
+   * chooses who to offer a freed slot to.
+   */
+  publicJoin: publicProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      firstName: z.string().trim().min(1).max(100),
+      lastName: z.string().trim().min(1).max(100),
+      phone: z.string().trim().min(6).max(30),
+      email: z.string().trim().email().max(320).optional().or(z.literal("")),
+      petName: z.string().trim().min(1).max(100),
+      breed: z.string().trim().max(100).optional(),
+      preferredStaffId: z.number().optional(),
+      earliestDate: DATE_KEY,
+      latestDate: DATE_KEY,
+      timeOfDay: z.enum(["any", "morning", "afternoon"]).default("any"),
+      note: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      await requireWaitlistSignupEnabled(db, tenantId);
+
+      const length = windowLengthDays(input.earliestDate, input.latestDate);
+      if (length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "The last date must be on or after the first." });
+      }
+      if (length > MAX_WAITLIST_WINDOW_DAYS) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Please keep the dates within ${MAX_WAITLIST_WINDOW_DAYS} days so we can still offer you something useful.`,
+        });
+      }
+
+      if (input.preferredStaffId !== undefined) {
+        const [groomer] = await db.select({ id: staff.id }).from(staff).where(and(
+          eq(staff.id, input.preferredStaffId), eq(staff.tenantId, tenantId),
+          eq(staff.isActive, true), eq(staff.onlineBookable, true),
+        )).limit(1);
+        if (!groomer) throw new TRPCError({ code: "BAD_REQUEST", message: "That groomer is not available at this salon" });
+      }
+
+      // Same identity rule as guest booking and membership sign-up: a
+      // client the salon already knows must not become a second record.
+      const email = input.email?.trim().toLowerCase() || null;
+      const identity = email ? or(eq(clients.email, email), eq(clients.phone, input.phone)) : eq(clients.phone, input.phone);
+      let [client] = await db.select({ id: clients.id }).from(clients)
+        .where(and(eq(clients.tenantId, tenantId), identity)).limit(1);
+      if (!client) {
+        const [created] = await db.insert(clients).values({
+          tenantId, firstName: input.firstName, lastName: input.lastName,
+          phone: input.phone, email, status: "active",
+        });
+        client = { id: (created as any).insertId as number };
+      }
+
+      const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(
+        eq(pets.tenantId, tenantId), eq(pets.clientId, client.id), eq(pets.name, input.petName),
+      )).limit(1);
+      let petId = existingPet?.id;
+      if (!petId) {
+        const [createdPet] = await db.insert(pets).values({
+          tenantId, clientId: client.id, name: input.petName, breed: input.breed || null,
+        });
+        petId = (createdPet as any).insertId as number;
+      }
+
+      const active = await db.select({ id: waitlistEntries.id, petId: waitlistEntries.petId })
+        .from(waitlistEntries)
+        .where(and(
+          eq(waitlistEntries.tenantId, tenantId),
+          eq(waitlistEntries.clientId, client.id),
+          eq(waitlistEntries.status, "active"),
+        ));
+
+      // Submitting the form twice is the normal way this happens, not
+      // abuse — a client who taps back and resubmits should not end up
+      // on the list twice for the same dog.
+      if (active.some((row: any) => row.petId === petId)) {
+        return { ok: true as const, alreadyOn: true, petName: input.petName };
+      }
+      if (active.length >= MAX_ACTIVE_ENTRIES_PER_CLIENT) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `You're already on the waitlist for ${active.length} dogs. Please call us to add another.`,
+        });
+      }
+
+      await db.insert(waitlistEntries).values({
+        tenantId, clientId: client.id, petId,
+        preferredStaffId: input.preferredStaffId ?? null,
+        earliestDate: input.earliestDate, latestDate: input.latestDate,
+        timeOfDay: input.timeOfDay, note: input.note || null,
+        // Null: nobody on the salon side put them here.
+        createdByUserId: null,
+      });
+
+      return { ok: true as const, alreadyOn: false, petName: input.petName };
     }),
 
   /** Everyone currently waiting, longest first. */

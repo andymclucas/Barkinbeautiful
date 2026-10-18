@@ -96,6 +96,11 @@ const PUBLIC = [
   // slot goes to several people and staff decide between them.
   "waitlistRouter.claim",
   "waitlistRouter.getOffer",
+  // A client adding themselves to the waitlist. Behind its own tenant
+  // switch, holds no slot and charges nothing — the salon still chooses
+  // who to offer a cancellation to.
+  "waitlistRouter.publicJoin",
+  "waitlistRouter.publicOptions",
 ];
 
 /**
@@ -229,13 +234,13 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(322);
+    expect(surface).toHaveLength(324);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
   it("exposes exactly these procedures without authentication", () => {
     expect(idsOfKind(surface, "public")).toEqual(PUBLIC);
-    expect(PUBLIC).toHaveLength(47);
+    expect(PUBLIC).toHaveLength(49);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

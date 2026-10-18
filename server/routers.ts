@@ -5369,6 +5369,13 @@ const membershipPlanInput = z.object({
   weeklyPriceAud: z.coerce.number().finite().min(0).max(100000),
   billingCycleWeeks: z.coerce.number().int().positive().max(104).default(1),
   appointmentIntervalWeeks: z.coerce.number().int().positive().max(104),
+  /**
+   * How many dogs the weekly price covers. 1 for everything except the
+   * salon's "X2" plans, where one row is priced for two. Capped at the
+   * same number self-serve sign-up allows, since a plan for more dogs
+   * than a sign-up can carry cannot be used.
+   */
+  coversPets: z.coerce.number().int().min(1).max(6).default(1),
   description: z.string().trim().max(2000).optional(),
   isActive: z.boolean().default(true),
   sortOrder: z.coerce.number().int().min(0).max(100000).default(0),
@@ -7297,10 +7304,10 @@ const onlineBookingRouter = router({
   getSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
-    const [tenant] = await db.select({ onlineBookingEnabled: tenants.onlineBookingEnabled, membershipSignupEnabled: tenants.membershipSignupEnabled, onlineBathOnlyDailyLimit: tenants.onlineBathOnlyDailyLimit, onlineBathCapacityPerSlot: tenants.onlineBathCapacityPerSlot, onlineBookingSlotMinutes: tenants.onlineBookingSlotMinutes, onlineBookingLeadHours: tenants.onlineBookingLeadHours }).from(tenants).where(eq(tenants.id, tenantOf(ctx, input))).limit(1);
+    const [tenant] = await db.select({ onlineBookingEnabled: tenants.onlineBookingEnabled, membershipSignupEnabled: tenants.membershipSignupEnabled, waitlistSignupEnabled: tenants.waitlistSignupEnabled, onlineBathOnlyDailyLimit: tenants.onlineBathOnlyDailyLimit, onlineBathCapacityPerSlot: tenants.onlineBathCapacityPerSlot, onlineBookingSlotMinutes: tenants.onlineBookingSlotMinutes, onlineBookingLeadHours: tenants.onlineBookingLeadHours }).from(tenants).where(eq(tenants.id, tenantOf(ctx, input))).limit(1);
     return tenant;
   }),
-  updateSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1), onlineBookingEnabled: z.boolean().optional(), membershipSignupEnabled: z.boolean().optional(), onlineBathOnlyDailyLimit: z.number().int().min(0).max(30).optional(), onlineBathCapacityPerSlot: z.number().int().min(1).max(20).optional(), onlineBookingSlotMinutes: z.number().int().min(15).max(120).optional(), onlineBookingLeadHours: z.number().int().min(0).max(336).optional() })).mutation(async ({ input, ctx }) => {
+  updateSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1), onlineBookingEnabled: z.boolean().optional(), membershipSignupEnabled: z.boolean().optional(), waitlistSignupEnabled: z.boolean().optional(), onlineBathOnlyDailyLimit: z.number().int().min(0).max(30).optional(), onlineBathCapacityPerSlot: z.number().int().min(1).max(20).optional(), onlineBookingSlotMinutes: z.number().int().min(15).max(120).optional(), onlineBookingLeadHours: z.number().int().min(0).max(336).optional() })).mutation(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
     const { tenantId, ...settings } = input; await db.update(tenants).set(settings).where(eq(tenants.id, tenantId)); return { success: true };

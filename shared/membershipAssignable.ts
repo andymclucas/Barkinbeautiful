@@ -32,6 +32,12 @@ export type AssignablePackage = {
   weeklyPrice: number;
   appointmentIntervalWeeks: number;
   visitsPerYear: string;
+  /**
+   * How many dogs this weekly price covers. 1 for everything except the
+   * salon's "X2" plans, where one row is priced for two. Never inferred
+   * from the name — see coversPetsFor.
+   */
+  coversPets: number;
   /** True for a plan the salon created itself. */
   custom: boolean;
 };
@@ -68,6 +74,9 @@ export function fromBuiltIn(pkg: MembershipPackage): AssignablePackage {
     weeklyPrice: pkg.weeklyPrice,
     appointmentIntervalWeeks: pkg.appointmentIntervalWeeks,
     visitsPerYear: pkg.visitsPerYear,
+    // Every built-in is one dog at one price. The cross-product has no
+    // multi-dog entries and never has.
+    coversPets: 1,
     custom: false,
   };
 }
@@ -80,6 +89,7 @@ export type MembershipPlanRow = {
   weightBand?: string | null;
   weeklyPriceAud: string | number;
   appointmentIntervalWeeks: number;
+  coversPets?: number | null;
   isActive?: boolean | null;
 };
 
@@ -96,8 +106,34 @@ export function fromPlan(plan: MembershipPlanRow): AssignablePackage {
     weeklyPrice: Number.isFinite(price) ? price : 0,
     appointmentIntervalWeeks: plan.appointmentIntervalWeeks,
     visitsPerYear: visitsPerYearFor(plan.appointmentIntervalWeeks),
+    coversPets: coversPetsFor(plan),
     custom: true,
   };
+}
+
+/**
+ * How many dogs a plan covers.
+ *
+ * Reads the COLUMN, never the name. A plan named "Silver+ (x2)" whose
+ * covers_pets is still 1 returns 1 — and the sign-up quote refuses it
+ * rather than guessing, because a number parsed out of a varchar is not
+ * a thing to put on an invoice.
+ */
+export function coversPetsFor(plan: Pick<MembershipPlanRow, "coversPets">): number {
+  const n = Number(plan.coversPets ?? 1);
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+/**
+ * Does this name claim to cover more than one dog?
+ *
+ * Used ONLY to block, never to price. The salon writes the count into
+ * the name — "X2", "x2 dogs", "2 x SML" — and if the column disagrees
+ * with the name, the safe move is to stop and have somebody say which
+ * is right, not to pick one.
+ */
+export function nameLooksMultiDog(name: string): boolean {
+  return /(^|[^a-z0-9])(x\s?[2-9]|[2-9]\s?x)([^a-z0-9]|$)/i.test(name);
 }
 
 /**

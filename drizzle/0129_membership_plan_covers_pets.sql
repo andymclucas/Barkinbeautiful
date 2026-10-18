@@ -1,0 +1,21 @@
+-- How many dogs a plan's weekly price covers.
+--
+-- The salon prices some memberships for two dogs on one row: "Silver VIP
+-- Classic - Small (0-10kg) X2" at $34 is two dogs at $17, and there are
+-- 21 live memberships on that convention. It works at the counter
+-- because a person reads the name.
+--
+-- It does not work in self-serve sign-up, which charges per dog. A
+-- family picking "Silver+ (x2)" for their two dogs would be quoted
+-- 2 x $58 when $58 already covers both. Nobody has hit it because only
+-- one such plan is pickable, and only since the cadence dedupe fix made
+-- it visible at all.
+--
+-- The fix is to stop the count living in free text. A name is read by
+-- people; a price is applied by code, and code should not be parsing
+-- "X2 dogs" out of a varchar to decide what to charge.
+--
+-- DEFAULT 1 leaves all 49 single-dog plans exactly as they were. The one
+-- plan that is really for two is set deliberately, by a human, in its
+-- own statement — not by a migration guessing from a name.
+ALTER TABLE `membership_plans` ADD COLUMN `covers_pets` INT NOT NULL DEFAULT 1;

@@ -32,6 +32,15 @@ export const WAITLIST_OFFER_TTL_HOURS = 24;
  */
 export const MAX_WAITLIST_WINDOW_DAYS = 120;
 
+/**
+ * A household can hold a few places, not a hundred.
+ *
+ * Self-serve means a form anyone can submit, and without a ceiling one
+ * client can fill the list and every freed slot goes to them. Three is
+ * past the biggest family the salon grooms and nowhere near a nuisance.
+ */
+export const MAX_ACTIVE_ENTRIES_PER_CLIENT = 3;
+
 export type TimeOfDay = "any" | "morning" | "afternoon";
 
 /** Noon Brisbane. Before it is a morning slot, from it an afternoon one. */
