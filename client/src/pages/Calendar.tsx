@@ -94,6 +94,8 @@ import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialo
 import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPricing";
 import { NewClientQuickAdd } from "@/components/NewClientQuickAdd";
 import { buildTimeSlots, splitLocalDateTime, joinLocalDateTime } from "@shared/bookingTimeSlots";
+import { timeValueToMinutes } from "@shared/bookingTimeSlots";
+import { annotateSlots, clashesFor, clashWarning, describeClash } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
 import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
@@ -1591,6 +1593,98 @@ export default function Calendar() {
     setNewAppt(current => current.scheduledEnd === endStr ? current : { ...current, scheduledEnd: endStr });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newAppt.scheduledStart, newAppt.serviceType, selectedAppointmentPetIds.join(","), selectedClientPets.data]);
+
+  /**
+   * The selected groomer's day, so the time dropdown can say what is
+   * already there.
+   *
+   * Only asked for once a groomer AND a date are chosen — before that
+   * there is no day to describe. The booking being edited is excluded so
+   * an appointment never clashes with itself.
+   */
+  const bookingDateKey = splitLocalDateTime(newAppt.scheduledStart).date;
+
+  /**
+   * Every groomer this booking needs: the dialog's default, plus any dog
+   * sent to someone else. A two-dog family routinely spans two people
+   * because each dog defaults to its own usual groomer.
+   */
+  const bookingStaffIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (newAppt.staffId) ids.add(Number(newAppt.staffId));
+    for (const value of Object.values(newAppt.staffByPetId)) {
+      if (value) ids.add(Number(value));
+    }
+    return Array.from(ids).filter((id) => Number.isInteger(id) && id > 0);
+  }, [newAppt.staffId, newAppt.staffByPetId]);
+
+  const groomerDay = trpc.calendar.groomerDay.useQuery(
+    { staffIds: bookingStaffIds, date: bookingDateKey },
+    { enabled: bookingStaffIds.length > 0 && !!bookingDateKey },
+  );
+
+  /**
+   * Everyone's commitments in one list. With two groomers the label says
+   * whose, because "already has Buddy booked" is useless when it is the
+   * other groomer who is busy.
+   */
+  const groomerBusy = useMemo(() => {
+    const groups = groomerDay.data?.busyByStaff ?? [];
+    if (groups.length <= 1) return groups[0]?.busy ?? [];
+    return groups.flatMap(group =>
+      group.busy.map(item => ({
+        ...item,
+        label: group.staffName ? `${group.staffName}: ${item.label}` : item.label,
+      })),
+    );
+  }, [groomerDay.data]);
+
+  /**
+   * How long this booking runs, in minutes, from the two form fields.
+   *
+   * String arithmetic on the "YYYY-MM-DDTHH:mm" the form already holds —
+   * a Date built here reads in the browser's zone, which is the `e6a4662`
+   * trap. An end before the start means it runs past midnight.
+   */
+  const bookingDurationMinutes = useMemo(() => {
+    const from = splitLocalDateTime(newAppt.scheduledStart);
+    const to = splitLocalDateTime(newAppt.scheduledEnd);
+    const startMinutes = timeValueToMinutes(from.time);
+    const endMinutes = timeValueToMinutes(to.time);
+    if (startMinutes === null || endMinutes === null) return 0;
+    const sameDay = !from.date || !to.date || from.date === to.date;
+    const span = sameDay ? endMinutes - startMinutes : endMinutes + 24 * 60 - startMinutes;
+    return span > 0 ? span : 0;
+  }, [newAppt.scheduledStart, newAppt.scheduledEnd]);
+
+  /** Every offered slot, marked with what a booking there would run into. */
+  const timeSlotsWithAvailability = useMemo(
+    () => annotateSlots(
+      buildTimeSlots({ include: splitLocalDateTime(newAppt.scheduledStart).time }),
+      groomerBusy,
+      bookingDurationMinutes,
+      timeValueToMinutes,
+    ),
+    [newAppt.scheduledStart, groomerBusy, bookingDurationMinutes],
+  );
+
+  /** What the time currently chosen runs into. Empty means it is free. */
+  const bookingClashes = useMemo(() => {
+    const startMinutes = timeValueToMinutes(splitLocalDateTime(newAppt.scheduledStart).time);
+    if (startMinutes === null || bookingDurationMinutes <= 0) return [];
+    return clashesFor(startMinutes, startMinutes + bookingDurationMinutes, groomerBusy);
+  }, [newAppt.scheduledStart, bookingDurationMinutes, groomerBusy]);
+
+  const bookingGroomerName = useMemo(() => {
+    const groups = groomerDay.data?.busyByStaff ?? [];
+    // With the dogs split between two people the warning must not name
+    // one of them, because the clash may belong to the other.
+    if (groups.length > 1) return "This booking's groomers";
+    return activeStaff.find(member => String(member.id) === newAppt.staffId)?.name ?? "";
+  }, [activeStaff, newAppt.staffId, groomerDay.data]);
+
+  /** Set when Create is pressed on a clashing slot; cleared by the dialog. */
+  const [clashConfirm, setClashConfirm] = useState<null | { message: string }>(null);
   // A client with exactly one dog has already told us which dog. The chip
   // is a toggle and an untapped one looks like a label, so a groomer
   // reasonably read "Quinnie (Cavoodle)" as chosen, hit Create, and got
@@ -1674,9 +1768,21 @@ export default function Calendar() {
     onError: (e) => toast.error(e.message),
   });
 
-  const handleCreate = () => {
+  /**
+   * `force` skips the double-booking confirmation, and is only ever true
+   * when it came from the confirmation itself.
+   */
+  const handleCreate = (force = false) => {
     const missing = newAppointmentError(newAppt);
     if (missing) { toast.error(missing); return; }
+
+    // Booking over another dog is allowed and sometimes right. It just
+    // must not happen by accident, which is what it did while the time
+    // dropdown offered every half hour regardless of who was selected.
+    if (!force) {
+      const clashMessage = clashWarning(bookingClashes, bookingGroomerName);
+      if (clashMessage) { setClashConfirm({ message: clashMessage }); return; }
+    }
 
     // Warn, never block. The salon squeezes dogs in for good reasons, and a
     // system that refused would simply be worked around — but nobody should
@@ -3010,8 +3116,24 @@ export default function Calendar() {
                 >
                   <SelectTrigger><SelectValue placeholder="Pick a time" /></SelectTrigger>
                   <SelectContent>
-                    {buildTimeSlots({ include: splitLocalDateTime(newAppt.scheduledStart).time }).map(slot => (
-                      <SelectItem key={slot.value} value={slot.value}>{slot.label}</SelectItem>
+                    {timeSlotsWithAvailability.map(slot => (
+                      // Busy slots stay selectable. The salon squeezes dogs
+                      // in for real reasons and a dropdown that hid them
+                      // would just send staff back to guessing — this says
+                      // what is there and lets them decide.
+                      <SelectItem key={slot.value} value={slot.value}>
+                        <span className="flex w-full items-center justify-between gap-3">
+                          <span className={slot.busy ? "text-muted-foreground" : ""}>{slot.label}</span>
+                          {slot.busy && (
+                            <span className="truncate text-[11px] text-amber-600 dark:text-amber-500">
+                              {slot.clashes[0].kind === "blockout"
+                                ? slot.clashes[0].label
+                                : describeClash(slot.clashes[0])}
+                              {slot.clashes.length > 1 ? ` +${slot.clashes.length - 1}` : ""}
+                            </span>
+                          )}
+                        </span>
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -3024,6 +3146,12 @@ export default function Calendar() {
                 <p className="text-[11px] text-muted-foreground">Suggested from the dogs' size — change it for a known-quick or a difficult groom.</p>
               </div>
             </div>
+            {bookingClashes.length > 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                <p className="font-medium">{clashWarning(bookingClashes, bookingGroomerName)}</p>
+                <p className="mt-0.5 opacity-80">You can still book it — you'll be asked to confirm.</p>
+              </div>
+            )}
             {(() => {
               if (!newAppt.scheduledStart) return null;
               const d = new Date(newAppt.scheduledStart);
@@ -3150,10 +3278,46 @@ export default function Calendar() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewAppt(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={multiPetCreateMutation.isPending || createRecurringMutation.isPending}>
+            <Button onClick={() => handleCreate()} disabled={multiPetCreateMutation.isPending || createRecurringMutation.isPending}>
               {multiPetCreateMutation.isPending || createRecurringMutation.isPending
                 ? "Creating..."
                 : repeatForm.enabled ? "Create Recurring Bookings" : "Create Appointment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Double-booking confirmation ──
+          Warn, never block: the salon squeezes dogs in for good reasons and
+          a system that refused would simply be worked around. The cost of
+          going ahead is one click; the cost of not noticing was a groomer
+          with two dogs in one slot. */}
+      <Dialog open={!!clashConfirm} onOpenChange={open => { if (!open) setClashConfirm(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>That time is already taken</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>{clashConfirm?.message}</p>
+            <div className="rounded-lg border bg-muted/40 p-2.5 text-xs">
+              {bookingClashes.map((clash, idx) => (
+                <p key={idx} className="flex items-center justify-between gap-3">
+                  <span className="font-medium">{describeClash(clash)}</span>
+                  <span className="text-muted-foreground">
+                    {clash.kind === "blockout" ? "Not working" : "Booked"}
+                  </span>
+                </p>
+              ))}
+            </div>
+            <p className="text-muted-foreground">Book it anyway?</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClashConfirm(null)}>Pick another time</Button>
+            <Button
+              onClick={() => { setClashConfirm(null); handleCreate(true); }}
+              disabled={multiPetCreateMutation.isPending || createRecurringMutation.isPending}
+            >
+              Book anyway
             </Button>
           </DialogFooter>
         </DialogContent>

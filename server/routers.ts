@@ -2,6 +2,8 @@ import { isValidTimeZone } from "@shared/auditTimestamp";
 import { searchTerms } from "@shared/clientSearchMatch";
 import { applyDiscount, validateDiscount, fromCents, toCents } from "@shared/appointmentDiscount";
 import { buildRevenueBuckets } from "@shared/revenueBuckets";
+import type { BusyInterval } from "@shared/groomerAvailability";
+import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
@@ -509,6 +511,137 @@ const calendarRouter = router({
         ))
         .orderBy(desc(appointments.scheduledStart))
         .limit(input.limit);
+    }),
+
+  /**
+   * What one groomer already has on, on one day.
+   *
+   * For the New Appointment dialog, which until now offered every
+   * half-hour from 7am to 6pm whoever was selected — so the only way to
+   * find out Charlotte was already on a three-hour Mastiff at 10:30 was
+   * to book over her and notice afterwards.
+   *
+   * Returns INTERVALS rather than a free/busy answer per slot: one query
+   * instead of twenty-three, and the warning can name what is in the way,
+   * which is what decides whether to go ahead. A blockout is a different
+   * decision from a dog.
+   *
+   * Minutes from midnight Brisbane, converted here. The client must never
+   * rebuild these as Dates — it reads them in the browser's zone and lands
+   * an hour out for anyone outside Brisbane (`e6a4662`).
+   */
+  groomerDay: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /**
+       * EVERY groomer the booking needs, not just the dialog's default.
+       * `preferredGroomerDefaults` gives each dog its usual groomer, so a
+       * two-dog family routinely spans two people — and checking only the
+       * default books the second one straight over an existing
+       * appointment. The recurring path already guards this; the single
+       * booking path did not.
+       */
+      staffIds: z.array(z.number().int().positive()).min(1).max(12),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      /** Editing an existing booking: it must not clash with itself. */
+      excludeAppointmentId: z.number().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return { busyByStaff: [] as { staffId: number; staffName: string; busy: BusyInterval[] }[] };
+      if (ctx.user.role === "staff") {
+        const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+        if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
+          throw new Error("This calendar is not available to your salon staff profile");
+        }
+      }
+      const tenantId = tenantOf(ctx, input);
+      const staffIds = Array.from(new Set(input.staffIds));
+      const { start, end } = aestDayBounds(input.date);
+
+      /** An instant to minutes past midnight in the salon's day. */
+      const minutesInDay = (at: Date): number => {
+        const parts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false,
+        }).formatToParts(at);
+        const hour = Number(parts.find((pt) => pt.type === "hour")?.value ?? "0");
+        const minute = Number(parts.find((pt) => pt.type === "minute")?.value ?? "0");
+        return hour * 60 + minute;
+      };
+
+      // Three queries for the whole booking, not three per groomer.
+      const apptConditions = [
+        eq(appointments.tenantId, tenantId),
+        inArray(appointments.staffId, staffIds),
+        gte(appointments.scheduledStart, start),
+        lt(appointments.scheduledStart, end),
+        ne(appointments.status, "cancelled"),
+        ne(appointments.workflowState, "cancelled"),
+      ];
+      if (input.excludeAppointmentId !== undefined) {
+        apptConditions.push(ne(appointments.id, input.excludeAppointmentId));
+      }
+      const booked = await db.select({
+        staffId: appointments.staffId,
+        scheduledStart: appointments.scheduledStart,
+        scheduledEnd: appointments.scheduledEnd,
+        petName: pets.name,
+        clientLastName: clients.lastName,
+      }).from(appointments)
+        .leftJoin(pets, eq(appointments.petId, pets.id))
+        .leftJoin(clients, eq(appointments.clientId, clients.id))
+        .where(and(...apptConditions));
+
+      const dayStart = blockoutDateValue(input.date);
+      const leave = await db.select({
+        staffId: staffBlockouts.staffId,
+        isFullDay: staffBlockouts.isFullDay,
+        startTime: staffBlockouts.startTime,
+        endTime: staffBlockouts.endTime,
+        reason: staffBlockouts.reason,
+      }).from(staffBlockouts).where(and(
+        eq(staffBlockouts.tenantId, tenantId),
+        inArray(staffBlockouts.staffId, staffIds),
+        gte(staffBlockouts.blockoutDate, dayStart),
+        lt(staffBlockouts.blockoutDate, new Date(dayStart.getTime() + 86_400_000)),
+      ));
+
+      const names = await db.select({ id: staff.id, name: staff.name })
+        .from(staff).where(and(eq(staff.tenantId, tenantId), inArray(staff.id, staffIds)));
+      const nameById = new Map(names.map((row) => [row.id, row.name]));
+
+      const byStaff = new Map<number, BusyInterval[]>(staffIds.map((id) => [id, []]));
+      for (const row of booked) {
+        if (row.staffId == null || !row.scheduledStart || !row.scheduledEnd) continue;
+        const startMinutes = minutesInDay(new Date(row.scheduledStart));
+        const rawEnd = minutesInDay(new Date(row.scheduledEnd));
+        // A booking running past midnight is clamped to the end of the day
+        // rather than wrapping to a small number and marking the morning.
+        const endMinutes = rawEnd > startMinutes ? rawEnd : 24 * 60;
+        byStaff.get(row.staffId)?.push({
+          startMinutes, endMinutes, kind: "appointment",
+          label: row.petName
+            ? `${row.petName}${row.clientLastName ? ` (${row.clientLastName})` : ""}`
+            : "Booked",
+        });
+      }
+      for (const row of leave) {
+        const fromMinutes = row.isFullDay ? 0 : (timeValueToMinutes(row.startTime) ?? 0);
+        const toMinutes = row.isFullDay ? 24 * 60 : (timeValueToMinutes(row.endTime) ?? 24 * 60);
+        if (!(toMinutes > fromMinutes)) continue;
+        byStaff.get(row.staffId)?.push({
+          startMinutes: fromMinutes, endMinutes: toMinutes, kind: "blockout",
+          label: row.reason?.trim() || "Not working",
+        });
+      }
+
+      return {
+        busyByStaff: staffIds.map((staffId) => ({
+          staffId,
+          staffName: nameById.get(staffId) ?? "",
+          busy: (byStaff.get(staffId) ?? []).sort((a, b) => a.startMinutes - b.startMinutes),
+        })),
+      };
     }),
 
   getAppointments: operationalProcedure
