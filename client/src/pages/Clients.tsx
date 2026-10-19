@@ -27,6 +27,7 @@ import { Link } from "wouter";
 import { toast } from "sonner";
 import { getClientPreviewSide } from "../lib/clientPreviewPosition";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { clientSince, describeClientSince } from "@shared/clientSince";
 import { ClientPetList } from "@/components/ClientPetList";
 
 const STATUS_COLOURS: Record<string, string> = {
@@ -430,7 +431,10 @@ export default function Clients() {
                 <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Contact</th>
                 <th className="text-left p-3 font-medium text-muted-foreground hidden xl:table-cell">Bookings</th>
                 <SortTh col="status" label="Status" className="hidden lg:table-cell" />
-                <SortTh col="createdAt" label="Since" className="hidden lg:table-cell" />
+                {/* Not sortable, and not a loss: it sorted on createdAt, where
+                    10,075 of 10,101 rows share the import date, so the order
+                    it produced was arbitrary. */}
+                <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">First visit</th>
               </tr>
             </thead>
             <tbody>
@@ -515,8 +519,24 @@ export default function Clients() {
                     <Badge className={`text-xs ${STATUS_COLOURS[c.status]}`}>{c.status}</Badge>
                   </td>
                   {/* Since */}
-                  <td className="p-3 hidden lg:table-cell text-xs text-muted-foreground">
-                    {new Date(c.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}
+                  {/* The date they first came in, or nothing. It used to show
+                      clients.createdAt, which for all but 26 clients is the day
+                      the MoeGo data was merged — a column of ten thousand
+                      identical dates that read as information. */}
+                  <td
+                    className="p-3 hidden lg:table-cell text-xs text-muted-foreground"
+                    title={describeClientSince({
+                      firstVisit: c.firstVisit,
+                      createdAt: c.createdAt,
+                      formatDate: (d: Date) => d.toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }),
+                    })}
+                  >
+                    {(() => {
+                      const since = clientSince(c.firstVisit);
+                      return since.known
+                        ? since.at.toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })
+                        : <span className="opacity-50">—</span>;
+                    })()}
                   </td>
                 </tr>
               ))}

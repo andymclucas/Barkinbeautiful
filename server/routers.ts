@@ -2647,6 +2647,10 @@ const clientsRouter = router({
       const visitRows = clientIds.length === 0 ? [] : await db.select({
         clientId: appointments.clientId,
         bookings: sql<number>`COUNT(*)`,
+        // When they first came in. This is the only honest "client since"
+        // the data supports: clients.createdAt is 3 Aug 2026 for 10,075 of
+        // 10,101 rows, the day the MoeGo merge ran.
+        firstVisit: sql<Date | null>`MIN(${appointments.scheduledStart})`,
         lastVisit: sql<Date | null>`MAX(CASE WHEN ${appointments.scheduledStart} <= NOW() AND ${appointments.workflowState} = 'complete' THEN ${appointments.scheduledStart} END)`,
         nextVisit: sql<Date | null>`MIN(CASE WHEN ${appointments.scheduledStart} > NOW() AND ${appointments.status} <> 'cancelled' THEN ${appointments.scheduledStart} END)`,
       }).from(appointments)
@@ -2678,6 +2682,7 @@ const clientsRouter = router({
             ...c,
             pets: petsByClient.get(c.id) ?? [],
             bookings: Number(visits?.bookings ?? 0),
+            firstVisit: visits?.firstVisit ?? null,
             lastVisit: visits?.lastVisit ?? null,
             nextVisit: visits?.nextVisit ?? null,
           };
