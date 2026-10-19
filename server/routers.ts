@@ -1,6 +1,7 @@
 import { isValidTimeZone } from "@shared/auditTimestamp";
 import { searchTerms } from "@shared/clientSearchMatch";
 import { applyDiscount, validateDiscount, fromCents, toCents } from "@shared/appointmentDiscount";
+import { buildRevenueBuckets } from "@shared/revenueBuckets";
 import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
@@ -6248,25 +6249,15 @@ const analyticsRouterExtended = router({
         const weeks = m.billingCycleWeeks ?? 1;
         totalWeeklyMemberRevenue += weeks > 0 ? price / weeks : price;
       }
+      // Membership revenue here is a RUN-RATE, not money received: the
+      // weekly value of every active membership, spread evenly. Billing
+      // has not started in Groomigo, so no membership has actually been
+      // charged — which is why this series is identical every day.
       const dailyMemberRevenue = totalWeeklyMemberRevenue / 7;
-      const buckets: { label: string; apptRevenue: number; memberRevenue: number }[] = [];
-      let cursor = new Date(dateFrom);
-      while (cursor <= dateTo) {
-        const bucketEnd = new Date(cursor);
-        bucketEnd.setDate(bucketEnd.getDate() + bucketDays - 1);
-        if (bucketEnd > dateTo) bucketEnd.setTime(dateTo.getTime());
-        const label = bucketDays === 1
-          ? cursor.toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Brisbane" })
-          : cursor.toLocaleDateString("en-AU", { month: "short", year: "2-digit", timeZone: "Australia/Brisbane" });
-        const bucketApptRevenue = apptRows
-          .filter(r => r.scheduledStart && r.scheduledStart >= cursor && r.scheduledStart <= bucketEnd)
-          .reduce((sum, r) => sum + parseFloat(r.price ?? "0"), 0);
-        const bucketDaysActual = Math.ceil((bucketEnd.getTime() - cursor.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-        const bucketMemberRevenue = dailyMemberRevenue * bucketDaysActual;
-        buckets.push({ label, apptRevenue: Math.round(bucketApptRevenue * 100) / 100, memberRevenue: Math.round(bucketMemberRevenue * 100) / 100 });
-        cursor.setDate(cursor.getDate() + bucketDays);
-      }
-      return buckets;
+
+      return buildRevenueBuckets({
+        rows: apptRows, dateFrom, dateTo, dailyMemberRevenue, bucketDays,
+      });
     }),
 });
 

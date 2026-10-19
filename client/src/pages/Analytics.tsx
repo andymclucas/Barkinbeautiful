@@ -2,7 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, Legend, type TooltipProps } from "recharts";
-import { CHART_MARKS, chartMeasureColours } from "@shared/chartStyle";
+import { CHART_MARKS, chartMeasureColours, CHART_TOKENS, chartTooltipStyle } from "@shared/chartStyle";
 import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
 import { useTheme } from "@/contexts/ThemeContext";
 import { NetSalesPerformance } from "@/components/NetSalesPerformance";
@@ -103,7 +103,7 @@ export default function Analytics() {
     const d = payload[0].payload as typeof pieData[0];
     const pct = totalRevenue > 0 ? ((d.revenue / totalRevenue) * 100).toFixed(1) : "0.0";
     return (
-      <div className="bg-popover text-popover-foreground border rounded-lg shadow-lg p-3 text-xs space-y-1 min-w-[160px]">
+      <div className="bg-popover/60 backdrop-blur-sm text-popover-foreground border rounded-lg shadow-lg p-3 text-xs space-y-1 min-w-[160px]">
         <div className="flex items-center gap-2 font-semibold text-sm pb-1 border-b">
           <div className="h-3 w-3 rounded-full shrink-0" style={{ background: d.colour }} />
           {d.name}
@@ -284,10 +284,10 @@ export default function Analytics() {
               ) : (
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={staffChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_TOKENS.grid} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(v) => [v, "Appointments"]} />
+                    <Tooltip contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v) => [v, "Appointments"]} />
                     <Bar dataKey="appointments" radius={[4, 4, 0, 0]}>
                       {staffChartData.map((entry, idx) => (
                         <Cell key={idx} fill={entry.colour} />
@@ -359,10 +359,10 @@ export default function Analytics() {
                   barGap={CHART_MARKS.barGap}
                   barCategoryGap={CHART_MARKS.barCategoryGap}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_TOKENS.grid} />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${v}`} />
-                  <Tooltip formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
+                  <Tooltip contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
                   <Legend formatter={(v: string) => v === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"} />
                   {/* Separate conditionals rather than a fragment: recharts
                       inspects its children to find the axes, and a fragment

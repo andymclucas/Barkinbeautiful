@@ -135,6 +135,61 @@ export const CHART_MARKS = {
   activeDotRadius: 5,
 } as const;
 
+/**
+ * Theme tokens the charts paint with.
+ *
+ * Written as `var(--token)`, NOT `hsl(var(--token))`. This app's tokens
+ * are complete oklch colours (`--popover: oklch(1 0 0)`), so wrapping one
+ * in `hsl()` yields `hsl(oklch(1 0 0))` — invalid CSS, which the browser
+ * drops without a word.
+ *
+ * That is not hypothetical. Every chart here declared its grid, axis text
+ * and tooltip in `hsl(var(--...))`, all of it was discarded, and the net
+ * sales tooltip rendered as bare text floating over the bars with no box
+ * at all. 23 declarations across three charts, none of them doing
+ * anything.
+ */
+export const CHART_TOKENS = {
+  grid: "var(--border)",
+  axisText: "var(--muted-foreground)",
+  surface: "var(--popover)",
+  surfaceText: "var(--popover-foreground)",
+  cursorLine: "var(--muted-foreground)",
+  cursorFill: "var(--muted)",
+} as const;
+
+/**
+ * How solid the hover card is.
+ *
+ * Deliberately translucent: the tooltip covers the marks it is describing,
+ * and a solid panel hides the very bars being compared. At 60% the shape
+ * underneath still reads.
+ */
+export const CHART_TOOLTIP_OPACITY = 0.6;
+
+/**
+ * The hover card's styling, shared so the charts cannot drift apart.
+ *
+ * The blur is what makes 60% legible. Without it, dark text at this alpha
+ * over a saturated bar is a guess rather than a figure, and a tooltip you
+ * have to squint at is worse than an opaque one.
+ */
+export function chartTooltipStyle(opacity: number = CHART_TOOLTIP_OPACITY) {
+  const pct = Math.round(Math.min(1, Math.max(0, opacity)) * 100);
+  return {
+    background: `color-mix(in oklab, ${CHART_TOKENS.surface} ${pct}%, transparent)`,
+    border: `1px solid color-mix(in oklab, ${CHART_TOKENS.grid} ${pct}%, transparent)`,
+    borderRadius: 10,
+    fontSize: 12,
+    color: CHART_TOKENS.surfaceText,
+    backdropFilter: "blur(6px)",
+    WebkitBackdropFilter: "blur(6px)",
+    // Without a shadow a translucent panel reads as part of the chart
+    // rather than as something floating above it.
+    boxShadow: "0 4px 16px oklch(0 0 0 / 0.14)",
+  };
+}
+
 /** Per user, so one person's choice is not imposed on the next. */
 export function chartStyleKey(userId: number | string | null | undefined, chart: string): string {
   return `groomigo_chart_style_v1_${chart}_${userId ?? "anon"}`;

@@ -7,7 +7,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { COMPARISON_LABELS, type ComparisonMode } from "@shared/comparisonPeriod";
-import { CHART_MARKS, chartSeriesColours } from "@shared/chartStyle";
+import { CHART_MARKS, chartSeriesColours, CHART_TOKENS, chartTooltipStyle } from "@shared/chartStyle";
 import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
 
 /**
@@ -106,17 +106,17 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
                 barCategoryGap={CHART_MARKS.barCategoryGap}
               >
                 {/* Recessive grid and axes: the lines are the content. */}
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_TOKENS.grid} vertical={false} />
                 <XAxis
                   dataKey="date"
                   tickFormatter={shortDate}
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 10, fill: CHART_TOKENS.axisText }}
                   interval="preserveStartEnd"
                   tickLine={false}
-                  axisLine={{ stroke: "hsl(var(--border))" }}
+                  axisLine={{ stroke: CHART_TOKENS.grid }}
                 />
                 <YAxis
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 10, fill: CHART_TOKENS.axisText }}
                   tickFormatter={(v: number) => `$${v >= 1000 ? `${Math.round(v / 1000)}k` : v}`}
                   tickLine={false}
                   axisLine={false}
@@ -125,14 +125,8 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
                 {/* Crosshair + tooltip: a line chart should answer "what is
                     that point?" without anyone having to ask. */}
                 <Tooltip
-                  cursor={{ stroke: "hsl(var(--muted-foreground))", strokeWidth: 1, strokeDasharray: "3 3" }}
-                  contentStyle={{
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 10,
-                    fontSize: 12,
-                    color: "hsl(var(--popover-foreground))",
-                  }}
+                  cursor={{ stroke: CHART_TOKENS.axisText, strokeWidth: 1, strokeDasharray: "3 3" }}
+                  contentStyle={chartTooltipStyle()}
                   labelFormatter={(iso: string) => shortDate(String(iso))}
                   formatter={(value: unknown, name: unknown, item: any) => {
                     const label = String(name) === "net"

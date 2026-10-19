@@ -1,6 +1,6 @@
 import { Bar, CartesianGrid, Cell, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useTheme } from "@/contexts/ThemeContext";
-import { chartSeriesColours, CHART_MARKS } from "@shared/chartStyle";
+import { chartSeriesColours, CHART_MARKS, CHART_TOKENS, chartTooltipStyle } from "@shared/chartStyle";
 import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
 import {
   formatStageDuration,
@@ -101,25 +101,25 @@ export function WorkflowTimingChart({
           {/* Recessive grid, and only along the measured axis. */}
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="hsl(var(--border))"
+            stroke={CHART_TOKENS.grid}
             horizontal={style !== "bar"}
             vertical={style === "bar"}
           />
           {style === "bar" ? (
             <XAxis
               type="number"
-              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              tick={{ fontSize: 10, fill: CHART_TOKENS.axisText }}
               tickFormatter={(v: number) => formatStageDuration(v)}
               tickLine={false}
-              axisLine={{ stroke: "hsl(var(--border))" }}
+              axisLine={{ stroke: CHART_TOKENS.grid }}
             />
           ) : (
             <XAxis
               type="category"
               dataKey="label"
-              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              tick={{ fontSize: 10, fill: CHART_TOKENS.axisText }}
               tickLine={false}
-              axisLine={{ stroke: "hsl(var(--border))" }}
+              axisLine={{ stroke: CHART_TOKENS.grid }}
               angle={-35}
               textAnchor="end"
               height={56}
@@ -131,14 +131,14 @@ export function WorkflowTimingChart({
               type="category"
               dataKey="label"
               width={128}
-              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+              tick={{ fontSize: 11, fill: CHART_TOKENS.axisText }}
               tickLine={false}
               axisLine={false}
             />
           ) : (
             <YAxis
               type="number"
-              tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+              tick={{ fontSize: 10, fill: CHART_TOKENS.axisText }}
               tickFormatter={(v: number) => formatStageDuration(v)}
               tickLine={false}
               axisLine={false}
@@ -146,14 +146,8 @@ export function WorkflowTimingChart({
             />
           )}
           <Tooltip
-            cursor={{ fill: "hsl(var(--muted))", fillOpacity: 0.4 }}
-            contentStyle={{
-              background: "hsl(var(--popover))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: 10,
-              fontSize: 12,
-              color: "hsl(var(--popover-foreground))",
-            }}
+            cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }}
+            contentStyle={chartTooltipStyle()}
             formatter={(value: unknown, _name: unknown, item: any) => [
               `${formatStageDuration(Number(value))} \u00b7 ${item?.payload?.sampleSize ?? 0} samples`,
               "Average",
@@ -178,7 +172,7 @@ export function WorkflowTimingChart({
                 dataKey="avgMinutes"
                 position="right"
                 formatter={(v: number) => formatStageDuration(v)}
-                style={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                style={{ fontSize: 11, fill: CHART_TOKENS.axisText }}
               />
             </Bar>
           )}
@@ -196,7 +190,7 @@ export function WorkflowTimingChart({
                 dataKey="avgMinutes"
                 position="top"
                 formatter={(v: number) => formatStageDuration(v)}
-                style={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                style={{ fontSize: 11, fill: CHART_TOKENS.axisText }}
               />
             </Line>
           )}
