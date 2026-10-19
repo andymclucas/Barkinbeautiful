@@ -70,7 +70,7 @@ import { trpc } from "@/lib/trpc";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { MyProfileDialog } from "@/components/MyProfileDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
-import { parseSections, STAFF_SECTIONS } from "@shared/staffPermissions";
+import { viewableSections, STAFF_SECTIONS } from "@shared/staffPermissions";
 import { toast } from "sonner";
 import { useSalonDocumentTitle } from "@/hooks/useSalonDocumentTitle";
 import { useRealtimeInvalidation } from "@/hooks/useRealtimeInvalidation";
@@ -313,9 +313,15 @@ function DashboardLayoutContent({
    * narrows an existing admin, because the four groomers who hold
    * users.role = "admin" today would lose the floor the moment this shipped.
    * Move someone onto a grant deliberately, then take the blanket admin away.
+   *
+   * VIEWABLE, not editable. A bather is given Clients and Memberships to
+   * read — they need to know a dog is nervous or a groom is covered — and
+   * cannot change either. Keying the nav off the edit grant hid the pages
+   * from the people the read-only grant was invented for, which made the
+   * whole view/edit split pointless from the sidebar's side.
    */
   const grantedPaths: ReadonlySet<string> | null = myStaff?.isAdmin
-    ? new Set<string>(parseSections(myStaff.adminSections).map(sectionPath))
+    ? new Set<string>(viewableSections(myStaff).map(sectionPath))
     : null;
   /**
    * Counts only, polled on a slow timer. A minute is plenty for "someone is

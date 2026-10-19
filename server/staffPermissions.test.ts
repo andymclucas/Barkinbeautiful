@@ -3,6 +3,7 @@ import {
   STAFF_SECTIONS, STAFF_SECTION_KEYS, isStaffSection, parseSections,
   canEditSection, describeGrant, sectionLabel,
   summariseGrant, STAFF_SECTION_KEYS,
+  canViewSection, viewableSections,
 } from "../shared/staffPermissions";
 
 /**
@@ -178,5 +179,44 @@ describe("the sections a grant does NOT include", () => {
   it("reports no gap for someone with no rights at all", () => {
     // They are not missing sections, they have no grant — a different state.
     expect(summariseGrant({ isAdmin: false }).missing).toEqual([]);
+  });
+});
+
+describe("view versus edit", () => {
+  const STAFF = { isAdmin: true, adminSections: ["appointments", "workflow"], viewSections: ["clients", "memberships"] };
+
+  it("lets a bather open the client record without being able to change it", () => {
+    // The whole point of the split: they need to know a dog is nervous.
+    expect(canViewSection(STAFF, "clients")).toBe(true);
+    expect(canEditSection(STAFF, "clients")).toBe(false);
+  });
+
+  it("treats anything editable as viewable too", () => {
+    // Being able to change something you cannot see is not a permission.
+    expect(canViewSection(STAFF, "appointments")).toBe(true);
+    expect(canEditSection(STAFF, "appointments")).toBe(true);
+  });
+
+  it("says no to a section in neither list", () => {
+    expect(canViewSection(STAFF, "pricing")).toBe(false);
+    expect(canViewSection(STAFF, "revenue_targets")).toBe(false);
+  });
+
+  it("gives nothing to someone with no grant at all", () => {
+    // Consistent with canEditSection: the grant is what creates the
+    // restriction, and the sidebar falls back to its own default.
+    expect(canViewSection({ isAdmin: false, viewSections: ["clients"] }, "clients")).toBe(false);
+    expect(viewableSections(null)).toEqual([]);
+  });
+
+  it("merges both lists in canonical order, without duplicates", () => {
+    expect(viewableSections(STAFF)).toEqual(["appointments", "workflow", "memberships", "clients"]);
+    expect(viewableSections({ isAdmin: true, adminSections: ["clients"], viewSections: ["clients"] }))
+      .toEqual(["clients"]);
+  });
+
+  it("copes with the column being null, which every row is today", () => {
+    expect(viewableSections({ isAdmin: true, adminSections: ["clients"], viewSections: null }))
+      .toEqual(["clients"]);
   });
 });

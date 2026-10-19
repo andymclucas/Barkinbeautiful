@@ -4226,6 +4226,7 @@ const staffRouter = router({
         // Drives which sections the sidebar offers.
         isAdmin: staff.isAdmin,
         adminSections: staff.adminSections,
+        viewSections: staff.viewSections,
       }).from(staff).where(eq(staff.userId, ctx.user.id)).limit(1);
       return member ?? null;
     }),
