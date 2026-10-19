@@ -26,6 +26,14 @@ export const STAFF_SECTIONS = [
   { key: "mass_text",       label: "Mass Text",         path: "/messages" },
   { key: "email_campaigns", label: "Email Campaigns",   path: "/email-campaigns" },
   { key: "reporting",       label: "Reporting",         path: "/reporting" },
+  /**
+   * What each groomer is targeted to bring in, and what they actually
+   * did. Separate from "analytics" because it is about PEOPLE: a manager
+   * runs the floor without needing to see what Ashleigh is measured on.
+   * It lived behind canAdministerStaff, which also gates editing someone
+   * else's record — two different decisions sharing one switch.
+   */
+  { key: "revenue_targets", label: "Staff revenue targets", path: "/staff" },
 ] as const;
 
 export type StaffSection = (typeof STAFF_SECTIONS)[number]["key"];
@@ -67,6 +75,8 @@ export interface StaffGrant {
   isAdmin?: boolean | null;
   /** The sections they may edit. Meaningless unless isAdmin. */
   adminSections?: unknown;
+  /** Sections they may open but not change. Edit already implies view. */
+  viewSections?: unknown;
 }
 
 /**
@@ -79,6 +89,29 @@ export interface StaffGrant {
 export function canEditSection(grant: StaffGrant | null | undefined, section: StaffSection): boolean {
   if (!grant?.isAdmin) return false;
   return parseSections(grant.adminSections).includes(section);
+}
+
+/**
+ * May this person OPEN this section, without necessarily changing it?
+ *
+ * A bather needs the client record to know a dog is nervous and must not
+ * be able to rewrite it. Edit implies view, so anything editable is
+ * viewable and only the read-only extras are stored separately.
+ */
+export function canViewSection(grant: StaffGrant | null | undefined, section: StaffSection): boolean {
+  if (!grant?.isAdmin) return false;
+  if (parseSections(grant.adminSections).includes(section)) return true;
+  return parseSections(grant.viewSections).includes(section);
+}
+
+/** Everything they may open, edit-able and read-only together. */
+export function viewableSections(grant: StaffGrant | null | undefined): StaffSection[] {
+  if (!grant?.isAdmin) return [];
+  const seen = new Set<StaffSection>([
+    ...parseSections(grant.adminSections),
+    ...parseSections(grant.viewSections),
+  ]);
+  return STAFF_SECTION_KEYS.filter((k) => seen.has(k));
 }
 
 export type GrantSummary = {

@@ -20,6 +20,7 @@ import { router, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointmentAddOns, appointments, pets, staff } from "../../drizzle/schema";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
+import { canEditSection } from "@shared/staffPermissions";
 import {
   TARGET_PERIODS, type TargetPeriod,
   daysInRange, targetForDays, targetProgress, rangeForPeriod, brisbaneToday,
@@ -32,8 +33,30 @@ import {
 const REVENUE_TARGETS_DENIED =
   "Revenue targets are visible to the salon owner only.";
 
-function requireOwner(user: { id: number; email?: string | null } | null | undefined) {
-  if (!canAdministerStaff(user)) throw new Error(REVENUE_TARGETS_DENIED);
+/**
+ * The owners, plus anyone deliberately granted the revenue-targets section.
+ *
+ * Lauren: a Manager has "all the same permissions as an owner, but cannot
+ * see staff revenue targets (unless Lauren chooses to give this
+ * permission)". That exception could not exist while this and "may edit
+ * somebody else's staff record" shared one switch — canAdministerStaff
+ * gated both. They are separate decisions and now have separate answers.
+ *
+ * Still closed by default: the grant has to be ticked for a named person,
+ * and no role except Owner carries it.
+ */
+async function requireOwner(user: { id: number; email?: string | null } | null | undefined) {
+  if (canAdministerStaff(user)) return;
+  if (user?.id) {
+    const db = await getDb();
+    if (db) {
+      const [member] = await db
+        .select({ isAdmin: staff.isAdmin, adminSections: staff.adminSections })
+        .from(staff).where(eq(staff.userId, user.id)).limit(1);
+      if (canEditSection(member, "revenue_targets")) return;
+    }
+  }
+  throw new Error(REVENUE_TARGETS_DENIED);
 }
 
 /** Brisbane midnight, as the UTC instant it actually happens at. */
@@ -70,7 +93,7 @@ export const revenueTargetsRouter = router({
       to: dateString.optional(),
     }))
     .query(async ({ input, ctx }) => {
-      requireOwner(ctx.user);
+      await requireOwner(ctx.user);
       const db = await getDb();
       if (!db) return { staff: [], days: 0 };
       const tenantId = tenantOf(ctx, input) ?? 1;
@@ -281,7 +304,7 @@ export const revenueTargetsRouter = router({
       period: z.enum(TARGET_PERIODS),
     }))
     .mutation(async ({ input, ctx }) => {
-      requireOwner(ctx.user);
+      await requireOwner(ctx.user);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const tenantId = tenantOf(ctx, input) ?? 1;

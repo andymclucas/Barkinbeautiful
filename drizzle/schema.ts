@@ -184,6 +184,12 @@ export const staff = mysqlTable("staff", {
    */
   isAdmin: boolean("is_admin").default(false).notNull(),
   adminSections: json("admin_sections"),
+  /**
+   * Sections they may OPEN but not change. Edit already implies view, so
+   * this holds only the read-only extras — a bather seeing the client
+   * record to know a dog is nervous, without being able to rewrite it.
+   */
+  viewSections: json("view_sections"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (t) => [index("idx_staff_tenant").on(t.tenantId)]);

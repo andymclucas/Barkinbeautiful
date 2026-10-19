@@ -925,6 +925,13 @@
       "when": 1791834787546,
       "tag": "0131_appt_tenant_client_index",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "5",
+      "when": 1791834787547,
+      "tag": "0132_staff_view_sections",
+      "breakpoints": true
     }
   ]
 }

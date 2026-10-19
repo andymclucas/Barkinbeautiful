@@ -84,6 +84,7 @@ import { collectByInstant, brisbaneDay } from "@shared/collectBy";
 import { fillDailySeries } from "@shared/dailySeries";
 import { actualEndFor } from "@shared/appointmentActualTimes";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
+import { OWNER_ROLE, isStaffRole, defaultEditSections, defaultViewSections } from "@shared/staffRoleDefaults";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
@@ -3757,7 +3758,46 @@ const staffRouter = router({
       if (fields.dateOfBirth !== undefined) updateData.dateOfBirth = fields.dateOfBirth;
       if (fields.emergencyContact !== undefined) updateData.emergencyContact = fields.emergencyContact;
       if (fields.emergencyPhone !== undefined) updateData.emergencyPhone = fields.emergencyPhone;
-      if (fields.role !== undefined) updateData.role = fields.role;
+      if (fields.role !== undefined) {
+        /**
+         * Changing the job title applies that title's default permissions.
+         *
+         * Lauren and Andy set a title and the rights follow, rather than
+         * twelve tick boxes being set by hand for every new starter —
+         * which is how Ashleigh ended up on 10 sections and Brooklyn on 9
+         * with nobody able to say why they differed. Overriding afterwards
+         * through setAdminRights still works and is not undone by this.
+         *
+         * Only when the title actually CHANGES. Saving a profile without
+         * touching the role must not silently reset a deliberate override.
+         */
+        const [current] = await db.select({ role: staff.role, userId: staff.userId })
+          .from(staff).where(eq(staff.id, staffId)).limit(1);
+        if (!current) throw new Error("Staff member not found");
+
+        if (fields.role === OWNER_ROLE && current.role !== OWNER_ROLE) {
+          // The Owner title carries every permission there is, so who may
+          // hold it is not a dropdown's decision. Checked against the
+          // salon's actual administrators, by user id.
+          const [owner] = current.userId
+            ? await db.select({ id: users.id, email: users.email })
+                .from(users).where(eq(users.id, current.userId)).limit(1)
+            : [];
+          if (!owner || !canAdministerStaff(owner)) {
+            throw new Error("Only the salon's owners can hold the Owner title.");
+          }
+        }
+
+        const nextRole = fields.role;
+        updateData.role = nextRole;
+        if (nextRole !== current.role && isStaffRole(nextRole)) {
+          const canEdit = defaultEditSections(nextRole);
+          updateData.isAdmin = true;
+          updateData.adminSections = canEdit;
+          updateData.viewSections = defaultViewSections(nextRole)
+            .filter((section) => !canEdit.includes(section));
+        }
+      }
       if (fields.colourHex !== undefined) updateData.colourHex = fields.colourHex;
       if (fields.isActive !== undefined) updateData.isActive = fields.isActive;
       if (fields.xeroEmployeeId !== undefined) updateData.xeroEmployeeId = fields.xeroEmployeeId;
@@ -3809,6 +3849,8 @@ const staffRouter = router({
       staffId: z.number(),
       isAdmin: z.boolean(),
       sections: z.array(z.enum(STAFF_SECTION_KEYS as unknown as [string, ...string[]])).optional(),
+      /** Sections they may open but not change. Edit already implies view. */
+      viewSections: z.array(z.enum(STAFF_SECTION_KEYS as unknown as [string, ...string[]])).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       requireStaffAdministrator(ctx.user);
@@ -3817,6 +3859,7 @@ const staffRouter = router({
       const [member] = await db.select({
         id: staff.id, name: staff.name, userId: staff.userId, email: staff.email,
         tenantId: staff.tenantId, isAdmin: staff.isAdmin, adminSections: staff.adminSections,
+        viewSections: staff.viewSections,
       }).from(staff).where(eq(staff.id, input.staffId)).limit(1);
       if (!member) throw new Error("Staff member not found");
       // Tenancy, checked before the write rather than left to the WHERE: a
@@ -3833,6 +3876,7 @@ const staffRouter = router({
       const before = { isAdmin: member.isAdmin, adminSections: member.adminSections };
       const updates: Record<string, unknown> = { isAdmin: input.isAdmin };
       if (input.sections !== undefined) updates.adminSections = parseSections(input.sections);
+      if (input.viewSections !== undefined) updates.viewSections = parseSections(input.viewSections);
       await db.update(staff).set(updates).where(eq(staff.id, member.id));
 
       // Access changing silently is the thing worth avoiding: somebody finds

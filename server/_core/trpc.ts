@@ -119,6 +119,68 @@ const enforceTrial = t.middleware(async opts => {
   return next();
 });
 
+/**
+ * Enforce the staff permission tick boxes.
+ *
+ * Until now they enforced almost nothing. `requireSection` existed in
+ * routers.ts with ZERO call sites, and the only genuinely gated section
+ * was mass_text — so un-ticking "Pricing & Services" for somebody hid
+ * the sidebar link and left the endpoints wide open. Pricing is eight
+ * adminProcedures and eight of the nine real users hold
+ * `users.role = "admin"`.
+ *
+ * Four rules keep this from taking the salon floor down, which is the
+ * only way a change like this does real damage:
+ *
+ * 1. MUTATIONS ONLY. Reading stays governed by the procedure types.
+ * 2. The salon's administrators always pass.
+ * 3. NO GRANT MEANS NO RESTRICTION. Somebody with isAdmin false is
+ *    untouched, exactly as before. Giving a person a grant is the act
+ *    that starts restricting them, and clearing it undoes that. Nobody
+ *    loses access the moment this deploys.
+ * 4. It FAILS OPEN. A database hiccup must never be the reason a dog
+ *    cannot be moved off the bath — same reasoning as enforceTrial.
+ */
+const enforceSection = t.middleware(async opts => {
+  const { ctx, next, path, type } = opts;
+  if (type !== "mutation" || !ctx.user) return next();
+
+  try {
+    const { sectionForPath } = await import("@shared/sectionForPath");
+    const section = sectionForPath(path);
+    if (!section) return next();
+
+    const { canAdministerStaff } = await import("@shared/staffAdministrators");
+    if (canAdministerStaff(ctx.user)) return next();
+
+    const { canEditSection, sectionLabel } = await import("@shared/staffPermissions");
+    const { getDb } = await import("../db");
+    const { staff } = await import("../../drizzle/schema");
+    const { eq } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return next();
+
+    const [member] = await db
+      .select({ isAdmin: staff.isAdmin, adminSections: staff.adminSections })
+      .from(staff).where(eq(staff.userId, ctx.user.id)).limit(1);
+
+    // Rule 3: no staff row, or no grant, means nothing has been decided
+    // about this person yet and they carry on as they did yesterday.
+    if (!member?.isAdmin) return next();
+
+    if (!canEditSection(member, section)) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `You do not have permission to change ${sectionLabel(section)}.`,
+      });
+    }
+  } catch (error) {
+    if (error instanceof TRPCError) throw error;
+    console.error("[permissions] check failed, allowing through:", path, error);
+  }
+  return next();
+});
+
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
 
@@ -178,8 +240,8 @@ const broadcastChange = t.middleware(async opts => {
 
 // Restricted staff accounts are deliberately excluded from the general application
 // surface. Only narrowly scoped operational procedures opt into `operationalProcedure`.
-export const protectedProcedure = t.procedure.use(requireNonStaffUser).use(enforceTenant).use(enforceTrial).use(broadcastChange);
-export const operationalProcedure = t.procedure.use(requireUser).use(enforceTenant).use(enforceTrial).use(broadcastChange);
+export const protectedProcedure = t.procedure.use(requireNonStaffUser).use(enforceTenant).use(enforceTrial).use(enforceSection).use(broadcastChange);
+export const operationalProcedure = t.procedure.use(requireUser).use(enforceTenant).use(enforceTrial).use(enforceSection).use(broadcastChange);
 
 export const adminProcedure = t.procedure.use(
   t.middleware(async opts => {
@@ -196,4 +258,4 @@ export const adminProcedure = t.procedure.use(
       },
     });
   }),
-).use(enforceTenant).use(enforceTrial).use(broadcastChange);
+).use(enforceTenant).use(enforceTrial).use(enforceSection).use(broadcastChange);

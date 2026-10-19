@@ -1,0 +1,13 @@
+-- Sections a staff member may OPEN but not change.
+--
+-- A bather needs the client record to know a dog is nervous and must not
+-- be able to rewrite it. `admin_sections` could not say that: one list
+-- per person, meaning "can edit", so read-only access had to be either
+-- full edit or nothing.
+--
+-- Nullable with no default, so every existing row stays valid and reads
+-- as "no read-only extras" — which is what they have today. Nobody gains
+-- or loses anything when this applies.
+--
+-- One statement, so a failure is recorded truthfully in the ledger.
+ALTER TABLE `staff` ADD COLUMN `view_sections` JSON NULL;
