@@ -101,14 +101,6 @@ export function BookingPetPricing(props: Props) {
    */
   const [applicableOnly, setApplicableOnly] = useState(true);
 
-  /** Which dog a newly added extra attaches to. First dog by default. */
-  const [addOnTargetPetId, setAddOnTargetPetId] = useState<number>(petIds[0] ?? 0);
-  useEffect(() => {
-    // Keep the target on a dog that is actually on the booking: removing
-    // the selected dog would otherwise strand extras on a pet id that is
-    // no longer there, and they would be sent on create.
-    if (!petIds.includes(addOnTargetPetId)) setAddOnTargetPetId(petIds[0] ?? 0);
-  }, [petIds, addOnTargetPetId]);
   const setBandMutation = trpc.pets.updateSizeBand.useMutation({
     onSuccess: () => {
       void utils.bookingPricing.context.invalidate();
@@ -362,50 +354,6 @@ export function BookingPetPricing(props: Props) {
         )}
       </div>
 
-      {/* Andy, 13/10: "Move the 'add an extra' drop down up underneath the
-          Service drop down". It was at the bottom of each dog's card, below
-          the price list and the last-time line, which is a long way from
-          where the conversation about extras actually happens. The extras
-          themselves still show against the dog they belong to. */}
-      <div className="flex items-end gap-2 rounded-md bg-muted/40 p-2">
-        <div className="min-w-0 flex-1">
-          <AddOnPicker
-            catalogue={addOnCatalogue}
-            onAdd={(addOn) => addStagedAddOn(addOnTargetPetId, addOn)}
-          />
-        </div>
-        {/* An extra belongs to ONE dog — a de-matt is not shared — so with
-            more than one on the booking it has to say which. With a single
-            dog there is nothing to ask.
-            
-            Andy, 17/10: the picker stays here rather than moving back into
-            the dog cards, but WHICH dog has to be unmissable. A de-matt
-            added to the wrong dog because the selector was still on the
-            previous one is a real charge on a real invoice. So it is
-            labelled "for", wide enough to read at a glance, and the dog it
-            will land on is ringed in the list below. */}
-        {petRows.length > 1 && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className="text-[11px] font-medium text-muted-foreground">for</span>
-            <Select value={String(addOnTargetPetId)} onValueChange={(v) => setAddOnTargetPetId(Number(v))}>
-              <SelectTrigger
-                className="h-7 w-36 shrink-0 border-violet-400 bg-card text-[11px] font-semibold text-violet-700 dark:border-violet-600 dark:text-violet-300"
-                aria-label="Which dog the extra is for"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {petRows.map((row) => (
-                  <SelectItem key={row.petId} value={String(row.petId)}>
-                    {row.pet?.name ?? `Pet ${row.petId}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-      </div>
-
       {petRows.map((row) => {
         const key = String(row.petId);
         const options = optionsByPetId[key] ?? [];
@@ -419,26 +367,24 @@ export function BookingPetPricing(props: Props) {
           row.band ? sizeBandLabel(row.band) : null,
         ].filter(Boolean);
 
-        // The dog the extras picker above is pointed at. Ringed so the
-        // answer to "which dog am I about to charge" is visible without
-        // reading the dropdown.
-        const isAddOnTarget = petRows.length > 1 && row.petId === addOnTargetPetId;
-
         return (
+          // Andy, 19/10: "noticeable boxes around each dog that has the
+          // price plus add-ons inside each of those boxes. So it is
+          // obvious to the staff member which things they are adding to
+          // which dog."
+          //
+          // A shared picker with a dog dropdown was tried first, then the
+          // dropdown was made loud. The dropdown was always the weak
+          // point: it keeps its last choice, and a de-matt on the wrong
+          // Cavoodle is a real charge on a real invoice. A box you are
+          // inside cannot be mistaken for another dog's.
           <div
             key={key}
-            className={`space-y-2 rounded-md border bg-muted/20 p-2.5 ${
-              isAddOnTarget ? "border-violet-400 ring-2 ring-violet-400/40 dark:border-violet-600" : ""
-            }`}
+            className="space-y-2.5 rounded-xl border-2 bg-card p-3 shadow-sm"
           >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-sm font-semibold">
+            <div className="flex items-baseline justify-between gap-2 border-b pb-2">
+              <span className="truncate text-sm font-bold">
                 {row.pet?.name ?? `Pet ${row.petId}`}
-                {isAddOnTarget && (
-                  <span className="ml-2 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
-                    extras go here
-                  </span>
-                )}
               </span>
               {facts.length > 0 && (
                 <span className="flex shrink-0 items-baseline gap-1.5 text-xs text-muted-foreground">
@@ -561,6 +507,20 @@ export function BookingPetPricing(props: Props) {
               </p>
             )}
 
+            {/* This dog's extras, in this dog's box. The picker adds to
+                row.petId and nothing else, so there is no target to get
+                wrong. */}
+            <div className="space-y-1.5 rounded-lg border bg-muted/30 p-2">
+              <Label className="text-[11px] font-medium text-muted-foreground">
+                Extras for {row.pet?.name ?? "this dog"}
+              </Label>
+              <AddOnPicker
+                catalogue={addOnCatalogue}
+                onAdd={(addOn) => addStagedAddOn(row.petId, addOn)}
+              />
+              {staged.length === 0 && (
+                <p className="text-[11px] text-muted-foreground">No extras on this dog.</p>
+              )}
             {staged.length > 0 && (
               <div className="space-y-1">
                 {staged.map((addOn, index) => (
@@ -581,6 +541,7 @@ export function BookingPetPricing(props: Props) {
                 ))}
               </div>
             )}
+            </div>
 
           </div>
         );
