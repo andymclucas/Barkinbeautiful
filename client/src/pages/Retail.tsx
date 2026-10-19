@@ -73,6 +73,17 @@ export default function Retail() {
                       <div>
                         <p className="font-medium">{p.name}</p>
                         {p.sku && <p className="text-xs text-muted-foreground">SKU: {p.sku}</p>}
+                        {/* Category, and whether it needs reordering. Both
+                            were behind a breakpoint, so a phone saw a name,
+                            a price and a bare number with no idea the stock
+                            was low. */}
+                        <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground lg:hidden">
+                          <span className="md:hidden">{p.category ?? "Uncategorised"}</span>
+                          <span className={p.stockQty <= p.reorderThreshold
+                            ? "font-semibold text-amber-600 dark:text-amber-400" : ""}>
+                            {p.stockQty <= p.reorderThreshold ? "Low stock" : "In stock"}
+                          </span>
+                        </p>
                       </div>
                     </div>
                   </td>

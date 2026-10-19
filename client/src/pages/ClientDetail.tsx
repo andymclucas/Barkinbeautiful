@@ -1497,6 +1497,21 @@ export default function ClientDetail() {
                         <td className="p-3">
                           <span className="font-medium">{a.petName}</span>
                           {a.petBreed && <div className="text-xs text-muted-foreground">{a.petBreed}</div>}
+                          {/* Service, groomer and whether it was paid. All
+                              three sat behind breakpoints, so a phone
+                              reading a dog's history saw a date, a name and
+                              a status — not what was done or by whom. */}
+                          <div className="mt-0.5 text-[11px] text-muted-foreground lg:hidden">
+                            <span className="md:hidden">{SERVICE_LABELS[a.serviceType] ?? a.serviceType}</span>
+                            {a.staffName ? <span className="md:before:content-none before:content-['_·_']">{a.staffName}</span> : null}
+                            {a.paymentStatus ? (
+                              <span className="sm:hidden">
+                                {" · "}
+                                {a.paymentStatus === "paid" ? "Paid"
+                                  : a.paymentStatus === "partial" ? "Part paid" : "Unpaid"}
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="p-3 hidden md:table-cell">
                           <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: SERVICE_COLOUR[a.serviceType] ?? "#64748b" }}>

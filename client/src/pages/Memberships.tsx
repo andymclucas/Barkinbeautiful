@@ -411,6 +411,19 @@ function MembershipRow({ m }: { m: MembershipItem }) {
               <div>
                 <p className={`font-medium transition-colors ${m.clientId ? "group-hover:text-primary group-hover:underline" : ""}`}>{m.clientFirstName} {m.clientLastName}</p>
                 <p className="text-xs text-muted-foreground">{m.petName} {m.petBreed ? `(${m.petBreed})` : ""}</p>
+                {/* What the hidden columns would have said. A phone could
+                    see the client, the price and the status but not WHICH
+                    plan or when it next bills — the two things you check a
+                    membership for. Folded in here rather than given their
+                    own card: one table, one extra line. */}
+                <p className="mt-0.5 text-[11px] text-muted-foreground md:hidden">
+                  {m.name}
+                  {m.tier ? ` · ${m.tier}` : ""}
+                  {m.nextBillingDate
+                    ? ` · next ${new Date(m.nextBillingDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: getActiveTimeZone() })}`
+                    : ""}
+                  {m.isTest ? " · TEST" : ""}
+                </p>
               </div>
             </span>
           </Link>
@@ -1218,6 +1231,14 @@ export default function Memberships() {
                             <div>
                               <p className="font-medium text-sm">{fp.clientFirstName} {fp.clientLastName}</p>
                               <p className="text-xs text-muted-foreground">{fp.petName}</p>
+                              {/* Which plan failed, and when. A phone saw
+                                  only the client and a count. */}
+                              <p className="mt-0.5 text-[11px] text-muted-foreground md:hidden">
+                                {fp.membershipName}
+                                {fp.lastFailedAt
+                                  ? ` · last ${new Date(fp.lastFailedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: getActiveTimeZone() })}`
+                                  : ""}
+                              </p>
                             </div>
                           </div>
                         </td>
