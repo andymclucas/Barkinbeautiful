@@ -81,6 +81,60 @@ export function canEditSection(grant: StaffGrant | null | undefined, section: St
   return parseSections(grant.adminSections).includes(section);
 }
 
+export type GrantSummary = {
+  isAdmin: boolean;
+  /** The granted sections, in canonical order. */
+  sections: StaffSection[];
+  /** Their labels, for rendering. */
+  labels: string[];
+  /** Every section is granted. */
+  all: boolean;
+  /** The sections NOT granted, in canonical order. */
+  missing: StaffSection[];
+  missingLabels: string[];
+  /** "Admin rights, every section" or "Admin rights, 4 of 11 sections". */
+  headline: string;
+};
+
+/**
+ * The grant as the staff card shows it: a headline AND the sections.
+ *
+ * `describeGrant` below collapses everything into one sentence, which the
+ * card then truncated — "Admin rights: Appointments, Workflow and 7 m…".
+ * That tells you somebody has rights and hides which, so checking what a
+ * groomer can change meant opening the dialog for each person in turn.
+ *
+ * The count is in the headline because "every section" and "10 of 11" look
+ * identical as a wall of chips, and the difference between them is the
+ * whole question when you are auditing who can change pricing.
+ */
+export function summariseGrant(grant: StaffGrant | null | undefined): GrantSummary {
+  const isAdmin = Boolean(grant?.isAdmin);
+  const sections = isAdmin ? parseSections(grant?.adminSections) : [];
+  const all = sections.length === STAFF_SECTION_KEYS.length;
+  const missing = isAdmin ? STAFF_SECTION_KEYS.filter((k) => !sections.includes(k)) : [];
+  const headline = !isAdmin
+    ? "No admin rights"
+    : sections.length === 0
+      ? "Admin rights, no sections yet"
+      : all
+        ? "Admin rights, every section"
+        : `Admin rights, ${sections.length} of ${STAFF_SECTION_KEYS.length} sections`;
+  return {
+    isAdmin, sections, labels: sections.map(sectionLabel), all, headline,
+    missing: [...missing], missingLabels: missing.map(sectionLabel),
+  };
+}
+
+/**
+ * How many absent sections are worth naming outright.
+ *
+ * At 10 of 11 granted, finding the missing one means comparing two
+ * three-row blocks of chips. Saying "not Reporting" answers that in a
+ * glance. Past two it stops being shorter than reading the chips.
+ */
+export const NAME_THE_GAP_UP_TO = 2;
+
 /** For the UI: "Appointments, Clients and 2 more", or "No sections yet". */
 export function describeGrant(grant: StaffGrant | null | undefined): string {
   if (!grant?.isAdmin) return "No admin rights";

@@ -18,7 +18,7 @@ import { blockoutDateKey } from "@shared/staffBlockouts";
 import { StaffAdminRightsDialog, type StaffRightsTarget } from "@/components/StaffAdminRightsDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { RevenueTargets, StaffRevenueTarget } from "@/components/RevenueTargets";
-import { describeGrant } from "@shared/staffPermissions";
+import { describeGrant, summariseGrant, NAME_THE_GAP_UP_TO } from "@shared/staffPermissions";
 import {
   Phone, Mail, MapPin, User, UserCog, Plus, Pencil, X,
   CalendarDays, TrendingUp, AlertCircle, AlertTriangle, ShieldCheck, ShieldOff, Smartphone, Send, CheckCircle2, Ban, Globe2, Download, ArrowLeft, ArrowUpRight
@@ -846,12 +846,42 @@ export default function Staff() {
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setRightsFor({ id: s.id, name: s.name, userId: (s as any).userId ?? null, isAdmin: (s as any).isAdmin ?? false, adminSections: (s as any).adminSections }); }}
-                      className="mt-2 flex w-full items-center gap-1.5 rounded-lg border bg-muted/40 px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+                      className="mt-2 block w-full rounded-lg border bg-muted/40 px-2 py-1.5 text-left transition-colors hover:border-primary/40"
+                      title={describeGrant({ isAdmin: (s as any).isAdmin, adminSections: (s as any).adminSections })}
                     >
-                      {(s as any).isAdmin
-                        ? <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                        : <ShieldOff className="h-3.5 w-3.5 shrink-0" />}
-                      <span className="truncate">{describeGrant({ isAdmin: (s as any).isAdmin, adminSections: (s as any).adminSections })}</span>
+                      {(() => {
+                        // The whole grant, not a truncated sentence. Checking
+                        // who can change pricing used to mean opening the
+                        // dialog for each person in turn.
+                        const grant = summariseGrant({ isAdmin: (s as any).isAdmin, adminSections: (s as any).adminSections });
+                        return (
+                          <>
+                            <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                              {grant.isAdmin
+                                ? <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                : <ShieldOff className="h-3.5 w-3.5 shrink-0" />}
+                              <span className="truncate">{grant.headline}</span>
+                            </span>
+                            {grant.missingLabels.length > 0 && grant.missingLabels.length <= NAME_THE_GAP_UP_TO && (
+                              <span className="mt-1 block text-[10px] text-muted-foreground">
+                                Not {grant.missingLabels.join(" or ")}
+                              </span>
+                            )}
+                            {grant.labels.length > 0 && (
+                              <span className="mt-1.5 flex flex-wrap gap-1">
+                                {grant.labels.map(label => (
+                                  <span
+                                    key={label}
+                                    className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium leading-tight text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200"
+                                  >
+                                    {label}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </button>
                   )}
                   <div className="mt-3 flex items-center justify-between gap-2">
