@@ -380,21 +380,30 @@ export function BookingPetPricing(props: Props) {
           // inside cannot be mistaken for another dog's.
           <div
             key={key}
-            className="space-y-2.5 rounded-xl border-2 bg-card p-3 shadow-sm"
+            className="min-w-0 space-y-2.5 overflow-hidden rounded-xl border-2 bg-card p-3 shadow-sm"
           >
-            <div className="flex items-baseline justify-between gap-2 border-b pb-2">
-              <span className="truncate text-sm font-bold">
+            {/* Nothing in this row may refuse to shrink except the one
+                short control. The facts used to carry shrink-0, which was
+                harmless while they sat alone — then "change size" was put
+                inside the same span and the pair pushed the row wider
+                than the box it is in. A breed like "Labradoodle (medium)"
+                beside a band label is easily enough to do it.
+                min-w-0 on both sides is what lets truncate actually
+                truncate; without it a flex child's minimum is its content. */}
+            <div className="flex min-w-0 items-baseline justify-between gap-2 border-b pb-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-bold">
                 {row.pet?.name ?? `Pet ${row.petId}`}
               </span>
               {facts.length > 0 && (
-                <span className="flex shrink-0 items-baseline gap-1.5 text-xs text-muted-foreground">
+                <span className="flex min-w-0 items-baseline gap-1.5 text-xs text-muted-foreground">
                   <span className="truncate">{facts.join(" · ")}</span>
                   {/* Only when there is a size to override. With none, the
-                      picker below is already showing. */}
+                      picker below is already showing. Kept unshrinkable
+                      because a half-truncated "change si…" is useless. */}
                   {row.band && (
                     <button
                       type="button"
-                      className="shrink-0 underline underline-offset-2 hover:text-foreground"
+                      className="shrink-0 whitespace-nowrap underline underline-offset-2 hover:text-foreground"
                       onClick={() => setEditingBandFor(editingBandFor === row.petId ? null : row.petId)}
                     >
                       {editingBandFor === row.petId ? "cancel" : "change size"}
@@ -638,7 +647,7 @@ export function AddOnPicker({
   const canAdd = Boolean(chosen) && (!needsPrice || (Number.isFinite(manual) && manual >= 0));
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       <Select value={picked} onValueChange={(v) => { setPicked(v); setManualPrice(""); }}>
         <SelectTrigger className="h-7 min-w-0 flex-1 text-[11px]">
           <SelectValue placeholder="Add an extra…" />
@@ -659,7 +668,7 @@ export function AddOnPicker({
 
       {needsPrice && (
         <Input
-          className="h-7 w-20 text-[11px]"
+          className="h-7 w-20 min-w-0 shrink text-[11px]"
           placeholder="$ amount"
           inputMode="decimal"
           value={manualPrice}
