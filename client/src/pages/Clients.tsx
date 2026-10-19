@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { getClientPreviewSide } from "../lib/clientPreviewPosition";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { clientSince, describeClientSince } from "@shared/clientSince";
+import { ClientListCard } from "@/components/ClientListCard";
 import { ClientPetList } from "@/components/ClientPetList";
 
 const STATUS_COLOURS: Record<string, string> = {
@@ -384,9 +385,12 @@ export default function Clients() {
           </Button>
         </div>
 
-        {/* Search + filter toolbar */}
-        <div className="flex gap-2 flex-shrink-0">
-          <div className="relative flex-1">
+        {/* Search + filter toolbar.
+            Stacked on a phone: three controls across 375px squeezed the
+            search input down to one visible character, which is the one
+            control you cannot work this list without. */}
+        <div className="flex flex-col gap-2 flex-shrink-0 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               className="pl-9"
@@ -396,12 +400,13 @@ export default function Clients() {
             />
           </div>
 
+          <div className="flex gap-2 sm:contents">
           {/* Status filter */}
           <Select
             value={statusFilter}
             onValueChange={v => { setStatusFilter(v as StatusFilter); setPage(1); }}
           >
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-full sm:w-36">
               <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent>
@@ -418,16 +423,41 @@ export default function Clients() {
             <Download className="h-4 w-4" />
             {exporting ? "Exporting…" : "Export CSV"}
           </Button>
+          </div>
         </div>
 
         {/* Table */}
         <div className="bg-card rounded-xl border overflow-auto flex-1 min-h-0">
-          <table className="w-full text-sm">
+          {/* Cards on a phone, the table from sm up. Seven columns cannot
+              fit 375px, so every column past the surname was hidden and a
+              phone showed two words against half a screen of white. */}
+          <div className="divide-y sm:hidden">
+            {isLoading && (
+              <p className="py-12 text-center text-sm text-muted-foreground">Loading clients…</p>
+            )}
+            {!isLoading && data?.clients.length === 0 && (
+              <p className="py-12 text-center text-sm text-muted-foreground">No clients found.</p>
+            )}
+            {data?.clients.map((c: any) => (
+              <ClientListCard
+                key={c.id}
+                client={c}
+                statusClass={STATUS_COLOURS[c.status]}
+                formatDate={(value) =>
+                  new Date(value).toLocaleDateString("en-AU", {
+                    day: "numeric", month: "short", year: "2-digit",
+                    timeZone: getActiveTimeZone(),
+                  })}
+              />
+            ))}
+          </div>
+
+          <table className="hidden w-full text-sm sm:table">
             <thead className="bg-muted/50 border-b sticky top-0 z-10">
               <tr>
                 <SortTh col="firstName" label="First Name" />
                 <SortTh col="lastName" label="Last Name" />
-                <th className="text-left p-3 font-medium text-muted-foreground hidden sm:table-cell">Dogs</th>
+                <th className="text-left p-3 font-medium text-muted-foreground">Dogs</th>
                 <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Contact</th>
                 <th className="text-left p-3 font-medium text-muted-foreground hidden xl:table-cell">Bookings</th>
                 <SortTh col="status" label="Status" className="hidden lg:table-cell" />
@@ -478,7 +508,7 @@ export default function Clients() {
                   {/* Dogs. Departed dogs stay in the list, struck through: a
                       family's dog disappearing from their own row reads as a
                       bug, and staff look for the dog they remember. */}
-                  <td className="p-3 hidden sm:table-cell">
+                  <td className="p-3">
                     <ClientPetList pets={c.pets} />
                   </td>
                   {/* Contact */}
