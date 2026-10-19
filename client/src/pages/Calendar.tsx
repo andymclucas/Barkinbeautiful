@@ -84,6 +84,8 @@ import {
   Clock3,
 } from "lucide-react";
 import { WaitlistPanel } from "@/components/WaitlistPanel";
+import { AngelWings } from "@/components/AngelWings";
+import { petHasPassedAway, PET_CANNOT_BE_SELECTED } from "@shared/petBookable";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -1533,6 +1535,24 @@ export default function Calendar() {
     { clientId: parseInt(newAppt.clientId) },
     { enabled: !!newAppt.clientId && !isNaN(parseInt(newAppt.clientId)) }
   );
+
+  // Drop a dog that has passed away from the selection as soon as the
+  // list says so. Tyson was sitting selected and priced in a booking
+  // five days after he was recorded, carried in from a prefilled form —
+  // and the chip being unclickable does nothing about a selection that
+  // was already made.
+  useEffect(() => {
+    const gone = (selectedClientPets.data ?? [])
+      .filter(petHasPassedAway)
+      .map((pet: any) => String(pet.id));
+    if (gone.length === 0) return;
+    setNewAppt(prev => {
+      if (!prev.petIds.some(id => gone.includes(id))) return prev;
+      const staffByPetId = { ...prev.staffByPetId };
+      gone.forEach(id => { delete staffByPetId[id]; });
+      return { ...prev, staffByPetId, petIds: prev.petIds.filter(id => !gone.includes(id)) };
+    });
+  }, [selectedClientPets.data]);
   const selectedAppointmentPetIds = useMemo(
     () => newAppt.petIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
     [newAppt.petIds],
@@ -2826,11 +2846,21 @@ export default function Calendar() {
                   <div className="flex flex-wrap gap-2">
                     {selectedClientPets.data?.map(pet => {
                       const selected = newAppt.petIds.includes(String(pet.id));
+                      // Still listed, never bookable. Removing a dog that
+                      // has died reads as a mistake to whoever is looking
+                      // for it; striking it through says what happened.
+                      const passedAway = petHasPassedAway(pet);
                       return (
                         <button
                           key={pet.id}
                           type="button"
-                          onClick={() => setNewAppt(prev => {
+                          aria-disabled={passedAway}
+                          title={passedAway ? PET_CANNOT_BE_SELECTED : undefined}
+                          onClick={() => passedAway
+                            ? toast.error(PET_CANNOT_BE_SELECTED, {
+                                description: `${pet.name} has been recorded as passed away.`,
+                              })
+                            : setNewAppt(prev => {
                             // Drop the dog's groomer when it is deselected:
                             // a stale entry would otherwise travel with the
                             // booking for a dog nobody is bringing.
@@ -2846,16 +2876,25 @@ export default function Calendar() {
                           })}
                           className={[
                             "px-3 py-1.5 rounded-full text-sm border transition-all",
-                            selected
-                              ? "bg-primary text-primary-foreground border-primary font-medium"
-                              // Dashed and muted, so an unchosen dog looks
-                              // like something waiting to be tapped rather
-                              // than a label stating a fact.
-                              : "border-dashed bg-background text-muted-foreground border-muted-foreground/40 hover:border-primary hover:text-primary",
+                            passedAway
+                              // Not dashed: dashed means "tap me". This is
+                              // solid, still, and the colour of the
+                              // memorial badge on the client page.
+                              ? "cursor-not-allowed border-amber-300 bg-amber-50/70 text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
+                              : selected
+                                ? "bg-primary text-primary-foreground border-primary font-medium"
+                                // Dashed and muted, so an unchosen dog looks
+                                // like something waiting to be tapped rather
+                                // than a label stating a fact.
+                                : "border-dashed bg-background text-muted-foreground border-muted-foreground/40 hover:border-primary hover:text-primary",
                           ].join(" ")}
                         >
-                          {pet.name}{pet.breed ? ` (${pet.breed})` : ""}
-                          <span className="ml-1.5 opacity-70">{selected ? "✓" : "+"}</span>
+                          <span className={passedAway ? "line-through decoration-amber-700/60" : undefined}>
+                            {pet.name}{pet.breed ? ` (${pet.breed})` : ""}
+                          </span>
+                          {passedAway
+                            ? <AngelWings className="ml-1.5 inline-block h-3.5 w-3.5 align-[-2px]" />
+                            : <span className="ml-1.5 opacity-70">{selected ? "✓" : "+"}</span>}
                         </button>
                       );
                     })}
