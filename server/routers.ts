@@ -2486,7 +2486,70 @@ const clientsRouter = router({
         .where(and(...conditions))
         .orderBy(orderExpr, secondaryExpr)
         .limit(input.pageSize).offset(offset);
-      return { clients: rows, total };
+
+      /**
+       * The detail the salon actually reads a client list for: which
+       * dogs, when they were last in, when they are next in, and how
+       * many times they have been.
+       *
+       * Two grouped queries for the PAGE, not a pair per client.
+       * getDebtSummary did the per-row version and took 64 seconds; the
+       * same shape here over 10,101 clients would be far worse.
+       *
+       * Deliberately no money column. 6,182 invoices are marked paid,
+       * but the MoeGo import turned pre-Aug-2025 EXPECTED revenue into
+       * paid invoices, so a "total paid" would be confidently wrong for
+       * exactly the long-standing clients it would matter most for.
+       */
+      const clientIds = rows.map((c: any) => c.id);
+
+      const petRows = clientIds.length === 0 ? [] : await db.select({
+        clientId: pets.clientId, id: pets.id, name: pets.name,
+        breed: pets.breed, status: pets.status,
+      }).from(pets)
+        .where(and(eq(pets.tenantId, tenantOf(ctx, input)), inArray(pets.clientId, clientIds)))
+        .orderBy(asc(pets.name));
+
+      const visitRows = clientIds.length === 0 ? [] : await db.select({
+        clientId: appointments.clientId,
+        bookings: sql<number>`COUNT(*)`,
+        lastVisit: sql<Date | null>`MAX(CASE WHEN ${appointments.scheduledStart} <= NOW() AND ${appointments.workflowState} = 'complete' THEN ${appointments.scheduledStart} END)`,
+        nextVisit: sql<Date | null>`MIN(CASE WHEN ${appointments.scheduledStart} > NOW() AND ${appointments.status} <> 'cancelled' THEN ${appointments.scheduledStart} END)`,
+      }).from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantOf(ctx, input)),
+          inArray(appointments.clientId, clientIds),
+          // Both columns, because they drift: one row is status "pending"
+          // with workflowState "cancelled", which a direct SQL cancellation
+          // from the MoeGo sync left half-written.
+          ne(appointments.status, "cancelled"),
+          ne(appointments.workflowState, "cancelled"),
+        ))
+        .groupBy(appointments.clientId);
+
+      const petsByClient = new Map<number, any[]>();
+      for (const pet of petRows) {
+        const list = petsByClient.get(pet.clientId) ?? [];
+        list.push({ id: pet.id, name: pet.name, breed: pet.breed, passedAway: pet.status === "departed" });
+        petsByClient.set(pet.clientId, list);
+      }
+      const visitsByClient = new Map<number, any>(
+        visitRows.map((v: any) => [Number(v.clientId), v]),
+      );
+
+      return {
+        clients: rows.map((c: any) => {
+          const visits = visitsByClient.get(c.id);
+          return {
+            ...c,
+            pets: petsByClient.get(c.id) ?? [],
+            bookings: Number(visits?.bookings ?? 0),
+            lastVisit: visits?.lastVisit ?? null,
+            nextVisit: visits?.nextVisit ?? null,
+          };
+        }),
+        total,
+      };
     }),
 
   getById: protectedProcedure

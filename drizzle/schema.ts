@@ -533,6 +533,12 @@ export const appointments = mysqlTable("appointments", {
    * column leads so the range can narrow what follows.
    */
   index("idx_appt_contact").on(t.contactId, t.scheduledStart),
+  /**
+   * For the client list's booking count, last groom and next booking,
+   * which group over (tenantId, clientId IN (...)). Without it that is a
+   * TableFullScan of every appointment on every page load.
+   */
+  index("idx_appt_tenant_client").on(t.tenantId, t.clientId),
 ]);
 
 // ─── Workflow Logs (Pet Tracker history) ──────────────────────────────────────

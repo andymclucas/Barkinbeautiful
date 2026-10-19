@@ -1,0 +1,18 @@
+-- The client list now shows each client's booking count, last groom and
+-- next booking. Those come from one grouped query over `appointments`
+-- filtered by (tenant_id, client_id IN (...)) — and there is no index on
+-- client_id at all, so EXPLAIN reports TableFullScan over every row:
+--
+--   HashAgg -> TableReader -> HashAgg -> Selection(411) -> TableFullScan(15647)
+--
+-- At 15,647 rows that costs nothing measurable (the query runs in the same
+-- ~215ms as every other round trip to TiDB). It is indexed now because it
+-- is a full scan on EVERY page load of a list staff open constantly, and
+-- the row count only goes one way: a second salon doubles it.
+--
+-- tenant_id leads because every query here filters on it first (CLAUDE.md
+-- §6) and that makes the index usable for any per-client appointment
+-- lookup, not just this one.
+--
+-- One statement, so a failure is recorded truthfully in the ledger.
+CREATE INDEX `idx_appt_tenant_client` ON `appointments` (`tenant_id`, `client_id`);

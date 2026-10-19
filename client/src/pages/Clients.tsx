@@ -27,6 +27,7 @@ import { Link } from "wouter";
 import { toast } from "sonner";
 import { getClientPreviewSide } from "../lib/clientPreviewPosition";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { ClientPetList } from "@/components/ClientPetList";
 
 const STATUS_COLOURS: Record<string, string> = {
   active: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
@@ -34,6 +35,13 @@ const STATUS_COLOURS: Record<string, string> = {
   lapsed: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
   blocked: "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300",
 };
+
+/** "12 Sep 25" — short enough for a column, unambiguous about the year. */
+const shortDate = (value: Date | string) =>
+  new Date(value).toLocaleDateString("en-AU", {
+    day: "numeric", month: "short", year: "2-digit",
+    timeZone: getActiveTimeZone(),
+  });
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom",
@@ -418,7 +426,9 @@ export default function Clients() {
               <tr>
                 <SortTh col="firstName" label="First Name" />
                 <SortTh col="lastName" label="Last Name" />
+                <th className="text-left p-3 font-medium text-muted-foreground hidden sm:table-cell">Dogs</th>
                 <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Contact</th>
+                <th className="text-left p-3 font-medium text-muted-foreground hidden xl:table-cell">Bookings</th>
                 <SortTh col="status" label="Status" className="hidden lg:table-cell" />
                 <SortTh col="createdAt" label="Since" className="hidden lg:table-cell" />
               </tr>
@@ -426,12 +436,12 @@ export default function Clients() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-muted-foreground">Loading clients…</td>
+                  <td colSpan={7} className="text-center py-12 text-muted-foreground">Loading clients…</td>
                 </tr>
               )}
               {!isLoading && data?.clients.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center py-12 text-muted-foreground">No clients found.</td>
+                  <td colSpan={7} className="text-center py-12 text-muted-foreground">No clients found.</td>
                 </tr>
               )}
               {data?.clients.map(c => (
@@ -461,6 +471,12 @@ export default function Clients() {
                       </Link>
                     </ClientHoverCard>
                   </td>
+                  {/* Dogs. Departed dogs stay in the list, struck through: a
+                      family's dog disappearing from their own row reads as a
+                      bug, and staff look for the dog they remember. */}
+                  <td className="p-3 hidden sm:table-cell">
+                    <ClientPetList pets={c.pets} />
+                  </td>
                   {/* Contact */}
                   <td className="p-3 hidden md:table-cell">
                     <div className="space-y-0.5">
@@ -473,6 +489,24 @@ export default function Clients() {
                         <p className="flex items-center gap-1 text-xs text-muted-foreground">
                           <Mail className="h-3 w-3" />{c.email}
                         </p>
+                      )}
+                    </div>
+                  </td>
+                  {/* Bookings to date, the last completed groom, and the
+                      next booked. "Bookings" not "visits" on purpose: 8,425
+                      appointments are still scheduled or pending, so the
+                      count is what was booked, not what happened.
+                      No money column — see clients.list for why. */}
+                  <td className="p-3 hidden xl:table-cell">
+                    <div className="space-y-0.5 text-xs">
+                      <p className="font-medium">
+                        {c.bookings} {c.bookings === 1 ? "booking" : "bookings"}
+                      </p>
+                      {c.lastVisit && (
+                        <p className="text-muted-foreground">Last {shortDate(c.lastVisit)}</p>
+                      )}
+                      {c.nextVisit && (
+                        <p className="font-medium text-primary">Next {shortDate(c.nextVisit)}</p>
                       )}
                     </div>
                   </td>
