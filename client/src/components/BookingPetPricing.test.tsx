@@ -88,21 +88,30 @@ describe("BookingPetPricing", () => {
     expect(screen.getByText(/Covered by membership/)).toBeInTheDocument();
   });
 
-  it("offers the extras picker once, not once per dog", () => {
-    // Moved out of each dog's card to sit under the Service dropdown.
+  it("gives every dog its own extras picker", () => {
+    // This pinned the opposite until 19/10: one shared picker with a
+    // dropdown saying which dog. The dropdown kept its last choice, and
+    // a de-matt on the wrong Cavoodle is a real charge on a real
+    // invoice, so the picker moved inside each dog's box.
     contextPets = [pet(100, "Teddy"), pet(200, "Bella")];
     renderPricing({ petIds: [100, 200], priceByPetId: { "100": "145.00", "200": "145.00" } });
-    expect(screen.getAllByText("Add an extra…")).toHaveLength(1);
+    expect(screen.getAllByText("Add an extra…")).toHaveLength(2);
   });
 
-  it("asks which dog an extra is for only when there are several", () => {
-    // An extra belongs to one dog — a de-matt is not shared.
-    renderPricing();
-    expect(screen.queryByLabelText("Which dog the extra is for")).not.toBeInTheDocument();
-
+  it("names the dog each picker belongs to", () => {
+    // The box is the signal, and the label says it in words too — one
+    // dog's extras must never read as another's.
     contextPets = [pet(100, "Teddy"), pet(200, "Bella")];
     renderPricing({ petIds: [100, 200], priceByPetId: { "100": "145.00", "200": "145.00" } });
-    expect(screen.getByLabelText("Which dog the extra is for")).toBeInTheDocument();
+    expect(screen.getByText("Extras for Teddy")).toBeInTheDocument();
+    expect(screen.getByText("Extras for Bella")).toBeInTheDocument();
+  });
+
+  it("no longer asks which dog an extra is for", () => {
+    // Nothing to ask: the picker adds to the dog whose box it is in.
+    contextPets = [pet(100, "Teddy"), pet(200, "Bella")];
+    renderPricing({ petIds: [100, 200], priceByPetId: { "100": "145.00", "200": "145.00" } });
+    expect(screen.queryByLabelText("Which dog the extra is for")).not.toBeInTheDocument();
   });
 
   it("shows each extra against the dog it belongs to", () => {
