@@ -1826,7 +1826,7 @@ export default function ClientDetail() {
               </Select>
             </div>
             {/* Date + Time */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Date</Label>
                 <Input type="date" value={bookDate} onChange={e => setBookDate(e.target.value)} />
@@ -1888,7 +1888,7 @@ export default function ClientDetail() {
           </DialogHeader>
           <div className="space-y-4 py-1 text-sm">
             <p><strong>{membershipAction?.petName}</strong> remains in the client’s care history. Choose how to handle this membership; no historical records will be deleted.</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <Button type="button" variant={departureMembershipAction === "transfer" ? "default" : "outline"} className="h-auto min-h-20 whitespace-normal" onClick={() => setDepartureMembershipAction("transfer")}>
                 <Replace className="mr-1.5 h-4 w-4" /> Transfer to replacement
               </Button>

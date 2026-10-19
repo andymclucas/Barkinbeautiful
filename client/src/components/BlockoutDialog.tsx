@@ -184,7 +184,7 @@ export function BlockoutDialog({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>First day <span className="text-red-500">*</span></Label>
               <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
@@ -213,7 +213,7 @@ export function BlockoutDialog({
 
           {!isFullDay && (
             <>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>From</Label>
                   <Input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />

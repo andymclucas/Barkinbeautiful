@@ -797,7 +797,7 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
       {/* Mood */}
       <div className="space-y-1.5">
         <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mood</Label>
-        <div className="grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
           {MOOD_OPTIONS.map(m => (
             <button key={m} type="button"
               onClick={() => setMoods(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m])}
@@ -2905,7 +2905,7 @@ export default function Calendar() {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>{newAppt.petIds.length > 1 ? "Groomer (all dogs)" : "Groomer"}</Label>
                 <Select value={newAppt.staffId} onValueChange={v => setNewAppt(p => ({ ...p, staffId: v }))}>
@@ -2984,7 +2984,7 @@ export default function Calendar() {
                 half hour blocks." The end time still follows automatically
                 from the dogs' size, so this is usually the only field
                 touched. */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Date *</Label>
                 <Input
@@ -3017,7 +3017,7 @@ export default function Calendar() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Ends</Label>
                 <Input type="datetime-local" value={newAppt.scheduledEnd} onChange={e => setNewAppt(p => ({ ...p, scheduledEnd: e.target.value }))} />
@@ -3116,7 +3116,7 @@ export default function Calendar() {
                   <span className="text-sm font-medium">Repeat this booking</span>
                 </label>
                 {repeatForm.enabled && (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label>Every</Label>
                       <Select value={repeatForm.frequencyWeeks} onValueChange={v => setRepeatForm(f => ({ ...f, frequencyWeeks: v }))}>
@@ -3286,7 +3286,7 @@ export default function Calendar() {
                       does not exist. This is where they already are. */}
                   {addingContact && (
                     <div className="rounded-md border bg-card p-2 space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <Input
                           className="h-7 text-xs"
                           placeholder="Name"
@@ -3375,7 +3375,7 @@ export default function Calendar() {
                     </div>
                   );
                 })()}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Groomer</Label>
                     {editSiblings.length > 0 ? (
@@ -3440,7 +3440,7 @@ export default function Calendar() {
                     the invoice rather than disappearing into the price. Sits
                     with the service it belongs to, above the times. */}
                 {editAppt && <AppointmentAddOns appointmentId={editAppt.id} />}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Start</Label>
                     <Input type="datetime-local" value={editForm.scheduledStart} disabled={preservesCancelledSchedule} onChange={e => setEditForm(p => ({ ...p, scheduledStart: e.target.value }))} />
@@ -3472,7 +3472,7 @@ export default function Calendar() {
                   }
                   return null;
                 })()}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Status</Label>
                     <Select value={editForm.workflowState} onValueChange={v => setEditForm(p => ({ ...p, workflowState: v }))}>
@@ -3677,19 +3677,19 @@ export default function Calendar() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1"><Label className="text-xs">Blade Size</Label><Input className="h-8 text-xs" placeholder="e.g. #7F, #5" value={styleNoteForm.bladeSize} onChange={e => setStyleNoteForm(f => ({ ...f, bladeSize: e.target.value }))} /></div>
                     <div className="space-y-1"><Label className="text-xs">Comb / Guard</Label><Input className="h-8 text-xs" placeholder="e.g. 16mm" value={styleNoteForm.combSize} onChange={e => setStyleNoteForm(f => ({ ...f, combSize: e.target.value }))} /></div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1"><Label className="text-xs">Body Length</Label><Input className="h-8 text-xs" placeholder="e.g. 1cm, short" value={styleNoteForm.bodyLength} onChange={e => setStyleNoteForm(f => ({ ...f, bodyLength: e.target.value }))} /></div>
                     <div className="space-y-1"><Label className="text-xs">Head Style</Label><Input className="h-8 text-xs" placeholder="e.g. Round, flat top" value={styleNoteForm.headStyle} onChange={e => setStyleNoteForm(f => ({ ...f, headStyle: e.target.value }))} /></div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1"><Label className="text-xs">Face Style</Label><Input className="h-8 text-xs" placeholder="e.g. Teddy bear" value={styleNoteForm.faceStyle} onChange={e => setStyleNoteForm(f => ({ ...f, faceStyle: e.target.value }))} /></div>
                     <div className="space-y-1"><Label className="text-xs">Ear Style</Label><Input className="h-8 text-xs" placeholder="e.g. Rounded, long" value={styleNoteForm.earStyle} onChange={e => setStyleNoteForm(f => ({ ...f, earStyle: e.target.value }))} /></div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="space-y-1"><Label className="text-xs">Leg Style</Label><Input className="h-8 text-xs" placeholder="e.g. Fluffy, scissored" value={styleNoteForm.legStyle} onChange={e => setStyleNoteForm(f => ({ ...f, legStyle: e.target.value }))} /></div>
                     <div className="space-y-1"><Label className="text-xs">Tail Style</Label><Input className="h-8 text-xs" placeholder="e.g. Pom-pom" value={styleNoteForm.tailStyle} onChange={e => setStyleNoteForm(f => ({ ...f, tailStyle: e.target.value }))} /></div>
                   </div>

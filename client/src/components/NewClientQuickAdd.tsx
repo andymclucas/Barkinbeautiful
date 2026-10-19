@@ -80,7 +80,7 @@ export function NewClientQuickAdd({
         <UserPlus className="h-3.5 w-3.5 text-primary" /> New client
       </p>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div className="space-y-1">
           <Label className="text-[11px]" htmlFor="qa-first-name">First name *</Label>
           <Input id="qa-first-name" className="h-8 text-xs" value={firstName} onChange={e => setFirstName(e.target.value)} />
@@ -96,7 +96,7 @@ export function NewClientQuickAdd({
         <Input id="qa-phone" className="h-8 text-xs" inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} />
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div className="space-y-1">
           <Label className="text-[11px]" htmlFor="qa-pet-name">Dog's name *</Label>
           <Input id="qa-pet-name" className="h-8 text-xs" value={petName} onChange={e => setPetName(e.target.value)} />
