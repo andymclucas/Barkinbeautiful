@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   STAFF_SECTIONS, STAFF_SECTION_KEYS, isStaffSection, parseSections,
   canEditSection, describeGrant, sectionLabel,
+  summariseGrant, STAFF_SECTION_KEYS,
 } from "../shared/staffPermissions";
 
 /**
@@ -99,5 +100,78 @@ describe("describeGrant", () => {
   it("labels sections the way the sidebar does", () => {
     expect(sectionLabel("pricing")).toBe("Pricing & Services");
     expect(sectionLabel("email_campaigns")).toBe("Email Campaigns");
+  });
+});
+
+describe("summariseGrant", () => {
+  it("says plainly when there are no rights at all", () => {
+    expect(summariseGrant(null)).toMatchObject({ isAdmin: false, sections: [], all: false, headline: "No admin rights" });
+    expect(summariseGrant({ isAdmin: false, adminSections: ["clients"] }).sections).toEqual([]);
+  });
+
+  it("distinguishes rights-with-no-sections from no rights", () => {
+    // Someone given rights and nothing ticked can change nothing, and the
+    // card has to say which of the two states they are in.
+    expect(summariseGrant({ isAdmin: true, adminSections: [] }).headline)
+      .toBe("Admin rights, no sections yet");
+  });
+
+  it("counts a partial grant, because a wall of chips cannot be eyeballed", () => {
+    const out = summariseGrant({ isAdmin: true, adminSections: ["clients", "staff", "reporting"] });
+    expect(out.headline).toBe(`Admin rights, 3 of ${STAFF_SECTION_KEYS.length} sections`);
+    expect(out.all).toBe(false);
+    expect(out.labels).toEqual(["Clients", "Staff", "Reporting"]);
+  });
+
+  it("names a full grant as such rather than counting it", () => {
+    const out = summariseGrant({ isAdmin: true, adminSections: [...STAFF_SECTION_KEYS] });
+    expect(out.headline).toBe("Admin rights, every section");
+    expect(out.all).toBe(true);
+    expect(out.labels).toHaveLength(STAFF_SECTION_KEYS.length);
+  });
+
+  it("returns sections in canonical order whatever order they were stored in", () => {
+    const out = summariseGrant({ isAdmin: true, adminSections: ["reporting", "appointments", "clients"] });
+    expect(out.sections).toEqual(["appointments", "clients", "reporting"]);
+  });
+
+  it("drops anything that is not a real section, failing closed", () => {
+    const out = summariseGrant({ isAdmin: true, adminSections: ["clients", "billing", 7, null] });
+    expect(out.sections).toEqual(["clients"]);
+  });
+
+  it("reads a grant stored as a JSON string", () => {
+    expect(summariseGrant({ isAdmin: true, adminSections: '["clients","staff"]' }).labels)
+      .toEqual(["Clients", "Staff"]);
+  });
+
+  it("agrees with describeGrant on the two fixed states", () => {
+    for (const grant of [null, { isAdmin: true, adminSections: [...STAFF_SECTION_KEYS] }]) {
+      expect(summariseGrant(grant).headline).toBe(describeGrant(grant));
+    }
+  });
+});
+
+describe("the sections a grant does NOT include", () => {
+  it("names the gap, which is the question when auditing", () => {
+    const granted = STAFF_SECTION_KEYS.filter((k) => k !== "reporting");
+    const out = summariseGrant({ isAdmin: true, adminSections: [...granted] });
+    expect(out.missingLabels).toEqual(["Reporting"]);
+    expect(out.headline).toBe(`Admin rights, ${granted.length} of ${STAFF_SECTION_KEYS.length} sections`);
+  });
+
+  it("has nothing missing on a full grant", () => {
+    expect(summariseGrant({ isAdmin: true, adminSections: [...STAFF_SECTION_KEYS] }).missing).toEqual([]);
+  });
+
+  it("lists the gap in canonical order, not storage order", () => {
+    const out = summariseGrant({ isAdmin: true, adminSections: ["clients"] });
+    expect(out.missing[0]).toBe("appointments");
+    expect(out.missing).toHaveLength(STAFF_SECTION_KEYS.length - 1);
+  });
+
+  it("reports no gap for someone with no rights at all", () => {
+    // They are not missing sections, they have no grant — a different state.
+    expect(summariseGrant({ isAdmin: false }).missing).toEqual([]);
   });
 });
