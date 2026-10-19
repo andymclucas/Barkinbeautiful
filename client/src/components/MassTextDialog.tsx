@@ -88,7 +88,7 @@ export function MassTextDialog() {
             </div>
 
             {kind === "booked_between" && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="grid gap-1.5">
                   <Label htmlFor="mt-from">From</Label>
                   <Input id="mt-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />

@@ -814,7 +814,7 @@ export default function WorkflowBoard() {
                   </div>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dog Name *</label>
                   <Input value={walkInPet} onChange={e => setWalkInPet(e.target.value)} placeholder="e.g. Buddy" className="mt-1" />
@@ -824,7 +824,7 @@ export default function WorkflowBoard() {
                   <Input value={walkInBreed} onChange={e => setWalkInBreed(e.target.value)} placeholder="e.g. Cavoodle" className="mt-1" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Service</label>
                   <Select value={walkInService} onValueChange={setWalkInService}>
@@ -936,7 +936,7 @@ export default function WorkflowBoard() {
                     : "Not checked in"}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                 <span className="text-muted-foreground">Bath</span>
                 <span className="text-right font-medium">{petPopup.bathingStartedAt && petPopup.bathingCompletedAt ? formatDuration(Math.floor((petPopup.bathingCompletedAt - petPopup.bathingStartedAt) / 60000)) : "—"}</span>
                 <span className="text-muted-foreground">Dry</span>

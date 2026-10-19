@@ -99,7 +99,7 @@ export default function Retail() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Product</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5"><Label>Product Name *</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>SKU</Label><Input value={form.sku} onChange={e => setForm(p => ({ ...p, sku: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>Category</Label><Input value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} /></div>

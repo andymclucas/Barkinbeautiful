@@ -347,7 +347,7 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
           </div>
 
           {selectedPackage && (
-            <div className="grid grid-cols-2 gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950 dark:text-emerald-100">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950 dark:text-emerald-100">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">Weekly price</p>
                 <p className="mt-1 text-lg font-bold">${selectedPackage.weeklyPrice.toFixed(2)} / week</p>
@@ -362,7 +362,7 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
           )}
 
           {isAdmin ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Weekly collection method</Label>
                 <Select value={form.paymentGateway} onValueChange={v => setForm(f => ({ ...f, paymentGateway: v as typeof form.paymentGateway }))}>
@@ -1049,7 +1049,7 @@ export default function Memberships() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                   <Card className="border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40">
                     <CardContent className="p-4">
                       <p className="text-xs text-red-600 dark:text-red-400 font-semibold uppercase tracking-wide">Grooms Owed</p>

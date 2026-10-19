@@ -540,11 +540,11 @@ export default function Clients() {
 
           {addStep === 1 ? (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>First Name *</Label><Input value={form.firstName} onChange={e => setForm(p => ({ ...p, firstName: e.target.value }))} /></div>
                 <div className="space-y-1.5"><Label>Last Name *</Label><Input value={form.lastName} onChange={e => setForm(p => ({ ...p, lastName: e.target.value }))} /></div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Phone</Label><Input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
                 <div className="space-y-1.5"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
               </div>
@@ -564,7 +564,7 @@ export default function Clients() {
           ) : (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">Add the first pet for <strong>{form.firstName} {form.lastName}</strong>. You can add more pets from their client profile later.</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Pet Name *</Label><Input placeholder="e.g. Buddy" value={petForm.name} onChange={e => setPetForm(p => ({ ...p, name: e.target.value }))} /></div>
                 <div className="space-y-1.5">
                   <Label>Species</Label>
@@ -578,7 +578,7 @@ export default function Clients() {
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Breed</Label><Input placeholder="e.g. Cavoodle" value={petForm.breed} onChange={e => setPetForm(p => ({ ...p, breed: e.target.value }))} /></div>
                 <div className="space-y-1.5">
                   <Label>Gender</Label>
@@ -592,7 +592,7 @@ export default function Clients() {
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Weight (kg)</Label><Input type="number" step="0.1" placeholder="e.g. 8.5" value={petForm.weightKg} onChange={e => setPetForm(p => ({ ...p, weightKg: e.target.value }))} /></div>
                 <div className="space-y-1.5"><Label>Coat Type</Label><Input placeholder="e.g. Curly, Straight" value={petForm.coatType} onChange={e => setPetForm(p => ({ ...p, coatType: e.target.value }))} /></div>
               </div>
@@ -601,7 +601,7 @@ export default function Clients() {
                   size band is what prices the groom, so asking here is the
                   cheapest moment there is. A weight, if one is given, is
                   better evidence and overrides this on the server. */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Size category</Label>
                   <Select value={petForm.sizeBand} onValueChange={v => setPetForm(p => ({ ...p, sizeBand: v }))}>
@@ -653,7 +653,7 @@ export default function Clients() {
                   onAdd={addOn => setPetForm(p => ({ ...p, addOns: [...p.addOns, addOn] }))}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Colour</Label><Input placeholder="e.g. Apricot, Black" value={petForm.colour} onChange={e => setPetForm(p => ({ ...p, colour: e.target.value }))} /></div>
                 <div className="space-y-1.5 flex flex-col justify-end">
                   <label className="flex items-center gap-2 cursor-pointer">
