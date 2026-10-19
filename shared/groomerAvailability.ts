@@ -105,6 +105,46 @@ export function shortTime(minutesFromMidnight: number): string {
   return m === 0 ? `${h12}${suffix}` : `${h12}:${String(m).padStart(2, "0")}${suffix}`;
 }
 
+/**
+ * Build a groomer's busy list from rows already converted to salon
+ * minutes.
+ *
+ * The conversion stays at the call site, which has the right helper for
+ * its own data. What lives here are the two things that actually bite
+ * when moving an appointment rather than creating one:
+ *
+ * - the appointment being MOVED must be excluded, or it clashes with
+ *   itself and every reschedule warns;
+ * - a cancelled row is not a commitment, and counting one blocks a slot
+ *   that is genuinely free.
+ *
+ * Both are easy to leave out and neither shows up until someone tries to
+ * nudge a booking half an hour.
+ */
+export function busyFromRows(input: {
+  rows: readonly {
+    id: number;
+    startMinutes: number;
+    endMinutes: number;
+    label: string;
+    kind?: BusyKind;
+    cancelled?: boolean;
+  }[];
+  excludeId?: number | null;
+}): BusyInterval[] {
+  return input.rows
+    .filter((row) => row.id !== input.excludeId)
+    .filter((row) => !row.cancelled)
+    .filter((row) => row.endMinutes > row.startMinutes)
+    .map((row) => ({
+      startMinutes: row.startMinutes,
+      endMinutes: row.endMinutes,
+      kind: row.kind ?? "appointment",
+      label: row.label,
+    }))
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+}
+
 /** Midnight to midnight: a full-day blockout, stored as 0 to 24 x 60. */
 const DAY_END_MINUTES = 24 * 60;
 
@@ -123,26 +163,44 @@ export function describeClash(clash: BusyInterval): string {
 }
 
 /**
- * The sentence shown before a double booking goes ahead.
+ * How many dogs the groomer already has on at that time.
  *
- * It names the groomer and what is already there, because "this slot is
- * taken" tells staff nothing they can act on — whether to go ahead
- * depends entirely on WHAT is in the way, and a blockout is a different
- * decision from a dog.
+ * CONTEXT, not a problem. An overlapping appointment is the normal way
+ * this salon runs: one dog in the bath, one drying, one being clipped,
+ * which is what the 12-state workflow exists for. Across the diary there
+ * are 14,445 overlapping pairs against 12,728 appointments, and only 150
+ * of those pairs are one family — so a warning on "this overlaps
+ * something" fires on nearly every booking, and a warning that always
+ * fires is one staff learn to dismiss.
+ *
+ * What limits a groomer is their DAY, not the clock: Lauren's numbers
+ * are 8 clips for Charlotte and Megs, 6 for Brooklyn and Zakaria, 5 for
+ * Ashleigh, with two tidies counting as one clip. That lives in
+ * `shared/groomerCapacity.ts` and is the real overbooking check.
  */
-export function clashWarning(
+export function concurrentDogs(clashes: readonly BusyInterval[]): number {
+  return clashes.filter((c) => c.kind === "appointment").length;
+}
+
+/** Only the things that mean the groomer genuinely is not there. */
+export function blockingClashes(clashes: readonly BusyInterval[]): BusyInterval[] {
+  return clashes.filter((c) => c.kind === "blockout");
+}
+
+/**
+ * The sentence shown before booking into time the groomer is not working.
+ *
+ * Blockouts ONLY. This used to warn on any overlap, which was wrong for
+ * how the salon works — see `concurrentDogs` above. Leave is
+ * unambiguous: nobody means to book a dog onto a day off, and there is
+ * no reading of it that is routine.
+ */
+export function unavailableWarning(
   clashes: readonly BusyInterval[],
   groomerName: string,
 ): string | null {
-  if (clashes.length === 0) return null;
+  const leave = blockingClashes(clashes);
+  if (leave.length === 0) return null;
   const who = groomerName.trim() || "This groomer";
-  const leave = clashes.filter((c) => c.kind === "blockout");
-  if (leave.length > 0 && clashes.length === leave.length) {
-    return `${who} is not working then — ${leave.map(describeClash).join(", ")}.`;
-  }
-  const listed = clashes.slice(0, 3).map(describeClash).join(", ");
-  const more = clashes.length > 3 ? `, and ${clashes.length - 3} more` : "";
-  return clashes.length === 1
-    ? `${who} already has ${listed} booked at that time.`
-    : `${who} already has ${clashes.length} things booked at that time: ${listed}${more}.`;
+  return `${who} is not working then — ${leave.map(describeClash).join(", ")}.`;
 }

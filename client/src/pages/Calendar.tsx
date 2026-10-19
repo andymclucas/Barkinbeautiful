@@ -1,5 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
-import { groomerDayLoad, isClip, overbookingWarning } from "@shared/groomerCapacity";
+import { clipLoadFor, clipLoadOf, groomerDayLoad, isClip, overbookingWarning } from "@shared/groomerCapacity";
 import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentValidation";
 import { preferredGroomerDefaults } from "@shared/preferredGroomerDefaults";
 import { formatCollectBy } from "@shared/collectBy";
@@ -95,7 +95,8 @@ import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPric
 import { NewClientQuickAdd } from "@/components/NewClientQuickAdd";
 import { buildTimeSlots, splitLocalDateTime, joinLocalDateTime } from "@shared/bookingTimeSlots";
 import { timeValueToMinutes } from "@shared/bookingTimeSlots";
-import { annotateSlots, clashesFor, clashWarning, describeClash } from "@shared/groomerAvailability";
+import { annotateSlots, blockingClashes, busyFromRows, clashesFor, concurrentDogs, describeClash, unavailableWarning } from "@shared/groomerAvailability";
+import type { BusyInterval } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
 import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
@@ -178,6 +179,12 @@ function toAESTDate(date: Date): Date {
 function aestDateKey(utcDate: Date): string {
   const d = toAESTDate(utcDate);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+
+/** Minutes past AEST midnight, for overlap maths against the slot grid. */
+function aestMinutesInDay(utcDate: Date): number {
+  const d = toAESTDate(utcDate);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
 }
 
 // dayDate is a local midnight Date (from setHours(0,0,0,0)) — treat it as AEST midnight
@@ -1404,7 +1411,7 @@ export default function Calendar() {
       minutesFromSeven: target.startMinutes,
     });
 
-    rescheduleMutation.mutate({
+    const move = () => rescheduleMutation.mutate({
       appointmentId:  appt.id,
       scheduledStart: dragSchedule.scheduledStartIso,
       scheduledEnd:   dragSchedule.scheduledEndIso,
@@ -1413,7 +1420,76 @@ export default function Calendar() {
       onSuccess: () => { toast.success("Appointment moved"); refetch(); },
       onError: (err) => toast.error(err.message),
     });
-  }, [rescheduleMutation, refetch, resolveDragTarget]);
+
+    // Dropping a dog on top of another is the easiest way to double-book
+    // there is — it takes one imprecise gesture and gives no feedback.
+    //
+    // Checked against the appointments and blockouts the calendar has
+    // ALREADY loaded rather than asking the server: a drop should land
+    // instantly, and a round trip mid-gesture would either stall it or
+    // race it. The drop is always on the day being viewed, which is
+    // exactly the day in memory.
+    if (targetStaffId !== null) {
+      const dropStart = new Date(dragSchedule.scheduledStartIso);
+      const dayKey = aestDateKey(dropStart);
+      const startMinutes = aestMinutesInDay(dropStart);
+      const endMinutes = startMinutes + Math.round(durationMs / 60_000);
+
+      const busy = busyFromRows({
+        excludeId: appt.id,
+        rows: [
+          ...(weekAppts ?? [])
+            .filter(other => other.staffId === targetStaffId
+              && aestDateKey(new Date(other.scheduledStart)) === dayKey)
+            .map(other => ({
+              id: other.id,
+              startMinutes: aestMinutesInDay(new Date(other.scheduledStart)),
+              endMinutes: aestMinutesInDay(new Date(other.scheduledEnd)),
+              label: other.petName
+                ? `${other.petName}${other.clientLastName ? ` (${other.clientLastName})` : ""}`
+                : "Booked",
+              cancelled: isCancelledAppointment(other),
+            })),
+          ...(blockouts ?? [])
+            .filter(b => b.staffId === targetStaffId
+              && aestDateKey(new Date(b.blockoutDate)) === dayKey)
+            // Negative ids cannot collide with an appointment id, so a
+            // blockout is never mistaken for the row being excluded.
+            .map((b, idx) => ({
+              id: -1 - idx,
+              startMinutes: b.isFullDay ? 0 : (timeValueToMinutes(b.startTime) ?? 0),
+              endMinutes: b.isFullDay ? 24 * 60 : (timeValueToMinutes(b.endTime) ?? 24 * 60),
+              label: b.reason?.trim() || "Not working",
+              kind: "blockout" as const,
+            })),
+        ],
+      });
+
+      const leave = blockingClashes(clashesFor(startMinutes, endMinutes, busy));
+
+      // The groomer's DAY is the real limit, not the clock. Counted from
+      // the rows already on screen, excluding the dog being dragged.
+      const groomer = staffList?.find(member => member.id === targetStaffId);
+      const capacity = (groomer as { dailyClipCapacity?: number | null } | undefined)?.dailyClipCapacity ?? null;
+      const adding = clipLoadFor(appt.serviceType);
+      const booked = clipLoadOf((weekAppts ?? [])
+        .filter(other => other.staffId === targetStaffId
+          && other.id !== appt.id
+          && !isCancelledAppointment(other)
+          && aestDateKey(new Date(other.scheduledStart)) === dayKey)
+        .map(other => other.serviceType));
+      const capacityWarning = groomer && capacity && adding > 0
+        ? overbookingWarning(groomerDayLoad(booked, capacity), groomer.name, adding)
+        : null;
+
+      if (leave.length > 0 || capacityWarning) {
+        setMoveConfirm({ groomerId: targetStaffId, clashes: leave, capacityWarning, proceed: move });
+        return;
+      }
+    }
+
+    move();
+  }, [rescheduleMutation, refetch, resolveDragTarget, weekAppts, blockouts, staffList]);
 
   // Prefer the team directory but retain a safe calendar fallback for migrated
   // appointments: their joined staff data is sufficient to render assigned
@@ -1685,6 +1761,90 @@ export default function Calendar() {
 
   /** Set when Create is pressed on a clashing slot; cleared by the dialog. */
   const [clashConfirm, setClashConfirm] = useState<null | { message: string }>(null);
+
+  /**
+   * The same availability check for MOVING an appointment.
+   *
+   * `excludeAppointmentId` is the whole difference: without it the
+   * booking clashes with itself and every reschedule warns, including
+   * nudging one fifteen minutes — which teaches staff to click through
+   * the warning, making it worse than not having one.
+   *
+   * Server-side rather than from the loaded calendar, because the edit
+   * dialog can move an appointment to any date, not just the one on
+   * screen.
+   */
+  const editDateKey = splitLocalDateTime(editForm.scheduledStart).date;
+  const editStaffId = editForm.staffId && editForm.staffId !== "__unassigned__"
+    ? Number(editForm.staffId) : null;
+  const editGroomerDay = trpc.calendar.groomerDay.useQuery(
+    {
+      staffIds: editStaffId ? [editStaffId] : [],
+      date: editDateKey,
+      excludeAppointmentId: editAppt?.id,
+    },
+    { enabled: !!editAppt && !!editStaffId && !!editDateKey && !preservesCancelledSchedule },
+  );
+
+  const editClashes = useMemo(() => {
+    const busy = editGroomerDay.data?.busyByStaff?.[0]?.busy ?? [];
+    const from = splitLocalDateTime(editForm.scheduledStart);
+    const to = splitLocalDateTime(editForm.scheduledEnd);
+    const startMinutes = timeValueToMinutes(from.time);
+    const endMinutes = timeValueToMinutes(to.time);
+    if (startMinutes === null || endMinutes === null) return [];
+    const sameDay = !from.date || !to.date || from.date === to.date;
+    const span = sameDay ? endMinutes - startMinutes : endMinutes + 24 * 60 - startMinutes;
+    if (span <= 0) return [];
+    return clashesFor(startMinutes, startMinutes + span, busy);
+  }, [editGroomerDay.data, editForm.scheduledStart, editForm.scheduledEnd]);
+
+  const editGroomerName = useMemo(
+    () => activeStaff.find(member => String(member.id) === editForm.staffId)?.name ?? "",
+    [activeStaff, editForm.staffId],
+  );
+
+  /**
+   * Would this move put the groomer over their day?
+   *
+   * This is the limit that actually binds — Lauren's figures, 8 clips for
+   * Charlotte and Megs down to 5 for Ashleigh, with two tidies to a clip.
+   * Counted from `groomerDay`, which excludes the appointment being moved,
+   * so moving one within the same day does not count it twice.
+   */
+  const editMoveCapacityWarning = useMemo(() => {
+    if (!editAppt || !editStaffId) return null;
+    const groomer = activeStaff.find(member => member.id === editStaffId);
+    const capacity = (groomer as { dailyClipCapacity?: number | null } | undefined)?.dailyClipCapacity ?? null;
+    if (!groomer || !capacity) return null;
+    const adding = clipLoadFor(editForm.serviceType ?? editAppt.serviceType);
+    if (adding <= 0) return null;
+    // The day's load comes from the calendar rows, which carry a service
+    // type; groomerDay returns time intervals and cannot say what each
+    // booking is. The appointment being moved is excluded so moving it
+    // within its own day does not count it twice.
+    const booked = clipLoadOf((weekAppts ?? [])
+      .filter(a => a.staffId === editStaffId
+        && a.id !== editAppt.id
+        && !isCancelledAppointment(a)
+        && aestDateKey(new Date(a.scheduledStart)) === editDateKey)
+      .map(a => a.serviceType));
+    return overbookingWarning(groomerDayLoad(booked, capacity), groomer.name, adding);
+  }, [editAppt, editStaffId, editForm.serviceType, editDateKey, weekAppts, activeStaff]);
+
+  /**
+   * A move that needs confirming. Carries the action rather than a flag,
+   * because the same dialog serves the edit form and a drag-and-drop,
+   * and each resumes differently.
+   */
+  const [moveConfirm, setMoveConfirm] = useState<
+    null | {
+      groomerId: number | null;
+      clashes: BusyInterval[];
+      capacityWarning: string | null;
+      proceed: () => void;
+    }
+  >(null);
   // A client with exactly one dog has already told us which dog. The chip
   // is a toggle and an untapped one looks like a label, so a groomer
   // reasonably read "Quinnie (Cavoodle)" as chosen, hit Create, and got
@@ -1780,7 +1940,7 @@ export default function Calendar() {
     // must not happen by accident, which is what it did while the time
     // dropdown offered every half hour regardless of who was selected.
     if (!force) {
-      const clashMessage = clashWarning(bookingClashes, bookingGroomerName);
+      const clashMessage = unavailableWarning(bookingClashes, bookingGroomerName);
       if (clashMessage) { setClashConfirm({ message: clashMessage }); return; }
     }
 
@@ -1789,16 +1949,19 @@ export default function Calendar() {
     // go over a groomer's day without noticing they have.
     const bookingGroomer = activeStaff.find(member => String(member.id) === newAppt.staffId);
     const capacity = (bookingGroomer as { dailyClipCapacity?: number | null } | undefined)?.dailyClipCapacity ?? null;
-    if (bookingGroomer && capacity && isClip(newAppt.serviceType) && newAppt.scheduledStart) {
+    // clipLoadFor, not isClip: a tidy is half a clip (Lauren, 08/10/2026),
+    // so booking one can tip a groomer over and a day of them adds up.
+    const addingLoad = clipLoadFor(newAppt.serviceType) * (newAppt.petIds.length || 1);
+    if (bookingGroomer && capacity && addingLoad > 0 && newAppt.scheduledStart) {
       const dayKey = newAppt.scheduledStart.slice(0, 10);
-      const alreadyBooked = filteredAppts.filter(a =>
-        a.staffId === bookingGroomer.id
-        && isClip(a.serviceType)
-        && aestDateKey(new Date(a.scheduledStart)) === dayKey).length;
+      const alreadyBooked = clipLoadOf(filteredAppts
+        .filter(a => a.staffId === bookingGroomer.id
+          && aestDateKey(new Date(a.scheduledStart)) === dayKey)
+        .map(a => a.serviceType));
       const warning = overbookingWarning(
         groomerDayLoad(alreadyBooked, capacity),
         bookingGroomer.name,
-        newAppt.petIds.length || 1,
+        addingLoad,
       );
       if (warning) toast.warning(warning, { duration: 6000 });
     }
@@ -1899,8 +2062,30 @@ export default function Calendar() {
     setNewContact({ name: "", phone: "", relationship: "" });
   };
 
-  const handleSaveEdit = async () => {
+  /** `force` is only ever true when it came from the move confirmation. */
+  const handleSaveEdit = async (force = false) => {
     if (!editAppt) return;
+
+    // Moving one dog on top of another is allowed and sometimes right, but
+    // it must not happen silently. Same reasoning as creating a booking:
+    // warn, never block.
+    if (!force) {
+      // Two different questions. Leave means the groomer is not there;
+      // capacity means they are, but their day is full. Overlapping
+      // another dog is neither — it is how the salon runs.
+      const notWorking = unavailableWarning(editClashes, editGroomerName);
+      const overCapacity = editMoveCapacityWarning;
+      if (notWorking || overCapacity) {
+        setMoveConfirm({
+          groomerId: editStaffId,
+          clashes: blockingClashes(editClashes),
+          capacityWarning: overCapacity,
+          proceed: () => { void handleSaveEdit(true); },
+        });
+        return;
+      }
+    }
+
     const promises: Promise<unknown>[] = [];
     const keepOriginalCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
     if (!keepOriginalCancelledSchedule) {
@@ -2163,7 +2348,7 @@ export default function Calendar() {
                         // four future days were already over before anyone
                         // had a way to see it.
                         const load = groomerDayLoad(
-                          mine.filter(a => isClip(a.serviceType)).length,
+                          clipLoadOf(mine.map(a => a.serviceType)),
                           (s as { dailyClipCapacity?: number | null }).dailyClipCapacity ?? null,
                         );
                         const tone =
@@ -3123,15 +3308,19 @@ export default function Calendar() {
                       // what is there and lets them decide.
                       <SelectItem key={slot.value} value={slot.value}>
                         <span className="flex w-full items-center justify-between gap-3">
-                          <span className={slot.busy ? "text-muted-foreground" : ""}>{slot.label}</span>
-                          {slot.busy && (
+                          <span>{slot.label}</span>
+                          {/* Leave is a problem and reads as one. Other dogs
+                              are just context: overlapping is how the salon
+                              runs, so a count informs without crying wolf. */}
+                          {blockingClashes(slot.clashes).length > 0 ? (
                             <span className="truncate text-[11px] text-amber-600 dark:text-amber-500">
-                              {slot.clashes[0].kind === "blockout"
-                                ? slot.clashes[0].label
-                                : describeClash(slot.clashes[0])}
-                              {slot.clashes.length > 1 ? ` +${slot.clashes.length - 1}` : ""}
+                              {blockingClashes(slot.clashes).map(c => c.label).join(", ")}
                             </span>
-                          )}
+                          ) : concurrentDogs(slot.clashes) > 0 ? (
+                            <span className="truncate text-[11px] text-muted-foreground">
+                              {concurrentDogs(slot.clashes)} dog{concurrentDogs(slot.clashes) === 1 ? "" : "s"} on
+                            </span>
+                          ) : null}
                         </span>
                       </SelectItem>
                     ))}
@@ -3146,9 +3335,9 @@ export default function Calendar() {
                 <p className="text-[11px] text-muted-foreground">Suggested from the dogs' size — change it for a known-quick or a difficult groom.</p>
               </div>
             </div>
-            {bookingClashes.length > 0 && (
+            {blockingClashes(bookingClashes).length > 0 && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-                <p className="font-medium">{clashWarning(bookingClashes, bookingGroomerName)}</p>
+                <p className="font-medium">{unavailableWarning(bookingClashes, bookingGroomerName)}</p>
                 <p className="mt-0.5 opacity-80">You can still book it — you'll be asked to confirm.</p>
               </div>
             )}
@@ -3287,6 +3476,43 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
+      {/* ── Move confirmation, shared by the edit form and drag-and-drop ──
+          A drop is one imprecise gesture with no feedback, which makes it
+          the easiest way to double-book there is. Same rule as creating:
+          warn, never block. */}
+      <Dialog open={!!moveConfirm} onOpenChange={open => { if (!open) setMoveConfirm(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {(moveConfirm?.clashes.length ?? 0) > 0 ? "That groomer is not working then" : "That would be a long day"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            {(moveConfirm?.clashes.length ?? 0) > 0 && (
+              <p>
+                {unavailableWarning(
+                  moveConfirm?.clashes ?? [],
+                  activeStaff.find(member => member.id === moveConfirm?.groomerId)?.name ?? "",
+                )}
+              </p>
+            )}
+            {moveConfirm?.capacityWarning && (
+              <p>{moveConfirm.capacityWarning}</p>
+            )}
+            <p className="text-muted-foreground">Move it there anyway?</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoveConfirm(null)}>Leave it where it is</Button>
+            <Button
+              onClick={() => { const go = moveConfirm?.proceed; setMoveConfirm(null); go?.(); }}
+              disabled={rescheduleMutation.isPending}
+            >
+              Move anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Double-booking confirmation ──
           Warn, never block: the salon squeezes dogs in for good reasons and
           a system that refused would simply be worked around. The cost of
@@ -3295,17 +3521,15 @@ export default function Calendar() {
       <Dialog open={!!clashConfirm} onOpenChange={open => { if (!open) setClashConfirm(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>That time is already taken</DialogTitle>
+            <DialogTitle>That groomer is not working then</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
             <p>{clashConfirm?.message}</p>
             <div className="rounded-lg border bg-muted/40 p-2.5 text-xs">
-              {bookingClashes.map((clash, idx) => (
+              {blockingClashes(bookingClashes).map((clash, idx) => (
                 <p key={idx} className="flex items-center justify-between gap-3">
                   <span className="font-medium">{describeClash(clash)}</span>
-                  <span className="text-muted-foreground">
-                    {clash.kind === "blockout" ? "Not working" : "Booked"}
-                  </span>
+                  <span className="text-muted-foreground">Not working</span>
                 </p>
               ))}
             </div>
@@ -3614,6 +3838,15 @@ export default function Calendar() {
                     <Input type="datetime-local" value={editForm.scheduledEnd} disabled={preservesCancelledSchedule} onChange={e => setEditForm(p => ({ ...p, scheduledEnd: e.target.value }))} />
                   </div>
                 </div>
+                {(blockingClashes(editClashes).length > 0 || editMoveCapacityWarning) && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                    {blockingClashes(editClashes).length > 0 && (
+                      <p className="font-medium">{unavailableWarning(editClashes, editGroomerName)}</p>
+                    )}
+                    {editMoveCapacityWarning && <p className="font-medium">{editMoveCapacityWarning}</p>}
+                    <p className="mt-0.5 opacity-80">You can still move it — you'll be asked to confirm.</p>
+                  </div>
+                )}
                 {preservesCancelledSchedule && (
                   <p className="rounded-md border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs font-medium text-red-800 dark:text-red-300">Cancelled appointments stay at their original booked time for historical tracking. Create a new appointment if the client needs to be rebooked.</p>
                 )}
@@ -3756,7 +3989,7 @@ export default function Calendar() {
                     );
                   })()}
                   <Button variant="outline" onClick={closeEditDialog}>Cancel</Button>
-                  <Button onClick={handleSaveEdit} disabled={rescheduleMutation.isPending || workflowMutation.isPending}>
+                  <Button onClick={() => handleSaveEdit()} disabled={rescheduleMutation.isPending || workflowMutation.isPending}>
                     {rescheduleMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
                 </DialogFooter>

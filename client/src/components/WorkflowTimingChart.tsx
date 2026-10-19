@@ -1,6 +1,6 @@
 import { Bar, CartesianGrid, Cell, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useTheme } from "@/contexts/ThemeContext";
-import { chartSeriesColours, CHART_MARKS, CHART_TOKENS, chartTooltipStyle } from "@shared/chartStyle";
+import { chartSeriesColours, CHART_MARKS, CHART_TOKENS, chartTooltipStyle, CHART_TOOLTIP_MOTION } from "@shared/chartStyle";
 import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
 import {
   formatStageDuration,
@@ -145,7 +145,7 @@ export function WorkflowTimingChart({
               width={56}
             />
           )}
-          <Tooltip
+          <Tooltip {...CHART_TOOLTIP_MOTION}
             cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }}
             contentStyle={chartTooltipStyle()}
             formatter={(value: unknown, _name: unknown, item: any) => [

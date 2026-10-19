@@ -7,7 +7,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { COMPARISON_LABELS, type ComparisonMode } from "@shared/comparisonPeriod";
-import { CHART_MARKS, chartSeriesColours, CHART_TOKENS, chartTooltipStyle } from "@shared/chartStyle";
+import { CHART_MARKS, chartSeriesColours, CHART_TOKENS, chartTooltipStyle, CHART_TOOLTIP_MOTION } from "@shared/chartStyle";
 import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
 
 /**
@@ -124,7 +124,7 @@ export function NetSalesPerformance({ dateFrom, dateTo }: { dateFrom: Date; date
                 />
                 {/* Crosshair + tooltip: a line chart should answer "what is
                     that point?" without anyone having to ask. */}
-                <Tooltip
+                <Tooltip {...CHART_TOOLTIP_MOTION}
                   cursor={{ stroke: CHART_TOKENS.axisText, strokeWidth: 1, strokeDasharray: "3 3" }}
                   contentStyle={chartTooltipStyle()}
                   labelFormatter={(iso: string) => shortDate(String(iso))}

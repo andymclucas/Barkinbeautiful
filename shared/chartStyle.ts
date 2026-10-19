@@ -165,6 +165,28 @@ export const CHART_TOKENS = {
  * and a solid panel hides the very bars being compared. At 60% the shape
  * underneath still reads.
  */
+/**
+ * Props every chart tooltip carries, so none of them lag the cursor.
+ *
+ * recharts defaults a Tooltip to `isAnimationActive: true` with
+ * `animationDuration: 400` and an ease — and that animation is on the
+ * tooltip's POSITION, which follows the mouse. Every mousemove restarts
+ * the ease, so the panel never catches up and lurches instead of
+ * tracking.
+ *
+ * Measured against recharts 2.15.2, sweeping across a bar chart: the
+ * default sat a median of 174px behind the cursor (worst 274px); with
+ * the animation off it is 13px, which is just the 10px offset and the
+ * panel's own edge. Thirteen times closer, and it stops swimming.
+ *
+ * The blur is NOT the cause and was measured too — 8.3ms median frame
+ * time with and without, no frames over 20ms. It stays.
+ */
+export const CHART_TOOLTIP_MOTION = {
+  isAnimationActive: false,
+  animationDuration: 0,
+} as const;
+
 export const CHART_TOOLTIP_OPACITY = 0.6;
 
 /**

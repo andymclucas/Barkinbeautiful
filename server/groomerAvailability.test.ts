@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  intervalsOverlap, clashesFor, annotateSlots, clashWarning, describeClash, shortTime,
+  intervalsOverlap, clashesFor, annotateSlots, unavailableWarning, concurrentDogs,
+  blockingClashes, describeClash, shortTime,
+  busyFromRows,
   type BusyInterval,
 } from "@shared/groomerAvailability";
 import { buildTimeSlots, timeValueToMinutes } from "@shared/bookingTimeSlots";
@@ -85,35 +87,46 @@ describe("annotateSlots", () => {
   });
 });
 
-describe("clashWarning", () => {
-  it("says nothing when the slot is free", () => {
-    expect(clashWarning([], "Charlotte")).toBeNull();
+describe("unavailableWarning", () => {
+  it("says nothing when the groomer is simply working", () => {
+    expect(unavailableWarning([], "Charlotte")).toBeNull();
   });
 
-  it("names the groomer and the dog in the way", () => {
-    const msg = clashWarning([appt(600, 780, "Link (Mastiff X)")], "Charlotte");
-    expect(msg).toBe("Charlotte already has 10am–1pm Link (Mastiff X) booked at that time.");
+  it("does NOT warn about another dog at the same time", () => {
+    // The rule this replaced warned on any overlap. Across the diary
+    // there are 14,445 overlapping pairs against 12,728 appointments —
+    // one dog in the bath, one drying, one being clipped is how the
+    // salon runs, and a warning that always fires gets dismissed.
+    expect(unavailableWarning([appt(600, 780, "Link (Mastiff X)")], "Charlotte")).toBeNull();
+    expect(unavailableWarning([appt(600, 660, "A"), appt(630, 700, "B")], "Megs")).toBeNull();
   });
 
-  it("says leave differently from a dog, because it is a different decision", () => {
-    const msg = clashWarning([leave(540, 1020, "Annual leave")], "Megs");
-    expect(msg).toContain("is not working then");
-    expect(msg).not.toContain("booked at that time");
+  it("warns about leave, which is never routine", () => {
+    const msg = unavailableWarning([leave(540, 1020, "Annual leave")], "Megs");
+    expect(msg).toBe("Megs is not working then — 9am–5pm Annual leave.");
   });
 
-  it("counts them when there are several", () => {
-    const msg = clashWarning([appt(600, 660, "A"), appt(630, 700, "B")], "Megs");
-    expect(msg).toContain("2 things booked");
-  });
-
-  it("trims a long list rather than printing all of it", () => {
-    const many = [appt(600, 610, "A"), appt(610, 620, "B"), appt(620, 630, "C"), appt(630, 640, "D")];
-    const msg = clashWarning(many, "Megs") ?? "";
-    expect(msg).toContain("and 1 more");
+  it("picks the leave out of a mixed list and ignores the dogs", () => {
+    const msg = unavailableWarning(
+      [appt(600, 660, "Buddy"), leave(540, 1020, "Annual leave")], "Megs") ?? "";
+    expect(msg).toContain("Annual leave");
+    expect(msg).not.toContain("Buddy");
   });
 
   it("falls back when the groomer has no name", () => {
-    expect(clashWarning([appt(600, 660)], "  ")).toContain("This groomer");
+    expect(unavailableWarning([leave(0, 1440)], "  ")).toContain("This groomer");
+  });
+});
+
+describe("concurrentDogs / blockingClashes", () => {
+  it("counts the dogs already on, as context rather than a problem", () => {
+    expect(concurrentDogs([appt(600, 660, "A"), appt(630, 700, "B"), leave(0, 1440)])).toBe(2);
+    expect(concurrentDogs([])).toBe(0);
+  });
+
+  it("keeps only leave as something that blocks", () => {
+    const out = blockingClashes([appt(600, 660, "A"), leave(0, 1440, "Leave")]);
+    expect(out.map((c) => c.label)).toEqual(["Leave"]);
   });
 });
 
@@ -134,11 +147,50 @@ describe("shortTime / describeClash", () => {
     // A full-day blockout is stored 0..1440 and both ends format as 12am,
     // so Megs' annual leave read "12am–12am Annual leave".
     expect(describeClash(leave(0, 1440, "Annual leave"))).toBe("Annual leave (all day)");
-    expect(clashWarning([leave(0, 1440, "Annual leave")], "Megs"))
+    expect(unavailableWarning([leave(0, 1440, "Annual leave")], "Megs"))
       .toBe("Megs is not working then — Annual leave (all day).");
   });
 
   it("still gives a span for a part-day blockout", () => {
     expect(describeClash(leave(540, 720, "Dentist"))).toBe("9am–12pm Dentist");
+  });
+});
+
+describe("busyFromRows", () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: 1, startMinutes: 600, endMinutes: 660, label: "Buddy", ...over,
+  });
+
+  it("drops the appointment being moved, so it cannot clash with itself", () => {
+    // Without this every reschedule warns, including nudging a booking
+    // fifteen minutes, and staff learn to click through the warning.
+    const rows = [row({ id: 7 }), row({ id: 8, startMinutes: 700, endMinutes: 760 })];
+    expect(busyFromRows({ rows, excludeId: 7 }).map((b) => b.label)).toHaveLength(1);
+    expect(busyFromRows({ rows, excludeId: null })).toHaveLength(2);
+  });
+
+  it("ignores a cancelled booking, which is not a commitment", () => {
+    const rows = [row({ id: 1, cancelled: true }), row({ id: 2, startMinutes: 700, endMinutes: 760 })];
+    expect(busyFromRows({ rows })).toHaveLength(1);
+  });
+
+  it("ignores a row with no duration", () => {
+    expect(busyFromRows({ rows: [row({ endMinutes: 600 })] })).toEqual([]);
+  });
+
+  it("keeps blockouts as blockouts and defaults the rest to appointments", () => {
+    const out = busyFromRows({ rows: [
+      row({ id: 1, kind: "blockout", label: "Leave" }),
+      row({ id: 2, startMinutes: 700, endMinutes: 760 }),
+    ] });
+    expect(out.map((b) => b.kind)).toEqual(["blockout", "appointment"]);
+  });
+
+  it("returns them in time order", () => {
+    const out = busyFromRows({ rows: [
+      row({ id: 1, startMinutes: 800, endMinutes: 860 }),
+      row({ id: 2, startMinutes: 600, endMinutes: 660 }),
+    ] });
+    expect(out.map((b) => b.startMinutes)).toEqual([600, 800]);
   });
 });

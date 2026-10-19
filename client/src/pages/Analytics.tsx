@@ -2,7 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, Legend, type TooltipProps } from "recharts";
-import { CHART_MARKS, chartMeasureColours, CHART_TOKENS, chartTooltipStyle } from "@shared/chartStyle";
+import { CHART_MARKS, chartMeasureColours, CHART_TOKENS, chartTooltipStyle, CHART_TOOLTIP_MOTION } from "@shared/chartStyle";
 import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
 import { useTheme } from "@/contexts/ThemeContext";
 import { NetSalesPerformance } from "@/components/NetSalesPerformance";
@@ -287,7 +287,7 @@ export default function Analytics() {
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_TOKENS.grid} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v) => [v, "Appointments"]} />
+                    <Tooltip {...CHART_TOOLTIP_MOTION} contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v) => [v, "Appointments"]} />
                     <Bar dataKey="appointments" radius={[4, 4, 0, 0]}>
                       {staffChartData.map((entry, idx) => (
                         <Cell key={idx} fill={entry.colour} />
@@ -315,7 +315,7 @@ export default function Analytics() {
                           <Cell key={idx} fill={entry.colour} />
                         ))}
                       </Pie>
-                      <Tooltip content={<PieTooltip />} />
+                      <Tooltip {...CHART_TOOLTIP_MOTION} content={<PieTooltip />} />
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="flex-1 space-y-2">
@@ -362,7 +362,7 @@ export default function Analytics() {
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_TOKENS.grid} />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${v}`} />
-                  <Tooltip contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
+                  <Tooltip {...CHART_TOOLTIP_MOTION} contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
                   <Legend formatter={(v: string) => v === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"} />
                   {/* Separate conditionals rather than a fragment: recharts
                       inspects its children to find the axes, and a fragment
