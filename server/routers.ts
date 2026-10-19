@@ -7,6 +7,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
+import { departedBookingMessage } from "@shared/petBookable";
 import { messageSearchFilter } from "./messageSearchFilter";
 import { TRPCError } from "@trpc/server";
 import { authRouter } from "./routers/auth";
@@ -664,11 +665,13 @@ const calendarRouter = router({
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your staff profile");
-      const [pet] = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
+      const [pet] = await db.select({ id: pets.id, name: pets.name, clientId: pets.clientId, tenantId: pets.tenantId, status: pets.status })
         .from(pets).where(eq(pets.id, input.petId)).limit(1);
       if (!pet || pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input)) {
         throw new Error("The selected client and pet are not available to this salon");
       }
+      const departedMessage = departedBookingMessage([pet]);
+      if (departedMessage) throw new Error(departedMessage);
       const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, [input.petId], input.serviceType);
       const coveredMembership = coverage.membershipByPetId[input.petId] ?? null;
       const token = nanoid(32);
@@ -713,11 +716,16 @@ const calendarRouter = router({
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your salon profile");
       const petIds = Array.from(new Set(input.petIds));
-      const selectedPets = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
+      const selectedPets = await db.select({ id: pets.id, name: pets.name, clientId: pets.clientId, tenantId: pets.tenantId, status: pets.status })
         .from(pets).where(inArray(pets.id, petIds));
       if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input))) {
         throw new Error("The selected client and pets are not available to this salon");
       }
+      // A dog recorded as passed away stays on the record and stays
+      // visible, but must not be bookable. Checked here as well as in the
+      // dialog, because the dialog is not the only way in.
+      const departedMessage = departedBookingMessage(selectedPets);
+      if (departedMessage) throw new Error(departedMessage);
 
       const firstStart = parseBrisbaneLocalDateTime(input.scheduledStart);
       const firstEnd = parseBrisbaneLocalDateTime(input.scheduledEnd);
@@ -855,11 +863,16 @@ const calendarRouter = router({
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your staff profile");
       const petIds = Array.from(new Set(input.petIds));
-      const selectedPets = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
+      const selectedPets = await db.select({ id: pets.id, name: pets.name, clientId: pets.clientId, tenantId: pets.tenantId, status: pets.status })
         .from(pets).where(inArray(pets.id, petIds));
       if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input))) {
         throw new Error("The selected client and pets are not available to this salon");
       }
+      // A dog recorded as passed away stays on the record and stays
+      // visible, but must not be bookable. Checked here as well as in the
+      // dialog, because the dialog is not the only way in.
+      const departedMessage = departedBookingMessage(selectedPets);
+      if (departedMessage) throw new Error(departedMessage);
       const groomerForPet = await resolveGroomerPerPet(db, tenantOf(ctx, input), petIds, input.staffId, input.staffByPetId);
       const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
       // Assign a shared sessionId when booking multiple pets together
@@ -968,11 +981,16 @@ const calendarRouter = router({
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This salon is not available to your staff profile");
       const petIds = Array.from(new Set(input.petIds));
-      const selectedPets = await db.select({ id: pets.id, clientId: pets.clientId, tenantId: pets.tenantId })
+      const selectedPets = await db.select({ id: pets.id, name: pets.name, clientId: pets.clientId, tenantId: pets.tenantId, status: pets.status })
         .from(pets).where(inArray(pets.id, petIds));
       if (selectedPets.length !== petIds.length || selectedPets.some(pet => pet.clientId !== input.clientId || pet.tenantId !== tenantOf(ctx, input))) {
         throw new Error("The selected client and pets are not available to this salon");
       }
+      // A dog recorded as passed away stays on the record and stays
+      // visible, but must not be bookable. Checked here as well as in the
+      // dialog, because the dialog is not the only way in.
+      const departedMessage = departedBookingMessage(selectedPets);
+      if (departedMessage) throw new Error(departedMessage);
       const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
       return {
         ...coverage,
