@@ -38,7 +38,7 @@ import {
 import { nanoid } from "nanoid";
 import { MEMBERSHIP_PACKAGES } from "@shared/membershipPackages";
 import {
-  MAX_SIGNUP_DOGS, quoteMembershipSignup, signupPackagesForWeight,
+  MAX_SIGNUP_DOGS, quoteMembershipSignup, signupPackagesForWeight, weightForQuote,
   type SignupDogInput,
 } from "@shared/membershipSignup";
 import {
@@ -243,15 +243,6 @@ export const membershipSignupRouter = router({
       const tenantId = tenantOf(ctx, input);
       await requireSignupEnabled(db, tenantId);
 
-      // Price and eligibility are settled server-side. The list the form
-      // picked from was built in a browser.
-      const quote = quoteMembershipSignup({
-        dogs: input.dogs as SignupDogInput[],
-        builtIns: MEMBERSHIP_PACKAGES,
-        plans: await activePlans(db, tenantId),
-      });
-      if (!quote.ok) throw new TRPCError({ code: "BAD_REQUEST", message: quote.problems.join(" ") });
-
       if (input.scheduledStart.getTime() <= Date.now()) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a first appointment in the future." });
       }
@@ -276,6 +267,49 @@ export const membershipSignupRouter = router({
         client = { id: (created as any).insertId as number };
       }
 
+      /**
+       * A client does not get to set their own dog's weight class.
+       *
+       * For a dog already on file with a recorded weight, that weight
+       * prices the membership and the number typed into the form is
+       * ignored. Only staff can change what is on the record —
+       * pets.updateWeight and pets.updateSizeBand are both
+       * operationalProcedure — and letting the form pick the band
+       * instead would be the same thing by another route: Rosie is on
+       * file at 9kg, somebody types 20, and the quote comes back at the
+       * Large rate.
+       *
+       * The typed weight still stands for a dog the salon has never
+       * seen. There is nothing else to go on, approval is where it gets
+       * checked, and the card shows it as entered.
+       */
+      const resolvedDogs: SignupDogInput[] = [];
+      const correctedWeights: Array<{ name: string; entered: number; onFile: number }> = [];
+      for (const dog of input.dogs) {
+        const [onFile] = await db.select({ id: pets.id, weightKg: pets.weightKg })
+          .from(pets)
+          .where(and(
+            eq(pets.tenantId, tenantId),
+            eq(pets.clientId, client.id),
+            eq(pets.name, dog.name.trim()),
+          ))
+          .limit(1);
+        const resolved = weightForQuote(dog.weightKg, onFile?.weightKg);
+        if (resolved.source === "record" && resolved.weightKg !== dog.weightKg) {
+          correctedWeights.push({ name: dog.name.trim(), entered: dog.weightKg, onFile: resolved.weightKg });
+        }
+        resolvedDogs.push({ ...dog, weightKg: resolved.weightKg });
+      }
+
+      // Price and eligibility are settled server-side, from the weights
+      // above. The list the form picked from was built in a browser.
+      const quote = quoteMembershipSignup({
+        dogs: resolvedDogs,
+        builtIns: MEMBERSHIP_PACKAGES,
+        plans: await activePlans(db, tenantId),
+      });
+      if (!quote.ok) throw new TRPCError({ code: "BAD_REQUEST", message: quote.problems.join(" ") });
+
       const duration = getAutoDurationMinutesForPets(
         serviceTypeFor(quote.lines[0].serviceType),
         quote.lines.map((line) => line.weightKg),
@@ -290,7 +324,13 @@ export const membershipSignupRouter = router({
         intervalWeeks: quote.intervalWeeks,
         monthsAhead: DEFAULT_MONTHS_AHEAD,
         weeklyTotal: quote.weeklyTotal.toFixed(2),
-        clientNote: input.note || null,
+        clientNote: [
+          input.note || null,
+          // Visible to whoever approves: the form said one thing and the
+          // record said another, and the record won.
+          ...correctedWeights.map((c) =>
+            `(${c.name}: entered ${c.entered}kg, priced from ${c.onFile}kg on file)`),
+        ].filter(Boolean).join(" ").slice(0, 500) || null,
       });
       const requestId = (createdRequest as any).insertId as number;
 

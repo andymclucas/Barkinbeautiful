@@ -108,6 +108,34 @@ export function signupPackagesForWeight(
   ).filter((pkg) => validatePlanForAssignment(pkg).ok);
 }
 
+/**
+ * Which weight prices a dog: the record, or the number typed on the form.
+ *
+ * The record always wins when there is one. Changing a dog's weight or
+ * size band is staff-only — pets.updateWeight and pets.updateSizeBand
+ * are both operationalProcedure — and letting a public form choose the
+ * band that prices the membership would be the same thing by another
+ * route. Rosie is on file at 9kg; somebody types 20; the quote comes
+ * back at the Large rate.
+ *
+ * The typed weight stands only for a dog the salon has never seen.
+ * There is nothing else to go on, and approval is where it is checked.
+ *
+ * A recorded weight of zero, blank or nonsense is treated as absent:
+ * 10,372 of 12,552 dogs have no weight, so "no record" is the normal
+ * case and must not become "priced at 0kg".
+ */
+export function weightForQuote(
+  entered: number,
+  recorded: number | string | null | undefined,
+): { weightKg: number; source: "record" | "entered" } {
+  const onFile = recorded === null || recorded === undefined || String(recorded).trim() === ""
+    ? Number.NaN
+    : Number(recorded);
+  if (Number.isFinite(onFile) && onFile > 0) return { weightKg: onFile, source: "record" };
+  return { weightKg: entered, source: "entered" };
+}
+
 export function quoteMembershipSignup(input: {
   dogs: readonly SignupDogInput[];
   builtIns: MembershipPackage[];

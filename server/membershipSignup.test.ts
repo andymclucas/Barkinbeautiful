@@ -3,6 +3,7 @@ import {
   MAX_SIGNUP_DOGS,
   quoteMembershipSignup,
   signupPackagesForWeight,
+  weightForQuote,
   type SignupDogInput,
 } from "@shared/membershipSignup";
 import { MEMBERSHIP_PACKAGES, getMembershipPackageById } from "@shared/membershipPackages";
@@ -157,5 +158,36 @@ describe("signupPackagesForWeight", () => {
 
   it("offers nothing for a weight with no band", () => {
     expect(signupPackagesForWeight(35, MEMBERSHIP_PACKAGES, [])).toEqual([]);
+  });
+});
+
+describe("weightForQuote", () => {
+  it("prices from the record whenever there is one", () => {
+    // A client does not get to set their own dog's weight class. Rosie is
+    // on file at 9kg; somebody types 20; she is still priced at 9.
+    expect(weightForQuote(20, 9)).toEqual({ weightKg: 9, source: "record" });
+    expect(weightForQuote(20, "9.00")).toEqual({ weightKg: 9, source: "record" });
+  });
+
+  it("uses the typed weight only for a dog with nothing on file", () => {
+    // 10,372 of 12,552 dogs have no weight, so this is the normal path
+    // for a new client, not an edge case.
+    for (const recorded of [null, undefined, "", "   "]) {
+      expect(weightForQuote(14, recorded as any)).toEqual({ weightKg: 14, source: "entered" });
+    }
+  });
+
+  it("treats a zero or unreadable record as absent, not as 0kg", () => {
+    // Priced at 0kg a dog falls in no band at all and the sign-up dies
+    // with a message about calling the salon, for a weight nobody typed.
+    for (const recorded of [0, "0.00", -5, "heavy", Number.NaN]) {
+      expect(weightForQuote(14, recorded as any)).toEqual({ weightKg: 14, source: "entered" });
+    }
+  });
+
+  it("says where the number came from, so the difference can be shown", () => {
+    // The approval card names it when the form and the record disagree.
+    expect(weightForQuote(20, 9).source).toBe("record");
+    expect(weightForQuote(20, null).source).toBe("entered");
   });
 });
