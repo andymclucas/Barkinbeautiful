@@ -44,6 +44,13 @@ async function main() {
     uri: process.env.DATABASE_URL,
     ssl: { minVersion: "TLSv1.2", rejectUnauthorized: true },
     timezone: "Z",
+    // Without these a dropped socket is not an error, it is a wait that
+    // never ends. The first run of this script sat for 29 minutes having
+    // used 1.5 seconds of CPU, its connection idle, holding a
+    // transaction open against production. Fail fast instead.
+    connectTimeout: 20_000,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 5_000,
   });
 
   const [appointments] = await db.query<any[]>(
@@ -97,22 +104,46 @@ async function main() {
     return;
   }
 
+  /**
+   * One statement per membership, not one per appointment.
+   *
+   * The first version issued 2,465 separate UPDATEs. Each is a round
+   * trip to TiDB at roughly 200ms, so the transaction stayed open for
+   * half an hour and the connection died under it — nothing was written,
+   * which is the transaction working, but nothing was achieved either.
+   *
+   * Grouping by the membership being written collapses that to about
+   * 140 statements. The per-row guard survives intact: the WHERE still
+   * carries `membership_id IS NULL`, so a link added between the read
+   * and the write is never overwritten, and the affected-row count is
+   * still asserted against the plan.
+   */
+  const idsByMembership = new Map<number, number[]>();
+  for (const row of plan) {
+    idsByMembership.set(row.membershipId, [...(idsByMembership.get(row.membershipId) ?? []), row.id]);
+  }
+
   await db.beginTransaction();
   try {
     let written = 0;
-    for (const row of plan) {
-      // Guarded on still-NULL, so a link added between the read and the
-      // write is never overwritten.
-      const [res] = await db.query<any>(
-        "UPDATE appointments SET membership_id=? WHERE id=? AND membership_id IS NULL AND tenant_id=?",
-        [row.membershipId, row.id, TENANT]);
-      written += res.affectedRows;
+    for (const [membershipId, ids] of idsByMembership) {
+      // Chunked so one membership with a long history cannot build a
+      // statement too large to send.
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
+        const [res] = await db.query<any>(
+          `UPDATE appointments SET membership_id=?
+            WHERE id IN (${chunk.map(() => "?").join(",")})
+              AND membership_id IS NULL AND tenant_id=?`,
+          [membershipId, ...chunk, TENANT]);
+        written += res.affectedRows;
+      }
     }
     if (written !== plan.length) {
       throw new Error(`expected to write ${plan.length}, wrote ${written} — rolling back`);
     }
     await db.commit();
-    console.log(`\nCOMMITTED — ${written} appointments linked.`);
+    console.log(`\nCOMMITTED — ${written} appointments linked in ${idsByMembership.size} statements.`);
   } catch (err) {
     await db.rollback();
     console.error("\nROLLED BACK:", (err as Error).message);
