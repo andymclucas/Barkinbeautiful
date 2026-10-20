@@ -72,3 +72,22 @@ export function priceForCoveredAppointment(
   if (fullyCovered) return "0.00";
   return requested ?? undefined;
 }
+
+/**
+ * What a dog ADDED to an existing family booking is priced at.
+ *
+ * Null, not zero: the booking it joins may already carry a combined
+ * price for the family, and inventing a per-pet charge would bill the
+ * same groom twice. The one exception is a dog the membership covers,
+ * which is explicitly zero for the same reason every covered groom is —
+ * the weekly payment is the revenue.
+ *
+ * A function rather than a ternary in the router because the rule was
+ * pinned by a test that read routers.ts and looked for the literal text
+ * `price: null`. That assertion could not tell the difference between
+ * the rule being right and the rule being absent, and it broke the
+ * moment the covered case was added (CLAUDE.md §7).
+ */
+export function priceForAddedFamilyPet(covered: boolean): string | null {
+  return covered ? "0.00" : null;
+}

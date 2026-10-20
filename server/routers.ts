@@ -78,7 +78,7 @@ import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
 import { pickupPrompt } from "@shared/pickupGroup";
-import { priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
+import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
 import { fillDailySeries } from "@shared/dailySeries";
@@ -1215,6 +1215,13 @@ const calendarRouter = router({
       if (!source.sessionId) {
         await db.update(appointments).set({ sessionId }).where(eq(appointments.id, source.id));
       }
+      // A dog added to a family booking gets its membership resolved like
+      // any other booking. This path set membershipId to null outright, so
+      // adding a member's dog to an existing booking left the groom
+      // unlinked AND unpriced — the two things the membership decides.
+      const addedCoverage = await getAppointmentMembershipCoverage(
+        db, source.tenantId, source.clientId, petIdsToAdd, source.serviceType as AppointmentService,
+      );
       await db.insert(appointments).values(petIdsToAdd.map((petId) => ({
         tenantId: source.tenantId,
         clientId: source.clientId,
@@ -1228,9 +1235,11 @@ const calendarRouter = router({
         scheduledStart: source.scheduledStart,
         scheduledEnd: source.scheduledEnd,
         notes: source.notes,
-        // The existing line may contain a total package price. Do not invent or duplicate a per-pet charge.
-        price: null,
-        membershipId: null,
+        // The existing line may contain a total package price. Do not invent
+        // or duplicate a per-pet charge — EXCEPT for a covered dog, whose
+        // groom is zero because the weekly payment already paid for it.
+        price: priceForAddedFamilyPet(Boolean(addedCoverage.membershipByPetId[petId])),
+        membershipId: addedCoverage.membershipByPetId[petId]?.id ?? null,
         trackerToken: nanoid(32),
         sessionId,
         workflowState: source.workflowState,

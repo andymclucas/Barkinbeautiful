@@ -21,7 +21,7 @@ import { toast } from "sonner";
  * board, and the standalone wall display at /workflow/display. It used to be
  * three separate tables. They drifted — the wall display ended up with seven
  * columns against the board's fifteen, missing the dog photos, family links,
- * cage and tag numbers, bath priority and membership that staff rely on — so
+ * cage and tag numbers and bath priority that staff rely on — so
  * the screen on the wall no longer resembled the screen they worked from.
  *
  * One table now serves all three. A column added here appears everywhere.
@@ -373,8 +373,6 @@ export function WorkflowBoardTable({
                 <th className="px-2 py-2.5 text-left min-w-[140px]">Dog / Owner</th>
                 <th className="px-2 py-2.5 text-center w-14">Family</th>
                 <th className="px-2 py-2.5 text-left w-28">Breed</th>
-                <th className="px-2 py-2.5 text-center w-16">Mem</th>
-                <th className="px-2 py-2.5 text-center w-14">Paid</th>
                 <th className="px-2 py-2.5 text-left min-w-[100px]">Service</th>
                 <th className="px-2 py-2.5 text-center w-24">Bath</th>
                 <th className="px-2 py-2.5 text-center w-24 bg-slate-800 text-slate-50 border-x border-slate-600">Bath priority</th>
@@ -386,7 +384,7 @@ export function WorkflowBoardTable({
               {/* Drag-drop target row */}
               {!readOnly && (
               <tr className="bg-slate-800/60">
-                <td colSpan={15} className="px-2 py-1">
+                <td colSpan={13} className="px-2 py-1">
                   <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground italic">
                     <span>Drag a row onto a stage chip:</span>
                     {STAGES.map(s => (
@@ -428,7 +426,7 @@ export function WorkflowBoardTable({
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="text-center py-16 text-muted-foreground">
+                  <td colSpan={13} className="text-center py-16 text-muted-foreground">
                     {isLoading ? "Loading..." : "No appointments for this day"}
                   </td>
                 </tr>
@@ -720,20 +718,6 @@ export function WorkflowBoardTable({
 
                     <td className="px-2 py-1.5 text-xs text-muted-foreground truncate max-w-[112px]">
                       {appt.petBreed ?? "—"}
-                    </td>
-
-                    {/* Membership */}
-                    <td className="px-2 py-1.5 text-center">
-                      {appt.membershipId ? (
-                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-[10px] font-bold border border-amber-300 dark:border-amber-800" title="Member">M</span>
-                      ) : (
-                        <span className="text-slate-300 text-xs">—</span>
-                      )}
-                    </td>
-
-                    {/* Paid */}
-                    <td className="px-2 py-1.5 text-center">
-                      <span className="text-xs text-muted-foreground">—</span>
                     </td>
 
                     {/* Service */}
