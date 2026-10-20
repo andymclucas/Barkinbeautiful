@@ -14,14 +14,14 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
-import { blockoutDateKey } from "@shared/staffBlockouts";
+import { blockoutDateKey, todayDateKey, addDaysToDateKey, blockoutIsPast } from "@shared/staffBlockouts";
 import { StaffAdminRightsDialog, type StaffRightsTarget } from "@/components/StaffAdminRightsDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { RevenueTargets, StaffRevenueTarget } from "@/components/RevenueTargets";
 import { describeGrant, summariseGrant, NAME_THE_GAP_UP_TO } from "@shared/staffPermissions";
 import {
   Phone, Mail, MapPin, User, UserCog, Plus, Pencil, X,
-  CalendarDays, TrendingUp, AlertCircle, AlertTriangle, ShieldCheck, ShieldOff, Smartphone, Send, CheckCircle2, Ban, Globe2, Download, ArrowLeft, ArrowUpRight
+  CalendarDays, TrendingUp, AlertCircle, AlertTriangle, ShieldCheck, ShieldOff, Smartphone, Send, CheckCircle2, Ban, Globe2, Download, ArrowLeft, ArrowUpRight, ChevronDown, ChevronRight
 } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 
@@ -637,15 +637,25 @@ export function StaffReviewProfile() {
  * off is twelve rows; listing those would bury the one fact that matters.
  */
 function BlockoutControls() {
-  const today = new Date();
-  const from = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const to = new Date(from.getTime() + 365 * 86_400_000);
+  /**
+   * The salon's today, not UTC's.
+   *
+   * This used to be `new Date(y, m, d).toISOString().slice(0, 10)`, and
+   * local midnight in Brisbane is 14:00 UTC the previous day — so on
+   * 20 October it asked for leave from the 19th, and a groomer who came
+   * back that morning was still listed as away. `e6a4662` again.
+   */
+  const todayKey = todayDateKey();
+  // A year back as well as forward: the past half is the archive.
+  const fromKey = addDaysToDateKey(todayKey, -365);
+  const toKey = addDaysToDateKey(todayKey, 365);
 
   const { data: staffList } = trpc.staff.list.useQuery({});
   const { data: blockouts, refetch } = trpc.staff.listBlockouts.useQuery({
-    dateFrom: from.toISOString().slice(0, 10),
-    dateTo: to.toISOString().slice(0, 10),
+    dateFrom: fromKey,
+    dateTo: toKey,
   });
+  const [showArchive, setShowArchive] = useState(false);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BlockoutEditing | null>(null);
@@ -676,6 +686,19 @@ function BlockoutControls() {
       .sort((a, b) => a.startDate.localeCompare(b.startDate));
   })();
 
+  /**
+   * Leave that has finished is history, not a notice.
+   *
+   * A run ending TODAY is still current — they are back tomorrow, and
+   * removing it while they are still away would be worse than leaving
+   * it. The rows are never deleted, so the archive is simply the same
+   * data read the other way.
+   */
+  const currentRuns = runs.filter(r => !blockoutIsPast(r.endDate, todayKey));
+  const pastRuns = runs
+    .filter(r => blockoutIsPast(r.endDate, todayKey))
+    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+
   const pretty = (key: string) =>
     new Date(`${key}T00:00:00Z`).toLocaleDateString("en-AU", {
       timeZone: "UTC", weekday: "short", day: "numeric", month: "short",
@@ -700,11 +723,11 @@ function BlockoutControls() {
         </Button>
       </div>
 
-      {runs.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-2">Nobody has time blocked out in the next year.</p>
+      {currentRuns.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-2">Nobody is away at the moment.</p>
       ) : (
         <div className="divide-y rounded-lg border">
-          {runs.map(({ first, days, startDate, endDate }) => (
+          {currentRuns.map(({ first, days, startDate, endDate }) => (
             <button
               key={first.id}
               className="flex w-full items-center gap-3 p-2.5 text-left hover:bg-muted/50"
@@ -736,6 +759,42 @@ function BlockoutControls() {
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Leave that has finished. Kept, not deleted — who was away and
+          when is worth being able to answer later — but folded away,
+          because a notice that someone is off is only a notice while
+          they are off. */}
+      {pastRuns.length > 0 && (
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => setShowArchive(v => !v)}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {showArchive ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            Previous leave ({pastRuns.length})
+          </button>
+          {showArchive && (
+            <div className="mt-2 divide-y rounded-lg border bg-muted/20">
+              {pastRuns.map(({ first, days, startDate, endDate }) => (
+                <div key={first.id} className="flex items-center gap-3 p-2.5 opacity-70">
+                  <StaffAvatar photoUrl={(first as { staffPhotoUrl?: string | null }).staffPhotoUrl} name={first.staffName ?? "?"} colourHex={first.staffColour} className="h-7 w-7" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">{first.staffName ?? "Unknown"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {startDate === endDate ? pretty(startDate) : `${pretty(startDate)} — ${pretty(endDate)}`}
+                      {days > 1 && ` · ${days} days`}
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                    {first.reason || "Blocked"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

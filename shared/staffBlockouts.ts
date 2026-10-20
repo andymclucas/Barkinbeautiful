@@ -158,3 +158,41 @@ export function blockoutBusyInterval(row: BlockoutRow): { start: Date; end: Date
   }
   return { start: new Date(midnight + from * 60_000), end: new Date(midnight + to * 60_000) };
 }
+
+/**
+ * Today, as the salon's calendar writes it.
+ *
+ * `new Date(y, m, d).toISOString().slice(0, 10)` is the obvious way to
+ * get a date key and it is wrong here. Local midnight in Brisbane is
+ * 14:00 UTC the PREVIOUS day, so on 20 October it yields "2026-10-19" —
+ * which is how a groomer who came back this morning was still listed as
+ * on leave. Same mistake as `e6a4662`.
+ *
+ * Built from the formatted parts instead, so the answer is whatever the
+ * salon's clock says and never an offset away from it.
+ */
+export function todayDateKey(timeZone = "Australia/Brisbane", now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** A date key N days from another, staying in date-key arithmetic. */
+export function addDaysToDateKey(dateKey: string, days: number): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + days));
+  return shifted.toISOString().slice(0, 10);
+}
+
+/**
+ * Has this leave finished?
+ *
+ * Compared as date-key strings, which sort correctly as text and cannot
+ * drift by a timezone the way parsing them into instants can. A run
+ * ending today is NOT past: the groomer is back tomorrow.
+ */
+export function blockoutIsPast(lastDateKey: string, todayKey: string): boolean {
+  return lastDateKey < todayKey;
+}
