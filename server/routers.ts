@@ -3550,6 +3550,11 @@ const staffRouter = router({
         // back to initials, which is why an uploaded photo appeared nowhere but
         // the edit dialog. Two sibling list procedures already returned it.
         photoUrl: staff.onlineProfilePhotoUrl,
+        // Same bug, second occurrence. The card defaults a missing status to
+        // "not_invited", so leaving this out told the salon that nine people
+        // who sign in every day had never been invited, and offered to invite
+        // them again.
+        portalStatus: staff.portalStatus,
         isActive: staff.isActive,
       }).from(staff).where(eq(staff.tenantId, tenantOf(ctx, input))).orderBy(asc(staff.name));
     }),

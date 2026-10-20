@@ -774,6 +774,24 @@ export default function Staff() {
     },
     onError: (e) => toast.error(e.message),
   });
+  /**
+   * Revoke from the card.
+   *
+   * The profile page has had this for a while; the card had only "Send
+   * invite", and only ever showed it because staff.list did not return
+   * portalStatus — so every card claimed the person had never been
+   * invited. Taking someone's access away should not need two clicks to
+   * reach when granting it needs none.
+   */
+  const cardRevokeMutation = trpc.staff.revokePortalAccess.useMutation({
+    onSuccess: () => {
+      toast.success("Access revoked");
+      utils.staff.list.invalidate();
+      utils.staff.listPortalInvitations.invalidate({});
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const quickInviteMutation = trpc.staff.invitePortalAccount.useMutation({
     onSuccess: (result) => {
       toast.success(result.emailSent ? `Invitation emailed to ${result.email}` : `Invitation prepared for ${result.email}. Email delivery needs attention.`);
@@ -816,8 +834,23 @@ export default function Staff() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {activeStaff.map(s => {
                 const portalStatus = (s as any).portalStatus ?? "not_invited";
-                const status = portalStatusMeta(portalStatus);
-                const canQuickInvite = portalStatus === "not_invited" && Boolean(s.email);
+                /**
+                 * Someone with a login who was never invited DOES have
+                 * access — they predate the invite flow, as the owner's own
+                 * account does. Calling that "Uninvited" is the opposite of
+                 * true, and offering to invite them is noise.
+                 */
+                const hasLoginWithoutInvite = portalStatus === "not_invited" && Boolean(s.userId);
+                const status = hasLoginWithoutInvite
+                  ? { label: "Has login", className: PORTAL_STATUS_META.approved.className }
+                  : portalStatusMeta(portalStatus);
+                /**
+                 * Resending is as valid as a first send, so this asks only
+                 * whether there is an address to send to. Tying it to
+                 * "not_invited" meant an invited person with a perfectly
+                 * good email was offered "Add email" instead of a resend.
+                 */
+                const canQuickInvite = Boolean(s.email);
                 return <div key={s.id} role="button" tabIndex={0} onClick={() => setSelectedId(s.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(s.id); } }}
                   className="text-left bg-card border rounded-2xl p-4 hover:border-primary/40 hover:shadow-md transition-all group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
                   <div className="flex items-start gap-3">
@@ -886,7 +919,35 @@ export default function Staff() {
                   )}
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <p className="text-xs text-primary/60 font-medium group-hover:text-primary transition-colors">View profile →</p>
-                    {portalStatus === "not_invited" && <Button size="sm" variant={canQuickInvite ? "outline" : "secondary"} className="h-8 gap-1.5" disabled={quickInviteMutation.isPending && canQuickInvite} onClick={(event) => { event.stopPropagation(); if (canQuickInvite) quickInviteMutation.mutate({ staffId: s.id, email: s.email! }); else setSelectedId(s.id); }}><Send className="h-3.5 w-3.5" />{canQuickInvite ? "Send invite" : "Add email"}</Button>}
+                    {/* One action, matching where they actually are.
+                        Invited but not accepted gets Resend; accepted gets
+                        Revoke; waiting on an administrator gets Approve.
+                        The status chip beside the name says which. */}
+                    {portalStatus === "approved" ? (
+                      <Button size="sm" variant="outline"
+                        className="h-8 gap-1.5 border-red-200 text-red-700 dark:border-red-900/50 dark:text-red-300"
+                        disabled={cardRevokeMutation.isPending}
+                        onClick={(event) => { event.stopPropagation(); cardRevokeMutation.mutate({ staffId: s.id }); }}>
+                        <Ban className="h-3.5 w-3.5" /> Revoke
+                      </Button>
+                    ) : portalStatus === "awaiting_approval" ? (
+                      <Button size="sm" className="h-8 gap-1.5"
+                        onClick={(event) => { event.stopPropagation(); setSelectedId(s.id); }}>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Approve
+                      </Button>
+                    ) : portalStatus === "revoked" ? (
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5"
+                        onClick={(event) => { event.stopPropagation(); setSelectedId(s.id); }}>
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Restore
+                      </Button>
+                    ) : hasLoginWithoutInvite ? null : (
+                      <Button size="sm" variant={canQuickInvite ? "outline" : "secondary"} className="h-8 gap-1.5"
+                        disabled={quickInviteMutation.isPending && canQuickInvite}
+                        onClick={(event) => { event.stopPropagation(); if (canQuickInvite) quickInviteMutation.mutate({ staffId: s.id, email: s.email! }); else setSelectedId(s.id); }}>
+                        <Send className="h-3.5 w-3.5" />
+                        {!canQuickInvite ? "Add email" : portalStatus === "invited" ? "Resend invite" : "Send invite"}
+                      </Button>
+                    )}
                   </div>
                 </div>;
               })}
