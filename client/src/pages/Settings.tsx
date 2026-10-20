@@ -12,6 +12,7 @@ import { Building2, Bell, Shield, Link, Palette, CreditCard, ExternalLink, Shiel
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useEffect, useState } from "react";
+import { BreedInput } from "@/components/BreedInput";
 
 export default function Settings() {
   const utils = trpc.useUtils();
@@ -188,7 +189,7 @@ export default function Settings() {
                 <div className="grid gap-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-card/80 p-3 sm:grid-cols-[170px_1fr]">
                   <div className="space-y-1.5"><Label>Configure</Label><select value={timingScope} onChange={(event) => setTimingScope(event.target.value as typeof timingScope)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="default">Salon default</option><option value="size">Pet-size preset</option><option value="breed">Breed override</option></select></div>
                   {timingScope === "size" && <div className="space-y-1.5"><Label>Pet size</Label><select value={timingSize} onChange={(event) => setTimingSize(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm">{timingReviewSettings?.sizePresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label} · {preset.minKg}–{preset.maxKg} kg</option>)}</select></div>}
-                  {timingScope === "breed" && <div className="space-y-1.5"><Label>Breed</Label><Input value={timingBreed} onChange={(event) => setTimingBreed(event.target.value)} placeholder="e.g. Standard Poodle" maxLength={100} /></div>}
+                  {timingScope === "breed" && <div className="space-y-1.5"><Label>Breed</Label><BreedInput value={timingBreed} onChange={setTimingBreed} placeholder="e.g. Standard Poodle" /></div>}
                   {timingScope === "default" && <div className="self-end rounded-lg bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">Applies when no matching size preset or breed override exists.</div>}
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{([

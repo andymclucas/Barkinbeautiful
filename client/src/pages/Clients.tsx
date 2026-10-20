@@ -30,6 +30,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 import { clientSince, describeClientSince } from "@shared/clientSince";
 import { ClientListCard } from "@/components/ClientListCard";
 import { ClientPetList } from "@/components/ClientPetList";
+import { BreedInput } from "@/components/BreedInput";
 
 const STATUS_COLOURS: Record<string, string> = {
   active: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
@@ -663,7 +664,7 @@ export default function Clients() {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5"><Label>Breed</Label><Input placeholder="e.g. Cavoodle" value={petForm.breed} onChange={e => setPetForm(p => ({ ...p, breed: e.target.value }))} /></div>
+                <div className="space-y-1.5"><Label>Breed</Label><BreedInput placeholder="e.g. Cavoodle" value={petForm.breed} onChange={breed => setPetForm(p => ({ ...p, breed }))} /></div>
                 <div className="space-y-1.5">
                   <Label>Gender</Label>
                   <Select value={petForm.gender} onValueChange={v => setPetForm(p => ({ ...p, gender: v }))}>

@@ -176,6 +176,10 @@ const OPERATIONAL = [
   "paymentsRouter.remove",
   "paymentsRouter.setBilledOverride",
   "petsRouter.create",
+  // The salon's own breed list, read from the dogs on file. Operational
+  // because it feeds the breed box on the walk-in and add-pet forms,
+  // which the floor uses.
+  "petsRouter.listBreeds",
   "petsRouter.listByClient",
   // The dog's usual groomer. A groomer knows which dogs are theirs, and
   // the person taking the booking is who hears "can we have Charlotte
@@ -235,7 +239,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(325);
+    expect(surface).toHaveLength(326);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -246,7 +250,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(105);
+    expect(OPERATIONAL).toHaveLength(106);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

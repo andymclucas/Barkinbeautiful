@@ -46,6 +46,7 @@ import { HeartCrack, History, Replace, Unlink } from "lucide-react";
 import { getDepartedMembershipBillingImpact, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
 import { resolveAppointmentMembershipCoverage } from "@shared/appointmentMembershipCoverage";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { BreedInput } from "@/components/BreedInput";
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom",
@@ -1948,7 +1949,7 @@ export default function ClientDetail() {
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="replacement-pet-breed" className="text-xs">Breed (optional)</Label>
-                      <Input id="replacement-pet-breed" value={replacementPetForm.breed} onChange={event => setReplacementPetForm(form => ({ ...form, breed: event.target.value }))} placeholder="Breed" />
+                      <BreedInput id="replacement-pet-breed" value={replacementPetForm.breed} onChange={breed => setReplacementPetForm(form => ({ ...form, breed }))} />
                     </div>
                     <Button
                       type="button"

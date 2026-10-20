@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { useDisplayTheme } from "@/lib/displayTheme";
 import { useTheme } from "@/contexts/ThemeContext";
+import { BreedInput } from "@/components/BreedInput";
 import {
   WorkflowBoardTable, formatDuration, fmtTime, stageColour,
   STAGES, TERMINAL_STAGES, ALL_STAGE_OPTIONS, NEXT_STAGE, PREV_STAGE,
@@ -821,7 +822,7 @@ export default function WorkflowBoard() {
                 </div>
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Breed</label>
-                  <Input value={walkInBreed} onChange={e => setWalkInBreed(e.target.value)} placeholder="e.g. Cavoodle" className="mt-1" />
+                  <BreedInput value={walkInBreed} onChange={setWalkInBreed} placeholder="e.g. Cavoodle" className="mt-1" />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

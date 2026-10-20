@@ -3236,6 +3236,44 @@ const clientsRouter = router({
 
 // ─── Pets ─────────────────────────────────────────────────────────────────────
 const petsRouter = router({
+  /**
+   * The breeds this salon actually uses, commonest first.
+   *
+   * Read from the dogs on file rather than held as a fixed list. 360
+   * distinct breeds came across in the MoeGo import, spelled
+   * consistently — no case or punctuation variants at all — so the
+   * column already IS the catalogue, and it stays current on its own as
+   * staff add dogs.
+   *
+   * A hardcoded list would be wrong twice over: it would drift the first
+   * time somebody typed a breed that was not on it, and it would be
+   * Barkin' Beautiful's list shipped to every other salon. This is
+   * per-tenant by construction.
+   *
+   * Ordered by how many dogs have it, because a picker that opens on
+   * Cavoodle, Maltese and Shih Tzu is answering the question most of the
+   * time before anyone types.
+   */
+  listBreeds: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select({ breed: pets.breed, dogs: sql<number>`COUNT(*)` })
+        .from(pets)
+        .where(and(
+          eq(pets.tenantId, tenantOf(ctx, input)),
+          isNotNull(pets.breed),
+          ne(pets.breed, ""),
+        ))
+        .groupBy(pets.breed)
+        .orderBy(sql`COUNT(*) DESC`);
+      return rows
+        .map((row) => ({ breed: (row.breed ?? "").trim(), dogs: Number(row.dogs) }))
+        .filter((row) => row.breed !== "");
+    }),
+
   listByClient: operationalProcedure
     .input(z.object({ clientId: z.number() }))
     .query(async ({ input, ctx }) => {
