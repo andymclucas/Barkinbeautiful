@@ -2,6 +2,7 @@ import { isValidTimeZone } from "@shared/auditTimestamp";
 import { searchTerms } from "@shared/clientSearchMatch";
 import { applyDiscount, validateDiscount, fromCents, toCents } from "@shared/appointmentDiscount";
 import { buildRevenueBuckets } from "@shared/revenueBuckets";
+import { DOG_BREED_CATALOGUE } from "@shared/dogBreedCatalogue";
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { buildPaymentTimeline } from "@shared/portalBilling";
@@ -3269,9 +3270,27 @@ const petsRouter = router({
         ))
         .groupBy(pets.breed)
         .orderBy(sql`COUNT(*) DESC`);
-      return rows
+      const inUse = rows
         .map((row) => ({ breed: (row.breed ?? "").trim(), dogs: Number(row.dogs) }))
         .filter((row) => row.breed !== "");
+
+      /**
+       * The salon's own breeds first, then the rest of MoeGo's catalogue.
+       *
+       * Ordering is the whole point. Cavoodle, Maltese and Shih Tzu are
+       * 3,000 of this salon's dogs and belong at the top; Xoloitzcuintli
+       * is in the list because somebody might one day bring one. Sorting
+       * the 630 alphabetically and leaving it at that would bury the
+       * three breeds that answer most of the question.
+       *
+       * Matched case-insensitively so "Poodle (Toy)" already on file is
+       * not offered twice.
+       */
+      const used = new Set(inUse.map((row) => row.breed.toLowerCase()));
+      const rest = DOG_BREED_CATALOGUE
+        .filter((breed) => !used.has(breed.toLowerCase()))
+        .map((breed) => ({ breed, dogs: 0 }));
+      return [...inUse, ...rest];
     }),
 
   listByClient: operationalProcedure
