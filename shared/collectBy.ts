@@ -147,3 +147,31 @@ export function brisbaneDay(value: Date | string | number): string | null {
     timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
   }).format(date);
 }
+
+/**
+ * How the out-time sticker looks on the board.
+ *
+ * Lauren, 22/10/2026: "Love the time out note but need BRIGHT RED
+ * STICKER. Maybe near the service area."
+ *
+ * It used to grade slate -> amber -> red by risk, so a dog that was
+ * comfortably on track wore a grey badge. On a board of thirty dogs a
+ * grey badge is one nobody sees, and the whole point of the out-time is
+ * that the floor plans around it hours before it becomes a problem.
+ *
+ * So the hue no longer carries the risk: **having a deadline at all is
+ * what the red says.** Risk is carried by volume — a ring once the sums
+ * stop working, and a pulse plus the word LATE once the time has gone.
+ * That keeps one thing on the row shouting, and keeps it shouting about
+ * the right thing.
+ */
+export function collectByTone(risk: CollectByRisk): string {
+  switch (risk) {
+    case "overdue":
+      return "bg-red-700 text-white ring-2 ring-red-400 motion-safe:animate-pulse";
+    case "at_risk":
+      return "bg-red-600 text-white ring-2 ring-red-300";
+    default:
+      return "bg-red-600 text-white";
+  }
+}

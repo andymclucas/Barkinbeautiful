@@ -173,11 +173,11 @@ describe("the Groomigo dog that walks the bar", () => {
    */
   function position(): number {
     const left = dog().style.left;
-    const px = [...left.matchAll(/(-?[\d.]+)px/g)]
+    const px = Array.from(left.matchAll(/(-?[\d.]+)px/g))
       .map((m) => Number(m[1]))
       .filter((n) => n !== 30)        // the gap total inside (100% - 30px)
       .reduce((a, b) => a + b, 0);
-    const coef = [...left.matchAll(/(-?[\d.]+)\s*\*\s*\(100% - 30px\)/g)]
+    const coef = Array.from(left.matchAll(/(-?[\d.]+)\s*\*\s*\(100% - 30px\)/g))
       .reduce((a, m) => a + Number(m[1]), 0);
     return px + coef * 1000;          // scaled so the column term dominates
   }

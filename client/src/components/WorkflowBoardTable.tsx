@@ -5,7 +5,8 @@ import { PetAvatar } from "@/components/PetAvatar";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workflowStageTimer";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, isBathPriorityMutable } from "@shared/bathPriorityQueue";
-import { collectByStatus } from "@shared/collectBy";
+import { collectByStatus, collectByTone } from "@shared/collectBy";
+import { shortAddOnLabel } from "@shared/addOnBoardLabel";
 import { parsePetCodes } from "@shared/petCodes";
 import { joinedContactBadge } from "@shared/appointmentContact";
 import { PetAlertButton } from "@/components/PetAlertButton";
@@ -630,11 +631,8 @@ export function WorkflowBoardTable({
                               sizeBand: appt.petSizeBand ?? null,
                             });
                             if (status.risk === "none") return null;
-                            const tone =
-                              status.risk === "overdue" ? "bg-red-600 text-white"
-                              : status.risk === "at_risk" ? "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
-                              : status.risk === "tight" ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300"
-                              : "bg-slate-100 text-slate-700 dark:bg-slate-900/60 dark:text-slate-300";
+                            // Red whatever the risk — see collectByTone.
+                            const tone = collectByTone(status.risk);
                             const why =
                               status.risk === "overdue" ? "Past the time this dog had to leave"
                               : status.risk === "at_risk" ? `About ${status.minutesNeeded} min of work left and ${status.minutesLeft} min to do it in`
@@ -642,11 +640,12 @@ export function WorkflowBoardTable({
                               : "Has a collection time, comfortably on track";
                             return (
                               <span
-                                className={`inline-flex items-center gap-0.5 mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${tone}`}
+                                className={`inline-flex items-center gap-0.5 mt-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-extrabold tracking-tight shadow-sm ${tone}`}
                                 title={why}
                                 aria-label={`${status.label}. ${why}`}
                               >
-                                <Clock className="h-2.5 w-2.5" /> {status.label}
+                                <Clock className="h-3 w-3" /> {status.label}
+                                {status.risk === "overdue" && " LATE"}
                               </span>
                             );
                           })()}
@@ -729,6 +728,30 @@ export function WorkflowBoardTable({
                       >
                         {SERVICE_LABEL[appt.serviceType] ?? appt.serviceType}
                       </span>
+                      {/* The extras, under the service, where Lauren asked
+                          for them: "show any add-ons on the workflow so
+                          groomers can see what else needs to be done at a
+                          glance." Amber, so they read as work to do rather
+                          than as another label — and distinct from the red
+                          out-time, which is the only thing on this row
+                          that should shout. */}
+                      {appt.addOns?.length > 0 && (
+                        <div className="flex flex-wrap gap-0.5 mt-0.5">
+                          {appt.addOns.map((addOn: { name: string; quantity: number }, i: number) => (
+                            <span
+                              key={`${addOn.name}-${i}`}
+                              className="inline-flex items-center rounded px-1 py-px text-[10px] font-semibold leading-tight bg-amber-100 text-amber-900 ring-1 ring-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:ring-amber-800"
+                              title={`Add-on: ${addOn.name}${addOn.quantity > 1 ? ` ×${addOn.quantity}` : ""}`}
+                            >
+                              {shortAddOnLabel(addOn.name)}
+                              {addOn.quantity > 1 && <span className="ml-0.5">×{addOn.quantity}</span>}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* A free-text note staff can type on the board. Kept
+                          separate from the booked add-ons above: one is what
+                          was sold, the other is what somebody scribbled. */}
                       {appt.workflowAddOns && (
                         <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{appt.workflowAddOns}</p>
                       )}

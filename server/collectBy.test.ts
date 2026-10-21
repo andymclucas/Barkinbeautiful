@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { brisbaneDay, collectByInstant, collectByStatus, formatCollectBy, RISK_ORDER } from "@shared/collectBy";
+import { brisbaneDay, collectByInstant, collectByStatus, collectByTone, formatCollectBy, RISK_ORDER } from "@shared/collectBy";
+import type { CollectByRisk } from "@shared/collectBy";
 
 /** Midday Brisbane on 8 October 2026, as the instant it happens. */
 const NOON = new Date("2026-10-08T02:00:00Z");
@@ -132,5 +133,45 @@ describe("brisbaneDay", () => {
 
   it("returns null for an unreadable value", () => {
     expect(brisbaneDay("not a date")).toBeNull();
+  });
+});
+
+describe("the out-time sticker is red at every risk level", () => {
+  /**
+   * Lauren, 22/10/2026: "Love the time out note but need BRIGHT RED
+   * STICKER." It used to be slate when comfortable, which on a board of
+   * thirty dogs is a badge nobody sees.
+   */
+  const ALL: CollectByRisk[] = ["comfortable", "tight", "at_risk", "overdue"];
+
+  it("is red even when the dog is comfortably on track", () => {
+    expect(collectByTone("comfortable")).toContain("bg-red-");
+  });
+
+  it("is red for every risk level, with no amber or slate anywhere", () => {
+    for (const risk of ALL) {
+      const tone = collectByTone(risk);
+      expect(tone, risk).toContain("bg-red-");
+      expect(tone, risk).not.toMatch(/amber|slate|yellow|gray|grey/);
+    }
+  });
+
+  it("escalates by volume rather than by changing colour", () => {
+    // A ring when the sums stop working; a pulse and nothing quieter
+    // once the time has actually gone.
+    expect(collectByTone("comfortable")).not.toContain("ring");
+    expect(collectByTone("at_risk")).toContain("ring");
+    expect(collectByTone("overdue")).toContain("ring");
+    expect(collectByTone("overdue")).toContain("animate-pulse");
+    expect(collectByTone("at_risk")).not.toContain("animate-pulse");
+  });
+
+  it("only animates for viewers who allow motion", () => {
+    expect(collectByTone("overdue")).toContain("motion-safe:animate-pulse");
+    expect(collectByTone("overdue")).not.toMatch(/(^|\s)animate-pulse/);
+  });
+
+  it("keeps white text on every variant, so it stays legible", () => {
+    for (const risk of ALL) expect(collectByTone(risk), risk).toContain("text-white");
   });
 });

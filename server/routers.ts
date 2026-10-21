@@ -1884,6 +1884,41 @@ const workflowRouter = router({
         }
       }
 
+      /**
+       * The extras booked on each dog, so a groomer can see at a glance
+       * what else needs doing.
+       *
+       * Lauren, 22/10/2026: "need to show any add-ons on the workflow so
+       * groomers can see what else needs to be done at a glance."
+       *
+       * The board already had a line for this, bound to
+       * `appointments.workflow_add_ons` — a free-text field that is
+       * empty on all 15,659 rows and that nothing writes. The real
+       * extras live in `appointment_add_ons`, which the board had never
+       * queried, so Teeth Ultra Clean and Anal Glands were invisible to
+       * the person who has to do them.
+       */
+      const addOnsByAppointment = new Map<number, Array<{ name: string; quantity: number }>>();
+      if (appointmentIds.length > 0) {
+        const addOnRows = await db
+          .select({
+            appointmentId: appointmentAddOns.appointmentId,
+            name: appointmentAddOns.name,
+            quantity: appointmentAddOns.quantity,
+          })
+          .from(appointmentAddOns)
+          .where(and(
+            eq(appointmentAddOns.tenantId, tenantOf(ctx, input)),
+            inArray(appointmentAddOns.appointmentId, appointmentIds),
+          ))
+          .orderBy(asc(appointmentAddOns.id));
+        for (const addOn of addOnRows) {
+          const list = addOnsByAppointment.get(addOn.appointmentId) ?? [];
+          list.push({ name: addOn.name, quantity: addOn.quantity });
+          addOnsByAppointment.set(addOn.appointmentId, list);
+        }
+      }
+
       const petIdsOnBoard = Array.from(new Set(boardRows.map(row => row.petId).filter((id): id is number => id !== null)));
       const vipPetIds = new Set<number>();
       if (petIdsOnBoard.length > 0) {
@@ -1899,6 +1934,7 @@ const workflowRouter = router({
         groomStyleNote: latestGroomNoteByAppointment.get(row.id)?.note ?? null,
         groomStyleWarnings: latestGroomNoteByAppointment.get(row.id)?.warnings ?? null,
         isVipMember: row.petId ? vipPetIds.has(row.petId) : false,
+        addOns: addOnsByAppointment.get(row.id) ?? [],
       }));
     }),
 
