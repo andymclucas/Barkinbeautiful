@@ -32,7 +32,10 @@ import {
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
 import { deriveWorkflowTimingUpdate, type WorkflowState } from "./workflowTiming";
-import { BATH_RESOURCE_MINUTES, countOverlappingBookings, countSharedBathResourceOverlaps, isOnlineSlotAvailable } from "./onlineBookingRules";
+import { BATH_RESOURCE_MINUTES, countOverlappingBookings, countSharedBathResourceOverlaps } from "./onlineBookingRules";
+import { onlineDailyCapacityVerdict } from "../shared/onlineBookingCapacity";
+import { ESTIMATE_DISCLAIMER, estimateOnlineBookingPrice } from "../shared/onlineBookingPrice";
+import { notifyOnlineBooking } from "./onlineBookingNotify";
 import { getPetWeightBand, isEligibleOnlineBookingService } from "../shared/onlineBookingWeightEligibility";
 import { buildOnlineBookingNotes } from "../shared/onlineBookingPreview";
 import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
@@ -7471,7 +7474,7 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   if (!gateOpen && !options.preview) {
     return { available: false, reason: options.forMembershipSignup ? "Membership sign-up is not enabled yet" : "Online booking is not enabled yet" } as const;
   }
-  const [groomer] = await db.select({ onlineBookable: staff.onlineBookable, isActive: staff.isActive, slotLimit: staff.onlineMaxDogsPerSlot, dailyLimit: staff.onlineMaxDogsPerDay, services: staff.onlineServices })
+  const [groomer] = await db.select({ onlineBookable: staff.onlineBookable, isActive: staff.isActive, slotLimit: staff.onlineMaxDogsPerSlot, dailyLimit: staff.onlineMaxDogsPerDay, dailyClipCapacity: staff.dailyClipCapacity, services: staff.onlineServices })
     .from(staff).where(and(eq(staff.id, input.staffId), eq(staff.tenantId, input.tenantId))).limit(1);
   if (!groomer?.isActive || !groomer.onlineBookable) return { available: false, reason: "This groomer is not available for online booking" } as const;
   if (groomer.services) {
@@ -7489,22 +7492,33 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   const blockedReason = await blockoutReasonFor({ tenantId: input.tenantId, staffId: input.staffId, scheduledStart: input.scheduledStart, scheduledEnd });
   if (blockedReason) return { available: false, reason: `This groomer is unavailable that day (${blockedReason})` } as const;
   const activeStatuses = ["confirmed", "pending"] as const;
-  const staffAppointments = await db.select({ id: appointments.id, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd })
+  const staffAppointments = await db.select({ id: appointments.id, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd, serviceType: appointments.serviceType, bookedOnline: appointments.bookedOnline })
     .from(appointments).where(and(eq(appointments.tenantId, input.tenantId), eq(appointments.staffId, input.staffId), gte(appointments.scheduledStart, start), lte(appointments.scheduledStart, end), inArray(appointments.status, activeStatuses as any)));
   const overlappingBookings = countOverlappingBookings(staffAppointments, input.scheduledStart, scheduledEnd);
-  // A membership sign-up is not held to the daily ONLINE cap. That number
-  // rations how much of the diary strangers may take; every groomer here
-  // runs 7-10 dogs a day against a cap of 6, so applying it to a weekly
-  // paying member showed an empty picker on every date, for ever. The
-  // per-slot limit still applies, because one groomer cannot groom two
-  // dogs at once, and nothing is booked by picking a slot anyway — the
-  // request goes to a person who sees the whole year before approving.
-  // 0 is isOnlineSlotAvailable's existing "no daily cap" value.
-  const dailyLimit = options.forMembershipSignup ? 0 : groomer.dailyLimit;
-  if (!isOnlineSlotAvailable({ overlappingBookings, slotLimit: groomer.slotLimit, bookingsToday: staffAppointments.length, dailyLimit })) {
-    const reason = overlappingBookings >= Math.max(1, groomer.slotLimit) ? "That groomer’s time slot is full" : "That groomer has reached their daily online booking limit";
-    return { available: false, reason } as const;
+  // One groomer cannot groom two dogs at once, so the per-slot limit is
+  // absolute and is checked on its own.
+  if (overlappingBookings >= Math.max(1, groomer.slotLimit)) {
+    return { available: false, reason: "That groomer’s time slot is full" } as const;
   }
+  // A membership sign-up is not held to the daily ONLINE cap. That number
+  // rations how much of the diary strangers may take; nothing is booked by
+  // picking a slot anyway — the request goes to a person who sees the
+  // whole year before approving. 0 is the existing "no daily cap" value.
+  const dailyLimit = options.forMembershipSignup ? 0 : groomer.dailyLimit;
+  // The cap counts ONLY what the public booked; real capacity counts the
+  // whole day. shared/onlineBookingCapacity.ts has why those are two
+  // different numbers, and what counting them as one broke.
+  const dailyVerdict = onlineDailyCapacityVerdict({
+    onlineBookingsToday: staffAppointments.filter((a) => Boolean(Number(a.bookedOnline))).length,
+    dailyLimit,
+    serviceTypesToday: staffAppointments.map((a) => a.serviceType),
+    addingServiceType: input.serviceType,
+    // A sign-up is a weekly paying client the salon has agreed to take, so
+    // it is not held to the clip count either; a staff member approves it
+    // against the real diary before anything is booked.
+    dailyClipCapacity: options.forMembershipSignup ? null : groomer.dailyClipCapacity,
+  });
+  if (!dailyVerdict.available) return { available: false, reason: dailyVerdict.reason } as const;
   if (input.petWeightKg !== undefined && isLargeDogFullGroom(input.serviceType, input.petWeightKg)) {
     const salonAppointments = await db.select({
       staffId: appointments.staffId,
@@ -7626,6 +7640,54 @@ async function listRescheduleSlots(input: { tenantId: number; staffId: number; s
   return results.filter((r): r is NonNullable<typeof r> => r !== null);
 }
 
+/**
+ * The estimate for an online booking, from the salon's OWN catalogue.
+ *
+ * Andy's standing rule: "Only use pricing from Pricing & Services
+ * section in Groomigo." So this reads `pricing_services` and nothing
+ * else — no hardcoded ladder, no MoeGo lookup, no arithmetic on a band.
+ *
+ * Returns null whenever the catalogue has no row for that service and
+ * size. A null is stored as a null price and the client is shown no
+ * figure, which is the honest outcome: an invented number becomes a
+ * figure somebody was quoted.
+ */
+async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg: number }) {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const catalogue = await db.select({
+      id: pricingServices.id,
+      name: pricingServices.name,
+      legacyServiceType: pricingServices.legacyServiceType,
+      weightBand: pricingServices.weightBand,
+      priceMode: pricingServices.priceMode,
+      priceAud: pricingServices.priceAud,
+      sortOrder: pricingServices.sortOrder,
+    }).from(pricingServices).where(and(
+      eq(pricingServices.tenantId, input.tenantId),
+      eq(pricingServices.catalogueType, "service"),
+      eq(pricingServices.isActive, true),
+    ));
+    return estimateOnlineBookingPrice({
+      serviceType: input.serviceType,
+      weightKg: input.weightKg,
+      catalogue,
+    });
+  } catch (err) {
+    // A pricing failure must not lose the booking. No price is recoverable
+    // by a staff member in ten seconds; a refused booking is not.
+    console.error("[online-booking] could not price the booking", err);
+    return null;
+  }
+}
+
+/** Just the figure, for the column on the appointment row. */
+async function onlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg: number }) {
+  const estimate = await estimateOnlineBookingPriceFor(input);
+  return estimate?.known ? estimate.price : null;
+}
+
 const onlineBookingRouter = router({
   getSettings: protectedProcedure.input(z.object({ tenantId: z.number().default(1) })).query(async ({ input, ctx }) => {
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
@@ -7667,6 +7729,37 @@ const onlineBookingRouter = router({
     if (ctx.user.role !== "admin") throw new Error("Administrator access required");
     return listAvailableOnlineSlots(input, { preview: true });
   }),
+  /**
+   * What a dog of this weight costs for this service, as an estimate.
+   *
+   * Public, because the figure has to appear on the booking form before
+   * anyone has identified themselves — the whole point is that someone
+   * can see roughly what a groom costs without ringing up. It reads the
+   * salon's own Pricing & Services catalogue and nothing else, and it
+   * leaks no client data: weight and service in, a catalogue price out.
+   *
+   * It always returns the disclaimer alongside a figure, so a caller
+   * cannot render the price without it.
+   */
+  priceEstimate: publicProcedure.input(z.object({
+    tenantId: z.number().default(1),
+    serviceType: z.enum(SERVICE_TYPES),
+    weightKg: z.coerce.number().min(0).max(80),
+  })).query(async ({ input, ctx }) => {
+    const tenantId = tenantOf(ctx, input);
+    const estimate = await estimateOnlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: input.weightKg });
+    if (estimate?.known) {
+      return { price: estimate.price, range: null, reason: null, disclaimer: ESTIMATE_DISCLAIMER };
+    }
+    // No single figure. The range and the reason go out instead, and the
+    // disclaimer with them: a range is still a statement about money.
+    return {
+      price: null,
+      range: estimate?.range ?? null,
+      reason: estimate?.reason ?? null,
+      disclaimer: estimate?.range ? ESTIMATE_DISCLAIMER : null,
+    };
+  }),
   validateSlot: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80), scheduledStart: z.coerce.date() })).mutation(async ({ input }) => {
     if (!isEligibleOnlineBookingService(input.serviceType, input.petWeightKg)) throw new Error("Select a valid dog weight to see eligible booking services");
     return checkOnlineCapacity(input);
@@ -7683,8 +7776,12 @@ const onlineBookingRouter = router({
     const petWeight = pet.weightKg ?? pet.weight;
     if (!isEligibleOnlineBookingService(input.serviceType, petWeight)) throw new Error("This pet needs a recorded weight between 0 and 80kg before online booking");
     const capacity = await checkOnlineCapacity({ ...input, petWeightKg: Number(petWeight) }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
-    const [result] = await db.insert(appointments).values({ tenantId: tenantOf(ctx, input), clientId: input.clientId, petId: input.petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes: input.notes ?? null, status: "pending", workflowState: "scheduled" });
-    return { success: true, appointmentId: (result as any).insertId as number };
+    const tenantId = tenantOf(ctx, input);
+    const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: Number(petWeight) });
+    const [result] = await db.insert(appointments).values({ tenantId, clientId: input.clientId, petId: input.petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes: input.notes ?? null, price: estimatePrice, status: "pending", workflowState: "scheduled", bookedOnline: true });
+    const appointmentId = (result as any).insertId as number;
+    const delivery = await notifyOnlineBooking({ tenantId, clientId: input.clientId, petId: input.petId, appointmentId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, weightKg: Number(petWeight), estimatePrice });
+    return { success: true, appointmentId, estimatePrice, disclaimer: estimatePrice ? ESTIMATE_DISCLAIMER : null, delivery };
   }),
   createGuest: publicProcedure.input(z.object({
     tenantId: z.number().default(1),
@@ -7719,8 +7816,13 @@ const onlineBookingRouter = router({
     }
     const sizeNote = `Online booking size: ${weightBand.label} (${input.weightKg}kg).`;
     const notes = [input.notes?.trim(), sizeNote].filter(Boolean).join("\n");
-    const [result] = await db.insert(appointments).values({ tenantId: tenantOf(ctx, input), clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, status: "pending", workflowState: "scheduled" });
-    return { success: true, appointmentId: (result as any).insertId as number };
+    const tenantId = tenantOf(ctx, input);
+    const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: input.weightKg });
+    const [result] = await db.insert(appointments).values({ tenantId, clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, price: estimatePrice, status: "pending", workflowState: "scheduled", bookedOnline: true });
+    const appointmentId = (result as any).insertId as number;
+    // The booking row is written. Nothing below may throw it away.
+    const delivery = await notifyOnlineBooking({ tenantId, clientId: client.id, petId, appointmentId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, weightKg: input.weightKg, estimatePrice });
+    return { success: true, appointmentId, estimatePrice, disclaimer: estimatePrice ? ESTIMATE_DISCLAIMER : null, delivery };
   }),
   createPreviewGuest: protectedProcedure.input(z.object({
     tenantId: z.number().default(1),
@@ -7755,8 +7857,16 @@ const onlineBookingRouter = router({
       petId = (createdPet as any).insertId as number;
     }
     const notes = buildOnlineBookingNotes({ notes: input.notes, sizeLabel: weightBand.label, weightKg: input.weightKg, preview: true });
-    const [result] = await db.insert(appointments).values({ tenantId: tenantOf(ctx, input), clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, status: "pending", workflowState: "scheduled" });
-    return { success: true, appointmentId: (result as any).insertId as number, preview: true };
+    const tenantId = tenantOf(ctx, input);
+    const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: input.weightKg });
+    // Marked booked_online, because it IS the online path — the point of
+    // the preview is to exercise what a stranger would get, bell row and
+    // confirmation included. It therefore also consumes one of the day's
+    // online slots until it is deleted, which is the honest cost.
+    const [result] = await db.insert(appointments).values({ tenantId, clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, price: estimatePrice, status: "pending", workflowState: "scheduled", bookedOnline: true });
+    const appointmentId = (result as any).insertId as number;
+    const delivery = await notifyOnlineBooking({ tenantId, clientId: client.id, petId, appointmentId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, weightKg: input.weightKg, estimatePrice, preview: true });
+    return { success: true, appointmentId, preview: true, estimatePrice, disclaimer: estimatePrice ? ESTIMATE_DISCLAIMER : null, delivery };
   }),
   // Returns all MoeGo pet IDs stored in Groomigo — used by the pet-code extraction script.
   listAllMoegoIds: operationalProcedure

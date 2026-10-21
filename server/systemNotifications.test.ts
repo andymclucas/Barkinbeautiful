@@ -106,3 +106,38 @@ describe("staff kinds", () => {
     expect(n.detail).not.toMatch(/undefined|null|For \./);
   });
 });
+
+/**
+ * The public booking itself in is the only row in this feed written by a
+ * stranger, and the only one where a number nobody has checked decides
+ * what the salon charges.
+ */
+describe("online_booking_received", () => {
+  it("names the client and the dog, because that is how the salon reads a row", () => {
+    const n = describeSystemNotification({
+      kind: "online_booking_received",
+      clientFirstName: "Jane", clientLastName: "Smith",
+      petNames: ["Rosie"],
+      detail: "Classic groom, 12kg as entered, estimated $95.00.",
+    });
+    expect(n.title).toBe("Jane Smith booked Rosie in online");
+    expect(n.detail).toContain("Classic groom, 12kg as entered, estimated $95.00.");
+  });
+
+  it("tells whoever opens it that the weight is unverified", () => {
+    // The whole hazard of online booking in one line: the owner's own
+    // figure picked the duration and the price.
+    const n = describeSystemNotification({ kind: "online_booking_received" });
+    expect(n.detail).toContain("check the weight");
+  });
+
+  it("still reads as a sentence with no dog and no detail", () => {
+    const n = describeSystemNotification({ kind: "online_booking_received" });
+    expect(n.title).toBe("A client booked in online");
+    expect(n.detail).not.toMatch(/undefined|null/);
+  });
+
+  it("is a known kind", () => {
+    expect(isSystemNotificationKind("online_booking_received")).toBe(true);
+  });
+});

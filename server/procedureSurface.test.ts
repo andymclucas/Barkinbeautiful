@@ -83,6 +83,9 @@ const PUBLIC = [
   // public booking one, and it books nothing — sign-ups still need
   // approving.
   "onlineBookingRouter.listMembershipSignupSlots",
+  // Weight and service in, a catalogue price out. No client data, and the
+  // figure has to appear before anyone has identified themselves.
+  "onlineBookingRouter.priceEstimate",
   "onlineBookingRouter.validateSlot",
   "salonSignupRouter.create",
   "salonSignupRouter.previewSlug",
@@ -239,13 +242,13 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(326);
+    expect(surface).toHaveLength(327);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
   it("exposes exactly these procedures without authentication", () => {
     expect(idsOfKind(surface, "public")).toEqual(PUBLIC);
-    expect(PUBLIC).toHaveLength(49);
+    expect(PUBLIC).toHaveLength(50);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

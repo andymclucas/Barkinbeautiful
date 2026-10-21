@@ -1,0 +1,15 @@
+-- Which appointments the public booked themselves.
+--
+-- Without this the online daily cap counts EVERY appointment a groomer
+-- has, so "max 6 online bookings a day" actually means "no online
+-- bookings once the groomer has 6 dogs". Against real load — Charlotte
+-- 7-10 a day, Megs 7-9 — that is 22 of 40 groomer-days already full
+-- before the page is even switched on, and Charlotte never bookable.
+--
+-- NOT NULL with a default, so every existing row reads false: nothing
+-- that came from MoeGo or was booked by staff was booked online, which
+-- is true. MySQL fills the column on the ALTER, so no backfill is needed
+-- and the old code never names it.
+--
+-- One statement, so a failure is recorded truthfully in the ledger.
+ALTER TABLE `appointments` ADD COLUMN `booked_online` BOOLEAN NOT NULL DEFAULT FALSE;

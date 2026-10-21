@@ -502,6 +502,15 @@ export const appointments = mysqlTable("appointments", {
   paymentStatus: mysqlEnum("payment_status", ["unpaid", "partial", "paid"]),
   status: mysqlEnum("status", ["confirmed", "pending", "cancelled", "no_show"]).default("confirmed").notNull(),
   moegoAppointmentId: varchar("moego_appointment_id", { length: 100 }),
+  /**
+   * The public booked this themselves.
+   *
+   * The online daily cap rations how much of the diary strangers may
+   * take. Without this flag it counted every appointment the groomer
+   * had, so the cap meant "no online bookings once the day has 6 dogs"
+   * rather than "up to 6 online bookings".
+   */
+  bookedOnline: boolean("booked_online").default(false).notNull(),
   sessionId: varchar("session_id", { length: 64 }),
   recurringGroupId: varchar("recurring_group_id", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1238,7 +1247,7 @@ export type AppointmentPayment = typeof appointmentPayments.$inferSelect;
 export const systemNotifications = mysqlTable("system_notifications", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull(),
-  kind: mysqlEnum("kind", ["client_portal_activated", "staff_invited", "staff_account_created", "membership_signup_requested"]).notNull(),
+  kind: mysqlEnum("kind", ["client_portal_activated", "staff_invited", "staff_account_created", "membership_signup_requested", "online_booking_received"]).notNull(),
   clientId: int("client_id"),
   readAt: timestamp("read_at"),
   readByUserId: int("read_by_user_id"),

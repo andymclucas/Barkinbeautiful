@@ -24,6 +24,17 @@ export const SYSTEM_NOTIFICATION_KINDS = [
    * plainly rather than reading like another thing already dealt with.
    */
   "membership_signup_requested",
+  /**
+   * The public booked themselves in.
+   *
+   * This IS work, like a sign-up request: the appointment lands at
+   * `status: "pending"`, so somebody has to look at it and confirm. It
+   * is also the only row in this feed written by a stranger, which is
+   * why the detail line carries the dog's weight as the OWNER typed it.
+   * That number picked the duration and the price estimate, and it is
+   * the thing most likely to be wrong.
+   */
+  "online_booking_received",
 ] as const;
 export type SystemNotificationKind = (typeof SYSTEM_NOTIFICATION_KINDS)[number];
 
@@ -85,6 +96,19 @@ export function describeSystemNotification(row: SystemNotificationRow): { title:
           dogs ? `For ${dogs}.` : null,
           row.detail,
           "Nothing is charged and no appointments are held until you approve it.",
+        ].filter(Boolean).join(" "),
+      };
+    }
+    case "online_booking_received": {
+      const dogs = listNames(row.petNames);
+      return {
+        title: dogs ? `${who} booked ${dogs} in online` : `${who} booked in online`,
+        // Weight, service and the estimate, written at booking time. The
+        // weight is the owner's own figure and nobody has checked it, so
+        // the copy says "as entered" rather than stating it as fact.
+        detail: [
+          row.detail,
+          "Confirm it, and check the weight before the price is held to.",
         ].filter(Boolean).join(" "),
       };
     }

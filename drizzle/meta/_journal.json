@@ -932,6 +932,20 @@
       "when": 1791834787547,
       "tag": "0132_staff_view_sections",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "5",
+      "when": 1791834787548,
+      "tag": "0133_appointments_booked_online",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "5",
+      "when": 1791834787549,
+      "tag": "0134_notification_online_booking",
+      "breakpoints": true
     }
   ]
 }

@@ -26,7 +26,7 @@ export const PET_WEIGHT_BANDS: readonly PetWeightBand[] = [
   { id: "giant", label: "Giant", minKg: 36, maxKg: 80 },
 ] as const;
 
-const ONLINE_BOOKING_SERVICE_LABELS: Record<OnlineBookingServiceType, string> = {
+export const ONLINE_BOOKING_SERVICE_LABELS: Record<OnlineBookingServiceType, string> = {
   classic_groom: "Classic Groom",
   styled_groom: "Styled Groom",
   bath_only: "Bath Only",
@@ -65,4 +65,15 @@ export function getWeightEligibilityMessage(weightKg: number | string | null | u
   const band = getPetWeightBand(weightKg);
   if (band) return `Showing services for ${getWeightBandDisplay(band)}.`;
   return "Enter your dog’s weight (0–80kg) to see the services available for their size.";
+}
+
+/**
+ * The service as a client should read it, for a confirmation email or
+ * text. Falls back to the raw value rather than an empty string: a
+ * booking for a service nobody has labelled yet should still produce a
+ * sentence the client can understand.
+ */
+export function onlineBookingServiceLabel(serviceType: string): string {
+  return ONLINE_BOOKING_SERVICE_LABELS[serviceType as OnlineBookingServiceType]
+    ?? serviceType.replace(/_/g, " ");
 }
