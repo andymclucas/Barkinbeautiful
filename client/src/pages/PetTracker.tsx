@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { useParams } from "wouter";
 import { Dog, Phone, CheckCircle2, Circle, Clock } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
-import { clientFacingStage, stepStatus, stageIcon, GROOMING_STEPS } from "@shared/groomingStage";
+import { clientFacingStage, stepStatus, stageIcon, stageColourFor, GROOMING_STEPS } from "@shared/groomingStage";
 
 export default function PetTracker() {
   const params = useParams<{ token: string }>();
@@ -34,6 +34,7 @@ export default function PetTracker() {
   // states. The table here only mapped six, so a dog under the dryer was
   // shown to its owner as "Appointment Booked".
   const stage = clientFacingStage(data.workflowState);
+  const stageColour = stageColourFor(stage);
   const isReady = data.workflowState === "ready";
   const isComplete = data.workflowState === "complete";
 
@@ -67,9 +68,15 @@ export default function PetTracker() {
           </p>
         </div>
 
-        {/* Current stage highlight */}
-        <div className={`rounded-2xl p-5 text-center ${isReady ? "bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-300 dark:border-emerald-800" : "bg-primary/5 border-2 border-primary/20"}`}>
-          <p className={`text-lg font-bold font-display ${isReady ? "text-emerald-700 dark:text-emerald-300" : "text-primary"}`}>
+        {/* Current stage highlight, in that stage's own colour. The
+            emerald special-case for `ready` is gone: emerald IS the ready
+            colour on the board, so it now comes from the same place as
+            the other five instead of being hardcoded here. */}
+        <div
+          className="rounded-2xl p-5 text-center border-2"
+          style={{ backgroundColor: `${stageColour}14`, borderColor: `${stageColour}55` }}
+        >
+          <p className="text-lg font-bold font-display" style={{ color: stageColour }}>
             {stage.label}
           </p>
           <p className="text-sm text-muted-foreground mt-1">{stage.description}</p>
