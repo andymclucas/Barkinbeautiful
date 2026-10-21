@@ -62,7 +62,19 @@ export type OnlineBookingNotifyInput = {
   weightKg: number;
   /** The stored estimate, exactly as written to appointments.price. */
   estimatePrice: string | null;
-  /** A preview booking an admin made to test the flow. */
+  /**
+   * A preview booking an admin made to test the flow.
+   *
+   * **Silences the email and the text.** `/book/preview` tells whoever
+   * is running the test, in those words, that "no client messages,
+   * automatic confirmations or live booking release will occur" — and
+   * the form lets them type any details they like, including a real
+   * client's. Texting a client because somebody was trying the form is
+   * not recoverable.
+   *
+   * The bell row still gets written: it is internal, it is how the test
+   * proves the notification works, and it carries "(test booking)".
+   */
   preview?: boolean;
 };
 
@@ -157,8 +169,10 @@ export async function notifyOnlineBooking(
     salonPhone,
   };
 
-  // 2. The email.
-  if (!client?.email) {
+  // 2. The email. Not for a preview — see `preview` on the input type.
+  if (input.preview) {
+    out.skipped.push("preview: no client email");
+  } else if (!client?.email) {
     out.skipped.push("no email address");
   } else {
     try {
@@ -177,7 +191,9 @@ export async function notifyOnlineBooking(
   // 3. The text. Gated on SMS_AUTOMATION_ENABLED like every other
   //    automated send here, so a staging deploy does not text a real
   //    person who filled in a form on the real site.
-  if (process.env.SMS_AUTOMATION_ENABLED !== "true") {
+  if (input.preview) {
+    out.skipped.push("preview: no client SMS");
+  } else if (process.env.SMS_AUTOMATION_ENABLED !== "true") {
     out.skipped.push("SMS automation disabled");
   } else if (!client?.phone) {
     out.skipped.push("no phone number");
