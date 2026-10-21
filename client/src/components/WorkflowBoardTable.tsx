@@ -1,4 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { WORKFLOW_STAGE_COLOURS } from "@shared/workflowStageColours";
 import { workflowStateLabel, workflowStateShortLabel } from "@shared/workflowStateLabels";
 import { PetAvatar } from "@/components/PetAvatar";
 import { StaffAvatar } from "@/components/StaffAvatar";
@@ -94,16 +95,16 @@ export function formatDuration(minutes: number | null) {
 
 // ─── Stage definitions ────────────────────────────────────────────────────────
 export const STAGES = [
-  { key: "scheduled",   label: "Waiting",    short: "WAIT",  colour: "#94a3b8" },
-  { key: "checked_in",  label: "Checked In", short: "IN",    colour: "#06b6d4" },
-  { key: "waiting_for_bath", label: workflowStateLabel("waiting_for_bath"), short: workflowStateShortLabel("waiting_for_bath"), colour: "#64748b" },
-  { key: "bathing",     label: "Bath",       short: "BATH",  colour: "#3b82f6" },
-  { key: "waiting_for_dry", label: "Wait for Dry", short: "WAIT DRY", colour: "#7c3aed" },
-  { key: "drying",      label: "Drying",     short: "DRY",   colour: "#8b5cf6" },
-  { key: "waiting_for_groom", label: "Wait for Groom", short: "WAIT GROOM", colour: "#b45309" },
-  { key: "grooming",    label: "Groom",      short: "GROOM", colour: "#f59e0b" },
-  { key: "ready",       label: "Ready",      short: "READY", colour: "#10b981" },
-  { key: "complete",    label: "Out",        short: "OUT",   colour: "#64748b" },
+  { key: "scheduled",   label: "Waiting",    short: "WAIT",  colour: WORKFLOW_STAGE_COLOURS.scheduled },
+  { key: "checked_in",  label: "Checked In", short: "IN",    colour: WORKFLOW_STAGE_COLOURS.checked_in },
+  { key: "waiting_for_bath", label: workflowStateLabel("waiting_for_bath"), short: workflowStateShortLabel("waiting_for_bath"), colour: WORKFLOW_STAGE_COLOURS.waiting_for_bath },
+  { key: "bathing",     label: "Bath",       short: "BATH",  colour: WORKFLOW_STAGE_COLOURS.bathing },
+  { key: "waiting_for_dry", label: "Wait for Dry", short: "WAIT DRY", colour: WORKFLOW_STAGE_COLOURS.waiting_for_dry },
+  { key: "drying",      label: "Drying",     short: "DRY",   colour: WORKFLOW_STAGE_COLOURS.drying },
+  { key: "waiting_for_groom", label: "Wait for Groom", short: "WAIT GROOM", colour: WORKFLOW_STAGE_COLOURS.waiting_for_groom },
+  { key: "grooming",    label: "Groom",      short: "GROOM", colour: WORKFLOW_STAGE_COLOURS.grooming },
+  { key: "ready",       label: "Ready",      short: "READY", colour: WORKFLOW_STAGE_COLOURS.ready },
+  { key: "complete",    label: "Out",        short: "OUT",   colour: WORKFLOW_STAGE_COLOURS.complete },
 ] as const;
 export const TERMINAL_STAGES = [
   { key: "cancelled", label: "Cancelled", short: "CANCEL", colour: "#dc2626" },

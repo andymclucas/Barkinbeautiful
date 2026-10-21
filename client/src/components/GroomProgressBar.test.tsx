@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { GroomProgressBar } from "./GroomProgressBar";
+import { GROOMING_STEPS } from "@shared/groomingStage";
+import { WORKFLOW_STAGE_COLOURS } from "@shared/workflowStageColours";
 
 function statuses() {
   return Array.from(screen.getByTestId("groom-progress").querySelectorAll("li")).map((li) => ({
@@ -15,9 +17,21 @@ describe("GroomProgressBar", () => {
     expect(statuses().map((s) => s.step)).toEqual([
       "checked_in", "bath", "dry", "groom", "ready", "collected",
     ]);
+    // Both label variants are in the DOM; CSS picks one by width, which
+    // jsdom does not apply. getAllByText, so this does not fail on the
+    // steps whose short and full labels are the same string.
     for (const label of ["Checked in", "Bathing", "Drying", "Grooming", "Ready for pickup", "Picked up"]) {
-      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.getAllByText(label).length, label).toBeGreaterThan(0);
     }
+  });
+
+  it("carries a short label for a phone and the full one for a wider screen", () => {
+    // At 375px a sixth of the width is ~50px, and "Ready for pickup"
+    // wrapped to two ragged lines against neighbours that did not.
+    render(<GroomProgressBar workflowState="ready" petName="Rosie" />);
+    const ready = screen.getByTestId("groom-progress").querySelector('[data-step="ready"]')!;
+    expect(ready.querySelector(".sm\\:hidden")?.textContent).toBe("Ready");
+    expect(ready.querySelector(".hidden")?.textContent).toBe("Ready for pickup");
   });
 
   it("marks exactly one step current", () => {
@@ -97,6 +111,53 @@ describe("GroomProgressBar", () => {
       const { container, unmount } = render(<GroomProgressBar workflowState={state} petName="Rosie" />);
       expect(container.textContent, state).not.toMatch(/\d{1,2}[:.]\d{2}|minute|hour|\bam\b|\bpm\b/i);
       unmount();
+    }
+  });
+});
+
+describe("the colours match the staff board", () => {
+  function barFor(step: string) {
+    return screen.getByTestId("groom-progress").querySelector(`[data-step="${step}"] > div`) as HTMLElement;
+  }
+
+  it("gives each lit step its own stage colour, not one brand purple", () => {
+    // Andy, 21/10/2026: "Make the different grooming stages more evident
+    // and colourful. Possibly to match the workflow board colour scheme."
+    render(<GroomProgressBar workflowState="ready" petName="Rosie" />);
+    const lit = ["checked_in", "bath", "dry", "groom", "ready"].map((k) => barFor(k).style.backgroundColor);
+    // Five distinct colours, not five copies of one.
+    expect(new Set(lit).size).toBe(5);
+  });
+
+  it("uses the exact hexes the board uses", () => {
+    render(<GroomProgressBar workflowState="ready" petName="Rosie" />);
+    const rgb = (hex: string) => {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+    };
+    expect(barFor("checked_in").style.backgroundColor).toBe(rgb(WORKFLOW_STAGE_COLOURS.checked_in));
+    expect(barFor("bath").style.backgroundColor).toBe(rgb(WORKFLOW_STAGE_COLOURS.bathing));
+    expect(barFor("dry").style.backgroundColor).toBe(rgb(WORKFLOW_STAGE_COLOURS.drying));
+    expect(barFor("groom").style.backgroundColor).toBe(rgb(WORKFLOW_STAGE_COLOURS.grooming));
+    expect(barFor("ready").style.backgroundColor).toBe(rgb(WORKFLOW_STAGE_COLOURS.ready));
+  });
+
+  it("leaves an upcoming step grey rather than a faded version of its colour", () => {
+    // A washed-out amber reads as "this is happening, dimly".
+    render(<GroomProgressBar workflowState="bathing" petName="Rosie" />);
+    expect(barFor("groom").style.backgroundColor).toBe("");
+    expect(barFor("groom").className).toContain("bg-muted");
+  });
+
+  it("rings the current step so it reads as here, not merely coloured", () => {
+    render(<GroomProgressBar workflowState="drying" petName="Rosie" />);
+    expect(barFor("dry").className).toContain("ring-2");
+    expect(barFor("bath").className).not.toContain("ring-2");
+  });
+
+  it("has a colour for every one of the six", () => {
+    for (const step of GROOMING_STEPS) {
+      expect(step.colour, step.key).toMatch(/^#[0-9a-f]{6}$/i);
     }
   });
 });

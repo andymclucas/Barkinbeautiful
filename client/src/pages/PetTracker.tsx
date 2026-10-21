@@ -94,26 +94,41 @@ export default function PetTracker() {
             const done = status === "done";
             const active = status === "current";
             return (
-              <div key={step.key} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${active ? "bg-primary/5 border border-primary/20" : done ? "opacity-60" : "opacity-40"}`}>
+              // Each row wears its stage's colour from the staff board, so
+              // this list and the salon's own screens agree at a glance.
+              <div
+                key={step.key}
+                className={`flex items-center gap-3 p-3 rounded-xl transition-all ${active ? "border" : done ? "" : "opacity-40"}`}
+                style={active ? { backgroundColor: `${step.colour}14`, borderColor: `${step.colour}55` } : undefined}
+              >
                 <div className="flex-shrink-0">
                   {done ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                    <CheckCircle2 className="h-5 w-5" style={{ color: step.colour }} />
                   ) : active ? (
-                    <div className="h-5 w-5 rounded-full border-2 border-primary bg-primary/20 flex items-center justify-center">
-                      <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                    <div
+                      className="h-5 w-5 rounded-full border-2 flex items-center justify-center"
+                      style={{ borderColor: step.colour, backgroundColor: `${step.colour}33` }}
+                    >
+                      <div className="h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: step.colour }} />
                     </div>
                   ) : (
                     <Circle className="h-5 w-5 text-muted-foreground/40" />
                   )}
                 </div>
                 <div>
-                  <p className={`text-sm font-medium ${active ? "text-primary" : done ? "text-foreground" : "text-muted-foreground"}`}>
+                  <p
+                    className={`text-sm font-medium ${active ? "font-semibold" : done ? "text-foreground" : "text-muted-foreground"}`}
+                    style={active ? { color: step.colour } : undefined}
+                  >
                     {step.label}
                   </p>
                 </div>
                 {active && (
                   <div className="ml-auto">
-                    <span className="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
+                    <span
+                      className="text-xs rounded-full px-2 py-0.5 font-semibold text-white"
+                      style={{ backgroundColor: step.colour }}
+                    >
                       Now
                     </span>
                   </div>

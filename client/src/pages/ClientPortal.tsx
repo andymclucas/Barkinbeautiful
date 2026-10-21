@@ -4,7 +4,7 @@ import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE } from "@shared/portalChat";
-import { clientFacingStage, isGroomInProgress, stageIcon } from "@shared/groomingStage";
+import { clientFacingStage, isGroomInProgress, stageIcon, stageColourFor } from "@shared/groomingStage";
 import { GroomProgressBar } from "@/components/GroomProgressBar";
 import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle, CreditCard, Loader2, TriangleAlert, Lock, ChevronRight } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -778,7 +778,7 @@ export default function ClientPortal() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <p className="text-lg font-semibold text-primary">{stage.label}</p>
+              <p className="text-lg font-semibold" style={{ color: stageColourFor(stage) }}>{stage.label}</p>
               <p className="text-sm text-muted-foreground">{stage.description}</p>
             </div>
             <GroomProgressBar workflowState={appointment.workflowState} petName={appointment.petName} />

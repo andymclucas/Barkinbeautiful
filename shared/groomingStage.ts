@@ -34,13 +34,21 @@
  * every state. A switch to a ticked-off list needs no new data.
  */
 
+import { WORKFLOW_STAGE_COLOURS } from "./workflowStageColours";
+
+/**
+ * Each step carries the colour its stage wears on the staff board, so a
+ * client and a groomer are looking at the same amber. `short` is for a
+ * phone, where "Ready for pickup" across a sixth of a 375px screen
+ * wraps to two ragged lines.
+ */
 export const GROOMING_STEPS = [
-  { key: "checked_in", label: "Checked in", icon: "🚪" },
-  { key: "bath", label: "Bathing", icon: "🛁" },
-  { key: "dry", label: "Drying", icon: "💨" },
-  { key: "groom", label: "Grooming", icon: "✂️" },
-  { key: "ready", label: "Ready for pickup", icon: "🐾" },
-  { key: "collected", label: "Picked up", icon: "✅" },
+  { key: "checked_in", label: "Checked in", short: "Checked in", icon: "🚪", colour: WORKFLOW_STAGE_COLOURS.checked_in },
+  { key: "bath", label: "Bathing", short: "Bath", icon: "🛁", colour: WORKFLOW_STAGE_COLOURS.bathing },
+  { key: "dry", label: "Drying", short: "Dry", icon: "💨", colour: WORKFLOW_STAGE_COLOURS.drying },
+  { key: "groom", label: "Grooming", short: "Groom", icon: "✂️", colour: WORKFLOW_STAGE_COLOURS.grooming },
+  { key: "ready", label: "Ready for pickup", short: "Ready", icon: "🐾", colour: WORKFLOW_STAGE_COLOURS.ready },
+  { key: "collected", label: "Picked up", short: "Picked up", icon: "✅", colour: WORKFLOW_STAGE_COLOURS.complete },
 ] as const;
 
 export type GroomingStepKey = (typeof GROOMING_STEPS)[number]["key"];
@@ -165,4 +173,13 @@ export function isGroomInProgress(workflowState: string | null | undefined): boo
  */
 export function stageIcon(stage: ClientFacingStage): string {
   return stage.onBar ? GROOMING_STEPS[stage.step].icon : "\u{1F43E}";
+}
+
+/**
+ * The colour of the step a dog is on, for the headline above the bar.
+ * Slate before it arrives and when the appointment is off track, which
+ * is the same thing the board shows for those states.
+ */
+export function stageColourFor(stage: ClientFacingStage): string {
+  return stage.onBar ? GROOMING_STEPS[stage.step].colour : WORKFLOW_STAGE_COLOURS.scheduled;
 }

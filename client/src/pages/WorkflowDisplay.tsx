@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { WORKFLOW_STAGE_COLOURS } from "@shared/workflowStageColours";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -17,15 +18,15 @@ import { WorkflowBoardTable } from "@/components/WorkflowBoardTable";
 import { getActiveTimeZone } from "@/lib/timezone";
 
 const STAGES = [
-  { key: "scheduled", label: "Waiting", colour: "#94a3b8" },
-  { key: "checked_in", label: "Checked in", colour: "#06b6d4" },
-  { key: "waiting_for_bath", label: workflowStateLabel("waiting_for_bath"), colour: "#64748b" },
-  { key: "bathing", label: "Bath", colour: "#3b82f6" },
-  { key: "waiting_for_dry", label: "Wait Dry", colour: "#7c3aed" },
-  { key: "drying", label: "Dry", colour: "#8b5cf6" },
-  { key: "waiting_for_groom", label: "Wait Groom", colour: "#b45309" },
-  { key: "grooming", label: "Groom", colour: "#f59e0b" },
-  { key: "ready", label: "Ready", colour: "#10b981" },
+  { key: "scheduled", label: "Waiting", colour: WORKFLOW_STAGE_COLOURS.scheduled },
+  { key: "checked_in", label: "Checked in", colour: WORKFLOW_STAGE_COLOURS.checked_in },
+  { key: "waiting_for_bath", label: workflowStateLabel("waiting_for_bath"), colour: WORKFLOW_STAGE_COLOURS.waiting_for_bath },
+  { key: "bathing", label: "Bath", colour: WORKFLOW_STAGE_COLOURS.bathing },
+  { key: "waiting_for_dry", label: "Wait Dry", colour: WORKFLOW_STAGE_COLOURS.waiting_for_dry },
+  { key: "drying", label: "Dry", colour: WORKFLOW_STAGE_COLOURS.drying },
+  { key: "waiting_for_groom", label: "Wait Groom", colour: WORKFLOW_STAGE_COLOURS.waiting_for_groom },
+  { key: "grooming", label: "Groom", colour: WORKFLOW_STAGE_COLOURS.grooming },
+  { key: "ready", label: "Ready", colour: WORKFLOW_STAGE_COLOURS.ready },
 ] as const;
 
 const INTER_STAGE_WAIT_STATES = new Set(["waiting_for_bath", "waiting_for_dry", "waiting_for_groom"]);

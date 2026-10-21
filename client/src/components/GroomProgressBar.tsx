@@ -6,15 +6,23 @@ import { clientFacingStage, stepStatus, GROOMING_STEPS } from "@shared/groomingS
  * Checked-in · Bathing · Drying · Grooming · Ready for pickup · Picked up,
  * which is the layout Andy asked for on 21/10/2026.
  *
+ * **Each step wears its stage's colour from the staff board** — cyan,
+ * blue, violet, amber, emerald, slate — rather than all six being the
+ * same brand purple. Andy, seeing it on a phone: "Make the different
+ * grooming stages more evident and colourful. Possibly to match the
+ * workflow board colour scheme." The colours come from
+ * shared/workflowStageColours.ts, which the board reads too, so the two
+ * cannot drift apart.
+ *
+ * Built for a phone first, because that is where an owner checks on
+ * their dog. At 375px each of six columns gets about 50px, so the full
+ * labels wrapped to two ragged lines of different heights; the bar uses
+ * `short` there and the full label from `sm:` up. The headline above it
+ * always spells the stage out in full, so nothing is lost.
+ *
  * Extracted from ClientPortal so it has plain props and can be rendered
  * in a test — the portal page itself is 1,000 lines of tRPC and cannot
- * be. The Pet Tracker draws the same six as a vertical list with its own
- * styling; both read their state from `clientFacingStage`, which is
- * where the twelve-to-six collapse and the hiding of the inter-stage
- * queues actually live.
- *
- * A bar rather than a list of times, deliberately: it says where things
- * are up to without promising when they will finish.
+ * be. The Pet Tracker draws the same six as a vertical list.
  */
 export function GroomProgressBar({
   workflowState,
@@ -33,35 +41,47 @@ export function GroomProgressBar({
 
   return (
     <ol
-      className={`flex items-stretch gap-1 ${className}`}
+      className={`flex items-stretch gap-1.5 ${className}`}
       aria-label={`${petName}'s progress`}
       data-testid="groom-progress"
     >
       {GROOMING_STEPS.map((step, idx) => {
         const status = stepStatus(stage, idx);
+        const lit = status !== "upcoming";
         return (
           <li
             key={step.key}
-            className="flex-1"
+            className="flex-1 min-w-0"
             aria-current={status === "current" ? "step" : undefined}
             data-step={step.key}
             data-status={status}
           >
             <div
-              className={`h-1.5 rounded-full ${
-                status === "done" ? "bg-primary" : status === "current" ? "bg-primary/60" : "bg-muted"
+              className={`h-2 rounded-full transition-colors ${lit ? "" : "bg-muted"} ${
+                status === "current" ? "ring-2 ring-offset-1 ring-offset-background" : ""
               }`}
+              style={
+                lit
+                  ? {
+                      backgroundColor: step.colour,
+                      // A done step is the colour flat; the current one is
+                      // the same colour ringed, so it reads as "here" at a
+                      // glance without a second hue to decode.
+                      ...(status === "current" ? { ["--tw-ring-color" as string]: step.colour } : {}),
+                    }
+                  : undefined
+              }
             />
             <p
-              className={`mt-1.5 text-[11px] leading-tight ${
-                status === "current"
-                  ? "font-semibold text-primary"
-                  : status === "done"
-                    ? "text-muted-foreground"
-                    : "text-muted-foreground/60"
+              className={`mt-1.5 text-center text-[10px] leading-tight sm:text-[11px] ${
+                status === "current" ? "font-semibold" : status === "done" ? "text-muted-foreground" : "text-muted-foreground/50"
               }`}
+              style={status === "current" ? { color: step.colour } : undefined}
             >
-              {step.label}
+              {/* Short on a phone, full from sm: up. Same element, so a
+                  screen reader is not read two labels for one step. */}
+              <span className="sm:hidden">{step.short}</span>
+              <span className="hidden sm:inline">{step.label}</span>
             </p>
           </li>
         );
