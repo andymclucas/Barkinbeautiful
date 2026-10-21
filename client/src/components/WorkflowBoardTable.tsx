@@ -7,6 +7,8 @@ import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workfl
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { collectByStatus, collectByTone } from "@shared/collectBy";
 import { shortAddOnLabel } from "@shared/addOnBoardLabel";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { DogBoardHoverCard } from "@/components/DogBoardHoverCard";
 import { parsePetCodes } from "@shared/petCodes";
 import { joinedContactBadge } from "@shared/appointmentContact";
 import { PetAlertButton } from "@/components/PetAlertButton";
@@ -530,6 +532,12 @@ export function WorkflowBoardTable({
                           />
                         </div>
                         <div className="min-w-0">
+                          {/* Hovering the name shows the whole dog: alert,
+                              out-time, add-ons, grooming notes, today's
+                              notes. Same source as the click-through
+                              dialog — see shared/dogBoardSummary.ts. */}
+                          <HoverCard openDelay={150} closeDelay={80}>
+                          <HoverCardTrigger asChild>
                           <button
                             className={`font-semibold text-sm leading-tight truncate text-left transition-colors flex items-center gap-1 ${readOnly ? "cursor-default" : "hover:text-primary hover:underline"}`}
                             onClick={readOnly ? undefined : () => {
@@ -542,6 +550,16 @@ export function WorkflowBoardTable({
                                 staffName: appt.staffName ?? null,
                                 notes: appt.notes ?? null,
                                 workflowState: appt.workflowState,
+                                // Everything the hover shows, so the dialog
+                                // can show the same and more.
+                                serviceType: appt.serviceType,
+                                collectBy: appt.collectBy ?? null,
+                                petSizeBand: (appt as any).petSizeBand ?? null,
+                                addOns: (appt as any).addOns ?? [],
+                                groomStyleNote: (appt as any).groomStyleNote ?? null,
+                                groomStyleWarnings: (appt as any).groomStyleWarnings ?? null,
+                                workflowAddOns: appt.workflowAddOns ?? null,
+                                petMoegoCodeLabels: (appt as any).petMoegoCodeLabels ?? null,
                                 checkedInAt: appt.checkedInAt ?? null,
                                 stageStartedAt: appt.stageStartedAt ?? null,
                                 bathingStartedAt: appt.bathingStartedAt ?? null,
@@ -570,6 +588,11 @@ export function WorkflowBoardTable({
                               </span>
                             )}
                           </button>
+                          </HoverCardTrigger>
+                          <HoverCardContent side="right" align="start" className="w-auto p-2">
+                            <DogBoardHoverCard row={appt as any} />
+                          </HoverCardContent>
+                          </HoverCard>
                           <p className="text-[11px] text-muted-foreground truncate">{appt.clientLastName}</p>
                           {(() => {
                             // "Tx + Rochelle" in green marker on the

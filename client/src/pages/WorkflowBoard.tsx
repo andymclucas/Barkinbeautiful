@@ -24,6 +24,8 @@ import { StaffAvatar } from "@/components/StaffAvatar";
 import { useDisplayTheme } from "@/lib/displayTheme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { BreedInput } from "@/components/BreedInput";
+import { dogBoardSummary } from "@shared/dogBoardSummary";
+import { collectByTone } from "@shared/collectBy";
 import {
   WorkflowBoardTable, formatDuration, fmtTime, stageColour,
   STAGES, TERMINAL_STAGES, ALL_STAGE_OPTIONS, NEXT_STAGE, PREV_STAGE,
@@ -885,7 +887,7 @@ export default function WorkflowBoard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setPetPopup(null)}>
           <div className="absolute inset-0 bg-black/40" />
           <div
-            className="relative bg-card rounded-2xl shadow-2xl max-w-sm w-full p-5 space-y-3"
+            className="relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-card p-5 shadow-2xl space-y-3"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-2">
@@ -926,6 +928,75 @@ export default function WorkflowBoard() {
                 <span className="text-xs text-muted-foreground">Groomer: <strong>{petPopup.staffName}</strong></span>
               )}
             </div>
+
+            {/* What the groom actually is: out-time, extras, and how this
+                dog is cut. Above the timing block because somebody opening
+                this wants the work, not the stopwatch. All of it from
+                shared/dogBoardSummary.ts, the same source as the hover
+                card, so the two cannot disagree. */}
+            {(() => {
+              const s = dogBoardSummary(petPopup as any);
+              return (
+                <>
+                  {s.collect && (
+                    <div className="flex items-center gap-2" data-testid="popup-collect">
+                      <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-extrabold ${collectByTone(s.collect.risk)}`}>
+                        <Clock className="h-3 w-3" /> {s.collect.label}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {s.collect.minutesLeft < 0
+                          ? `${Math.abs(s.collect.minutesLeft)} min past the time this dog had to leave`
+                          : `${s.collect.minutesLeft} min left, about ${s.collect.minutesNeeded} min of work to do`}
+                      </span>
+                    </div>
+                  )}
+
+                  {s.addOnBadges.length > 0 && (
+                    <div className="space-y-1" data-testid="popup-addons">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add-ons</p>
+                      <div className="flex flex-wrap gap-1">
+                        {(petPopup as any).addOns?.map((a: { name: string; quantity: number }, i: number) => (
+                          <span
+                            key={`${a.name}-${i}`}
+                            className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold bg-amber-100 text-amber-900 ring-1 ring-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:ring-amber-800"
+                          >
+                            {a.name}{a.quantity > 1 && ` ×${a.quantity}`}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(s.styleNote || s.styleWarnings) && (
+                    <div className="space-y-1" data-testid="popup-style">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Grooming notes</p>
+                      {s.styleNote && (
+                        <p className="whitespace-pre-wrap rounded-lg border bg-violet-50/60 p-2.5 text-sm dark:bg-violet-950/40">
+                          {s.styleNote}
+                        </p>
+                      )}
+                      {s.styleWarnings && (
+                        <p className="text-sm text-amber-800 dark:text-amber-300">{s.styleWarnings}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {s.codes.length > 0 && (
+                    <div className="flex flex-wrap gap-1" data-testid="popup-codes">
+                      {s.codes.map((code: string) => (
+                        <span key={code} className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold">{code}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  {s.boardNote && (
+                    <p className="text-xs text-muted-foreground" data-testid="popup-board-note">
+                      Board note: {s.boardNote}
+                    </p>
+                  )}
+                </>
+              );
+            })()}
 
             {/* Workflow timing */}
             <div className="rounded-lg border bg-muted p-3 space-y-2">
