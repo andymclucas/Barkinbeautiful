@@ -161,3 +161,89 @@ describe("the colours match the staff board", () => {
     }
   });
 });
+
+describe("the Groomigo dog that walks the bar", () => {
+  const dog = () => screen.getByTestId("groom-dog");
+
+  /**
+   * The browser normalises calc(), so asserting the literal string is
+   * brittle. This reduces it to a comparable number by treating the
+   * column width as one unit: px terms plus the coefficients of
+   * (100% - 30px). What matters is the ordering, not the spelling.
+   */
+  function position(): number {
+    const left = dog().style.left;
+    const px = [...left.matchAll(/(-?[\d.]+)px/g)]
+      .map((m) => Number(m[1]))
+      .filter((n) => n !== 30)        // the gap total inside (100% - 30px)
+      .reduce((a, b) => a + b, 0);
+    const coef = [...left.matchAll(/(-?[\d.]+)\s*\*\s*\(100% - 30px\)/g)]
+      .reduce((a, m) => a + Number(m[1]), 0);
+    return px + coef * 1000;          // scaled so the column term dominates
+  }
+
+  it("starts over the first step, not off the end of the bar", () => {
+    render(<GroomProgressBar workflowState="checked_in" petName="Rosie" />);
+    const p = position();
+    expect(p).toBeGreaterThan(0);
+    // Half a column in, so well inside the first sixth.
+    expect(p).toBeLessThan(1000 / 6);
+  });
+
+  it("moves further along at each stage, and never back", () => {
+    const seen: number[] = [];
+    for (const state of ["checked_in", "bathing", "drying", "grooming", "ready", "complete"]) {
+      const { unmount } = render(<GroomProgressBar workflowState={state} petName="Rosie" />);
+      seen.push(position());
+      unmount();
+    }
+    expect(seen).toHaveLength(6);
+    for (let i = 1; i < seen.length; i++) {
+      expect(seen[i], `step ${i} is not past step ${i - 1}`).toBeGreaterThan(seen[i - 1]);
+    }
+    // And it finishes inside the bar rather than past its right edge.
+    expect(seen[5]).toBeLessThan(1000);
+  });
+
+  it("does not move for a delay the client is not shown", () => {
+    // waiting_for_dry and drying are the same step, so the dog must not
+    // twitch between them — that would leak the queue it exists to hide.
+    const { unmount } = render(<GroomProgressBar workflowState="waiting_for_dry" petName="Rosie" />);
+    const queued = position();
+    unmount();
+    render(<GroomProgressBar workflowState="drying" petName="Rosie" />);
+    expect(position()).toBe(queued);
+  });
+
+  it("takes the colour of the step it is standing on", () => {
+    const { unmount } = render(<GroomProgressBar workflowState="grooming" petName="Rosie" />);
+    const amber = dog().style.color;
+    unmount();
+    render(<GroomProgressBar workflowState="ready" petName="Rosie" />);
+    expect(dog().style.color).not.toBe(amber);
+    expect(amber).not.toBe("");
+  });
+
+  it("is hidden from screen readers, so the step is not announced twice", () => {
+    render(<GroomProgressBar workflowState="bathing" petName="Rosie" />);
+    expect(dog().getAttribute("aria-hidden")).toBe("true");
+    expect(dog().closest("[aria-hidden='true']")).not.toBeNull();
+  });
+
+  it("only animates when the viewer allows motion", () => {
+    // A marker sliding across the screen is exactly what prefers-reduced-
+    // motion is for. motion-safe: means it simply appears in place.
+    render(<GroomProgressBar workflowState="bathing" petName="Rosie" />);
+    const cls = dog().getAttribute("class") ?? "";
+    expect(cls).toContain("motion-safe:transition-");
+    expect(cls).not.toMatch(/(^|\s)transition-/);
+  });
+
+  it("is not drawn at all when there is no bar", () => {
+    for (const state of ["scheduled", "cancelled", "no_show"]) {
+      const { unmount } = render(<GroomProgressBar workflowState={state} petName="Rosie" />);
+      expect(screen.queryByTestId("groom-dog"), state).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+});
