@@ -1,84 +1,120 @@
 /**
  * What a client is told their dog is up to.
  *
- * The salon runs a twelve-state workflow; a client does not care about
- * the difference between "waiting for dry" and "drying" except that one
- * means their dog is in a queue. So the twelve collapse to six steps,
- * with a flag for "in the queue for this step rather than having it
- * done".
+ * The salon runs a twelve-state workflow. A client gets six steps, and
+ * Andy named them on 21/10/2026:
+ *
+ *   Checked-in · Bathing · Drying · Grooming · Ready for pickup · Picked up
+ *
+ * with one rule about what they must NOT see: "Client doesn't need to
+ * see the potential delays in between each stage of the grooming cycle."
+ *
+ * That rule is why `waiting_for_dry` reads as Drying and
+ * `waiting_for_groom` reads as Grooming, rather than "Waiting to be
+ * dried" and "Waiting for the groomer" as they used to. A bathed dog in
+ * the dryer queue is, from the owner's side, a dog being dried. The
+ * queue is the salon's business: it is real, it is on the Pet Tracker's
+ * staff board and in the workflow timing analytics, and it is of no use
+ * to someone waiting at home except as something to worry about.
+ *
+ * `waiting_for_bath` is the exception and keeps its own description.
+ * That stage is not a queue — the dog's nails, pads and sanitary are
+ * being done before the bath. Staff call it Bath Prep too (see
+ * shared/workflowStateLabels.ts). It sits on the Bathing step, because
+ * the next thing to happen is the bath.
  *
  * No times, deliberately. The salon runs behind on a bad day and a
  * promised pickup time that slips is worse than no time at all — that is
  * a phone call, not a progress bar.
  *
- * This existed only inside PetTracker.tsx and mapped six of the twelve
- * states, so `drying`, `waiting_for_dry`, `waiting_for_bath` and
- * `waiting_for_groom` all fell through to index 0 and told the client
- * "Appointment Booked" while their dog was under the dryer.
+ * Andy also flagged a likely change: "This may change to show when these
+ * things are completed rather than in progress." `completedThrough` is
+ * here for that. It is the last step genuinely FINISHED, which is a
+ * different question from which step is current, and the two differ for
+ * every state. A switch to a ticked-off list needs no new data.
  */
 
 export const GROOMING_STEPS = [
-  { key: "booked", label: "Booked", icon: "📅" },
   { key: "checked_in", label: "Checked in", icon: "🚪" },
-  { key: "bath", label: "Bath", icon: "🛁" },
+  { key: "bath", label: "Bathing", icon: "🛁" },
   { key: "dry", label: "Drying", icon: "💨" },
   { key: "groom", label: "Grooming", icon: "✂️" },
   { key: "ready", label: "Ready for pickup", icon: "🐾" },
+  { key: "collected", label: "Picked up", icon: "✅" },
 ] as const;
 
 export type GroomingStepKey = (typeof GROOMING_STEPS)[number]["key"];
 
+/** How one step on the bar should render. */
+export type StepStatus = "done" | "current" | "upcoming";
+
 export type ClientFacingStage = {
-  /** Index into GROOMING_STEPS, or -1 when the appointment is off-track. */
+  /**
+   * Index into GROOMING_STEPS for the step the dog is on now, or -1
+   * before it arrives and when the appointment is off track.
+   */
   step: number;
   stepKey: GroomingStepKey | null;
-  /** In the queue for this step rather than having it under way. */
-  waiting: boolean;
+  /**
+   * Index of the last step actually COMPLETED, or -1 when none is. Not
+   * simply `step - 1`: a collected dog has finished all six.
+   */
+  completedThrough: number;
   label: string;
   description: string;
   /** Nothing more will happen today. */
   finished: boolean;
   /** Cancelled or a no-show: show the state, not a progress bar. */
   offTrack: boolean;
+  /** The dog is in the salon now, so the bar is worth showing. */
+  onBar: boolean;
 };
 
 const S = (
   step: number,
-  waiting: boolean,
+  completedThrough: number,
   label: string,
   description: string,
   finished = false,
 ): ClientFacingStage => ({
   step,
   stepKey: step >= 0 ? GROOMING_STEPS[step].key : null,
-  waiting,
+  completedThrough,
   label,
   description,
   finished,
   offTrack: false,
+  onBar: step >= 0,
 });
 
 const STAGES: Record<string, ClientFacingStage> = {
-  scheduled: S(0, false, "Booked", "The appointment is confirmed."),
-  checked_in: S(1, false, "Checked in", "Your dog has arrived and is settling in."),
-  // "Bath prep", not "waiting": the dog is having its nails, pads and
-  // sanitary done before the bath. Telling an owner their dog is waiting,
-  // when somebody is in fact working on it, undersells the salon and reads
-  // as a delay. Staff call this stage Bath Prep too — see
-  // shared/workflowStateLabels.ts.
-  waiting_for_bath: S(1, true, "Bath prep", "Having their nails, pads and tidy-up done before the bath."),
-  bathing: S(2, false, "Having a bath", "Your dog is being washed."),
-  waiting_for_dry: S(2, true, "Waiting to be dried", "Bathed, and waiting for the dryer."),
-  drying: S(3, false, "Being dried", "Your dog is being dried off."),
-  waiting_for_groom: S(3, true, "Waiting for the groomer", "Clean, dry, and waiting for the groomer."),
-  grooming: S(4, false, "With the groomer", "Your dog is being groomed."),
-  ready: S(5, false, "Ready for pickup", "All done and waiting for you.", true),
-  complete: S(5, false, "Picked up", "Collected — see you next time.", true),
+  // Not on the bar: nothing has happened, and six grey dots on the day
+  // of a booking invite the question "why has nothing started".
+  scheduled: { ...S(-1, -1, "Booked", "The appointment is confirmed."), onBar: false },
+
+  checked_in: S(0, -1, "Checked in", "Your dog has arrived and is settling in."),
+
+  // Real work, not a queue — hence its own description on the Bathing step.
+  waiting_for_bath: S(1, 0, "Bath prep", "Having their nails, pads and tidy-up done before the bath."),
+  bathing: S(1, 0, "Having a bath", "Your dog is being washed."),
+
+  // Bathed and in the dryer queue. The client is told "drying", because
+  // that is the next thing that happens and the queue is not theirs to
+  // carry. Indistinguishable from `drying` on purpose.
+  waiting_for_dry: S(2, 1, "Being dried", "Bathed, and on to the dryer."),
+  drying: S(2, 1, "Being dried", "Your dog is being dried off."),
+
+  // Same again: clean, dry, and the groomer is next.
+  waiting_for_groom: S(3, 2, "With the groomer", "Clean, dry, and on to the groomer."),
+  grooming: S(3, 2, "With the groomer", "Your dog is being groomed."),
+
+  ready: S(4, 3, "Ready for pickup", "All done and waiting for you.", true),
+  complete: S(5, 5, "Picked up", "Collected — see you next time.", true),
 };
 
 const OFF_TRACK: Record<string, ClientFacingStage> = {
-  cancelled: { step: -1, stepKey: null, waiting: false, label: "Cancelled", description: "This appointment was cancelled.", finished: true, offTrack: true },
-  no_show: { step: -1, stepKey: null, waiting: false, label: "Missed", description: "This appointment was missed.", finished: true, offTrack: true },
+  cancelled: { step: -1, stepKey: null, completedThrough: -1, label: "Cancelled", description: "This appointment was cancelled.", finished: true, offTrack: true, onBar: false },
+  no_show: { step: -1, stepKey: null, completedThrough: -1, label: "Missed", description: "This appointment was missed.", finished: true, offTrack: true, onBar: false },
 };
 
 /**
@@ -91,8 +127,42 @@ export function clientFacingStage(workflowState: string | null | undefined): Cli
   return OFF_TRACK[workflowState] ?? STAGES[workflowState] ?? STAGES.scheduled;
 }
 
-/** True once there is something worth watching today. */
+/**
+ * How one step renders, given where the dog is.
+ *
+ * Driven by `completedThrough` rather than by `step`, so "done" means
+ * finished and nothing else. That is the distinction Andy flagged might
+ * matter later, and it costs nothing to get right now.
+ */
+export function stepStatus(stage: ClientFacingStage, index: number): StepStatus {
+  if (index <= stage.completedThrough) return "done";
+  if (index === stage.step) return "current";
+  return "upcoming";
+}
+
+/**
+ * True when the dog is in the salon and the bar should be on screen.
+ *
+ * **Includes `ready`.** It used to exclude it, because `ready` carries
+ * `finished: true` and the old check tested that flag — so a dog sitting
+ * on the bench waiting to be collected dropped off the client's live
+ * card altogether, which is the one moment they most want to see. "Ready
+ * for pickup" is one of the six steps; a dog that has reached it has not
+ * left.
+ *
+ * `complete` is excluded: the dog has gone home.
+ */
 export function isGroomInProgress(workflowState: string | null | undefined): boolean {
   const stage = clientFacingStage(workflowState);
-  return !stage.offTrack && !stage.finished && stage.step > 0;
+  if (stage.offTrack || !stage.onBar) return false;
+  return stage.stepKey !== "collected";
+}
+
+/**
+ * The emoji for the step a dog is on, or a paw before it arrives and
+ * when the appointment is off track. Here rather than at the call sites
+ * so the `step === -1` case is handled once.
+ */
+export function stageIcon(stage: ClientFacingStage): string {
+  return stage.onBar ? GROOMING_STEPS[stage.step].icon : "\u{1F43E}";
 }

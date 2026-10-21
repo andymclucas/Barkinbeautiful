@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { useParams } from "wouter";
 import { Dog, Phone, CheckCircle2, Circle, Clock } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
-import { clientFacingStage, GROOMING_STEPS } from "@shared/groomingStage";
+import { clientFacingStage, stepStatus, stageIcon, GROOMING_STEPS } from "@shared/groomingStage";
 
 export default function PetTracker() {
   const params = useParams<{ token: string }>();
@@ -34,7 +34,6 @@ export default function PetTracker() {
   // states. The table here only mapped six, so a dog under the dryer was
   // shown to its owner as "Appointment Booked".
   const stage = clientFacingStage(data.workflowState);
-  const currentStageIdx = stage.step;
   const isReady = data.workflowState === "ready";
   const isComplete = data.workflowState === "complete";
 
@@ -58,7 +57,7 @@ export default function PetTracker() {
         {/* Pet info */}
         <div className="text-center space-y-2">
           <div className={`text-6xl transition-all duration-500 ${isReady ? "animate-bounce" : ""}`}>
-            {stage.step >= 0 ? GROOMING_STEPS[stage.step].icon : "ℹ️"}
+            {stage.onBar ? stageIcon(stage) : "ℹ️"}
           </div>
           <h1 className="text-2xl font-bold font-display">
             {data.petName} is {isReady ? "ready!" : isComplete ? "all done!" : "in the salon"}
@@ -89,8 +88,11 @@ export default function PetTracker() {
         {/* Progress steps */}
         <div className="space-y-3">
           {GROOMING_STEPS.map((step, idx) => {
-            const done = idx < currentStageIdx;
-            const active = idx === currentStageIdx;
+            // "done" means finished, not merely behind us — see
+            // stepStatus in shared/groomingStage.ts.
+            const status = stepStatus(stage, idx);
+            const done = status === "done";
+            const active = status === "current";
             return (
               <div key={step.key} className={`flex items-center gap-3 p-3 rounded-xl transition-all ${active ? "bg-primary/5 border border-primary/20" : done ? "opacity-60" : "opacity-40"}`}>
                 <div className="flex-shrink-0">
@@ -112,7 +114,7 @@ export default function PetTracker() {
                 {active && (
                   <div className="ml-auto">
                     <span className="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
-                      {stage.waiting ? "Next up" : "Now"}
+                      Now
                     </span>
                   </div>
                 )}
