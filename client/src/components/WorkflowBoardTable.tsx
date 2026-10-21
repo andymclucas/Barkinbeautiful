@@ -258,7 +258,11 @@ function StaffCell({ value, staffList, onSave, placeholder, readOnly }: {
               <StaffAvatar photoUrl={selected.photoUrl} name={selected.name} colourHex={selected.colourHex} className="h-5 w-5" ring={false} />
               <span className="truncate">{selected.name.split(" ")[0]}</span>
             </span>
-          ) : <span className="text-white/40">{placeholder ?? "—"}</span>}
+          ) : (
+            // Was text-white/40 — white at 40% on a light row, so the Bath
+            // and Dry columns read as empty rather than as unassigned.
+            <span className="text-muted-foreground">{placeholder ?? "—"}</span>
+          )}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
@@ -374,13 +378,13 @@ export function WorkflowBoardTable({
                 <th className="px-2 py-2.5 text-center w-12 bg-violet-900 text-violet-50 border-r border-violet-700">Tag</th>
                 <th className="px-2 py-2.5 text-left min-w-[140px]">Dog / Owner</th>
                 <th className="px-2 py-2.5 text-center w-14">Family</th>
-                <th className="px-2 py-2.5 text-left w-28">Breed</th>
+                <th className="px-2 py-2.5 text-left w-36">Breed</th>
                 <th className="px-2 py-2.5 text-left min-w-[100px]">Service</th>
                 <th className="px-2 py-2.5 text-center w-24">Bath</th>
                 <th className="px-2 py-2.5 text-center w-24 bg-slate-800 text-slate-50 border-x border-slate-600">Bath priority</th>
                 <th className="px-2 py-2.5 text-center w-24">Dry</th>
                 <th className="px-2 py-2.5 text-center w-24">Groomer</th>
-                <th className="px-2 py-2.5 text-center min-w-[160px]">Stage</th>
+                <th className="px-2 py-2.5 text-center min-w-[400px]">Stage</th>
                 <th className="px-2 py-2.5 text-center w-16">Out</th>
               </tr>
               {/* Drag-drop target row */}
@@ -716,8 +720,13 @@ export function WorkflowBoardTable({
                       })()}
                     </td>
 
-                    <td className="px-2 py-1.5 text-xs text-muted-foreground truncate max-w-[112px]">
-                      {appt.petBreed ?? "—"}
+                    {/* Wraps instead of truncating: "West Highland White
+                        Terrier" read as "West Highland ..." and a groomer
+                        cannot tell two Maltese crosses apart from that. */}
+                    <td className="px-2 py-1.5 text-xs leading-tight text-muted-foreground">
+                      <span className="block max-w-[140px]" title={appt.petBreed ?? undefined}>
+                        {appt.petBreed ?? "—"}
+                      </span>
                     </td>
 
                     {/* Service */}
@@ -811,8 +820,15 @@ export function WorkflowBoardTable({
                     <td className="px-2 py-1.5">
                       <div className="flex items-center gap-1">
                         {/* Current stage badge */}
+                        {/* Fixed width, so every row's dropdown and advance
+                            button start at the same x. This was the only
+                            content-sized element before a flex-1 button, so
+                            "GROOM 17:59" and "WAIT" pushed the rest of the
+                            row to different places and nothing lined up
+                            down the board. 136px fits the widest case,
+                            "WAIT GROOM" with a running timer. */}
                         <span
-                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold text-white flex-shrink-0"
+                          className="inline-flex w-[136px] flex-shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold text-white"
                           style={{ background: stage.colour }}
                           title={stageTimer ? `${stage.label}: ${stageTimer} in this stage` : stage.label}
                         >
@@ -846,7 +862,10 @@ export function WorkflowBoardTable({
                               STAGES, so the bar, the legend, the advance button
                               and this control cannot drift apart. */}
                           <SelectTrigger
-                            className="h-7 w-[116px] border-0 px-2 text-[10px] font-semibold text-white shadow-sm hover:opacity-90 focus:ring-2 focus:ring-offset-1"
+                            /* 128px and 11px: "Wait for Groom" is the
+                               longest label and was being cut to "Wait for
+                               Groo" at the old size. */
+                            className="h-7 w-[128px] flex-shrink-0 whitespace-nowrap border-0 px-2 text-[11px] font-semibold text-white shadow-sm hover:opacity-90 focus:ring-2 focus:ring-offset-1"
                             style={{ background: stageColour(appt.workflowState) }}
                             aria-label={`Manually change ${appt.petName ?? "pet"} workflow stage`}
                             title="Change stage, pause between stages, or record a cancelled or no-show outcome. Timing is updated automatically."
@@ -871,7 +890,11 @@ export function WorkflowBoardTable({
                             ))}
                           </SelectContent>
                         </Select>
-                        {/* Advance button */}
+                        {/* Advance button. The slot is always there, even
+                            at the end of the line, so a completed row does
+                            not collapse and pull its neighbours out of
+                            line. */}
+                        {!nextStage && <span className="flex-1" aria-hidden="true" />}
                         {nextStage && (
                           <button
                             className="flex-1 text-[11px] font-semibold px-2 py-1 rounded border transition-colors hover:opacity-90 active:scale-95 text-white"
@@ -883,10 +906,13 @@ export function WorkflowBoardTable({
                             → {STAGES.find(s => s.key === nextStage)?.short}
                           </button>
                         )}
-                        {/* Revert button */}
+                        {/* Revert arrow, same idea: a dog at the first
+                            stage has nothing to go back to, and the gap
+                            used to shift that row's button 24px right. */}
+                        {!prevStage && <span className="w-6 flex-shrink-0" aria-hidden="true" />}
                         {prevStage && (
                           <button
-                            className="text-[10px] text-muted-foreground hover:text-muted-foreground px-1 py-1 rounded hover:bg-muted transition-colors"
+                            className="w-6 flex-shrink-0 rounded py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
                             onClick={() => revertStage(appt)}
                             disabled={updateStage.isPending}
                             title="Go back one stage"
