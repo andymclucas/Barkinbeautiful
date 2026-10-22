@@ -656,8 +656,13 @@ export default function Clients() {
                   <Select value={petForm.species} onValueChange={v => setPetForm(p => ({ ...p, species: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      {/* Cat is gone: Barkin' Beautiful grooms dogs
+                          (Andy, 23/10/2026). "Other" stays for the
+                          occasional non-dog that still needs recording.
+                          The database enum keeps 'cat' — 20 rows still
+                          hold it, and dropping a value a row uses is a
+                          data migration, not a tidy-up. */}
                       <SelectItem value="dog">Dog</SelectItem>
-                      <SelectItem value="cat">Cat</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
