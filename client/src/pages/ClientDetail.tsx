@@ -570,6 +570,7 @@ export default function ClientDetail() {
   );
 
   const { client, pets, memberships, appointments, payments, photos } = data;
+  const styleNotes = data.styleNotes ?? [];
   // Whether Stripe could actually charge this client off-session. Same
   // predicate the server uses before starting a subscription, so the button
   // offered here and the call it makes cannot disagree.
@@ -1134,7 +1135,7 @@ export default function ClientDetail() {
                           reading them back meant opening bookings one at
                           a time — so nobody did, and what happened last
                           groom never reached the groomer doing this one. */}
-                      <PetNoteArchive appointments={appointments} petId={pet.id} petName={pet.name} />
+                      <PetNoteArchive appointments={appointments} styleNotes={styleNotes} petId={pet.id} petName={pet.name} />
                       <div className="flex items-start gap-2 overflow-x-auto pb-1">
                         {(photosByPet[pet.id] ?? []).slice(0, 6).map(photo => (
                           <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer" className="block shrink-0 group" title={photo.caption ?? "View groom photo"}>

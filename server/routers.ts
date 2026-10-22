@@ -2991,7 +2991,7 @@ const clientsRouter = router({
 
   getProfile: protectedProcedure
     .input(z.object({ clientId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
       // Client details
@@ -3125,6 +3125,48 @@ const clientsRouter = router({
         .where(eq(appointments.clientId, input.clientId))
         .orderBy(desc(appointments.scheduledStart))
         .limit(100);
+
+      /**
+       * How each dog has been cut, for the notes archive on its card.
+       *
+       * Keyed off the PET rather than the appointment, because a style
+       * note outlives the booking it was written on — `appointmentId` is
+       * nullable and is deliberately nulled when a booking is deleted
+       * (see the restore snapshot above). Going through appointments
+       * would silently drop every note whose groom was later cancelled,
+       * which is exactly the history a groomer wants.
+       *
+       * Staff-only, like the appointment notes beside them: neither is
+       * selected by buildClientPortalPayload.
+       */
+      const clientPetIds = clientPets.map((pet) => pet.id);
+      const clientStyleNotes = clientPetIds.length === 0 ? [] : await db
+        .select({
+          id: groomStyleNotes.id,
+          petId: groomStyleNotes.petId,
+          createdAt: groomStyleNotes.createdAt,
+          note: groomStyleNotes.note,
+          warnings: groomStyleNotes.warnings,
+          serviceType: groomStyleNotes.serviceType,
+          bladeSize: groomStyleNotes.bladeSize,
+          combSize: groomStyleNotes.combSize,
+          bodyLength: groomStyleNotes.bodyLength,
+          headStyle: groomStyleNotes.headStyle,
+          faceStyle: groomStyleNotes.faceStyle,
+          earStyle: groomStyleNotes.earStyle,
+          legStyle: groomStyleNotes.legStyle,
+          tailStyle: groomStyleNotes.tailStyle,
+          staffName: staff.name,
+        })
+        .from(groomStyleNotes)
+        .leftJoin(staff, eq(groomStyleNotes.staffId, staff.id))
+        .where(and(
+          eq(groomStyleNotes.tenantId, tenantOf(ctx)),
+          inArray(groomStyleNotes.petId, clientPetIds),
+        ))
+        .orderBy(desc(groomStyleNotes.createdAt))
+        .limit(200);
+
       // Membership payments (last 50)
       const membershipIds = clientMemberships.map(m => m.id);
       let payments: { id: number; amount: string; status: string; paidAt: Date | null; membershipName: string | null }[] = [];
@@ -3143,7 +3185,7 @@ const clientsRouter = router({
           .orderBy(desc(membershipPayments.paidAt))
           .limit(50);
       }
-      return { client, contacts: additionalContacts, pets: clientPets, memberships: clientMemberships, appointments: clientAppointments, payments, photos: clientPhotos, petMembershipEvents: clientPetMembershipEvents };
+      return { client, contacts: additionalContacts, pets: clientPets, memberships: clientMemberships, appointments: clientAppointments, styleNotes: clientStyleNotes, payments, photos: clientPhotos, petMembershipEvents: clientPetMembershipEvents };
     }),
 
   /**

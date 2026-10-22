@@ -15,16 +15,18 @@ describe("PetNoteArchive", () => {
     expect(screen.getByTestId("note-archive-empty").textContent).toContain("No groomer notes on Waffle yet");
   });
 
-  it("shows the most recent note in full", () => {
-    // The last note is what matters with a dog on the table.
+  it("shows the most recent notes in full", () => {
+    // Two, not one: the newest is often a style note with the groom it
+    // describes right under it, and showing one would hide what
+    // actually happened that day.
     render(<PetNoteArchive appointments={APPTS} petId={10} petName="Waffle" />);
     expect(screen.getByText("very matted in ears, had to demat")).toBeInTheDocument();
-    expect(screen.getAllByTestId("note-archive-entry")).toHaveLength(1);
+    expect(screen.getAllByTestId("note-archive-entry")).toHaveLength(2);
   });
 
   it("folds the older ones away behind a count", () => {
     render(<PetNoteArchive appointments={APPTS} petId={10} petName="Waffle" />);
-    expect(screen.getByTestId("note-archive-more").textContent).toContain("Show 2 earlier notes");
+    expect(screen.getByTestId("note-archive-more").textContent).toContain("Show 1 earlier note");
     expect(screen.queryByText("First groom, nervous")).not.toBeInTheDocument();
   });
 
@@ -39,14 +41,14 @@ describe("PetNoteArchive", () => {
   });
 
   it("says 'note' not 'notes' when only one is hidden", () => {
-    render(<PetNoteArchive appointments={APPTS.slice(0, 2)} petId={10} petName="Waffle" />);
+    render(<PetNoteArchive appointments={APPTS} petId={10} petName="Waffle" />);
     expect(screen.getByTestId("note-archive-more").textContent).toContain("Show 1 earlier note");
     expect(screen.getByTestId("note-archive-more").textContent).not.toContain("notes");
   });
 
   it("dates each note in Brisbane time and names the groomer", () => {
     render(<PetNoteArchive appointments={APPTS} petId={10} petName="Waffle" />);
-    const entry = screen.getByTestId("note-archive-entry");
+    const [entry] = screen.getAllByTestId("note-archive-entry");
     expect(entry.textContent).toContain("22 Oct 2026");
     expect(entry.textContent).toContain("Brooklyn Cossey");
   });
@@ -58,7 +60,7 @@ describe("PetNoteArchive", () => {
     expect(screen.getByTestId("note-archive").textContent).toContain("Staff only");
   });
 
-  it("shows no earlier-notes button when there is only one", () => {
+  it("shows no earlier-notes button when everything already fits", () => {
     render(<PetNoteArchive appointments={APPTS.slice(1, 2)} petId={10} petName="Waffle" />);
     expect(screen.queryByTestId("note-archive-more")).not.toBeInTheDocument();
   });
@@ -67,5 +69,50 @@ describe("PetNoteArchive", () => {
     const mixed = [...APPTS, { id: 9, petId: 11, scheduledStart: "2026-10-23T00:00:00Z", notes: "Different dog" }];
     render(<PetNoteArchive appointments={mixed} petId={10} petName="Waffle" />);
     expect(screen.queryByText("Different dog")).not.toBeInTheDocument();
+  });
+});
+
+const STYLE = [{
+  id: 100, petId: 10, createdAt: "2026-10-23T00:00:00Z",
+  note: "Owner wants it shorter next time",
+  bladeSize: "#4", faceStyle: "Teddy bear",
+  warnings: "Hates the dryer on his face",
+  staffName: "Brooklyn Cossey",
+}];
+
+describe("style notes in the archive", () => {
+  it("shows them alongside the appointment notes", () => {
+    render(<PetNoteArchive appointments={APPTS} styleNotes={STYLE} petId={10} petName="Waffle" />);
+    expect(screen.getByText("Owner wants it shorter next time")).toBeInTheDocument();
+    expect(screen.getByText("very matted in ears, had to demat")).toBeInTheDocument();
+  });
+
+  it("marks which kind each entry is, so they are not confused", () => {
+    // "How this dog is cut" and "what happened on the day" are different
+    // questions, and a groomer reading the wrong one plans the wrong groom.
+    render(<PetNoteArchive appointments={APPTS} styleNotes={STYLE} petId={10} petName="Waffle" />);
+    const kinds = screen.getAllByTestId("note-archive-entry").map((el) => el.getAttribute("data-kind"));
+    expect(kinds).toEqual(["style", "appointment"]);
+  });
+
+  it("shows the styling itself, labelled", () => {
+    render(<PetNoteArchive appointments={[]} styleNotes={STYLE} petId={10} petName="Waffle" />);
+    expect(screen.getByText("Blade #4 · Face Teddy bear")).toBeInTheDocument();
+  });
+
+  it("surfaces the groomer's warning", () => {
+    render(<PetNoteArchive appointments={[]} styleNotes={STYLE} petId={10} petName="Waffle" />);
+    expect(screen.getByText("Hates the dryer on his face")).toBeInTheDocument();
+  });
+
+  it("still says there is nothing when neither kind exists", () => {
+    render(<PetNoteArchive appointments={[]} styleNotes={[]} petId={10} petName="Waffle" />);
+    expect(screen.getByTestId("note-archive-empty")).toBeInTheDocument();
+  });
+
+  it("works when style notes are not passed at all", () => {
+    // The prop is optional; an older call site must not crash the card.
+    render(<PetNoteArchive appointments={APPTS} petId={10} petName="Waffle" />);
+    expect(screen.getByTestId("note-archive")).toBeInTheDocument();
   });
 });
