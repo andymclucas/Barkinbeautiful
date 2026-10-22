@@ -3,6 +3,7 @@ import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { PetNoteArchive } from "@/components/PetNoteArchive";
+import { MoegoBadge } from "@/components/MoegoBadge";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -1535,9 +1536,14 @@ export default function ClientDetail() {
                           </div>
                         </td>
                         <td className="p-3 hidden md:table-cell">
-                          <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: SERVICE_COLOUR[a.serviceType] ?? "#64748b" }}>
-                            {SERVICE_LABELS[a.serviceType] ?? a.serviceType}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold text-white" style={{ background: SERVICE_COLOUR[a.serviceType] ?? "#64748b" }}>
+                              {SERVICE_LABELS[a.serviceType] ?? a.serviceType}
+                            </span>
+                            {/* So a price that does not match the catalogue
+                                reads as "imported" rather than as a mistake. */}
+                            <MoegoBadge moegoAppointmentId={(a as { moegoAppointmentId?: string | null }).moegoAppointmentId} />
+                          </div>
                         </td>
                         <td className="p-3 hidden lg:table-cell text-muted-foreground text-xs">{a.staffName ?? "—"}</td>
                         <td className="p-3">

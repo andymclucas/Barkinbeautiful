@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { MoegoBadge } from "@/components/MoegoBadge";
 import { repriceForService } from "@shared/repricing";
 import type { DogSizeBand } from "@shared/dogSizeBand";
 import { presenceKey } from "@shared/presence";
@@ -276,6 +277,8 @@ type Appt = {
   serviceType: string;
   notes: string | null;
   price: string | null;
+  /** Set when the booking came across from MoeGo. Null for one made here. */
+  moegoAppointmentId?: string | null;
   /** What price was before the discount. price is the net figure. */
   preDiscountPrice: string | null;
   discountPercent: number | null;
@@ -3984,7 +3987,10 @@ export default function Calendar() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label>Price ($)</Label>
+                    <Label className="flex items-center gap-1.5">
+                      Price ($)
+                      <MoegoBadge moegoAppointmentId={editAppt.moegoAppointmentId} />
+                    </Label>
                     {editSiblings.length > 0 ? (
                       <div className="space-y-2">
                         {[editAppt, ...editSiblings].map(pet => (

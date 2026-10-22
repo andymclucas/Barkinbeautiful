@@ -680,6 +680,11 @@ const calendarRouter = router({
           serviceType: appointments.serviceType,
           notes: appointments.notes,
           price: appointments.price,
+          // Where this booking came from. A MoeGo import keeps its
+          // original price by design (Andy, 22/10/2026), so the
+          // surfaces that let somebody change a price say which
+          // rows those are.
+          moegoAppointmentId: appointments.moegoAppointmentId,
           preDiscountPrice: appointments.preDiscountPrice,
           discountPercent: appointments.discountPercent,
           discountReason: appointments.discountReason,
@@ -3111,6 +3116,11 @@ const clientsRouter = router({
           workflowState: appointments.workflowState,
           status: appointments.status,
           price: appointments.price,
+          // Where this booking came from. A MoeGo import keeps its
+          // original price by design (Andy, 22/10/2026), so the
+          // surfaces that let somebody change a price say which
+          // rows those are.
+          moegoAppointmentId: appointments.moegoAppointmentId,
           paymentStatus: appointments.paymentStatus,
           notes: appointments.notes,
           staffId: appointments.staffId,
