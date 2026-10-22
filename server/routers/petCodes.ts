@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, operationalProcedure, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { petCodes, pets } from "../../drizzle/schema";
+import { parsePetCodes } from "../../shared/petCodes";
 
 /**
  * The salon's pet-code vocabulary, managed from Pricing & Services.
@@ -58,21 +59,35 @@ export const petCodesRouter = router({
           : eq(petCodes.tenantId, tenantId))
         .orderBy(asc(petCodes.sortOrder), asc(petCodes.code));
 
-      // One grouped pass rather than a count per code: 93 codes would
-      // otherwise be 93 table scans every time the page opens.
-      const [counts] = await db.execute(sql`
-        SELECT TRIM(j.code) AS code, COUNT(*) AS n
-          FROM ${pets}
-          JOIN JSON_TABLE(
-            CONCAT('["', REPLACE(REPLACE(${pets.moegoCodeLabels}, '"', '\\\\"'), ',', '","'), '"]'),
-            '$[*]' COLUMNS (code VARCHAR(80) PATH '$')
-          ) AS j
-         WHERE ${pets.tenantId} = ${tenantId}
-           AND ${pets.moegoCodeLabels} IS NOT NULL AND ${pets.moegoCodeLabels} <> ''
-         GROUP BY TRIM(j.code)`);
+      /**
+       * Counted in JS, not in SQL.
+       *
+       * This was a JSON_TABLE query. **TiDB does not support
+       * JSON_TABLE** — it parses as a syntax error, so every call threw
+       * and the picker sits on the client record, which meant opening
+       * any client record showed "Some data could not be loaded".
+       * Verified against 8.0.11-TiDB-v8.5.3-serverless on 23/10/2026;
+       * FIND_IN_SET, used elsewhere in this file, is fine.
+       *
+       * The data is small enough that this is not a compromise: 1,384
+       * dogs carry a short comma-joined string, and parsing them here
+       * uses the same parser every display path uses, so the count
+       * cannot disagree with what is rendered.
+       */
+      const labelRows = await db
+        .select({ labels: pets.moegoCodeLabels })
+        .from(pets)
+        .where(and(
+          eq(pets.tenantId, tenantId),
+          isNotNull(pets.moegoCodeLabels),
+          ne(pets.moegoCodeLabels, ""),
+        ));
       const used = new Map<string, number>();
-      for (const row of (counts as unknown as any[]) ?? []) {
-        used.set(String(row.code).trim().toLowerCase(), Number(row.n));
+      for (const row of labelRows) {
+        for (const code of parsePetCodes(row.labels)) {
+          const key = code.trim().toLowerCase();
+          used.set(key, (used.get(key) ?? 0) + 1);
+        }
       }
       return rows.map((row: any) => ({ ...row, dogsUsing: used.get(String(row.code).trim().toLowerCase()) ?? 0 }));
     }),
