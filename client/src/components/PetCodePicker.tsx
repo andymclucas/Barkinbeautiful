@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { parsePetCodes } from "@shared/petCodes";
 import { indexPetCodes, meaningFor, colourFor } from "@shared/petCodeCatalogue";
+import { readableTextOn } from "@shared/readableTextOn";
 
 /**
  * The codes on a dog, with the salon's catalogue behind the picker.
@@ -88,8 +89,10 @@ export function PetCodePicker({
           <span
             key={code}
             title={meaning ? `${code} — ${meaning}` : code}
-            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${colour ? "text-white" : "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"}`}
-            style={colour ? { background: colour } : undefined}
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${colour ? "" : "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"}`}
+            // Black or white, whichever actually contrasts — white was
+            // forced on every colour, and white on amber is about 2:1.
+            style={colour ? { background: colour, color: readableTextOn(colour) } : undefined}
             data-testid="pet-code-chip"
           >
             {code}

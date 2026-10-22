@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { readableTextOn } from "@shared/readableTextOn";
 
 /**
  * The salon's pet-code vocabulary, managed here.
@@ -113,8 +114,8 @@ export function PetCodeCatalogue() {
                 <tr key={row.id} className="border-t" data-testid="pet-code-row">
                   <td className="p-3">
                     <span
-                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold ${row.colourHex ? "text-white" : "bg-muted"} ${row.isActive ? "" : "opacity-50"}`}
-                      style={row.colourHex ? { background: row.colourHex } : undefined}
+                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold ${row.colourHex ? "" : "bg-muted"} ${row.isActive ? "" : "opacity-50"}`}
+                      style={row.colourHex ? { background: row.colourHex, color: readableTextOn(row.colourHex) } : undefined}
                     >
                       {row.code}
                     </span>
