@@ -9,7 +9,13 @@ const createPet = vi.fn();
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     clients: { create: { useMutation: () => ({ mutateAsync: createClient, isPending: false }) } },
-    pets: { create: { useMutation: () => ({ mutateAsync: createPet, isPending: false }) } },
+    pets: {
+      create: { useMutation: () => ({ mutateAsync: createPet, isPending: false }) },
+      // BreedInput offers the salon's own breed list. Stubbed empty: the
+      // datalist is a convenience and the field takes free text either
+      // way, which is what these tests are about.
+      listBreeds: { useQuery: () => ({ data: [] }) },
+    },
   },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -23,16 +29,19 @@ import { NewClientQuickAdd } from "./NewClientQuickAdd";
  * component sends is asserted exactly, because that is the part that breaks:
  * a field renamed on the procedure would otherwise sail through.
  */
-describe("NewClientQuickAdd", () => {
-  beforeEach(() => {
-    createClient.mockReset().mockResolvedValue({ success: true, id: 4242 });
-    createPet.mockReset().mockResolvedValue({ success: true, id: 99 });
-  });
+// Top level, not inside the first describe: the spies are module-level and
+// the blocks below are siblings, so a reset scoped to one of them leaves
+// the others accumulating calls from whatever ran before.
+beforeEach(() => {
+  createClient.mockReset().mockResolvedValue({ success: true, id: 4242 });
+  createPet.mockReset().mockResolvedValue({ success: true, id: 99 });
+});
 
+describe("NewClientQuickAdd", () => {
   const fill = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.type(screen.getByLabelText("First name *"), "Kim");
     await user.type(screen.getByLabelText("Last name *"), "Dahl");
-    await user.type(screen.getByLabelText("Dog's name *"), "Ralph");
+    await user.type(screen.getByLabelText("Dog 1 name"), "Ralph");
   };
 
   it("will not save until it has a name and a dog", async () => {
@@ -49,7 +58,7 @@ describe("NewClientQuickAdd", () => {
     // whole purpose of this form.
     expect(save).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Dog's name *"), "Ralph");
+    await user.type(screen.getByLabelText("Dog 1 name"), "Ralph");
     expect(save).toBeEnabled();
   });
 
@@ -69,7 +78,10 @@ describe("NewClientQuickAdd", () => {
     // The dog is attached to the client that was just created, not to
     // whatever was selected before.
     expect(createPet).toHaveBeenCalledWith({ clientId: 4242, name: "Ralph" });
-    expect(onCreated).toHaveBeenCalledWith({ clientId: 4242, petId: 99, petName: "Ralph" });
+    expect(onCreated).toHaveBeenCalledWith({
+      clientId: 4242, firstName: "Kim", lastName: "Dahl",
+      petIds: [99], petNames: ["Ralph"],
+    });
   });
 
   it("trims what was typed", async () => {
@@ -78,7 +90,7 @@ describe("NewClientQuickAdd", () => {
 
     await user.type(screen.getByLabelText("First name *"), "  Kim  ");
     await user.type(screen.getByLabelText("Last name *"), " Dahl ");
-    await user.type(screen.getByLabelText("Dog's name *"), " Ralph ");
+    await user.type(screen.getByLabelText("Dog 1 name"), " Ralph ");
     await user.click(screen.getByRole("button", { name: /add and book/i }));
 
     expect(createClient).toHaveBeenCalledWith(
@@ -127,5 +139,113 @@ describe("NewClientQuickAdd", () => {
     expect(onCancel).toHaveBeenCalled();
     expect(createClient).not.toHaveBeenCalled();
     expect(createPet).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The three things Lauren hit on 23/10/2026: "tried to add new client
+ * with 2 dogs. it only lets me add 1, still no breed area. then also
+ * noticed it changed the clients name to the number".
+ */
+describe("a family with more than one dog", () => {
+  it("adds another dog row on demand", async () => {
+    const user = userEvent.setup();
+    render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getAllByTestId("qa-dog")).toHaveLength(1);
+    await user.click(screen.getByTestId("qa-add-dog"));
+    expect(screen.getAllByTestId("qa-dog")).toHaveLength(2);
+  });
+
+  it("creates every dog, in the order they were typed", async () => {
+    const user = userEvent.setup();
+    const onCreated = vi.fn();
+    createPet.mockReset()
+      .mockResolvedValueOnce({ success: true, id: 101 })
+      .mockResolvedValueOnce({ success: true, id: 102 });
+    render(<NewClientQuickAdd onCreated={onCreated} onCancel={vi.fn()} />);
+
+    await user.type(screen.getByLabelText("First name *"), "Kim");
+    await user.type(screen.getByLabelText("Last name *"), "Dahl");
+    await user.type(screen.getByLabelText("Dog 1 name"), "Ralph");
+    await user.click(screen.getByTestId("qa-add-dog"));
+    await user.type(screen.getByLabelText("Dog 2 name"), "Biscuit");
+    await user.click(screen.getByRole("button", { name: /add and book/i }));
+
+    expect(createPet).toHaveBeenCalledTimes(2);
+    expect(createPet).toHaveBeenNthCalledWith(1, { clientId: 4242, name: "Ralph" });
+    expect(createPet).toHaveBeenNthCalledWith(2, { clientId: 4242, name: "Biscuit" });
+    // Both are handed back, so the booking selects both rather than one.
+    expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({
+      petIds: [101, 102], petNames: ["Ralph", "Biscuit"],
+    }));
+  });
+
+  it("ignores an empty extra row rather than creating a nameless dog", async () => {
+    const user = userEvent.setup();
+    render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
+    await user.type(screen.getByLabelText("First name *"), "Kim");
+    await user.type(screen.getByLabelText("Last name *"), "Dahl");
+    await user.type(screen.getByLabelText("Dog 1 name"), "Ralph");
+    await user.click(screen.getByTestId("qa-add-dog"));
+    await user.click(screen.getByRole("button", { name: /add and book/i }));
+    expect(createPet).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a row be removed again", async () => {
+    const user = userEvent.setup();
+    render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
+    await user.click(screen.getByTestId("qa-add-dog"));
+    await user.click(screen.getByLabelText("Remove dog 2"));
+    expect(screen.getAllByTestId("qa-dog")).toHaveLength(1);
+  });
+
+  it("has no Remove on the only dog", async () => {
+    render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByLabelText("Remove dog 1")).not.toBeInTheDocument();
+  });
+});
+
+describe("breed", () => {
+  it("is asked for, and sent", async () => {
+    // It was omitted on purpose and the omission was wrong: breed is
+    // asked on the phone anyway, so not capturing it means typing twice.
+    const user = userEvent.setup();
+    render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
+    await user.type(screen.getByLabelText("First name *"), "Kim");
+    await user.type(screen.getByLabelText("Last name *"), "Dahl");
+    await user.type(screen.getByLabelText("Dog 1 name"), "Ralph");
+    await user.type(screen.getByPlaceholderText("Breed"), "Cavoodle");
+    await user.click(screen.getByRole("button", { name: /add and book/i }));
+
+    expect(createPet).toHaveBeenCalledWith(expect.objectContaining({ breed: "Cavoodle" }));
+  });
+
+  it("is left out of the payload when blank", async () => {
+    const user = userEvent.setup();
+    render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
+    await user.type(screen.getByLabelText("First name *"), "Kim");
+    await user.type(screen.getByLabelText("Last name *"), "Dahl");
+    await user.type(screen.getByLabelText("Dog 1 name"), "Ralph");
+    await user.click(screen.getByRole("button", { name: /add and book/i }));
+    expect(createPet).toHaveBeenCalledWith({ clientId: 4242, name: "Ralph" });
+  });
+});
+
+describe("the name handed back", () => {
+  it("includes the client's name, not just the id", async () => {
+    // Without it the booking dialog showed "Client #420002": the picker
+    // looks names up in a SEARCH query, and a client created a second
+    // ago is not in those results.
+    const user = userEvent.setup();
+    const onCreated = vi.fn();
+    render(<NewClientQuickAdd onCreated={onCreated} onCancel={vi.fn()} />);
+    await user.type(screen.getByLabelText("First name *"), "Kim");
+    await user.type(screen.getByLabelText("Last name *"), "Dahl");
+    await user.type(screen.getByLabelText("Dog 1 name"), "Ralph");
+    await user.click(screen.getByRole("button", { name: /add and book/i }));
+
+    expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({
+      firstName: "Kim", lastName: "Dahl",
+    }));
   });
 });

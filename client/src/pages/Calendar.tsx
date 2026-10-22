@@ -1260,6 +1260,9 @@ export default function Calendar() {
   );
   const [clientSearch, setClientSearch] = useState("");
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  // The client just added from inside this dialog, so the picker can show
+  // their name before the search query has caught up.
+  const [justAddedClient, setJustAddedClient] = useState<{ clientId: number; firstName: string; lastName: string } | null>(null);
   const {
     data: clientSearchResults,
     isFetching: isClientSearchFetching,
@@ -3056,6 +3059,11 @@ export default function Calendar() {
                       {(() => {
                         const sel = clientSearchOptions.find((c: typeof clientSearchOptions[0]) => String(c.clientId) === newAppt.clientId);
                         if (sel) return `${sel.firstName ?? ''} ${sel.lastName ?? ''}`.trim();
+                        // A client added from this dialog a moment ago is
+                        // not in the search results yet.
+                        if (justAddedClient && String(justAddedClient.clientId) === newAppt.clientId) {
+                          return `${justAddedClient.firstName} ${justAddedClient.lastName}`.trim();
+                        }
                         if (newAppt.clientId) return `Client #${newAppt.clientId}`;
                         return <span className="text-muted-foreground">Search by name, pet or phone…</span>;
                       })()}
@@ -3095,13 +3103,20 @@ export default function Calendar() {
                     {addingClient ? (
                       <NewClientQuickAdd
                         onCancel={() => setAddingClient(false)}
-                        onCreated={({ clientId, petId }) => {
+                        onCreated={({ clientId, firstName, lastName, petIds }) => {
                           setAddingClient(false);
                           setClientSearch("");
+                          // Remember the name. The picker's options come
+                          // from a SEARCH query and a client created a
+                          // second ago is not in those results, so the
+                          // trigger used to read "Client #420002".
+                          setJustAddedClient({ clientId, firstName, lastName });
                           setNewAppt(p => ({
                             ...p,
                             clientId: String(clientId),
-                            petIds: [String(petId)],
+                            // Every dog is selected, because somebody who
+                            // just entered two of them is booking two.
+                            petIds: petIds.map(String),
                             priceByPetId: {},
                             addOnsByPetId: {},
                           }));
