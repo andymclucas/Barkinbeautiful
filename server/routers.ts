@@ -100,6 +100,7 @@ import {
 import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
+import { presenceRouter } from "./routers/presence";
 import { bookingPricingRouter } from "./routers/bookingPricing";
 import { stripeConnectRouter } from "./routers/stripeConnect";
 import { salonSignupRouter } from "./routers/salonSignup";
@@ -10908,6 +10909,7 @@ export const appRouter = router({
   trial: trialRouter,
   revenueTargets: revenueTargetsRouter,
   workflowReview: workflowReviewRouter,
+  presence: presenceRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,
   membershipSignup: membershipSignupRouter,

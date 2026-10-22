@@ -1,4 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { presenceKey } from "@shared/presence";
+import { usePresence } from "@/hooks/usePresence";
+import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { clipLoadFor, clipLoadOf, groomerDayLoad, isClip, overbookingWarning } from "@shared/groomerCapacity";
 import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentValidation";
 import { preferredGroomerDefaults } from "@shared/preferredGroomerDefaults";
@@ -1034,6 +1037,11 @@ export default function Calendar() {
     // Who to ring about this booking. null is the client themselves.
     contactId: null as number | null,
   });
+  // Who else has this appointment open. The key is null while the dialog
+  // is closed, which is how usePresence knows to leave.
+  const editPresenceKey = presenceKey("appointment", editAppt?.id ?? null);
+  const editViewers = usePresence(editPresenceKey);
+
   const preservesCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
   // Per-pet groomer overrides for multi-pet sessions: { [appointmentId]: staffId }
   const [siblingGroomers, setSiblingGroomers] = useState<Record<number, string>>({});
@@ -3581,6 +3589,7 @@ export default function Calendar() {
               </span>
             </DialogTitle>
           </DialogHeader>
+          <PresenceIndicator viewers={editViewers} />
           {editAppt && (() => {
             const editSiblings = getSiblings(editAppt);
             return (

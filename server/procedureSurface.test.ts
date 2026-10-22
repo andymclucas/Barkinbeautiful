@@ -194,6 +194,11 @@ const OPERATIONAL = [
   "portalChatRouter.listThreads",
   "portalChatRouter.markRead",
   "portalChatRouter.reply",
+  // Who else has a record open. Operational because a bather and a
+  // groomer are exactly the people who need to know somebody is already
+  // in a dog's appointment; protectedProcedure would reject them.
+  "presenceRouter.heartbeat",
+  "presenceRouter.leave",
   "pushSubscriptionsRouter.myDevices",
   "pushSubscriptionsRouter.publicKey",
   "pushSubscriptionsRouter.sendTest",
@@ -242,7 +247,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(327);
+    expect(surface).toHaveLength(329);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -253,7 +258,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(106);
+    expect(OPERATIONAL).toHaveLength(108);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

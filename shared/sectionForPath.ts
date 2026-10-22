@@ -94,6 +94,18 @@ export const UNGATED_NAMESPACES: readonly string[] = [
   "salonSignup",
   "sidebarCounts",
   "system",
+  /**
+   * `presence.*` — saying "I have this open" is not an edit, and the
+   * people who most need to see that somebody else is already in a dog's
+   * appointment are the bathers and groomers whose rights are narrowest.
+   * Gating it on `appointments` would mean a bather with workflow access
+   * only could not announce themselves and would be invisible to Lauren
+   * — the exact collision this exists to prevent.
+   *
+   * It writes nothing a permission protects: a name and two initials, on
+   * a record key the caller already named, inside their own salon.
+   */
+  "presence",
 ];
 
 /**

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { startPresenceSweeper } from "../presenceRegistry";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
@@ -803,6 +804,10 @@ async function startServer() {
     // VITE_APP_URL is unset, so a misconfiguration is visible in the deploy log
     // instead of being discovered via a customer's dead link.
     logAppUrlConfiguration();
+    // Clears presence entries whose browser never said goodbye — a tab
+    // that was killed, a laptop that slept, a network that dropped. The
+    // timer is unref'd, so it never holds up a shutdown.
+    startPresenceSweeper();
   });
 }
 

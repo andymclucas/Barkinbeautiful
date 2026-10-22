@@ -130,8 +130,21 @@ export type DataChangedEvent = {
   source: string;
 };
 
+/**
+ * Who is looking at a record. Fanned out so everyone else's open dialog
+ * updates the moment somebody arrives or leaves, rather than on their
+ * next heartbeat. See server/presenceRegistry.ts.
+ */
+export type PresenceChangedEvent = {
+  type: "presence-changed";
+  tenantId: number;
+  recordKey: string;
+  viewers: { userId: number; name: string; initials: string }[];
+};
+
 export type AppEvent =
   | NewMessageEvent
+  | PresenceChangedEvent
   | CallRingingEvent
   | CallEndedEvent
   | MissedCallEvent
