@@ -193,6 +193,10 @@ const OPERATIONAL = [
   // The dog's usual groomer. A groomer knows which dogs are theirs, and
   // the person taking the booking is who hears "can we have Charlotte
   // again". Tenant-checked on both the pet and the staff member.
+  // Tagging a dog. Operational because the person who discovers a dog
+  // bites is the groomer holding it, and protectedProcedure would reject
+  // the restricted staff who most need to record that.
+  "petsRouter.updateCodes",
   "petsRouter.updatePreferredGroomer",
   "petsRouter.updateSizeBand",
   "petsRouter.updateWeight",
@@ -253,7 +257,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(333);
+    expect(surface).toHaveLength(334);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -264,7 +268,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(109);
+    expect(OPERATIONAL).toHaveLength(110);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

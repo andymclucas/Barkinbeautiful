@@ -4,6 +4,7 @@ import { usePresence } from "@/hooks/usePresence";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { PetNoteArchive } from "@/components/PetNoteArchive";
 import { MoegoBadge } from "@/components/MoegoBadge";
+import { PetCodePicker } from "@/components/PetCodePicker";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -1101,36 +1102,17 @@ export default function ClientDetail() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="px-4 pb-4 space-y-1.5 text-sm">
-                      {(() => {
-                        // MoeGo's own tags, shown as MoeGo shows them. Kept
-                        // verbatim and unclassified: "PLUCK EARS" and "DONT
-                        // PLUCK EARS" are both real codes here.
-                        const codes = parsePetCodes(pet.moegoCodeLabels);
-                        if (codes.length === 0) return null;
-                        return (
-                          <div className="flex flex-wrap items-center gap-1" aria-label={`MoeGo codes: ${codes.map(describePetCode).join(", ")}`}>
-                            {codes.map(code => {
-                              // On the record there is room to say what the
-                              // shorthand means. "Ner" on its own tells a new
-                              // groomer nothing; "Ner · Nervous" tells them
-                              // everything they need before they start.
-                              const meaning = petCodeMeaning(code);
-                              return (
-                                <span
-                                  key={code}
-                                  title={describePetCode(code)}
-                                  className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
-                                >
-                                  {code}
-                                  {meaning && (
-                                    <span className="font-normal opacity-75">· {meaning}</span>
-                                  )}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
+                      {/* The dog's codes, editable. They were read-only
+                          chips until 22/10/2026 — the salon could see
+                          "SENSITIVE" but only a database write could add
+                          it. The picker offers the catalogue and still
+                          takes anything typed, because the person who
+                          finds out a dog bites is holding it. */}
+                      <PetCodePicker
+                        petId={pet.id}
+                        petName={pet.name}
+                        codes={pet.moegoCodeLabels}
+                      />
                       {/* Every note written on this dog, newest first.
                           They already existed one per appointment, but
                           reading them back meant opening bookings one at

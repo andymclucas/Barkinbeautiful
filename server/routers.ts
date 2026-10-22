@@ -102,6 +102,7 @@ import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
+import { parsePetCodes } from "../shared/petCodes";
 import { bookingPricingRouter } from "./routers/bookingPricing";
 import { stripeConnectRouter } from "./routers/stripeConnect";
 import { salonSignupRouter } from "./routers/salonSignup";
@@ -3546,6 +3547,47 @@ const petsRouter = router({
    * not the same as one whose preference nobody has recorded, but the
    * salon can only express the former.
    */
+  /**
+   * The codes on a dog — "✂5f, SENSITIVE, PLUCK EARS".
+   *
+   * `operationalProcedure`, because the person who discovers a dog bites
+   * is the groomer holding it, and `protectedProcedure` would reject the
+   * restricted staff who most need to record that.
+   *
+   * Stored as the comma-joined text the import wrote, not as ids: codes
+   * are a vocabulary, not an authority, and a groomer may type one that
+   * is not in the catalogue (Andy, 22/10/2026). Normalised through
+   * parsePetCodes on the way in, so a duplicate or a stray comma cannot
+   * be saved.
+   */
+  updateCodes: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      petId: z.number(),
+      codes: z.array(z.string().trim().min(1).max(80)).max(40),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
+        throw new Error("This pet is not available to your salon staff profile");
+      }
+      const [pet] = await db.select({ id: pets.id })
+        .from(pets)
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
+        .limit(1);
+      if (!pet) throw new Error("Pet not found");
+      // Round-trip through the parser so what is stored is exactly what
+      // the rest of the app expects to read back: trimmed, de-duplicated,
+      // in order.
+      const cleaned = parsePetCodes(input.codes.join(","));
+      await db.update(pets)
+        .set({ moegoCodeLabels: cleaned.length > 0 ? cleaned.join(", ") : null })
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))));
+      return { success: true, codes: cleaned };
+    }),
+
   updatePreferredGroomer: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
