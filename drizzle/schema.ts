@@ -604,6 +604,39 @@ export const memberships = mysqlTable("memberships", {
 // These editable catalogues are intentionally additive. Existing appointments,
 // memberships and historical prices continue to use their established fields until
 // a separately tested Phase 3 cutover reads from these records.
+/**
+ * The salon's own pet-code vocabulary — "✂5f", "SENSITIVE", "PLUCK EARS".
+ *
+ * A vocabulary, not an authority. `pets.moego_code_labels` stays free text
+ * and a groomer can still type a code that is not in here (Andy,
+ * 22/10/2026); this supplies the meaning, the colour and the picker. An
+ * unknown code renders as itself, exactly as it did before the table
+ * existed.
+ *
+ * It replaces shared/petCodeMeanings.ts, a 111-entry map transcribed from
+ * MoeGo by hand, which said of itself that it would fall behind.
+ *
+ * `code` joins to the text on the pet, so it carries the unique index.
+ */
+export const petCodes = mysqlTable("pet_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  /** The badge a groomer reads. Matches the text in moego_code_labels. */
+  code: varchar("code", { length: 80 }).notNull(),
+  /** What the shorthand stands for: "Nervous", "#5f blade". */
+  description: varchar("description", { length: 255 }),
+  colourHex: varchar("colour_hex", { length: 16 }),
+  sortOrder: int("sort_order").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_pet_codes_tenant_code").on(t.tenantId, t.code),
+  index("idx_pet_codes_tenant_active").on(t.tenantId, t.isActive),
+]);
+
+export type PetCode = typeof petCodes.$inferSelect;
+
 export const pricingServices = mysqlTable("pricing_services", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull().references(() => tenants.id),

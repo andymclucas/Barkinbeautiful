@@ -50,6 +50,9 @@ export const SECTION_BY_NAMESPACE: Readonly<Record<string, StaffSection>> = {
   membershipSignup: "memberships",
 
   pricing: "pricing",
+  // The pet-code vocabulary is managed from the Pricing & Services
+  // page, so it is gated by the same permission.
+  petCodes: "pricing",
   groomStylePresets: "pricing",
   retail: "pricing",
   storeCredit: "pricing",

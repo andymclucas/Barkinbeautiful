@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PetCodeCatalogue } from "@/components/PetCodeCatalogue";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Pencil, Plus, Power, Tags, Trash2 } from "lucide-react";
@@ -102,7 +103,7 @@ const displayServicePrice = (record: Pick<ServiceRecord, "priceMode" | "priceAud
 export default function Pricing() {
   const { user, loading } = useAuth();
   const utils = trpc.useUtils();
-  const [activeTab, setActiveTab] = useState<"services" | "add-ons" | "memberships">("services");
+  const [activeTab, setActiveTab] = useState<"services" | "add-ons" | "memberships" | "pet-codes">("services");
   const [serviceEditor, setServiceEditor] = useState<{ record?: ServiceRecord; form: ServiceFormState } | null>(null);
   const [planEditor, setPlanEditor] = useState<{ record?: MembershipPlanRecord; form: ReturnType<typeof emptyPlanForm> } | null>(null);
 
@@ -199,19 +200,23 @@ export default function Pricing() {
             <h1 className="mt-1 text-2xl font-bold font-display">Pricing &amp; Services</h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Maintain the future service, add-on and membership catalogue. Existing bookings, membership amounts and historical pricing are unchanged until a separate cutover is approved.</p>
           </div>
-          <Button onClick={() => activeTab === "memberships" ? openPlanEditor() : openServiceEditor(activeTab === "services" ? "service" : "add_on")} className="gap-2"><Plus className="h-4 w-4" /> Add {activeTab === "memberships" ? "Membership Plan" : activeTab === "services" ? "Service" : "Add-on"}</Button>
+          {activeTab !== "pet-codes" && (
+            <Button onClick={() => activeTab === "memberships" ? openPlanEditor() : openServiceEditor(activeTab === "services" ? "service" : "add_on")} className="gap-2"><Plus className="h-4 w-4" /> Add {activeTab === "memberships" ? "Membership Plan" : activeTab === "services" ? "Service" : "Add-on"}</Button>
+          )}
         </div>
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
-          <TabsList className="grid w-full grid-cols-3 sm:w-[440px]">
+          <TabsList className="grid w-full grid-cols-4 sm:w-[580px]">
             <TabsTrigger value="services">Services <span className="ml-1 text-xs text-muted-foreground">{services.length}</span></TabsTrigger>
             <TabsTrigger value="add-ons">Add-ons <span className="ml-1 text-xs text-muted-foreground">{addOns.length}</span></TabsTrigger>
             <TabsTrigger value="memberships">Memberships <span className="ml-1 text-xs text-muted-foreground">{planRows.length}</span></TabsTrigger>
+            <TabsTrigger value="pet-codes">Pet codes</TabsTrigger>
           </TabsList>
 
           <TabsContent value="services" className="mt-4"><CatalogueTable rows={services} loading={servicesLoading} onEdit={(record) => openServiceEditor("service", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ id: record.id }); }} /></TabsContent>
           <TabsContent value="add-ons" className="mt-4"><CatalogueTable rows={addOns} loading={servicesLoading} onEdit={(record) => openServiceEditor("add_on", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ id: record.id }); }} /></TabsContent>
           <TabsContent value="memberships" className="mt-4"><MembershipPlanTable rows={planRows} loading={plansLoading} onEdit={openPlanEditor} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change existing memberships.`)) deletePlanMutation.mutate({ id: record.id }); }} /></TabsContent>
+          <TabsContent value="pet-codes" className="mt-4"><PetCodeCatalogue /></TabsContent>
         </Tabs>
       </div>
 
