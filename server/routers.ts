@@ -104,6 +104,7 @@ import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
 import { parsePetCodes } from "../shared/petCodes";
 import { buildPassingReview, describePassingReview, type PassingReview } from "../shared/petPassingReview";
+import { canDeletePet } from "../shared/petDeletion";
 import { bookingPricingRouter } from "./routers/bookingPricing";
 import { stripeConnectRouter } from "./routers/stripeConnect";
 import { salonSignupRouter } from "./routers/salonSignup";
@@ -3638,6 +3639,83 @@ const petsRouter = router({
    * fixture grooms counting as somebody's work, or an inference script
    * reading them as evidence about a real customer.
    */
+  /**
+   * Correct a dog's details — the name, the breed, the sex.
+   *
+   * `operationalProcedure`: a misspelled name is noticed by the groomer
+   * holding the dog, and protectedProcedure would reject exactly those
+   * restricted staff. Weight, size band and preferred groomer have their
+   * own procedures already and are not duplicated here.
+   */
+  updateDetails: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      petId: z.number(),
+      name: z.string().trim().min(1).max(100).optional(),
+      breed: z.string().trim().max(100).nullable().optional(),
+      gender: z.enum(["male", "female", "unknown"]).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
+        throw new Error("This pet is not available to your salon staff profile");
+      }
+      const [pet] = await db.select({ id: pets.id }).from(pets)
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
+      if (!pet) throw new Error("Pet not found");
+      const updates: Record<string, unknown> = {};
+      if (input.name !== undefined) updates.name = input.name;
+      if (input.breed !== undefined) updates.breed = input.breed || null;
+      if (input.gender !== undefined) updates.gender = input.gender;
+      if (Object.keys(updates).length === 0) return { success: true, changed: false };
+      await db.update(pets).set(updates)
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))));
+      return { success: true, changed: true };
+    }),
+
+  /**
+   * Delete a dog outright — for a row that should never have existed.
+   *
+   * `adminProcedure`, and guarded: a dog with ANY history is refused,
+   * because removing it would orphan appointments, invoices and the
+   * timing analytics. See shared/petDeletion.ts for why this exists at
+   * all — without it, staff retired duplicates by marking them dead, and
+   * five of seven "departed" dogs on 19/10/2026 were duplicates.
+   *
+   * `check: true` asks without deleting, so the UI can warn first.
+   */
+  remove: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1), petId: z.number(), check: z.boolean().default(false) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const [pet] = await db.select({ id: pets.id, name: pets.name, clientId: pets.clientId })
+        .from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantId))).limit(1);
+      if (!pet) throw new Error("Pet not found");
+
+      const count = async (table: any, column: any) => {
+        const [row] = await db.select({ n: sql<number>`COUNT(*)` }).from(table).where(eq(column, pet.id));
+        return Number(row?.n ?? 0);
+      };
+      const history = {
+        appointments: await count(appointments, appointments.petId),
+        memberships: await count(memberships, memberships.petId),
+        photos: await count(petPhotos, petPhotos.petId),
+        styleNotes: await count(groomStyleNotes, groomStyleNotes.petId),
+      };
+      const verdict = canDeletePet(history);
+      if (input.check) return { checked: true as const, petName: pet.name, verdict, history };
+      if (!verdict.canDelete) throw new Error(verdict.reason);
+
+      // Nothing references it, so there is nothing to cascade. The event
+      // trail is kept: it records that a row existed and was removed.
+      await db.delete(pets).where(and(eq(pets.id, pet.id), eq(pets.tenantId, tenantId)));
+      return { checked: false as const, success: true, petName: pet.name, clientId: pet.clientId };
+    }),
+
   setTestFlag: adminProcedure
     .input(z.object({
       tenantId: z.number().default(1),

@@ -6,6 +6,7 @@ import { PetNoteArchive } from "@/components/PetNoteArchive";
 import { MoegoBadge } from "@/components/MoegoBadge";
 import { PetCodePicker } from "@/components/PetCodePicker";
 import { PassingReviewDialog } from "@/components/PassingReviewDialog";
+import { PetEditorDialog, type EditablePet } from "@/components/PetEditorDialog";
 import type { PassingReview } from "@shared/petPassingReview";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
@@ -311,6 +312,7 @@ export default function ClientDetail() {
   const [paymentFilter, setPaymentFilter] = useState("all");
   const BOOKINGS_PER_PAGE = 10;
   const [departedPet, setDepartedPet] = useState<{ id: number; name: string } | null>(null);
+  const [petEditor, setPetEditor] = useState<{ pet: EditablePet | null } | null>(null);
   const [departureNote, setDepartureNote] = useState("");
   const [membershipAction, setMembershipAction] = useState<{ membershipId: number; petId: number; petName: string; membershipName: string } | null>(null);
   const [departureMembershipAction, setDepartureMembershipAction] = useState<"remove" | "transfer">("transfer");
@@ -1073,6 +1075,14 @@ export default function ClientDetail() {
 
           {/* ── Pets tab ── */}
           <TabsContent value="pets" className="mt-0">
+            {/* Adding, renaming and removing a dog. A card could change
+                weight, size, codes and groomer but not its name or
+                breed, and there was no way to remove one at all. */}
+            <div className="mb-3 flex justify-end">
+              <Button size="sm" className="gap-1.5" onClick={() => setPetEditor({ pet: null })}>
+                <Plus className="h-4 w-4" /> Add a dog
+              </Button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {pets.length === 0 && <p className="text-muted-foreground text-sm col-span-3">No pets on file.</p>}
               {pets.map(pet => {
@@ -1099,6 +1109,14 @@ export default function ClientDetail() {
                               and a letter appearing there. */}
                           <PetAvatar petId={pet.id} petName={pet.name} className="h-8 w-8" />
                           <span className="truncate">{pet.name}</span>
+                          <button
+                            type="button"
+                            className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label={`Edit ${pet.name}`}
+                            onClick={() => setPetEditor({ pet: { id: pet.id, name: pet.name, breed: pet.breed, sizeBand: pet.sizeBand } })}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                         {/* Badges go UNDER the photo and name. They used to sit
                             beside them in a justify-between row, where a tier
@@ -2092,6 +2110,13 @@ export default function ClientDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <PetEditorDialog
+        open={petEditor !== null}
+        pet={petEditor?.pet ?? null}
+        clientId={clientId}
+        onClose={() => setPetEditor(null)}
+        onSaved={() => utils.clients.getProfile.invalidate({ clientId })}
+      />
       <PassingReviewDialog
         review={passingReview}
         clientId={clientId}
