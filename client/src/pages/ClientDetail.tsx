@@ -2,6 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
+import { PetNoteArchive } from "@/components/PetNoteArchive";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -1128,6 +1129,12 @@ export default function ClientDetail() {
                           </div>
                         );
                       })()}
+                      {/* Every note written on this dog, newest first.
+                          They already existed one per appointment, but
+                          reading them back meant opening bookings one at
+                          a time — so nobody did, and what happened last
+                          groom never reached the groomer doing this one. */}
+                      <PetNoteArchive appointments={appointments} petId={pet.id} petName={pet.name} />
                       <div className="flex items-start gap-2 overflow-x-auto pb-1">
                         {(photosByPet[pet.id] ?? []).slice(0, 6).map(photo => (
                           <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer" className="block shrink-0 group" title={photo.caption ?? "View groom photo"}>
