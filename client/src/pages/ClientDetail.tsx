@@ -1,4 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { presenceKey } from "@shared/presence";
+import { usePresence } from "@/hooks/usePresence";
+import { PresenceIndicator } from "@/components/PresenceIndicator";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -282,6 +285,11 @@ export default function ClientDetail() {
   const { data, isLoading } = trpc.clients.getProfile.useQuery({ clientId }, { enabled: !!clientId });
   const { data: currentUser } = trpc.auth.me.useQuery();
   const utils = trpc.useUtils();
+  // Who else has this client open. Registered above the loading guards
+  // below, because hooks cannot run conditionally — and because you are
+  // on the record from the moment you navigate to it, not from the
+  // moment the query comes back.
+  const clientViewers = usePresence(presenceKey("client", clientId));
   const [uploadingPhotoForPetId, setUploadingPhotoForPetId] = useState<number | null>(null);
   const [addCreditSignal, setAddCreditSignal] = useState(0);
   // Overview first: the figures and the notes are what someone opening a
@@ -646,6 +654,10 @@ export default function ClientDetail() {
   return (
     <DashboardLayout>
       <div className="space-y-6 max-w-5xl">
+        {/* Above everything, including the back button: somebody who came
+            here to change a card or a membership should see that Lauren
+            is already in it before they start, not after. */}
+        <PresenceIndicator viewers={clientViewers} />
         {/* Back button */}
         <div className="flex items-center justify-between gap-2">
           <Link href="/clients">

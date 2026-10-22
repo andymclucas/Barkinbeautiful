@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import {
-  PRESENCE_HEARTBEAT_MS, type PresenceViewer,
-} from "@shared/presence";
+import { PRESENCE_HEARTBEAT_MS, type PresenceViewer } from "@shared/presence";
+import { subscribeToAppEvents } from "@/lib/appEventStream";
 
 /**
  * Who else has this record open, live.
@@ -55,19 +54,17 @@ export function usePresence(recordKey: string | null): PresenceViewer[] {
     const timer = setInterval(beat, PRESENCE_HEARTBEAT_MS);
 
     // Everyone else's arrival or departure arrives here, so the avatars
-    // change the moment it happens rather than on the next beat.
-    const source = new EventSource("/api/events");
-    source.onmessage = (message) => {
-      let event: { type?: string; recordKey?: string; viewers?: PresenceViewer[] };
-      try { event = JSON.parse(message.data); } catch { return; }
+    // change the moment it happens rather than on the next beat. Shared
+    // connection: a client record with an appointment dialog over it
+    // mounts this hook twice, and a tab only gets six HTTP/1.1
+    // connections in total. See lib/appEventStream.ts.
+    const unsubscribe = subscribeToAppEvents((event) => {
       if (event.type !== "presence-changed" || event.recordKey !== recordKey) return;
-      if (!Array.isArray(event.viewers)) return;
-      // The broadcast is the whole room; this screen wants everyone but
-      // itself, and the heartbeat reply is what tells us who that is.
-      // Rather than track our own id here, drop anyone the last beat
-      // already excluded — simplest correct thing is to re-beat.
+      // The broadcast is the whole room, and this screen wants everyone
+      // but itself. Re-beating is what tells us who that is, rather than
+      // tracking our own id here and getting it wrong once.
       beat();
-    };
+    });
 
     const sayGoodbye = () => {
       leaveRef.current.mutate({ recordKey });
@@ -77,7 +74,7 @@ export function usePresence(recordKey: string | null): PresenceViewer[] {
     return () => {
       cancelled = true;
       clearInterval(timer);
-      source.close();
+      unsubscribe();
       window.removeEventListener("pagehide", sayGoodbye);
       sayGoodbye();
     };
