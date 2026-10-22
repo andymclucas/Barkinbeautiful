@@ -1280,7 +1280,7 @@ export type AppointmentPayment = typeof appointmentPayments.$inferSelect;
 export const systemNotifications = mysqlTable("system_notifications", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull(),
-  kind: mysqlEnum("kind", ["client_portal_activated", "staff_invited", "staff_account_created", "membership_signup_requested", "online_booking_received"]).notNull(),
+  kind: mysqlEnum("kind", ["client_portal_activated", "staff_invited", "staff_account_created", "membership_signup_requested", "online_booking_received", "pet_passed_membership_review"]).notNull(),
   clientId: int("client_id"),
   readAt: timestamp("read_at"),
   readByUserId: int("read_by_user_id"),

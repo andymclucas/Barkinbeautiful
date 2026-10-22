@@ -35,6 +35,16 @@ export const SYSTEM_NOTIFICATION_KINDS = [
    * the thing most likely to be wrong.
    */
   "online_booking_received",
+  /**
+   * A dog died and the household still has money attached to it.
+   *
+   * Work, and of a particular kind: it is the only row in this feed
+   * that is also a bereavement. The copy asks a question rather than
+   * telling anyone to cancel anything — the surviving dog's grooms are
+   * often prepaid through the same plan, and "stop the membership" is
+   * the wrong instinct about half the time.
+   */
+  "pet_passed_membership_review",
 ] as const;
 export type SystemNotificationKind = (typeof SYSTEM_NOTIFICATION_KINDS)[number];
 
@@ -110,6 +120,14 @@ export function describeSystemNotification(row: SystemNotificationRow): { title:
           row.detail,
           "Confirm it, and check the weight before the price is held to.",
         ].filter(Boolean).join(" "),
+      };
+    }
+    case "pet_passed_membership_review": {
+      return {
+        title: row.detail ? `${row.detail.split(" was recorded")[0]} — membership to review` : `${who} — membership to review`,
+        // The detail line is written at the time and already carries the
+        // dog, the number of plans and the weekly figure.
+        detail: row.detail ?? "A dog has passed away and the household still has an active membership.",
       };
     }
     case "staff_invited":

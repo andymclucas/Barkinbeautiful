@@ -5,6 +5,8 @@ import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { PetNoteArchive } from "@/components/PetNoteArchive";
 import { MoegoBadge } from "@/components/MoegoBadge";
 import { PetCodePicker } from "@/components/PetCodePicker";
+import { PassingReviewDialog } from "@/components/PassingReviewDialog";
+import type { PassingReview } from "@shared/petPassingReview";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -361,12 +363,16 @@ export default function ClientDetail() {
     onError: (error) => toast.error(error.message || "Could not delete that booking"),
   });
 
+  // Raised after a passing when money is still attached to the household.
+  // Nothing in it is applied automatically — see PassingReviewDialog.
+  const [passingReview, setPassingReview] = useState<PassingReview | null>(null);
   const markDeparted = trpc.pets.markDeparted.useMutation({
     onSuccess: async (result) => {
       await utils.clients.getProfile.invalidate({ clientId });
       setDepartedPet(null);
       setDepartureNote("");
       toast.success(result.alreadyRecorded ? `${result.petName} is already recorded as passed away` : `${result.petName} has been recorded as passed away`);
+      if (result.review && !result.review.isEmpty) setPassingReview(result.review);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -381,6 +387,17 @@ export default function ClientDetail() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const reviewAction = trpc.memberships.manageDepartedPet.useMutation({
+    onSuccess: async (result) => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      toast.success(result.action === "transferred"
+        ? `Membership moved to ${result.replacementPetName}`
+        : "Membership stopped");
+      setPassingReview(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const createReplacementPet = trpc.pets.create.useMutation({
     onSuccess: async (result) => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -2075,6 +2092,27 @@ export default function ClientDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <PassingReviewDialog
+        review={passingReview}
+        clientId={clientId}
+        busy={reviewAction.isPending}
+        onClose={() => setPassingReview(null)}
+        onMove={(membershipId, toPetId) => {
+          const row = passingReview?.memberships.find((m) => m.membership.id === membershipId);
+          if (!row?.membership.petId) return;
+          reviewAction.mutate({
+            membershipId,
+            petId: row.membership.petId,
+            action: "transfer",
+            replacementPetId: toPetId,
+          });
+        }}
+        onCancelPlan={(membershipId) => {
+          const row = passingReview?.memberships.find((m) => m.membership.id === membershipId);
+          if (!row?.membership.petId) return;
+          reviewAction.mutate({ membershipId, petId: row.membership.petId, action: "remove" });
+        }}
+      />
     </DashboardLayout>
   );
 }

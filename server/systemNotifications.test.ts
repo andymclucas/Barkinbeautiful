@@ -141,3 +141,35 @@ describe("online_booking_received", () => {
     expect(isSystemNotificationKind("online_booking_received")).toBe(true);
   });
 });
+
+describe("pet_passed_membership_review", () => {
+  it("asks a question rather than telling anyone to cancel", () => {
+    // "Stop the membership" is the wrong instinct about half the time —
+    // the surviving dog's grooms are often prepaid through the same plan.
+    const n = describeSystemNotification({
+      kind: "pet_passed_membership_review",
+      detail: "Teacup was recorded as passed away. The household still has 2 active memberships worth $49.00 a week — check whether they should move, stop or stay.",
+    });
+    expect(n.detail).toContain("should move, stop or stay");
+    expect(n.detail).not.toMatch(/^cancel|must be cancelled/i);
+  });
+
+  it("leads with the dog's name, which is how the salon reads it", () => {
+    const n = describeSystemNotification({
+      kind: "pet_passed_membership_review",
+      detail: "Teacup was recorded as passed away. The household still has 1 active membership.",
+    });
+    expect(n.title).toBe("Teacup — membership to review");
+  });
+
+  it("still renders with no detail recorded", () => {
+    const n = describeSystemNotification({ kind: "pet_passed_membership_review" });
+    expect(n.title).toBeTruthy();
+    expect(n.detail).toBeTruthy();
+    expect(`${n.title} ${n.detail}`).not.toMatch(/undefined|null/);
+  });
+
+  it("is a known kind", () => {
+    expect(isSystemNotificationKind("pet_passed_membership_review")).toBe(true);
+  });
+});

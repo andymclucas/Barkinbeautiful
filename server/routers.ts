@@ -103,6 +103,7 @@ import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appoint
 import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
 import { parsePetCodes } from "../shared/petCodes";
+import { buildPassingReview, describePassingReview, type PassingReview } from "../shared/petPassingReview";
 import { bookingPricingRouter } from "./routers/bookingPricing";
 import { stripeConnectRouter } from "./routers/stripeConnect";
 import { salonSignupRouter } from "./routers/salonSignup";
@@ -3681,7 +3682,68 @@ const petsRouter = router({
         note: input.note || null,
         changedByUserId: ctx.user.id,
       });
-      return { success: true, alreadyRecorded: false, petName: pet.name };
+
+      /**
+       * What is still attached to this household, so the caller can put
+       * the question in front of somebody.
+       *
+       * Every ACTIVE membership on the client, not only those pointing
+       * at this dog: the MoeGo import hung every plan off a single pet,
+       * so Kayla Fellingham's two-dog plan for Latte and Teacup was
+       * recorded against Jemima. Filtering on pet_id would have shown
+       * nothing and left $30 a week running.
+       */
+      let review: PassingReview | null = null;
+      try {
+        const household = await db
+          .select({ id: pets.id, name: pets.name, status: pets.status, weightKg: pets.weightKg, weight: pets.weight })
+          .from(pets)
+          .where(and(eq(pets.clientId, pet.clientId), eq(pets.tenantId, pet.tenantId)));
+        const live = await db
+          .select({
+            id: memberships.id, name: memberships.name,
+            pricePerCycle: memberships.pricePerCycle,
+            billingCycleWeeks: memberships.billingCycleWeeks,
+            petId: memberships.petId,
+          })
+          .from(memberships)
+          .where(and(
+            eq(memberships.clientId, pet.clientId),
+            eq(memberships.tenantId, pet.tenantId),
+            eq(memberships.status, "active"),
+            eq(memberships.isTest, false),
+          ));
+        const departedRow = household.find((row) => row.id === pet.id);
+        review = buildPassingReview({
+          departedPet: {
+            id: pet.id, name: pet.name, status: "departed",
+            weightKg: departedRow?.weightKg ?? null, weight: departedRow?.weight ?? null,
+          },
+          survivingPets: household
+            .filter((row) => row.id !== pet.id)
+            .map((row) => ({
+              id: row.id, name: row.name,
+              status: row.status === "departed" ? "departed" as const : "active" as const,
+              weightKg: row.weightKg, weight: row.weight,
+            })),
+          memberships: live.map((m) => ({ ...m, petName: null })),
+        });
+
+        // Caught like every other notification write: a bell row failing
+        // must not undo a passing somebody has just recorded.
+        if (!review.isEmpty) {
+          await db.insert(systemNotifications).values({
+            tenantId: pet.tenantId,
+            kind: "pet_passed_membership_review",
+            clientId: pet.clientId,
+            detail: describePassingReview(review),
+          });
+        }
+      } catch (err) {
+        console.error("[passing] could not build the membership review", err);
+      }
+
+      return { success: true, alreadyRecorded: false, petName: pet.name, review };
     }),
 });
 
