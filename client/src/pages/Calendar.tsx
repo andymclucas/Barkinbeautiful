@@ -1,4 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { repriceForService } from "@shared/repricing";
+import type { DogSizeBand } from "@shared/dogSizeBand";
 import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
@@ -1615,6 +1617,37 @@ export default function Calendar() {
   const getSiblings = (appt: Appt): Appt[] => {
     if (!appt.sessionId) return [];
     return liveSiblings(appt, sessionMap.get(appt.sessionId) ?? []);
+  };
+
+  /**
+   * Re-pricing when somebody changes the service in this dialog.
+   *
+   * Lauren, 22/10/2026: she changed Miller to a tidy, saved, and the
+   * price was still the groom's. The new-booking form has always
+   * re-priced on a service change; this dialog never did.
+   *
+   * Driven from the dropdown's own change handler rather than an effect
+   * watching the service, so it cannot fire on open and overwrite a
+   * figure somebody set by hand last week.
+   */
+  const editPetIds = editAppt ? [editAppt, ...getSiblings(editAppt)].map((p) => p.petId) : [];
+  const repriceCatalogue = trpc.bookingPricing.catalogue.useQuery(undefined, { enabled: !!editAppt });
+  const repriceContext = trpc.bookingPricing.context.useQuery(
+    { clientId: editAppt?.clientId ?? 0, petIds: editPetIds },
+    { enabled: !!editAppt && !!editAppt.clientId && editPetIds.length > 0 },
+  );
+  const repriceFor = (petId: number, serviceType: string, currentPrice: string | null | undefined) => {
+    const pet = repriceContext.data?.pets?.find((row: { petId: number }) => row.petId === petId);
+    const catalogue = repriceCatalogue.data ?? [];
+    if (!pet || catalogue.length === 0) return null;
+    const outcome = repriceForService({
+      serviceType,
+      sizeBand: pet.sizeBand as DogSizeBand | null,
+      tier: pet.tier,
+      catalogue,
+      currentPrice,
+    });
+    return outcome.repriced ? outcome : null;
   };
 
   const selectedClientPets = trpc.pets.listByClient.useQuery(
@@ -3813,7 +3846,14 @@ export default function Calendar() {
                             <span className="text-xs text-muted-foreground w-16 shrink-0 truncate">{pet.petName}:</span>
                             <Select
                               value={siblingServices[pet.id] ?? pet.serviceType}
-                              onValueChange={v => setSiblingServices(prev => ({ ...prev, [pet.id]: v }))}
+                              onValueChange={v => {
+                                setSiblingServices(prev => ({ ...prev, [pet.id]: v }));
+                                const moved = repriceFor(pet.petId, v, siblingPrices[pet.id] ?? pet.price);
+                                if (moved) {
+                                  setSiblingPrices(prev => ({ ...prev, [pet.id]: moved.price }));
+                                  toast.success(`${pet.petName}: price updated to $${moved.price}`);
+                                }
+                              }}
                             >
                               <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
                               <SelectContent>
@@ -3824,7 +3864,17 @@ export default function Calendar() {
                         ))}
                       </div>
                     ) : (
-                      <Select value={editForm.serviceType} onValueChange={v => setEditForm(p => ({ ...p, serviceType: v }))}>
+                      <Select
+                        value={editForm.serviceType}
+                        onValueChange={v => setEditForm(p => {
+                          const moved = editAppt ? repriceFor(editAppt.petId, v, p.price) : null;
+                          if (moved) {
+                            toast.success(`Price updated to $${moved.price} for ${SERVICE_LABELS[v as keyof typeof SERVICE_LABELS] ?? v}`);
+                            return { ...p, serviceType: v, price: moved.price };
+                          }
+                          return { ...p, serviceType: v };
+                        })}
+                      >
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {Object.entries(SERVICE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
