@@ -195,7 +195,28 @@ export function BookingPetPricing(props: Props) {
     const addOns: Record<string, StagedAddOn[]> = { ...props.addOnsByPetId };
     for (const row of repeatable) {
       const last = row.pet!.last!;
-      if (last.price) prices[String(row.petId)] = last.price;
+      /**
+       * The service repeats; the PRICE comes from the catalogue.
+       *
+       * Andy, 22/10/2026: "Leave all ones that have been brought across
+       * from MoeGo with the prices as is, but any new ones need to
+       * reflect pricing on Groomigo."
+       *
+       * 450 of 456 upcoming bookings were imported from MoeGo and 88% of
+       * them carry a price the Groomigo catalogue does not recognise.
+       * Copying `last.price` therefore walked a MoeGo figure into a
+       * brand-new Groomigo booking nearly every time — which is the one
+       * way a new booking could still be priced from the old system.
+       *
+       * Falls back to the previous figure only when the catalogue cannot
+       * answer, because an empty price box invoices as zero.
+       */
+      const fromCatalogue = pickDefaultPriceOption(
+        groomPriceOptions({ serviceType: service, sizeBand: row.band, catalogue }),
+        row.tier,
+      )?.priceAud ?? null;
+      const repeated = fromCatalogue ?? (last.price || null);
+      if (repeated) prices[String(row.petId)] = repeated;
       const carried = last.addOns
         .filter((addOn) => addOn.pricingServiceId)
         .map((addOn) => ({
