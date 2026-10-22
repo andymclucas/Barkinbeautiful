@@ -3124,7 +3124,12 @@ const clientsRouter = router({
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .where(eq(appointments.clientId, input.clientId))
         .orderBy(desc(appointments.scheduledStart))
-        .limit(100);
+        // 200, matching the style notes beside them. Checked against the
+        // live data on 22/10/2026: five clients are over 100 and the
+        // busiest has 177, so nobody's history is cut at this figure.
+        // It also feeds the Bookings tab's pagination, so the five who
+        // were truncated now get their older pages back too.
+        .limit(200);
 
       /**
        * How each dog has been cut, for the notes archive on its card.
