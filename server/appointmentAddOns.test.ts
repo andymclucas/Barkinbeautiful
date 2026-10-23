@@ -59,8 +59,8 @@ describe("the itemised invoice", () => {
     });
     expect(lines).toEqual([
       { description: "Link — Classic Groom", quantity: "1", unitPrice: "95.00", lineTotal: "95.00" },
-      { description: "Anal Glands", quantity: "1", unitPrice: "35.00", lineTotal: "35.00" },
-      { description: "Teeth Ultra Clean", quantity: "1", unitPrice: "65.00", lineTotal: "65.00" },
+      { description: "Link — Anal Glands", quantity: "1", unitPrice: "35.00", lineTotal: "35.00" },
+      { description: "Link — Teeth Ultra Clean", quantity: "1", unitPrice: "65.00", lineTotal: "65.00" },
     ]);
     expect(subtotal).toBe("195.00");
   });
@@ -72,9 +72,31 @@ describe("the itemised invoice", () => {
       addOns: [{ name: "Pick Up or Delivery (each way)", unitPrice: "25.00", quantity: 2 }],
     });
     expect(lines[1]).toEqual({
-      description: "Pick Up or Delivery (each way)", quantity: "2", unitPrice: "25.00", lineTotal: "50.00",
+      description: "Link — Pick Up or Delivery (each way)", quantity: "2", unitPrice: "25.00", lineTotal: "50.00",
     });
     expect(subtotal).toBe("145.00");
+  });
+
+  it("tells two dogs' add-ons apart on one bill", () => {
+    // The case this exists for. Lauren bills a two-dog booking as one
+    // invoice, and both dogs often have the same extra. Unattributed,
+    // the client gets two lines both reading "Teeth Brushing" and no way
+    // to see that each dog was charged once rather than one dog twice.
+    const pippin = buildInvoiceLines({
+      petName: "Pippin", serviceLabel: "Classic Groom", servicePrice: "145.00",
+      addOns: [{ name: "Teeth Brushing", unitPrice: "35.00" }],
+    });
+    const mabel = buildInvoiceLines({
+      petName: "Mabel", serviceLabel: "Classic Groom", servicePrice: "163.00",
+      addOns: [{ name: "Teeth Brushing", unitPrice: "35.00" }],
+    });
+    const descriptions = [...pippin.lines, ...mabel.lines].map((l) => l.description);
+    expect(descriptions).toEqual([
+      "Pippin — Classic Groom", "Pippin — Teeth Brushing",
+      "Mabel — Classic Groom", "Mabel — Teeth Brushing",
+    ]);
+    // Every line names a dog, so no line is ambiguous on a combined bill.
+    expect(new Set(descriptions).size).toBe(descriptions.length);
   });
 
   it("still shows an add-on that was never priced", () => {
@@ -232,7 +254,7 @@ describe("the invoice a membership client gets for extras", () => {
       unitPrice: "0.00",
       lineTotal: "0.00",
     });
-    expect(itemised.lines[1].description).toBe("De-matt");
+    expect(itemised.lines[1].description).toBe("Millie — De-matt");
   });
 
   it("refuses to bill the groom even when the appointment carries a price", () => {

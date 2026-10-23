@@ -97,7 +97,12 @@ export function buildInvoiceLines(input: {
     const lineCents = unitCents * quantity;
     subtotalCents += lineCents;
     lines.push({
-      description: addOn.name,
+      // Named for the dog, like the service line above. On a single-dog
+      // invoice that is mildly redundant; on a combined one it is the
+      // difference between a reader knowing whose teeth were brushed
+      // and guessing. Two dogs, one bill, one line saying "Teeth
+      // Brushing" is a question the client has to ring up about.
+      description: `${pet} — ${addOn.name}`,
       quantity: String(quantity),
       unitPrice: centsToAmount(unitCents),
       lineTotal: centsToAmount(lineCents),
