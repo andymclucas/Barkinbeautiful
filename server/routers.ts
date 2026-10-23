@@ -100,6 +100,7 @@ import {
 import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
+import { countInvoicesCovering } from "./invoiceCoverage";
 import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
 import { parsePetCodes } from "../shared/petCodes";
@@ -1332,15 +1333,14 @@ const calendarRouter = router({
       // path and the manual button cannot drift. Nothing is sent to anyone:
       // raising an invoice writes a row, it does not email or charge.
       if (input.newState === "complete" && appt.workflowState !== "complete") {
-        const [invoiceCount] = await db.select({ n: sql<number>`COUNT(*)` })
-          .from(invoices).where(eq(invoices.appointmentId, appt.id));
+        const invoiceCount = await countInvoicesCovering(db, appt.id);
         // Loaded before the decision, not after: an appointment with no
         // price but a real add-on still has something to bill.
         const addOns = await loadAddOnsForInvoice(db, appt.tenantId, appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
-          existingInvoiceCount: Number(invoiceCount?.n ?? 0),
+          existingInvoiceCount: invoiceCount,
           workflowState: "complete",
           status: appt.status,
           addOnsTotal: addOnsTotal(addOns),
@@ -1656,13 +1656,12 @@ const calendarRouter = router({
         // billed membership grooms that the weekly charge already covers.
         // Same decision as the automatic path on completion, so the two
         // cannot diverge — see shared/appointmentInvoicing.ts.
-        const [already] = await db.select({ n: sql<number>`COUNT(*)` })
-          .from(invoices).where(eq(invoices.appointmentId, appt.id));
+        const already = await countInvoicesCovering(db, appt.id);
         const addOns = await loadAddOnsForInvoice(db, tenantOf(ctx, input), appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
-          existingInvoiceCount: Number(already?.n ?? 0),
+          existingInvoiceCount: already,
           workflowState: "complete",
           status: "confirmed",
           addOnsTotal: addOnsTotal(addOns),
@@ -1762,15 +1761,12 @@ const calendarRouter = router({
       const parts: CombinableAppointment[] = [];
       const skipped: Array<{ petName: string; reason: string }> = [];
       for (const appt of appts) {
-        const [already] = await db.select({ n: sql<number>`COUNT(*)` })
-          .from(invoiceAppointments).where(eq(invoiceAppointments.appointmentId, appt.id));
-        const [legacy] = await db.select({ n: sql<number>`COUNT(*)` })
-          .from(invoices).where(eq(invoices.appointmentId, appt.id));
+        const already = await countInvoicesCovering(db, appt.id);
         const addOns = await loadAddOnsForInvoice(db, tenantId, appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
-          existingInvoiceCount: Number(already?.n ?? 0) + Number(legacy?.n ?? 0),
+          existingInvoiceCount: already,
           workflowState: "complete",
           status: "confirmed",
           addOnsTotal: addOnsTotal(addOns),
