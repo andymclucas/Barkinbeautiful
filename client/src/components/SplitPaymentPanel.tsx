@@ -13,6 +13,10 @@ import {
   PAYMENT_METHODS, PAYMENT_METHOD_LABELS, splitEvenly, validatePaymentAmount,
   type PaymentMethod,
 } from "@shared/splitPayments";
+import { allocateAcrossDogs, describeAllocation, totalOutstanding } from "@shared/payAcrossDogs";
+
+/** Sentinel for the "every dog on this booking" option in the picker. */
+const ALL_DOGS = -1;
 
 /**
  * Taking the money for a booking, in as many transactions as it takes.
@@ -73,12 +77,52 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
   }
 
   const multiDog = data.appointments.length > 1;
-  const check = amount.trim()
+  /**
+   * "All dogs" — one tap at the counter for a household paying together.
+   *
+   * Lauren, 23/10/2026: "If they are paying all together do I just put
+   * in the total amount here? It says one dogs name that's all." She
+   * could not: the amount was validated against the SELECTED dog, so
+   * $290 on a $290 two-dog booking came back "more than the $145.00
+   * outstanding".
+   *
+   * The ledger still gets a row per dog — every report, invoice and
+   * membership check reads it that way — but the person entering it
+   * types one number.
+   */
+  const payingAll = target === ALL_DOGS;
+  const balances = data.appointments.map((a) => ({
+    appointmentId: a.appointmentId,
+    petName: a.petName,
+    outstanding: a.outstanding,
+  }));
+  const spread = payingAll && amount.trim() ? allocateAcrossDogs(amount, balances) : null;
+  const check = !payingAll && amount.trim()
     ? validatePaymentAmount(amount, { outstanding: selected?.outstanding ?? null, paid: selected?.paid ?? 0 })
     : null;
+  const canSubmit = payingAll ? Boolean(spread?.ok) : Boolean(check?.ok);
+  const error = payingAll ? (spread && !spread.ok ? spread.error : null) : (check && !check.ok ? check.error : null);
 
-  const submit = () => {
-    if (!check?.ok) return;
+  const submit = async () => {
+    if (!canSubmit) return;
+    if (payingAll && spread?.ok) {
+      // Sequential, so a failure part-way leaves the rows that did land
+      // rather than a half-applied batch nobody can see.
+      try {
+        for (const part of spread.allocations) {
+          await record.mutateAsync({
+            appointmentId: part.appointmentId,
+            amount: part.amount.toFixed(2),
+            method,
+            note: note.trim() || undefined,
+          });
+        }
+        toast.success(`Payment recorded — ${describeAllocation(spread.allocations)}`);
+      } catch {
+        // record's own onError has already said what went wrong.
+      }
+      return;
+    }
     record.mutate({ appointmentId: selectedId, amount, method, note: note.trim() || undefined });
   };
 
@@ -194,6 +238,11 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             <Select value={String(selectedId)} onValueChange={(v) => setTarget(Number(v))}>
               <SelectTrigger className="h-8 w-[7.5rem] text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
+                {/* First, because paying for the whole household is the
+                    common case at the counter — not the exception. */}
+                <SelectItem value={String(ALL_DOGS)} className="text-xs font-semibold">
+                  All dogs {money(totalOutstanding(balances))}
+                </SelectItem>
                 {data.appointments.map((entry) => (
                   <SelectItem key={entry.appointmentId} value={String(entry.appointmentId)} className="text-xs">
                     {entry.petName}
@@ -227,7 +276,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
           <Button
             size="sm"
             className="h-8 gap-1.5"
-            disabled={!check?.ok || record.isPending}
+            disabled={!canSubmit || record.isPending}
             onClick={submit}
           >
             {record.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -257,14 +306,28 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
 
         {/* One tap for the two amounts anyone actually types. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {selected?.outstanding != null && selected.outstanding > 0 && (
+          {!payingAll && selected?.outstanding != null && selected.outstanding > 0 && (
             <>
               <QuickAmount label={`Balance ${money(selected.outstanding)}`} onClick={() => setAmount(selected.outstanding!.toFixed(2))} />
               <QuickAmount label={`Half ${money(splitEvenly(selected.outstanding, 2)[0])}`} onClick={() => setAmount(splitEvenly(selected.outstanding!, 2)[0].toFixed(2))} />
               <QuickAmount label={`Third ${money(splitEvenly(selected.outstanding, 3)[0])}`} onClick={() => setAmount(splitEvenly(selected.outstanding!, 3)[0].toFixed(2))} />
             </>
           )}
-          {check && !check.ok && <span className="text-[11px] text-red-600 dark:text-red-400">{check.error}</span>}
+          {payingAll && totalOutstanding(balances) > 0 && (
+            <QuickAmount
+              label={`Whole booking ${money(totalOutstanding(balances))}`}
+              onClick={() => setAmount(totalOutstanding(balances).toFixed(2))}
+            />
+          )}
+          {/* Read back which dogs the money lands on, before it does.
+              A part payment fills one dog at a time, so "Agnes $145.00
+              and Shirley $55.00" is worth seeing rather than assuming. */}
+          {spread?.ok && (
+            <span className="text-[11px] text-muted-foreground" data-testid="allocation-preview">
+              {describeAllocation(spread.allocations)}
+            </span>
+          )}
+          {error && <span className="text-[11px] text-red-600 dark:text-red-400">{error}</span>}
         </div>
       </div>
     </div>
