@@ -26,7 +26,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
+  invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
@@ -105,6 +105,7 @@ import { petCodesRouter } from "./routers/petCodes";
 import { parsePetCodes } from "../shared/petCodes";
 import { buildPassingReview, describePassingReview, type PassingReview } from "../shared/petPassingReview";
 import { canDeletePet } from "../shared/petDeletion";
+import { combineInvoice, combinedInvoiceNumber, type CombinableAppointment } from "../shared/combinedInvoice";
 import { bookingPricingRouter } from "./routers/bookingPricing";
 import { stripeConnectRouter } from "./routers/stripeConnect";
 import { salonSignupRouter } from "./routers/salonSignup";
@@ -1700,13 +1701,135 @@ const calendarRouter = router({
         await db.insert(invoiceLineItems).values(
           itemised.lines.map(line => ({ invoiceId, ...line })),
         );
+        // A single-dog invoice gets a link row too, so "has this
+        // appointment been billed?" has one place to look whichever
+        // path raised it.
+        await db.insert(invoiceAppointments).values({
+          tenantId: tenantOf(ctx, input), invoiceId, appointmentId: appt.id,
+        });
         created.push({ invoiceId, invoiceNumber: invNum, petName: appt.petName ?? "Pet", total: itemised.subtotal });
       }
       return { success: true, created, skipped };
     }),
+
+  /**
+   * One invoice for the whole booking.
+   *
+   * Lauren, 23/10/2026: "how do I invoice a total double dog invoice?"
+   * createSessionBills raises one per dog, so a household paying once
+   * for Agnes and Shirley got two bills.
+   *
+   * The line items are the same per-dog ones from the same helper, so a
+   * combined bill and two separate ones itemise identically. All this
+   * changes is the envelope.
+   */
+  createCombinedSessionBill: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      appointmentIds: z.array(z.number()).min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffTenant(db, ctx.user);
+      const tenantId = tenantOf(ctx, input);
+
+      const appts = await db
+        .select({
+          id: appointments.id, petId: appointments.petId, clientId: appointments.clientId,
+          membershipId: appointments.membershipId, price: appointments.price,
+          serviceType: appointments.serviceType, scheduledStart: appointments.scheduledStart,
+          petName: pets.name, clientLastName: clients.lastName,
+        })
+        .from(appointments)
+        .leftJoin(pets, eq(appointments.petId, pets.id))
+        .leftJoin(clients, eq(appointments.clientId, clients.id))
+        .where(and(eq(appointments.tenantId, tenantId), inArray(appointments.id, input.appointmentIds)))
+        .orderBy(asc(appointments.id));
+      if (appts.length === 0) throw new Error("No appointments found");
+
+      // One household per invoice. Billing two clients on one bill would
+      // put somebody else's dog on a client's paperwork.
+      const clientIds = Array.from(new Set(appts.map((a) => a.clientId)));
+      if (clientIds.length > 1) throw new Error("These bookings belong to different clients");
+
+      const SERVICE_LABELS_COMBINED: Record<string, string> = {
+        classic_groom: "Classic Groom", styled_groom: "Styled Groom",
+        bath_only: "Bath Only", fft: "FFT", nail_trim: "Nail Trim",
+        daycare: "Daycare", deshed: "Deshed", other: "Other",
+      };
+
+      const parts: CombinableAppointment[] = [];
+      const skipped: Array<{ petName: string; reason: string }> = [];
+      for (const appt of appts) {
+        const [already] = await db.select({ n: sql<number>`COUNT(*)` })
+          .from(invoiceAppointments).where(eq(invoiceAppointments.appointmentId, appt.id));
+        const [legacy] = await db.select({ n: sql<number>`COUNT(*)` })
+          .from(invoices).where(eq(invoices.appointmentId, appt.id));
+        const addOns = await loadAddOnsForInvoice(db, tenantId, appt.id);
+        const decision = decideAppointmentInvoice({
+          price: appt.price,
+          membershipId: appt.membershipId,
+          existingInvoiceCount: Number(already?.n ?? 0) + Number(legacy?.n ?? 0),
+          workflowState: "complete",
+          status: "confirmed",
+          addOnsTotal: addOnsTotal(addOns),
+        });
+        if (!decision.invoice) { skipped.push({ petName: appt.petName ?? "Pet", reason: decision.reason }); continue; }
+        const itemised = buildInvoiceLines({
+          petName: appt.petName,
+          serviceLabel: SERVICE_LABELS_COMBINED[appt.serviceType] ?? appt.serviceType,
+          servicePrice: appt.price ? parseFloat(String(appt.price)).toFixed(2) : "0.00",
+          addOns,
+          membershipCovered: decision.bill === "extras_only",
+        });
+        parts.push({
+          appointmentId: appt.id, petName: appt.petName,
+          lines: itemised.lines, subtotalCents: itemised.subtotalCents,
+          membershipCovered: decision.bill === "extras_only",
+        });
+      }
+
+      const combined = combineInvoice(parts);
+      if (!combined) return { success: true, created: null, skipped };
+
+      const first = appts[0];
+      const invNum = combinedInvoiceNumber({
+        clientLastName: first.clientLastName,
+        date: new Date(first.scheduledStart),
+        suffix: Date.now().toString(36).slice(-4).toUpperCase(),
+      });
+      const [result] = await db.insert(invoices).values({
+        tenantId, clientId: first.clientId,
+        // Left null: the invoice covers several, and invoice_appointments
+        // is where that is recorded. Picking one would make the other
+        // dogs invisible to anything reading this column.
+        appointmentId: null,
+        membershipId: null,
+        invoiceNumber: invNum,
+        subtotal: combined.subtotal, taxAmount: "0", total: combined.subtotal,
+        status: "draft",
+        dueAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        notes: `Grooming invoice \u2014 ${combined.who} \u2014 ${new Date(first.scheduledStart).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })}`,
+      });
+      const invoiceId = Number((result as any).insertId);
+      await db.insert(invoiceLineItems).values(combined.lines.map((line) => ({ invoiceId, ...line })));
+      await db.insert(invoiceAppointments).values(
+        combined.appointmentIds.map((appointmentId) => ({ tenantId, invoiceId, appointmentId })),
+      );
+
+      return {
+        success: true,
+        created: {
+          invoiceId, invoiceNumber: invNum, total: combined.subtotal,
+          who: combined.who, pets: combined.petNames,
+        },
+        skipped,
+      };
+    }),
 });
 
-// ─── Workflow Board ───────────────────────────────────────────────────────────
+// ─── Workflow Board ───────────────────────────────────────────────────
 const workflowRouter = router({
   getTodayBoard: operationalProcedure
     .input(z.object({ tenantId: z.number().default(1) }))

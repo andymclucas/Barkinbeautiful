@@ -749,6 +749,29 @@ export const invoices = mysqlTable("invoices", {
 }, (t) => [index("idx_invoice_tenant").on(t.tenantId), index("idx_invoice_client").on(t.clientId)]);
 
 // ─── Invoice Line Items ───────────────────────────────────────────────────────
+/**
+ * Which appointments an invoice covers.
+ *
+ * `invoices.appointment_id` holds one and cannot express a household
+ * paying once for two dogs — which is what Create Bills produced two
+ * bills for. That column stays for every invoice already raised; this
+ * table is the authority going forward, and a single-dog invoice gets a
+ * row here too so the duplicate-bill check has one place to look.
+ */
+export const invoiceAppointments = mysqlTable("invoice_appointments", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  invoiceId: int("invoice_id").notNull(),
+  appointmentId: int("appointment_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_invoice_appt").on(t.invoiceId, t.appointmentId),
+  index("idx_invoice_appt_appointment").on(t.appointmentId),
+  index("idx_invoice_appt_tenant").on(t.tenantId),
+]);
+
+export type InvoiceAppointment = typeof invoiceAppointments.$inferSelect;
+
 export const invoiceLineItems = mysqlTable("invoice_line_items", {
   id: int("id").autoincrement().primaryKey(),
   invoiceId: int("invoice_id").notNull().references(() => invoices.id),

@@ -1320,6 +1320,19 @@ export default function Calendar() {
   const updateDetailsMutation = trpc.calendar.updateDetails.useMutation({
     onError: (e) => toast.error(e.message),
   });
+  const combinedBillMutation = trpc.calendar.createCombinedSessionBill.useMutation({
+    onSuccess: (r) => {
+      if (!r.created) {
+        toast.info("Nothing to bill — every groom on this booking is covered by a membership");
+        return;
+      }
+      toast.success(`Invoice ${r.created.invoiceNumber} created`, {
+        description: `${r.created.who} — $${r.created.total}`,
+      });
+      utils.calendar.getAppointments.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const createSessionBillsMutation = trpc.calendar.createSessionBills.useMutation({
     onSuccess: (data) => {
       const lines = data.created.map(b => `${b.petName}: $${b.total} (${b.invoiceNumber})`).join("\n");
@@ -4055,17 +4068,36 @@ export default function Calendar() {
                       return price !== "" && parseFloat(price) > 0;
                     });
                     return (
+                      <>
+                      {/* One bill for the household. Lauren, 23/10/2026:
+                          "how do I invoice a total double dog invoice?"
+                          Offered first on a multi-dog booking, because
+                          one family paying once is the common case. */}
+                      {allPets.length > 1 && (
+                        <Button
+                          variant="outline"
+                          className="gap-1.5 border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-800 dark:hover:text-emerald-300"
+                          disabled={!allHavePrices || combinedBillMutation.isPending}
+                          title={!allHavePrices ? "Set a price for each dog before generating a bill" : "One draft invoice covering every dog on this booking"}
+                          onClick={() => combinedBillMutation.mutate({ appointmentIds: allPets.map(p => p.id) })}
+                        >
+                          {combinedBillMutation.isPending ? "Creating..." : "One Bill for All"}
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         className="gap-1.5 border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-800 dark:hover:text-emerald-300"
                         disabled={!allHavePrices || createSessionBillsMutation.isPending}
-                        title={!allHavePrices ? "Set a price for each dog before generating bills" : "Create a separate draft invoice for each dog"}
+                        title={!allHavePrices ? "Set a price for each dog before generating bills" : "A separate draft invoice for each dog"}
                         onClick={() => createSessionBillsMutation.mutate({
                           appointmentIds: allPets.map(p => p.id),
                         })}
                       >
-                        {createSessionBillsMutation.isPending ? "Creating..." : "Create Bills"}
+                        {createSessionBillsMutation.isPending
+                          ? "Creating..."
+                          : allPets.length > 1 ? "Separate Bills" : "Create Bill"}
                       </Button>
+                      </>
                     );
                   })()}
                   <Button variant="outline" onClick={closeEditDialog}>Cancel</Button>
