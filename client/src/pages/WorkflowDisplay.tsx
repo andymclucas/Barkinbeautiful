@@ -16,6 +16,8 @@ import { useDisplayTheme } from "@/lib/displayTheme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { WorkflowBoardTable } from "@/components/WorkflowBoardTable";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { useTimezone } from "@/lib/timezone";
+import { dayInZone, addCalendarDays, isDayBefore } from "@shared/calendarDay";
 
 const STAGES = [
   { key: "scheduled", label: "Waiting", colour: WORKFLOW_STAGE_COLOURS.scheduled },
@@ -71,7 +73,20 @@ export default function WorkflowDisplay() {
     return () => setDarkSurface(false);
   }, [theme, setDarkSurface]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [boardDate, setBoardDate] = useState(() => new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10));
+  /**
+   * Which day the board is showing.
+   *
+   * The salon's clock, not the viewer's: "which dogs are in today" has to
+   * be the same answer on every screen, or two staff in different zones
+   * see different boards. lib/timezone.ts makes the same distinction.
+   *
+   * It used to be `Date.now() + 10 * 3600000`, a hardcoded Brisbane
+   * offset that is an hour out in any zone with daylight saving — enough
+   * to name the wrong day near midnight.
+   */
+  const { salonTimezone } = useTimezone();
+  const salonToday = dayInZone(now, salonTimezone) ?? new Date().toISOString().slice(0, 10);
+  const [boardDate, setBoardDate] = useState(salonToday);
   const { data: boardData, refetch, isFetching, isLoading: isBoardLoading, isError } = trpc.workflow.getBoard.useQuery(
     { date: boardDate },
     { ...workflowBoardRefreshOptions, enabled: !!user },
@@ -113,17 +128,35 @@ export default function WorkflowDisplay() {
 
   const resetForTomorrow = () => {
     setShowCompleted(false);
-    setBoardDate(currentDate => {
-      const nextDate = new Date(`${currentDate}T00:00:00`);
-      nextDate.setDate(nextDate.getDate() + 1);
-      return nextDate.toISOString().slice(0, 10);
-    });
+    // This was a no-op for its whole life. It parsed the date as LOCAL
+    // time, added a day, then read it back with toISOString() as UTC, and
+    // in Brisbane the two conversions cancelled the increment exactly —
+    // every date mapped to itself and the button did nothing.
+    setBoardDate(currentDate => addCalendarDays(currentDate, 1) ?? currentDate);
   };
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  /**
+   * Follow the salon into the new day.
+   *
+   * boardDate was read once at mount and nothing ever moved it, so a wall
+   * display left on overnight kept asking for yesterday: next morning the
+   * board showed yesterday's dogs, all complete, and none of today's.
+   * Opening the page fresh always looked fine, which is why it never
+   * reproduced on a phone or a tablet that gets closed.
+   *
+   * Only ever FORWARD, and only when the board is behind. Someone who
+   * pressed "reset for tomorrow" is looking ahead deliberately and must
+   * not be dragged back. `salonToday` changes once a day, so despite the
+   * one-second clock tick this runs once at midnight.
+   */
+  useEffect(() => {
+    setBoardDate(current => (isDayBefore(current, salonToday) ? salonToday : current));
+  }, [salonToday]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -218,7 +251,11 @@ export default function WorkflowDisplay() {
           <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-12 w-12 object-contain rounded bg-white p-1" />
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Live Workflow Board</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{new Date(`${boardDate}T00:00:00`).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long" })} · Independent read-only display</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{/* Parsed and rendered as UTC on purpose. boardDate is a plain
+                 calendar day, not an instant, so converting it between zones
+                 can only move it: read as local and rendered in a zone behind
+                 the salon it showed "Thursday 22 October" above Friday's dogs. */}
+              {new Date(`${boardDate}T00:00:00Z`).toLocaleDateString("en-AU", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long" })} · Independent read-only display</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
