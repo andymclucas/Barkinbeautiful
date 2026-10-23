@@ -44,6 +44,7 @@ import { desc } from "drizzle-orm";
 import { sendSms, buildAppointmentReminderSms } from "./sms";
 import { appointments, staff } from "../drizzle/schema";
 import { gte, isNotNull, lt } from "drizzle-orm";
+import { resolveChargePlan } from "@shared/membershipBillingCycle";
 
 
 
@@ -110,10 +111,18 @@ async function attemptMembershipCharge(
     return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true };
   }
 
+  // The amount for ONE cycle, not the weekly rate. A monthly member's
+  // price_per_cycle is weekly, so charging it here would retry 23% of
+  // what they owe and mark the failure resolved.
+  const plan = resolveChargePlan(membership);
+  if (!plan.ok) {
+    return { ok: false, skipped: true, reason: plan.error, declineCode: null, viaInvoice: false };
+  }
+
   const result = await chargeSavedCard({
     customerId: client.stripeCustomerId!,
     paymentMethodId: client.stripeDefaultPaymentMethodId!,
-    amountDollars: membership.pricePerCycle ?? "0",
+    amountDollars: (plan.amountCents / 100).toFixed(2),
     description: `${membership.name ?? "Membership"} - retry`,
     metadata: {
       groomigo_membership_id: String(membership.id),
@@ -160,6 +169,8 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         tenantId: memberships.tenantId,
         failedCount: memberships.failedPaymentCount,
         pricePerCycle: memberships.pricePerCycle,
+        billingCycle: memberships.billingCycle,
+        billingCycleWeeks: memberships.billingCycleWeeks,
         membershipName: memberships.name,
         clientId: memberships.clientId,
         petId: memberships.petId,
@@ -320,6 +331,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
               petName,
               membershipName,
               pricePerCycle: priceStr,
+              billingCycle: m.billingCycle,
               businessName: tenantRow?.name ?? "Barkin' Beautiful",
               businessPhone: tenantRow?.phone,
               businessEmail: tenantRow?.email,
@@ -362,6 +374,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
               petName,
               membershipName,
               pricePerCycle: priceStr,
+              billingCycle: m.billingCycle,
               failedPaymentCount: newFailCount,
               retryDate,
             }),

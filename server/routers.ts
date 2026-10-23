@@ -101,7 +101,7 @@ import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
-import { weeklyToMonthly, annualisedCost, describeRate } from "../shared/membershipBillingCycle";
+import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
 import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
 import { parsePetCodes } from "../shared/petCodes";
@@ -5797,6 +5797,7 @@ const membershipsRouter = router({
           id: memberships.id,
           name: memberships.name,
           pricePerCycle: memberships.pricePerCycle,
+          billingCycle: memberships.billingCycle,
           failedPaymentCount: memberships.failedPaymentCount,
           clientId: memberships.clientId,
           petId: memberships.petId,
@@ -5851,6 +5852,7 @@ const membershipsRouter = router({
         petName: row.petName ?? "Unknown pet",
         membershipName: row.name,
         pricePerCycle: parseFloat(row.pricePerCycle ?? "0").toFixed(2),
+        billingCycle: row.billingCycle,
         failedPaymentCount: newFailCount,
         retryDate: retryDateStr,
       });
@@ -5861,9 +5863,17 @@ const membershipsRouter = router({
           html: adminHtml,
         });
       }
+      // Says the cycle rather than assuming "/wk": the owner reading this
+      // needs to know whether $450.67 or $104.00 failed.
+      const failedPlan = resolveChargePlan({
+        billingCycle: row.billingCycle, billingCycleWeeks: 1, pricePerCycle: row.pricePerCycle,
+      });
+      const failedAmountLabel = failedPlan.ok
+        ? failedPlan.label
+        : `$${parseFloat(row.pricePerCycle ?? "0").toFixed(2)}`;
       await notifyOwner({
         title: `Payment Failed: ${row.clientFirstName} ${row.clientLastName} — ${row.name}`,
-        content: `Failure #${newFailCount}. Retry scheduled for ${retryDateStr}. Amount: $${parseFloat(row.pricePerCycle ?? "0").toFixed(2)}/wk.`,
+        content: `Failure #${newFailCount}. Retry scheduled for ${retryDateStr}. Amount: ${failedAmountLabel}.`,
       }).catch(() => {});
 
       // On 2nd failure: email the client
@@ -5873,6 +5883,7 @@ const membershipsRouter = router({
           petName: row.petName ?? "your pet",
           membershipName: row.name,
           pricePerCycle: parseFloat(row.pricePerCycle ?? "0").toFixed(2),
+          billingCycle: row.billingCycle,
           businessName: row.tenantName ?? "Barkin\' Beautiful Grooming Studio",
           businessPhone: row.tenantPhone,
           businessEmail: row.tenantEmail,

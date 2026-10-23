@@ -1,3 +1,5 @@
+// Reuses the Stripe cadence vocabulary rather than inventing a second one.
+import { billingCycleFromWeeks, type BillingCycle as StripeBillingCycle } from "./stripeBilling";
 /**
  * Weekly and monthly membership rates, and the conversion between them.
  *
@@ -79,17 +81,24 @@ export function monthlyToWeekly(monthly: string | number | null | undefined): st
  */
 export function annualisedCost(
   rate: string | number | null | undefined,
-  cycle: BillingCycle,
+  cycle: MembershipBillingCycle,
 ): string | null {
   const cents = toCents(rate);
   if (cents <= 0) return null;
   return fromCents(Math.round(cents * (cycle === "monthly" ? MONTHS_PER_YEAR : WEEKS_PER_YEAR)));
 }
 
-export type BillingCycle = "weekly" | "monthly";
+/**
+ * What the `memberships.billing_cycle` column holds. Deliberately NARROWER
+ * than the `BillingCycle` in stripeBilling.ts, which also knows
+ * "fortnightly": a fortnight is expressible in whole weeks and so is
+ * carried by `billing_cycle_weeks`, where it already works. This column
+ * exists only for the cadence that column cannot hold.
+ */
+export type MembershipBillingCycle = "weekly" | "monthly";
 
 /** How a rate reads to a human, e.g. "$65.00/month". */
-export function describeRate(rate: string | number | null | undefined, cycle: BillingCycle): string {
+export function describeRate(rate: string | number | null | undefined, cycle: MembershipBillingCycle): string {
   const cents = toCents(rate);
   if (cents <= 0) return "unpriced";
   return `$${fromCents(cents)}/${cycle === "monthly" ? "month" : "week"}`;
@@ -115,4 +124,61 @@ export function switchImpact(
     monthly, annualBefore: before, annualAfter: after,
     differenceCents: toCents(after) - toCents(before),
   };
+}
+
+
+/**
+ * The cadence AND the amount Stripe should bill, decided together.
+ *
+ * These two must be resolved in one place. `startSubscription` used to
+ * take the cadence from `billing_cycle_weeks` and the amount from
+ * `price_per_cycle` independently, which was correct only while every
+ * membership was weekly and the two happened to agree. Set one membership
+ * to monthly and it would have billed the WEEKLY rate on a WEEKLY
+ * cadence — the monthly setting silently ignored, 52 charges a year.
+ *
+ * The amount rule differs by cadence, which is the subtle part:
+ *
+ *  - weekly / fortnightly: `price_per_cycle` is already the amount for
+ *    one cycle. It is passed through untouched, exactly as before.
+ *  - monthly: `price_per_cycle` is the WEEKLY rate and the charge is
+ *    weekly x 52/12. Passing it through would bill $104 a month for a
+ *    $104-a-week membership — a 77% undercharge that looks plausible on
+ *    the invoice.
+ *
+ * Returns an error rather than guessing, because every wrong answer here
+ * takes the wrong amount of money off a real person.
+ */
+export type ChargePlan =
+  | { ok: true; cycle: StripeBillingCycle; amountCents: number; label: string }
+  | { ok: false; error: string };
+
+export function resolveChargePlan(membership: {
+  billingCycle?: MembershipBillingCycle | null;
+  billingCycleWeeks?: number | null;
+  pricePerCycle?: string | number | null;
+}): ChargePlan {
+  const stored = toCents(membership.pricePerCycle);
+  if (stored <= 0) return { ok: false, error: "This membership has no price to bill" };
+
+  if (membership.billingCycle === "monthly") {
+    const monthly = weeklyToMonthly(membership.pricePerCycle);
+    if (monthly === null) return { ok: false, error: "This membership has no price to bill" };
+    return { ok: true, cycle: "monthly", amountCents: toCents(monthly), label: describeRate(monthly, "monthly") };
+  }
+
+  // Unchanged from before: whole-week cadences keep coming from the int
+  // column, and an unmapped one still refuses rather than guessing. Four
+  // weeks is NOT monthly — 4-weekly bills 13 times a year, monthly 12.
+  const cycle = billingCycleFromWeeks(membership.billingCycleWeeks);
+  if (!cycle) {
+    return {
+      ok: false,
+      error: `This membership bills every ${membership.billingCycleWeeks ?? "?"} weeks, which automatic Stripe billing doesn't cover. Change it to weekly or fortnightly first.`,
+    };
+  }
+  const label = cycle === "fortnightly"
+    ? `$${(stored / 100).toFixed(2)}/fortnight`
+    : describeRate(membership.pricePerCycle, "weekly");
+  return { ok: true, cycle, amountCents: stored, label };
 }

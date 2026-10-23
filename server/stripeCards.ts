@@ -26,7 +26,8 @@ import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
 import { getAppBaseUrl } from "./appUrl";
-import { toStripeCents, stripeRecurring, billingCycleFromWeeks } from "@shared/stripeBilling";
+import { toStripeCents, stripeRecurring } from "@shared/stripeBilling";
+import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 
 /** Find or create the Stripe customer that represents this client. */
@@ -321,6 +322,7 @@ export async function startMembershipSubscription(membershipId: number, firstCha
       name: memberships.name,
       pricePerCycle: memberships.pricePerCycle,
       billingCycleWeeks: memberships.billingCycleWeeks,
+      billingCycle: memberships.billingCycle,
       stripeSubscriptionId: memberships.stripeSubscriptionId,
     })
     .from(memberships)
@@ -346,16 +348,12 @@ export async function startMembershipSubscription(membershipId: number, firstCha
     throw new Error("This client has no card on file yet. Send them a card link first.");
   }
 
-  const amount = toStripeCents(membership.pricePerCycle);
-  if (amount <= 0) throw new Error("This membership has no price to bill");
-
-  // Guessing a cadence overcharges or undercharges a real person, so refuse.
-  const cycle = billingCycleFromWeeks(membership.billingCycleWeeks);
-  if (!cycle) {
-    throw new Error(
-      `This membership bills every ${membership.billingCycleWeeks ?? "?"} weeks, which automatic Stripe billing doesn't cover. Change it to weekly or fortnightly first.`,
-    );
-  }
+  // Cadence and amount come from ONE decision, never two. Resolving them
+  // separately is what let a monthly membership bill the weekly rate on a
+  // weekly cadence — see resolveChargePlan.
+  const plan = resolveChargePlan(membership);
+  if (!plan.ok) throw new Error(plan.error);
+  const { cycle, amountCents: amount } = plan;
 
   const productId = await ensureMembershipProduct(stripe, membership.tenantId ?? 1);
   // trial_end rather than billing_cycle_anchor: "take nothing until this

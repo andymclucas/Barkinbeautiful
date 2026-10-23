@@ -4,6 +4,7 @@
  * Set RESEND_FROM_EMAIL to the verified sender address (e.g. "noreply@barkinbeautiful.com.au").
  */
 import { Resend } from "resend";
+import { weeklyToMonthly, describeRate, type MembershipBillingCycle } from "../shared/membershipBillingCycle";
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
@@ -44,11 +45,24 @@ export async function sendEmail({
 }
 
 /** Email template: admin alert for first failed payment */
+/**
+ * What the client is actually charged, said in their own cycle.
+ *
+ * `pricePerCycle` is the WEEKLY rate for a monthly member, so printing it
+ * beside the word "week" tells someone who was charged $450.67 that their
+ * membership is $104/week. Both numbers are true and the pairing is not.
+ */
+function chargedLabel(pricePerCycle: string, cycle: MembershipBillingCycle = "weekly"): string {
+  if (cycle === "monthly") return describeRate(weeklyToMonthly(pricePerCycle), "monthly");
+  return describeRate(pricePerCycle, "weekly");
+}
+
 export function buildAdminFailedPaymentEmail({
   clientName,
   petName,
   membershipName,
   pricePerCycle,
+  billingCycle,
   failedPaymentCount,
   retryDate,
 }: {
@@ -56,6 +70,8 @@ export function buildAdminFailedPaymentEmail({
   petName: string;
   membershipName: string;
   pricePerCycle: string;
+  /** Defaults to weekly, which is what every membership was before 23/10/2026. */
+  billingCycle?: MembershipBillingCycle;
   failedPaymentCount: number;
   retryDate: string;
 }): string {
@@ -81,7 +97,7 @@ export function buildAdminFailedPaymentEmail({
       <tr><td>Client</td><td><strong>${clientName}</strong></td></tr>
       <tr><td>Pet</td><td>${petName}</td></tr>
       <tr><td>Membership</td><td>${membershipName}</td></tr>
-      <tr><td>Amount</td><td>$${pricePerCycle}/week</td></tr>
+      <tr><td>Amount</td><td>${chargedLabel(pricePerCycle, billingCycle)}</td></tr>
       <tr><td>Failure #</td><td>${failedPaymentCount}</td></tr>
       <tr><td>Retry scheduled</td><td>${retryDate}</td></tr>
     </table>
@@ -100,6 +116,7 @@ export function buildClientFailedPaymentEmail({
   petName,
   membershipName,
   pricePerCycle,
+  billingCycle,
   businessName,
   businessPhone,
   businessEmail,
@@ -108,6 +125,8 @@ export function buildClientFailedPaymentEmail({
   petName: string;
   membershipName: string;
   pricePerCycle: string;
+  /** Defaults to weekly, which is what every membership was before 23/10/2026. */
+  billingCycle?: MembershipBillingCycle;
   businessName: string;
   businessPhone?: string | null;
   businessEmail?: string | null;
@@ -135,7 +154,7 @@ export function buildClientFailedPaymentEmail({
     <table>
       <tr><td>Pet</td><td><strong>${petName}</strong></td></tr>
       <tr><td>Membership</td><td>${membershipName}</td></tr>
-      <tr><td>Weekly amount</td><td>$${pricePerCycle}</td></tr>
+      <tr><td>Amount</td><td>${chargedLabel(pricePerCycle, billingCycle)}</td></tr>
     </table>
   </div>
   <p>To reinstate your membership and resume bookings, please update your payment details or contact us as soon as possible.</p>

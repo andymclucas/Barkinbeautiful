@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   WEEKLY_TO_MONTHLY, weeklyToMonthly, monthlyToWeekly,
-  annualisedCost, describeRate, switchImpact,
+  annualisedCost, describeRate, switchImpact, resolveChargePlan,
 } from "../shared/membershipBillingCycle";
 
 describe("the multiplier", () => {
@@ -105,5 +105,69 @@ describe("describeRate", () => {
     expect(describeRate("15.00", "weekly")).toBe("$15.00/week");
     expect(describeRate("65.00", "monthly")).toBe("$65.00/month");
     expect(describeRate(null, "weekly")).toBe("unpriced");
+  });
+});
+
+describe("resolveChargePlan — the cadence and the amount together", () => {
+  it("bills a monthly membership monthly, at the MONTHLY amount", () => {
+    // The defect this exists for: before, cadence came from
+    // billing_cycle_weeks (=1 -> weekly) and the amount from
+    // price_per_cycle (the weekly rate), so a monthly membership was
+    // billed $104 every WEEK instead of $450.67 every month.
+    const plan = resolveChargePlan({
+      billingCycle: "monthly", billingCycleWeeks: 1, pricePerCycle: "104.00",
+    });
+    expect(plan).toEqual({
+      ok: true, cycle: "monthly", amountCents: 45067, label: "$450.67/month",
+    });
+  });
+
+  it("leaves a weekly membership exactly as it billed before", () => {
+    const plan = resolveChargePlan({
+      billingCycle: "weekly", billingCycleWeeks: 1, pricePerCycle: "104.00",
+    });
+    expect(plan).toEqual({
+      ok: true, cycle: "weekly", amountCents: 10400, label: "$104.00/week",
+    });
+  });
+
+  it("still honours a fortnightly membership from the weeks column", () => {
+    // price_per_cycle is the per-FORTNIGHT amount there, not a weekly
+    // rate, so it passes through untouched.
+    const plan = resolveChargePlan({
+      billingCycle: "weekly", billingCycleWeeks: 2, pricePerCycle: "208.00",
+    });
+    expect(plan).toEqual({
+      ok: true, cycle: "fortnightly", amountCents: 20800, label: "$208.00/fortnight",
+    });
+  });
+
+  it("refuses a cadence Stripe billing cannot express", () => {
+    const plan = resolveChargePlan({ billingCycle: "weekly", billingCycleWeeks: 4, pricePerCycle: "400.00" });
+    expect(plan.ok).toBe(false);
+    // 4-weekly bills 13 times a year and monthly 12 — picking one would
+    // over- or undercharge, so it asks a human.
+    if (!plan.ok) expect(plan.error).toMatch(/every 4 weeks/);
+  });
+
+  it("refuses an unpriced membership rather than billing zero", () => {
+    for (const bad of [null, undefined, "", "0.00", "-1"]) {
+      const plan = resolveChargePlan({ billingCycle: "monthly", billingCycleWeeks: 1, pricePerCycle: bad });
+      expect(plan.ok).toBe(false);
+    }
+  });
+
+  it("treats a missing billing_cycle as weekly, not as monthly", () => {
+    // Old rows and any insert that never names the column must keep
+    // billing exactly as they do today.
+    const plan = resolveChargePlan({ billingCycleWeeks: 1, pricePerCycle: "15.00" });
+    expect(plan).toMatchObject({ ok: true, cycle: "weekly", amountCents: 1500 });
+  });
+
+  it("charges the same over a year whichever cycle is chosen", () => {
+    const weekly = resolveChargePlan({ billingCycle: "weekly", billingCycleWeeks: 1, pricePerCycle: "15.00" });
+    const monthly = resolveChargePlan({ billingCycle: "monthly", billingCycleWeeks: 1, pricePerCycle: "15.00" });
+    if (!weekly.ok || !monthly.ok) throw new Error("both should resolve");
+    expect(weekly.amountCents * 52).toBe(monthly.amountCents * 12);
   });
 });
