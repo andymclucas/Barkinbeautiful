@@ -13,7 +13,7 @@ import {
   PAYMENT_METHODS, PAYMENT_METHOD_LABELS, splitEvenly, validatePaymentAmount,
   type PaymentMethod,
 } from "@shared/splitPayments";
-import { allocateAcrossDogs, describeAllocation, totalOutstanding } from "@shared/payAcrossDogs";
+import { allocateAcrossDogs, describeAllocation, totalOutstanding, prefilledAmount } from "@shared/payAcrossDogs";
 
 /** Sentinel for the "every dog on this booking" option in the picker. */
 const ALL_DOGS = -1;
@@ -44,11 +44,44 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
   const { data, isLoading } = trpc.payments.forBooking.useQuery({ appointmentId });
 
   const [target, setTarget] = useState<number | null>(null);
-  const [amount, setAmount] = useState("");
+  /**
+   * What the staff member typed, and whether they have typed at all.
+   *
+   * Andy, 23/10/2026: "don't need to fill in the total - it should auto
+   * populate to take the payment." So the box shows the balance until
+   * somebody edits it, and shows exactly what they typed afterwards —
+   * including an empty box, which must stay empty rather than springing
+   * back to the balance while they are mid-edit.
+   *
+   * Two pieces of state rather than one because "" is a real value a
+   * person can choose. A single string cannot tell "untouched" from
+   * "deliberately cleared", and conflating them makes the field refill
+   * itself under the cursor.
+   */
+  const [typedAmount, setTypedAmount] = useState("");
+  const [amountEdited, setAmountEdited] = useState(false);
   const [method, setMethod] = useState<PaymentMethod>("eftpos");
   const [note, setNote] = useState("");
 
-  const selectedId = target ?? data?.appointments[0]?.appointmentId ?? appointmentId;
+  /** Typing, or tapping a quick amount, takes the field off the balance. */
+  const setAmount = (value: string) => { setAmountEdited(true); setTypedAmount(value); };
+  /** Back onto the balance — after a payment lands, or the target changes. */
+  const resetAmount = () => { setAmountEdited(false); setTypedAmount(""); };
+
+  /**
+   * Nothing chosen yet means nobody has touched the picker, so choose the
+   * thing the counter actually does: a household with two dogs pays once,
+   * with one card. It used to fall through to the FIRST dog, which is how
+   * Lauren got "It says one dogs name that's all" — the control looked
+   * like it was for Agnes, and typing the $290 total was rejected against
+   * Agnes's $145.
+   *
+   * A single-dog booking has no "All dogs" option and no picker at all, so
+   * it still falls through to that one dog.
+   */
+  const multiDog = (data?.appointments.length ?? 0) > 1;
+  const effectiveTarget = target ?? (multiDog ? ALL_DOGS : null);
+  const selectedId = effectiveTarget ?? data?.appointments[0]?.appointmentId ?? appointmentId;
   const selected = useMemo(
     () => data?.appointments.find((a) => a.appointmentId === selectedId),
     [data, selectedId],
@@ -56,7 +89,9 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
 
   const record = trpc.payments.record.useMutation({
     onSuccess: () => {
-      setAmount("");
+      // resetAmount, not setAmount(""): the balance has just changed, so
+      // the box should show what is still owed, not sit empty.
+      resetAmount();
       setNote("");
       toast.success("Payment recorded");
       utils.payments.forBooking.invalidate({ appointmentId });
@@ -76,7 +111,6 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
     return <p className="py-3 text-xs text-muted-foreground">Loading payments…</p>;
   }
 
-  const multiDog = data.appointments.length > 1;
   /**
    * "All dogs" — one tap at the counter for a household paying together.
    *
@@ -90,12 +124,28 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
    * membership check reads it that way — but the person entering it
    * types one number.
    */
-  const payingAll = target === ALL_DOGS;
+  const payingAll = selectedId === ALL_DOGS;
   const balances = data.appointments.map((a) => ({
     appointmentId: a.appointmentId,
     petName: a.petName,
     outstanding: a.outstanding,
   }));
+
+  /**
+   * What the box shows: the balance owing, until somebody edits it.
+   *
+   * It follows whatever is selected, so switching from "All dogs" to one
+   * dog swaps $290.00 for that dog's $145.00 without anyone retyping.
+   * Nothing is prefilled once the balance is settled — an empty box is
+   * the honest state when there is nothing left to take.
+   */
+  const outstandingForTarget = payingAll
+    ? totalOutstanding(balances)
+    : (selected?.outstanding ?? 0);
+  const amount = prefilledAmount({
+    edited: amountEdited, typed: typedAmount, outstanding: outstandingForTarget,
+  });
+
   const spread = payingAll && amount.trim() ? allocateAcrossDogs(amount, balances) : null;
   const check = !payingAll && amount.trim()
     ? validatePaymentAmount(amount, { outstanding: selected?.outstanding ?? null, paid: selected?.paid ?? 0 })
@@ -235,7 +285,10 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
       <div className="space-y-2 border-t pt-2.5">
         <div className="flex flex-wrap items-center gap-2">
           {multiDog && (
-            <Select value={String(selectedId)} onValueChange={(v) => setTarget(Number(v))}>
+            <Select
+              value={String(selectedId)}
+              onValueChange={(v) => { setTarget(Number(v)); resetAmount(); }}
+            >
               <SelectTrigger className="h-8 w-[7.5rem] text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {/* First, because paying for the whole household is the

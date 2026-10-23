@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allocateAcrossDogs, totalOutstanding, describeAllocation } from "../shared/payAcrossDogs";
+import { allocateAcrossDogs, totalOutstanding, describeAllocation, prefilledAmount } from "../shared/payAcrossDogs";
 
 /** Lauren's booking: Agnes and Shirley, $145 each. */
 const AGNES = { appointmentId: 1, petName: "Agnes", outstanding: 145 };
@@ -106,5 +106,41 @@ describe("describeAllocation", () => {
 
   it("is empty when nothing is allocated", () => {
     expect(describeAllocation([])).toBe("");
+  });
+});
+
+describe("prefilledAmount", () => {
+  it("fills the box with what is owing, so nobody types the total", () => {
+    expect(prefilledAmount({ edited: false, typed: "", outstanding: 290 })).toBe("290.00");
+    expect(prefilledAmount({ edited: false, typed: "", outstanding: 145 })).toBe("145.00");
+  });
+
+  it("keeps an empty box empty once the staff member clears it", () => {
+    // The whole reason `edited` exists. "" is a value someone chooses —
+    // they clear the field to retype — and without the flag the balance
+    // would spring straight back under the cursor.
+    expect(prefilledAmount({ edited: true, typed: "", outstanding: 290 })).toBe("");
+  });
+
+  it("shows exactly what was typed, part-payments included", () => {
+    expect(prefilledAmount({ edited: true, typed: "50", outstanding: 290 })).toBe("50");
+    expect(prefilledAmount({ edited: true, typed: "1", outstanding: 290 })).toBe("1");
+  });
+
+  it("stays empty when nothing is owed, rather than offering 0.00", () => {
+    // A zero sitting in the box reads as an amount someone meant to take.
+    for (const settled of [0, null, undefined, -5]) {
+      expect(prefilledAmount({ edited: false, typed: "", outstanding: settled })).toBe("");
+    }
+  });
+
+  it("does not put NaN in front of anyone", () => {
+    expect(prefilledAmount({ edited: false, typed: "", outstanding: Number.NaN })).toBe("");
+  });
+
+  it("follows the selected target, so switching dogs reprices the box", () => {
+    // "All dogs" $290 -> one dog $145 without anyone retyping.
+    expect(prefilledAmount({ edited: false, typed: "", outstanding: 290 })).toBe("290.00");
+    expect(prefilledAmount({ edited: false, typed: "", outstanding: 145 })).toBe("145.00");
   });
 });

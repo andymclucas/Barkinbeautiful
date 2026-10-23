@@ -101,3 +101,30 @@ export function describeAllocation(allocations: readonly Allocation[]): string {
   if (parts.length === 1) return parts[0];
   return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
+
+/**
+ * What the amount box should show.
+ *
+ * Andy, 23/10/2026: "don't need to fill in the total - it should auto
+ * populate to take the payment." The counter is nearly always taking the
+ * whole balance, so typing it is work the screen can do.
+ *
+ * `edited` is the load-bearing argument. An empty string is a value a
+ * person can deliberately choose — they clear the box to retype — and a
+ * single string cannot tell that apart from "nobody has typed yet". Treat
+ * them the same and the field refills itself under the cursor the moment
+ * it is cleared, which is worse than never prefilling at all.
+ *
+ * Returns "" when nothing is owed rather than "0.00": a zero in the box
+ * reads as an amount someone meant to take.
+ */
+export function prefilledAmount(input: {
+  edited: boolean;
+  typed: string;
+  outstanding: number | null | undefined;
+}): string {
+  if (input.edited) return input.typed;
+  const owing = Number(input.outstanding ?? 0);
+  if (!Number.isFinite(owing) || owing <= 0) return "";
+  return owing.toFixed(2);
+}
