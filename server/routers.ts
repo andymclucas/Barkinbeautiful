@@ -101,6 +101,7 @@ import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
+import { weeklyToMonthly, annualisedCost, describeRate } from "../shared/membershipBillingCycle";
 import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
 import { parsePetCodes } from "../shared/petCodes";
@@ -5055,6 +5056,22 @@ const staffRouter = router({
 });
 
 // ─── Memberships ──────────────────────────────────────────────────────────────
+
+/**
+ * What a membership actually costs on a given cycle, for the reply the UI
+ * shows back to whoever pressed the button. The weekly rate is the input
+ * on both branches — see setBillingCycle.
+ */
+function rateSummary(weeklyRate: string | null | undefined, cycle: "weekly" | "monthly") {
+  const charged = cycle === "monthly" ? weeklyToMonthly(weeklyRate) : (weeklyRate ?? null);
+  return {
+    weeklyRate: weeklyRate ?? null,
+    chargedAmount: charged,
+    chargedLabel: describeRate(charged, cycle),
+    annualised: annualisedCost(charged, cycle),
+  };
+}
+
 const membershipsRouter = router({
   list: protectedProcedure
     .input(z.object({
@@ -5099,6 +5116,7 @@ const membershipsRouter = router({
           serviceType: memberships.serviceType,
           status: memberships.status,
           pricePerCycle: memberships.pricePerCycle,
+          billingCycle: memberships.billingCycle,
           billingCycleWeeks: memberships.billingCycleWeeks,
           appointmentIntervalWeeks: memberships.appointmentIntervalWeeks,
           nextBillingDate: memberships.nextBillingDate,
@@ -5364,6 +5382,70 @@ const membershipsRouter = router({
    * Cancels any live Stripe subscription too: a cancelled membership that
    * keeps debiting a card is the worst version of this bug.
    */
+  /**
+   * Move one membership between weekly and monthly billing.
+   *
+   * Andy, 23/10/2026: "Set default to weekly billing, but give the
+   * clients an option to move to monthly billing as it has been asked if
+   * that is an option. Won't be everyone, but it needs to be workable for
+   * their cashflow." So it is opt-in per membership, never a bulk switch.
+   *
+   * `pricePerCycle` is NOT touched. It stays the weekly rate for every
+   * membership on either cycle, and the monthly figure is derived from it
+   * on demand. Storing a second rate is how the two drift apart the first
+   * time somebody edits one and forgets the other.
+   *
+   * adminProcedure, matching cancelMembership: this decides what a client
+   * is charged and when, which is the owner's call rather than the salon
+   * floor's.
+   */
+  setBillingCycle: adminProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      membershipId: z.number().int().positive(),
+      billingCycle: z.enum(["weekly", "monthly"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [membership] = await db
+        .select({
+          id: memberships.id,
+          status: memberships.status,
+          billingCycle: memberships.billingCycle,
+          pricePerCycle: memberships.pricePerCycle,
+          stripeSubscriptionId: memberships.stripeSubscriptionId,
+        })
+        .from(memberships)
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input))))
+        .limit(1);
+      if (!membership) throw new TRPCError({ code: "NOT_FOUND", message: "Membership not found" });
+      if (membership.status === "cancelled" || membership.status === "expired") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This membership is closed" });
+      }
+      if (membership.billingCycle === input.billingCycle) {
+        return { changed: false, billingCycle: input.billingCycle, ...rateSummary(membership.pricePerCycle, input.billingCycle) };
+      }
+
+      // A live Stripe subscription has its own interval, and Stripe cannot
+      // change one in place. Refusing is deliberate: silently leaving the
+      // subscription weekly while the record says monthly would bill the
+      // client 52 times a year against a monthly rate.
+      if (membership.stripeSubscriptionId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Stop billing first, change the cycle, then start it again — Stripe cannot move a live subscription between weekly and monthly.",
+        });
+      }
+
+      await db.update(memberships)
+        .set({ billingCycle: input.billingCycle })
+        .where(and(eq(memberships.id, membership.id), eq(memberships.tenantId, tenantOf(ctx, input))));
+
+      return { changed: true, billingCycle: input.billingCycle, ...rateSummary(membership.pricePerCycle, input.billingCycle) };
+    }),
+
   cancelMembership: adminProcedure
     .input(z.object({
       tenantId: z.number().default(1),

@@ -18,6 +18,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { weeklyToMonthly, describeRate, annualisedCost } from "@shared/membershipBillingCycle";
 
 type MembershipItem = {
   id: number;
@@ -27,6 +28,8 @@ type MembershipItem = {
   serviceType: string | null;
   status: string;
   pricePerCycle: string | null;
+  /** Always the WEEKLY rate, whichever cycle bills it. */
+  billingCycle?: "weekly" | "monthly" | null;
   billingCycleWeeks: number | null;
   nextBillingDate: number | Date | null;
   failedPaymentCount: number | null;
@@ -444,7 +447,21 @@ function MembershipRow({ m }: { m: MembershipItem }) {
         )}
       </td>
       <td className="p-3 font-medium">
-        ${m.pricePerCycle}<span className="text-xs text-muted-foreground font-normal">/wk</span>
+        {/* A monthly member is charged weekly x 52/12, but the weekly rate
+            is what is stored, so both are shown: the figure that leaves
+            their account, and the rate it comes from. Showing only one
+            makes a $450.67 charge look unrelated to a $104 membership. */}
+        {m.billingCycle === "monthly" ? (
+          <>
+            ${weeklyToMonthly(m.pricePerCycle) ?? "—"}
+            <span className="text-xs text-muted-foreground font-normal">/mo</span>
+            <span className="block text-[11px] font-normal text-muted-foreground">
+              ${m.pricePerCycle}/wk equivalent
+            </span>
+          </>
+        ) : (
+          <>${m.pricePerCycle}<span className="text-xs text-muted-foreground font-normal">/wk</span></>
+        )}
       </td>
       <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">
         {m.nextBillingDate ? new Date(m.nextBillingDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }) : "—"}
@@ -458,6 +475,7 @@ function MembershipRow({ m }: { m: MembershipItem }) {
             <Badge className="text-xs bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 block">Suspended</Badge>
           )}
           <MembershipBillingControl m={m} />
+          <MembershipCycleControl m={m} />
           <MembershipCancelControl m={m} />
         </div>
       </td>
@@ -465,6 +483,86 @@ function MembershipRow({ m }: { m: MembershipItem }) {
   );
 }
 
+
+/**
+ * Weekly or monthly, for one client.
+ *
+ * Andy, 23/10/2026: "Set default to weekly billing, but give the clients
+ * an option to move to monthly billing as it has been asked if that is an
+ * option. Won't be everyone, but it needs to be workable for their
+ * cashflow." Hence a per-membership control and no bulk switch.
+ *
+ * It states the new charge and the annual total before asking, because
+ * the one thing a client will query is why $104 a week became $450.67 a
+ * month. Those are the same money — 52 weeks against 12 months — and the
+ * figure is derived rather than typed so it cannot be got wrong here.
+ */
+function MembershipCycleControl({ m }: { m: MembershipItem }) {
+  const utils = trpc.useUtils();
+  const [confirming, setConfirming] = useState(false);
+  const cycle = m.billingCycle === "monthly" ? "monthly" : "weekly";
+  const next = cycle === "monthly" ? "weekly" : "monthly";
+  const nextRate = next === "monthly" ? weeklyToMonthly(m.pricePerCycle) : m.pricePerCycle;
+
+  const setCycle = trpc.memberships.setBillingCycle.useMutation({
+    onSuccess: (result) => {
+      setConfirming(false);
+      toast.success(result.changed ? `Now billing ${result.chargedLabel}` : "Already on that cycle");
+      utils.memberships.list.invalidate();
+    },
+    onError: (error) => { setConfirming(false); toast.error(error.message); },
+  });
+
+  // Closed memberships bill nothing, so there is no cycle to choose.
+  if (m.status === "cancelled" || m.status === "expired") return null;
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        className="block text-[11px] font-medium text-violet-700 dark:text-violet-300 hover:underline"
+      >
+        Switch to {next} billing
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-violet-200 dark:border-violet-800/40 bg-violet-50 dark:bg-violet-400/5 p-2 text-[11px]">
+      <p className="font-semibold text-slate-900 dark:text-white">
+        Bill {describeRate(nextRate, next)}?
+      </p>
+      <p className="mt-0.5 text-slate-600 dark:text-slate-300">
+        {nextRate
+          ? `Same money over a year — $${annualisedCost(nextRate, next)} either way.`
+          : "This membership has no price set."}
+      </p>
+      {m.stripeSubscriptionId && (
+        <p className="mt-1 font-medium text-amber-700 dark:text-amber-300">
+          Stop billing first — Stripe cannot move a live subscription between cycles.
+        </p>
+      )}
+      <div className="mt-1.5 flex gap-1.5">
+        <button
+          type="button"
+          disabled={setCycle.isPending || !nextRate}
+          onClick={() => setCycle.mutate({ membershipId: m.id, billingCycle: next })}
+          className="rounded bg-violet-600 px-2 py-1 font-semibold text-white disabled:opacity-50"
+        >
+          {setCycle.isPending ? "Saving…" : "Confirm"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="rounded border px-2 py-1 font-medium"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Ending the membership itself, as opposed to its billing.

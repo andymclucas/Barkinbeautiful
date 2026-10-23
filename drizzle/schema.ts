@@ -578,6 +578,12 @@ export const memberships = mysqlTable("memberships", {
   tier: mysqlEnum("tier", ["diamond", "platinum", "gold", "silver", "bronze"]).notNull(),
   serviceType: mysqlEnum("service_type", ["classic", "styled"]).default("classic").notNull(),
   billingCycleWeeks: int("billing_cycle_weeks").default(1).notNull(),
+  /**
+   * Weekly or monthly. `pricePerCycle` always holds the WEEKLY rate
+   * whichever this says; the monthly figure is derived by
+   * shared/membershipBillingCycle.ts so the two cannot drift.
+   */
+  billingCycle: mysqlEnum("billing_cycle", ["weekly", "monthly"]).default("weekly").notNull(),
   appointmentIntervalWeeks: int("appointment_interval_weeks"),
   pricePerCycle: decimal("price_per_cycle", { precision: 10, scale: 2 }).notNull(),
   status: mysqlEnum("status", ["active", "paused", "cancelled", "pending_payment", "expired"]).default("active").notNull(),
