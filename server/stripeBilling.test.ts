@@ -11,7 +11,7 @@ import {
   isCardExpired,
   describeStripeKey,
 } from "../shared/stripeBilling";
-import { brisbaneDate } from "../shared/businessDays";
+import { brisbaneDate, isBrisbaneWeekend } from "../shared/businessDays";
 
 describe("money at the Stripe boundary", () => {
   it("converts dollars to integer cents", () => {
@@ -217,5 +217,77 @@ describe("describeCard with no card details", () => {
       stripeCardExpMonth: 8, stripeCardExpYear: 2028,
       stripeDefaultPaymentMethodId: "pm_1",
     })).toBe("Visa ···· 4242 · exp 08/28");
+  });
+});
+
+describe("retry thresholds by billing cycle", () => {
+  // A Monday, so the business-day maths is easy to follow.
+  const monday = new Date("2026-10-26T04:00:00Z"); // 14:00 Brisbane
+
+  it("leaves weekly exactly as it was: two attempts, next business day", () => {
+    const first = planAfterFailure(1, "retry", monday, "weekly");
+    expect(first.retry).toBe(true);
+    expect(first.suspend).toBe(false);
+    expect(brisbaneDate(first.retryAt!)).toBe("2026-10-27"); // Tuesday
+
+    const second = planAfterFailure(2, "retry", monday, "weekly");
+    expect(second.retry).toBe(false);
+    expect(second.suspend).toBe(true);
+  });
+
+  it("gives monthly four attempts, not two", () => {
+    // The next natural charge is a MONTH away, so these retries are the
+    // only recovery path. Two attempts inside 24 hours then four weeks of
+    // silence is the wrong shape for a $116 charge.
+    for (const count of [1, 2, 3]) {
+      const plan = planAfterFailure(count, "retry", monday, "monthly");
+      expect(plan.retry).toBe(true);
+      expect(plan.suspend).toBe(false);
+    }
+    const final = planAfterFailure(4, "retry", monday, "monthly");
+    expect(final.retry).toBe(false);
+    expect(final.suspend).toBe(true);
+  });
+
+  it("spaces monthly retries three business days apart, skipping the weekend", () => {
+    // Monday + 3 business days = Thursday. Not Wednesday, and never a
+    // Saturday.
+    const plan = planAfterFailure(1, "retry", monday, "monthly");
+    expect(brisbaneDate(plan.retryAt!)).toBe("2026-10-29"); // Thursday
+    expect(isBrisbaneWeekend(plan.retryAt!)).toBe(false);
+  });
+
+  it("covers a fortnightly pay cycle before suspending", () => {
+    // Most Australians are paid fortnightly, and a $116 charge fails on
+    // timing far more often than a $27 one. Walk the whole ladder.
+    let at = monday;
+    const days: string[] = [];
+    for (let attempt = 1; attempt < 4; attempt += 1) {
+      const plan = planAfterFailure(attempt, "retry", at, "monthly");
+      at = plan.retryAt!;
+      days.push(brisbaneDate(at));
+    }
+    expect(days).toEqual(["2026-10-29", "2026-11-03", "2026-11-06"]);
+    // From the first failure to the last attempt: 11 calendar days.
+    const span = (at.getTime() - monday.getTime()) / 86_400_000;
+    expect(span).toBeGreaterThan(10);
+  });
+
+  it("defaults to weekly when no cycle is given", () => {
+    // Every membership billed weekly before 23/10/2026, and any caller
+    // that has not been updated must keep behaving exactly as it did.
+    expect(planAfterFailure(2, "retry", monday)).toEqual(planAfterFailure(2, "retry", monday, "weekly"));
+  });
+
+  it("still suspends a bad card immediately, whatever the cycle", () => {
+    // No number of retries fixes an expired card or a bank refusal, so
+    // the extra monthly attempts must not be spent on one.
+    for (const cycle of ["weekly", "monthly"] as const) {
+      for (const action of ["new_card", "contact_bank"] as const) {
+        const plan = planAfterFailure(1, action, monday, cycle);
+        expect(plan.retry).toBe(false);
+        expect(plan.suspend).toBe(true);
+      }
+    }
   });
 });

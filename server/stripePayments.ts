@@ -138,6 +138,7 @@ async function membershipForSubscription(db: any, subscriptionId: string | null)
       clientId: memberships.clientId,
       name: memberships.name,
       failedPaymentCount: memberships.failedPaymentCount,
+      billingCycle: memberships.billingCycle,
     })
     .from(memberships)
     .where(eq(memberships.stripeSubscriptionId, subscriptionId))
@@ -330,7 +331,9 @@ export async function processStripeEvent(event: Stripe.Event) {
     const failedCount = (membership.failedPaymentCount ?? 0) + 1;
     const declineCode = (invoice as unknown as { last_finalization_error?: { decline_code?: string; code?: string } })
       .last_finalization_error?.decline_code ?? null;
-    const plan = planAfterFailure(failedCount, classifyFailure(declineCode), now);
+    const plan = planAfterFailure(
+      failedCount, classifyFailure(declineCode), now, membership.billingCycle ?? "weekly",
+    );
 
     await db.insert(membershipPayments).values({
       membershipId: membership.id,

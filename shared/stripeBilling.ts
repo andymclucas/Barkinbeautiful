@@ -12,7 +12,7 @@
  * momentarily declined card was suspended two business days later without
  * Stripe ever being asked a second time.
  */
-import { nextBrisbaneBusinessDay, MAX_PAYMENT_RETRIES } from "./businessDays";
+import { nextBrisbaneBusinessDay, businessDaysAfter, MAX_PAYMENT_RETRIES } from "./businessDays";
 
 /** Dollars (decimal string or number) to the integer cents Stripe wants. */
 export function toStripeCents(amount: string | number | null | undefined): number {
@@ -90,6 +90,48 @@ export interface RetryPlan {
 }
 
 /**
+ * How hard to chase a failed payment, which depends on the cycle.
+ *
+ * Andy, 24/10/2026: "Set the retry thresholds for monthly billing."
+ *
+ * The weekly policy — two attempts a day apart, then suspend — is right
+ * for weekly and wrong for monthly, for three reasons:
+ *
+ *  1. A weekly miss self-corrects. The next charge is seven days away
+ *     whatever happens, so the retries are a convenience. A monthly
+ *     miss has no next charge for a MONTH, so the retries are the only
+ *     recovery path there is. Spending both of them inside 24 hours and
+ *     then waiting four weeks is the wrong shape.
+ *
+ *  2. The amounts are not comparable. The average weekly charge on the
+ *     live book is $26.80; monthly is $116.12. A $27 charge usually
+ *     fails because the card is wrong. A $116 charge much more often
+ *     fails because the money is not there yet, which is a timing
+ *     problem that fixes itself.
+ *
+ *  3. Most Australians are paid fortnightly. Four attempts three
+ *     business days apart spans about thirteen calendar days, so a
+ *     client whose pay lands mid-cycle gets caught by a retry instead
+ *     of by a suspension.
+ *
+ * Weekly is deliberately UNCHANGED. It works, and widening it would
+ * leave a non-paying weekly client booking for a fortnight.
+ *
+ * None of this applies to a card that is simply wrong: `classifyFailure`
+ * sends expired cards and bank refusals straight to suspension however
+ * the membership bills, because no number of retries fixes those.
+ */
+export const RETRY_POLICY: Record<"weekly" | "monthly", {
+  /** Attempts in total, counting the one that just failed. */
+  maxAttempts: number;
+  /** Business days between attempts. */
+  businessDaysBetween: number;
+}> = {
+  weekly: { maxAttempts: MAX_PAYMENT_RETRIES, businessDaysBetween: 1 },
+  monthly: { maxAttempts: 4, businessDaysBetween: 3 },
+};
+
+/**
  * What happens after an attempt fails.
  *
  * `failedCount` is the count INCLUDING the attempt that just failed, so the
@@ -101,7 +143,10 @@ export function planAfterFailure(
   failedCount: number,
   action: FailureAction,
   now: Date,
+  /** Defaults to weekly, which is how every membership billed before 23/10/2026. */
+  cycle: "weekly" | "monthly" = "weekly",
 ): RetryPlan {
+  const policy = RETRY_POLICY[cycle] ?? RETRY_POLICY.weekly;
   if (action !== "retry") {
     return {
       retry: false,
@@ -110,7 +155,7 @@ export function planAfterFailure(
       reason: FAILURE_ACTION_MESSAGE[action],
     };
   }
-  if (failedCount >= MAX_PAYMENT_RETRIES) {
+  if (failedCount >= policy.maxAttempts) {
     return {
       retry: false,
       retryAt: null,
@@ -120,7 +165,7 @@ export function planAfterFailure(
   }
   return {
     retry: true,
-    retryAt: nextBrisbaneBusinessDay(now),
+    retryAt: businessDaysAfter(now, policy.businessDaysBetween),
     suspend: false,
     reason: FAILURE_ACTION_MESSAGE.retry,
   };

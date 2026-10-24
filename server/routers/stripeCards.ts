@@ -135,6 +135,7 @@ export const stripeCardsRouter = router({
           clientId: memberships.clientId,
           name: memberships.name,
           pricePerCycle: memberships.pricePerCycle,
+          billingCycle: memberships.billingCycle,
           failedPaymentCount: memberships.failedPaymentCount,
         })
         .from(memberships)
@@ -196,7 +197,12 @@ export const stripeCardsRouter = router({
         return { ok: true, message: "Payment taken" };
       }
 
-      const plan = planAfterFailure((membership.failedPaymentCount ?? 0) + 1, classifyFailure(result.declineCode), now);
+      const plan = planAfterFailure(
+        (membership.failedPaymentCount ?? 0) + 1,
+        classifyFailure(result.declineCode),
+        now,
+        membership.billingCycle ?? "weekly",
+      );
       await db.update(memberships).set({
         failedPaymentCount: (membership.failedPaymentCount ?? 0) + 1,
         lastFailedPaymentAt: now,

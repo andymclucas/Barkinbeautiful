@@ -46,6 +46,22 @@ export function isBrisbaneWeekend(instant: Date): boolean {
  * meant a failure at 23:30 Brisbane scheduled a retry at 23:30, outside any
  * window a human would notice it in.
  */
+/**
+ * `days` Brisbane business days after `from`, at `atHourBrisbane` local.
+ *
+ * Exists so a retry can be spaced further than "tomorrow". A weekly
+ * membership self-corrects — the next charge is seven days away either
+ * way — but a monthly one has no next charge for a month, so the retries
+ * ARE the recovery and cramming them into consecutive days wastes them
+ * on the same empty account. See RETRY_POLICY in stripeBilling.ts.
+ */
+export function businessDaysAfter(from: Date, days: number, atHourBrisbane = 9): Date {
+  const steps = Math.max(1, Math.trunc(Number.isFinite(days) ? days : 1));
+  let cursor = from;
+  for (let i = 0; i < steps; i += 1) cursor = nextBrisbaneBusinessDay(cursor, atHourBrisbane);
+  return cursor;
+}
+
 export function nextBrisbaneBusinessDay(from: Date, atHourBrisbane = 9): Date {
   const [y, m, d] = brisbaneDate(from).split("-").map(Number);
   const cursor = new Date(Date.UTC(y, m - 1, d));

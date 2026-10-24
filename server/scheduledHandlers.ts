@@ -296,7 +296,10 @@ export async function paymentRetryHandler(req: Request, res: Response) {
       // ── It genuinely declined ──────────────────────────────────────────
       const action = classifyFailure(attempt.declineCode);
       const newFailCount = (m.failedCount ?? 0) + 1;
-      const plan = planAfterFailure(newFailCount, action, now);
+      // Monthly gets more attempts, spaced further apart — the next
+      // natural charge is a month away, so these retries are the only
+      // recovery path. See RETRY_POLICY.
+      const plan = planAfterFailure(newFailCount, action, now, m.billingCycle ?? "weekly");
       const retryDate = plan.retryAt
         ? plan.retryAt.toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })
         : "no further automatic attempt";
