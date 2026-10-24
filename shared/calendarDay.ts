@@ -58,3 +58,26 @@ export function isDayBefore(day: string | null | undefined, other: string | null
   if (!day || !other) return false;
   return day < other;
 }
+
+/**
+ * The wall-clock time at `value` in `timeZone`, as 24-hour "HH:MM".
+ *
+ * `hourCycle: "h23"` because en-AU otherwise renders midnight as "24:05",
+ * which an <input type="time"> rejects outright — so the walk-in form
+ * would silently come up blank for the first hour of every day.
+ */
+export function timeOfDayInZone(value: Date | string | number, timeZone: string): string | null {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone, hour: "2-digit", minute: "2-digit", hour12: false, hourCycle: "h23",
+    }).formatToParts(date);
+    const hour = parts.find((p) => p.type === "hour")?.value;
+    const minute = parts.find((p) => p.type === "minute")?.value;
+    if (!hour || !minute) return null;
+    return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
+  } catch {
+    return null;
+  }
+}

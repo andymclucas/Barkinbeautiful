@@ -1,6 +1,8 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
 import { trpc } from "@/lib/trpc";
+import { useTimezone } from "@/lib/timezone";
+import { dayInZone, timeOfDayInZone } from "@shared/calendarDay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -40,10 +42,20 @@ export default function WorkflowBoard() {
   const reviewDate = reviewParams.get("date");
   const reviewAppointmentId = Number(reviewParams.get("reviewAppointment"));
   const hasReviewAppointmentFocus = Number.isInteger(reviewAppointmentId) && reviewAppointmentId > 0;
+  /**
+   * The salon's clock, not the viewer's and not a hardcoded offset.
+   *
+   * This was `Date.now() + 10 * 3600000`, which is Brisbane's +10 written
+   * as arithmetic. Correct in Queensland, an hour out in any zone that
+   * observes daylight saving, and enough to name the wrong day near
+   * midnight. "Which dogs are in today" has to be the salon's answer or
+   * two staff on different clocks see different boards — the same rule
+   * lib/timezone.ts states.
+   */
+  const { salonTimezone } = useTimezone();
   const [boardDate, setBoardDate] = useState(() => {
     if (reviewDate && /^\d{4}-\d{2}-\d{2}$/.test(reviewDate)) return reviewDate;
-    const d = new Date(Date.now() + 10 * 3600000);
-    return d.toISOString().slice(0, 10);
+    return dayInZone(Date.now(), salonTimezone) ?? new Date().toISOString().slice(0, 10);
   });
   const [tvMode, setTvMode] = useState(false);
 
@@ -88,10 +100,12 @@ export default function WorkflowBoard() {
   const [walkInBreed, setWalkInBreed] = useState("");
   const [walkInService, setWalkInService] = useState("classic_groom");
   const [walkInStaffId, setWalkInStaffId] = useState<string>("");
-  const [walkInTime, setWalkInTime] = useState(() => {
-    const now = new Date(Date.now() + 10 * 3600000);
-    return `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
-  });
+  // A walk-in happens at the salon, so it is prefilled with the salon's
+  // clock. getUTCHours() on an offset-shifted Date also rendered midnight
+  // as "24:05", which <input type="time"> rejects outright.
+  const [walkInTime, setWalkInTime] = useState(
+    () => timeOfDayInZone(Date.now(), salonTimezone) ?? "09:00",
+  );
   const [outConfirm, setOutConfirm] = useState<{ id: number; petName: string } | null>(null);
   const [pickupMessageAppointment, setPickupMessageAppointment] = useState<{ id: number; petName: string } | null>(null);
   const [selectedPickupRecipientId, setSelectedPickupRecipientId] = useState<string>("");
@@ -362,7 +376,7 @@ export default function WorkflowBoard() {
     return Array.from(people.values()).filter(person => person.bath.count + person.dry.count + person.groom.count + person.total.count > 0);
   }, [boardData, staffList, timingReviewThresholds]);
 
-  const today = new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10);
+  const today = dayInZone(Date.now(), salonTimezone) ?? "";
   const isToday = boardDate === today;
 
   // ─── TV Mode ────────────────────────────────────────────────────────────────

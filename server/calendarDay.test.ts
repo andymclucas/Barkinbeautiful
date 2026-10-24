@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dayInZone, addCalendarDays, isDayBefore } from "../shared/calendarDay";
+import { dayInZone, addCalendarDays, isDayBefore, timeOfDayInZone } from "../shared/calendarDay";
 
 describe("addCalendarDays", () => {
   it("actually advances a day — the bug this replaces did not", () => {
@@ -74,5 +74,37 @@ describe("isDayBefore", () => {
   it("is false when either side is missing, so nothing rolls on bad input", () => {
     expect(isDayBefore(null, "2026-10-23")).toBe(false);
     expect(isDayBefore("2026-10-23", null)).toBe(false);
+  });
+});
+
+describe("timeOfDayInZone", () => {
+  it("gives the local wall clock, not the UTC one", () => {
+    const at = Date.parse("2026-10-24T00:30:00Z");
+    expect(timeOfDayInZone(at, "Australia/Brisbane")).toBe("10:30");
+    expect(timeOfDayInZone(at, "UTC")).toBe("00:30");
+    expect(timeOfDayInZone(at, "Australia/Perth")).toBe("08:30");
+  });
+
+  it("renders midnight as 00:xx, never 24:xx", () => {
+    // en-AU renders midnight as hour 24, which <input type="time">
+    // rejects — the walk-in field would come up blank after midnight.
+    const midnight = Date.parse("2026-10-23T14:05:00Z"); // 00:05 Brisbane
+    expect(timeOfDayInZone(midnight, "Australia/Brisbane")).toBe("00:05");
+  });
+
+  it("tracks daylight saving instead of assuming a fixed offset", () => {
+    const jan = Date.parse("2026-01-15T00:30:00Z"); // Sydney +11
+    expect(timeOfDayInZone(jan, "Australia/Sydney")).toBe("11:30");
+    expect(timeOfDayInZone(jan, "Australia/Brisbane")).toBe("10:30");
+  });
+
+  it("is always zero-padded, so it parses as a time input value", () => {
+    const early = Date.parse("2026-10-23T23:01:00Z"); // 09:01 Brisbane
+    expect(timeOfDayInZone(early, "Australia/Brisbane")).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  it("returns null rather than a broken string", () => {
+    expect(timeOfDayInZone(Number.NaN, "UTC")).toBeNull();
+    expect(timeOfDayInZone(Date.now(), "Not/AZone")).toBeNull();
   });
 });
