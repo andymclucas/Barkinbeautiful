@@ -101,6 +101,7 @@ import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
+import { sendBookingConfirmation } from "./bookingConfirmation";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
 import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
 import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
@@ -844,7 +845,28 @@ const calendarRouter = router({
         workflowState: "scheduled",
         status: "confirmed",
       });
-      return { success: true, trackerToken: token, membershipCovered: coverage.fullyCovered };
+
+      /**
+       * Text the client that their dog is in.
+       *
+       * NOTE: nothing in the client calls this procedure — Calendar.tsx
+       * declares the mutation at :1307 and never invokes it, and every
+       * real booking goes through createMultiPetAppointment, one dog or
+       * many. Wired anyway so the two paths cannot diverge if this one
+       * is ever used, but the live path is the other one.
+       */
+      const [booked] = await db.select({ id: appointments.id })
+        .from(appointments)
+        .where(and(eq(appointments.tenantId, tenantOf(ctx, input)), eq(appointments.trackerToken, token)))
+        .limit(1);
+      const confirmation = booked
+        ? await sendBookingConfirmation(db, [booked.id])
+        : { sent: false as const, reason: "appointment not found" };
+
+      return {
+        success: true, trackerToken: token, membershipCovered: coverage.fullyCovered,
+        confirmationSms: confirmation,
+      };
     }),
 
   createRecurringAppointments: operationalProcedure
@@ -1068,6 +1090,9 @@ const calendarRouter = router({
         }
       }
 
+      // Every row of this booking, so the confirmation text can name
+      // all the dogs and claim them together rather than per row.
+      const createdAppointmentIds: number[] = [];
       for (const petId of petIds) {
         const token = nanoid(32);
         // The membership pays for the groom, so the price is zero whatever
@@ -1101,6 +1126,7 @@ const calendarRouter = router({
         // Extras are charged even on a membership groom — the weekly
         // payment covers the cut, not the de-matt done on the day.
         const appointmentId = (result as any)?.insertId as number | undefined;
+        if (appointmentId) createdAppointmentIds.push(appointmentId);
         for (const addOn of input.addOnsByPetId?.[String(petId)] ?? []) {
           const service = addOnCatalogue.get(addOn.pricingServiceId)!;
           // Already validated above, before any row was written.
@@ -1119,7 +1145,22 @@ const calendarRouter = router({
         }
         created.push(petId);
       }
-      return { success: true, created: created.length, membershipCovered: coverage.fullyCovered };
+
+      /**
+       * One text for the whole booking, naming every dog on it.
+       *
+       * This is the path the app actually books through — one dog or
+       * several, from the Calendar dialog and the client page alike. It
+       * can never throw: the rows are committed and the staff member has
+       * already seen the booking succeed, so a Twilio outage must not
+       * surface as a failed booking.
+       */
+      const confirmation = await sendBookingConfirmation(db, createdAppointmentIds);
+
+      return {
+        success: true, created: created.length, membershipCovered: coverage.fullyCovered,
+        confirmationSms: confirmation,
+      };
     }),
 
   getMembershipCoverage: operationalProcedure

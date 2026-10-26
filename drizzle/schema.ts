@@ -541,6 +541,13 @@ export const appointments = mysqlTable("appointments", {
   completedAt: bigint("completed_at", { mode: "number" }),
   pickedUpAt: bigint("picked_up_at", { mode: "number" }),
   reminderSentAt: timestamp("reminder_sent_at"),
+  /**
+   * When the client was texted to say this appointment is booked. NULL
+   * means never. The only guard against a duplicate send, so it is
+   * claimed in the same statement that sends — see
+   * server/bookingConfirmation.ts.
+   */
+  confirmationSmsSentAt: timestamp("confirmation_sms_sent_at"),
   reminder4dSentAt: timestamp("reminder_4d_sent_at"),
   reminder2dSentAt: timestamp("reminder_2d_sent_at"),
   reminderMorningSentAt: timestamp("reminder_morning_sent_at"),
