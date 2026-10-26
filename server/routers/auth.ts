@@ -1,5 +1,6 @@
 import { router, publicProcedure, protectedProcedure, operationalProcedure } from "../_core/trpc";
 import { z } from "zod";
+import { serialiseStaffOrder, parseStaffOrder } from "../../shared/staffColumnOrder";
 import bcrypt from "bcryptjs";
 import { getDb } from "../db";
 import { staff, users } from "../../drizzle/schema";
@@ -231,5 +232,43 @@ export const authRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       await db.update(users).set({ timezone: input.timezone }).where(eq(users.id, ctx.user.id));
       return { success: true, timezone: input.timezone };
+    }),
+
+  /**
+   * This user's own left-to-right order for the calendar's staff columns.
+   *
+   * Andy, 26/10/2026: "save it to their profile so any changes becomes
+   * their default view." On the user row rather than in localStorage,
+   * which is where the existing column FILTER lives — localStorage is
+   * per-device, and he works on an iPad and a desktop.
+   *
+   * operationalProcedure, matching setTimezone: this is a person's own
+   * view of their own screen, and a restricted groomer has as much right
+   * to arrange their board as anyone.
+   *
+   * Null clears it and falls back to groomers-then-bathers alphabetical.
+   * Ids are not validated against the roster on the way IN — staff come
+   * and go, and applyStaffOrder reconciles a stale list on every read, so
+   * rejecting an id here would only break saving when somebody leaves.
+   */
+  setStaffColumnOrder: operationalProcedure
+    .input(z.object({ staffIds: z.array(z.number().int().positive()).max(100).nullable() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const stored = input.staffIds === null ? null : serialiseStaffOrder(input.staffIds);
+      await db.update(users).set({ staffColumnOrder: stored }).where(eq(users.id, ctx.user.id));
+      return { success: true, staffColumnOrder: stored };
+    }),
+
+  /** The saved order, for the calendar to apply on load. */
+  getStaffColumnOrder: operationalProcedure
+    .query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [row] = await db
+        .select({ staffColumnOrder: users.staffColumnOrder })
+        .from(users).where(eq(users.id, ctx.user.id)).limit(1);
+      return { staffIds: parseStaffOrder(row?.staffColumnOrder) };
     }),
 });

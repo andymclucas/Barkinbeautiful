@@ -1,3 +1,4 @@
+import { applyStaffOrder, moveStaff } from "@shared/staffColumnOrder";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MoegoBadge } from "@/components/MoegoBadge";
 import { repriceForService } from "@shared/repricing";
@@ -1523,10 +1524,29 @@ export default function Calendar() {
   // Prefer the team directory but retain a safe calendar fallback for migrated
   // appointments: their joined staff data is sufficient to render assigned
   // columns and filter options even if a staff-list request is unavailable.
+  // The user's own left-to-right order, from their profile rather than
+  // this browser. The column FILTER beside it is localStorage and so is
+  // per-device; the ORDER follows the person between iPad and desktop.
+  const { data: savedStaffOrder } = trpc.auth.getStaffColumnOrder.useQuery(undefined, { enabled: !!user });
   const activeStaff = useMemo(
-    () => resolveCalendarStaffColumns(staffList, weekAppts),
-    [staffList, weekAppts],
+    // applyStaffOrder reconciles a stale list on every read: anyone who
+    // has left drops out, anyone hired since lands after the ordered
+    // ones. A new groomer missing from the board is a dog nobody can book.
+    () => applyStaffOrder(resolveCalendarStaffColumns(staffList, weekAppts), savedStaffOrder?.staffIds),
+    [staffList, weekAppts, savedStaffOrder],
   );
+  const [arrangingOrder, setArrangingOrder] = useState(false);
+  const [draftOrder, setDraftOrder] = useState<typeof activeStaff | null>(null);
+  const utilsForOrder = trpc.useUtils();
+  const saveStaffOrder = trpc.auth.setStaffColumnOrder.useMutation({
+    onSuccess: () => {
+      utilsForOrder.auth.getStaffColumnOrder.invalidate();
+      setArrangingOrder(false);
+      setDraftOrder(null);
+      toast.success("Saved as your default column order");
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const activeStaffIds = useMemo(() => activeStaff.map((member) => member.id), [activeStaff]);
 
   // Bring back the staff columns this user last chose.
@@ -2786,6 +2806,54 @@ export default function Calendar() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-56 p-2" align="end">
+                {arrangingOrder ? (
+                  <div>
+                    <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Column order
+                    </p>
+                    {(draftOrder ?? activeStaff).map((member, index, list) => (
+                      <div key={member.id} className="flex items-center gap-1 rounded-md px-2 py-1 text-sm">
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: member.colourHex ?? "#6366f1" }} />
+                        <span className="flex-1 truncate">{member.name.split(" ")[0]}</span>
+                        <button
+                          type="button" aria-label={`Move ${member.name} left`}
+                          disabled={index === 0}
+                          className="rounded border px-1.5 py-0.5 text-xs disabled:opacity-30"
+                          onClick={() => setDraftOrder(moveStaff(list, member.id, "up"))}
+                        >↑</button>
+                        <button
+                          type="button" aria-label={`Move ${member.name} right`}
+                          disabled={index === list.length - 1}
+                          className="rounded border px-1.5 py-0.5 text-xs disabled:opacity-30"
+                          onClick={() => setDraftOrder(moveStaff(list, member.id, "down"))}
+                        >↓</button>
+                      </div>
+                    ))}
+                    <div className="mt-2 flex gap-1.5 border-t pt-2">
+                      <button
+                        type="button"
+                        disabled={saveStaffOrder.isPending}
+                        className="flex-1 rounded bg-violet-600 px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                        onClick={() => saveStaffOrder.mutate({
+                          staffIds: (draftOrder ?? activeStaff).map((m) => m.id),
+                        })}
+                      >{saveStaffOrder.isPending ? "Saving…" : "Save as my default"}</button>
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-1 text-xs"
+                        onClick={() => { setArrangingOrder(false); setDraftOrder(null); }}
+                      >Cancel</button>
+                    </div>
+                    {/* Clearing is separate from cancelling: one abandons an
+                        edit, the other throws away a saved preference. */}
+                    <button
+                      type="button"
+                      className="mt-1 w-full rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent"
+                      onClick={() => saveStaffOrder.mutate({ staffIds: null })}
+                    >Reset to groomers, then bathers</button>
+                  </div>
+                ) : (
+                <div>
                 <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Visible staff columns</p>
                 <button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent" onClick={() => setStaffSelection({ kind: "all" })}>
                   <span className={`flex h-4 w-4 items-center justify-center rounded border ${coversAllStaff(staffSelection, activeStaff) ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{coversAllStaff(staffSelection, activeStaff) && <Check className="h-3 w-3" />}</span>
@@ -2828,6 +2896,16 @@ export default function Calendar() {
                   <span className={`flex h-4 w-4 items-center justify-center rounded border ${showUnassignedColumn ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{showUnassignedColumn && <Check className="h-3 w-3" />}</span>
                   <span className="h-2 w-2 rounded-full" style={{ background: "#94a3b8" }} />Unassigned
                 </button>
+                {/* Separate from the checkboxes above: those choose WHICH
+                    columns show on this device, this chooses what ORDER
+                    they come in and follows the person to any device. */}
+                <button
+                  type="button"
+                  className="mt-2 w-full rounded-md border px-2 py-1.5 text-xs font-medium hover:bg-accent"
+                  onClick={() => { setDraftOrder(activeStaff); setArrangingOrder(true); }}
+                >Arrange column order…</button>
+                </div>
+                )}
               </PopoverContent>
             </Popover>
             {/* View toggle */}

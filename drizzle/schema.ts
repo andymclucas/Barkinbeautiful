@@ -119,6 +119,12 @@ export const users = mysqlTable("users", {
   // "Australia/Perth". Nullable: existing accounts predate the column, and a
   // null falls back to the salon's own tenants.timezone.
   timezone: varchar("timezone", { length: 64 }),
+  /**
+   * This user's own order for the calendar's staff columns: a comma
+   * list of staff ids, read by shared/staffColumnOrder.ts. NULL means
+   * no preference — groomers before bathers, then alphabetical.
+   */
+  staffColumnOrder: varchar("staff_column_order", { length: 512 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
