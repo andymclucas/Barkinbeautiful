@@ -21,6 +21,7 @@ const WorkflowBoard = lazy(() => import("./pages/WorkflowBoard"));
 const WorkflowDisplay = lazy(() => import("./pages/WorkflowDisplay"));
 const StaffPortal = lazy(() => import("./pages/StaffPortal"));
 const Clients = lazy(() => import("./pages/Clients"));
+const OverdueForGroom = lazy(() => import("@/pages/OverdueForGroom"));
 const ClientDetail = lazy(() => import("./pages/ClientDetail"));
 const Memberships = lazy(() => import("./pages/Memberships"));
 const Pricing = lazy(() => import("./pages/Pricing"));
@@ -80,6 +81,8 @@ function Router() {
       <Route path="/workflow/display" component={WorkflowDisplay} />
       <Route path="/my-day" component={StaffPortal} />
       <Route path="/clients" component={Clients} />
+      {/* Before /clients/:id — wouter would otherwise read "overdue" as an id. */}
+      <Route path="/clients/overdue" component={OverdueForGroom} />
       <Route path="/clients/:id" component={ClientDetail} />
       <Route path="/memberships" component={Memberships} />
       <Route path="/pricing" component={Pricing} />

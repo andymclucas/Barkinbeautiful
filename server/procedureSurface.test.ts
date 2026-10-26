@@ -263,7 +263,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(338);
+    expect(surface).toHaveLength(339);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

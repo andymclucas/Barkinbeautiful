@@ -101,6 +101,8 @@ import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
+import { overduePets, type OverduePet } from "../shared/overdueForGroom";
+import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
 import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
 import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
@@ -2737,6 +2739,113 @@ const workflowReviewRouter = router({
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 const clientsRouter = router({
+  /**
+   * Dogs that have slipped past their own grooming rhythm.
+   *
+   * Andy, 26/10/2026, after looking at a competitor: build the overdue
+   * list. The salon already knew its AVERAGE repeat interval — that is
+   * what analytics reports — but nothing said whether a particular dog
+   * was late against its own pattern, so a lapsed regular was only
+   * noticed when somebody happened to wonder where they had got to.
+   *
+   * protectedProcedure, not operational: this is the client book with
+   * contact details and a retention angle, which is owner surface.
+   * Restricted staff are confined to their own appointments.
+   *
+   * Everything about who counts as overdue lives in
+   * shared/overdueForGroom.ts. This procedure only feeds it.
+   */
+  overdueForGroom: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** Gaps needed before a rhythm is believed. Two means three visits. */
+      minIntervals: z.number().int().min(1).max(10).default(2),
+      limit: z.number().int().min(1).max(500).default(100),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input ?? {});
+
+      // Completed grooms are the evidence. Only the pet and the date are
+      // needed, so this stays a narrow read even across the whole book.
+      const visits = await db
+        .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.workflowState, "complete"),
+          isNotNull(appointments.petId),
+        ));
+
+      // Anything in the diary ahead of now means the dog is not overdue,
+      // whatever its history says. Cancelled and no-show do NOT count —
+      // a cancelled booking is exactly how a client slips away.
+      const booked = await db
+        .select({ petId: appointments.petId })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          gte(appointments.scheduledStart, new Date()),
+          notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+          isNotNull(appointments.petId),
+        ));
+
+      // Departed is the only way this salon retires a pet, and it is also
+      // how duplicates are closed off — so both drop out here.
+      const gone = await db
+        .select({ id: pets.id })
+        .from(pets)
+        .where(and(eq(pets.tenantId, tenantId), eq(pets.status, "departed")));
+
+      // The salon's clock: "how many days late" is a day either side at
+      // the band boundaries, and the bands are what staff act on.
+      const [tenantRow] = await db.select({ timezone: tenants.timezone })
+        .from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+      const tenantTimeZone = tenantRow?.timezone || DEFAULT_TIMEZONE;
+
+      // Past appointments nobody closed out. The dog probably came in and
+      // was groomed, but the workflow never advanced, so there is no
+      // confirmed visit to measure from — see the guard in the module.
+      const unconfirmed = await db
+        .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          lt(appointments.scheduledStart, new Date()),
+          notInArray(appointments.workflowState, ["complete", "cancelled", "no_show"]),
+          isNotNull(appointments.petId),
+        ));
+
+      const overdue = overduePets({
+        visits: visits.map((v) => ({ petId: v.petId as number, scheduledStart: v.scheduledStart })),
+        bookedPetIds: booked.map((b) => b.petId as number),
+        excludePetIds: gone.map((g) => g.id),
+        unconfirmedVisits: unconfirmed.map((v) => ({ petId: v.petId as number, scheduledStart: v.scheduledStart })),
+        options: { timeZone: tenantTimeZone, minIntervals: input?.minIntervals ?? 2 },
+      });
+
+      const top = overdue.slice(0, input?.limit ?? 100);
+      if (top.length === 0) return { pets: [], total: 0 };
+
+      // Names and numbers only for the rows actually being shown.
+      const detail = await db
+        .select({
+          petId: pets.id, petName: pets.name, breed: pets.breed,
+          clientId: clients.id, firstName: clients.firstName, lastName: clients.lastName,
+          phone: clients.phone, email: clients.email,
+        })
+        .from(pets)
+        .leftJoin(clients, eq(clients.id, pets.clientId))
+        .where(and(eq(pets.tenantId, tenantId), inArray(pets.id, top.map((p: OverduePet) => p.petId))));
+      const byPet = new Map(detail.map((d) => [d.petId, d]));
+
+      return {
+        total: overdue.length,
+        pets: top.map((p: OverduePet) => ({ ...p, ...(byPet.get(p.petId) ?? {}) })),
+      };
+    }),
+
   /**
    * The client list.
    *
