@@ -18,6 +18,7 @@ import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointmentAddOns, pricingServices } from "../../drizzle/schema";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
+import { validateLineDiscount, MAX_DISCOUNT_REASON } from "../../shared/lineDiscount";
 import { addOnRequiresManualPrice, addOnsTotal } from "../../shared/appointmentAddOns";
 
 export const appointmentAddOnsRouter = router({
@@ -115,6 +116,16 @@ export const appointmentAddOnsRouter = router({
       id: z.number(),
       quantity: z.number().int().min(1).max(20).optional(),
       unitPrice: z.number().min(0).max(10000).optional(),
+      /**
+       * Who actually did it. Null clears it back to "whoever has the dog".
+       * Andy, 27/10/2026: a teeth clean or a daycare on a two-dog booking
+       * is often not done by that dog's own groomer.
+       */
+      staffId: z.number().int().positive().nullable().optional(),
+      /** A discount on this line: percent OR amount, never both. */
+      discountKind: z.enum(["percent", "amount"]).nullable().optional(),
+      discountValue: z.union([z.number(), z.string()]).nullable().optional(),
+      discountReason: z.string().max(MAX_DISCOUNT_REASON).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -127,9 +138,36 @@ export const appointmentAddOnsRouter = router({
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "That add-on is no longer on this appointment" });
       await requireApprovedStaffAppointmentAccess(db, ctx.user, row.appointmentId);
 
+      const quantity = input.quantity ?? row.quantity;
+      const unitPrice = input.unitPrice !== undefined ? input.unitPrice.toFixed(2) : row.unitPrice;
+
+      // Only touch the discount when the caller mentions it, so editing a
+      // quantity cannot silently wipe a discount somebody agreed.
+      const discountTouched = input.discountKind !== undefined || input.discountValue !== undefined;
+      let discountFields: Record<string, unknown> = {};
+      if (discountTouched) {
+        // Validated against the line's own gross, so "$50 off" on a $35
+        // add-on is refused here rather than silently clamped later.
+        const gross = (Number(unitPrice) * Math.max(1, quantity)).toFixed(2);
+        const check = validateLineDiscount({
+          kind: input.discountKind ?? null,
+          value: input.discountValue ?? null,
+          reason: input.discountReason ?? null,
+          gross,
+        });
+        if (!check.ok) throw new TRPCError({ code: "BAD_REQUEST", message: check.error });
+        discountFields = {
+          discountPercent: check.discount?.kind === "percent" ? String(check.discount.value) : null,
+          discountAmount: check.discount?.kind === "amount" ? check.discount.value.toFixed(2) : null,
+          discountReason: check.reason,
+        };
+      }
+
       await db.update(appointmentAddOns).set({
-        quantity: input.quantity ?? row.quantity,
-        unitPrice: input.unitPrice !== undefined ? input.unitPrice.toFixed(2) : row.unitPrice,
+        quantity,
+        unitPrice,
+        ...(input.staffId !== undefined ? { staffId: input.staffId } : {}),
+        ...discountFields,
       }).where(eq(appointmentAddOns.id, input.id));
 
       return { success: true };
@@ -165,9 +203,19 @@ export async function loadAddOnsForInvoice(db: any, tenantId: number, appointmen
     name: appointmentAddOns.name,
     unitPrice: appointmentAddOns.unitPrice,
     quantity: appointmentAddOns.quantity,
+    // The discount columns belong HERE, not only on the editor's list.
+    // Without them buildInvoiceLines sees no discount and bills the full
+    // rate — the money is recorded and never taken off, which is the
+    // same shape as the monthly-billing miss on 23/10/2026.
+    discountPercent: appointmentAddOns.discountPercent,
+    discountAmount: appointmentAddOns.discountAmount,
+    discountReason: appointmentAddOns.discountReason,
   }).from(appointmentAddOns).where(and(
     eq(appointmentAddOns.tenantId, tenantId),
     eq(appointmentAddOns.appointmentId, appointmentId),
   )).orderBy(asc(appointmentAddOns.id));
-  return rows as { name: string; unitPrice: string; quantity: number }[];
+  return rows as {
+    name: string; unitPrice: string; quantity: number;
+    discountPercent: string | null; discountAmount: string | null; discountReason: string | null;
+  }[];
 }

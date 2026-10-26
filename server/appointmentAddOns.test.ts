@@ -333,3 +333,73 @@ describe("billableTotal with a manual override", () => {
     expect(totals.get(2130003)).toBe("175.00");
   });
 });
+
+describe("a discount on an add-on line", () => {
+  const base = { petName: "Boo", serviceLabel: "Classic Groom", servicePrice: "110.00" };
+
+  it("shows the full rate and takes the discount off on its own line", () => {
+    // Folding it into the unit price would read as though the salon's
+    // prices changed. The client should see $35 and what came off it.
+    const { lines, subtotal } = buildInvoiceLines({
+      ...base,
+      addOns: [{ name: "Teeth Clean", unitPrice: "35.00", discountAmount: "5.00", discountReason: "regular" }],
+    });
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toMatchObject({ description: "Boo — Teeth Clean", lineTotal: "35.00" });
+    expect(lines[2]).toMatchObject({ description: "Boo — Teeth Clean: $5.00 off (regular)", lineTotal: "-5.00" });
+    expect(subtotal).toBe("140.00"); // 110 + 35 - 5
+  });
+
+  it("takes a percentage off the line AFTER quantity", () => {
+    // Two teeth cleans at 20% off is 20% off both, not off one.
+    const { lines, subtotal } = buildInvoiceLines({
+      ...base,
+      addOns: [{ name: "Teeth Clean", unitPrice: "35.00", quantity: 2, discountPercent: 20, discountReason: "two dogs" }],
+    });
+    expect(lines[1]).toMatchObject({ quantity: "2", lineTotal: "70.00" });
+    expect(lines[2]).toMatchObject({ lineTotal: "-14.00" });
+    expect(subtotal).toBe("166.00"); // 110 + 70 - 14
+  });
+
+  it("never discounts a line below zero", () => {
+    const { subtotal } = buildInvoiceLines({
+      ...base, servicePrice: "0.00",
+      addOns: [{ name: "Nail Trim", unitPrice: "15.00", discountAmount: "50.00", discountReason: "goodwill" }],
+    });
+    expect(subtotal).toBe("0.00");
+  });
+
+  it("charges full price when both discount columns are set", () => {
+    // Impossible through the UI; if a row has both, picking one is a
+    // surprise to whoever agreed the other.
+    const { subtotal } = buildInvoiceLines({
+      ...base,
+      addOns: [{ name: "Teeth Clean", unitPrice: "35.00", discountPercent: 20, discountAmount: "5.00" }],
+    });
+    expect(subtotal).toBe("145.00");
+  });
+
+  it("leaves an undiscounted add-on exactly as it was", () => {
+    const { lines, subtotal } = buildInvoiceLines({
+      ...base, addOns: [{ name: "Teeth Clean", unitPrice: "35.00" }],
+    });
+    expect(lines).toHaveLength(2);
+    expect(subtotal).toBe("145.00");
+  });
+});
+
+describe("addOnsTotal nets off discounts", () => {
+  it("sums what is owed, not the full rate", () => {
+    // This figure feeds decideAppointmentInvoice and the payment panel's
+    // "owing", so summing gross would have the counter asking a client
+    // for money that was discounted off.
+    expect(addOnsTotal([
+      { name: "Teeth Clean", unitPrice: "35.00", discountAmount: "5.00" },
+      { name: "Nail Trim", unitPrice: "15.00" },
+    ])).toBe("45.00");
+  });
+
+  it("is unchanged when nothing is discounted", () => {
+    expect(addOnsTotal([{ name: "Teeth Clean", unitPrice: "35.00", quantity: 2 }])).toBe("70.00");
+  });
+});

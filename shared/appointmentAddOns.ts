@@ -1,3 +1,4 @@
+import { applyLineDiscount, discountFromColumns, describeLineDiscount } from "./lineDiscount";
 /**
  * Extras done on the day, and the itemised invoice they produce.
  *
@@ -18,6 +19,10 @@ export type AddOnLine = {
   /** Dollars, as stored. "35.00". */
   unitPrice: string | number;
   quantity?: number;
+  /** A discount on this line: percent OR amount, never both. */
+  discountPercent?: string | number | null;
+  discountAmount?: string | number | null;
+  discountReason?: string | null;
 };
 
 export type InvoiceLine = {
@@ -94,7 +99,19 @@ export function buildInvoiceLines(input: {
     // Quantity is whole: two nail paintings, not 1.5 of one.
     const quantity = Math.max(1, Math.round(addOn.quantity ?? 1));
     const unitCents = toCents(addOn.unitPrice);
-    const lineCents = unitCents * quantity;
+    const grossCents = unitCents * quantity;
+    /**
+     * Any discount applies to the line AFTER quantity — 20% off two
+     * teeth cleans is 20% off both, not off one of them. The discount is
+     * shown on its own line rather than folded into the unit price, so
+     * the client can see the full rate and what came off it; a quietly
+     * reduced unit price reads like the salon's prices changed.
+     */
+    const discounted = applyLineDiscount(
+      centsToAmount(grossCents),
+      discountFromColumns(addOn.discountPercent, addOn.discountAmount),
+    );
+    const lineCents = discounted.netCents;
     subtotalCents += lineCents;
     lines.push({
       // Named for the dog, like the service line above. On a single-dog
@@ -105,8 +122,17 @@ export function buildInvoiceLines(input: {
       description: `${pet} — ${addOn.name}`,
       quantity: String(quantity),
       unitPrice: centsToAmount(unitCents),
-      lineTotal: centsToAmount(lineCents),
+      lineTotal: centsToAmount(grossCents),
     });
+    if (discounted.discountCents > 0) {
+      const label = describeLineDiscount(discounted.discount, discounted.discountCents);
+      lines.push({
+        description: `${pet} — ${addOn.name}: ${label}${addOn.discountReason ? ` (${addOn.discountReason})` : ""}`,
+        quantity: "1",
+        unitPrice: centsToAmount(-discounted.discountCents),
+        lineTotal: centsToAmount(-discounted.discountCents),
+      });
+    }
   }
 
   return { lines, subtotalCents, subtotal: centsToAmount(subtotalCents) };
@@ -134,7 +160,14 @@ export function appointmentTotal(
 export function addOnsTotal(addOns: AddOnLine[]): string {
   let cents = 0;
   for (const addOn of addOns) {
-    cents += toCents(addOn.unitPrice) * Math.max(1, Math.round(addOn.quantity ?? 1));
+    const gross = toCents(addOn.unitPrice) * Math.max(1, Math.round(addOn.quantity ?? 1));
+    // NET, not gross. This figure feeds decideAppointmentInvoice and the
+    // payment panel's "owing", so summing the full rate would have the
+    // counter asking a client for money that was discounted off.
+    cents += applyLineDiscount(
+      centsToAmount(gross),
+      discountFromColumns(addOn.discountPercent, addOn.discountAmount),
+    ).netCents;
   }
   return centsToAmount(cents);
 }

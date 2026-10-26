@@ -476,6 +476,12 @@ export const appointments = mysqlTable("appointments", {
    * automatically.
    */
   discountPercent: int("discount_percent"),
+  /**
+   * A flat dollar discount on the booking, beside discountPercent above.
+   * That one is the 5/10/15/20 staff ladder; this is "take $20 off",
+   * which the ladder cannot express. One or the other, never both.
+   */
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   /** Why. Required whenever discountPercent is set; enforced in shared/. */
   discountReason: varchar("discount_reason", { length: 200 }),
   /**
@@ -1611,6 +1617,20 @@ export const appointmentAddOns = mysqlTable("appointment_add_ons", {
   name: varchar("name", { length: 255 }).notNull(),
   unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).default("0.00").notNull(),
   quantity: int("quantity").default(1).notNull(),
+  /**
+   * Who actually did this add-on. NULL means whoever has the dog.
+   *
+   * Andy, 27/10/2026: a teeth clean or a daycare on a two-dog booking is
+   * often done by someone other than that dog's groomer. No foreign key,
+   * matching appointments.staffId, so a staff member can leave without
+   * rewriting history.
+   */
+  staffId: int("staff_id"),
+  /** A discount on THIS line: percent OR amount, never both. */
+  discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
+  /** Why. Required whenever either is set — see shared/lineDiscount.ts. */
+  discountReason: varchar("discount_reason", { length: 200 }),
   createdByUserId: int("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
