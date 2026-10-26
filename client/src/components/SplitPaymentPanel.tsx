@@ -14,6 +14,7 @@ import {
   type PaymentMethod,
 } from "@shared/splitPayments";
 import { allocateAcrossDogs, describeAllocation, totalOutstanding, prefilledAmount } from "@shared/payAcrossDogs";
+import { cashTender, describeChange, acceptsOverTender } from "@shared/cashTendered";
 
 /** Sentinel for the "every dog on this booking" option in the picker. */
 const ALL_DOGS = -1;
@@ -146,12 +147,35 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
     edited: amountEdited, typed: typedAmount, outstanding: outstandingForTarget,
   });
 
-  const spread = payingAll && amount.trim() ? allocateAcrossDogs(amount, balances) : null;
-  const check = !payingAll && amount.trim()
-    ? validatePaymentAmount(amount, { outstanding: selected?.outstanding ?? null, paid: selected?.paid ?? 0 })
+  /**
+   * Cash can be over-tendered; a card cannot.
+   *
+   * Lauren, 27/10/2026: a $110 groom paid with $200 cash was refused
+   * outright — "That is more than the $110.00 outstanding" — so nothing
+   * could be recorded while the client stood there. Handing over more
+   * than the bill is simply how cash works.
+   *
+   * What gets RECORDED is what the salon keeps. $200 in and $90 out is
+   * $110 of revenue; recording the $200 would put money the salon does
+   * not have into every report.
+   */
+  const owedHere = payingAll ? totalOutstanding(balances) : (selected?.outstanding ?? null);
+  const tender = acceptsOverTender(method) && amount.trim()
+    ? cashTender({ tendered: amount, outstanding: owedHere })
+    : null;
+  const overTendered = Boolean(tender?.ok && tender.change > 0);
+  // Once cash covers the bill, the amount APPLIED is what the rest of
+  // the panel works from — never the tendered figure.
+  const effectiveAmount = tender?.ok && overTendered ? tender.applied.toFixed(2) : amount;
+
+  const spread = payingAll && effectiveAmount.trim() ? allocateAcrossDogs(effectiveAmount, balances) : null;
+  const check = !payingAll && effectiveAmount.trim()
+    ? validatePaymentAmount(effectiveAmount, { outstanding: selected?.outstanding ?? null, paid: selected?.paid ?? 0 })
     : null;
   const canSubmit = payingAll ? Boolean(spread?.ok) : Boolean(check?.ok);
-  const error = payingAll ? (spread && !spread.ok ? spread.error : null) : (check && !check.ok ? check.error : null);
+  const error = tender && !tender.ok
+    ? tender.error
+    : payingAll ? (spread && !spread.ok ? spread.error : null) : (check && !check.ok ? check.error : null);
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -173,7 +197,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
       }
       return;
     }
-    record.mutate({ appointmentId: selectedId, amount, method, note: note.trim() || undefined });
+    record.mutate({ appointmentId: selectedId, amount: effectiveAmount, method, note: note.trim() || undefined });
   };
 
   return (
@@ -381,6 +405,17 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             </span>
           )}
           {error && <span className="text-[11px] text-red-600 dark:text-red-400">{error}</span>}
+          {/* The number the counter reads out while the drawer is open.
+              Green and bold because handing back the wrong change is the
+              mistake this is here to prevent. */}
+          {!error && overTendered && tender?.ok && (
+            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
+              {describeChange(tender.change)}
+              <span className="ml-1.5 font-normal text-muted-foreground">
+                — recording {`$${tender.applied.toFixed(2)}`}
+              </span>
+            </span>
+          )}
         </div>
       </div>
     </div>
