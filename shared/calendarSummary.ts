@@ -132,7 +132,20 @@ export function summariseCalendar(appointments: SummarisableAppointment[]): Cale
         tier: a.membershipTier,
       });
     }
-    const value = amount(a.price);
+    /**
+     * A covered groom is not collectable, whatever price sits on it.
+     *
+     * appointmentInvoicing bills extras only once a membershipId is
+     * set, so the price on the row is ignored at billing time — but
+     * this used to count it anyway, which put money into "Booked in"
+     * and "Still to collect" that nobody would ever be asked for. On
+     * 28/10/2026 that was $1,360 of priced-but-covered bookings
+     * promising revenue the invoice path had already written off.
+     *
+     * Extras are not in `price` — they live on appointmentAddOns and
+     * are billed separately — so zeroing this does not hide them.
+     */
+    const value = a.membershipId ? 0 : amount(a.price);
     const paid = amount(a.paidAmount);
     expected += value;
     taken += paid;

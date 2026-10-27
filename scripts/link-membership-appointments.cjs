@@ -17,9 +17,18 @@
  * membershipId set, appointmentInvoicing bills extras only; without
  * one it bills everything. For a groom already priced at zero those
  * are the same invoice, so linking changes the label and the counts
- * and not a cent. Seven otherwise-eligible bookings DO carry a price
- * and are deliberately left alone: linking them would zero $275 of
- * MoeGo-imported charges, and MoeGo prices stay as they are.
+ * and not a cent.
+ *
+ * `--include-priced` drops that condition and links the ones carrying
+ * a MoeGo price too. That is NOT money-neutral: it writes off whatever
+ * those grooms were priced at, because a covered groom is not charged
+ * for. It is a separate flag rather than the default so the money
+ * decision has to be made on purpose — Andy made it on 28/10/2026 for
+ * seven bookings worth $275, having been shown the list.
+ *
+ * The price is left ON the row rather than zeroed. The invoice path
+ * ignores it, the day panel no longer counts it, and leaving it there
+ * means unsetting the link is enough to undo this.
  *
  * Multi-dog plans are not excluded, and should not be. A plan that
  * names this dog covers this dog whatever else it covers; the
@@ -32,9 +41,10 @@ require("dotenv").config({ quiet: true });
 const mysql = require("mysql2/promise");
 
 const APPLY = process.argv.includes("--apply");
+const INCLUDE_PRICED = process.argv.includes("--include-priced");
 
 const SELECT_CANDIDATES = `
-  SELECT a.id, a.pet_id, mm.id AS membership_id, p.name AS pet,
+  SELECT a.id, a.pet_id, mm.id AS membership_id, p.name AS pet, a.price,
          CONCAT(cl.first_name, ' ', cl.last_name) AS client,
          DATE_FORMAT(CONVERT_TZ(a.scheduled_start, '+00:00', '+10:00'), '%a %e %b') AS whenn
   FROM appointments a
@@ -45,7 +55,7 @@ const SELECT_CANDIDATES = `
     AND a.membership_id IS NULL
     AND a.scheduled_start >= NOW()
     AND a.workflow_state NOT IN ('cancelled', 'no_show')
-    AND COALESCE(a.price, 0) = 0
+    AND (? = 1 OR COALESCE(a.price, 0) = 0)
     AND (SELECT COUNT(*) FROM memberships m2
          WHERE m2.client_id = a.client_id AND m2.status = 'active') = 1
   ORDER BY a.scheduled_start`;
@@ -56,8 +66,10 @@ const SELECT_CANDIDATES = `
     ssl: { minVersion: "TLSv1.2", rejectUnauthorized: true },
   });
 
-  const [rows] = await c.query(SELECT_CANDIDATES);
-  console.log(`candidates: ${rows.length}`);
+  const [rows] = await c.query(SELECT_CANDIDATES, [INCLUDE_PRICED ? 1 : 0]);
+  const writeOff = rows.reduce((sum, r) => sum + Math.round(Number(r.price ?? 0) * 100), 0) / 100;
+  console.log(`candidates: ${rows.length}${INCLUDE_PRICED ? "  (--include-priced)" : ""}`);
+  if (writeOff > 0) console.log(`WRITES OFF $${writeOff.toFixed(2)} of priced grooms — they become covered.`);
   console.table(rows.slice(0, 10).map((r) => ({ id: r.id, pet: r.pet, client: r.client, when: r.whenn, plan: r.membership_id })));
   if (rows.length > 10) console.log(`… and ${rows.length - 10} more`);
 
@@ -69,12 +81,15 @@ const SELECT_CANDIDATES = `
       // booking edited since the select is skipped rather than
       // overwritten — including the price, which is what makes this
       // safe.
+      // Re-asserts the price it was chosen under, not merely "some
+      // price": a booking repriced between the select and the write is
+      // skipped rather than written off at a figure nobody approved.
       const [res] = await c.query(
         `UPDATE appointments SET membership_id = ?
          WHERE id = ? AND tenant_id = 1 AND membership_id IS NULL
-           AND COALESCE(price, 0) = 0
+           AND COALESCE(price, 0) = ?
            AND workflow_state NOT IN ('cancelled','no_show')`,
-        [row.membership_id, row.id],
+        [row.membership_id, row.id, row.price ?? 0],
       );
       written += res.affectedRows;
     }

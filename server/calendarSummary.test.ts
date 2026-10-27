@@ -221,3 +221,41 @@ describe("membership value on the day", () => {
     expect(summary.membershipVisitValue).toBe(0);
   });
 });
+
+describe("a covered groom that still carries a price", () => {
+  /**
+   * 43 bookings were linked to their membership on 28/10/2026 and
+   * another $1,360 of priced-but-covered work was already there.
+   * appointmentInvoicing bills extras only once a membershipId is set,
+   * so that price is never charged — counting it promised revenue the
+   * invoice path had already written off.
+   */
+  it("does not count its price as money to collect", () => {
+    const summary = summariseCalendar([
+      { petId: 1, membershipId: 10, price: "145.00", paidAmount: null,
+        membershipPricePerCycle: "23.78", membershipTier: "silver", workflowState: "complete" },
+    ]);
+    expect(summary.expectedRevenue).toBe(0);
+    expect(summary.outstandingRevenue).toBe(0);
+    expect(summary.earnedRevenue).toBe(0);
+    // The subscription revenue is still counted — that part is real.
+    expect(summary.membershipVisitValue).toBeCloseTo(142.68, 2);
+  });
+
+  it("still counts money actually taken against it", () => {
+    // A client who paid for extras on a covered groom really did pay.
+    const summary = summariseCalendar([
+      { petId: 1, membershipId: 10, price: "145.00", paidAmount: "35.00" },
+    ]);
+    expect(summary.takenRevenue).toBe(35);
+    expect(summary.outstandingRevenue).toBe(0);
+  });
+
+  it("leaves an uncovered groom's price alone", () => {
+    const summary = summariseCalendar([
+      { petId: 2, membershipId: null, price: "145.00", paidAmount: null },
+    ]);
+    expect(summary.expectedRevenue).toBe(145);
+    expect(summary.outstandingRevenue).toBe(145);
+  });
+});

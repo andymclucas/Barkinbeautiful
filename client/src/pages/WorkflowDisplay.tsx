@@ -19,6 +19,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 import { useTimezone } from "@/lib/timezone";
 import { dayInZone, addCalendarDays, isDayBefore } from "@shared/calendarDay";
 
+import { useBuildVersionReload } from "@/hooks/useBuildVersionReload";
 const STAGES = [
   { key: "scheduled", label: "Waiting", colour: WORKFLOW_STAGE_COLOURS.scheduled },
   { key: "checked_in", label: "Checked in", colour: WORKFLOW_STAGE_COLOURS.checked_in },
@@ -53,6 +54,11 @@ function formatDuration(minutes: number | null) {
 }
 
 export default function WorkflowDisplay() {
+  // Opened once and left on the wall for weeks. Nothing else makes it
+  // fetch new code: it never changes route, so the lazy-chunk reload
+  // never fires. This is what stops it showing Monday's header above
+  // Tuesday's dogs.
+  useBuildVersionReload();
   const { loading, user } = useAuth();
   const displayUrl = typeof window === "undefined"
     ? `${PRODUCTION_APP_URL}/workflow/display`
