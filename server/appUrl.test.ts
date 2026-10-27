@@ -98,3 +98,46 @@ describe("getAppBaseUrl", () => {
     expect(getAppBaseUrl()).toBe(PRODUCTION_APP_URL);
   });
 });
+
+describe("getPortalBaseUrl", () => {
+  const saved = { app: process.env.VITE_APP_URL, portal: process.env.VITE_PORTAL_URL };
+  afterEach(() => {
+    process.env.VITE_APP_URL = saved.app;
+    process.env.VITE_PORTAL_URL = saved.portal;
+    if (saved.portal === undefined) delete process.env.VITE_PORTAL_URL;
+  });
+
+  it("sends clients to their own host when one is set", async () => {
+    process.env.VITE_APP_URL = "https://staff.barkinbeautiful.com.au";
+    process.env.VITE_PORTAL_URL = "https://clients.barkinbeautiful.com.au";
+    const { getPortalBaseUrl } = await import("./appUrl");
+    expect(getPortalBaseUrl()).toBe("https://clients.barkinbeautiful.com.au");
+  });
+
+  it("strips a trailing slash, like its sibling", async () => {
+    process.env.VITE_PORTAL_URL = "https://clients.barkinbeautiful.com.au/";
+    const { getPortalBaseUrl } = await import("./appUrl");
+    expect(getPortalBaseUrl()).toBe("https://clients.barkinbeautiful.com.au");
+  });
+
+  /**
+   * Until DNS and Render know the new name, a link to a host that does
+   * not resolve is worse than one that does. The staff host at least
+   * serves the portal.
+   */
+  it("falls back to the staff host when unset", async () => {
+    process.env.VITE_APP_URL = "https://staff.barkinbeautiful.com.au";
+    delete process.env.VITE_PORTAL_URL;
+    const { getPortalBaseUrl } = await import("./appUrl");
+    expect(getPortalBaseUrl()).toBe("https://staff.barkinbeautiful.com.au");
+  });
+
+  it("falls back rather than emitting a broken link", async () => {
+    process.env.VITE_APP_URL = "https://staff.barkinbeautiful.com.au";
+    for (const bad of ["not a url", "ftp://clients.example.com", "   "]) {
+      process.env.VITE_PORTAL_URL = bad;
+      const { getPortalBaseUrl } = await import("./appUrl");
+      expect(getPortalBaseUrl(), bad).toBe("https://staff.barkinbeautiful.com.au");
+    }
+  });
+});
