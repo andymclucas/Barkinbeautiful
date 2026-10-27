@@ -10,12 +10,23 @@ import { extractBuildId, isNewBuild } from "@shared/buildVersion";
  * an import fails. Without this the display runs whatever bundle it
  * loaded on the day somebody opened it.
  *
- * Only for screens nobody is interacting with. On a page where staff
- * are typing, a reload mid-sentence is worse than stale code; the
- * board and the calendar deliberately do NOT use this.
+ * Two modes, because two kinds of screen.
+ *
+ * "reload" is for a wall display nobody touches: it reloads itself.
+ * "notify" is for a page staff type into — it reports that a new build
+ * exists and lets them choose when, because a reload mid-sentence
+ * loses what somebody was entering and is worse than stale code.
+ *
+ * The staff board turns out to need the second. It is cast to a screen
+ * in the salon AND typed into, and with no check at all it was running
+ * whichever bundle it loaded days ago.
  */
-export function useBuildVersionReload(options: { intervalMs?: number } = {}): void {
+export function useBuildVersionReload(
+  options: { intervalMs?: number; mode?: "reload" | "notify"; onNewBuild?: () => void } = {},
+): void {
   const intervalMs = options.intervalMs ?? 10 * 60 * 1000;
+  const mode = options.mode ?? "reload";
+  const onNewBuild = options.onNewBuild;
 
   useEffect(() => {
     if (typeof document === "undefined" || typeof window === "undefined") return;
@@ -38,7 +49,9 @@ export function useBuildVersionReload(options: { intervalMs?: number } = {}): vo
         const response = await fetch("/", { cache: "no-store" });
         if (!response.ok || cancelled) return;
         const latest = extractBuildId(await response.text());
-        if (!cancelled && isNewBuild(current, latest)) window.location.reload();
+        if (cancelled || !isNewBuild(current, latest)) return;
+        if (mode === "notify") onNewBuild?.();
+        else window.location.reload();
       } catch {
         // Salon wifi drops. Try again at the next tick rather than
         // treating a failed fetch as news.
@@ -50,5 +63,5 @@ export function useBuildVersionReload(options: { intervalMs?: number } = {}): vo
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [intervalMs]);
+  }, [intervalMs, mode, onNewBuild]);
 }
