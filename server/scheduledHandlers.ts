@@ -21,6 +21,7 @@ import { getDb } from "./db";
 import { memberships, clients, pets, tenants, smsLogs } from "../drizzle/schema";
 import { eq, lte, and, gt, sql } from "drizzle-orm";
 import { membershipsDueToResume } from "@shared/membershipPause";
+import { groomsToRecover, totalPrice } from "@shared/membershipCoverageDrift";
 import { resumeMembershipSubscription } from "./stripeCards";
 import {
   sendEmail,
@@ -258,6 +259,22 @@ async function resumePausedMembershipsDue(
           continue;
         }
       }
+      /**
+       * Flag grooms booked at the Casual rate that this membership
+       * would have covered.
+       *
+       * A client who books their return groom while paused is priced
+       * as a non-member, because they were not one when they booked.
+       * Restarting the fee before that appointment makes them pay
+       * twice for one groom. Before the sweep existed a human
+       * restarted the membership and could notice; nothing notices
+       * now, so this says so.
+       *
+       * It proposes. Repricing somebody's booking without asking is
+       * the thing this feature deliberately does not do.
+       */
+      await flagGroomsToRecover(db, membership, now);
+
       restarted++;
     } catch (error) {
       // One membership failing to resume must not stop the rest, and
@@ -269,6 +286,60 @@ async function resumePausedMembershipsDue(
     }
   }
   return restarted;
+}
+
+/**
+ * Tell the owner about grooms a restarted membership should now cover.
+ *
+ * Keyed on the membership's own pet rather than the household: a second
+ * dog with no membership is correctly being charged, and flagging it
+ * would train staff to ignore the notice.
+ */
+async function flagGroomsToRecover(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  membership: { id: number; name: string | null; clientId: number },
+  now: Date,
+): Promise<void> {
+  const [row] = await db
+    .select({ petId: memberships.petId })
+    .from(memberships)
+    .where(eq(memberships.id, membership.id))
+    .limit(1);
+  if (!row?.petId) return;
+
+  const upcoming = await db
+    .select({
+      id: appointments.id,
+      petId: appointments.petId,
+      petName: pets.name,
+      scheduledStart: appointments.scheduledStart,
+      price: appointments.price,
+      membershipId: appointments.membershipId,
+      workflowState: appointments.workflowState,
+      status: appointments.status,
+    })
+    .from(appointments)
+    .leftJoin(pets, eq(appointments.petId, pets.id))
+    .where(and(eq(appointments.petId, row.petId), gte(appointments.scheduledStart, now)));
+
+  const toRecover = groomsToRecover(upcoming, { petIds: [row.petId], from: now });
+  if (toRecover.length === 0) return;
+
+  const dates = toRecover
+    .map((g) => g.scheduledStart.toLocaleDateString("en-AU", {
+      day: "numeric", month: "long", timeZone: "Australia/Brisbane",
+    }))
+    .join(", ");
+
+  await notifyOwner({
+    title: "▶️ Membership restarted — check these grooms are not charged twice",
+    content:
+      `${membership.name ?? "A membership"} has come off pause. ` +
+      `${toRecover.length} groom${toRecover.length === 1 ? "" : "s"} booked while it was paused ` +
+      `${toRecover.length === 1 ? "is" : "are"} still priced at the casual rate ` +
+      `(${dates}, $${totalPrice(toRecover)} in total). ` +
+      `The client will now pay the membership fee as well unless somebody adjusts them.`,
+  });
 }
 
 export async function paymentRetryHandler(req: Request, res: Response) {

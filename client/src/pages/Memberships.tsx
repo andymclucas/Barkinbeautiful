@@ -669,6 +669,26 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
    * failure mode the shared/ convention exists to prevent, and this is
    * the figure staff will read out to a client on the phone.
    */
+  /**
+   * The grooms already in the diary that this pause will leave free.
+   *
+   * Asked for only while the pause dialog is open and re-asked as the
+   * plan changes, because the window depends on the restart date. The
+   * figure staff need is "two grooms, $190" before they confirm, not a
+   * surprise next month.
+   */
+  const { data: pauseImpact } = trpc.stripeCards.pauseImpact.useQuery(
+    {
+      membershipId: m.id,
+      plan: pauseMode === "cycles"
+        ? { mode: "cycles", cycles: pauseCycles }
+        : pauseMode === "date" && pauseResumeOn
+          ? { mode: "date", resumeOn: new Date(`${pauseResumeOn}T00:00:00+10:00`) }
+          : { mode: "manual" },
+    },
+    { enabled: confirming === "pause" },
+  );
+
   const pausePreview = useMemo(() => {
     if (pauseMode !== "cycles") return null;
     const resolved = resolvePauseResumesAt(
@@ -824,6 +844,43 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
               <p className="pl-6 text-xs text-muted-foreground">
                 Nothing is charged until somebody resumes it here. It will not restart on its own.
               </p>
+            )}
+
+            {/* The part nobody could see before.
+
+                Coverage is decided when a booking is made and frozen
+                onto it, so a groom already in the diary stays free
+                through the pause while the fee is skipped. One
+                full-price groom outweighs several weeks of saved fee,
+                so staff get the number before they commit — and can
+                move or cancel those grooms first if they would rather. */}
+            {pauseImpact && pauseImpact.freeGrooms.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/40">
+                <p className="font-semibold text-amber-900 dark:text-amber-200">
+                  {pauseImpact.freeGrooms.length} groom{pauseImpact.freeGrooms.length === 1 ? "" : "s"} already booked
+                  {pauseImpact.openEnded ? " in the next 8 weeks" : " during this pause"}
+                </p>
+                <ul className="mt-1 space-y-0.5 text-amber-900/90 dark:text-amber-200/90">
+                  {pauseImpact.freeGrooms.slice(0, 5).map((g) => (
+                    <li key={g.id}>
+                      {g.petName ?? "Dog"} &mdash;{" "}
+                      {new Date(g.scheduledStart).toLocaleDateString("en-AU", {
+                        weekday: "short", day: "numeric", month: "short", timeZone: "Australia/Brisbane",
+                      })}
+                    </li>
+                  ))}
+                  {pauseImpact.freeGrooms.length > 5 && (
+                    <li>&hellip; and {pauseImpact.freeGrooms.length - 5} more</li>
+                  )}
+                </ul>
+                <p className="mt-1.5 text-amber-900/80 dark:text-amber-200/80">
+                  {pauseImpact.freeGrooms.length === 1 ? "It stays" : "They stay"} free &mdash; the
+                  membership covered {pauseImpact.freeGrooms.length === 1 ? "it" : "them"} when
+                  {pauseImpact.freeGrooms.length === 1 ? " it was" : " they were"} booked, and pausing does not
+                  change that. Move or cancel {pauseImpact.freeGrooms.length === 1 ? "it" : "them"} first if that
+                  is not what you want.
+                </p>
+              </div>
             )}
           </div>
         )}

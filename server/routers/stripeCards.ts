@@ -11,10 +11,12 @@
  * page, which is what keeps the business out of PCI scope.
  */
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { groomsFreeDuringPause } from "@shared/membershipCoverageDrift";
+import { resolvePauseResumesAt } from "@shared/membershipPause";
+import { and, desc, eq, gte, isNull, inArray } from "drizzle-orm";
 import { router, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
-import { clients, memberships, membershipPayments } from "../../drizzle/schema";
+import { appointments, clients, memberships, membershipPayments, pets } from "../../drizzle/schema";
 import {
   createCardSetupLink,
   emailCardSetupLink,
@@ -126,6 +128,90 @@ export const stripeCardsRouter = router({
       ]).default({ mode: "manual" }),
     }))
     .mutation(async ({ input }) => pauseMembershipSubscription(input.membershipId, input.plan)),
+
+  /**
+   * What pausing would do to grooms already in the diary.
+   *
+   * Coverage is frozen onto an appointment when it is booked, so a
+   * groom booked before a pause and falling inside it is still marked
+   * covered — the dog is done for nothing while the fee is skipped.
+   * Nothing warned anybody, and one full-price groom outweighs several
+   * weeks of the fee being saved.
+   *
+   * A query, not a mutation: it tells staff what they are about to do
+   * so they can move or cancel those grooms first. It changes nothing
+   * and reprices nothing, because repricing a booking a client has
+   * already been quoted is not a decision software should take alone.
+   */
+  pauseImpact: adminProcedure
+    .input(z.object({
+      membershipId: z.number(),
+      plan: z.discriminatedUnion("mode", [
+        z.object({ mode: z.literal("cycles"), cycles: z.number().int().min(1).max(52) }),
+        z.object({ mode: z.literal("date"), resumeOn: z.coerce.date() }),
+        z.object({ mode: z.literal("manual") }),
+      ]).default({ mode: "manual" }),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { freeGrooms: [], until: null, openEnded: false };
+
+      const [membership] = await db
+        .select({
+          id: memberships.id,
+          petId: memberships.petId,
+          billingCycle: memberships.billingCycle,
+          billingCycleWeeks: memberships.billingCycleWeeks,
+          nextBillingDate: memberships.nextBillingDate,
+        })
+        .from(memberships)
+        .where(eq(memberships.id, input.membershipId))
+        .limit(1);
+      if (!membership) return { freeGrooms: [], until: null, openEnded: false };
+
+      const now = new Date();
+      const resumesAt = resolvePauseResumesAt(input.plan, {
+        nextBillingDate: membership.nextBillingDate ?? null,
+        billingCycle: (membership.billingCycle ?? "weekly") as "weekly" | "monthly",
+        billingCycleWeeks: membership.billingCycleWeeks ?? 1,
+        now,
+      });
+
+      /**
+       * A manual pause has no end, so it gets a horizon instead.
+       *
+       * Eight weeks: long enough to cover the salon's longest grooming
+       * interval, short enough that the list stays something a person
+       * can read. Returning every booking the client will ever have is
+       * not a list anybody acts on.
+       */
+      const openEnded = resumesAt === null;
+      const until = resumesAt ?? new Date(now.getTime() + 8 * 7 * 24 * 60 * 60 * 1000);
+
+      const rows = await db
+        .select({
+          id: appointments.id,
+          petId: appointments.petId,
+          petName: pets.name,
+          scheduledStart: appointments.scheduledStart,
+          price: appointments.price,
+          membershipId: appointments.membershipId,
+          workflowState: appointments.workflowState,
+          status: appointments.status,
+        })
+        .from(appointments)
+        .leftJoin(pets, eq(appointments.petId, pets.id))
+        .where(and(
+          eq(appointments.membershipId, membership.id),
+          gte(appointments.scheduledStart, now),
+        ));
+
+      return {
+        freeGrooms: groomsFreeDuringPause(rows, { membershipId: membership.id, from: now, until }),
+        until: resumesAt,
+        openEnded,
+      };
+    }),
 
   /** Start charging a paused membership again. */
   resumeSubscription: adminProcedure
