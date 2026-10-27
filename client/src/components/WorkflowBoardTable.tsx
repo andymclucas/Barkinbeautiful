@@ -10,6 +10,7 @@ import { shortAddOnLabel } from "@shared/addOnBoardLabel";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { DogBoardHoverCard } from "@/components/DogBoardHoverCard";
 import { parsePetCodes } from "@shared/petCodes";
+import { PetCodeChips } from "@/components/PetCodeChips";
 import { joinedContactBadge } from "@shared/appointmentContact";
 import { PetAlertButton } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
@@ -637,22 +638,12 @@ export function WorkflowBoardTable({
                             // get one of them backwards. A human reads them.
                             const codes = parsePetCodes(appt.petMoegoCodeLabels);
                             if (codes.length === 0) return null;
-                            return (
-                              <span
-                                className="mt-0.5 flex flex-wrap items-center gap-0.5"
-                                title={codes.map(describePetCode).join("\n")}
-                                aria-label={`MoeGo codes: ${codes.map(describePetCode).join(", ")}`}
-                              >
-                                {codes.map((code) => (
-                                  <span
-                                    key={code}
-                                    className="inline-flex items-center rounded px-1 py-px text-[9px] font-semibold leading-tight bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
-                                  >
-                                    {code}
-                                  </span>
-                                ))}
-                              </span>
-                            );
+                            // Through the shared chips, so a colour set in
+                            // the catalogue reaches the board. These used to
+                            // be drawn grey here whatever the catalogue said,
+                            // which made colouring a code pointless in the
+                            // one place a groomer actually reads it.
+                            return <PetCodeChips codes={codes} size="xs" className="mt-0.5" />;
                           })()}
                           {(() => {
                             // When the dog has to be gone by, and whether it

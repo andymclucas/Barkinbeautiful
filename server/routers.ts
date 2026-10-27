@@ -811,6 +811,9 @@ const calendarRouter = router({
           clientEmail: clients.email,
           petName: pets.name,
           petBreed: pets.breed,
+          // The dog's codes, so the appointment dialog can show them
+          // alongside the board. Same column the board already reads.
+          petMoegoCodeLabels: pets.moegoCodeLabels,
           staffName: staff.name,
           staffColour: staff.colourHex,
         })
