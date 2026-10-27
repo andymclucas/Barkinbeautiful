@@ -1009,6 +1009,13 @@
       "when": 1791834787558,
       "tag": "0143_addon_completed",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "5",
+      "when": 1791834787559,
+      "tag": "0144_membership_pause_schedule",
+      "breakpoints": true
     }
   ]
 }

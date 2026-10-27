@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { weeklyToMonthly, describeRate, annualisedCost } from "@shared/membershipBillingCycle";
 
+import { describePause } from "@shared/membershipPause";
 type MembershipItem = {
   id: number;
   clientId: number | null;
@@ -27,6 +28,9 @@ type MembershipItem = {
   tier: string | null;
   serviceType: string | null;
   status: string;
+  /** Set only by a deliberate pause, never by a failed-payment suspension. */
+  pauseMode?: "cycles" | "date" | "manual" | null;
+  pauseResumesAt?: string | Date | null;
   pricePerCycle: string | null;
   /** Always the WEEKLY rate, whichever cycle bills it. */
   billingCycle?: "weekly" | "monthly" | null;
@@ -644,6 +648,17 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   // Blank means charge now. Set when the client has to be told how the new
   // billing works before any money leaves their account.
   const [firstChargeOn, setFirstChargeOn] = useState("");
+  /**
+   * How the pause ends, chosen before it starts.
+   *
+   * Defaulted to one cycle rather than "manual": the common case is a
+   * client away for a known stretch, and a pause nobody has to remember
+   * to lift is the point of the feature. Manual is still there for the
+   * open-ended case.
+   */
+  const [pauseMode, setPauseMode] = useState<"cycles" | "date" | "manual">("cycles");
+  const [pauseCycles, setPauseCycles] = useState(1);
+  const [pauseResumeOn, setPauseResumeOn] = useState("");
 
   const cycle = billingCycleFromWeeks(m.billingCycleWeeks);
   const clientName = [m.clientFirstName, m.clientLastName].filter(Boolean).join(" ").trim() || "this client";
@@ -709,6 +724,60 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
             : firstChargeOn
             ? <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, with the <strong>first charge on {firstChargeOn}</strong>. Nothing is taken before then.</>
             : <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, starting with a charge right now. It cannot be undone from here.</>}
+        {confirming === "pause" && (
+          <div className="grid gap-2 pt-1">
+            <Label className="text-xs">When should billing restart?</Label>
+            {([
+              { mode: "cycles", label: "After certain cycles" },
+              { mode: "date", label: "On certain date" },
+              { mode: "manual", label: "Restart manually" },
+            ] as const).map(({ mode, label }) => (
+              <label key={mode} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name={`pause-mode-${m.id}`}
+                  className="accent-primary"
+                  checked={pauseMode === mode}
+                  onChange={() => setPauseMode(mode)}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+            {pauseMode === "cycles" && (
+              <div className="flex items-center gap-2 pl-6">
+                <Input
+                  type="number"
+                  min={1}
+                  max={52}
+                  className="h-8 w-20"
+                  aria-label="Billing cycles to pause for"
+                  value={pauseCycles}
+                  onChange={(e) => setPauseCycles(Math.max(1, Math.min(52, Number(e.target.value) || 1)))}
+                />
+                <span className="text-xs text-muted-foreground">
+                  billing cycle{pauseCycles === 1 ? "" : "s"} skipped, then billing restarts
+                </span>
+              </div>
+            )}
+            {pauseMode === "date" && (
+              <div className="pl-6 grid gap-1">
+                <Input
+                  type="date"
+                  className="h-8"
+                  aria-label="Date billing restarts"
+                  value={pauseResumeOn}
+                  onChange={(e) => setPauseResumeOn(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Billing restarts on this date.</p>
+              </div>
+            )}
+            {pauseMode === "manual" && (
+              <p className="pl-6 text-xs text-muted-foreground">
+                Nothing is charged until somebody resumes it here. It will not restart on its own.
+              </p>
+            )}
+          </div>
+        )}
         {confirming === "start" && (
           <div className="grid gap-1.5">
             <Label htmlFor={`first-charge-${m.id}`} className="text-xs">First charge (leave blank to charge now)</Label>
@@ -728,11 +797,25 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
           <Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirming(null)}>Cancel</Button>
           <Button
             size="sm"
-            disabled={busy}
+            // A date pause with no date would otherwise post an Invalid
+            // Date and be refused by the server after the dialog closed.
+            disabled={busy || (confirming === "pause" && pauseMode === "date" && !pauseResumeOn)}
             variant={confirming === "cancel" ? "destructive" : "default"}
             onClick={() => {
               if (confirming === "charge") chargeNow.mutate({ membershipId: m.id });
-              else if (confirming === "pause") pause.mutate({ membershipId: m.id });
+              else if (confirming === "pause") {
+                pause.mutate({
+                  membershipId: m.id,
+                  plan: pauseMode === "cycles"
+                    ? { mode: "cycles", cycles: pauseCycles }
+                    // Read as midday Brisbane rather than midnight, so a
+                    // date typed here cannot land on the previous day once
+                    // it is stored as UTC.
+                    : pauseMode === "date"
+                      ? { mode: "date", resumeOn: new Date(`${pauseResumeOn}T12:00:00+10:00`) }
+                      : { mode: "manual" },
+                });
+              }
               else if (confirming === "resume") resume.mutate({ membershipId: m.id });
               else if (confirming === "cancel") cancelBilling.mutate({ membershipId: m.id });
               else start.mutate({ membershipId: m.id, firstChargeOn: firstChargeOn || null });
@@ -755,10 +838,43 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
     // "paused", so tell them apart by whether a payment actually failed.
     const failing = (m.failedPaymentCount ?? 0) > 0;
     const pausedByStaff = m.status === "paused" && !failing;
+    /**
+     * When a paused membership starts paying again.
+     *
+     * "Billing paused" on its own was the whole of the old badge, and
+     * it is the thing staff actually ask about — a client rings to
+     * check and nobody can answer without opening Stripe.
+     */
+    const pauseRestartLabel = pausedByStaff && m.pauseResumesAt
+      ? `Paused till ${new Date(m.pauseResumesAt).toLocaleDateString("en-AU", {
+          day: "numeric", month: "short", timeZone: "Australia/Brisbane",
+        })}`
+      : pausedByStaff && m.pauseMode === "manual"
+        ? "Paused — manual restart"
+        : null;
 
     return (
       <div className="flex flex-col items-stretch gap-1">
-        <Badge className={`block text-center text-[10px] ${
+        <Badge
+          /**
+           * The full story on hover. The badge has room for "Paused
+           * till 3 Nov" and not for the difference between a holiday
+           * and a debt, which is the thing staff most need to know
+           * before they ring a client about it.
+           */
+          title={describePause(
+            {
+              status: m.status,
+              pauseMode: m.pauseMode ?? null,
+              pauseResumesAt: m.pauseResumesAt ? new Date(m.pauseResumesAt) : null,
+              failedPaymentCount: m.failedPaymentCount ?? 0,
+              bookingSuspended: m.bookingSuspended ?? false,
+            },
+            (date) => date.toLocaleDateString("en-AU", {
+              day: "numeric", month: "long", timeZone: "Australia/Brisbane",
+            }),
+          )}
+          className={`block text-center text-[10px] ${
           pausedByStaff
             ? "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
             : cycle
@@ -766,7 +882,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
               : "bg-amber-100 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300"
         }`}>
           {pausedByStaff
-            ? "Billing paused"
+            ? pauseRestartLabel ?? "Billing paused"
             : cycle === "fortnightly" ? "Stripe fortnightly"
             : cycle === "weekly" ? "Stripe weekly"
             : "Stripe — cycle unclear"}

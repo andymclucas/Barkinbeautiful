@@ -20,6 +20,8 @@ import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
 import { memberships, clients, pets, tenants, smsLogs } from "../drizzle/schema";
 import { eq, lte, and, gt, sql } from "drizzle-orm";
+import { membershipsDueToResume } from "@shared/membershipPause";
+import { resumeMembershipSubscription } from "./stripeCards";
 import {
   sendEmail,
   buildAdminFailedPaymentEmail,
@@ -135,6 +137,85 @@ async function attemptMembershipCharge(
   return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: false };
 }
 
+
+/**
+ * Put memberships back on billing once their pause has run out.
+ *
+ * Stripe can restart collection by itself — a pause is set with
+ * `resumes_at` where a date is known — but Stripe resuming does not
+ * write to this database. Without this sweep a client would be charged
+ * again while Groomigo still showed them paused, and the salon would
+ * be reading a status that was not true.
+ *
+ * It also covers the memberships Stripe knows nothing about. Most of
+ * the book is still billed by hand while it migrates off MoeGo, and
+ * those have no subscription to resume.
+ *
+ * **Only ever resumes a DELIBERATE pause.** `status = "paused"` is also
+ * what the failed-payment escalation sets at strike two, so a sweep
+ * keyed on status alone would put a client who had never paid back
+ * onto automatic billing. `isDeliberatePause` keys on `pauseMode`,
+ * which only the pause action writes. See shared/membershipPause.ts.
+ */
+async function resumePausedMembershipsDue(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  now: Date,
+): Promise<number> {
+  const paused = await db
+    .select({
+      id: memberships.id,
+      status: memberships.status,
+      pauseMode: memberships.pauseMode,
+      pauseResumesAt: memberships.pauseResumesAt,
+      failedPaymentCount: memberships.failedPaymentCount,
+      bookingSuspended: memberships.bookingSuspended,
+      stripeSubscriptionId: memberships.stripeSubscriptionId,
+    })
+    .from(memberships)
+    /**
+     * No tenant filter, deliberately: a scheduled job runs for the
+     * whole platform, not one salon.
+     *
+     * It is not yet TRUE multi-tenant, though, and that is worth
+     * naming rather than discovering. `resumeMembershipSubscription`
+     * refuses any membership whose tenantId is not 1, so a second
+     * salon's rows would be selected here and then throw, once each
+     * run, into the log. The guard is right — it is there so a bug
+     * cannot bill another salon's client — and the fix belongs with it
+     * rather than here. When billing goes multi-tenant, these two
+     * change together.
+     */
+    .where(eq(memberships.status, "paused"));
+
+  const due = membershipsDueToResume(paused, now);
+  let restarted = 0;
+
+  for (const membership of due) {
+    try {
+      if (membership.stripeSubscriptionId) {
+        // Lifting it here as well as relying on Stripe's own
+        // `resumes_at` is deliberate: the two can disagree if a pause
+        // was edited, and clearing an already-cleared pause is a no-op.
+        await resumeMembershipSubscription(membership.id);
+      } else {
+        await db
+          .update(memberships)
+          .set({ status: "active", pauseMode: null, pauseResumesAt: null, pausedAt: null })
+          .where(eq(memberships.id, membership.id));
+      }
+      restarted++;
+    } catch (error) {
+      // One membership failing to resume must not stop the rest, and
+      // must not stop the payment retries that run after this.
+      console.error(
+        `[scheduled] could not resume membership ${membership.id}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  return restarted;
+}
+
 export async function paymentRetryHandler(req: Request, res: Response) {
   try {
     // Authorised either by the CRON_SECRET bearer token (how an external
@@ -161,6 +242,11 @@ export async function paymentRetryHandler(req: Request, res: Response) {
     if (!db) return res.json({ ok: true, skipped: "no-db" });
 
     const now = new Date();
+
+    // Restart anything whose pause has run out, before retrying
+    // anything. A membership coming off pause is not a failure case and
+    // must not be mixed into the retry loop below.
+    const resumed = await resumePausedMembershipsDue(db, now);
 
     // Find all memberships due for retry (retry date is in the past, still has failures)
     const dueRetries = await db
@@ -194,7 +280,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         title: "⚠️ Membership payment retries did not run",
         content: `${dueRetries.length} membership payment(s) were due for retry, but Stripe is not configured on this deployment. Nothing was charged and no client was suspended. The retries stay scheduled and will run once STRIPE_SECRET_KEY is set.`,
       }).catch(() => undefined);
-      return res.json({ ok: true, processed: 0, skipped: "stripe-not-configured", due: dueRetries.length });
+      return res.json({ ok: true, processed: 0, resumed, skipped: "stripe-not-configured", due: dueRetries.length });
     }
 
     let processed = 0;
@@ -388,7 +474,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
       processed++;
     }
 
-    return res.json({ ok: true, processed });
+    return res.json({ ok: true, processed, resumed });
   } catch (err) {
     console.error("[paymentRetryHandler] Error:", err);
     return res.status(500).json({

@@ -613,6 +613,20 @@ export const memberships = mysqlTable("memberships", {
   lastFailedPaymentAt: timestamp("last_failed_payment_at"),
   bookingSuspended: boolean("booking_suspended").default(false).notNull(),
   paymentRetryScheduledAt: datetime("payment_retry_scheduled_at"),
+  /**
+   * How a deliberate pause ends: after N cycles, on a date, or when
+   * somebody says so.
+   *
+   * Also the discriminator between the two things `status = "paused"`
+   * means. The failed-payment escalation sets that status too and never
+   * touches this, so a non-null `pauseMode` is what marks a pause as
+   * chosen rather than imposed — and only those are ever auto-resumed.
+   * See shared/membershipPause.ts.
+   */
+  pauseMode: mysqlEnum("pause_mode", ["cycles", "date", "manual"]),
+  /** When billing restarts. Null for a pause that waits for a person. */
+  pauseResumesAt: datetime("pause_resumes_at"),
+  pausedAt: datetime("paused_at"),
   moegoMembershipId: varchar("moego_membership_id", { length: 100 }),
   stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
   startedAt: timestamp("started_at").defaultNow().notNull(),

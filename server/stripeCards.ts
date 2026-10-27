@@ -28,6 +28,7 @@ import { requireStripeClient } from "./stripeClient";
 import { getAppBaseUrl } from "./appUrl";
 import { toStripeCents, stripeRecurring } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
+import { resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
 import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 
 /** Find or create the Stripe customer that represents this client. */
@@ -470,36 +471,100 @@ export async function cancelMembershipSubscription(membershipId: number) {
 /**
  * Stop charging a membership without tearing down its subscription.
  *
- * For a client who is away or between dogs: Stripe keeps the subscription
- * and the saved card, but issues nothing while paused. "void" rather than
- * "keep_as_draft" so no invoice quietly accrues and lands as a lump sum the
- * day they come back.
+ * For a client who is away or between dogs: Stripe keeps the
+ * subscription and the saved card, but issues nothing while paused.
+ * "void" rather than "keep_as_draft" so no invoice quietly accrues and
+ * lands as a lump sum the day they come back.
+ *
+ * The restart is decided up front — after N billing cycles, on a date,
+ * or not until somebody says so — because the version of this that
+ * paused indefinitely relied on a human remembering, and the salon has
+ * ~153 of these.
+ *
+ * Where a resume date is known it is handed to Stripe as well, so
+ * Stripe restarts collection on its own. The scheduled sweep still
+ * runs: Stripe resuming does NOT update this row, and a membership
+ * that Stripe is charging while Groomigo shows "paused" is worse than
+ * either state on its own.
+ *
+ * Works for a membership with no Stripe subscription at all. Most of
+ * the book is still being migrated from MoeGo and is billed by hand —
+ * refusing to pause those would make the feature useless for exactly
+ * the clients most likely to need it.
  *
  * NOTE: membership status "paused" is also what the failed-payment
- * escalation sets. A deliberate pause leaves failedPaymentCount at 0 and
- * bookingSuspended false, which is how the two are told apart.
+ * escalation sets. `pauseMode` is what tells the two apart, and only a
+ * row carrying one is ever auto-resumed. See shared/membershipPause.ts.
  */
-export async function pauseMembershipSubscription(membershipId: number) {
+export async function pauseMembershipSubscription(
+  membershipId: number,
+  plan: PausePlan = { mode: "manual" },
+  now: Date = new Date(),
+) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+
+  const validation = validatePausePlan(plan, now);
+  if (!validation.ok) throw new Error(validation.reason);
+
   const [membership] = await db
     .select({
       id: memberships.id,
       tenantId: memberships.tenantId,
+      status: memberships.status,
       stripeSubscriptionId: memberships.stripeSubscriptionId,
+      billingCycle: memberships.billingCycle,
+      billingCycleWeeks: memberships.billingCycleWeeks,
+      nextBillingDate: memberships.nextBillingDate,
+      failedPaymentCount: memberships.failedPaymentCount,
     })
     .from(memberships)
     .where(eq(memberships.id, membershipId))
     .limit(1);
   if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
-  if (!membership.stripeSubscriptionId) throw new Error("This membership is not on automatic billing");
+  if (membership.status === "cancelled") throw new Error("This membership has been cancelled");
 
-  const stripe = requireStripeClient();
-  await stripe.subscriptions.update(membership.stripeSubscriptionId, {
-    pause_collection: { behavior: "void" },
+  /**
+   * A membership behind on payments is not a candidate for a holiday.
+   * Pausing one would clear the debt from view — it stops looking like
+   * a failure and starts looking like an arrangement — while the money
+   * is still owed.
+   */
+  if ((membership.failedPaymentCount ?? 0) > 0) {
+    throw new Error("Sort the failed payment out before pausing this membership");
+  }
+
+  const resumesAt = resolvePauseResumesAt(plan, {
+    nextBillingDate: membership.nextBillingDate ?? null,
+    billingCycle: (membership.billingCycle ?? "weekly") as "weekly" | "monthly",
+    billingCycleWeeks: membership.billingCycleWeeks ?? 1,
+    now,
   });
-  await db.update(memberships).set({ status: "paused" }).where(eq(memberships.id, membership.id));
-  return { paused: true };
+
+  if (membership.stripeSubscriptionId) {
+    const stripe = requireStripeClient();
+    await stripe.subscriptions.update(membership.stripeSubscriptionId, {
+      pause_collection: {
+        behavior: "void",
+        // Stripe wants whole seconds. Omitted entirely for a manual
+        // pause: a `resumes_at` of null is how Stripe is told there
+        // isn't one.
+        ...(resumesAt ? { resumes_at: Math.floor(resumesAt.getTime() / 1000) } : {}),
+      },
+    });
+  }
+
+  await db
+    .update(memberships)
+    .set({
+      status: "paused",
+      pauseMode: plan.mode,
+      pauseResumesAt: resumesAt,
+      pausedAt: now,
+    })
+    .where(eq(memberships.id, membership.id));
+
+  return { paused: true, resumesAt, onStripe: Boolean(membership.stripeSubscriptionId) };
 }
 
 /** Start charging a paused membership again from its next cycle. */
@@ -520,7 +585,13 @@ export async function resumeMembershipSubscription(membershipId: number) {
 
   const stripe = requireStripeClient();
   await stripe.subscriptions.update(membership.stripeSubscriptionId, { pause_collection: null });
-  await db.update(memberships).set({ status: "active" }).where(eq(memberships.id, membership.id));
+  // The schedule is cleared along with the status. Leaving a stale
+  // restart date behind would have the card show "paused until 3 Nov"
+  // on a membership that is being charged again.
+  await db
+    .update(memberships)
+    .set({ status: "active", pauseMode: null, pauseResumesAt: null, pausedAt: null })
+    .where(eq(memberships.id, membership.id));
   return { resumed: true };
 }
 
