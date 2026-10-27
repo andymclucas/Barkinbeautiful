@@ -111,6 +111,7 @@ import { blockoutDateKey } from "@shared/staffBlockouts";
 import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
 import { getActiveTimeZone } from "@/lib/timezone";
 
+import { PetCodeChips } from "@/components/PetCodeChips";
 // ── Constants ────────────────────────────────────────────────────────────────
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7am–7pm (13 rows)
 const HOUR_HEIGHT = 72; // px per hour
@@ -304,6 +305,8 @@ type Appt = {
   clientEmail?: string | null;
   petName: string | null;
   petBreed: string | null;
+  /** The dog's shorthand codes, as stored: "✂5f, SENSITIVE". */
+  petMoegoCodeLabels: string | null;
   staffName: string | null;
   staffColour: string | null;
   sessionId: string | null;
@@ -3890,6 +3893,12 @@ export default function Calendar() {
                       The contact saved on this booking is no longer on the client’s record. It will fall back to {editAppt.clientFirstName} {editAppt.clientLastName}.
                     </p>
                   )}
+                  {/* The dog's codes, where the groomer opening the
+                      booking will see them — the same chips and the same
+                      catalogue colours as the board. Charlie asked for
+                      the colours; they are no use on a screen that does
+                      not show the codes at all. */}
+                  <PetCodeChips codes={editAppt.petMoegoCodeLabels} />
                   {editAppt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appointment:</span> {new Date(editAppt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>}
                 </div>
                 {(() => {
