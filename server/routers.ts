@@ -75,7 +75,7 @@ import { createCardSetupLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
-import { getAppBaseUrl } from "./appUrl";
+import { getAppBaseUrl, getPortalBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
 import { withoutRevenueTarget } from "@shared/staffRecord";
 import { requireSalonOwner, isSalonOwner } from "./tenantOwner";
@@ -7857,7 +7857,7 @@ const groomingReportsRouter = router({
       // what they can actually do: an active portal account gets the sign-in
       // link, anyone else is invited to ask rather than sent to a login screen
       // they cannot get past.
-      const { getAppBaseUrl: portalBase } = await import("./appUrl");
+      const { getPortalBaseUrl: portalBase } = await import("./appUrl");
       const hasPortalAccount = appointmentRecipient?.portalAccountStatus === "active";
       const portalBlock = hasPortalAccount
         ? `<div style="padding:0 32px 24px">
@@ -11119,7 +11119,8 @@ const clientPortalRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "This client has no email address on file" });
       }
 
-      const baseUrl = getAppBaseUrl();
+      // The CLIENT's host, not the staff one — see getPortalBaseUrl.
+      const baseUrl = getPortalBaseUrl();
       const greeting = client.firstName ? `Hi ${client.firstName},` : "Hi,";
       let portalUrl: string;
       let mode: "account" | "link";
@@ -11214,7 +11215,10 @@ const clientPortalRouter = router({
       // wrong in the customer's inbox — and it is the client, not the sender,
       // who has to open it. CLAUDE.md section 8: client-facing links come
       // from appUrl.ts, which also logs loudly when VITE_APP_URL is unset.
-      const baseUrl = getAppBaseUrl();
+      // The CLIENT's host: this link is opened by a customer, and
+      // sending them to the staff sign-in is what left Holly Lucas
+      // trying to log in at the wrong door for a morning.
+      const baseUrl = getPortalBaseUrl();
       const setupUrl = `${baseUrl}/portal/setup/${setup.token}`;
 
       const { sendEmail } = await import("./email");

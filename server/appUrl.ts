@@ -90,3 +90,50 @@ export function logAppUrlConfiguration(): void {
     getAppBaseUrl();
   }
 }
+
+let warnedPortalInvalid = false;
+
+/**
+ * Where a CLIENT's links point, which is not where staff links point.
+ *
+ * Holly Lucas spent a morning on 28/10/2026 failing to sign in. Her
+ * portal account was fine; she was typing it into the STAFF form at
+ * staff.barkinbeautiful.com.au, because that is the address the salon
+ * hands out and the portal lived on the same host. The staff form
+ * found no staff account, said "invalid email or password", and its
+ * forgot-password reply — deliberately vague so strangers cannot probe
+ * which emails exist — promised an email that was never sent. She was
+ * right that it was the correct address. It was the wrong door.
+ *
+ * So client links get their own host, set as VITE_PORTAL_URL (for
+ * example https://clients.barkinbeautiful.com.au). Both names serve
+ * the same app, so the split is about what a client is TOLD rather
+ * than what works.
+ *
+ * Falls back to the staff base when unset, rather than throwing or
+ * guessing a hostname. Until DNS and Render know about the new name,
+ * a link to a host that does not resolve is worse than one that does —
+ * same reasoning as getAppBaseUrl, which warns rather than taking the
+ * salon offline over a missing variable.
+ */
+export function getPortalBaseUrl(): string {
+  const configured = process.env.VITE_PORTAL_URL;
+  if (!configured || !configured.trim()) return getAppBaseUrl();
+
+  const normalised = normalise(configured);
+  try {
+    const parsed = new URL(normalised);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return normalised;
+  } catch {
+    // Falls through to the warning below.
+  }
+
+  if (!warnedPortalInvalid) {
+    warnedPortalInvalid = true;
+    console.error(
+      `[appUrl] VITE_PORTAL_URL is not a usable URL (got "${configured}") — ` +
+        `client portal links will use ${getAppBaseUrl()} instead.`,
+    );
+  }
+  return getAppBaseUrl();
+}
