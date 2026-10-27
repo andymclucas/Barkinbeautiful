@@ -37,6 +37,7 @@ import {
 } from "../../drizzle/schema";
 import { nanoid } from "nanoid";
 import { MEMBERSHIP_PACKAGES } from "@shared/membershipPackages";
+import { properName } from "@shared/personName";
 import {
   MAX_SIGNUP_DOGS, quoteMembershipSignup, signupPackagesForWeight, weightForQuote,
   type SignupDogInput,
@@ -261,7 +262,7 @@ export const membershipSignupRouter = router({
         .where(and(eq(clients.tenantId, tenantId), identity)).limit(1);
       if (!client) {
         const [created] = await db.insert(clients).values({
-          tenantId, firstName: input.firstName, lastName: input.lastName,
+          tenantId, ...properName(input),
           phone: input.phone, email, status: "active",
         });
         client = { id: (created as any).insertId as number };

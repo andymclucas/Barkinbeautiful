@@ -41,6 +41,7 @@ import { sendSms } from "../sms";
 import { getAppBaseUrl } from "../appUrl";
 import { nanoid } from "nanoid";
 import { brisbaneDateKey } from "@shared/localDateTime";
+import { properName } from "@shared/personName";
 import {
   MAX_ACTIVE_ENTRIES_PER_CLIENT,
   MAX_WAITLIST_WINDOW_DAYS,
@@ -217,7 +218,7 @@ export const waitlistRouter = router({
         .where(and(eq(clients.tenantId, tenantId), identity)).limit(1);
       if (!client) {
         const [created] = await db.insert(clients).values({
-          tenantId, firstName: input.firstName, lastName: input.lastName,
+          tenantId, ...properName(input),
           phone: input.phone, email, status: "active",
         });
         client = { id: (created as any).insertId as number };
