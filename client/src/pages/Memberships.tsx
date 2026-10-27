@@ -686,7 +686,20 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   });
 
   const pause = trpc.stripeCards.pauseSubscription.useMutation({
-    onSuccess: () => { toast.success("Billing paused — nothing will be charged until you resume"); utils.memberships.list.invalidate(); setConfirming(null); },
+    // Says what was actually set. The old wording promised a manual
+    // restart regardless of the mode chosen, so staff pausing for two
+    // cycles would tell the client "not until we call you" and the
+    // card would be charged anyway.
+    onSuccess: (result) => {
+      const resumesAt = result?.resumesAt ? new Date(result.resumesAt) : null;
+      toast.success(resumesAt
+        ? `Billing paused — restarts ${resumesAt.toLocaleDateString("en-AU", {
+            day: "numeric", month: "long", timeZone: "Australia/Brisbane",
+          })}`
+        : "Billing paused — nothing will be charged until you resume it here");
+      utils.memberships.list.invalidate();
+      setConfirming(null);
+    },
     onError: (error) => { toast.error(error.message); setConfirming(null); },
   });
   const resume = trpc.stripeCards.resumeSubscription.useMutation({
@@ -716,7 +729,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
           {confirming === "charge"
             ? <>This retries {clientName}&rsquo;s outstanding membership payment against their saved card, now. The amount is whatever that failed invoice is for. It cannot be undone from here &mdash; a mistake has to be refunded in Stripe.</>
             : confirming === "pause"
-            ? <>{clientName} will not be charged again until you resume. Their card and subscription stay in place, and nothing builds up while paused &mdash; they will not be billed for the missed weeks when they come back.</>
+            ? <>{clientName}&rsquo;s card and subscription stay in place, and nothing builds up while paused &mdash; they will not be billed for the missed weeks when they come back. Choose below when billing restarts.</>
             : confirming === "resume"
             ? <>{clientName} will be charged <strong>{amount}</strong> {cadence} again from their next billing date. Nothing is charged right now for the paused period.</>
             : confirming === "cancel"
@@ -755,7 +768,9 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
                   onChange={(e) => setPauseCycles(Math.max(1, Math.min(52, Number(e.target.value) || 1)))}
                 />
                 <span className="text-xs text-muted-foreground">
-                  billing cycle{pauseCycles === 1 ? "" : "s"} skipped, then billing restarts
+                  {m.billingCycle === "monthly" ? "month" : "week"}
+                  {pauseCycles === 1 ? "" : "s"} skipped
+                  {" "}&mdash; {pauseCycles} charge{pauseCycles === 1 ? "" : "s"} missed, then billing restarts
                 </span>
               </div>
             )}
@@ -808,11 +823,19 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
                   membershipId: m.id,
                   plan: pauseMode === "cycles"
                     ? { mode: "cycles", cycles: pauseCycles }
-                    // Read as midday Brisbane rather than midnight, so a
-                    // date typed here cannot land on the previous day once
-                    // it is stored as UTC.
+                    /**
+                     * Start of day Brisbane, not midday.
+                     *
+                     * Subscriptions started with a chosen first charge
+                     * are anchored at 09:00 Brisbane, so a midday
+                     * restart let that morning's invoice be raised
+                     * while collection was still paused. Stripe voids
+                     * it, and the client silently skips a whole extra
+                     * cycle. Midnight puts the restart ahead of any
+                     * invoice raised that day.
+                     */
                     : pauseMode === "date"
-                      ? { mode: "date", resumeOn: new Date(`${pauseResumeOn}T12:00:00+10:00`) }
+                      ? { mode: "date", resumeOn: new Date(`${pauseResumeOn}T00:00:00+10:00`) }
                       : { mode: "manual" },
                 });
               }
@@ -960,11 +983,20 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   return (
     <>
       {/* A real button, not a 10px text link: this is the action that puts a
-          client onto automatic billing, and staff could not find it. */}
+          client onto automatic billing, and staff could not find it.
+
+          Pastel BLUE, deliberately off-brand. Every other action on this
+          row is the salon's primary colour, so a dark pink "Set Weekly
+          Billing" sat among dark pink links and the one button that
+          starts taking money was the hardest to pick out. Blue is not
+          one of the ramps the brand theme rewrites (violet and pink
+          are), so it stays blue whatever colour a salon chooses — which
+          is the point, though a salon whose own brand is blue would
+          want this revisited. */}
       <Button
         type="button"
         size="sm"
-        className="h-7 w-full gap-1.5 whitespace-nowrap px-2.5 text-[11px] font-semibold"
+        className="h-7 w-full gap-1.5 whitespace-nowrap px-2.5 text-[11px] font-semibold border border-blue-300 bg-blue-100 text-blue-900 hover:bg-blue-200 hover:text-blue-950 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-100 dark:hover:bg-blue-900"
         disabled={busy}
         onClick={() => setConfirming("start")}
       >

@@ -21,7 +21,7 @@
  * can be tested without a Stripe key.
  */
 import type Stripe from "stripe";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
@@ -519,6 +519,7 @@ export async function pauseMembershipSubscription(
       billingCycleWeeks: memberships.billingCycleWeeks,
       nextBillingDate: memberships.nextBillingDate,
       failedPaymentCount: memberships.failedPaymentCount,
+      bookingSuspended: memberships.bookingSuspended,
     })
     .from(memberships)
     .where(eq(memberships.id, membershipId))
@@ -540,6 +541,19 @@ export async function pauseMembershipSubscription(
    */
   if ((membership.failedPaymentCount ?? 0) > 0) {
     throw new Error("Sort the failed payment out before pausing this membership");
+  }
+
+  /**
+   * A membership already on a booking hold cannot be paused either.
+   *
+   * It would be a one-way door: `isDeliberatePause` refuses any row
+   * with a booking suspension, so the sweep would never lift it — while
+   * Stripe, which knows nothing about holds, would restart collection
+   * at `resumes_at` regardless. The client gets billed by a membership
+   * Groomigo still shows as suspended.
+   */
+  if (membership.bookingSuspended) {
+    throw new Error("This membership is on hold — lift the hold before pausing it");
   }
 
   const resumesAt = resolvePauseResumesAt(plan, {
@@ -583,12 +597,28 @@ export async function resumeMembershipSubscription(membershipId: number) {
     .select({
       id: memberships.id,
       tenantId: memberships.tenantId,
+      status: memberships.status,
       stripeSubscriptionId: memberships.stripeSubscriptionId,
     })
     .from(memberships)
     .where(eq(memberships.id, membershipId))
     .limit(1);
   if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+
+  /**
+   * Only a paused membership can be resumed.
+   *
+   * This guard replaces one that used to exist by accident. Refusing
+   * every membership without a Stripe subscription also refused every
+   * CANCELLED one, because cancelling clears the subscription id —
+   * so when that throw was removed to let hand-billed memberships
+   * resume, the protection went with it. An admin clicking Resume on a
+   * stale list could then reactivate a cancelled membership, leaving it
+   * counted by every `status = "active"` revenue report.
+   */
+  if (membership.status !== "paused") {
+    throw new Error(`This membership is ${membership.status}, not paused`);
+  }
 
   /**
    * A membership with no subscription is resumable too.
@@ -607,10 +637,16 @@ export async function resumeMembershipSubscription(membershipId: number) {
   // The schedule is cleared along with the status. Leaving a stale
   // restart date behind would have the card show "paused until 3 Nov"
   // on a membership that is being charged again.
-  await db
+  // Conditional on the status it was read under. My previous commit
+  // message claimed the resume writes re-assert their conditions; only
+  // the sweep's branch actually did. This is the other half.
+  const [updated] = await db
     .update(memberships)
     .set({ status: "active", pauseMode: null, pauseResumesAt: null, pausedAt: null })
-    .where(eq(memberships.id, membership.id));
+    .where(and(eq(memberships.id, membership.id), eq(memberships.status, "paused")));
+  if ((updated as unknown as { affectedRows?: number }).affectedRows === 0) {
+    throw new Error("This membership changed while it was being resumed — check it and try again");
+  }
   return { resumed: true, onStripe: Boolean(membership.stripeSubscriptionId) };
 }
 
