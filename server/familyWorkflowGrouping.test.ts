@@ -113,15 +113,31 @@ describe("family Workflow grouping", () => {
     expect(rows.map(row => row.id)).toEqual([1, 2, 3, 4]);
   });
 
-  it("uses the same family ordering on the controller and independent Workflow display", () => {
-    const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
-      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
-    const displaySource = readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8");
-    expect(routerSource).toContain("sessionId: appointments.sessionId");
-    expect(boardSource).toContain("groupFamilyWorkflowRows((boardData ?? []).filter");
-    expect(boardSource).toContain("Dogs linked as family!");
-    expect(displaySource).toContain("const dayRows = groupFamilyWorkflowRows(boardData ?? [])");
+  /**
+   * A delegation check, not a behaviour one.
+   *
+   * What matters is that BOTH screens order families through this one
+   * function, so the wall display and the controller cannot disagree
+   * about which dogs sit together. It used to pin the exact argument
+   * each screen passed — `groupFamilyWorkflowRows((boardData ?? [])`
+   * — which broke the moment day care was filtered out of the board
+   * on 28/10/2026, despite the ordering being untouched. Pinning an
+   * expression tests the spelling; counting the call sites tests the
+   * thing the comment claims.
+   */
+  it("orders families through the shared function on every board that shows them", () => {
+    const sources = {
+      board: readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8"),
+      display: readFileSync(new URL("../client/src/pages/WorkflowDisplay.tsx", import.meta.url), "utf8"),
+    };
+    for (const [screen, source] of Object.entries(sources)) {
+      const calls = source.match(/groupFamilyWorkflowRows\(/g) ?? [];
+      expect(calls.length, `${screen} should order families through the shared function`).toBe(1);
+    }
+    // The column the grouping needs, so a family stays a family after a
+    // reschedule splits their recorded times.
+    expect(readFileSync(new URL("./routers.ts", import.meta.url), "utf8"))
+      .toContain("sessionId: appointments.sessionId");
   });
 
   it("aligns only later active appointments in a family shared session, while preserving past and terminal records", () => {

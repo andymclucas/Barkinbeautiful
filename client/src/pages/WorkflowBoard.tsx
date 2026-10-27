@@ -2,6 +2,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
 import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCascade";
 import { trpc } from "@/lib/trpc";
+import { splitDaycare } from "@shared/daycareBoard";
+import { DaycareBoardSection } from "@/components/DaycareBoardSection";
 import { useTimezone } from "@/lib/timezone";
 import { dayInZone, timeOfDayInZone } from "@shared/calendarDay";
 import { Badge } from "@/components/ui/badge";
@@ -342,12 +344,37 @@ export default function WorkflowBoard() {
     update(appt.id, { workflowState: prev });
   }, [update]);
 
-  const rows = groupFamilyWorkflowRows((boardData ?? []).filter(a =>
+  /**
+   * Day care comes off the grooming board entirely.
+   *
+   * Those dogs sat in the twelve-state machine with bath, dry and
+   * groom columns they will never use. They get their own section
+   * below, so the stage filters and the family grouping above apply
+   * only to dogs actually being groomed.
+   */
+  const { grooming: groomingBoard, daycare: daycareBoard } = useMemo(
+    () => splitDaycare(boardData ?? []),
+    [boardData],
+  );
+
+  const rows = groupFamilyWorkflowRows(groomingBoard.filter(a =>
     shouldShowWorkflowRow({ state: a.workflowState, showCompleted, stageFilter }) &&
     (groomerFilter === "__all__" || String(a.staffId) === groomerFilter) &&
     (stageFilter === "__all__" || a.workflowState === stageFilter) &&
     (familyFilter === null || (a as any).petFamilyGroupId === familyFilter)
   ));
+
+  /**
+   * Day care is filtered only by the groomer picker. The stage filters
+   * name stages a day care dog does not have, so "show me the dogs
+   * waiting for a bath" should empty this section rather than leave it
+   * showing everybody.
+   */
+  const daycareRows = daycareBoard.filter((a) =>
+    (groomerFilter === "__all__" || String(a.staffId) === groomerFilter)
+    && stageFilter === "__all__"
+    && (showCompleted || a.workflowState !== "complete")
+  );
   const bathQueue = useMemo(() => buildBathPriorityQueue(boardData ?? []), [boardData]);
   const bathQueueByAppointmentId = useMemo(() => {
     const queueItems = new Map<number, (typeof bathQueue)[number]>();
@@ -719,6 +746,15 @@ export default function WorkflowBoard() {
               setBathGroupPriority,
             }}
           />
+
+        {/* Below the board, as asked: time in, time out, no stages. */}
+        <DaycareBoardSection
+          rows={daycareRows}
+          now={now}
+          busy={updateStage.isPending}
+          onArrive={(id) => update(id, { workflowState: "checked_in" })}
+          onCollect={(id) => update(id, { workflowState: "complete" })}
+        />
 
         {/* Daily production snapshot — useful for delay and pricing review */}
         {performanceSnapshot.length > 0 && (
