@@ -5399,6 +5399,10 @@ const membershipsRouter = router({
           nextBillingDate: memberships.nextBillingDate,
           failedPaymentCount: memberships.failedPaymentCount,
           bookingSuspended: memberships.bookingSuspended,
+          // So the row can say WHEN a paused membership starts paying
+          // again, rather than only that it is paused.
+          pauseMode: memberships.pauseMode,
+          pauseResumesAt: memberships.pauseResumesAt,
           // So the row can show whether weekly Stripe billing is live.
           stripeSubscriptionId: memberships.stripeSubscriptionId,
           isTest: memberships.isTest,

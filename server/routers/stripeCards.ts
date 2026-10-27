@@ -108,10 +108,24 @@ export const stripeCardsRouter = router({
     .input(z.object({ membershipId: z.number() }))
     .mutation(async ({ input }) => cancelMembershipSubscription(input.membershipId)),
 
-  /** Stop charging without tearing the subscription down. */
+  /**
+   * Stop charging without tearing the subscription down, with the
+   * restart decided now rather than left to somebody's memory.
+   *
+   * The three modes are a discriminated union so an impossible request
+   * cannot be expressed: a cycles pause carries no date, a date pause
+   * carries no cycle count, and a manual one carries neither.
+   */
   pauseSubscription: adminProcedure
-    .input(z.object({ membershipId: z.number() }))
-    .mutation(async ({ input }) => pauseMembershipSubscription(input.membershipId)),
+    .input(z.object({
+      membershipId: z.number(),
+      plan: z.discriminatedUnion("mode", [
+        z.object({ mode: z.literal("cycles"), cycles: z.number().int().min(1).max(52) }),
+        z.object({ mode: z.literal("date"), resumeOn: z.coerce.date() }),
+        z.object({ mode: z.literal("manual") }),
+      ]).default({ mode: "manual" }),
+    }))
+    .mutation(async ({ input }) => pauseMembershipSubscription(input.membershipId, input.plan)),
 
   /** Start charging a paused membership again. */
   resumeSubscription: adminProcedure
