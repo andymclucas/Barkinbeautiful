@@ -324,6 +324,7 @@ export async function startMembershipSubscription(membershipId: number, firstCha
       pricePerCycle: memberships.pricePerCycle,
       billingCycleWeeks: memberships.billingCycleWeeks,
       billingCycle: memberships.billingCycle,
+      status: memberships.status,
       stripeSubscriptionId: memberships.stripeSubscriptionId,
     })
     .from(memberships)
@@ -332,6 +333,25 @@ export async function startMembershipSubscription(membershipId: number, firstCha
   // Same tenant guard the client-portal procedures use: the tRPC context
   // carries no tenantId, so fail closed rather than trusting an id.
   if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+
+  /**
+   * Never start billing a membership that is not meant to be billed.
+   *
+   * This used to have no status check at all, which was survivable
+   * only because the button was hidden on anything already on Stripe.
+   * Now that hand-billed memberships can be paused, a paused row still
+   * shows "Set Weekly Billing", and one click would start a
+   * subscription and charge at once — a client who had just been told
+   * their billing was on hold.
+   */
+  if (membership.status !== "active") {
+    throw new Error(
+      membership.status === "paused"
+        ? "This membership is paused — resume it before starting billing"
+        : `This membership is ${membership.status}, so billing cannot be started`,
+    );
+  }
+
   if (membership.stripeSubscriptionId) {
     return { subscriptionId: membership.stripeSubscriptionId, alreadyExisted: true };
   }

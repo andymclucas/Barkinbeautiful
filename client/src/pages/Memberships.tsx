@@ -14,13 +14,13 @@ import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone,
 import { Textarea } from "@/components/ui/textarea";
 import { MembershipAccountsReceivable } from "@/components/MembershipAccountsReceivable";
 import { MembershipSignupRequests } from "@/components/MembershipSignupRequests";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { weeklyToMonthly, describeRate, annualisedCost } from "@shared/membershipBillingCycle";
 
-import { describePause } from "@shared/membershipPause";
+import { describePause, resolvePauseResumesAt } from "@shared/membershipPause";
 type MembershipItem = {
   id: number;
   clientId: number | null;
@@ -660,6 +660,31 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   const [pauseCycles, setPauseCycles] = useState(1);
   const [pauseResumeOn, setPauseResumeOn] = useState("");
 
+  /**
+   * The restart date staff are about to commit to, in words.
+   *
+   * Computed with resolvePauseResumesAt — the function the server uses
+   * — rather than a second copy of the cycle maths here. A dialog that
+   * promised one date while the server stored another is the exact
+   * failure mode the shared/ convention exists to prevent, and this is
+   * the figure staff will read out to a client on the phone.
+   */
+  const pausePreview = useMemo(() => {
+    if (pauseMode !== "cycles") return null;
+    const resolved = resolvePauseResumesAt(
+      { mode: "cycles", cycles: pauseCycles },
+      {
+        nextBillingDate: m.nextBillingDate ? new Date(m.nextBillingDate) : null,
+        billingCycle: m.billingCycle === "monthly" ? "monthly" : "weekly",
+        billingCycleWeeks: m.billingCycleWeeks ?? 1,
+        now: new Date(),
+      },
+    );
+    return resolved?.toLocaleDateString("en-AU", {
+      day: "numeric", month: "long", timeZone: "Australia/Brisbane",
+    }) ?? null;
+  }, [pauseMode, pauseCycles, m.nextBillingDate, m.billingCycle, m.billingCycleWeeks]);
+
   const cycle = billingCycleFromWeeks(m.billingCycleWeeks);
   const clientName = [m.clientFirstName, m.clientLastName].filter(Boolean).join(" ").trim() || "this client";
   const amount = m.pricePerCycle ? `$${m.pricePerCycle}` : "the membership price";
@@ -729,9 +754,18 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
           {confirming === "charge"
             ? <>This retries {clientName}&rsquo;s outstanding membership payment against their saved card, now. The amount is whatever that failed invoice is for. It cannot be undone from here &mdash; a mistake has to be refunded in Stripe.</>
             : confirming === "pause"
-            ? <>{clientName}&rsquo;s card and subscription stay in place, and nothing builds up while paused &mdash; they will not be billed for the missed weeks when they come back. Choose below when billing restarts.</>
+            ? (m.stripeSubscriptionId
+                ? <>{clientName}&rsquo;s card and subscription stay in place, and nothing builds up while paused &mdash; they will not be billed for the missed weeks when they come back. Choose below when billing restarts.</>
+                /* No card, no subscription: this records the hold and
+                   marks the membership paused. It cannot stop an invoice
+                   somebody raises by hand, or anything still running in
+                   MoeGo — saying otherwise would have staff promise a
+                   client something Groomigo cannot deliver. */
+                : <>{clientName} is invoiced by hand, so this records the hold and marks the membership paused &mdash; it does <strong>not</strong> stop an invoice someone raises manually, or anything still billing in MoeGo. Choose below when it comes off hold.</>)
             : confirming === "resume"
-            ? <>{clientName} will be charged <strong>{amount}</strong> {cadence} again from their next billing date. Nothing is charged right now for the paused period.</>
+            ? (m.stripeSubscriptionId
+                ? <>{clientName} will be charged <strong>{amount}</strong> {cadence} again from their next billing date. Nothing is charged right now for the paused period.</>
+                : <>This takes {clientName}&rsquo;s membership off hold and back to active. Nothing is charged &mdash; they are invoiced by hand, so billing them again is still something someone has to do.</>)
             : confirming === "cancel"
             ? <>This stops {clientName} being charged automatically. The membership itself stays active &mdash; this only ends the card billing. Use <strong>Pause</strong> if they are away for a while, or cancel the membership itself if they are leaving the salon.</>
             : firstChargeOn
@@ -770,7 +804,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
                 <span className="text-xs text-muted-foreground">
                   {m.billingCycle === "monthly" ? "month" : "week"}
                   {pauseCycles === 1 ? "" : "s"} skipped
-                  {" "}&mdash; {pauseCycles} charge{pauseCycles === 1 ? "" : "s"} missed, then billing restarts
+                  {pausePreview ? <> &mdash; restarts <strong>{pausePreview}</strong></> : null}
                 </span>
               </div>
             )}
@@ -846,7 +880,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
           >
             {busy ? "Working…"
               : confirming === "charge" ? "Retry the payment"
-              : confirming === "pause" ? "Pause billing"
+              : confirming === "pause" ? (m.stripeSubscriptionId ? "Pause billing" : "Put on hold")
               : confirming === "resume" ? "Resume billing"
               : confirming === "cancel" ? "Stop billing"
               : firstChargeOn ? `Bill ${amount} ${cadence} from ${firstChargeOn}` : `Bill ${amount} ${cadence}`}
@@ -980,6 +1014,59 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
     );
   }
 
+  /**
+   * Hand-billed: no Stripe subscription, invoiced by the salon.
+   *
+   * Most of the book is still this while it migrates off MoeGo, and
+   * they are the clients most likely to ask for a pause — so the
+   * button belongs here too, not only on the Stripe rows. The server
+   * has accepted it all along; only this branch was missing.
+   *
+   * A paused one deliberately does NOT offer "Set Weekly Billing".
+   * Starting a subscription charges immediately, and doing that to a
+   * client who was just told their billing was on hold is the worst
+   * outcome this screen can produce. The server refuses it too.
+   */
+  const handBilledPaused = m.status === "paused" && (m.failedPaymentCount ?? 0) === 0;
+  if (handBilledPaused) {
+    return (
+      <div className="flex flex-col items-stretch gap-1">
+        <Badge
+          title={describePause(
+            {
+              status: m.status,
+              pauseMode: m.pauseMode ?? null,
+              pauseResumesAt: m.pauseResumesAt ? new Date(m.pauseResumesAt) : null,
+              failedPaymentCount: m.failedPaymentCount ?? 0,
+              bookingSuspended: m.bookingSuspended ?? false,
+            },
+            (date) => date.toLocaleDateString("en-AU", {
+              day: "numeric", month: "long", timeZone: "Australia/Brisbane",
+            }),
+          )}
+          className="block text-center text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+        >
+          {m.pauseResumesAt
+            ? `Paused till ${new Date(m.pauseResumesAt).toLocaleDateString("en-AU", {
+                day: "numeric", month: "short", timeZone: "Australia/Brisbane",
+              })}`
+            : "Paused — manual restart"}
+        </Badge>
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 w-full gap-1.5 whitespace-nowrap px-2 text-[11px] font-semibold"
+          disabled={busy}
+          onClick={() => setConfirming("resume")}
+        >
+          <PlayCircle className="h-3 w-3 shrink-0" />
+          {resume.isPending ? "Resuming…" : "Resume"}
+        </Button>
+        {dialog}
+      </div>
+    );
+  }
+
   return (
     <>
       {/* A real button, not a 10px text link: this is the action that puts a
@@ -1006,6 +1093,17 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
           : cadence === "every week"
             ? "Set Weekly Billing"
             : "Set Fortnightly Billing"}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="mt-1 h-7 w-full gap-1.5 whitespace-nowrap px-2 text-[11px] font-semibold"
+        disabled={busy}
+        onClick={() => setConfirming("pause")}
+      >
+        <PauseCircle className="h-3 w-3 shrink-0" />
+        {pause.isPending ? "Pausing…" : "Pause"}
       </Button>
       {dialog}
     </>
