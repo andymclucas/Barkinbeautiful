@@ -1,4 +1,5 @@
 import { isValidTimeZone } from "@shared/auditTimestamp";
+import { properName } from "@shared/personName";
 import { searchTerms } from "@shared/clientSearchMatch";
 import { applyDiscount, validateDiscount, fromCents, toCents } from "@shared/appointmentDiscount";
 import { buildRevenueBuckets } from "@shared/revenueBuckets";
@@ -3222,6 +3223,9 @@ const clientsRouter = router({
       if (!db) throw new Error("DB unavailable");
       const [result] = await db.insert(clients).values({
         ...input,
+        // After the spread, so a lowercase name typed at the counter is
+        // stored the way it will be read back on an invoice and an SMS.
+        ...properName(input),
         tenantId: tenantOf(ctx, input),
       });
       return { success: true, id: (result as any).insertId as number };
@@ -8567,7 +8571,7 @@ const onlineBookingRouter = router({
     const identity = email ? or(eq(clients.email, email), eq(clients.phone, input.phone)) : eq(clients.phone, input.phone);
     let [client] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.tenantId, tenantOf(ctx, input)), identity)).limit(1);
     if (!client) {
-      const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), firstName: input.firstName, lastName: input.lastName, phone: input.phone, email, status: "active" });
+      const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...properName(input), phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
     const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
@@ -8609,7 +8613,7 @@ const onlineBookingRouter = router({
     const identity = email ? or(eq(clients.email, email), eq(clients.phone, input.phone)) : eq(clients.phone, input.phone);
     let [client] = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.tenantId, tenantOf(ctx, input)), identity)).limit(1);
     if (!client) {
-      const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), firstName: input.firstName, lastName: input.lastName, phone: input.phone, email, status: "active" });
+      const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...properName(input), phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
     const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
@@ -8688,7 +8692,10 @@ const migrationRouter = router({
       const errorMessages: string[] = [];
       for (const rec of input.records) {
         try {
-          await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...rec }).onDuplicateKeyUpdate({ set: { updatedAt: new Date() } });
+          // MoeGo's own records carry lowercase names, and the import is
+          // where 651 of them came from. Tidied on the way in rather than
+          // cleaned up afterwards.
+          await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...rec, ...properName(rec) }).onDuplicateKeyUpdate({ set: { updatedAt: new Date() } });
           processed++;
         } catch (e: unknown) {
           errors++;
