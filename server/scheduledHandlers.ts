@@ -166,6 +166,9 @@ async function resumePausedMembershipsDue(
   const paused = await db
     .select({
       id: memberships.id,
+      clientId: memberships.clientId,
+      name: memberships.name,
+      pausedAt: memberships.pausedAt,
       status: memberships.status,
       pauseMode: memberships.pauseMode,
       pauseResumesAt: memberships.pauseResumesAt,
@@ -194,6 +197,43 @@ async function resumePausedMembershipsDue(
 
   for (const membership of due) {
     try {
+      /**
+       * Never restart billing for a client who has lost a dog since
+       * the pause began.
+       *
+       * Pause is for a dog that is away or recovering, so the dog
+       * dying mid-pause is a real path, and `markDeparted` only
+       * reviews memberships with status "active" — a paused one is
+       * invisible to it. Left alone, the sweep re-enables Stripe
+       * collection and a bereaved client is billed by a machine.
+       *
+       * Checked across the CLIENT's pets, not `memberships.petId`:
+       * the MoeGo import hung plans off the wrong dog, so the direct
+       * link is not reliable enough to decide this on.
+       *
+       * It proposes rather than decides, which is the rule
+       * shared/petPassingReview.ts already sets for this situation.
+       */
+      const bereaved = await db
+        .select({ id: pets.id, name: pets.name })
+        .from(pets)
+        .where(and(
+          eq(pets.clientId, membership.clientId),
+          gt(sql`${pets.departedAt}`, membership.pausedAt ?? new Date(0)),
+        ))
+        .limit(1);
+
+      if (bereaved.length > 0) {
+        await notifyOwner({
+          title: "⏸️ Paused membership not restarted — a dog has passed",
+          content:
+            `${membership.name ?? "A membership"} was due to restart billing today, but ` +
+            `${bereaved[0].name ?? "a dog"} was marked as departed during the pause. ` +
+            `Nothing has been charged. Cancel the membership, or restart it by hand if it is for another dog.`,
+        });
+        continue;
+      }
+
       if (membership.stripeSubscriptionId) {
         // Lifting it here as well as relying on Stripe's own
         // `resumes_at` is deliberate: the two can disagree if a pause
