@@ -493,8 +493,10 @@ export async function cancelMembershipSubscription(membershipId: number) {
  * the clients most likely to need it.
  *
  * NOTE: membership status "paused" is also what the failed-payment
- * escalation sets. `pauseMode` is what tells the two apart, and only a
- * row carrying one is ever auto-resumed. See shared/membershipPause.ts.
+ * escalation sets. `pauseMode` marks which of the two this is, and the
+ * sweep also refuses any row with a failure count or booking
+ * suspension — that second check is the one that protects the money
+ * path. See shared/membershipPause.ts.
  */
 export async function pauseMembershipSubscription(
   membershipId: number,
@@ -522,7 +524,13 @@ export async function pauseMembershipSubscription(
     .where(eq(memberships.id, membershipId))
     .limit(1);
   if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+  // Both closed states, matching the four other membership mutations
+  // that already treat "expired" as finished. Nothing writes "expired"
+  // for memberships today, so this is consistency rather than a fix.
+  // Pausing an already-paused membership is allowed on purpose: it is
+  // how staff change their mind about when it restarts.
   if (membership.status === "cancelled") throw new Error("This membership has been cancelled");
+  if (membership.status === "expired") throw new Error("This membership has expired");
 
   /**
    * A membership behind on payments is not a candidate for a holiday.
@@ -581,10 +589,21 @@ export async function resumeMembershipSubscription(membershipId: number) {
     .where(eq(memberships.id, membershipId))
     .limit(1);
   if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
-  if (!membership.stripeSubscriptionId) throw new Error("This membership is not on automatic billing");
 
-  const stripe = requireStripeClient();
-  await stripe.subscriptions.update(membership.stripeSubscriptionId, { pause_collection: null });
+  /**
+   * A membership with no subscription is resumable too.
+   *
+   * Pause accepts hand-billed memberships — most of the book is still
+   * one while it migrates off MoeGo — so refusing to resume them left
+   * a manual pause that nothing could lift: the sweep never touches
+   * manual mode, and this threw. The row simply goes back to active;
+   * there is no collection to restart.
+   */
+  if (membership.stripeSubscriptionId) {
+    const stripe = requireStripeClient();
+    await stripe.subscriptions.update(membership.stripeSubscriptionId, { pause_collection: null });
+  }
+
   // The schedule is cleared along with the status. Leaving a stale
   // restart date behind would have the card show "paused until 3 Nov"
   // on a membership that is being charged again.
@@ -592,7 +611,7 @@ export async function resumeMembershipSubscription(membershipId: number) {
     .update(memberships)
     .set({ status: "active", pauseMode: null, pauseResumesAt: null, pausedAt: null })
     .where(eq(memberships.id, membership.id));
-  return { resumed: true };
+  return { resumed: true, onStripe: Boolean(membership.stripeSubscriptionId) };
 }
 
 /**

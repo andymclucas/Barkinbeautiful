@@ -312,6 +312,13 @@ export async function processStripeEvent(event: Stripe.Event) {
       paymentRetryScheduledAt: null,
       bookingSuspended: false,
       status: "active",
+      // This is the normal exit for a Stripe pause that ended on its
+      // own `resumes_at`: the first invoice after it lands here. Left
+      // set, the pause columns would linger on an actively-billing
+      // membership and the card would read "paused till 3 Nov".
+      pauseMode: null,
+      pauseResumesAt: null,
+      pausedAt: null,
     }).where(eq(memberships.id, membership.id));
     // Clearing the failure state is idempotent, so it runs either way.
     return { duplicate: false, handled: alreadyBooked ? "subscription_paid_already_booked" : "subscription_paid" };
@@ -348,6 +355,13 @@ export async function processStripeEvent(event: Stripe.Event) {
       paymentRetryScheduledAt: plan.retryAt,
       bookingSuspended: plan.suspend,
       status: plan.suspend ? "paused" : "pending_payment",
+      // A payment failure is not a holiday. Clearing the pause
+      // schedule keeps the two meanings of status "paused" from
+      // blurring, and stops a stale restart date from ever being
+      // read as one.
+      pauseMode: null,
+      pauseResumesAt: null,
+      pausedAt: null,
     }).where(eq(memberships.id, membership.id));
 
     // Lights the Dashboard's failed-payments alert, and emails the owner.
