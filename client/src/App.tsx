@@ -1,10 +1,15 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Redirect, Route, Switch } from "wouter";
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
+import { lazyPage } from "@/lib/lazyPage";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
+// lazyPage rather than React's lazy: the two differ only when a chunk
+// fails to load, which after a deploy means it no longer exists. See
+// client/src/lib/lazyPage.ts.
+//
 // Pages are lazy-loaded so the initial download is a small, focused chunk
 // per page rather than one ~1.8MB bundle containing every page in the app.
 // On a slow/congested connection (e.g. salon WiFi shared across several
@@ -15,43 +20,43 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 // likely to complete even on a poor connection.
 
 // Pages — Admin
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Calendar = lazy(() => import("./pages/Calendar"));
-const WorkflowBoard = lazy(() => import("./pages/WorkflowBoard"));
-const WorkflowDisplay = lazy(() => import("./pages/WorkflowDisplay"));
-const StaffPortal = lazy(() => import("./pages/StaffPortal"));
-const Clients = lazy(() => import("./pages/Clients"));
-const OverdueForGroom = lazy(() => import("@/pages/OverdueForGroom"));
-const ClientDetail = lazy(() => import("./pages/ClientDetail"));
-const Memberships = lazy(() => import("./pages/Memberships"));
-const Pricing = lazy(() => import("./pages/Pricing"));
-const Retail = lazy(() => import("./pages/Retail"));
-const Analytics = lazy(() => import("./pages/Analytics"));
-const Staff = lazy(() => import("./pages/Staff").then(m => ({ default: m.default })));
-const StaffReviewProfile = lazy(() => import("./pages/Staff").then(m => ({ default: m.StaffReviewProfile })));
-const Messages = lazy(() => import("./pages/Messages"));
-const PortalInbox = lazy(() => import("./pages/PortalInbox"));
-const EmailCampaigns = lazy(() => import("./pages/EmailCampaigns"));
-const Reporting = lazy(() => import("./pages/Reporting"));
-const Migration = lazy(() => import("./pages/Migration"));
-const Settings = lazy(() => import("./pages/Settings"));
-const NotFound = lazy(() => import("./pages/NotFound"));
+const Dashboard = lazyPage(() => import("./pages/Dashboard"));
+const Calendar = lazyPage(() => import("./pages/Calendar"));
+const WorkflowBoard = lazyPage(() => import("./pages/WorkflowBoard"));
+const WorkflowDisplay = lazyPage(() => import("./pages/WorkflowDisplay"));
+const StaffPortal = lazyPage(() => import("./pages/StaffPortal"));
+const Clients = lazyPage(() => import("./pages/Clients"));
+const OverdueForGroom = lazyPage(() => import("@/pages/OverdueForGroom"));
+const ClientDetail = lazyPage(() => import("./pages/ClientDetail"));
+const Memberships = lazyPage(() => import("./pages/Memberships"));
+const Pricing = lazyPage(() => import("./pages/Pricing"));
+const Retail = lazyPage(() => import("./pages/Retail"));
+const Analytics = lazyPage(() => import("./pages/Analytics"));
+const Staff = lazyPage(() => import("./pages/Staff").then(m => ({ default: m.default })));
+const StaffReviewProfile = lazyPage(() => import("./pages/Staff").then(m => ({ default: m.StaffReviewProfile })));
+const Messages = lazyPage(() => import("./pages/Messages"));
+const PortalInbox = lazyPage(() => import("./pages/PortalInbox"));
+const EmailCampaigns = lazyPage(() => import("./pages/EmailCampaigns"));
+const Reporting = lazyPage(() => import("./pages/Reporting"));
+const Migration = lazyPage(() => import("./pages/Migration"));
+const Settings = lazyPage(() => import("./pages/Settings"));
+const NotFound = lazyPage(() => import("./pages/NotFound"));
 
 // Pages — Public (no auth)
-const PetTracker = lazy(() => import("./pages/PetTracker"));
-const OnlineBooking = lazy(() => import("./pages/OnlineBooking"));
-const MembershipSignup = lazy(() => import("./pages/MembershipSignup"));
-const ClientPhotoUpload = lazy(() => import("./pages/ClientPhotoUpload"));
-const WaitlistOffer = lazy(() => import("./pages/WaitlistOffer"));
-const WaitlistJoin = lazy(() => import("./pages/WaitlistJoin"));
-const Login = lazy(() => import("./pages/Login"));
-const SalonSignup = lazy(() => import("./pages/SalonSignup"));
-const StaffInvitationAccept = lazy(() => import("./pages/StaffInvitationAccept"));
-const ClientPortal = lazy(() => import("./pages/ClientPortal"));
-const GroomingCard = lazy(() => import("./pages/GroomingCard"));
-const ClientPortalLogin = lazy(() => import("./pages/ClientPortalLogin"));
-const ClientPortalSetup = lazy(() => import("./pages/ClientPortalSetup"));
-const ClientPortalCardResult = lazy(() => import("./pages/ClientPortalCardResult"));
+const PetTracker = lazyPage(() => import("./pages/PetTracker"));
+const OnlineBooking = lazyPage(() => import("./pages/OnlineBooking"));
+const MembershipSignup = lazyPage(() => import("./pages/MembershipSignup"));
+const ClientPhotoUpload = lazyPage(() => import("./pages/ClientPhotoUpload"));
+const WaitlistOffer = lazyPage(() => import("./pages/WaitlistOffer"));
+const WaitlistJoin = lazyPage(() => import("./pages/WaitlistJoin"));
+const Login = lazyPage(() => import("./pages/Login"));
+const SalonSignup = lazyPage(() => import("./pages/SalonSignup"));
+const StaffInvitationAccept = lazyPage(() => import("./pages/StaffInvitationAccept"));
+const ClientPortal = lazyPage(() => import("./pages/ClientPortal"));
+const GroomingCard = lazyPage(() => import("./pages/GroomingCard"));
+const ClientPortalLogin = lazyPage(() => import("./pages/ClientPortalLogin"));
+const ClientPortalSetup = lazyPage(() => import("./pages/ClientPortalSetup"));
+const ClientPortalCardResult = lazyPage(() => import("./pages/ClientPortalCardResult"));
 
 /** Small, immediate visual feedback while a page chunk downloads — never
  * leaves the screen blank, even on a slow connection. */
