@@ -121,7 +121,33 @@ export default function Messages() {
     },
     onError: (error) => toast.error(error.message),
   });
-  const { data: missedCallsList, refetch: refetchMissedCalls } = trpc.sms.getMissedCalls.useQuery({ limit: 100 });
+  /**
+   * Voicemail search: the same box as conversations, plus dates.
+   *
+   * Debounced like the thread search, and for the same reason — every
+   * keystroke otherwise asks the server for matches of a term that is
+   * still being typed.
+   */
+  const [callSearch, setCallSearch] = useState("");
+  const [callSearchDebounced, setCallSearchDebounced] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setCallSearchDebounced(callSearch), 250);
+    return () => clearTimeout(timer);
+  }, [callSearch]);
+  const [callFrom, setCallFrom] = useState("");
+  const [callTo, setCallTo] = useState("");
+
+  const { data: missedCallData, refetch: refetchMissedCalls } = trpc.sms.getMissedCalls.useQuery({
+    limit: 100,
+    search: callSearchDebounced.trim() || undefined,
+    from: callFrom || undefined,
+    to: callTo || undefined,
+  });
+  const missedCallsList = missedCallData?.calls;
+  /** How many MATCHED, which is not how many are shown at a limit of 100. */
+  const missedCallTotal = missedCallData?.total ?? 0;
+  const missedCallSearching = missedCallData?.searching ?? false;
+  const callFiltersOn = Boolean(callSearch.trim() || callFrom || callTo);
   const clearMissedCall = trpc.sms.clearMissedCall.useMutation({ onSuccess: () => refetchMissedCalls() });
   // Back in the queue. Clears only the live flag — the "first read by" line
   // below each row is written once and survives this.
@@ -701,6 +727,74 @@ export default function Messages() {
               )}
             </CardTitle>
             <p className="text-xs text-muted-foreground">Voicemail transcripts from missed landline calls, routed via Twilio</p>
+
+            {/* Same search as conversations, plus dates.
+
+                It reaches the whole table, not the hundred rows below:
+                85 of these are already archived, and a staff member
+                looking for a call from three weeks ago was scrolling
+                for it. The transcript is searched too, which is the
+                point — "Christina said something about surgery" is
+                findable only by its words. */}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[13rem] flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={callSearch}
+                  onChange={(e) => setCallSearch(e.target.value)}
+                  placeholder="Search name, number, dog or what was said…"
+                  className="h-8 pl-8 pr-8 text-sm"
+                  aria-label="Search voicemails"
+                />
+                {callSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setCallSearch("")}
+                    aria-label="Clear voicemail search"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <Input
+                type="date"
+                value={callFrom}
+                onChange={(e) => setCallFrom(e.target.value)}
+                className="h-8 w-[9.5rem] text-sm"
+                aria-label="Voicemails from date"
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={callTo}
+                onChange={(e) => setCallTo(e.target.value)}
+                className="h-8 w-[9.5rem] text-sm"
+                aria-label="Voicemails to date"
+              />
+              {callFiltersOn && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  onClick={() => { setCallSearch(""); setCallFrom(""); setCallTo(""); }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+            {missedCallSearching && (
+              /* What matched, not what fits. A limit of 100 would
+                 otherwise make "140 found" look like "100 found". */
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {missedCallTotal === 0
+                  ? "No voicemails match that."
+                  : `${missedCallTotal} voicemail${missedCallTotal === 1 ? "" : "s"} match${missedCallTotal === 1 ? "es" : ""}${
+                      missedCallTotal > (missedCallsList?.length ?? 0) ? ` — showing the ${missedCallsList?.length} most recent` : ""
+                    }.`}
+              </p>
+            )}
           </CardHeader>
           <CardContent className="pt-0">
             {missedCallsList && missedCallsList.length > 0 ? (() => {
@@ -851,7 +945,15 @@ export default function Messages() {
                 </div>
               );
             })() : (
-              <p className="text-sm text-muted-foreground text-center py-6">No missed calls recorded yet</p>
+              <p className="text-sm text-muted-foreground text-center py-6">
+                {/* "No missed calls recorded yet" with a filter on reads
+                    as "the salon has never had a missed call", which
+                    sends someone looking for a bug instead of clearing
+                    the box. */}
+                {callFiltersOn
+                  ? "No voicemails match that search or date range."
+                  : "No missed calls recorded yet"}
+              </p>
             )}
           </CardContent>
         </Card>

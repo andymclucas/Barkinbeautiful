@@ -12,6 +12,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
+import { missedCallSearchFilter } from "./missedCallSearchFilter";
 import { departedBookingMessage } from "@shared/petBookable";
 import { messageSearchFilter } from "./messageSearchFilter";
 import { TRPCError } from "@trpc/server";
@@ -71,7 +72,7 @@ import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignmen
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
-import { parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
@@ -9863,10 +9864,59 @@ const smsRouter = router({
     }),
 
   getMissedCalls: protectedProcedure
-    .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(100) }))
+    .input(z.object({
+      tenantId: z.number().default(1),
+      limit: z.number().default(100),
+      /**
+       * Same box, same rules as conversation search — the term goes
+       * through parseMessageSearch, so "0427", "Harvey" and a phrase
+       * from a transcript all mean here what they mean there.
+       */
+      search: z.string().max(100).optional(),
+      /** Brisbane date keys, YYYY-MM-DD. Both or neither. */
+      from: z.string().optional(),
+      to: z.string().optional(),
+    }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) return [];
+      if (!db) return { calls: [], total: 0, searching: false };
+
+      const search = parseMessageSearch(input.search);
+      const filters = [eq(missedCalls.tenantId, tenantOf(ctx, input))];
+      const searchFilter = missedCallSearchFilter(search);
+      if (searchFilter) filters.push(searchFilter);
+
+      /**
+       * A date range reaches the whole table, like the term does.
+       *
+       * Brisbane days, not UTC ones: a voicemail at 8am Brisbane is
+       * the previous day in UTC, so filtering on the raw column would
+       * put the salon's morning calls under yesterday. The range is
+       * inclusive at both ends because staff type the day they mean.
+       */
+      const dateFiltered = Boolean(input.from || input.to);
+      if (dateFiltered) {
+        const range = brisbaneExplicitRange(input.from ?? "", input.to ?? "");
+        filters.push(gte(missedCalls.receivedAt, range.from));
+        filters.push(lte(missedCalls.receivedAt, range.to));
+      }
+
+      const where = and(...filters);
+
+      // What matched, not what fits in the window. 85 archived calls sit
+      // under a limit of 100, so a search that finds 140 must be able to
+      // say so rather than looking like it found 100.
+      // db.select() hands back the ROWS, not mysql2's [rows, fields]
+      // tuple. Destructuring it as a tuple threw "object is not
+      // iterable" on every call, and the `as unknown as` cast that was
+      // here hid it from the type checker — a cast that silences an
+      // error is a cast that silences the next one too.
+      const [totalRow] = await db
+        .select({ total: sql<number>`COUNT(*)` })
+        .from(missedCalls)
+        .leftJoin(clients, eq(missedCalls.clientId, clients.id))
+        .where(where);
+
       const rows = await db.select({
         id: missedCalls.id,
         fromNumber: missedCalls.fromNumber,
@@ -9886,7 +9936,7 @@ const smsRouter = router({
         receivedAt: missedCalls.receivedAt,
       }).from(missedCalls)
         .leftJoin(clients, eq(missedCalls.clientId, clients.id))
-        .where(eq(missedCalls.tenantId, tenantOf(ctx, input)))
+        .where(where)
         .orderBy(desc(missedCalls.receivedAt))
         .limit(input.limit);
 
@@ -9909,12 +9959,17 @@ const smsRouter = router({
       // Filtered here, not in the page — hiding it client-side would still
       // ship every groomer the names.
       const canSeeReaders = canAdministerStaff(ctx.user);
-      return rows.map(r => ({
-        ...r,
-        clientName: r.callerName || r.clientName,
-        petNames: r.clientId ? (petsByClient.get(r.clientId) ?? []) : [],
-        readByName: canSeeReaders ? (r.readByName as string | null) : null,
-      }));
+      return {
+        calls: rows.map(r => ({
+          ...r,
+          clientName: r.callerName || r.clientName,
+          petNames: r.clientId ? (petsByClient.get(r.clientId) ?? []) : [],
+          readByName: canSeeReaders ? (r.readByName as string | null) : null,
+        })),
+        total: Number(totalRow?.total ?? 0),
+        /** True when the list is narrowed, so the page can say so. */
+        searching: search.active || dateFiltered,
+      };
     }),
 
   clearMissedCall: protectedProcedure
