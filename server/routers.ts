@@ -102,7 +102,6 @@ import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
-import { cascades } from "../shared/linkedWorkflowCascade";
 import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount";
 import { sendBookingConfirmation } from "./bookingConfirmation";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
@@ -2183,11 +2182,20 @@ const workflowRouter = router({
       completedAt: z.number().nullable().optional(),
       pickedUpAt: z.number().nullable().optional(),
       notes: z.string().nullable().optional(),
+      /**
+       * Also check in the rest of this dog's party.
+       *
+       * Andy, 27/10/2026: "Perhaps a button that pops up to say 'would
+       * you like to check in all dogs related to this family?'" — so the
+       * cascade is asked for, never assumed. The screen prompts and
+       * sends this; nothing happens to a linked dog otherwise.
+       */
+      alsoCheckInLinked: z.boolean().default(false),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const { appointmentId, ...fields } = input;
+      const { appointmentId, alsoCheckInLinked, ...fields } = input;
       const [currentAppointment] = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
       if (!currentAppointment) throw new Error("Appointment not found");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, appointmentId);
@@ -2223,11 +2231,25 @@ const workflowRouter = router({
       // bath grouping): shared bath group, else shared booking session,
       // else same pet-family at the same scheduled time.
       let linkedCompleteIds: number[] = [];
-      // Check-in cascades for the same reason completion does: a family
-      // arrives in one car. Andy, 27/10/2026 — Charlie and Ruby Blackaby
-      // checked in together, and only Charlie moved.
-      if (fields.workflowState !== undefined && cascades(fields.workflowState)) {
-        const cascadeStage = fields.workflowState;
+      /**
+       * Only check-in and completion ever move a linked dog, and they do
+       * it on different terms.
+       *
+       * Andy, 27/10/2026: "it's only the check-in that should check in
+       * all dogs in that family. No other stages in the grooming cycle
+       * should have that feature. They need to be bathed, dryed etc
+       * separately." So bath, dry and groom never cascade — two dogs
+       * share a car, not a bath.
+       *
+       * Check-in cascades only when the screen asked and the user said
+       * yes. Completion keeps the automatic behaviour it has always had:
+       * one dog of a party being collected means the party has gone.
+       */
+      const cascadeStage =
+        fields.workflowState === "complete" ? "complete" as const
+        : fields.workflowState === "checked_in" && alsoCheckInLinked ? "checked_in" as const
+        : null;
+      if (cascadeStage !== null) {
         const [linkKeys] = await db.select({
           bathGroupId: appointments.bathGroupId,
           sessionId: appointments.sessionId,

@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
+import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCascade";
 import { trpc } from "@/lib/trpc";
 import { useTimezone } from "@/lib/timezone";
 import { dayInZone, timeOfDayInZone } from "@shared/calendarDay";
@@ -18,7 +19,7 @@ import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresh
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, bathQueuePositionMeta, buildBathPriorityQueue, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Save, Star, Sun, Tv2, Unlink, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Save, Star, Sun, Tv2, Unlink, UserPlus, Users, X } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -106,6 +107,12 @@ export default function WorkflowBoard() {
   const [walkInTime, setWalkInTime] = useState(
     () => timeOfDayInZone(Date.now(), salonTimezone) ?? "09:00",
   );
+  const [checkInFamilyPrompt, setCheckInFamilyPrompt] = useState<{
+    appointmentId: number;
+    fields: Record<string, unknown>;
+    petName: string;
+    linked: { id: number; petName: string }[];
+  } | null>(null);
   const [outConfirm, setOutConfirm] = useState<{ id: number; petName: string } | null>(null);
   const [pickupMessageAppointment, setPickupMessageAppointment] = useState<{ id: number; petName: string } | null>(null);
   const [selectedPickupRecipientId, setSelectedPickupRecipientId] = useState<string>("");
@@ -195,7 +202,52 @@ export default function WorkflowBoard() {
     onError: (error) => { setBathQueueDragId(null); toast.error(error.message); },
   });
 
+  /**
+   * Checking a dog in, asking first whether its party comes too.
+   *
+   * Andy, 27/10/2026: "Perhaps a button that pops up to say 'would you
+   * like to check in all dogs related to this family?'" — asked, never
+   * assumed. Only check-in does this; bath, dry and groom are each dog's
+   * own, because two dogs share a car and not a bath.
+   *
+   * The linked dogs are worked out from the board rows already in hand,
+   * using the same keys the server uses: shared bath group, else shared
+   * booking session, else same family at the same time. Only dogs still
+   * at "scheduled" are offered — one already in the bath must not be
+   * dragged backwards.
+   */
+  const linkedStillToArrive = useCallback((appointmentId: number) => {
+    const rows = boardData ?? [];
+    const self = rows.find(r => r.id === appointmentId);
+    if (!self) return [];
+    const sameParty = (r: typeof self) =>
+      (self as any).bathGroupId ? (r as any).bathGroupId === (self as any).bathGroupId
+      : (self as any).sessionId ? (r as any).sessionId === (self as any).sessionId
+      : (self as any).petFamilyGroupId
+        ? (r as any).petFamilyGroupId === (self as any).petFamilyGroupId
+          && r.scheduledStart === self.scheduledStart
+        : false;
+    return rows.filter(r =>
+      r.id !== appointmentId && sameParty(r)
+      && r.workflowState === "scheduled"
+      && cascadeEligible(String((r as any).status ?? "confirmed"), r.workflowState),
+    );
+  }, [boardData]);
+
   const update = useCallback((appointmentId: number, fields: Omit<Parameters<typeof updateStage.mutate>[0], 'appointmentId'>, options?: { petName?: string | null }) => {
+    // Ask before bringing the rest of the party in with this dog.
+    if (fields.workflowState === "checked_in" && !(fields as any).alsoCheckInLinked) {
+      const linked = linkedStillToArrive(appointmentId);
+      if (linked.length > 0) {
+        setCheckInFamilyPrompt({
+          appointmentId,
+          fields,
+          petName: options?.petName ?? "this dog",
+          linked: linked.map(r => ({ id: r.id, petName: r.petName ?? "a dog" })),
+        });
+        return;
+      }
+    }
     updateStage.mutate({ appointmentId, ...fields }, {
       onSuccess: () => {
         // Send the "ready for pickup" text prompt the moment a dog actually
@@ -235,7 +287,7 @@ export default function WorkflowBoard() {
         }
       },
     });
-  }, [updateStage]);
+  }, [updateStage, linkedStillToArrive]);
 
   const sendPickupMessage = trpc.sms.sendPickupMessage.useMutation({
     onSuccess: result => {
@@ -719,6 +771,49 @@ export default function WorkflowBoard() {
       </div>
 
       {/* ── OUT Payment Confirmation ── */}
+      {/* Asked on check-in only, and only when there is somebody to add.
+          Both buttons check THIS dog in — the choice is whether the rest
+          of the party comes with it, so neither option is a dead end. */}
+      {checkInFamilyPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setCheckInFamilyPrompt(null)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative bg-card rounded-2xl shadow-2xl max-w-xs w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-sky-100 dark:bg-sky-950/50">
+                <Users className="h-6 w-6 text-sky-600 dark:text-sky-400" />
+              </div>
+              <h3 className="text-lg font-bold">
+                {describeCascadePrompt(checkInFamilyPrompt.linked.map(l => l.petName))}
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {checkInFamilyPrompt.petName} is from the same booking. Families usually arrive together.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={() => {
+                  const p = checkInFamilyPrompt;
+                  setCheckInFamilyPrompt(null);
+                  update(p.appointmentId, { ...p.fields, alsoCheckInLinked: true } as never, { petName: p.petName });
+                }}
+              >
+                Check in all {checkInFamilyPrompt.linked.length + 1} dogs
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const p = checkInFamilyPrompt;
+                  setCheckInFamilyPrompt(null);
+                  update(p.appointmentId, { ...p.fields, alsoCheckInLinked: false } as never, { petName: p.petName });
+                }}
+              >
+                Just {checkInFamilyPrompt.petName}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {outConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setOutConfirm(null)}>
           <div className="absolute inset-0 bg-black/50" />
