@@ -154,8 +154,10 @@ async function attemptMembershipCharge(
  * **Only ever resumes a DELIBERATE pause.** `status = "paused"` is also
  * what the failed-payment escalation sets at strike two, so a sweep
  * keyed on status alone would put a client who had never paid back
- * onto automatic billing. `isDeliberatePause` keys on `pauseMode`,
- * which only the pause action writes. See shared/membershipPause.ts.
+ * onto automatic billing. `isDeliberatePause` checks BOTH the
+ * `pauseMode` mark and the failure counters; the counters are the half
+ * that holds if a stale mark ever survives on a row. See
+ * shared/membershipPause.ts.
  */
 async function resumePausedMembershipsDue(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -198,10 +200,23 @@ async function resumePausedMembershipsDue(
         // was edited, and clearing an already-cleared pause is a no-op.
         await resumeMembershipSubscription(membership.id);
       } else {
-        await db
+        // Re-asserts the conditions the row was selected under. A
+        // cancellation or a strike-two suspension landing between that
+        // select and this write would otherwise be overwritten with
+        // "active", putting a cancelled client back on billing.
+        const [updated] = await db
           .update(memberships)
           .set({ status: "active", pauseMode: null, pauseResumesAt: null, pausedAt: null })
-          .where(eq(memberships.id, membership.id));
+          .where(and(
+            eq(memberships.id, membership.id),
+            eq(memberships.status, "paused"),
+            eq(memberships.failedPaymentCount, 0),
+            eq(memberships.bookingSuspended, false),
+          ));
+        if ((updated as unknown as { affectedRows?: number }).affectedRows === 0) {
+          console.warn(`[scheduled] membership ${membership.id} changed during the sweep; left alone`);
+          continue;
+        }
       }
       restarted++;
     } catch (error) {
@@ -243,10 +258,28 @@ export async function paymentRetryHandler(req: Request, res: Response) {
 
     const now = new Date();
 
-    // Restart anything whose pause has run out, before retrying
-    // anything. A membership coming off pause is not a failure case and
-    // must not be mixed into the retry loop below.
-    const resumed = await resumePausedMembershipsDue(db, now);
+    /**
+     * Restart anything whose pause has run out, before retrying
+     * anything. A membership coming off pause is not a failure case and
+     * must not be mixed into the retry loop below.
+     *
+     * Wrapped, because this runs FIRST in the money path. The select
+     * inside can throw for reasons that have nothing to do with the
+     * retries — a column the deployed code expects and the database has
+     * not got yet is the `b848737` failure exactly — and an unhandled
+     * throw here returns 500 before a single failed payment is retried.
+     * Resuming a pause late is a cosmetic problem; not retrying the
+     * salon's declined payments is not.
+     */
+    let resumed = 0;
+    try {
+      resumed = await resumePausedMembershipsDue(db, now);
+    } catch (error) {
+      console.error(
+        "[scheduled] pause sweep failed; continuing to payment retries:",
+        error instanceof Error ? error.message : error,
+      );
+    }
 
     // Find all memberships due for retry (retry date is in the past, still has failures)
     const dueRetries = await db
@@ -407,6 +440,13 @@ export async function paymentRetryHandler(req: Request, res: Response) {
             bookingSuspended: true,
             paymentRetryScheduledAt: null,
             status: "paused",
+            // A payment failure is not a holiday. Clearing the pause
+            // schedule keeps the two meanings of status "paused" from
+            // blurring, and stops a stale restart date ever being read
+            // as one by the sweep.
+            pauseMode: null,
+            pauseResumesAt: null,
+            pausedAt: null,
           })
           .where(eq(memberships.id, m.id));
 

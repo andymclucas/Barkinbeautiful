@@ -8,10 +8,14 @@ import {
 const utc = (iso: string) => new Date(iso);
 const NOW = utc("2026-10-27T00:00:00Z");
 
+/** The Brisbane wall-clock reading of an instant, which is what a client sees. */
+const bne = (d: Date) =>
+  d.toLocaleString("sv-SE", { timeZone: "Australia/Brisbane" }).replace(" ", "T");
+
 describe("addMonths", () => {
   it("keeps the day of the month", () => {
-    expect(addMonths(utc("2026-01-15T03:00:00Z"), 1).toISOString()).toBe("2026-02-15T03:00:00.000Z");
-    expect(addMonths(utc("2026-10-03T00:00:00Z"), 2).toISOString()).toBe("2026-12-03T00:00:00.000Z");
+    expect(bne(addMonths(utc("2026-01-15T03:00:00+10:00"), 1))).toBe("2026-02-15T03:00:00");
+    expect(bne(addMonths(utc("2026-10-03T00:00:00+10:00"), 2))).toBe("2026-12-03T00:00:00");
   });
 
   /**
@@ -20,16 +24,35 @@ describe("addMonths", () => {
    * on a long month.
    */
   it("clamps to the end of a shorter month instead of rolling over", () => {
-    expect(addMonths(utc("2026-01-31T00:00:00Z"), 1).toISOString()).toBe("2026-02-28T00:00:00.000Z");
-    expect(addMonths(utc("2026-03-31T00:00:00Z"), 1).toISOString()).toBe("2026-04-30T00:00:00.000Z");
+    expect(bne(addMonths(utc("2026-01-31T00:00:00+10:00"), 1))).toBe("2026-02-28T00:00:00");
+    expect(bne(addMonths(utc("2026-03-31T00:00:00+10:00"), 1))).toBe("2026-04-30T00:00:00");
   });
 
   it("handles a leap year", () => {
-    expect(addMonths(utc("2028-01-31T00:00:00Z"), 1).toISOString()).toBe("2028-02-29T00:00:00.000Z");
+    expect(bne(addMonths(utc("2028-01-31T00:00:00+10:00"), 1))).toBe("2028-02-29T00:00:00");
   });
 
   it("crosses a year boundary", () => {
-    expect(addMonths(utc("2026-11-15T00:00:00Z"), 3).toISOString()).toBe("2027-02-15T00:00:00.000Z");
+    expect(bne(addMonths(utc("2026-11-15T00:00:00+10:00"), 3))).toBe("2027-02-15T00:00:00");
+  });
+
+  /**
+   * The bug this replaced. 9am Brisbane is 23:00 the PREVIOUS day in
+   * UTC, so UTC component maths lands in the wrong month: 1 March gave
+   * 29 March and 31 January gave 1 March, defeating the clamp above.
+   * `setWeeklyBilling` anchors first charges at 9am, so this was the
+   * common case.
+   */
+  it("is right for a 9am Brisbane anchor, where UTC maths was not", () => {
+    expect(bne(addMonths(utc("2026-03-01T09:00:00+10:00"), 1))).toBe("2026-04-01T09:00:00");
+    expect(bne(addMonths(utc("2026-01-31T09:00:00+10:00"), 1))).toBe("2026-02-28T09:00:00");
+    expect(bne(addMonths(utc("2026-05-01T09:00:00+10:00"), 1))).toBe("2026-06-01T09:00:00");
+  });
+
+  it("accepts another salon's offset", () => {
+    // Sold to salons outside Queensland; +10 is a default, not a law.
+    const utcSalon = addMonths(utc("2026-03-01T09:00:00Z"), 1, 0);
+    expect(utcSalon.toISOString()).toBe("2026-04-01T09:00:00.000Z");
   });
 });
 
@@ -71,6 +94,19 @@ describe("resolvePauseResumesAt", () => {
   it("counts cycles from the next billing date", () => {
     expect(resolvePauseResumesAt({ mode: "cycles", cycles: 2 }, context)!.toISOString())
       .toBe("2026-11-17T00:00:00.000Z");
+  });
+
+  /**
+   * `nextBillingDate` is set once and nothing advances it on a
+   * hand-billed membership, so on most of the book it is in the past.
+   * Counting forward from it produced a restart date BEHIND today, and
+   * the next sweep would have ended the pause on the spot.
+   */
+  it("never resolves a restart date in the past from a stale billing date", () => {
+    const stale = { ...context, nextBillingDate: utc("2026-09-01T09:00:00+10:00") };
+    const resumed = resolvePauseResumesAt({ mode: "cycles", cycles: 2 }, stale)!;
+    expect(resumed.getTime()).toBeGreaterThan(NOW.getTime());
+    expect(bne(resumed)).toBe("2026-11-10T10:00:00");
   });
 
   it("falls back to today when no next billing date is on file", () => {
@@ -173,6 +209,26 @@ describe("isDueToResume", () => {
   it("never resumes a failed-payment suspension, whatever the date", () => {
     const trap = { ...suspended, pauseResumesAt: utc("2020-01-01T00:00:00Z") };
     expect(isDueToResume(trap, utc("2030-01-01T00:00:00Z"))).toBe(false);
+  });
+
+  /**
+   * The case the mark alone would not catch: a row carrying a STALE
+   * `pauseMode` from an earlier holiday that has since failed a
+   * payment. Only two places clear that column, so such a row is
+   * reachable. The failure counters are what must refuse it, and this
+   * asserts that through isDueToResume rather than only through
+   * isDeliberatePause.
+   */
+  it("refuses a row with a stale pause mark that is now failing", () => {
+    const stale = {
+      status: "paused", pauseMode: "date" as const,
+      pauseResumesAt: utc("2020-01-01T00:00:00Z"),
+      failedPaymentCount: 2, bookingSuspended: true,
+    };
+    expect(isDueToResume(stale, utc("2030-01-01T00:00:00Z"))).toBe(false);
+    // Each counter alone is enough to stop it.
+    expect(isDueToResume({ ...stale, bookingSuspended: false }, utc("2030-01-01T00:00:00Z"))).toBe(false);
+    expect(isDueToResume({ ...stale, failedPaymentCount: 0 }, utc("2030-01-01T00:00:00Z"))).toBe(false);
   });
 
   it("picks exactly the due ones out of a mixed list", () => {

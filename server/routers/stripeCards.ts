@@ -223,6 +223,13 @@ export const stripeCardsRouter = router({
         paymentRetryScheduledAt: plan.retryAt,
         bookingSuspended: plan.suspend,
         status: plan.suspend ? "paused" : "pending_payment",
+        // A payment failure is not a holiday. Clearing the pause
+        // schedule keeps the two meanings of status "paused" from
+        // blurring, and stops a stale restart date from ever being
+        // read as one.
+        pauseMode: null,
+        pauseResumesAt: null,
+        pausedAt: null,
       }).where(eq(memberships.id, membership.id));
       await db.insert(membershipPayments).values({
         membershipId: membership.id,

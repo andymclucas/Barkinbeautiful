@@ -617,11 +617,12 @@ export const memberships = mysqlTable("memberships", {
    * How a deliberate pause ends: after N cycles, on a date, or when
    * somebody says so.
    *
-   * Also the discriminator between the two things `status = "paused"`
-   * means. The failed-payment escalation sets that status too and never
-   * touches this, so a non-null `pauseMode` is what marks a pause as
-   * chosen rather than imposed — and only those are ever auto-resumed.
-   * See shared/membershipPause.ts.
+   * Marks a pause as CHOSEN rather than imposed — `status = "paused"`
+   * also means "suspended for not paying". It records intent and is
+   * not a safety check on its own: the sweep additionally refuses any
+   * row carrying a failure count or a booking suspension, which is the
+   * half that actually protects the money path. See
+   * shared/membershipPause.ts.
    */
   pauseMode: mysqlEnum("pause_mode", ["cycles", "date", "manual"]),
   /** When billing restarts. Null for a pause that waits for a person. */

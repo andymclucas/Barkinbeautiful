@@ -21,9 +21,14 @@
  * discriminator — only a deliberate pause sets it, so only a
  * deliberate pause can auto-resume. See `isDeliberatePause`.
  *
- * Dates are computed in UTC. Brisbane has no DST, so a fixed +10
- * offset means UTC arithmetic preserves the Brisbane day-of-month,
- * which is the thing a client actually reads off their statement.
+ * Month arithmetic happens in Brisbane civil time, not UTC. An earlier
+ * version of this file claimed UTC was equivalent because Queensland
+ * has no DST. It is not: 9am Brisbane is 23:00 the PREVIOUS day in
+ * UTC, so UTC component maths lands on the wrong month end. Measured —
+ * 1 March 9am plus a month gave 29 March, and 31 January gave 1 March,
+ * defeating the very clamp below. `setWeeklyBilling` anchors first
+ * charges at 9am Brisbane, so this was the common case rather than an
+ * edge one.
  */
 
 export type PauseMode = "cycles" | "date" | "manual";
@@ -49,6 +54,16 @@ export const MAX_PAUSE_YEARS = 2;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Queensland's fixed offset. No DST, so one constant is enough.
+ *
+ * Passed in rather than assumed wherever a salon outside Queensland
+ * would need a different one — the platform is sold to other grooming
+ * businesses, and a hardcoded +10 is the kind of thing that works for
+ * one customer and silently misbills the second.
+ */
+export const BRISBANE_OFFSET_MS = 10 * 60 * 60 * 1000;
+
 /** `from` plus n weeks. */
 export function addWeeks(from: Date, weeks: number): Date {
   return new Date(from.getTime() + weeks * 7 * DAY_MS);
@@ -62,21 +77,25 @@ export function addWeeks(from: Date, weeks: number): Date {
  * it lands on a long month, which is how a 31st-of-the-month client
  * ends up being charged on the 3rd.
  */
-export function addMonths(from: Date, months: number): Date {
-  const year = from.getUTCFullYear();
-  const month = from.getUTCMonth() + months;
-  const day = from.getUTCDate();
+export function addMonths(from: Date, months: number, offsetMs = BRISBANE_OFFSET_MS): Date {
+  // Shifted into local civil time so the component maths below is done
+  // on the date a human would read, then shifted back.
+  const local = new Date(from.getTime() + offsetMs);
+  const year = local.getUTCFullYear();
+  const month = local.getUTCMonth() + months;
+  const day = local.getUTCDate();
 
   const lastDayOfTarget = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  return new Date(Date.UTC(
+  const shifted = Date.UTC(
     year,
     month,
     Math.min(day, lastDayOfTarget),
-    from.getUTCHours(),
-    from.getUTCMinutes(),
-    from.getUTCSeconds(),
-    from.getUTCMilliseconds(),
-  ));
+    local.getUTCHours(),
+    local.getUTCMinutes(),
+    local.getUTCSeconds(),
+    local.getUTCMilliseconds(),
+  );
+  return new Date(shifted - offsetMs);
 }
 
 /** `from` advanced by whole billing cycles of this membership's cadence. */
@@ -113,7 +132,20 @@ export function resolvePauseResumesAt(plan: PausePlan, context: PauseContext): D
   if (plan.mode === "manual") return null;
   if (plan.mode === "date") return plan.resumeOn;
 
-  const anchor = context.nextBillingDate ?? context.now;
+  /**
+   * Never anchor on a billing date that has already gone by.
+   *
+   * `nextBillingDate` is set once when billing starts and nothing
+   * advances it for a hand-billed membership, so on most of the book
+   * it is in the past. Counting two cycles forward from it returned a
+   * restart date BEHIND today — measured: a 1 September anchor paused
+   * for two weekly cycles on 27 October resolved to 15 September, and
+   * the next sweep would have ended the pause immediately. Validation
+   * did not catch it because it checks the plan, not the result.
+   */
+  const anchor = context.nextBillingDate && context.nextBillingDate.getTime() > context.now.getTime()
+    ? context.nextBillingDate
+    : context.now;
   return addBillingCycles(anchor, plan.cycles, context.billingCycle, context.billingCycleWeeks);
 }
 
@@ -159,10 +191,10 @@ export type PausableMembership = {
  * Whether this row was paused on purpose, as opposed to suspended for
  * not paying.
  *
- * `pauseMode` is the discriminator and is the only one that is safe:
- * it is set exclusively by the pause action, while the failed-payment
- * escalation sets status, `failedPaymentCount` and `bookingSuspended`
- * and never touches it. The counters are checked too, so a membership
+ * `pauseMode` is set exclusively by the pause action, so it records
+ * intent. It is not sufficient on its own — a stale one can survive on
+ * a row that went back to active by another route — so the counters
+ * are checked as well, and they are the load-bearing half. A membership
  * that was paused deliberately and THEN failed a payment — possible,
  * because a pause can be lifted and a charge fail the same week — is
  * treated as a payment problem rather than silently resumed.
