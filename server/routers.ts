@@ -745,6 +745,21 @@ const calendarRouter = router({
           serviceType: appointments.serviceType,
           notes: appointments.notes,
           price: appointments.price,
+          /**
+           * Money actually recorded against this dog, for the sidebar's
+           * revenue split.
+           *
+           * A correlated subquery rather than a join: an appointment can
+           * have several payments — a deposit then the balance, or a
+           * split across two cards — and joining would return the
+           * appointment once per payment, silently duplicating dogs on
+           * the board. Indexed by idx_appointment_payments_appointment.
+           */
+          paidAmount: sql<string>`(
+            SELECT COALESCE(SUM(${appointmentPayments.amount}), 0)
+            FROM ${appointmentPayments}
+            WHERE ${appointmentPayments.appointmentId} = ${appointments.id}
+          )`,
           // Where this booking came from. A MoeGo import keeps its
           // original price by design (Andy, 22/10/2026), so the
           // surfaces that let somebody change a price say which

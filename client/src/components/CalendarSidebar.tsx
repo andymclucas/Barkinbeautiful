@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 
+import type { CalendarSummaryFigures } from "@shared/calendarSummary";
 /**
  * The persistent left rail on the Appointments page.
  *
@@ -12,16 +13,16 @@ import { cn } from "@/lib/utils";
  * and there was no way to see next week's shape while looking at today.
  */
 
-export interface CalendarSummary {
-  totalAppointments: number;
-  totalPets: number;
-  /** Money actually taken - completed appointments. */
-  earnedRevenue: number;
-  /** Money booked in, whether or not it has been collected yet. */
-  expectedRevenue: number;
-  /** Cancelled and no-show bookings, excluded from every figure above. */
-  cancelledCount: number;
-}
+/**
+ * The shared type, not a copy of it.
+ *
+ * This used to restate the fields here, and the restatement had already
+ * drifted: it described earnedRevenue as "money actually taken", which
+ * it never was — it is the price of completed work, and on 27/10/2026
+ * it read $1,508 against $350 genuinely collected. A second definition
+ * of a type is a second place for the truth to rot.
+ */
+export type CalendarSummary = CalendarSummaryFigures;
 
 const money = (n: number) =>
   `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -135,8 +136,49 @@ export function CalendarSidebar({
         <dl className="space-y-1.5">
           <Row label="Total appts" value={String(summary.totalAppointments)} />
           <Row label="Total pets" value={String(summary.totalPets)} />
-          <Row label="Earned rev" value={money(summary.earnedRevenue)} tone="text-emerald-700 dark:text-emerald-300" />
-          <Row label="Expected rev" value={money(summary.expectedRevenue)} />
+
+          {/* Who is paying for the day, before what it came to.
+
+              A covered groom carries no price, so without this a day of
+              25 membership dogs and 10 paying ones reads as a quiet day
+              on the money rows alone. The revenue for those 25 arrived
+              in weekly debits and is not on this page at all. */}
+          {summary.membershipPetCount > 0 && (
+            <>
+              <Row
+                label="On membership"
+                value={String(summary.membershipPetCount)}
+                tone="text-muted-foreground"
+                hint="Covered dogs — their groom carries no price here. The revenue comes through the weekly or monthly membership payment, not today's till."
+              />
+              <Row
+                label="Paying on the day"
+                value={String(summary.payingPetCount)}
+                tone="text-muted-foreground"
+              />
+            </>
+          )}
+
+          <Row
+            label="Taken"
+            value={money(summary.takenRevenue)}
+            tone="text-emerald-700 dark:text-emerald-300"
+            hint="Money actually recorded against today's dogs, however it was paid."
+          />
+          {summary.outstandingRevenue > 0 && (
+            <Row
+              label="Still to collect"
+              value={money(summary.outstandingRevenue)}
+              tone="text-amber-700 dark:text-amber-300"
+              hint="Priced work on the day that has not been paid for yet, counted per dog so an overpayment cannot mask somebody else's debt."
+            />
+          )}
+          <Row
+            label="Completed value"
+            value={money(summary.earnedRevenue)}
+            hint="What the finished grooms are priced at. Not money in — a completed groom nobody has settled still counts here."
+          />
+          <Row label="Booked in" value={money(summary.expectedRevenue)} hint="Everything priced on the day, finished or not." />
           {summary.cancelledCount > 0 && (
             // The toolbar counts every booking on the day, these figures count
             // only the live ones. Showing the difference stops a correct pair
@@ -153,10 +195,15 @@ export function CalendarSidebar({
   );
 }
 
-function Row({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function Row({ label, value, tone, hint }: { label: string; value: string; tone?: string; hint?: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <dt className="text-[11.5px] text-muted-foreground">{label}</dt>
+    // The hint goes on the whole row, not just the label: these figures
+    // mean specific things — "Taken" is the till, "Completed value" is
+    // not money in — and the difference is the entire point of showing
+    // them separately. Someone reading the panel should be able to find
+    // that out without opening the code.
+    <div className="flex items-baseline justify-between gap-2" title={hint}>
+      <dt className={cn("text-[11.5px] text-muted-foreground", hint && "cursor-help decoration-dotted underline-offset-2 hover:underline")}>{label}</dt>
       <dd className={cn("text-[12.5px] font-semibold tabular-nums", tone ?? "text-foreground")}>{value}</dd>
     </div>
   );
