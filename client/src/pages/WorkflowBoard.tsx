@@ -793,7 +793,7 @@ export default function WorkflowBoard() {
             <div className="px-4 py-3 border-b flex items-center justify-between gap-3">
               <div>
                 <h2 className="font-semibold text-sm">Daily workflow timing</h2>
-                <p className="text-xs text-muted-foreground">Average completed duration by assigned bather and groomer. Amber values need a review; they may point to a delay or pricing exception.</p>
+                <p className="text-xs text-muted-foreground">Average completed duration, and how many dogs each person finished, by assigned bather and groomer. Amber values need a review; they may point to a delay or pricing exception.</p>
               </div>
               <Badge variant="outline" className="text-[10px]">Today only</Badge>
             </div>
@@ -812,7 +812,31 @@ export default function WorkflowBoard() {
                         {[person.bath, person.dry, person.groom, person.total].map((metric, index) => {
                           const avg = average(metric);
                           const review = metric.reviews > 0;
-                          return <td key={index} className={`px-3 py-2.5 text-center font-mono ${review ? "text-amber-700 dark:text-amber-300 font-bold" : "text-foreground"}`}>{formatDuration(avg)}{review ? " ⚠" : ""}</td>;
+                          /**
+                           * The count beneath the average, because the
+                           * average alone does not say how much work
+                           * somebody did. Lauren, 27/10/2026: "would be
+                           * good to see.. Akilah for example bathed 25
+                           * dogs, Steph did 10".
+                           *
+                           * `count` was already carried here to divide
+                           * by — it is the number of dogs whose stage
+                           * both started and finished — and was simply
+                           * never shown. Per stage rather than one
+                           * "dogs" column, because this table lists
+                           * bathers, dryers and groomers together and a
+                           * single number would not say which.
+                           */
+                          return (
+                            <td key={index} className={`px-3 py-2.5 text-center font-mono ${review ? "text-amber-700 dark:text-amber-300 font-bold" : "text-foreground"}`}>
+                              <div>{formatDuration(avg)}{review ? " ⚠" : ""}</div>
+                              {metric.count > 0 && (
+                                <div className="mt-0.5 font-sans text-[10px] font-normal text-muted-foreground">
+                                  {metric.count} dog{metric.count === 1 ? "" : "s"}
+                                </div>
+                              )}
+                            </td>
+                          );
                         })}
                         <td className="px-3 py-2.5 text-center">
                           <Button
