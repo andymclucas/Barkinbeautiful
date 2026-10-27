@@ -156,7 +156,26 @@ export function CalendarSidebar({
                 value={String(summary.payingPetCount)}
                 tone="text-muted-foreground"
               />
+              <Row
+                label="Membership value"
+                value={money(summary.membershipVisitValue)}
+                tone="text-emerald-700 dark:text-emerald-300"
+                hint="What the covered grooms are worth as subscription revenue — each plan's weekly rate times the weeks its tier leaves between grooms. Real money, arriving weekly rather than at the counter. Counted once per plan, so a two-dog household's single fee is not doubled."
+              />
             </>
+          )}
+          {summary.unlinkedMembershipPetCount > 0 && (
+            /* The figure above is only as complete as the links behind
+               it. 128 of 713 upcoming bookings belong to a membership
+               client without being linked to the plan — mostly MoeGo
+               imports and the extra dogs of multi-dog households. Saying
+               so beats quietly understating the covered count. */
+            <Row
+              label="Not linked to a plan"
+              value={String(summary.unlinkedMembershipPetCount)}
+              tone="text-amber-700 dark:text-amber-300"
+              hint="These dogs belong to a client with an active membership, but the booking is not linked to it — so they are counted as paying and their value is not in the figure above. Usually a MoeGo import, or the second dog of a household on one plan."
+            />
           )}
 
           <Row

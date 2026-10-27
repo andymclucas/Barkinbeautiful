@@ -47,6 +47,21 @@ const PACKAGE_SCHEDULE: Record<MembershipTier, { appointmentIntervalWeeks: numbe
   bronze: { appointmentIntervalWeeks: 8, visitsPerYear: "6–7 visits per year" },
 };
 
+/**
+ * How many weeks a tier is meant to leave between grooms.
+ *
+ * Exported because `memberships.appointment_interval_weeks` is NULL on
+ * every one of the 151 active memberships — the column exists and was
+ * never populated, so the tier is the only cadence the data actually
+ * carries. Falls back to the gentlest tier rather than throwing: an
+ * unrecognised tier should understate a figure, not break the page it
+ * is on.
+ */
+export function intervalWeeksForTier(tier: string | null | undefined): number {
+  const schedule = PACKAGE_SCHEDULE[String(tier ?? "").toLowerCase() as MembershipTier];
+  return schedule?.appointmentIntervalWeeks ?? PACKAGE_SCHEDULE.bronze.appointmentIntervalWeeks;
+}
+
 function packageName(tier: MembershipTier, serviceType: MembershipService, weightClass: MembershipWeightClass) {
   const title = `${tier.charAt(0).toUpperCase()}${tier.slice(1)} VIP`;
   const serviceSuffix = tier === "diamond" || tier === "platinum" ? "" : ` ${serviceType === "styled" ? "Styled" : "Classic"}`;

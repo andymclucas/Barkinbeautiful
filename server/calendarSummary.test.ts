@@ -72,7 +72,9 @@ describe("summariseCalendar", () => {
     expect(summariseCalendar([])).toEqual({
       totalAppointments: 0, totalPets: 0, earnedRevenue: 0, expectedRevenue: 0,
       takenRevenue: 0, outstandingRevenue: 0,
-      membershipPetCount: 0, payingPetCount: 0, cancelledCount: 0,
+      membershipPetCount: 0, payingPetCount: 0,
+      membershipVisitValue: 0, unlinkedMembershipPetCount: 0,
+      cancelledCount: 0,
     });
   });
 
@@ -167,5 +169,55 @@ describe("the revenue split", () => {
     expect(summary.takenRevenue).toBe(0);
     expect(summary.outstandingRevenue).toBe(0);
     expect(summary.earnedRevenue).toBe(0);
+  });
+});
+
+describe("membership value on the day", () => {
+  /**
+   * A day full of covered dogs used to read as a day that earned
+   * nothing, because a covered groom carries no price. This is the
+   * subscription revenue those grooms carry instead.
+   */
+  it("values covered grooms from the plan behind them", () => {
+    const summary = summariseCalendar([
+      { petId: 1, membershipId: 10, price: null, membershipPricePerCycle: "23.78", membershipTier: "silver" },
+      { petId: 2, membershipId: 11, price: null, membershipPricePerCycle: "21.17", membershipTier: "bronze" },
+    ]);
+    expect(summary.membershipVisitValue).toBeCloseTo(142.68 + 169.36, 2);
+    expect(summary.takenRevenue).toBe(0);
+  });
+
+  /** One household, one fee, however many of its dogs came in. */
+  it("counts a multi-dog household's fee once", () => {
+    const summary = summariseCalendar([
+      { petId: 1, membershipId: 3, price: null, membershipPricePerCycle: "104.00", membershipTier: "diamond" },
+      { petId: 2, membershipId: 3, price: null, membershipPricePerCycle: "104.00", membershipTier: "diamond" },
+    ]);
+    expect(summary.membershipVisitValue).toBeCloseTo(208, 2);
+    expect(summary.membershipPetCount).toBe(2);
+  });
+
+  /**
+   * 128 of 713 upcoming bookings belong to a membership client without
+   * being linked to the plan. Counting them as covered would overstate;
+   * saying nothing would understate. They get their own line.
+   */
+  it("reports dogs whose plan the booking is not linked to", () => {
+    const summary = summariseCalendar([
+      { petId: 1, membershipId: 10, price: null, membershipPricePerCycle: "23.78", membershipTier: "silver" },
+      { petId: 2, membershipId: null, price: "95.00", clientHasMembership: 1 },
+      { petId: 3, membershipId: null, price: "95.00", clientHasMembership: 0 },
+    ]);
+    expect(summary.unlinkedMembershipPetCount).toBe(1);
+    expect(summary.membershipPetCount).toBe(1);
+    // Still counted as paying, because that is what the booking says.
+    expect(summary.payingPetCount).toBe(2);
+  });
+
+  it("ignores cancelled dogs in the value", () => {
+    const summary = summariseCalendar([
+      { petId: 1, membershipId: 10, membershipPricePerCycle: "23.78", membershipTier: "silver", workflowState: "cancelled" },
+    ]);
+    expect(summary.membershipVisitValue).toBe(0);
   });
 });
