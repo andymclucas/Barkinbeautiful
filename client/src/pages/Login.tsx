@@ -8,7 +8,11 @@ import { toast } from "sonner";
 import { Eye, EyeOff, X } from "lucide-react";
 import { GROOMIGO_TAGLINE } from "@shared/salonTitle";
 
+import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 export default function Login() {
+  // The first screen a salon ever sees, and the one they show staff.
+  // It wears their colours too.
+  usePublicBrandTheme();
   const [, navigate] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -135,7 +139,7 @@ export default function Login() {
       />
 
       {/* Ambient glow blobs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full opacity-10 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #a78bfa 0%, transparent 70%)" }} />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full opacity-10 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, var(--color-violet-400) 0%, transparent 70%)" }} />
       <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full opacity-[0.08] blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #f0abfc 0%, transparent 70%)" }} />
 
       <div className="relative w-full max-w-md z-10">
@@ -150,7 +154,7 @@ export default function Login() {
               transition: "transform 0.35s cubic-bezier(0.23,1,0.32,1), filter 0.35s ease",
               transform: logoHovered ? "scale(1.12)" : "scale(1)",
               filter: logoHovered
-                ? "drop-shadow(0 0 12px #7c3aed) drop-shadow(0 0 30px #7c3aedaa) drop-shadow(0 0 60px #7c3aed44) brightness(1.15)"
+                ? "drop-shadow(0 0 12px var(--color-violet-600)) drop-shadow(0 0 30px color-mix(in oklch, var(--color-violet-600) 67%, transparent)) drop-shadow(0 0 60px color-mix(in oklch, var(--color-violet-600) 27%, transparent)) brightness(1.15)"
                 : "drop-shadow(0 2px 8px rgba(124,58,237,0.14)) brightness(1)",
             }}
           >
@@ -187,7 +191,7 @@ export default function Login() {
                 <Button
                   onClick={finishResetAndSignIn}
                   className="w-full font-semibold text-white rounded-xl"
-                  style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)", boxShadow: "0 4px 16px rgba(124,58,237,0.26)" }}
+                  style={{ background: "linear-gradient(135deg, var(--color-violet-500) 0%, var(--color-violet-600) 100%)", boxShadow: "0 4px 16px rgba(124,58,237,0.26)" }}
                 >
                   Continue to sign in
                 </Button>
@@ -240,7 +244,7 @@ export default function Login() {
                   <Button
                     type="submit"
                     className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
-                    style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%)", boxShadow: "0 4px 20px rgba(124,58,237,0.30)" }}
+                    style={{ background: "linear-gradient(135deg, var(--color-violet-500) 0%, var(--color-violet-600) 50%, var(--color-violet-700) 100%)", boxShadow: "0 4px 20px rgba(124,58,237,0.30)" }}
                     disabled={completeResetMutation.isPending}
                   >
                     {completeResetMutation.isPending ? (
@@ -318,7 +322,7 @@ export default function Login() {
             <Button
               type="submit"
               className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
-              style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%)", boxShadow: "0 4px 20px rgba(124,58,237,0.30)" }}
+              style={{ background: "linear-gradient(135deg, var(--color-violet-500) 0%, var(--color-violet-600) 50%, var(--color-violet-700) 100%)", boxShadow: "0 4px 20px rgba(124,58,237,0.30)" }}
               disabled={loginMutation.isPending}
             >
               {loginMutation.isPending ? (
@@ -338,7 +342,7 @@ export default function Login() {
                 <div
                   className="w-4 h-4 rounded border transition-all"
                   style={{
-                    background: rememberMe ? "#7c3aed" : "#ffffff",
+                    background: rememberMe ? "var(--color-violet-600)" : "#ffffff",
                     border: rememberMe ? "1px solid var(--brand-primary)" : "1px solid var(--auth-field-border)",
                     boxShadow: rememberMe ? "0 0 8px rgba(124,58,237,0.34)" : "none",
                   }}
@@ -367,8 +371,8 @@ export default function Login() {
               onClick={() => { setForgotOpen(true); setForgotEmail(email); setForgotSent(false); }}
               className="text-xs transition-colors hover:underline"
               style={{ color: "var(--auth-text-brand-soft)" }}
-              onMouseEnter={e => (e.currentTarget.style.color = "#7c3aed")}
-              onMouseLeave={e => (e.currentTarget.style.color = "#7c3aed80")}
+              onMouseEnter={e => (e.currentTarget.style.color = "var(--color-violet-600)")}
+              onMouseLeave={e => (e.currentTarget.style.color = "color-mix(in oklch, var(--color-violet-600) 50%, transparent)")}
             >
               Forgot password?
             </button>
@@ -449,7 +453,7 @@ export default function Login() {
                   <Button
                     type="submit"
                     className="w-full font-semibold text-white rounded-xl"
-                    style={{ background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)", boxShadow: "0 4px 16px rgba(124,58,237,0.26)" }}
+                    style={{ background: "linear-gradient(135deg, var(--color-violet-500) 0%, var(--color-violet-600) 100%)", boxShadow: "0 4px 16px rgba(124,58,237,0.26)" }}
                     disabled={resetMutation.isPending}
                   >
                     {resetMutation.isPending ? (

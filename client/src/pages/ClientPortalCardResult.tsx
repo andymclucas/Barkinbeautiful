@@ -4,6 +4,7 @@ import { CreditCard, PawPrint, ShieldCheck, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 /**
  * Where Stripe Checkout returns a client after a card setup link.
  *
@@ -18,6 +19,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  * to look up and nothing a stranger could learn by guessing the URL.
  */
 export default function ClientPortalCardResult({ saved }: { saved: boolean }) {
+  // This page is sent to the salon's own clients, so it wears the
+  // salon's colours rather than stock Groomigo ones.
+  usePublicBrandTheme();
   // Where the client was before Stripe, if they started from inside the
   // portal. A client on a link has no login, so "Go to client sign in" is a
   // dead end for them; this puts them back where they were. Read once on

@@ -6,6 +6,7 @@ import { CardReviewPrompt } from "@/components/CardReviewPrompt";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 
+import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 /**
  * A dog's grooming card, as the owner opens it from a link.
  *
@@ -108,6 +109,9 @@ function BeforeAfter({ before, after, petName }: { before: string | null; after:
 }
 
 export default function GroomingCard() {
+  // This page is sent to the salon's own clients, so it wears the
+  // salon's colours rather than stock Groomigo ones.
+  usePublicBrandTheme();
   const params = useParams<{ token: string }>();
   const token = params.token ?? "";
   const { data: card, isLoading, error } = trpc.groomingReports.getShared.useQuery(

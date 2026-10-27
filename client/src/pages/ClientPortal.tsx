@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 
+import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 type PortalPet = { id: number; name: string; breed: string | null; species: string; status: string };
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
@@ -678,6 +679,9 @@ function YourDetailsCard({ client, onSaved }: {
 }
 
 export default function ClientPortal() {
+  // This page is sent to the salon's own clients, so it wears the
+  // salon's colours rather than stock Groomigo ones.
+  usePublicBrandTheme();
   const { token, previewClientId } = useParams<{ token?: string; previewClientId?: string }>();
   const [, navigate] = useLocation();
   // Admin preview: same payload, no session, nothing changed on the client's
