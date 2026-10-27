@@ -102,6 +102,7 @@ import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
+import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount";
 import { sendBookingConfirmation } from "./bookingConfirmation";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
 import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
@@ -331,6 +332,13 @@ const calendarRouter = router({
       tenantId: z.number().default(1),
       appointmentId: z.number().int().positive(),
       percent: z.number().int().nullable(),
+      /**
+       * A flat dollar discount instead of a percentage. Andy,
+       * 27/10/2026: "plus the overall total if required". One or the
+       * other — an amount wins if both arrive, and the two columns are
+       * never both written.
+       */
+      amount: z.number().positive().nullable().optional(),
       reason: z.string().max(200).nullable().optional(),
       applyToSession: z.boolean().default(false),
     }))
@@ -342,8 +350,14 @@ const calendarRouter = router({
       // Without it any authenticated user could discount any appointment.
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
 
-      const validated = validateDiscount({ percent: input.percent, reason: input.reason });
-      if (!validated.ok) throw new TRPCError({ code: "BAD_REQUEST", message: validated.error });
+      // A dollar figure goes through the general validator; a percentage
+      // keeps the 5/10/15/20 ladder it has always had, so the staff
+      // discount cannot quietly become a free-text field.
+      const usingAmount = input.amount !== null && input.amount !== undefined;
+      const validated = usingAmount
+        ? null
+        : validateDiscount({ percent: input.percent, reason: input.reason });
+      if (validated && !validated.ok) throw new TRPCError({ code: "BAD_REQUEST", message: validated.error });
 
       const [target] = await db
         .select({
@@ -408,19 +422,36 @@ const calendarRouter = router({
             eq(appointmentPayments.tenantId, target.tenantId),
             eq(appointmentPayments.appointmentId, row.id),
           ));
-        const breakdown = applyDiscount(base, validated.percent);
+        // A dollar discount is checked against THIS row's own price, so
+        // "$20 off" across a session cannot take more off a cheap dog
+        // than that dog costs.
+        const lineCheck = usingAmount
+          ? validateLineDiscount({ kind: "amount", value: input.amount!, reason: input.reason, gross: base })
+          : null;
+        if (lineCheck && !lineCheck.ok) {
+          skipped.push({ id: row.id, why: lineCheck.error });
+          continue;
+        }
+        const breakdown = usingAmount
+          ? applyLineDiscount(base, lineCheck && lineCheck.ok ? lineCheck.discount : null)
+          : applyDiscount(base, validated && validated.ok ? validated.percent : null);
         if (toCents(paidRow?.paid ?? 0) > breakdown.netCents) {
           skipped.push({ id: row.id, why: "already paid more than the discounted total" });
           continue;
         }
 
+        const clearing = usingAmount ? false : !(validated && validated.ok && validated.percent !== null);
+        const reasonToStore = usingAmount
+          ? (lineCheck && lineCheck.ok ? lineCheck.reason : null)
+          : (validated && validated.ok ? validated.reason : null);
         await db.update(appointments).set({
-          preDiscountPrice: validated.percent === null ? null : fromCents(breakdown.grossCents),
+          preDiscountPrice: clearing ? null : fromCents(breakdown.grossCents),
           price: fromCents(breakdown.netCents),
-          discountPercent: validated.percent,
-          discountReason: validated.reason,
-          discountAppliedByUserId: validated.percent === null ? null : ctx.user.id,
-          discountAppliedAt: validated.percent === null ? null : now,
+          discountPercent: usingAmount ? null : (validated && validated.ok ? validated.percent : null),
+          discountAmount: usingAmount ? (breakdown.discountCents / 100).toFixed(2) : null,
+          discountReason: reasonToStore,
+          discountAppliedByUserId: clearing ? null : ctx.user.id,
+          discountAppliedAt: clearing ? null : now,
         }).where(and(eq(appointments.id, row.id), eq(appointments.tenantId, target.tenantId)));
 
         updated.push({
@@ -440,7 +471,14 @@ const calendarRouter = router({
         });
       }
 
-      return { updated, skipped, percent: validated.percent, reason: validated.reason };
+      return {
+        updated, skipped,
+        percent: usingAmount ? null : (validated && validated.ok ? validated.percent : null),
+        amount: usingAmount ? input.amount ?? null : null,
+        reason: usingAmount
+          ? (input.reason ?? "").trim() || null
+          : (validated && validated.ok ? validated.reason : null),
+      };
     }),
 
   searchAppointments: operationalProcedure

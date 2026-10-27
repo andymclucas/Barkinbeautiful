@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DISCOUNT_PERCENTS, applyDiscount, fromCents } from "@shared/appointmentDiscount";
+import { applyLineDiscount, validateLineDiscount } from "@shared/lineDiscount";
 
 /**
  * Apply a staff discount to an appointment, with a reason.
@@ -39,6 +40,7 @@ export function ApplyDiscountDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [percent, setPercent] = useState<number | null>(currentPercent ?? null);
+  const [amount, setAmount] = useState("");
   const [reason, setReason] = useState(currentReason ?? "");
   const [applyToSession, setApplyToSession] = useState(false);
 
@@ -62,8 +64,17 @@ export function ApplyDiscountDialog({
     onError: (error) => toast.error(error.message),
   });
 
-  const preview = applyDiscount(grossPrice, percent as never);
-  const reasonMissing = percent !== null && reason.trim() === "";
+  const usingAmount = amount.trim() !== "";
+  const amountCheck = usingAmount
+    ? validateLineDiscount({ kind: "amount", value: amount, reason: reason || "x", gross: grossPrice })
+    : null;
+  const amountError = amountCheck && !amountCheck.ok ? amountCheck.error : null;
+  const preview = usingAmount
+    ? applyLineDiscount(grossPrice, amountCheck && amountCheck.ok ? amountCheck.discount : null)
+    : applyDiscount(grossPrice, percent as never);
+  // A reason is required for either shape — money comes off the bill and
+  // nobody can say why a month later otherwise.
+  const reasonMissing = (percent !== null || usingAmount) && reason.trim() === "";
 
   return (
     <>
@@ -105,13 +116,31 @@ export function ApplyDiscountDialog({
               ))}
             </div>
 
+            {/* A flat dollar figure, beside the ladder rather than inside
+                it. Andy, 27/10/2026: "plus the overall total if
+                required." The ladder is the staff-discount policy and
+                stays four fixed steps; this is "take $20 off", which it
+                cannot express. Typing here clears the percentage,
+                because a line carries one or the other, never both. */}
+            <div className="grid gap-1.5">
+              <Label htmlFor="discount-amount">or take a set amount off</Label>
+              <Input
+                id="discount-amount"
+                placeholder="$0.00"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => { setAmount(e.target.value); if (e.target.value.trim()) setPercent(null); }}
+              />
+              {amountError && <p className="text-xs text-red-600 dark:text-red-400">{amountError}</p>}
+            </div>
+
             <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Full price</span><span>${fromCents(preview.grossCents)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span>−${fromCents(preview.discountCents)}</span></div>
               <div className="mt-1 flex justify-between border-t pt-1 font-semibold"><span>Client pays</span><span>${fromCents(preview.netCents)}</span></div>
             </div>
 
-            {percent !== null && (
+            {(percent !== null || usingAmount) && (
               <div className="grid gap-1.5">
                 <Label htmlFor="discount-reason">Reason <span className="text-red-600">*</span></Label>
                 <Input
@@ -142,16 +171,22 @@ export function ApplyDiscountDialog({
             <Button variant="outline" size="sm" disabled={save.isPending} onClick={() => setOpen(false)}>Cancel</Button>
             <Button
               size="sm"
-              disabled={save.isPending || reasonMissing}
+              disabled={save.isPending || reasonMissing || Boolean(amountError)}
               title={reasonMissing ? "Please say why this discount is being applied" : undefined}
               onClick={() => save.mutate({
                 appointmentId,
-                percent,
+                // One or the other reaches the server, never both.
+                percent: usingAmount ? null : percent,
+                amount: usingAmount && amountCheck?.ok && amountCheck.discount?.kind === "amount"
+                  ? amountCheck.discount.value
+                  : null,
                 reason: reason.trim() || null,
                 applyToSession,
               })}
             >
-              {save.isPending ? "Saving…" : percent === null ? "Remove discount" : "Apply discount"}
+              {save.isPending ? "Saving…"
+                : percent === null && !usingAmount ? "Remove discount"
+                : "Apply discount"}
             </Button>
           </DialogFooter>
         </DialogContent>
