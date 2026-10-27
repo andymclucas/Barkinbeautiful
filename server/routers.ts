@@ -747,6 +747,28 @@ const calendarRouter = router({
           notes: appointments.notes,
           price: appointments.price,
           /**
+           * The covering plan's rate and tier, so the sidebar can value
+           * a covered groom. A LEFT JOIN would be 1:1 here, but the
+           * calendar list is a hot query with several joins already and
+           * these two are only read by one panel.
+           */
+          membershipPricePerCycle: sql<string | null>`(
+            SELECT m.price_per_cycle FROM memberships m WHERE m.id = ${appointments.membershipId}
+          )`,
+          membershipTier: sql<string | null>`(
+            SELECT m.tier FROM memberships m WHERE m.id = ${appointments.membershipId}
+          )`,
+          /**
+           * Does this dog's CLIENT hold a membership this booking is not
+           * linked to? 128 of 713 upcoming bookings are in that state.
+           */
+          clientHasMembership: sql<number>`(
+            SELECT EXISTS (
+              SELECT 1 FROM memberships m
+              WHERE m.client_id = ${appointments.clientId} AND m.status = 'active'
+            )
+          )`,
+          /**
            * Money actually recorded against this dog, for the sidebar's
            * revenue split.
            *

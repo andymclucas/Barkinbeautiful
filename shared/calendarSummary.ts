@@ -26,6 +26,8 @@
  *    how a correct number gets reported as a bug.
  */
 
+import { membershipVisitValueCents } from "./membershipVisitValue";
+
 export interface SummarisableAppointment {
   petId?: number | null;
   price?: string | number | null;
@@ -33,6 +35,21 @@ export interface SummarisableAppointment {
   status?: string | null;
   /** Set when a membership covers this groom. The price is then nil. */
   membershipId?: number | null;
+  /** The covering plan's weekly rate and tier, for its visit value. */
+  membershipPricePerCycle?: string | number | null;
+  membershipTier?: string | null;
+  /**
+   * True when this dog's CLIENT holds an active membership but this
+   * booking is not linked to it.
+   *
+   * 128 of 713 upcoming bookings are in that state — MoeGo imports that
+   * never carried the link, plus the second and third dogs of multi-dog
+   * households. They are counted separately rather than folded in,
+   * because guessing would be wrong in both directions: some of those
+   * dogs are genuinely covered and some are a household's extra dog who
+   * really is paying.
+   */
+  clientHasMembership?: boolean | number | null;
   /** Money recorded against this appointment, however it was taken. */
   paidAmount?: string | number | null;
 }
@@ -57,6 +74,19 @@ export interface CalendarSummaryFigures {
   membershipPetCount: number;
   /** Dogs being charged for the day's work. */
   payingPetCount: number;
+  /**
+   * Subscription revenue the day's memberships carry, in dollars.
+   *
+   * Weekly rate x the tier's weeks between grooms, counted once per
+   * PLAN. Real money, arriving weekly rather than at the counter.
+   */
+  membershipVisitValue: number;
+  /**
+   * Dogs whose client holds a membership that this booking is not
+   * linked to, so they are in neither figure above with any confidence.
+   * Shown so the covered count is not read as complete.
+   */
+  unlinkedMembershipPetCount: number;
   /** Cancelled and no-show rows, excluded from every figure above. */
   cancelledCount: number;
 }
@@ -78,6 +108,8 @@ export function summariseCalendar(appointments: SummarisableAppointment[]): Cale
   const pets = new Set<number>();
   const membershipPets = new Set<number>();
   const payingPets = new Set<number>();
+  const unlinkedMembershipPets = new Set<number>();
+  const plans: Array<{ membershipId: number; pricePerCycle?: string | number | null; tier?: string | null }> = [];
   let earned = 0;
   let expected = 0;
   let taken = 0;
@@ -89,6 +121,16 @@ export function summariseCalendar(appointments: SummarisableAppointment[]): Cale
       // Counted by DOG, like every other figure on this panel. A dog
       // booked twice in a day is one dog on the board.
       (a.membershipId ? membershipPets : payingPets).add(a.petId);
+      // MySQL EXISTS arrives as 0/1, not a boolean, so this accepts
+      // both rather than casting one away at the call site.
+      if (!a.membershipId && Boolean(a.clientHasMembership)) unlinkedMembershipPets.add(a.petId);
+    }
+    if (a.membershipId) {
+      plans.push({
+        membershipId: a.membershipId,
+        pricePerCycle: a.membershipPricePerCycle,
+        tier: a.membershipTier,
+      });
     }
     const value = amount(a.price);
     const paid = amount(a.paidAmount);
@@ -111,6 +153,8 @@ export function summariseCalendar(appointments: SummarisableAppointment[]): Cale
     outstandingRevenue: Math.round(outstanding * 100) / 100,
     membershipPetCount: membershipPets.size,
     payingPetCount: payingPets.size,
+    membershipVisitValue: membershipVisitValueCents(plans) / 100,
+    unlinkedMembershipPetCount: unlinkedMembershipPets.size,
     cancelledCount: appointments.length - live.length,
   };
 }
