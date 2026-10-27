@@ -102,6 +102,7 @@ import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
+import { cascades } from "../shared/linkedWorkflowCascade";
 import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount";
 import { sendBookingConfirmation } from "./bookingConfirmation";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
@@ -310,6 +311,20 @@ async function resolveGroomerPerPet(
   }
   const assignments = resolveGroomerAssignments(petIds, defaultStaffId, staffByPetId);
   return (petId: number) => assignments.get(petId);
+}
+
+/**
+ * Which linked dogs a cascade may move, as a SQL condition.
+ *
+ * Check-in only ever moves a dog that has not arrived: pulling a dog
+ * already in the bath back to "checked in" would lose its timings and
+ * take it off the bather's queue mid-wash. Completion moves anything not
+ * already complete. See shared/linkedWorkflowCascade.ts.
+ */
+function cascadeFilter(stage: "checked_in" | "complete") {
+  return stage === "checked_in"
+    ? sql`${appointments.workflowState} = 'scheduled'`
+    : sql`${appointments.workflowState} <> 'complete'`;
 }
 
 const calendarRouter = router({
@@ -2208,7 +2223,11 @@ const workflowRouter = router({
       // bath grouping): shared bath group, else shared booking session,
       // else same pet-family at the same scheduled time.
       let linkedCompleteIds: number[] = [];
-      if (fields.workflowState === "complete") {
+      // Check-in cascades for the same reason completion does: a family
+      // arrives in one car. Andy, 27/10/2026 — Charlie and Ruby Blackaby
+      // checked in together, and only Charlie moved.
+      if (fields.workflowState !== undefined && cascades(fields.workflowState)) {
+        const cascadeStage = fields.workflowState;
         const [linkKeys] = await db.select({
           bathGroupId: appointments.bathGroupId,
           sessionId: appointments.sessionId,
@@ -2223,14 +2242,14 @@ const workflowRouter = router({
               eq(appointments.tenantId, currentAppointment.tenantId),
               eq(appointments.bathGroupId, linkKeys.bathGroupId),
               sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
-              sql`${appointments.workflowState} <> 'complete'`,
+              cascadeFilter(cascadeStage),
             ));
           } else if (linkKeys.sessionId?.trim()) {
             linkedRows = await db.select({ id: appointments.id }).from(appointments).where(and(
               eq(appointments.tenantId, currentAppointment.tenantId),
               eq(appointments.sessionId, linkKeys.sessionId),
               sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
-              sql`${appointments.workflowState} <> 'complete'`,
+              cascadeFilter(cascadeStage),
             ));
           } else if (linkKeys.petFamilyGroupId) {
             linkedRows = await db.select({ id: appointments.id }).from(appointments)
@@ -2240,17 +2259,37 @@ const workflowRouter = router({
                 eq(pets.familyGroupId, linkKeys.petFamilyGroupId),
                 eq(appointments.scheduledStart, linkKeys.scheduledStart),
                 sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
-                sql`${appointments.workflowState} <> 'complete'`,
+                cascadeFilter(cascadeStage),
               ));
           }
           linkedCompleteIds = linkedRows.map(r => r.id).filter(id => id !== appointmentId);
         }
         if (linkedCompleteIds.length > 0) {
+          const at = Date.now();
           await db.update(appointments).set({
-            workflowState: "complete",
-            completedAt: Date.now(),
+            workflowState: cascadeStage,
+            // The stage's own timestamp, not completedAt for both — a
+            // check-in that stamped completedAt would mark the dog
+            // finished before it had been bathed.
+            ...(cascadeStage === "complete"
+              ? { completedAt: at, actualEnd: new Date(at) }
+              : { checkedInAt: at, actualStart: new Date(at) }),
             status: currentAppointment.status === "cancelled" || currentAppointment.status === "no_show" ? undefined : "confirmed",
           }).where(and(eq(appointments.tenantId, currentAppointment.tenantId), inArray(appointments.id, linkedCompleteIds)));
+
+          // The audit trail the Pet Tracker and the timing analytics read.
+          // Without these the linked dogs change stage with no record of
+          // who or why.
+          for (const id of linkedCompleteIds) {
+            await db.insert(workflowLogs).values({
+              appointmentId: id,
+              fromState: null,
+              toState: cascadeStage,
+              changedByStaffId: null,
+              notes: `Moved with the rest of the booking when another dog was ${cascadeStage === "complete" ? "picked up" : "checked in"}`,
+              changedAtMs: at,
+            }).catch(() => {});
+          }
         }
       }
       if (fields.workflowState !== undefined && workflowChangedAtMs !== null) {
