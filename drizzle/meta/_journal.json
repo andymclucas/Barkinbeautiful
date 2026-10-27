@@ -1002,6 +1002,13 @@
       "when": 1791834787557,
       "tag": "0142_appointment_discount_amount",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "5",
+      "when": 1791834787558,
+      "tag": "0143_addon_completed",
+      "breakpoints": true
     }
   ]
 }

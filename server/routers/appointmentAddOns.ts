@@ -16,7 +16,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
-import { appointmentAddOns, pricingServices } from "../../drizzle/schema";
+import { appointmentAddOns, pricingServices, staff } from "../../drizzle/schema";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import { validateLineDiscount, MAX_DISCOUNT_REASON } from "../../shared/lineDiscount";
 import { addOnRequiresManualPrice, addOnsTotal } from "../../shared/appointmentAddOns";
@@ -171,6 +171,53 @@ export const appointmentAddOnsRouter = router({
       }).where(eq(appointmentAddOns.id, input.id));
 
       return { success: true };
+    }),
+
+  /**
+   * Tick an extra off once it has been done.
+   *
+   * Lauren, 27/10/2026: "We need them to be able to put a tick next to
+   * it so we know it's checked off & completed." The board already
+   * showed which extras a dog needed; nothing said whether one had
+   * happened, so checking meant walking out the back to ask.
+   *
+   * operationalProcedure, and that is the whole point: the bather who
+   * did the teeth clean is a restricted staff account, and they are
+   * exactly who should be ticking it. protectedProcedure would reject
+   * them and leave the job to whoever has an office login.
+   *
+   * Toggles rather than only setting, because the commonest correction
+   * is a tick on the wrong line.
+   */
+  setDone: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().int().positive().default(1),
+      id: z.number(),
+      done: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Database unavailable" });
+
+      const [row] = await db.select().from(appointmentAddOns).where(and(
+        eq(appointmentAddOns.id, input.id),
+        eq(appointmentAddOns.tenantId, tenantOf(ctx, input)),
+      )).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "That add-on is no longer on this appointment" });
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, row.appointmentId);
+
+      // Who ticked it comes from the signed-in user's staff record, not
+      // from the client: the point of recording it is that it cannot be
+      // claimed on somebody else's behalf.
+      const [me] = await db.select({ id: staff.id }).from(staff)
+        .where(and(eq(staff.tenantId, tenantOf(ctx, input)), eq(staff.userId, ctx.user.id))).limit(1);
+
+      await db.update(appointmentAddOns).set({
+        completedAt: input.done ? new Date() : null,
+        completedByStaffId: input.done ? (me?.id ?? null) : null,
+      }).where(eq(appointmentAddOns.id, input.id));
+
+      return { success: true, done: input.done };
     }),
 
   remove: operationalProcedure

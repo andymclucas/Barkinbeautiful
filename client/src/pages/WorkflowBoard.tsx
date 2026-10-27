@@ -181,6 +181,18 @@ export default function WorkflowBoard() {
     onSuccess: () => refetch(),
     onError: (e) => toast.error(e.message),
   });
+  /**
+   * Ticking an extra off from the board.
+   *
+   * Lauren, 27/10/2026: bathers need to mark a teeth clean or a de-matt
+   * done so nobody has to walk out the back and ask. The board refetches
+   * so every screen in the salon shows the tick, not just this one.
+   */
+  const toggleAddOn = trpc.appointmentAddOns.setDone.useMutation({
+    onSuccess: () => refetch(),
+    onError: (e) => toast.error(e.message),
+  });
+
   const setBathPriority = trpc.workflow.setBathPriority.useMutation({
     onSuccess: ({ updated }) => {
       toast.success(updated > 1 ? `Bath priority updated for ${updated} linked dogs` : "Bath priority updated");
@@ -700,6 +712,7 @@ export default function WorkflowBoard() {
               setFamilyLinkPopup,
               setFamilySearch,
               setBathPriority,
+    toggleAddOnDone: (addOnId: number, done: boolean) => toggleAddOn.mutate({ id: addOnId, done }),
               bathGroupCandidates,
               setBathGroupPopup,
               setBathGroupSelectedIds,

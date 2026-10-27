@@ -2143,13 +2143,17 @@ const workflowRouter = router({
        * queried, so Teeth Ultra Clean and Anal Glands were invisible to
        * the person who has to do them.
        */
-      const addOnsByAppointment = new Map<number, Array<{ name: string; quantity: number }>>();
+      const addOnsByAppointment = new Map<number, Array<{ id: number; name: string; quantity: number; completedAt: Date | null }>>();
       if (appointmentIds.length > 0) {
         const addOnRows = await db
           .select({
             appointmentId: appointmentAddOns.appointmentId,
+            // The board needs the id to tick it off, and completedAt to
+            // show whether it has been. Lauren, 27/10/2026.
+            id: appointmentAddOns.id,
             name: appointmentAddOns.name,
             quantity: appointmentAddOns.quantity,
+            completedAt: appointmentAddOns.completedAt,
           })
           .from(appointmentAddOns)
           .where(and(
@@ -2159,7 +2163,7 @@ const workflowRouter = router({
           .orderBy(asc(appointmentAddOns.id));
         for (const addOn of addOnRows) {
           const list = addOnsByAppointment.get(addOn.appointmentId) ?? [];
-          list.push({ name: addOn.name, quantity: addOn.quantity });
+          list.push({ id: addOn.id, name: addOn.name, quantity: addOn.quantity, completedAt: addOn.completedAt });
           addOnsByAppointment.set(addOn.appointmentId, list);
         }
       }

@@ -1631,6 +1631,15 @@ export const appointmentAddOns = mysqlTable("appointment_add_ons", {
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   /** Why. Required whenever either is set — see shared/lineDiscount.ts. */
   discountReason: varchar("discount_reason", { length: 200 }),
+  /**
+   * When this extra was actually done, and by whom. NULL means not yet.
+   *
+   * Lauren, 27/10/2026: the board showed which extras a dog needed but
+   * not whether any had been done, so checking meant walking out the
+   * back to ask the bathers.
+   */
+  completedAt: timestamp("completed_at"),
+  completedByStaffId: int("completed_by_staff_id"),
   createdByUserId: int("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [

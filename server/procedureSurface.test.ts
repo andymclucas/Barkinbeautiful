@@ -116,6 +116,7 @@ const OPERATIONAL = [
   "appointmentAddOnsRouter.catalogue",
   "appointmentAddOnsRouter.list",
   "appointmentAddOnsRouter.remove",
+  "appointmentAddOnsRouter.setDone",
   "appointmentAddOnsRouter.update",
   "authRouter.getStaffColumnOrder",
   "authRouter.setStaffColumnOrder",
@@ -265,7 +266,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(341);
+    expect(surface).toHaveLength(342);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -276,7 +277,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(114);
+    expect(OPERATIONAL).toHaveLength(115);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

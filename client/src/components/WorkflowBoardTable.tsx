@@ -14,7 +14,7 @@ import { joinedContactBadge } from "@shared/appointmentContact";
 import { PetAlertButton } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
-import { CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
+import { Check, CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -38,6 +38,11 @@ import { toast } from "sonner";
 export type StaffLite = { id: number; name: string; role: string; photoUrl?: string | null; colourHex?: string | null };
 
 export type BoardActions = {
+  /**
+   * Tick an extra off, or untick it. Lauren, 27/10/2026 — the board
+   * showed which extras a dog needed but not whether any were done.
+   */
+  toggleAddOnDone: (addOnId: number, done: boolean) => void;
   update: (id: number, patch: Record<string, unknown>, meta?: { petName?: string | null }) => void;
   updateStagePending: boolean;
   advanceStage: (appt: any) => void;
@@ -357,6 +362,7 @@ export function WorkflowBoardTable({
     setFamilyLinkPopup: noop,
     setFamilySearch: noop,
     setBathPriority: { isPending: false, mutate: noop },
+    toggleAddOnDone: noop,
     bathGroupCandidates: [],
     setBathGroupPopup: noop,
     setBathGroupSelectedIds: noop,
@@ -769,16 +775,44 @@ export function WorkflowBoardTable({
                           that should shout. */}
                       {appt.addOns?.length > 0 && (
                         <div className="flex flex-wrap gap-0.5 mt-0.5">
-                          {appt.addOns.map((addOn: { name: string; quantity: number }, i: number) => (
-                            <span
-                              key={`${addOn.name}-${i}`}
-                              className="inline-flex items-center rounded px-1 py-px text-[10px] font-semibold leading-tight bg-amber-100 text-amber-900 ring-1 ring-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:ring-amber-800"
-                              title={`Add-on: ${addOn.name}${addOn.quantity > 1 ? ` ×${addOn.quantity}` : ""}`}
+                          {appt.addOns.map((addOn: { id?: number; name: string; quantity: number; completedAt?: string | Date | null }, i: number) => {
+                            const done = Boolean(addOn.completedAt);
+                            /**
+                             * Lauren, 27/10/2026: "We have to go out the
+                             * back to make sure the bathers have seen the
+                             * add on note. We need them to be able to put
+                             * a tick next to it so we know it's checked
+                             * off & completed."
+                             *
+                             * Amber means still to do, green with a tick
+                             * means done. It stays on the row rather than
+                             * disappearing: the groom was still charged
+                             * for it, and a line that vanishes when ticked
+                             * looks like a mistake.
+                             */
+                            return (
+                            <button
+                              key={addOn.id ?? `${addOn.name}-${i}`}
+                              type="button"
+                              disabled={readOnly || !addOn.id}
+                              onClick={() => addOn.id && a.toggleAddOnDone(addOn.id, !done)}
+                              className={`inline-flex items-center rounded px-1 py-px text-[10px] font-semibold leading-tight ring-1 ${
+                                done
+                                  ? "bg-emerald-100 text-emerald-900 ring-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-200 dark:ring-emerald-800"
+                                  : "bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-950/60 dark:text-amber-200 dark:ring-amber-800"
+                              } ${readOnly ? "" : "hover:brightness-95"}`}
+                              title={done
+                                ? `${addOn.name} — done. Tap to undo.`
+                                : `Add-on: ${addOn.name}${addOn.quantity > 1 ? ` ×${addOn.quantity}` : ""} — tap when done`}
                             >
-                              {shortAddOnLabel(addOn.name)}
+                              {done && <Check className="mr-0.5 h-2.5 w-2.5" />}
+                              <span className={done ? "line-through decoration-1" : ""}>
+                                {shortAddOnLabel(addOn.name)}
+                              </span>
                               {addOn.quantity > 1 && <span className="ml-0.5">×{addOn.quantity}</span>}
-                            </span>
-                          ))}
+                            </button>
+                            );
+                          })}
                         </div>
                       )}
                       {/* A free-text note staff can type on the board. Kept

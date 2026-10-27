@@ -58,6 +58,7 @@ function boardActions(over: Partial<BoardActions> = {}): BoardActions {
     update: vi.fn(),
     updateStagePending: false,
     advanceStage: vi.fn(),
+    toggleAddOnDone: vi.fn(),
     revertStage: vi.fn(),
     dragApptId: { current: null },
     boardData: undefined,
