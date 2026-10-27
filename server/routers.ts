@@ -101,6 +101,7 @@ import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
+import { trackerSmsAllowed } from "../shared/trackerSmsGate";
 import { sendBookingConfirmation } from "./bookingConfirmation";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
 import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
@@ -1447,7 +1448,11 @@ const calendarRouter = router({
 
       // Pet Tracker links are operationally useful but must not be sent during the
       // prototype. A successful send is logged and marked once to prevent repeats.
-      if (input.newState === "checked_in" && !appt.trackerSmsSent && appt.trackerToken && process.env.SMS_AUTOMATION_ENABLED === "true") {
+      // Off unless TRACKER_SMS_ENABLED is explicitly "true" — Andy,
+      // 27/10/2026: "Do not send any check in SMS to the clients with
+      // the workflow at this point." Its own switch rather than the
+      // global one, which also gates the reminders.
+      if (input.newState === "checked_in" && !appt.trackerSmsSent && appt.trackerToken && trackerSmsAllowed(process.env)) {
         const [trackerRecipient] = await db.select({
           firstName: clients.firstName,
           phone: clients.phone,
