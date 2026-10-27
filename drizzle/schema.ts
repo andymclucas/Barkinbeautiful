@@ -677,6 +677,35 @@ export const petCodes = mysqlTable("pet_codes", {
 
 export type PetCode = typeof petCodes.$inferSelect;
 
+/**
+ * Which dogs a membership covers.
+ *
+ * `memberships.petId` names one dog; 27 of the salon's 151 active plans
+ * are priced for a household. "Silver+ (x2)" at $58 a week is two dogs
+ * on one fee, not two memberships — so without this the second dog's
+ * grooms carry no membership, are counted as paying, and leave their
+ * share of the subscription out of every membership figure.
+ *
+ * Holds EVERY covered dog, including the plan's own `petId`, so the
+ * answer to "which dogs does this plan cover" is one query with
+ * nothing to reconcile. `memberships.petId` stays as the primary dog
+ * because every existing query reads it.
+ */
+export const membershipPets = mysqlTable("membership_pets", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  membershipId: int("membership_id").notNull(),
+  petId: int("pet_id").notNull(),
+  /** A plan covering a dog is a money decision, so it says who decided. */
+  addedByUserId: int("added_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_membership_pets").on(t.membershipId, t.petId),
+  index("idx_membership_pets_tenant_pet").on(t.tenantId, t.petId),
+]);
+
+export type MembershipPet = typeof membershipPets.$inferSelect;
+
 export const pricingServices = mysqlTable("pricing_services", {
   id: int("id").autoincrement().primaryKey(),
   tenantId: int("tenant_id").notNull().references(() => tenants.id),

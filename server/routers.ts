@@ -12,6 +12,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
+import { needsPetAssignment, missingPetCount } from "@shared/membershipCoveredPets";
 import { missedCallSearchFilter } from "./missedCallSearchFilter";
 import { departedBookingMessage } from "@shared/petBookable";
 import { messageSearchFilter } from "./messageSearchFilter";
@@ -28,7 +29,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
+  invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
@@ -5391,6 +5392,152 @@ function rateSummary(weeklyRate: string | null | undefined, cycle: "weekly" | "m
 }
 
 const membershipsRouter = router({
+  /**
+   * Plans whose name claims more dogs than are recorded against them.
+   *
+   * The salon prices a household on one fee and writes the count into
+   * the plan's name — "Silver+ (x2)" at $58 is two dogs, not two
+   * memberships. Only the named dog was ever linked, so the others'
+   * grooms carry no membership: counted as paying, their share of the
+   * subscription missing from every membership figure, and their
+   * bookings among the 78 that sit unlinked.
+   *
+   * Which dog goes on which plan is a human's answer. This only
+   * decides what to ASK about, which is the one thing the plan name
+   * may be used for.
+   */
+  listPetAssignments: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const tenantId = tenantOf(ctx, input);
+
+      const rows = await db
+        .select({
+          membershipId: memberships.id,
+          name: memberships.name,
+          pricePerCycle: memberships.pricePerCycle,
+          tier: memberships.tier,
+          clientId: memberships.clientId,
+          primaryPetId: memberships.petId,
+          clientFirstName: clients.firstName,
+          clientLastName: clients.lastName,
+        })
+        .from(memberships)
+        .leftJoin(clients, eq(memberships.clientId, clients.id))
+        .where(and(eq(memberships.tenantId, tenantId), eq(memberships.status, "active")));
+
+      const covered = await db
+        .select({ membershipId: membershipPets.membershipId, petId: membershipPets.petId })
+        .from(membershipPets)
+        .where(eq(membershipPets.tenantId, tenantId));
+      const coveredBy = new Map<number, number[]>();
+      for (const row of covered) {
+        coveredBy.set(row.membershipId, [...(coveredBy.get(row.membershipId) ?? []), row.petId]);
+      }
+
+      const candidates = rows
+        .map((row) => ({
+          ...row,
+          // Until the backfill runs, a plan with no rows in the join
+          // table still covers its own dog — reading the table alone
+          // would report every plan as covering nothing.
+          coveredPetIds: coveredBy.get(row.membershipId)
+            ?? (row.primaryPetId ? [row.primaryPetId] : []),
+        }))
+        .filter((row) => needsPetAssignment(row));
+
+      if (candidates.length === 0) return [];
+
+      // The household's dogs, so staff pick from a list rather than
+      // typing a name. Departed dogs are left out: a plan cannot start
+      // covering a dog that has died.
+      const clientIds = Array.from(new Set(candidates.map((c) => c.clientId)));
+      const householdPets = await db
+        .select({ id: pets.id, clientId: pets.clientId, name: pets.name, breed: pets.breed })
+        .from(pets)
+        .where(and(
+          eq(pets.tenantId, tenantId),
+          inArray(pets.clientId, clientIds),
+          eq(pets.status, "active"),
+        ));
+
+      return candidates.map((c) => ({
+        ...c,
+        clientName: [c.clientFirstName, c.clientLastName].filter(Boolean).join(" ").trim(),
+        missing: missingPetCount(c),
+        householdPets: householdPets.filter((p) => p.clientId === c.clientId),
+      }));
+    }),
+
+  /**
+   * Record which dogs a plan covers.
+   *
+   * Replaces the whole set rather than adding to it, so unticking a dog
+   * works and the screen says what it means. The plan's own pet is
+   * always included — a membership that did not cover the dog it names
+   * would be a different kind of wrong.
+   *
+   * adminProcedure: this decides whose grooms are free.
+   */
+  setCoveredPets: adminProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      membershipId: z.number().int().positive(),
+      petIds: z.array(z.number().int().positive()).max(10),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+
+      const [membership] = await db
+        .select({ id: memberships.id, clientId: memberships.clientId, petId: memberships.petId })
+        .from(memberships)
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantId)))
+        .limit(1);
+      if (!membership) throw new Error("Membership not found");
+
+      const wanted = Array.from(new Set([
+        ...(membership.petId ? [membership.petId] : []),
+        ...input.petIds,
+      ]));
+
+      /**
+       * Every dog must belong to the plan's own client.
+       *
+       * Without this an id typed into the request could put another
+       * household's dog on somebody else's fee — free grooms for one
+       * client, charged to another.
+       */
+      const owned = await db
+        .select({ id: pets.id })
+        .from(pets)
+        .where(and(
+          eq(pets.tenantId, tenantId),
+          eq(pets.clientId, membership.clientId),
+          inArray(pets.id, wanted.length > 0 ? wanted : [-1]),
+        ));
+      const ownedIds = new Set(owned.map((p) => p.id));
+      const foreign = wanted.filter((id) => !ownedIds.has(id));
+      if (foreign.length > 0) throw new Error("Those dogs are not on this client's record");
+
+      await db.delete(membershipPets).where(and(
+        eq(membershipPets.tenantId, tenantId),
+        eq(membershipPets.membershipId, membership.id),
+      ));
+      if (wanted.length > 0) {
+        await db.insert(membershipPets).values(wanted.map((petId) => ({
+          tenantId,
+          membershipId: membership.id,
+          petId,
+          addedByUserId: ctx.user.id,
+        })));
+      }
+      return { covered: wanted.length };
+    }),
+
   list: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
