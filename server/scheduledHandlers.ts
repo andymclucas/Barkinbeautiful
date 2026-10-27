@@ -172,6 +172,19 @@ async function resumePausedMembershipsDue(
       stripeSubscriptionId: memberships.stripeSubscriptionId,
     })
     .from(memberships)
+    /**
+     * No tenant filter, deliberately: a scheduled job runs for the
+     * whole platform, not one salon.
+     *
+     * It is not yet TRUE multi-tenant, though, and that is worth
+     * naming rather than discovering. `resumeMembershipSubscription`
+     * refuses any membership whose tenantId is not 1, so a second
+     * salon's rows would be selected here and then throw, once each
+     * run, into the log. The guard is right — it is there so a bug
+     * cannot bill another salon's client — and the fix belongs with it
+     * rather than here. When billing goes multi-tenant, these two
+     * change together.
+     */
     .where(eq(memberships.status, "paused"));
 
   const due = membershipsDueToResume(paused, now);
