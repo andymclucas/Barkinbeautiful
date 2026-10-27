@@ -102,6 +102,7 @@ import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
+import { priceForPet } from "../shared/multiPetPricing";
 import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount";
 import { sendBookingConfirmation } from "./bookingConfirmation";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
@@ -1153,7 +1154,21 @@ const calendarRouter = router({
         // box can never bill a member for a groom they already pay for.
         const petPrice = priceForCoveredAppointment(
           coverage.fullyCovered,
-          input.priceByPetId?.[String(petId)] ?? input.price,
+          /**
+           * This dog's own figure, never the booking total.
+           *
+           * It used to be `priceByPetId[pet] ?? price`, so a dog missing
+           * from the map silently took the WHOLE booking figure — $590
+           * for three dogs landed entirely on Ruby, 27/10/2026. A dog
+           * nobody priced is now left unpriced, which the salon already
+           * handles and which somebody can see and fix.
+           */
+          priceForPet({
+            petId,
+            priceByPetId: input.priceByPetId,
+            singlePrice: input.price,
+            petCount: petIds.length,
+          }),
         );
         const [result] = await db.insert(appointments).values({
           tenantId: tenantOf(ctx, input),
