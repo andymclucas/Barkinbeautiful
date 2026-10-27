@@ -3,6 +3,7 @@ import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
 import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCascade";
 import { trpc } from "@/lib/trpc";
 import { splitDaycare } from "@shared/daycareBoard";
+import { useBuildVersionReload } from "@/hooks/useBuildVersionReload";
 import { DaycareBoardSection } from "@/components/DaycareBoardSection";
 import { useTimezone } from "@/lib/timezone";
 import { dayInZone, timeOfDayInZone } from "@shared/calendarDay";
@@ -40,6 +41,16 @@ import {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function WorkflowBoard() {
+  /**
+   * The board is left open all day and cast to a screen in the salon,
+   * so it goes just as stale as the wall display did — but staff type
+   * into it, so it says so rather than reloading under them.
+   */
+  const [newBuildAvailable, setNewBuildAvailable] = useState(false);
+  useBuildVersionReload({
+    mode: "notify",
+    onNewBuild: useCallback(() => setNewBuildAvailable(true), []),
+  });
   const [location, navigate] = useLocation();
   const reviewParams = new URLSearchParams(location.split("?")[1] ?? "");
   const reviewDate = reviewParams.get("date");
@@ -709,6 +720,26 @@ export default function WorkflowBoard() {
               })}
             </div>
           </section>
+        )}
+
+        {newBuildAvailable && (
+          /* Not a reload: somebody may be part-way through typing a
+             price or a cage number. It waits to be asked. */
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900/60 dark:bg-amber-950/40">
+            <span className="font-medium text-amber-900 dark:text-amber-200">
+              This board is running an old version.
+            </span>
+            <span className="text-amber-800/80 dark:text-amber-200/80">
+              Reload when you have a moment — nothing is lost once you do.
+            </span>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="ml-auto rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+            >
+              Reload now
+            </button>
+          </div>
         )}
 
         {/* Main whiteboard table */}

@@ -87,6 +87,29 @@ describe("useBuildVersionReload", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
+  /**
+   * The staff board is cast to a screen AND typed into, so it must be
+   * told rather than reloaded — a reload mid-sentence loses whatever
+   * somebody was entering.
+   */
+  it("notifies instead of reloading when asked to", async () => {
+    serve(indexHtml("index-NEWBUILD.js"));
+    const onNewBuild = vi.fn();
+    renderHook(() => useBuildVersionReload({ intervalMs: 1000, mode: "notify", onNewBuild }));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onNewBuild).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("stays quiet in notify mode while the build is unchanged", async () => {
+    serve(indexHtml(CURRENT));
+    const onNewBuild = vi.fn();
+    renderHook(() => useBuildVersionReload({ intervalMs: 1000, mode: "notify", onNewBuild }));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(onNewBuild).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it("stops polling once the screen unmounts", async () => {
     serve(indexHtml(CURRENT));
     const { unmount } = renderHook(() => useBuildVersionReload({ intervalMs: 1000 }));
