@@ -1016,6 +1016,20 @@
       "when": 1791834787559,
       "tag": "0144_membership_pause_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "5",
+      "when": 1791834787560,
+      "tag": "0145_membership_pets",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "5",
+      "when": 1791834787561,
+      "tag": "0146_membership_pets_index",
+      "breakpoints": true
     }
   ]
 }

@@ -21,6 +21,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 import { weeklyToMonthly, describeRate, annualisedCost } from "@shared/membershipBillingCycle";
 
 import { describePause, resolvePauseResumesAt } from "@shared/membershipPause";
+import { MembershipPetAssignment } from "@/components/MembershipPetAssignment";
 type MembershipItem = {
   id: number;
   clientId: number | null;
@@ -1390,6 +1391,11 @@ export default function Memberships() {
         </div>
 
         <MembershipSignupRequests />
+        {/* Above the tabs, beside the sign-up requests: both are "a
+            human has to decide something" and both disappear once
+            nobody does. It renders nothing at all when every plan
+            covers as many dogs as its name says. */}
+        <MembershipPetAssignment />
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           {/* Tabs are an inline-flex row: on a phone they ran past the
               right edge and took the page with them. Scroll instead. */}
