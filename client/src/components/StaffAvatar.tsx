@@ -22,7 +22,11 @@ export function StaffAvatar({
   ring?: boolean;
 }) {
   const [errored, setErrored] = useState(false);
-  const colour = colourHex ?? "#7c3aed";
+  // A groomer with no colour of their own falls back to the salon's
+  // brand rather than stock violet — on a green-branded salon a stray
+  // purple disc is the one thing that still looks like someone else's
+  // software.
+  const colour = colourHex ?? "var(--brand-primary)";
 
   // "Ashleigh Knight" -> "AK"; single names -> first letter.
   const initials = (name ?? "")

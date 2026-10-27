@@ -11,6 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2, Bell, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck, Clock3, RotateCcw, Star } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { applyBrandTheme, readLogoColours, readLogoColoursFromUrl } from "@/lib/brandTheme";
+import { deriveAccent, deriveSidebar } from "@shared/brandPalette";
 import { useEffect, useState } from "react";
 import { BreedInput } from "@/components/BreedInput";
 
@@ -39,13 +41,70 @@ export default function Settings() {
     const values = saved ?? fallback;
     setTimingMinutes({ bath: String(values.bathMinutes), dry: String(values.dryMinutes), groom: String(values.groomMinutes), total: String(values.totalMinutes) });
   }, [timingReviewSettings, timingScope, timingSize, timingBreed]);
-  const applyBrand = (next: typeof brand) => {
-    const root = document.documentElement;
-    root.style.setProperty("--brand-primary", next.primary);
-    root.style.setProperty("--brand-accent", next.accent);
-    root.style.setProperty("--brand-sidebar", next.sidebar);
-    root.style.setProperty("--font-sans", next.font);
+  const applyBrand = (next: typeof brand) => { applyBrandTheme(next); };
+
+  /**
+   * Take the salon's colours from the logo they just uploaded.
+   *
+   * This is the whole feature as a salon experiences it: upload a
+   * logo, and the app is theirs. The pickers below stay — a derived
+   * palette is a good start, not a ruling — but nobody has to use them.
+   *
+   * The colours are read from the file in the browser BEFORE it is
+   * uploaded, so a salon still sees their palette if the upload fails,
+   * and nothing has to be downloaded again to work it out. A logo with
+   * no colour in it (black type on transparent) leaves the existing
+   * colours alone rather than tinting everything with whichever grey
+   * came out on top.
+   */
+  const handleLogoUpload = async (file: File) => {
+    const colours = await readLogoColours(file);
+    let next = brand;
+    if (colours.length > 0) {
+      const primary = colours[0];
+      next = { ...brand, primary, accent: deriveAccent(primary), sidebar: deriveSidebar(primary) };
+      setBrand(next);
+      applyBrand(next);
+    }
+
+    try {
+      const res = await fetch("/api/upload/salon-logo", {
+        method: "POST", headers: { "Content-Type": file.type }, body: file,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      next = { ...next, logoUrl: data.url };
+      setBrand(next);
+      toast.success(colours.length > 0
+        ? "Logo uploaded and colours taken from it. Save branding to keep them."
+        : "Logo uploaded. No colour found in it, so the palette is unchanged.");
+    } catch {
+      toast.error(colours.length > 0
+        ? "Colours read from the logo, but the upload failed — try the upload again."
+        : "Logo upload failed");
+    }
   };
+  /**
+   * Take the colours from the logo that is already on file.
+   *
+   * Without this the derivation only ever runs at the moment of
+   * upload, so a salon that uploaded a logo before this existed would
+   * have to upload it again to get at its colours.
+   */
+  const takeColoursFromCurrentLogo = async () => {
+    if (!brand.logoUrl) return;
+    const colours = await readLogoColoursFromUrl(brand.logoUrl);
+    if (colours.length === 0) {
+      toast.error("No colour could be read from that logo — pick the colours by hand below.");
+      return;
+    }
+    const primary = colours[0];
+    const next = { ...brand, primary, accent: deriveAccent(primary), sidebar: deriveSidebar(primary) };
+    setBrand(next);
+    applyBrand(next);
+    toast.success(`Colours taken from your logo. Save branding to keep them.`);
+  };
+
   const updateBrand = trpc.settings.updateTenantInfo.useMutation({
     onSuccess: () => { utils.settings.getTenantInfo.invalidate({}); toast.success("Salon branding saved"); },
     onError: () => toast.error("Could not save salon branding"),
@@ -135,7 +194,7 @@ export default function Settings() {
                 </div>
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div className="rounded-xl border bg-card/75 p-3 space-y-2 brand-lift"><Label>Platform font</Label><select value={brand.font} onChange={e => { const next = { ...brand, font: e.target.value }; setBrand(next); applyBrand(next); }} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option>Inter</option><option>DM Sans</option><option>Plus Jakarta Sans</option><option>Manrope</option><option>Nunito Sans</option></select></div>
-                  <div className="rounded-xl border bg-card/75 p-3 space-y-2 brand-lift"><Label>Custom salon logo</Label><Input type="file" accept="image/*" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; try { const res = await fetch("/api/upload/salon-logo", { method: "POST", headers: { "Content-Type": file.type }, body: file }); const data = await res.json(); if (!res.ok) throw new Error(data.error); setBrand(v => ({ ...v, logoUrl: data.url })); toast.success("Logo uploaded. Save branding to apply it."); } catch { toast.error("Logo upload failed"); } }} /><p className="text-xs text-muted-foreground">PNG, JPG or WebP, max 5 MB.</p></div>
+                  <div className="rounded-xl border bg-card/75 p-3 space-y-2 brand-lift"><Label>Custom salon logo</Label><Input type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (file) void handleLogoUpload(file); }} /><p className="text-xs text-muted-foreground">PNG, JPG or WebP, max 5 MB. The colours below are taken from it automatically — change any of them if you'd rather.</p>{brand.logoUrl ? <Button type="button" variant="outline" size="sm" onClick={() => void takeColoursFromCurrentLogo()}>Use my logo's colours</Button> : null}</div>
                 </div>
                 <div className="rounded-xl bg-[var(--brand-sidebar)] p-4 text-white flex items-center justify-between gap-4">
                   <div><p className="font-semibold">Live brand preview</p><p className="text-sm text-white/70">Navigation and shared dashboard surfaces update immediately.</p></div>

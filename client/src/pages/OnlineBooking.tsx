@@ -20,7 +20,11 @@ import { getBookingGroomerDisplayName } from "../../../shared/bookingGroomerDisp
 import { getActiveTimeZone } from "@/lib/timezone";
 import { OnlineBookingEstimate } from "@/components/OnlineBookingEstimate";
 
+import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 export default function OnlineBooking({ previewMode = false }: { previewMode?: boolean }) {
+  // This page is sent to the salon's own clients, so it wears the
+  // salon's colours rather than stock Groomigo ones.
+  usePublicBrandTheme();
   const publicProfiles = trpc.onlineBooking.listGroomerProfiles.useQuery({}, { enabled: !previewMode });
   const previewProfiles = trpc.onlineBooking.listPreviewGroomerProfiles.useQuery({}, { enabled: previewMode });
   const groomers = previewMode ? previewProfiles.data : publicProfiles.data;

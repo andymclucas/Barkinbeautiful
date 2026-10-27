@@ -7,7 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 export default function ClientPortalSetup() {
+  // This page is sent to the salon's own clients, so it wears the
+  // salon's colours rather than stock Groomigo ones.
+  usePublicBrandTheme();
   const { token } = useParams<{ token: string }>();
   const [, navigate] = useLocation();
   const [password, setPassword] = useState("");

@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { MAX_SIGNUP_DOGS } from "@shared/membershipSignup";
 
+import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 /**
  * Joining a membership without ringing the salon.
  *
@@ -122,6 +123,9 @@ function DogRow({
 }
 
 export default function MembershipSignup() {
+  // This page is sent to the salon's own clients, so it wears the
+  // salon's colours rather than stock Groomigo ones.
+  usePublicBrandTheme();
   // No retry: this fails with FORBIDDEN when the salon has not switched
   // sign-up on, and retrying does not change that — it only keeps the page
   // on a spinner through three rounds of backoff.

@@ -67,6 +67,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { trpc } from "@/lib/trpc";
+import { applyBrandTheme } from "@/lib/brandTheme";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { MyProfileDialog } from "@/components/MyProfileDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
@@ -97,33 +98,6 @@ const staffOperationMenuItems = menuItems.filter((item) => isStaffOperationRoute
 
 
 /** Perceived luminance 0–1 for a #rrggbb hex colour. */
-function luma(hex: string): number {
-  const h = hex.replace("#", "");
-  if (h.length !== 6) return 0.5;
-  const r = parseInt(h.slice(0, 2), 16) / 255;
-  const g = parseInt(h.slice(2, 4), 16) / 255;
-  const b = parseInt(h.slice(4, 6), 16) / 255;
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-/** Set sidebar CSS custom properties so foreground colours are always readable. */
-function applySidebarColor(hex: string, root: HTMLElement) {
-  root.style.setProperty("--brand-sidebar", hex);
-  root.style.setProperty("--color-sidebar", hex);
-  const dark = luma(hex) < 0.45;
-  if (dark) {
-    root.style.setProperty("--color-sidebar-foreground",        "rgba(255,255,255,0.90)");
-    root.style.setProperty("--color-sidebar-accent",            "rgba(255,255,255,0.09)");
-    root.style.setProperty("--color-sidebar-accent-foreground", "rgba(255,255,255,0.92)");
-    root.style.setProperty("--color-sidebar-border",            "rgba(255,255,255,0.10)");
-  } else {
-    root.style.setProperty("--color-sidebar-foreground",        "oklch(0.30 0.04 288)");
-    root.style.setProperty("--color-sidebar-accent",            "oklch(0.955 0.022 292)");
-    root.style.setProperty("--color-sidebar-accent-foreground", "oklch(0.42 0.16 292)");
-    root.style.setProperty("--color-sidebar-border",            "oklch(0.935 0.012 292)");
-  }
-}
-
 /** Quick brand-colour editor rendered in a Dialog. */
 function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const utils = trpc.useUtils();
@@ -150,12 +124,9 @@ function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChang
     onError: () => toast.error("Could not save colours"),
   });
 
-  const preview = (next: typeof colors) => {
-    const root = document.documentElement;
-    root.style.setProperty("--brand-primary",        next.primary);
-    root.style.setProperty("--brand-primary-strong", next.primary);
-    applySidebarColor(next.sidebar, root);
-  };
+  // Previews through the same applier the saved theme uses, so what a
+  // salon sees while dragging the picker is what they get on reload.
+  const preview = (next: typeof colors) => { applyBrandTheme(next); };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -283,24 +254,12 @@ function DashboardLayoutContent({
   const { data: myStaff, refetch: refetchMyStaff } = trpc.staff.getMyProfile.useQuery();
 
 
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const root = document.documentElement;
-    const apply = (name: string, value: string | null | undefined) => { if (value) root.style.setProperty(name, value); };
-    apply("--brand-primary", tenantBranding?.brandPrimary);
-    apply("--brand-accent",  tenantBranding?.brandAccent);
-    applySidebarColor(tenantBranding?.brandSidebar ?? "#1e1229", root);
-    return () => {
-      root.style.removeProperty("--brand-primary");
-      root.style.removeProperty("--brand-accent");
-      root.style.removeProperty("--brand-sidebar");
-      root.style.removeProperty("--color-sidebar");
-      root.style.removeProperty("--color-sidebar-foreground");
-      root.style.removeProperty("--color-sidebar-accent");
-      root.style.removeProperty("--color-sidebar-accent-foreground");
-      root.style.removeProperty("--color-sidebar-border");
-    };
-  }, [tenantBranding]);
+  useEffect(() => applyBrandTheme({
+    primary: tenantBranding?.brandPrimary,
+    accent: tenantBranding?.brandAccent,
+    sidebar: tenantBranding?.brandSidebar,
+    font: tenantBranding?.brandFont,
+  }), [tenantBranding]);
 
   const activeMenuItem = menuItems.find(
     (item) => location === item.path || location.startsWith(item.path + "/")

@@ -91,6 +91,11 @@ const PUBLIC = [
   "salonSignupRouter.previewSlug",
   "salonSignupRouter.requestCode",
   "salonSignupRouter.verifyCode",
+  // The salon's public identity — name, logo and four colours — so the
+  // pages a salon's own customers land on can be painted in their
+  // brand. Narrower than getTenantInfo on purpose: no contact details,
+  // no timezone, no billing state.
+  "settingsRouter.getPublicBranding",
   "staffRouter.acceptInvitation",
   "staffRouter.getInvitation",
   "trackerRouter.getByToken",
@@ -266,13 +271,13 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(342);
+    expect(surface).toHaveLength(343);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
   it("exposes exactly these procedures without authentication", () => {
     expect(idsOfKind(surface, "public")).toEqual(PUBLIC);
-    expect(PUBLIC).toHaveLength(50);
+    expect(PUBLIC).toHaveLength(51);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

@@ -295,7 +295,7 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2 min-w-0">
                           <span
                             className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center text-white text-[9px] font-bold"
-                            style={{ background: a.staffColour ?? "#7c3aed" }}
+                            style={{ background: a.staffColour ?? "var(--brand-primary)" }}
                           >
                             {staffInitials(a.staffName ?? null)}
                           </span>

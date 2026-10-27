@@ -7945,6 +7945,44 @@ const groomingReportsRouter = router({
 
 // ─── Settings (Tenant Info) ─────────────────────────────────────────────────────────────────────────────────
 const settingsRouter = router({
+  /**
+   * A salon's branding, for the pages their own customers land on.
+   *
+   * publicProcedure on purpose, and the narrowest one in this file.
+   * The client portal, the grooming card, online booking and the
+   * membership sign-up are all reached without a staff session — some
+   * without any session at all — and they are the surfaces a salon
+   * most wants to look like theirs. Without this they render in stock
+   * Groomigo colours while the staff app is branded, which is a worse
+   * look than not theming at all.
+   *
+   * It returns the salon's public identity and nothing else: the name
+   * and logo already appear on those pages, and the four colours are
+   * on display the moment anyone opens one. Deliberately NOT the phone,
+   * email, address, timezone or billing state that getTenantInfo
+   * carries — none of that is needed to paint a page, and an
+   * unauthenticated endpoint should hand back only what it must.
+   */
+  getPublicBranding: publicProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const [t] = await db
+        .select({
+          name: tenants.name,
+          logoUrl: tenants.logoUrl,
+          brandFont: tenants.brandFont,
+          brandPrimary: tenants.brandPrimary,
+          brandAccent: tenants.brandAccent,
+          brandSidebar: tenants.brandSidebar,
+        })
+        .from(tenants)
+        .where(eq(tenants.id, input.tenantId))
+        .limit(1);
+      return t ?? null;
+    }),
+
   getTenantInfo: operationalProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
     .query(async ({ input, ctx }) => {
@@ -8053,7 +8091,14 @@ const settingsRouter = router({
       phone: z.string().optional(),
       email: z.string().optional(),
       address: z.string().optional(),
-      logoUrl: z.string().url().optional(),
+      /**
+       * An absolute URL (an uploaded logo on S3) or a root-relative
+       * path (one served from the app itself). The client already
+       * handles both — it prefixes a leading "/" with the origin — but
+       * this refused the relative form, so saving branding for a salon
+       * whose logo is served locally failed validation.
+       */
+      logoUrl: z.union([z.string().url(), z.string().regex(/^\/[^\s]*$/)]).optional(),
       brandFont: z.enum(["Inter", "DM Sans", "Plus Jakarta Sans", "Manrope", "Nunito Sans"]).optional(),
       brandPrimary: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       brandAccent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
