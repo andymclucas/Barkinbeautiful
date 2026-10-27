@@ -57,6 +57,7 @@ import { resolveAppointmentMembershipCoverage } from "@shared/appointmentMembers
 import { getActiveTimeZone } from "@/lib/timezone";
 import { BreedInput } from "@/components/BreedInput";
 
+import { resolveBookingEnd, isDaycareService, DEFAULT_DAYCARE_END } from "@shared/bookingEnd";
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom",
   bath_only: "Bath", fft: "FFT (Face, Feet & Hygiene Tidy)", nail_trim: "Nail Trim",
@@ -568,6 +569,12 @@ export default function ClientDetail() {
   const [bookService, setBookService] = useState("classic_groom");
   const [bookDate, setBookDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [bookTime, setBookTime] = useState("09:00");
+  /**
+   * Day care carries a real pick-up time. Everything else had a flat
+   * ninety minutes, which for a dog dropped at nine meant a booked
+   * collection of half ten on the day care board.
+   */
+  const [bookEndTime, setBookEndTime] = useState(DEFAULT_DAYCARE_END);
   const [bookStaffId, setBookStaffId] = useState<string>("");
   const { data: staffList } = trpc.staff.list.useQuery({});
   const createAppt = trpc.calendar.createMultiPetAppointment.useMutation({
@@ -616,7 +623,14 @@ export default function ClientDetail() {
   const handleBook = () => {
     if (!bookPetId) { toast.error("Please select a pet"); return; }
     const start = new Date(`${bookDate}T${bookTime}:00`);
-    const end = new Date(start.getTime() + 90 * 60000);
+    const end = resolveBookingEnd({ start, serviceType: bookService, endTime: bookEndTime });
+    if (!end) {
+      // Only day care can fail here, and only on a pick-up time that
+      // is not after the drop-off. Said out loud rather than booking
+      // something nobody meant.
+      toast.error("Pick-up time has to be after the drop-off time");
+      return;
+    }
     createAppt.mutate({
       clientId: client.id,
       petIds: Array.from(new Set([bookPetId, ...bookFamilyPetIds])).map(id => parseInt(id)),
@@ -1891,9 +1905,22 @@ export default function ClientDetail() {
                 <Input type="date" value={bookDate} onChange={e => setBookDate(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label>Time</Label>
+                <Label>{isDaycareService(bookService) ? "Drop-off" : "Time"}</Label>
                 <Input type="time" value={bookTime} onChange={e => setBookTime(e.target.value)} />
               </div>
+              {/* Only day care asks. Every other service still runs on
+                  the ninety minutes it always did; changing grooming
+                  durations is a separate decision with its own numbers
+                  behind it. */}
+              {isDaycareService(bookService) && (
+                <div className="space-y-1.5">
+                  <Label>Pick-up</Label>
+                  <Input type="time" value={bookEndTime} onChange={e => setBookEndTime(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">
+                    Shown as the &ldquo;Out&rdquo; time on the day care board.
+                  </p>
+                </div>
+              )}
             </div>
             {/* Groomer */}
             <div className="space-y-1.5">
