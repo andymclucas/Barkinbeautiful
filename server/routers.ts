@@ -8087,7 +8087,14 @@ const settingsRouter = router({
       phone: z.string().optional(),
       email: z.string().optional(),
       address: z.string().optional(),
-      logoUrl: z.string().url().optional(),
+      /**
+       * An absolute URL (an uploaded logo on S3) or a root-relative
+       * path (one served from the app itself). The client already
+       * handles both — it prefixes a leading "/" with the origin — but
+       * this refused the relative form, so saving branding for a salon
+       * whose logo is served locally failed validation.
+       */
+      logoUrl: z.union([z.string().url(), z.string().regex(/^\/[^\s]*$/)]).optional(),
       brandFont: z.enum(["Inter", "DM Sans", "Plus Jakarta Sans", "Manrope", "Nunito Sans"]).optional(),
       brandPrimary: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       brandAccent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
