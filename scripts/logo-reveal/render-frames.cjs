@@ -254,10 +254,15 @@ async function renderFrame(i, groundBuf, dogBuf) {
   /* Bloom: strong while the ink is landing, then a slow breath. */
   const pulse = Math.sin(Math.PI * seg(t, ...T.settle));
   const gain = 0.30 + 0.34 * pulse + 0.05 * Math.sin(t * 1.1);
-  const [wide, tight] = await Promise.all([
-    glow(logoBuf, Math.max(0.3, 17 * MARK_K), gain),
-    glow(logoBuf, Math.max(0.3, 5 * MARK_K), gain * 0.55),
-  ]);
+  /* ONE wide, edgeless lift — no tight bloom.
+     A tight glow (sigma ~10px at 1080p) hugs the stroke and gets its
+     own visible edge against the ground, so every line was ringed by a
+     second, softer line. That is the "double line around the logo",
+     and it survived two fixes aimed at the geometry because the
+     geometry was never the problem: the mark matches the artwork to
+     0.35%, and a scanline across any stroke is a single clean run.
+     A wide blur spreads too far to form a contour. */
+  const wide = await glow(logoBuf, Math.max(0.3, 34 * MARK_K), gain * 0.62);
 
   const grain = await sharp({
     create: { width: W, height: H, channels: 3, background: "#808080",
@@ -270,7 +275,6 @@ async function renderFrame(i, groundBuf, dogBuf) {
     { input: wide, blend: "screen" },
     { input: dogRevealed, blend: "over" },
     { input: restBuf, blend: "over" },
-    { input: tight, blend: "screen" },
     { input: grain, blend: "soft-light" },
   ]).png({ compressionLevel: 3 }).toBuffer();
 }

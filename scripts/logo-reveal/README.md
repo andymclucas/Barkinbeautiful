@@ -76,6 +76,16 @@ needed again unless the logo itself changes.
   gradient coordinates re-render at full resolution each frame, a
   moving `transform` gets promoted to a layer and resampled. A fixed
   size HTML version of this read as "pixelated" for four rounds.
+- **A tight bloom puts a second line round every stroke.** This is what
+  "the double line around the logo" actually was, and it survived two
+  fixes aimed at the geometry because the geometry was never wrong: the
+  mark matches the artwork to 0.35%, and a scanline across any stroke
+  is a single clean run. A glow blurred at about 10px at 1080p hugs the
+  line and gets its own edge against the dark ground, which reads as a
+  softer line drawn around the real one. `render-frames.cjs` now keeps
+  ONE wide, edgeless lift and no tight pass. If atmosphere is ever
+  turned back up, check a 2x crop of a held frame, not the whole frame
+  — at 100% the halo looks like intent.
 - **Reveal the mark through a mask. Never draw a pen over it.** The
   centreline is an approximation of the artwork's spine, so a stroke
   along it is a different shape from the fill: at width 24 it covers
