@@ -2,12 +2,26 @@ export type AppointmentService = "classic_groom" | "styled_groom" | "bath_only" 
 
 export type ActivePetMembership = {
   id: number;
+  /** The plan's primary dog — memberships.pet_id. Always covered. */
   petId: number;
   name: string;
   tier: string;
   serviceType: "classic" | "styled";
   status: string;
   bookingSuspended: boolean;
+  /**
+   * Every OTHER dog the plan covers, from membership_pets.
+   *
+   * A plan named "x2" or "x3" is one fee for several dogs, but only the
+   * primary lived on the membership row. So the second and third dogs
+   * were priced as though they had no plan at all — Allyson Warner pays
+   * $78 a cycle for three styled grooms and Groomigo charged for two of
+   * them. 31 dogs across 27 plans, found 28/10/2026.
+   *
+   * Optional, and the primary stands without it, because this is empty
+   * for any plan nobody has assigned dogs to yet.
+   */
+  coveredPetIds?: readonly number[];
 };
 
 export type AppointmentMembershipCoverage = {
@@ -31,7 +45,11 @@ export function resolveAppointmentMembershipCoverage(
   const membershipByPetId: Record<number, ActivePetMembership> = {};
   for (const membership of memberships) {
     if (membership.status !== "active" || membership.bookingSuspended || !membershipCoversService(membership.serviceType, appointmentService)) continue;
-    membershipByPetId[membership.petId] ??= membership;
+    // The primary AND every assigned dog. First plan wins per dog, which
+    // is the behaviour this already had when two plans named one dog.
+    for (const petId of [membership.petId, ...(membership.coveredPetIds ?? [])]) {
+      if (typeof petId === "number" && Number.isFinite(petId)) membershipByPetId[petId] ??= membership;
+    }
   }
 
   const uniquePetIds = Array.from(new Set(petIds));
