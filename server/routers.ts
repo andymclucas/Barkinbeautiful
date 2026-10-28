@@ -1,3 +1,4 @@
+import { vipPetIds } from "@shared/vipPetIds";
 import { isValidTimeZone } from "@shared/auditTimestamp";
 import { properName } from "@shared/personName";
 import { searchTerms } from "@shared/clientSearchMatch";
@@ -2228,11 +2229,22 @@ const workflowRouter = router({
       }
 
       const petIdsOnBoard = Array.from(new Set(boardRows.map(row => row.petId).filter((id): id is number => id !== null)));
-      const vipPetIds = new Set<number>();
+      // A plan covers its primary dog AND every dog assigned to it. Reading
+      // memberships.pet_id alone left the second dog on an "x2" plan without
+      // a badge — Lauren, 28/10/2026. See shared/vipPetIds.ts.
+      let vipPetIdSet = new Set<number>();
       if (petIdsOnBoard.length > 0) {
-        const activeMemberships = await db.select({ petId: memberships.petId }).from(memberships)
-          .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard)));
-        for (const m of activeMemberships) vipPetIds.add(m.petId);
+        const [primaries, covered] = await Promise.all([
+          db.select({ petId: memberships.petId }).from(memberships)
+            .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard))),
+          db.select({ petId: membershipPets.petId }).from(membershipPets)
+            .innerJoin(memberships, eq(memberships.id, membershipPets.membershipId))
+            .where(and(eq(membershipPets.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(membershipPets.petId, petIdsOnBoard))),
+        ]);
+        vipPetIdSet = vipPetIds({
+          primaryPetIds: primaries.map(m => m.petId),
+          coveredPetIds: covered.map(m => m.petId),
+        });
       }
 
       return boardRows.map(row => ({
@@ -2241,7 +2253,7 @@ const workflowRouter = router({
         petAlertLevel: normalizePetAlertLevel(row.petAlertLevel),
         groomStyleNote: latestGroomNoteByAppointment.get(row.id)?.note ?? null,
         groomStyleWarnings: latestGroomNoteByAppointment.get(row.id)?.warnings ?? null,
-        isVipMember: row.petId ? vipPetIds.has(row.petId) : false,
+        isVipMember: row.petId ? vipPetIdSet.has(row.petId) : false,
         addOns: addOnsByAppointment.get(row.id) ?? [],
       }));
     }),
