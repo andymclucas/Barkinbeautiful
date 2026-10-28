@@ -126,3 +126,9 @@ package-lock.json
 * [0-9].ts
 * [0-9].tsx
 * [0-9].md
+
+# MoeGo pulls. Every one is a list of real clients with their phone
+# numbers, and this repository is on GitHub. The import script reads
+# the file from a path outside the repo for the same reason.
+*.tsv
+scripts/moego-*.tsv
