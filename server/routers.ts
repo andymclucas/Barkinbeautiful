@@ -1100,6 +1100,16 @@ const calendarRouter = router({
       // so the single-groomer case is unchanged.
       staffByPetId: z.record(z.string(), z.number()).optional(),
       serviceType: z.enum(SERVICE_TYPES).default("classic_groom"),
+      /**
+       * The client already has this booking somewhere else, so do not
+       * confirm it to them.
+       *
+       * A back-filled MoeGo booking carries no moego id for the import
+       * guard to catch — only the person typing it knows. Lauren,
+       * 28/10/2026: "Kevin was in moego but not synced over to
+       * Groomigo so put it in manually. It sent her a text."
+       */
+      alreadyArranged: z.boolean().optional(),
       scheduledStart: z.string(),
       scheduledEnd: z.string(),
       notes: z.string().optional(),
@@ -1266,7 +1276,9 @@ const calendarRouter = router({
        * already seen the booking succeed, so a Twilio outage must not
        * surface as a failed booking.
        */
-      const confirmation = await sendBookingConfirmation(db, createdAppointmentIds);
+      const confirmation = await sendBookingConfirmation(db, createdAppointmentIds, {
+        alreadyArranged: input.alreadyArranged === true,
+      });
 
       return {
         success: true, created: created.length, membershipCovered: coverage.fullyCovered,

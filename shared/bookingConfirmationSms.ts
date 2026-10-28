@@ -32,6 +32,15 @@ export type BookingConfirmationInput = {
 const DEFAULT_SALON = "Barkin' Beautiful";
 
 /** Automated texts land between these hours, on the salon's clock. */
+/**
+ * How far ahead a booking must be for a confirmation to mean anything.
+ *
+ * Two hours. Long enough that somebody booking a same-day slot in the
+ * morning for the afternoon still gets told, short enough that typing
+ * in a booking the client is about to arrive for does not text them.
+ */
+export const MINIMUM_LEAD_MINUTES = 120;
+
 export const QUIET_FROM_HOUR = 7;
 export const QUIET_UNTIL_HOUR = 19;
 
@@ -62,6 +71,8 @@ export type ConfirmationSkipReason =
   | "imported"
   | "booked_online"
   | "in_the_past"
+  | "already_arranged"
+  | "too_soon"
   | "not_live"
   | "automation_off";
 
@@ -91,6 +102,17 @@ export function decideBookingConfirmation(input: {
   smsOptedOutAt?: Date | string | null;
   /** Hour of day, 0-23, on the SALON's clock. Omit to skip the check. */
   localHour?: number;
+  /**
+   * Staff said this booking is already arranged elsewhere.
+   *
+   * The `moegoAppointmentId` guard below only catches rows the IMPORT
+   * created. When somebody types a MoeGo booking in by hand there is
+   * no id to catch, so Groomigo believes it is new and confirms it.
+   * Lauren, 28/10/2026: "Kevin was in moego but not synced over to
+   * Groomigo so put it in manually. It sent her a text." This is how
+   * a person says otherwise, because nothing in the data can.
+   */
+  alreadyArranged?: boolean;
   now?: Date | number;
 }): ConfirmationDecision {
   // The global gate. Checked here as well as at the call site so a new
@@ -121,6 +143,9 @@ export function decideBookingConfirmation(input: {
   // message would contradict.
   if (input.bookedOnline) return { send: false, reason: "booked_online" };
 
+  // Typed in to match a booking the client already has elsewhere.
+  if (input.alreadyArranged) return { send: false, reason: "already_arranged" };
+
   if (input.status === "cancelled" || input.workflowState === "cancelled" || input.workflowState === "no_show") {
     return { send: false, reason: "not_live" };
   }
@@ -142,6 +167,14 @@ export function decideBookingConfirmation(input: {
   const now = typeof input.now === "number" ? input.now : (input.now ?? new Date()).getTime();
   if (!Number.isFinite(start) || start <= now) return { send: false, reason: "in_the_past" };
 
+  /**
+   * A confirmation is a reminder of something arranged earlier. Sent
+   * minutes before the dog arrives it is neither — Kevin's went at
+   * 7:46 for an eight o'clock booking, to a client already driving
+   * over. Anything inside the window is back-filling, not booking.
+   */
+  if (start - now < MINIMUM_LEAD_MINUTES * 60_000) return { send: false, reason: "too_soon" };
+
   if (!input.clientPhone?.trim()) return { send: false, reason: "no_phone" };
 
   // Never land an automated message in the middle of the night. Staff
@@ -156,6 +189,8 @@ export function decideBookingConfirmation(input: {
 }
 
 export const CONFIRMATION_SKIP_LABEL: Record<ConfirmationSkipReason, string> = {
+  already_arranged: "already booked elsewhere — staff asked not to text",
+  too_soon: "starts too soon for a confirmation to be useful",
   opted_out: "the client has replied STOP",
   not_confirmed: "the booking is not confirmed yet",
   quiet_hours: "outside the hours an automated text may land",

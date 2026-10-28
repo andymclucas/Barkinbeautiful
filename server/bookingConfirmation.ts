@@ -62,6 +62,14 @@ const affected = (result: unknown): number =>
 export async function sendBookingConfirmation(
   db: any,
   appointmentIds: readonly number[],
+  /**
+   * Staff said the client already has this booking elsewhere.
+   *
+   * Back-filling a MoeGo booking by hand leaves no id for the import
+   * guard to catch, so nothing in the data can tell this apart from a
+   * new booking. Only the person typing it knows.
+   */
+  options: { alreadyArranged?: boolean } = {},
 ): Promise<ConfirmationOutcome> {
   try {
     const ids = Array.from(new Set(appointmentIds.filter((id) => Number.isInteger(id) && id > 0)));
@@ -114,6 +122,7 @@ export async function sendBookingConfirmation(
         status: row.status,
         workflowState: row.workflowState,
         localHour,
+        alreadyArranged: options.alreadyArranged === true,
       });
       if (!decision.send) return { sent: false, reason: CONFIRMATION_SKIP_LABEL[decision.reason] };
     }
