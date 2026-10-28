@@ -135,7 +135,7 @@ describe("decideBookingConfirmation", () => {
     for (const key of Object.keys(CONFIRMATION_SKIP_LABEL)) {
       expect(CONFIRMATION_SKIP_LABEL[key as keyof typeof CONFIRMATION_SKIP_LABEL]).toBeTruthy();
     }
-    expect(Object.keys(CONFIRMATION_SKIP_LABEL)).toHaveLength(10);
+    expect(Object.keys(CONFIRMATION_SKIP_LABEL)).toHaveLength(12);
   });
 });
 
@@ -213,10 +213,22 @@ describe("rules added after review", () => {
 describe("the live booking path actually sends", () => {
   const routers = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
 
+  /**
+   * The check that matters: the confirmation is wired to the path the
+   * app ACTUALLY uses. It was once attached only to a procedure
+   * nothing called, so every booking went out unconfirmed and the
+   * tests were green throughout.
+   *
+   * It used to pin the exact argument list, which broke the moment a
+   * third argument was added on 28/10/2026 to let staff suppress the
+   * text for a back-filled booking — a change that did not touch the
+   * wiring at all. Matching the call rather than its spelling tests
+   * the thing this comment claims.
+   */
   it("calls the helper from createMultiPetAppointment, the path the app uses", () => {
     const multiPet = routers.slice(routers.indexOf("createMultiPetAppointment: operationalProcedure"));
     const body = multiPet.slice(0, multiPet.indexOf("\n  addPetsToSharedAppointment"));
-    expect(body).toContain("sendBookingConfirmation(db, createdAppointmentIds)");
+    expect(body).toMatch(/sendBookingConfirmation\(\s*db,\s*createdAppointmentIds/);
   });
 
   it("passes every row of the booking, not just the first", () => {
@@ -231,5 +243,64 @@ describe("the live booking path actually sends", () => {
     // step so the two cannot diverge. A third appearing without a group
     // design would mean a series texting once per occurrence.
     expect(routers.match(/await sendBookingConfirmation\(/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe("not texting a booking the client already has", () => {
+  const base = {
+    automationEnabled: true,
+    confirmationSmsSentAt: null,
+    clientPhone: "0400000000",
+    moegoAppointmentId: null,
+    bookedOnline: false,
+    status: "confirmed",
+    workflowState: "scheduled",
+    localHour: 10,
+    now: new Date("2026-10-28T00:00:00Z"),            // 10am Brisbane
+    scheduledStart: new Date("2026-10-29T00:00:00Z"), // tomorrow
+  };
+
+  it("sends for an ordinary new booking", () => {
+    expect(decideBookingConfirmation(base).send).toBe(true);
+  });
+
+  /**
+   * Lauren, 28/10/2026: "Kevin was in moego but not synced over to
+   * Groomigo so put it in manually. It sent her a text." A booking
+   * typed in by hand carries no MoeGo id, so the import guard cannot
+   * see it. This is how a person says it is already arranged.
+   */
+  it("stays quiet when staff say it is already booked elsewhere", () => {
+    const decision = decideBookingConfirmation({ ...base, alreadyArranged: true });
+    expect(decision.send).toBe(false);
+    expect(decision.send === false && decision.reason).toBe("already_arranged");
+  });
+
+  /**
+   * Kevin's went out at 7:46 for an eight o'clock booking, to a client
+   * already driving over. A confirmation is a reminder of something
+   * arranged earlier; minutes beforehand it is neither.
+   */
+  it("stays quiet when the booking is minutes away", () => {
+    const decision = decideBookingConfirmation({
+      ...base,
+      scheduledStart: new Date("2026-10-28T00:14:00Z"), // 14 minutes later
+    });
+    expect(decision.send).toBe(false);
+    expect(decision.send === false && decision.reason).toBe("too_soon");
+  });
+
+  it("still sends for a same-day booking with real notice", () => {
+    expect(decideBookingConfirmation({
+      ...base,
+      scheduledStart: new Date("2026-10-28T05:00:00Z"), // five hours later
+    }).send).toBe(true);
+  });
+
+  it("keeps refusing anything already in the past", () => {
+    const decision = decideBookingConfirmation({
+      ...base, scheduledStart: new Date("2026-10-27T23:00:00Z"),
+    });
+    expect(decision.send === false && decision.reason).toBe("in_the_past");
   });
 });

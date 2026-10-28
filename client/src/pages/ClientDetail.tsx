@@ -575,6 +575,16 @@ export default function ClientDetail() {
    * collection of half ten on the day care board.
    */
   const [bookEndTime, setBookEndTime] = useState(DEFAULT_DAYCARE_END);
+  /**
+   * Typing in a booking the client already has elsewhere.
+   *
+   * Nothing in the data can tell this from a new booking — a
+   * hand-entered MoeGo booking carries no import id — so the person
+   * typing it has to say. Lauren, 28/10/2026: "Kevin was in moego but
+   * not synced over to Groomigo so put it in manually. It sent her a
+   * text."
+   */
+  const [alreadyArranged, setAlreadyArranged] = useState(false);
   const [bookStaffId, setBookStaffId] = useState<string>("");
   const { data: staffList } = trpc.staff.list.useQuery({});
   const createAppt = trpc.calendar.createMultiPetAppointment.useMutation({
@@ -636,6 +646,7 @@ export default function ClientDetail() {
       petIds: Array.from(new Set([bookPetId, ...bookFamilyPetIds])).map(id => parseInt(id)),
       staffId: bookStaffId ? parseInt(bookStaffId) : undefined,
       serviceType: bookService as "classic_groom",
+      alreadyArranged,
       scheduledStart: start.toISOString(),
       scheduledEnd: end.toISOString(),
       price: bookingMembershipCoverage.fullyCovered ? "0.00" : undefined,
@@ -1908,6 +1919,23 @@ export default function ClientDetail() {
                 <Label>{isDaycareService(bookService) ? "Drop-off" : "Time"}</Label>
                 <Input type="time" value={bookTime} onChange={e => setBookTime(e.target.value)} />
               </div>
+              {/* Ticked when back-filling something already booked in
+                  MoeGo, so the client is not texted a confirmation for
+                  an appointment they made weeks ago. */}
+              <label className="col-span-full flex items-start gap-2 rounded-lg border bg-muted/40 p-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-primary"
+                  checked={alreadyArranged}
+                  onChange={(e) => setAlreadyArranged(e.target.checked)}
+                />
+                <span>
+                  <span className="font-medium">Already booked elsewhere &mdash; don&rsquo;t text the client</span>
+                  <span className="block text-muted-foreground">
+                    Tick when copying a booking in from MoeGo. They have already been told.
+                  </span>
+                </span>
+              </label>
               {/* Only day care asks. Every other service still runs on
                   the ninety minutes it always did; changing grooming
                   durations is a separate decision with its own numbers
