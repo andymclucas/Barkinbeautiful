@@ -30,17 +30,24 @@ function tokenNames(theme: BrandInput): string[] {
  *
  * The theme is written as inline custom properties on the root
  * element, and an inline style beats the `.dark` rule in index.css —
- * so applying light-mode neutrals while dark mode is on would leave a
- * dark-mode user with white surfaces. The mode has to be read, not
- * assumed.
+ * so applying the wrong mode's neutrals leaves a page whose surfaces
+ * disagree with everything drawn on them. The mode has to be read,
+ * not assumed.
+ *
+ * Read from the `dark` class and NOTHING else, because ThemeContext
+ * says of itself that it is the "ONE owner of the class on <html>".
+ * It toggles `dark` and never adds a `light` class, so an earlier
+ * version of this fell through to prefers-color-scheme — and for
+ * anyone whose PHONE is dark while the app is light, which is the
+ * app's own default, it painted dark surfaces onto a light page.
+ * Megs, 28/10/2026: "my screen keeps doing weird black lines" — the
+ * board's striped rows, drawn with dark-mode greys.
+ *
+ * Deferring to the one owner is the whole fix. A second opinion about
+ * what mode the app is in is how the two disagree.
  */
 function currentMode(root: HTMLElement): ThemeMode {
-  if (root.classList.contains("dark")) return "dark";
-  if (root.classList.contains("light")) return "light";
-  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-  return "light";
+  return root.classList.contains("dark") ? "dark" : "light";
 }
 
 /**
@@ -77,14 +84,13 @@ export function applyBrandTheme(
   const observer = new MutationObserver(paint);
   observer.observe(root, { attributes: true, attributeFilter: ["class"] });
 
-  const media = typeof window !== "undefined" && typeof window.matchMedia === "function"
-    ? window.matchMedia("(prefers-color-scheme: dark)")
-    : null;
-  media?.addEventListener?.("change", paint);
+  // No media listener. ThemeContext already watches the system
+  // preference and toggles the class when it changes, which the
+  // observer above picks up — listening separately would be the same
+  // second opinion that caused the problem.
 
   return () => {
     observer.disconnect();
-    media?.removeEventListener?.("change", paint);
     for (const name of tokenNames(theme)) root.style.removeProperty(name);
     root.style.removeProperty("--font-sans");
   };
