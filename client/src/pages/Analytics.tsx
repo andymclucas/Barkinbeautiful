@@ -168,7 +168,10 @@ export default function Analytics() {
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{kpi.label}</p>
                   <kpi.icon className={`h-4 w-4 ${kpi.colour}`} />
                 </div>
-                <p className={`text-3xl font-bold font-display ${kpi.colour}`}>{kpi.value}</p>
+                {/* Two cards to a row on a phone gives each about 130px, and
+                    "$43,544.50" needs 177 at text-3xl — so the figure was cut
+                    off mid-number. It steps up with the viewport instead. */}
+                <p className={`text-xl sm:text-2xl lg:text-3xl font-bold font-display tabular-nums break-all ${kpi.colour}`}>{kpi.value}</p>
                 {kpi.detail && <p className="mt-1 text-xs text-muted-foreground">{kpi.detail}</p>}
               </CardContent>
             </Card>
@@ -285,8 +288,20 @@ export default function Analytics() {
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={staffChartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_TOKENS.grid} />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
+                    {/* interval 0 keeps every groomer's name: recharts was
+                        dropping six of ten on a phone, so most bars had
+                        nothing under them. Angled, because ten upright names
+                        do not fit in 309px at any readable size. */}
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 10 }}
+                      interval={0}
+                      angle={-40}
+                      textAnchor="end"
+                      height={58}
+                      tickMargin={4}
+                    />
+                    <YAxis tick={{ fontSize: 11 }} width={34} />
                     <Tooltip {...CHART_TOOLTIP_MOTION} contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v) => [v, "Appointments"]} />
                     <Bar dataKey="appointments" radius={[4, 4, 0, 0]}>
                       {staffChartData.map((entry, idx) => (
@@ -391,14 +406,21 @@ export default function Analytics() {
             <CardTitle className="text-sm font-semibold">Staff Performance — Combined Revenue Contribution</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <table className="w-full text-sm">
+            {/* The table was 386px wide inside a 375px phone, so the PAGE
+                scrolled sideways and the columns ran into each other —
+                "45$3,783.00" with no gap, and Share clipped off the edge.
+                It scrolls inside its own card now, the same answer the
+                calendar tabs got. Cells gained horizontal padding so wide
+                figures cannot touch, and nowrap so none of them wrap. */}
+            <div className="-mx-4 overflow-x-auto px-4">
+            <table className="w-full min-w-[30rem] text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left py-2 font-medium text-muted-foreground">Groomer</th>
-                  <th className="text-right py-2 font-medium text-muted-foreground">Appointments</th>
-                  <th className="text-right py-2 font-medium text-muted-foreground">Revenue</th>
-                  <th className="text-right py-2 font-medium text-muted-foreground">Avg per Appt</th>
-                  <th className="text-right py-2 font-medium text-muted-foreground">Share</th>
+                  <th className="text-left py-2 pr-3 font-medium text-muted-foreground whitespace-nowrap">Groomer</th>
+                  <th className="text-right py-2 pl-3 font-medium text-muted-foreground whitespace-nowrap">Appointments</th>
+                  <th className="text-right py-2 pl-3 font-medium text-muted-foreground whitespace-nowrap">Revenue</th>
+                  <th className="text-right py-2 pl-3 font-medium text-muted-foreground whitespace-nowrap">Avg per Appt</th>
+                  <th className="text-right py-2 pl-3 font-medium text-muted-foreground whitespace-nowrap">Share</th>
                 </tr>
               </thead>
               <tbody>
@@ -413,18 +435,19 @@ export default function Analytics() {
                         {s.name}
                       </div>
                     </td>
-                    <td className="py-2.5 text-right font-medium">{s.appointments}</td>
-                    <td className="py-2.5 text-right font-medium">${s.revenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td className="py-2.5 text-right text-muted-foreground">
+                    <td className="py-2.5 pl-3 text-right font-medium tabular-nums whitespace-nowrap">{s.appointments}</td>
+                    <td className="py-2.5 pl-3 text-right font-medium tabular-nums whitespace-nowrap">${s.revenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="py-2.5 pl-3 text-right text-muted-foreground tabular-nums whitespace-nowrap">
                       {s.appointments > 0 ? `$${(s.revenue / s.appointments).toFixed(0)}` : "—"}
                     </td>
-                    <td className="py-2.5 text-right text-muted-foreground">
+                    <td className="py-2.5 pl-3 text-right text-muted-foreground tabular-nums whitespace-nowrap">
                       {totalRevenue > 0 ? `${((s.revenue / totalRevenue) * 100).toFixed(1)}%` : "—"}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </CardContent>
         </Card>
       </div>
