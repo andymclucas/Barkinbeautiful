@@ -1,4 +1,5 @@
 import { vipPetIds } from "@shared/vipPetIds";
+import { buildRescheduleUpdate } from "@shared/rescheduleUpdate";
 import { isValidTimeZone } from "@shared/auditTimestamp";
 import { properName } from "@shared/personName";
 import { searchTerms } from "@shared/clientSearchMatch";
@@ -1658,11 +1659,14 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
-      await db.update(appointments).set({
+      // Omitted staffId leaves the groomer alone; null unassigns. See
+      // buildRescheduleUpdate — the old `input.staffId ?? null` took the
+      // dog off its groomer whenever a caller moved only the time.
+      await db.update(appointments).set(buildRescheduleUpdate({
         scheduledStart: parseBrisbaneLocalDateTime(input.scheduledStart),
         scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
-        staffId: input.staffId ?? null,
-      }).where(eq(appointments.id, input.appointmentId));
+        staffId: input.staffId,
+      })).where(eq(appointments.id, input.appointmentId));
       return { success: true };
     }),
 

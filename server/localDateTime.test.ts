@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { parseBrisbaneLocalDateTime, brisbaneDateKey, brisbaneCalendarPeriod, brisbaneExplicitRange, wholeCalendarYear, yearOptions, MAX_YEARS_OFFERED, localCalendarDay, localCalendarDayKey } from "../shared/localDateTime";
+import {
+  MAX_YEARS_OFFERED,
+  brisbaneCalendarPeriod,
+  brisbaneDateKey,
+  brisbaneExplicitRange,
+  brisbaneLocalInputValue,
+  localCalendarDay,
+  localCalendarDayKey,
+  parseBrisbaneLocalDateTime,
+  wholeCalendarYear,
+  yearOptions,
+} from "../shared/localDateTime";
 
 describe("parseBrisbaneLocalDateTime", () => {
   it("interprets a naive datetime-local string as Brisbane (UTC+10) time", () => {
@@ -215,5 +226,27 @@ describe("localCalendarDay / localCalendarDayKey", () => {
     // input — only ever produce real days, so rolling forward is fine;
     // what matters is that it does not produce an Invalid Date.
     expect(localCalendarDayKey(localCalendarDay("2026-02-29"))).toBe("2026-03-01");
+  });
+});
+
+describe("brisbaneLocalInputValue", () => {
+  /**
+   * Poppy's daycare, 28/10/2026 09:00 Brisbane, stored as 23:00 UTC the
+   * day before. A device-offset conversion on a UTC machine would show
+   * "27 Oct 23:00" in the editor and save the dog to the wrong day.
+   */
+  it("shows Brisbane wall-clock time, not the device's", () => {
+    expect(brisbaneLocalInputValue(new Date("2026-10-27T23:00:00Z"))).toBe("2026-10-28T09:00");
+  });
+
+  it("round-trips through parseBrisbaneLocalDateTime", () => {
+    for (const value of ["2026-10-28T09:00", "2026-01-01T00:00", "2026-12-31T23:59"]) {
+      expect(brisbaneLocalInputValue(parseBrisbaneLocalDateTime(value))).toBe(value);
+    }
+  });
+
+  /** Crossing midnight UTC is where an offset bug shows up as a wrong date. */
+  it("rolls the date forward across the UTC day boundary", () => {
+    expect(brisbaneLocalInputValue(new Date("2026-10-27T14:00:00Z"))).toBe("2026-10-28T00:00");
   });
 });

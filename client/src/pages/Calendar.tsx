@@ -14,14 +14,21 @@ import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { trpc } from "@/lib/trpc";
 import {
   calendarColumnGroups,
+  columnOwnsAppointment,
+  isDaycareColumn,
   resolveCalendarStaffColumns,
+  withDaycareColumn,
   withUnassignedColumn,
+  DAYCARE_COLUMN,
 } from "@/lib/calendarStaffColumns";
 import {
   calendarStaffFilterKey,
   calendarUnassignedColumnKey,
+  calendarDaycareColumnKey,
   parseShowUnassignedColumn,
+  parseShowDaycareColumn,
   serialiseShowUnassignedColumn,
+  serialiseShowDaycareColumn,
   coversAllStaff,
   DEFAULT_CALENDAR_STAFF_SELECTION,
   describeCalendarStaffSelection,
@@ -932,6 +939,10 @@ export default function Calendar() {
   // Shown by default: it only appears on days that have a dog with nobody
   // against them, and those are exactly the ones worth seeing.
   const [showUnassignedColumn, setShowUnassignedColumn] = useState(true);
+  // Daycare dogs get their own column, for the same reason Unassigned does:
+  // they are on the board all day and are not being groomed, so they filled
+  // a groomer's column with work that groomer is not doing.
+  const [showDaycareColumn, setShowDaycareColumn] = useState(true);
   // Adding a contact from the appointment, because the client record is
   // where the "Pickup contacts" form lives and /clients/:id is not a
   // staff-reachable route — so for a groomer that form may as well not
@@ -1444,11 +1455,21 @@ export default function Calendar() {
       minutesFromSeven: target.startMinutes,
     });
 
+    /**
+     * The Daycare column is not a person, so dropping into it must not
+     * write its sentinel id to staff_id. Dropping a dog there means
+     * "move it to this time" and leaves whoever is against it alone.
+     */
+    const droppedOnDaycare = targetStaffId === DAYCARE_COLUMN.id;
+    const nextStaffId = droppedOnDaycare
+      ? (appt.staffId === null || appt.staffId === undefined ? null : Number(appt.staffId))
+      : targetStaffId;
+
     const move = () => rescheduleMutation.mutate({
       appointmentId:  appt.id,
       scheduledStart: dragSchedule.scheduledStartIso,
       scheduledEnd:   dragSchedule.scheduledEndIso,
-      staffId: targetStaffId,
+      staffId: nextStaffId,
     }, {
       onSuccess: () => { toast.success("Appointment moved"); refetch(); },
       onError: (err) => toast.error(err.message),
@@ -1574,6 +1595,9 @@ export default function Calendar() {
       setStaffSelection(
         parseCalendarStaffSelection(window.localStorage.getItem(staffFilterKey), activeStaff),
       );
+      setShowDaycareColumn(
+        parseShowDaycareColumn(window.localStorage.getItem(calendarDaycareColumnKey(user.id))),
+      );
       setShowUnassignedColumn(
         parseShowUnassignedColumn(window.localStorage.getItem(calendarUnassignedColumnKey(user.id))),
       );
@@ -1594,10 +1618,14 @@ export default function Calendar() {
         calendarUnassignedColumnKey(user?.id),
         serialiseShowUnassignedColumn(showUnassignedColumn),
       );
+      window.localStorage.setItem(
+        calendarDaycareColumnKey(user?.id),
+        serialiseShowDaycareColumn(showDaycareColumn),
+      );
     } catch {
       // As above — a filter that cannot be saved is not worth an error.
     }
-  }, [staffSelection, staffFilterKey, showUnassignedColumn, user]);
+  }, [staffSelection, staffFilterKey, showUnassignedColumn, showDaycareColumn, user]);
 
   // One source for the grooming/bathing line, shared with the default above:
   // inlined twice before this, which is how a default and the menu grouping
@@ -2363,19 +2391,36 @@ export default function Calendar() {
     // one, so the dog sits at its booked time like every other dog. Dropping
     // onto that column unassigns, which handleDropOnColumn already does with
     // a null staff id.
+    // A daycare dog with nobody against it is drawn in the Daycare column,
+    // so it must not also keep an otherwise-empty Unassigned column alive.
+    // Willow Blair on 28/10/2026 was the only unassigned dog that day and
+    // is daycare, which left a blank grey column reading "0 appts".
     const hasUnassignedToday = filteredAppts.some(
-      (a) => !a.staffId && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate),
+      (a) => !a.staffId
+        && !(a.serviceType === "daycare" && showDaycareColumn)
+        && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate),
     );
-    const allCols = withUnassignedColumn(activeStaff, hasUnassignedToday && showUnassignedColumn);
-    // The Unassigned column is not a staff member, so the staff filter has no
-    // opinion on it and it always survives.
+    const hasDaycareToday = filteredAppts.some(
+      (a) => a.serviceType === "daycare" && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate),
+    );
+    const daycareColumnShown = hasDaycareToday && showDaycareColumn;
+    const allCols = withDaycareColumn(
+      withUnassignedColumn(activeStaff, hasUnassignedToday && showUnassignedColumn),
+      daycareColumnShown,
+    );
+    // Neither Unassigned nor Daycare is a staff member, so the staff filter
+    // has no opinion on them and they always survive.
     const cols = allCols.filter(
-      (staffMember) => staffMember.id === null || visibleStaffIds.includes(staffMember.id),
+      (staffMember) =>
+        staffMember.id === null
+        || isDaycareColumn(staffMember)
+        || visibleStaffIds.includes(staffMember.id),
     );
     const {
       groomers: groomerCount,
       bathers: batherCount,
       unassigned: unassignedCount,
+      daycare: daycareCount,
     } = calendarColumnGroups(cols);
 
     return (
@@ -2400,12 +2445,13 @@ export default function Calendar() {
             // scrolling.
             return (
               <div className="flex min-h-0 flex-1 flex-col" style={{ width: totalWidth, minWidth: totalWidth }}>
-                {(groomerCount > 0 || batherCount > 0 || unassignedCount > 0) && (
+                {(groomerCount > 0 || batherCount > 0 || unassignedCount > 0 || daycareCount > 0) && (
                   <div className="grid border-b bg-muted/80 shrink-0" style={{ gridTemplateColumns: colTemplate }}>
                     <div className="border-r" />
                     {groomerCount > 0 && <div className="px-3 py-2 border-r text-[10px] font-bold uppercase tracking-[0.16em] text-violet-800 dark:text-violet-300 bg-gradient-to-r from-violet-100/90 dark:from-violet-950/90 to-violet-50/50 dark:to-violet-950/50" style={{ gridColumn: `span ${groomerCount}` }}>Groomers</div>}
                     {batherCount > 0 && <div className={`px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-800 dark:text-blue-300 bg-gradient-to-r from-blue-100/90 dark:from-blue-950/90 to-blue-50/50 dark:to-blue-950/50 ${unassignedCount > 0 ? "border-r" : ""}`} style={{ gridColumn: `span ${batherCount}` }}>Bathing Team</div>}
-                    {unassignedCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300 bg-gradient-to-r from-slate-200/90 dark:from-slate-800/90 to-slate-100/50 dark:to-slate-800/50" style={{ gridColumn: `span ${unassignedCount}` }}>Nobody assigned</div>}
+                    {unassignedCount > 0 && <div className={`px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-700 dark:text-slate-300 bg-gradient-to-r from-slate-200/90 dark:from-slate-800/90 to-slate-100/50 dark:to-slate-800/50 ${daycareCount > 0 ? "border-r" : ""}`} style={{ gridColumn: `span ${unassignedCount}` }}>Nobody assigned</div>}
+                    {daycareCount > 0 && <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-800 dark:text-amber-300 bg-gradient-to-r from-amber-100/90 dark:from-amber-950/90 to-amber-50/50 dark:to-amber-950/50" style={{ gridColumn: `span ${daycareCount}` }}>Daycare</div>}
                   </div>
                 )}
                 {/* Sticky header */}
@@ -2423,8 +2469,13 @@ export default function Calendar() {
                         <span className="text-xs font-semibold truncate">{s.name.split(" ")[0]}</span>
                       </div>
                       {(() => {
+                        // Same ownership test the column body uses, or the
+                        // count in the header disagrees with the dogs
+                        // underneath it — the Daycare column read "0 appts"
+                        // above two dogs.
                         const mine = filteredAppts.filter(a =>
-                          a.staffId === s.id && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate));
+                          columnOwnsAppointment(s, a, { daycareColumnShown })
+                          && aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate));
                         // Clips against what this groomer said they can do.
                         // Shown here because this is the column somebody is
                         // looking at when they decide where to put a dog —
@@ -2475,7 +2526,7 @@ export default function Calendar() {
             {cols.map((s, ci) => {
               const colAppts = filteredAppts.filter(a => {
                 const aest = toAESTDate(new Date(a.scheduledStart));
-                return a.staffId === s.id &&
+                return columnOwnsAppointment(s, a, { daycareColumnShown }) &&
                   aestDateKey(new Date(a.scheduledStart)) === dayDateKey(dayDate) &&
                   aest.getUTCHours() >= 7 && aest.getUTCHours() < 20;
               }) as Appt[];
@@ -2504,7 +2555,11 @@ export default function Calendar() {
                     const pad = (n: number) => String(n).padStart(2, "0");
                     setNewAppt(p => ({
                       ...p,
-                      staffId: String(s.id),
+                      // Daycare is a column, not a groomer: a new booking
+                      // started there opens with nobody against it rather
+                      // than with the sentinel id.
+                      staffId: isDaycareColumn(s) ? "__unassigned__" : String(s.id),
+                      serviceType: isDaycareColumn(s) ? "daycare" : p.serviceType,
                       scheduledStart: `${y}-${mo}-${d}T${pad(startH)}:${pad(startM)}`,
                       scheduledEnd: `${y}-${mo}-${d}T${pad(endH)}:${pad(endM)}`,
                     }));
@@ -2898,6 +2953,18 @@ export default function Calendar() {
                 >
                   <span className={`flex h-4 w-4 items-center justify-center rounded border ${showUnassignedColumn ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{showUnassignedColumn && <Check className="h-3 w-3" />}</span>
                   <span className="h-2 w-2 rounded-full" style={{ background: "#94a3b8" }} />Unassigned
+                </button>
+                {/* Daycare dogs are on the board all day and are not being
+                    groomed, so they are drawn here rather than filling a
+                    groomer's column with work that groomer is not doing.
+                    Unticking returns them to whoever is against them. */}
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+                  onClick={() => setShowDaycareColumn((shown) => !shown)}
+                >
+                  <span className={`flex h-4 w-4 items-center justify-center rounded border ${showDaycareColumn ? "border-primary bg-primary text-primary-foreground" : "border-input"}`}>{showDaycareColumn && <Check className="h-3 w-3" />}</span>
+                  <span className="h-2 w-2 rounded-full" style={{ background: DAYCARE_COLUMN.colourHex ?? "#f59e0b" }} />Daycare
                 </button>
                 {/* Separate from the checkboxes above: those choose WHICH
                     columns show on this device, this chooses what ORDER

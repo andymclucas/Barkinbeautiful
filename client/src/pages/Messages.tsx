@@ -1,3 +1,4 @@
+import { collapseBySend } from "@shared/messageThreadGrouping";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { AssignStaffPicker } from "@/components/AssignStaffPicker";
@@ -218,7 +219,7 @@ export default function Messages() {
   // twice showed stale messages.
   const threadPreview = (thread: { clientId: number | null; toNumber: string }) => {
     if (!logs) return [];
-    return (logs as any[]).filter(l => (thread.clientId ? l.clientId === thread.clientId : l.toNumber === thread.toNumber));
+    return collapseBySend((logs as any[]).filter(l => (thread.clientId ? l.clientId === thread.clientId : l.toNumber === thread.toNumber)));
   };
 
   const openThreadDialog = (thread: { clientId: number | null; toNumber: string; clientName: string | null }) => {
@@ -266,10 +267,15 @@ export default function Messages() {
 
   const threadMessages = useMemo(() => {
     if (!openThread || !logs) return [];
-    return logs
-      .filter((l: any) => (openThread.clientId ? l.clientId === openThread.clientId : l.toNumber === openThread.toNumber))
-      .slice()
-      .sort((a: any, b: any) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+    // collapseBySend: one Twilio send is one message. The pickup text is
+    // logged against every dog it covers, so a two-dog family read as a
+    // double text and the salon rang a client to apologise for it.
+    return collapseBySend(
+      logs
+        .filter((l: any) => (openThread.clientId ? l.clientId === openThread.clientId : l.toNumber === openThread.toNumber))
+        .slice()
+        .sort((a: any, b: any) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()),
+    );
   }, [openThread, logs]);
 
 

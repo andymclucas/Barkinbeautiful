@@ -17,6 +17,9 @@ export type AssignedCalendarAppointment = {
 
 const FALLBACK_COLOUR = "#6366f1";
 
+/** See DAYCARE_COLUMN below. Declared here because the group counter needs it. */
+const DAYCARE_COLUMN_ID = -100;
+
 function isActiveStaffValue(value: unknown): boolean {
   return value !== false && value !== 0 && value !== "0";
 }
@@ -113,10 +116,79 @@ export function calendarColumnGroups(columns: CalendarStaffColumn[]): {
   groomers: number;
   bathers: number;
   unassigned: number;
+  daycare: number;
 } {
   return {
-    groomers: columns.filter((c) => c.id !== null && c.role !== "bather").length,
-    bathers: columns.filter((c) => c.id !== null && c.role === "bather").length,
+    groomers: columns.filter((c) => c.id !== null && c.id !== DAYCARE_COLUMN_ID && c.role !== "bather").length,
+    bathers: columns.filter((c) => c.id !== null && c.id !== DAYCARE_COLUMN_ID && c.role === "bather").length,
     unassigned: columns.filter((c) => c.id === null).length,
+    daycare: columns.filter((c) => c.id === DAYCARE_COLUMN_ID).length,
   };
+}
+
+/**
+ * The column every daycare dog sits in, whoever is against it.
+ *
+ * Andy, 28/10/2026: "add another 'staff member' that just is for daycare
+ * dogs so staff can see the daycare appointments for the day."
+ *
+ * A pseudo-column rather than a real staff row, for the same reason
+ * Unassigned is one. A "Daycare" row in the `staff` table would be a
+ * person as far as the rest of the system is concerned: it would take a
+ * share of revenue per staff member, appear in the roster and the clip
+ * counts, and be bookable as a groomer.
+ *
+ * It cannot use `id: null` — Unassigned has that, and a daycare dog with
+ * nobody against it must still land here rather than in two columns. A
+ * negative id cannot collide with a real staff id.
+ */
+export const DAYCARE_COLUMN: CalendarStaffColumn = {
+  id: DAYCARE_COLUMN_ID,
+  name: "Daycare",
+  colourHex: "#f59e0b",
+  isActive: true,
+  role: "daycare",
+};
+
+export function isDaycareColumn(column: CalendarStaffColumn): boolean {
+  return column.id === DAYCARE_COLUMN.id;
+}
+
+/**
+ * Which column a dog is drawn in. Exactly one, which is the whole point.
+ *
+ * Daycare is matched on the SERVICE, not on who is against the booking.
+ * Poppy's daycare on 28/10/2026 was assigned to a groomer, so a plain
+ * `staffId === column.id` test would have drawn her in that groomer's
+ * column — and, once a daycare column existed, in both at once. The
+ * daycare test therefore has to come first AND has to exclude daycare
+ * dogs from the staff columns.
+ */
+export function columnOwnsAppointment(
+  column: CalendarStaffColumn,
+  appointment: { staffId: number | string | null; serviceType?: string | null },
+  options: { daycareColumnShown: boolean },
+): boolean {
+  const isDaycare = appointment.serviceType === "daycare";
+  if (isDaycareColumn(column)) return isDaycare;
+  // Only pulled out of the groomer's column when there is a daycare column
+  // to pull it into. With the column hidden the dog must still be drawn
+  // somewhere, or hiding a column would hide a dog.
+  if (isDaycare && options.daycareColumnShown) return false;
+  const staffId = appointment.staffId === null || appointment.staffId === undefined
+    ? null
+    : Number(appointment.staffId);
+  return staffId === column.id;
+}
+
+/**
+ * Append the Daycare column only on days that actually have a daycare dog,
+ * so a normal grooming day does not carry an empty amber column. Same
+ * reasoning as withUnassignedColumn.
+ */
+export function withDaycareColumn(
+  staffColumns: CalendarStaffColumn[],
+  hasDaycare: boolean,
+): CalendarStaffColumn[] {
+  return hasDaycare ? [...staffColumns, DAYCARE_COLUMN] : staffColumns;
 }
