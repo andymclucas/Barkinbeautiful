@@ -107,11 +107,31 @@ const anim = (attr, a, b) =>
   `<animate attributeName="${attr}" dur="7s" repeatCount="indefinite" calcMode="linear"
         keyTimes="0;0.52;0.70;1" values="${a};${a};${b};${b}"/>`;
 
+/* Paint declared as an inline style, not just a presentation attribute.
+   A presentation attribute is the LOWEST priority paint there is — any
+   stylesheet rule beats it. Dropped into a stroke-based icon system
+   (Lucide, Feather, Heroicons outline — this app uses Lucide), a rule
+   like `svg path { fill: none; stroke: currentColor }` overrides
+   fill="#12BDBB" and the mark renders as a hollow outline: every line
+   of the dog becomes two thin lines with a gap. That is the "double
+   lines", and it is invisible from inside the file. An inline style
+   wins against everything but !important. */
+const paint = (fill) => `fill="${fill}" stroke="none" style="fill:${fill};stroke:none"`;
+
 function build({ ground, dogColour, wordColour, id, themed, markOnly, responsive }) {
   const dogPaint = themed ? `var(--gg-dog, ${dogColour})` : dogColour;
   const wordPaint = themed ? `var(--gg-word, ${wordColour})` : wordColour;
+  /* Every mask path carries its own paint inline, for the same reason
+     the mark does: a stylesheet rule on `svg path` beats anything
+     inherited from the group, so an icon system's `stroke-width: 9`
+     shrinks the reveal mask from 72 to 9 and uncovers a sliver of the
+     artwork instead of all of it.
+     NOT stroke-dashoffset, though — that is inherited from the band
+     group, where the animation lives, and a declaration on the path
+     would beat the animated value and freeze the draw. */
+  const penPaint = `fill:none;stroke:#fff;stroke-width:${MASK_WIDTH};stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1`;
   const bands = BANDS.map((paths, i) =>
-    `<g class="b${i + 1}">${paths.map((d) => `<path pathLength="1" d="${d}"/>`).join("")}</g>`
+    `<g class="b${i + 1}">${paths.map((d) => `<path pathLength="1" style="${penPaint}" d="${d}"/>`).join("")}</g>`
   ).join("\n      ");
 
   const dogPad = 70;
@@ -163,7 +183,7 @@ ${BAND_KEYS.map(([a, b], i) => `    @keyframes band${i + 1} { 0%, ${a}% { stroke
       <stop offset="1"    stop-color="#12BDBB" stop-opacity="0"/>
     </linearGradient>
     <mask id="reveal-${id}" maskUnits="userSpaceOnUse" x="-400" y="-400" width="${lock.W + 800}" height="${lock.H + 800}">
-      <g class="pen" fill="none" stroke="#fff" stroke-width="${MASK_WIDTH}" stroke-linecap="round" stroke-linejoin="round">${bands}</g>
+      <g class="pen" style="fill:none;stroke:#fff;stroke-width:${MASK_WIDTH};stroke-linecap:round;stroke-linejoin:round">${bands}</g>
     </mask>
     <clipPath id="lockclip-${id}" clipPathUnits="userSpaceOnUse">
       <path d="${DOG_D}"/>
@@ -172,10 +192,10 @@ ${BAND_KEYS.map(([a, b], i) => `    @keyframes band${i + 1} { 0%, ${a}% { stroke
   </defs>
 ${ground ? `  <rect x="-99999" y="-99999" width="199999" height="199999" fill="${ground}"/>` : ""}
 
-  <path class="mark" fill="${dogPaint}" fill-rule="evenodd" mask="url(#reveal-${id})" d="${DOG_D}"/>
+  <path class="mark" ${paint(dogPaint)} fill-rule="evenodd" mask="url(#reveal-${id})" d="${DOG_D}"/>
 
 ${markOnly ? "" : `  <g class="word">
-    <path transform="translate(${WORD_X} ${WORD_Y})" fill="${wordPaint}" fill-rule="evenodd" d="${WORD_D}"/>
+    <path transform="translate(${WORD_X} ${WORD_Y})" ${paint(wordPaint)} fill-rule="evenodd" d="${WORD_D}"/>
   </g>`}
 
   <!-- One light crossing the finished lockup. Clipped to the dog AND
