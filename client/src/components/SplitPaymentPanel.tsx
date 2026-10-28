@@ -59,6 +59,25 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
    * "deliberately cleared", and conflating them makes the field refill
    * itself under the cursor.
    */
+  /**
+   * What this client has already paid in, sitting unspent.
+   *
+   * Lauren, 28/10/2026: Sweety and Benji's dad handed over $800 cash
+   * to pre-pay his baths, and holds $840 on the account — "would like
+   * to show their store credit count visible in their invoicing area".
+   * The balance existed and was only visible on the client record, so
+   * the one place it decides whether to ask for money did not show it.
+   *
+   * Every dog on a booking belongs to the same client, so the first
+   * one names the account.
+   */
+  const clientId = data?.appointments?.[0]?.clientId ?? null;
+  const { data: credit } = trpc.storeCredit.getBalance.useQuery(
+    { clientId: clientId as number },
+    { enabled: clientId != null },
+  );
+  const creditBalance = Number(credit?.balance ?? 0);
+
   const [typedAmount, setTypedAmount] = useState("");
   const [amountEdited, setAmountEdited] = useState(false);
   const [method, setMethod] = useState<PaymentMethod>("eftpos");
@@ -206,7 +225,18 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
         <p className="flex items-center gap-1.5 text-sm font-semibold">
           <Banknote className="h-4 w-4 text-muted-foreground" /> Payments
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="flex flex-wrap items-center justify-end gap-x-2 text-xs text-muted-foreground">
+          {creditBalance > 0 && (
+            /* Before the totals, because it changes what to ask for. A
+               client with credit on the account should not be handing
+               over a card. */
+            <span
+              className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+              title="Paid in advance and not yet used. Take it with the Store credit payment method."
+            >
+              {money(creditBalance)} store credit
+            </span>
+          )}
           {data.anyUnpriced
             ? "Some dogs have no price yet"
             : <>Booking {money(data.bookingTotal)} · paid {money(data.bookingPaid)} · owing <strong className="text-foreground">{money(data.bookingOutstanding)}</strong></>}
