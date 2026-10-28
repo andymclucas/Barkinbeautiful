@@ -302,19 +302,39 @@ export default function Messages() {
     onError: (err) => toast.error(err.message),
   });
 
+  /**
+   * One row per TEXT SENT, not per dog it was logged against.
+   *
+   * Andy, 28/10/2026: "It's showing that two texts get sent when both dogs
+   * are complete. Should only be 1 text when both dogs are done."
+   *
+   * Only one was sent. On 28/10 there were 13 Twilio sends and 19 log
+   * rows: a family pickup text is deliberately logged against every dog it
+   * covers, because that row is what stops a second prompt when the
+   * sibling is marked ready. The thread was fixed for this; this list and
+   * the counts above it were not, so the history still read as doubles and
+   * the salon rang a client to apologise for one.
+   */
+  const collapsedLogs = useMemo(() => collapseBySend((logs ?? []) as any[]), [logs]);
+
   const filteredLogs = useMemo(() => {
-    if (!logs) return [];
     const q = search.toLowerCase();
-    return logs.filter((l: any) => {
+    return collapsedLogs.filter((l: any) => {
       const matchesSearch = !q || l.toNumber.includes(q) || (l.clientName ?? "").toLowerCase().includes(q) || l.body.toLowerCase().includes(q) || l.type.includes(q);
       return matchesSearch && (statusFilter === "all" || l.status === statusFilter) && (typeFilter === "all" || l.type === typeFilter);
     });
-  }, [logs, search, statusFilter, typeFilter]);
+  }, [collapsedLogs, search, statusFilter, typeFilter]);
 
   const stats = useMemo(() => {
-    if (!logs) return { total: 0, sent: 0, failed: 0 };
-    return { total: logs.length, sent: logs.filter((l: any) => l.status === "sent").length, failed: logs.filter((l: any) => l.status === "failed").length };
-  }, [logs]);
+    // Counted off the collapsed list too: "total" above a list of texts
+    // means texts, and counting log rows made every family send look like
+    // two against the salon's Twilio bill.
+    return {
+      total: collapsedLogs.length,
+      sent: collapsedLogs.filter((l: any) => l.status === "sent").length,
+      failed: collapsedLogs.filter((l: any) => l.status === "failed").length,
+    };
+  }, [collapsedLogs]);
 
   const pendingInboundReplies = useMemo(() => {
     if (!logs) return [];
