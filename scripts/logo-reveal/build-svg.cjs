@@ -44,10 +44,20 @@ const lock = JSON.parse(fs.readFileSync(ART + "/lockup.json", "utf8"));
 const WORD_Y = Math.max(0, lock.word.y0 - 4);
 const WORD_X = Math.max(0, lock.word.x0 - 4);
 
-/* Measured, not guessed: the artwork's ink area divided by the
-   skeleton's length. It was 40, which drew a dog visibly fatter than
-   the finished mark it handed over to. */
-const PEN_WIDTH = 24;
+/* The reveal mask's stroke weight, in viewBox units.
+
+   The centreline is an APPROXIMATION of the artwork's spine: it has
+   spurious branches and it stops short of the ends. A pen stroked
+   along it is therefore a DIFFERENT SHAPE from the traced fill — at
+   24 it covers only 80% of the mark and 38% of it falls outside.
+   Drawing that pen and then cross-fading to the fill put two
+   differently-shaped teal shapes on screen together for about a
+   second, which is exactly the double line that kept being reported.
+
+   At 72 the stroke covers the artwork completely, so it is used as a
+   MASK instead: what appears is the real mark, uncovered along the
+   path the pen travels. One shape on screen, always. */
+const MASK_WIDTH = 72;
 
 /* Assert the dog actually lands where the artwork puts it. Cheap, and
    it is exactly the check that was missing above. */
@@ -120,13 +130,11 @@ function build({ ground, dogColour, wordColour, id, themed, markOnly, responsive
 ${BAND_KEYS.map((k, i) => `    .pen .b${i + 1} { animation-name: band${i + 1}; }`).join("\n")}
 ${BAND_KEYS.map(([a, b], i) => `    @keyframes band${i + 1} { 0%, ${a}% { stroke-dashoffset: 1; } ${b}%, 100% { stroke-dashoffset: 0; } }`).join("\n")}
 
-    /* The pen lifts off as the solid mark takes over. They overlap for
-       about a second, so neither ever pops. */
-    .pen { opacity: 0; animation: penInk 7s ease-in-out infinite; }
-    @keyframes penInk { 0%, 2% { opacity: 0; } 5%, 38% { opacity: 1; } 50%, 100% { opacity: 0; } }
-
-    .mark { opacity: 0; animation: hold 7s ease-in-out infinite; }
-    @keyframes hold { 0%, 32% { opacity: 0; } 46%, 91% { opacity: 1; } 99%, 100% { opacity: 0; } }
+    /* The mark is on from the first frame; the MASK is what makes it
+       appear. At 0% the mask is empty, so nothing shows. This opacity
+       only clears the lockup at the end of the loop. */
+    .mark { animation: markOut 7s ease-in-out infinite; }
+    @keyframes markOut { 0%, 91% { opacity: 1; } 99%, 100% { opacity: 0; } }
 
     /* The word fades up. No slide, no scale. */
     .word { opacity: 0; animation: fadeWord 7s ease-in-out infinite; }
@@ -137,7 +145,6 @@ ${BAND_KEYS.map(([a, b], i) => `    @keyframes band${i + 1} { 0%, ${a}% { stroke
 
     @media (prefers-reduced-motion: reduce) {
       .flash { animation: none; opacity: 0; }
-      .pen { animation: none; opacity: 0; }
       .pen g { animation: none; stroke-dashoffset: 0; }
       .mark, .word { animation: none; opacity: 1; }
     }
@@ -155,6 +162,9 @@ ${BAND_KEYS.map(([a, b], i) => `    @keyframes band${i + 1} { 0%, ${a}% { stroke
       <stop offset="0.7"  stop-color="#12BDBB" stop-opacity="0.28"/>
       <stop offset="1"    stop-color="#12BDBB" stop-opacity="0"/>
     </linearGradient>
+    <mask id="reveal-${id}" maskUnits="userSpaceOnUse" x="-400" y="-400" width="${lock.W + 800}" height="${lock.H + 800}">
+      <g class="pen" fill="none" stroke="#fff" stroke-width="${MASK_WIDTH}" stroke-linecap="round" stroke-linejoin="round">${bands}</g>
+    </mask>
     <clipPath id="lockclip-${id}" clipPathUnits="userSpaceOnUse">
       <path d="${DOG_D}"/>
       <path transform="translate(${WORD_X} ${WORD_Y})" d="${WORD_D}"/>
@@ -162,10 +172,7 @@ ${BAND_KEYS.map(([a, b], i) => `    @keyframes band${i + 1} { 0%, ${a}% { stroke
   </defs>
 ${ground ? `  <rect x="-99999" y="-99999" width="199999" height="199999" fill="${ground}"/>` : ""}
 
-  <path class="mark" fill="${dogPaint}" fill-rule="evenodd" d="${DOG_D}"/>
-  <g class="pen" fill="none" stroke="${dogPaint}" stroke-width="${PEN_WIDTH}" stroke-linecap="round" stroke-linejoin="round">
-      ${bands}
-  </g>
+  <path class="mark" fill="${dogPaint}" fill-rule="evenodd" mask="url(#reveal-${id})" d="${DOG_D}"/>
 
 ${markOnly ? "" : `  <g class="word">
     <path transform="translate(${WORD_X} ${WORD_Y})" fill="${wordPaint}" fill-rule="evenodd" d="${WORD_D}"/>
@@ -191,7 +198,7 @@ fs.writeFileSync(OUT + "/groomigo-animated-themed.svg", themed);
 fs.writeFileSync(OUT + "/groomigo-animated-dark.svg", dark);
 fs.writeFileSync(OUT + "/groomigo-animated-light.svg", light);
 fs.writeFileSync(OUT + "/groomigo-animated-transparent.svg", clear);
-console.log("viewBox", VB, "| word at", WORD_X + "," + WORD_Y, "| pen", PEN_WIDTH);
+console.log("viewBox", VB, "| word at", WORD_X + "," + WORD_Y, "| mask", MASK_WIDTH);
 console.log("dark svg:", (dark.length / 1024).toFixed(1), "KB");
 
 module.exports = { build, lock, PAD, VB };

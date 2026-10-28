@@ -66,12 +66,20 @@ const easeOut = (p) => 1 - Math.pow(1 - p, 3);
 
 const T = {
   bandStart: 0.35, bandStep: 0.33, bandDur: 0.66,
-  markIn: [2.60, 3.45],
-  penOut: [3.10, 3.65],
-  settle: [3.30, 4.10],      // the bloom pulse as the ink lands
-  wordIn: [3.65, 4.50],
+  settle: [2.95, 3.80],      // the bloom pulse as the last of the ink lands
+  wordIn: [3.45, 4.35],
   sweep: [4.45, 5.75],
 };
+
+/* The reveal mask's stroke weight, in artwork units.
+   The centreline is an APPROXIMATION of the artwork's spine — it has
+   spurious branches and it misses the ends — so a pen stroked along it
+   is a different shape from the traced fill: at 24 it covers only 80%
+   of the mark and 38% of it falls outside. Showing both at once was
+   the double line. At 72 the stroke covers the artwork completely, so
+   it can be used as a MASK instead: what gets drawn is the real mark,
+   uncovered along the path the pen travels. One shape, always. */
+const MASK_WIDTH = 72;
 
 // ── deterministic drifting motes ────────────────────────────────────
 const mulberry = (a) => () => {
@@ -112,29 +120,51 @@ function motesSvg(t, nearLayer) {
 }
 
 // ── the mark itself, at time t ──────────────────────────────────────
+const SVG_OPEN = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">`;
+
+/** The traced dog, whole. Static — the reveal is done by the mask. */
+const dogSvg = `${SVG_OPEN}${place(`<path fill="${TEAL}" fill-rule="evenodd" d="${G.DOG_D}"/>`)}</svg>`;
+
+/** How far each stroke has been laid down at time t. */
+function strokeProgress(t) {
+  const out = [];
+  G.BANDS.forEach((band, i) => {
+    const a = T.bandStart + i * T.bandStep;
+    band.forEach(({ d, flat }, j) => {
+      /* Stagger the strokes WITHIN a band too. Starting all nine at
+         once put a row of sparks across the frame that read as a zip
+         rather than a hand drawing. */
+      const lead = (j / band.length) * T.bandDur * 0.45;
+      out.push({ d, flat, p: easeInOut(seg(t, a + lead, a + lead + T.bandDur * 0.7)) });
+    });
+  });
+  return out;
+}
+
+/** White where the artwork has been uncovered. */
+function maskSvg(t) {
+  const strokes = strokeProgress(t).filter((s) => s.p > 0).map(({ d, flat, p }) => {
+    const L = flat.length;
+    return `<path d="${d}" stroke-dasharray="${L.toFixed(1)}" stroke-dashoffset="${(L * (1 - p)).toFixed(1)}"/>`;
+  }).join("");
+  return `${SVG_OPEN}${place(`<g fill="none" stroke="#fff" stroke-width="${MASK_WIDTH}" stroke-linecap="round" stroke-linejoin="round">${strokes}</g>`)}</svg>`;
+}
+
 function logoSvg(t) {
-  const markO = easeInOut(seg(t, ...T.markIn));
-  const penO = 1 - easeInOut(seg(t, ...T.penOut));
   const wordO = easeInOut(seg(t, ...T.wordIn));
 
-  let pen = "", sparks = "";
-  if (penO > 0.01) {
+  let sparks = "";
+  {
     G.BANDS.forEach((band, i) => {
       const a = T.bandStart + i * T.bandStep;
-      band.forEach(({ d, flat }, j) => {
-        /* Stagger the strokes WITHIN a band too. Starting all nine at
-           once put a row of sparks across the frame that read as a
-           zip rather than a hand drawing. */
+      band.forEach(({ flat }, j) => {
         const lead = (j / band.length) * T.bandDur * 0.45;
         const p = easeInOut(seg(t, a + lead, a + lead + T.bandDur * 0.7));
-        if (p <= 0) return;
-        const L = flat.length;
-        pen += `<path d="${d}" stroke-dasharray="${L.toFixed(1)}" stroke-dashoffset="${(L * (1 - p)).toFixed(1)}"/>`;
         /* A spark rides the tip while a stroke is being laid down, and
            is gone the moment it finishes. Short strokes — the eye, the
            brow — get none; a spark bigger than the mark it is drawing
            looks like a blob, not a pen. */
-        if (p > 0.02 && p < 0.985 && L > 150) {
+        if (p > 0.02 && p < 0.985 && flat.length > 150) {
           const [x, y] = G.pointAt(flat, p);
           sparks += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="46" fill="${BRIGHT}" fill-opacity="0.13"/>`
                  +  `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="13" fill="#FFFFFF" fill-opacity="0.7"/>`;
@@ -166,9 +196,7 @@ function logoSvg(t) {
     </clipPath>
   </defs>
   ${place(`
-    <g opacity="${markO.toFixed(3)}"><path fill="${TEAL}" fill-rule="evenodd" d="${G.DOG_D}"/></g>
-    <g opacity="${penO.toFixed(3)}" fill="none" stroke="${TEAL}" stroke-width="${G.PEN_WIDTH}" stroke-linecap="round" stroke-linejoin="round">${pen}</g>
-    <g opacity="${penO.toFixed(3)}">${sparks}</g>
+    <g>${sparks}</g>
     <g opacity="${wordO.toFixed(3)}"><path transform="translate(${G.WORD_X} ${G.WORD_Y})" fill="${WORD_INK}" fill-rule="evenodd" d="${G.WORD_D}"/></g>
     ${flashOn ? `<rect x="-500" y="-500" width="3100" height="2300" fill="url(#sweep)" clip-path="url(#lock)"/>` : ""}
   `)}
@@ -204,13 +232,24 @@ async function glow(pngBuffer, sigma, gain) {
     .png().toBuffer();
 }
 
-async function renderFrame(i, groundBuf) {
+async function renderFrame(i, groundBuf, dogBuf) {
   const t = i / FPS;
-  const [farBuf, nearBuf, logoBuf] = await Promise.all([
+  const [farBuf, nearBuf, restBuf, maskBuf] = await Promise.all([
     sharp(Buffer.from(motesSvg(t, false))).png().toBuffer(),
     sharp(Buffer.from(motesSvg(t, true))).blur(Math.max(0.3, 7 * FRAME_K)).png().toBuffer(),
     sharp(Buffer.from(logoSvg(t))).png().toBuffer(),
+    sharp(Buffer.from(maskSvg(t))).png().toBuffer(),
   ]);
+
+  /* The real mark, uncovered as far as the pen has got. `dest-in`
+     keeps the dog only where the mask has alpha, so there is never a
+     second shape on screen to read as a double line. */
+  const dogRevealed = await sharp(dogBuf)
+    .composite([{ input: maskBuf, blend: "dest-in" }]).png().toBuffer();
+
+  /* Bloom is taken from everything that is lit, mark and word alike. */
+  const logoBuf = await sharp(dogRevealed)
+    .composite([{ input: restBuf, blend: "over" }]).png().toBuffer();
 
   /* Bloom: strong while the ink is landing, then a slow breath. */
   const pulse = Math.sin(Math.PI * seg(t, ...T.settle));
@@ -229,7 +268,8 @@ async function renderFrame(i, groundBuf) {
     { input: farBuf, blend: "screen" },
     { input: nearBuf, blend: "screen" },
     { input: wide, blend: "screen" },
-    { input: logoBuf, blend: "over" },
+    { input: dogRevealed, blend: "over" },
+    { input: restBuf, blend: "over" },
     { input: tight, blend: "screen" },
     { input: grain, blend: "soft-light" },
   ]).png({ compressionLevel: 3 }).toBuffer();
@@ -237,10 +277,27 @@ async function renderFrame(i, groundBuf) {
 
 (async () => {
   const groundBuf = await sharp(Buffer.from(groundSvg)).png().toBuffer();
+  const dogBuf = await sharp(Buffer.from(dogSvg)).png().toBuffer();
+
+  /* The mask must end up covering the artwork completely, or the logo
+     holds with a bite out of it. Check, rather than trust the 72. */
+  {
+    const full = await sharp(dogBuf).composite([
+      { input: await sharp(Buffer.from(maskSvg(DUR))).png().toBuffer(), blend: "dest-in" },
+    ]).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const bare = await sharp(dogBuf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    let missing = 0, total = 0;
+    for (let k = 3; k < bare.data.length; k += 4) {
+      if (bare.data[k] > 128) { total++; if (full.data[k] < 128) missing++; }
+    }
+    const pct = (100 * missing) / total;
+    console.log(`mask covers ${(100 - pct).toFixed(2)}% of the mark at width ${MASK_WIDTH}`);
+    if (pct > 0.05) throw new Error(`reveal mask misses ${pct.toFixed(2)}% of the artwork — raise MASK_WIDTH`);
+  }
   const at = process.argv.indexOf("--at");
   if (at > -1) {
     const t = Number(process.argv[at + 1]);
-    const buf = await renderFrame(Math.round(t * FPS), groundBuf);
+    const buf = await renderFrame(Math.round(t * FPS), groundBuf, dogBuf);
     fs.writeFileSync(path.join(__dirname, `probe-${FORMAT}-${t}.png`), buf);
     console.log(`wrote probe-${FORMAT}-${t}.png  (${W}x${H}, t=${t}s)`);
     return;
@@ -249,7 +306,7 @@ async function renderFrame(i, groundBuf) {
   fs.mkdirSync(OUT, { recursive: true });
   const started = Date.now();
   for (let i = 0; i < N; i++) {
-    fs.writeFileSync(path.join(OUT, `f${String(i).padStart(4, "0")}.png`), await renderFrame(i, groundBuf));
+    fs.writeFileSync(path.join(OUT, `f${String(i).padStart(4, "0")}.png`), await renderFrame(i, groundBuf, dogBuf));
     if (i % 25 === 0) process.stdout.write(`  ${i}/${N}  ${((Date.now() - started) / 1000).toFixed(0)}s\n`);
   }
   console.log(`rendered ${N} ${W}x${H} frames in ${((Date.now() - started) / 1000).toFixed(0)}s -> ${OUT}`);

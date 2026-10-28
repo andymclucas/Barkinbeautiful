@@ -76,11 +76,25 @@ needed again unless the logo itself changes.
   gradient coordinates re-render at full resolution each frame, a
   moving `transform` gets promoted to a layer and resampled. A fixed
   size HTML version of this read as "pixelated" for four rounds.
-- **A browser caches `<mask>` contents.** Revealing the fill along the
-  centreline through an SVG mask computes correctly — the dash animates,
-  the computed styles prove it — and never re-renders. Use two layers
-  that cross-fade.
+- **Reveal the mark through a mask. Never draw a pen over it.** The
+  centreline is an approximation of the artwork's spine, so a stroke
+  along it is a different shape from the fill: at width 24 it covers
+  80% of the mark and 38% of it falls outside. Drawing the pen and then
+  cross-fading to the fill therefore put two differently-shaped teal
+  shapes on screen together for about a second — the **double line**
+  that was reported three times. At width 72 the stroke covers the
+  artwork completely, so it is used as a mask and only one shape is
+  ever visible. `render-frames.cjs` asserts the coverage at startup
+  rather than trusting the 72.
+- **SVG `<mask>` contents DO animate.** An earlier version of this file
+  said browsers cache them and that two cross-fading layers were the
+  only way. That was wrong, and it was wrong because it was measured
+  with the broken frame-stepping below. A mask whose strokes animate
+  `stroke-dashoffset` re-renders correctly in Chrome, driven by CSS or
+  by SMIL.
 - **`animation-delay` does not seek a paused animation.** Chrome keeps
   the hold time, so stepping frames by changing the delay shows the
-  wrong moment and invents bugs that are not there. Use
-  `getAnimations()` and set `currentTime`.
+  wrong moment. This is the most expensive mistake in this file: it
+  invented bugs that were not there, and it produced the false
+  conclusion about masks above, which then cost three rounds of the
+  real one. Use `getAnimations()` and set `currentTime`.
