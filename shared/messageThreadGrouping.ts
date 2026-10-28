@@ -142,3 +142,35 @@ export function recentThread<M extends ThreadMessageInput>(
   const ordered = [...messages].sort((a, b) => messageInstant(a) - messageInstant(b));
   return buildThread(ordered.slice(-limit), timeZone, now);
 }
+
+/**
+ * One Twilio send is one message, however many dogs it was logged against.
+ *
+ * Lauren, 28/10/2026: "She got a double text." Jennine Murray's thread
+ * showed "Cherry and Pepper are all done" twice. Only ONE text was sent —
+ * both rows carry the same twilio_sid, SMe375bbc...542d3, at the same
+ * second. The pickup message is deliberately logged against EVERY dog it
+ * covers, because that record is what stops a second prompt when the
+ * sibling is marked ready. The thread was rendering the bookkeeping.
+ *
+ * So the client got one text and the salon phoned her about a duplicate
+ * that never existed.
+ *
+ * Collapses on `twilioSid` ONLY. A null sid means Twilio never took it —
+ * a failed send, or an inbound message — and those are distinct messages
+ * that must never be folded together.
+ */
+export function collapseBySend<M extends ThreadMessageInput & { twilioSid?: string | null }>(
+  messages: readonly M[],
+): M[] {
+  const seen = new Set<string>();
+  const out: M[] = [];
+  for (const message of messages) {
+    const sid = message.twilioSid?.trim();
+    if (!sid) { out.push(message); continue; }
+    if (seen.has(sid)) continue;
+    seen.add(sid);
+    out.push(message);
+  }
+  return out;
+}

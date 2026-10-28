@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GROUP_WINDOW_MS,
   buildThread,
+  collapseBySend,
   dayLabel,
   messageInstant,
   recentThread,
@@ -155,5 +156,44 @@ describe("message thread grouping", () => {
     it("returns nothing for an empty thread", () => {
       expect(recentThread([], TZ, 4)).toEqual([]);
     });
+  });
+});
+
+describe("collapseBySend", () => {
+  const row = (id: number, twilioSid: string | null, body = "Cherry and Pepper are all done") =>
+    ({ id, twilioSid, body, direction: "outbound", sentAt: "2026-10-28T02:17:52Z" });
+
+  /**
+   * Lauren, 28/10/2026: "She got a double text." One Twilio send, logged
+   * against Cherry's appointment and Pepper's, rendered twice.
+   */
+  it("shows one message for one Twilio send logged against two dogs", () => {
+    const out = collapseBySend([row(3720021, "SMe375"), row(3720022, "SMe375")]);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe(3720021);
+  });
+
+  /**
+   * A null sid means Twilio never took it — a failed send, or an inbound
+   * message. Folding those together would hide real, separate messages.
+   */
+  it("never folds messages Twilio never accepted", () => {
+    const out = collapseBySend([row(1, null, "first"), row(2, null, "second"), row(3, null, "third")]);
+    expect(out).toHaveLength(3);
+  });
+
+  it("keeps genuinely separate sends apart", () => {
+    const out = collapseBySend([row(1, "SMaaa"), row(2, "SMbbb")]);
+    expect(out).toHaveLength(2);
+  });
+
+  it("keeps the first of a duplicated pair, so order is unchanged", () => {
+    const out = collapseBySend([row(1, "SMaaa"), row(2, "SMaaa"), row(3, "SMbbb")]);
+    expect(out.map(m => m.id)).toEqual([1, 3]);
+  });
+
+  it("treats blank and whitespace sids as no sid", () => {
+    const out = collapseBySend([row(1, ""), row(2, "   ")]);
+    expect(out).toHaveLength(2);
   });
 });
