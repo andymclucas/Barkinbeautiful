@@ -1,4 +1,4 @@
-import { automatedSmsAllowed, describeBlockedSms, type AutomatedSmsType } from "@shared/automatedSms";
+import { automatedSmsAllowed, automatedSmsPermitted, describeBlockedSms, type AutomatedSmsType } from "@shared/automatedSms";
 import { describePets } from "@shared/pickupGroup";
 import twilio from "twilio";
 import { getAppBaseUrl } from "./appUrl";
@@ -57,10 +57,11 @@ export async function sendSms(
     //
     // `blocked` distinguishes "never attempted" from "Twilio refused it",
     // because the four callers that mirror a send into sms_logs must NOT
-    // write a row for this one. That table IS the Messages thread, and a
+    // write a row for this one. That table IS the Messages thread, so a
     // failed row for a message nobody tried to send would put a phantom
-    // text in a conversation staff read every day — forty a day from
-    // check-in alone — and read as though Twilio were broken.
+    // text in a conversation staff read all day, and would read as
+    // though Twilio were broken. The confirmation path alone reached it
+    // four times in two days.
     console.info(`[sms] not sent — ${describeBlockedSms(options.type)}`);
     return { success: false, blocked: true, error: "blocked_by_policy" };
   }
@@ -76,7 +77,7 @@ export async function sendSms(
    * Production has it set, so this changes nothing live. Staff-sent
    * messages are not gated: somebody pressing send has decided.
    */
-  if (options.trigger === "automated" && process.env.SMS_AUTOMATION_ENABLED !== "true") {
+  if (options.trigger === "automated" && !automatedSmsPermitted(options.type, process.env)) {
     console.info(`[sms] not sent — SMS_AUTOMATION_ENABLED is not "true", so no automated ${options.type} goes out`);
     return { success: false, blocked: true, error: "automation_disabled" };
   }

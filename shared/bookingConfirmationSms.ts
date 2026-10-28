@@ -74,7 +74,8 @@ export type ConfirmationSkipReason =
   | "already_arranged"
   | "too_soon"
   | "not_live"
-  | "automation_off";
+  | "automation_off"
+  | "policy_off";
 
 export type ConfirmationDecision =
   | { send: true }
@@ -90,6 +91,8 @@ export type ConfirmationDecision =
  */
 export function decideBookingConfirmation(input: {
   automationEnabled: boolean;
+  /** Whether the automated-SMS allow-list permits a confirmation. */
+  policyAllows: boolean;
   confirmationSmsSentAt: Date | string | number | null | undefined;
   clientPhone: string | null | undefined;
   /** Set on anything that came from the MoeGo import. */
@@ -118,6 +121,13 @@ export function decideBookingConfirmation(input: {
   // The global gate. Checked here as well as at the call site so a new
   // caller cannot route around it by forgetting.
   if (!input.automationEnabled) return { send: false, reason: "automation_off" };
+  /**
+   * Decided HERE, before the caller claims confirmation_sms_sent_at.
+   * Claiming it for a text the policy then blocks puts the column back
+   * in the state the caller's own comment calls a past bug: saying
+   * "sent" with nothing in sms_logs.
+   */
+  if (!input.policyAllows) return { send: false, reason: "policy_off" };
 
   // Idempotency. The column is the only thing standing between one text
   // and one text per retry, so it is the first real check.
@@ -201,4 +211,5 @@ export const CONFIRMATION_SKIP_LABEL: Record<ConfirmationSkipReason, string> = {
   in_the_past: "the appointment is in the past",
   not_live: "cancelled or a no-show",
   automation_off: "SMS automation is off",
+  policy_off: "automated texts to clients are switched off",
 };

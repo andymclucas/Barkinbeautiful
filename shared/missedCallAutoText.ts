@@ -68,7 +68,7 @@ export function autoTextPhoneKey(from: string | null | undefined): string | null
 /** Outcome of trying to claim the one-and-only send for a number. */
 export type AutoTextClaim =
   | { send: true; reason: "claimed" }
-  | { send: false; reason: "already-sent" | "not-dialable" | "no-database" | "claim-failed" };
+  | { send: false; reason: "already-sent" | "not-dialable" | "no-database" | "claim-failed" | "policy-off" };
 
 /**
  * Whether to send, given what happened when we tried to write the claim row.
@@ -79,10 +79,21 @@ export type AutoTextClaim =
  * reaches voicemail, and staff still see the missed call in the app.
  */
 export function classifyClaim(input: {
+  policyAllows: boolean;
   phoneKey: string | null;
   databaseAvailable: boolean;
   insert: "won" | "duplicate" | "error" | "not-attempted";
 }): AutoTextClaim {
+  /**
+   * Policy first, and the CALLER must not have claimed a row either.
+   *
+   * The row is a once-ever claim: UNIQUE on (tenant_id, phone_e164),
+   * and a second insert for the same number comes back "already-sent".
+   * Claiming it for a text that policy then blocks spends the only
+   * chance that number ever had — about four callers a day, invisibly,
+   * because nothing in the app reads this table.
+   */
+  if (!input.policyAllows) return { send: false, reason: "policy-off" };
   if (!input.phoneKey) return { send: false, reason: "not-dialable" };
   if (!input.databaseAvailable) return { send: false, reason: "no-database" };
   if (input.insert === "won") return { send: true, reason: "claimed" };
@@ -115,5 +126,7 @@ export function describeClaim(claim: AutoTextClaim, phoneKey: string | null, fro
       return `[Twilio] Missed-call auto-text WITHHELD for ${who} - database unavailable, cannot prove it was not already sent`;
     case "claim-failed":
       return `[Twilio] Missed-call auto-text WITHHELD for ${who} - could not record the send claim`;
+    case "policy-off":
+      return `[Twilio] Missed-call auto-text withheld for ${who} - automated texts to clients are off. No claim recorded, so ${who} is still eligible if it is switched back on`;
   }
 }

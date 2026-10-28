@@ -21,6 +21,7 @@
  * live in shared/bookingConfirmationSms.ts so they are testable without
  * a database or a Twilio key.
  */
+import { automatedSmsPermitted } from "@shared/automatedSms";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { appointments, clients, pets, staff, tenants, smsLogs } from "../drizzle/schema";
 import { sendSms } from "./sms";
@@ -113,6 +114,7 @@ export async function sendBookingConfirmation(
     for (const row of rows) {
       const decision = decideBookingConfirmation({
         automationEnabled: process.env.SMS_AUTOMATION_ENABLED === "true",
+        policyAllows: automatedSmsPermitted("confirmation", process.env),
         confirmationSmsSentAt: row.confirmationSmsSentAt,
         clientPhone: row.clientPhone,
         smsOptedOutAt: row.smsOptedOutAt,

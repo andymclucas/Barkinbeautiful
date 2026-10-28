@@ -52,3 +52,23 @@ export function automatedSmsAllowed(type: AutomatedSmsType): boolean {
 export function describeBlockedSms(type: AutomatedSmsType): string {
   return `${type} is an automated message, and only ${Array.from(ALLOWED_AUTOMATED_SMS).join(", ")} may go to clients`;
 }
+
+/**
+ * Will an automated message of this type actually be sent?
+ *
+ * `sendSms` is the enforcement point and needs no help from callers.
+ * This exists for the two callers that **spend something** before they
+ * send — the missed-call ledger row, which is a once-ever claim keyed
+ * UNIQUE on the caller's number, and the booking confirmation's
+ * `confirmation_sms_sent_at` claim. Both must ask before they write,
+ * or they record a send that never happened.
+ *
+ * `env` is passed in rather than read, so this stays pure and testable
+ * — same shape as shared/trackerSmsGate.ts.
+ */
+export function automatedSmsPermitted(
+  type: AutomatedSmsType,
+  env: Record<string, string | undefined>,
+): boolean {
+  return automatedSmsAllowed(type) && env.SMS_AUTOMATION_ENABLED === "true";
+}

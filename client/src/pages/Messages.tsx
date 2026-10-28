@@ -1013,14 +1013,17 @@ export default function Messages() {
           <CardContent className="p-4 flex items-start gap-3">
             <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
             <div>
-              <div className="font-medium text-sm text-blue-900 dark:text-blue-200">Automated Appointment Reminders</div>
+              <div className="font-medium text-sm text-blue-900 dark:text-blue-200">Automated texts to clients are off</div>
               <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                Three-stage reminders are ready: 4 days before, 2 days before, and the morning of each appointment.
-                Each stage sends once per appointment and will only send after the salon explicitly enables live SMS automation.
+                The only text that reaches a client is "ready for pickup", and a staff member sends it from the
+                workflow board. Booking confirmations, appointment reminders, the Pet Tracker link and the
+                missed-call auto-reply are all switched off, so nothing goes out on its own.
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                You can still text any client yourself from here, as normal.
               </p>
               <div className="mt-2 flex items-center gap-2">
-                <Badge className="bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-xs">SMS_AUTOMATION_ENABLED</Badge>
-                <span className="text-xs text-blue-600 dark:text-blue-400">Set this environment variable to "true" in Render when you're ready to turn on automated reminders</span>
+                <span className="text-xs text-blue-600 dark:text-blue-400">Turning any of them back on is a code change, not a settings change — ask Andy.</span>
               </div>
             </div>
           </CardContent>

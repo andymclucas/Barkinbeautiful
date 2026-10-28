@@ -1,3 +1,4 @@
+import { automatedSmsPermitted } from "@shared/automatedSms";
 import "dotenv/config";
 import { startPresenceSweeper } from "../presenceRegistry";
 import express from "express";
@@ -394,9 +395,14 @@ async function startServer() {
       let db: Awaited<ReturnType<typeof getDb>> = null;
 
       try {
+        // Asked BEFORE the claim row is written. See classifyClaim: that
+        // row is a once-ever claim keyed UNIQUE on the number, so
+        // claiming it for a blocked text would permanently disqualify a
+        // caller who was never actually texted.
+        const policyAllows = automatedSmsPermitted("missed_call", process.env);
         if (phoneKey) {
           db = await getDb();
-          if (db) {
+          if (db && policyAllows) {
             try {
               await db.insert(missedCallAutoTexts).values({
                 tenantId,
@@ -413,7 +419,7 @@ async function startServer() {
           }
         }
 
-        const claim = classifyClaim({ phoneKey, databaseAvailable: Boolean(db), insert });
+        const claim = classifyClaim({ policyAllows, phoneKey, databaseAvailable: Boolean(db), insert });
         console.log(describeClaim(claim, phoneKey, String(From)));
 
         if (claim.send && phoneKey && db) {
