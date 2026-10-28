@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   calendarColumnGroups,
+  columnOwnsAppointment,
   resolveCalendarStaffColumns,
+  withDaycareColumn,
   withUnassignedColumn,
+  DAYCARE_COLUMN,
+  UNASSIGNED_COLUMN,
+  type CalendarStaffColumn,
 } from "../client/src/lib/calendarStaffColumns";
 
 describe("resolveCalendarStaffColumns", () => {
@@ -114,8 +119,8 @@ describe("calendarColumnGroups", () => {
     // column count the banners stop lining up with the board beneath them.
     const cols = withUnassignedColumn([MEGS, STEPH], true);
     const groups = calendarColumnGroups(cols);
-    expect(groups).toEqual({ groomers: 1, bathers: 1, unassigned: 1 });
-    expect(groups.groomers + groups.bathers + groups.unassigned).toBe(cols.length);
+    expect(groups).toEqual({ groomers: 1, bathers: 1, unassigned: 1, daycare: 0 });
+    expect(groups.groomers + groups.bathers + groups.unassigned + groups.daycare).toBe(cols.length);
   });
 
   it("does not file Unassigned under Groomers", () => {
@@ -126,6 +131,69 @@ describe("calendarColumnGroups", () => {
   });
 
   it("reports no unassigned group when the column is absent", () => {
-    expect(calendarColumnGroups([MEGS, STEPH])).toEqual({ groomers: 1, bathers: 1, unassigned: 0 });
+    expect(calendarColumnGroups([MEGS, STEPH])).toEqual({ groomers: 1, bathers: 1, unassigned: 0, daycare: 0 });
+  });
+});
+
+describe("the daycare column", () => {
+  const charlotte: CalendarStaffColumn = {
+    id: 3, name: "Charlotte Purcell", colourHex: "#ef4444", isActive: true, role: "groomer",
+  };
+  /** Poppy, 28/10/2026: a daycare booking assigned to a groomer. */
+  const poppy = { staffId: 3, serviceType: "daycare" };
+  const groom = { staffId: 3, serviceType: "classic_groom" };
+  const shown = { daycareColumnShown: true };
+
+  it("draws a daycare dog in the daycare column, not the groomer's", () => {
+    expect(columnOwnsAppointment(DAYCARE_COLUMN, poppy, shown)).toBe(true);
+    expect(columnOwnsAppointment(charlotte, poppy, shown)).toBe(false);
+  });
+
+  /**
+   * The bug this exists to prevent. Poppy carries a staff id, so a plain
+   * `staffId === column.id` test matches her groomer's column too and she
+   * is drawn twice — in two places at once, at the same time.
+   */
+  it("puts each dog in exactly one column", () => {
+    const columns = [charlotte, DAYCARE_COLUMN];
+    for (const appt of [poppy, groom, { staffId: null, serviceType: "daycare" }]) {
+      const owners = columns.filter(c => columnOwnsAppointment(c, appt, shown));
+      expect(owners, JSON.stringify(appt)).toHaveLength(1);
+    }
+  });
+
+  it("leaves ordinary grooms where they were", () => {
+    expect(columnOwnsAppointment(charlotte, groom, shown)).toBe(true);
+    expect(columnOwnsAppointment(DAYCARE_COLUMN, groom, shown)).toBe(false);
+  });
+
+  /** A daycare dog with nobody against it belongs here, not in Unassigned. */
+  it("claims an unassigned daycare dog", () => {
+    const loose = { staffId: null, serviceType: "daycare" };
+    expect(columnOwnsAppointment(DAYCARE_COLUMN, loose, shown)).toBe(true);
+    expect(columnOwnsAppointment(UNASSIGNED_COLUMN, loose, shown)).toBe(false);
+  });
+
+  /**
+   * Hiding the column must not hide the dog. With no daycare column on the
+   * board the dog falls back to whoever is against it, which is the
+   * behaviour the calendar had before this existed.
+   */
+  it("returns the dog to its groomer when the column is hidden", () => {
+    const hidden = { daycareColumnShown: false };
+    expect(columnOwnsAppointment(charlotte, poppy, hidden)).toBe(true);
+  });
+
+  it("adds the column only on days that have a daycare dog", () => {
+    expect(withDaycareColumn([charlotte], false)).toEqual([charlotte]);
+    expect(withDaycareColumn([charlotte], true)).toEqual([charlotte, DAYCARE_COLUMN]);
+  });
+
+  /** The banner spans must add up to the column count or the header skews. */
+  it("counts daycare as its own banner, not as a groomer", () => {
+    const groups = calendarColumnGroups([charlotte, UNASSIGNED_COLUMN, DAYCARE_COLUMN]);
+    expect(groups).toEqual({ groomers: 1, bathers: 0, unassigned: 1, daycare: 1 });
+    const total = groups.groomers + groups.bathers + groups.unassigned + groups.daycare;
+    expect(total).toBe(3);
   });
 });

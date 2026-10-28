@@ -23,6 +23,9 @@
  * Queensland does not observe daylight saving, so the +10:00 offset used
  * for case 1 is constant year-round -- no DST table needed.
  */
+/** Brisbane is UTC+10 all year; Queensland does not observe daylight saving. */
+const BRISBANE_OFFSET_MS = 10 * 60 * 60 * 1000;
+
 export function parseBrisbaneLocalDateTime(value: string): Date {
   const hasTimezoneMarker = /(Z|[+-]\d{2}:?\d{2})$/.test(value);
   if (hasTimezoneMarker) {
@@ -45,6 +48,25 @@ export function parseBrisbaneLocalDateTime(value: string): Date {
       second ? Number(second) : 0
     )
   );
+}
+
+/**
+ * The inverse of parseBrisbaneLocalDateTime: an instant as the Brisbane
+ * wall-clock string an <input type="datetime-local"> wants.
+ *
+ * Computed from the UTC fields plus the fixed +10, NOT from
+ * `getTimezoneOffset()`. Reading the device's offset gives the right
+ * answer only on a machine set to Brisbane time — which is every machine
+ * in the salon, and none of the ones this will eventually run on. Round
+ * trips exactly: parse(format(d)) === d for whole minutes.
+ *
+ * Queensland does not observe daylight saving, so +10 is constant.
+ */
+export function brisbaneLocalInputValue(instant: Date): string {
+  const shifted = new Date(instant.getTime() + BRISBANE_OFFSET_MS);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
+    + `T${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`;
 }
 
 /**

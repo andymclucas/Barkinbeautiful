@@ -226,3 +226,27 @@ export function serialiseShowUnassignedColumn(show: boolean): string {
 export function parseShowUnassignedColumn(raw: string | null | undefined): boolean {
   return String(raw ?? "").trim() !== "0";
 }
+
+/**
+ * Whether the Daycare column is shown, per user.
+ *
+ * Its own key, for the same reason the Unassigned one is separate: the
+ * staff selection is about WHICH PEOPLE to show, and Daycare is not a
+ * person. Folding it into that list would give two chances to filter a
+ * column out of existence.
+ *
+ * Defaults to SHOWN, and the column only appears on days that actually
+ * have a daycare dog.
+ */
+export function calendarDaycareColumnKey(userId: number | string | null | undefined): string {
+  return `groomigo_calendar_daycare_v1_${userId ?? "anon"}`;
+}
+
+export function serialiseShowDaycareColumn(show: boolean): string {
+  return show ? "1" : "0";
+}
+
+/** Anything that is not an explicit "0" means shown, including nothing. */
+export function parseShowDaycareColumn(raw: string | null | undefined): boolean {
+  return String(raw ?? "").trim() !== "0";
+}

@@ -38,6 +38,7 @@ import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS, BOOKING_BUCKET_LAB
 import { ClientPetsAside } from "@/components/client-record/ClientPetsAside";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { brisbaneLocalInputValue, parseBrisbaneLocalDateTime } from "@shared/localDateTime";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -309,6 +310,18 @@ export default function ClientDetail() {
   // session with it, so it goes through a named confirm rather than a
   // window.confirm — the same shape the calendar's Delete booking uses.
   const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string } | null>(null);
+  /**
+   * Adjusting a booking's time without leaving the client.
+   *
+   * Andy, 28/10/2026: "Poppy is set for the wrong time today and I need to
+   * adjust it. Add feature to adjust in the client tab." Until now this
+   * table could only DELETE a booking, so fixing a time meant finding the
+   * dog again on the calendar — and a daycare dog booked against a groomer
+   * is not where you would look for it.
+   */
+  const [editAppt, setEditAppt] = useState<
+    { id: number; label: string; scheduledStart: string; scheduledEnd: string } | null
+  >(null);
   const [bookingPage, setBookingPage] = useState(1);
   const [paymentFilter, setPaymentFilter] = useState("all");
   const BOOKINGS_PER_PAGE = 10;
@@ -355,6 +368,16 @@ export default function ClientDetail() {
     { clientId },
     { enabled: isAdmin && Boolean(clientId) },
   );
+  // The same procedure the calendar's own edit dialog uses, so a booking
+  // moved from here behaves exactly as one moved by dragging it.
+  const rescheduleAppointment = trpc.calendar.reschedule.useMutation({
+    onSuccess: async () => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      setEditAppt(null);
+      toast.success("Booking time updated");
+    },
+    onError: (error) => toast.error(error.message || "Could not change that booking"),
+  });
   const deleteAppointment = trpc.calendar.deleteAppointment.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -1610,7 +1633,20 @@ export default function ClientDetail() {
                             : <span className="text-xs text-muted-foreground">—</span>}
                         </td>
                         <td className="p-3 text-right font-medium">{a.price ? `$${parseFloat(a.price).toFixed(2)}` : "—"}</td>
-                        <td className="p-3 text-right">
+                        <td className="p-3 text-right whitespace-nowrap">
+                          <button
+                            className="rounded p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                            title="Change this booking's time"
+                            aria-label={`Change the time of ${a.petName}'s booking`}
+                            onClick={() => setEditAppt({
+                              id: a.id,
+                              label: `${a.petName} — ${SERVICE_LABELS[a.serviceType] ?? a.serviceType}`,
+                              scheduledStart: brisbaneLocalInputValue(new Date(a.scheduledStart)),
+                              scheduledEnd: brisbaneLocalInputValue(new Date(a.scheduledEnd)),
+                            })}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                           <button
                             className="rounded p-1 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                             title="Delete this booking"
@@ -2143,6 +2179,68 @@ export default function ClientDetail() {
       {/* Same warning the calendar gives, because it is the same delete: a
           shared booking takes every pet in it, and payments survive without
           their appointment link rather than disappearing. */}
+      <Dialog open={!!editAppt} onOpenChange={open => { if (!open) setEditAppt(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change booking time</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{editAppt?.label}</p>
+          <div className="space-y-3 pt-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="appt-start">Starts</Label>
+              <Input
+                id="appt-start"
+                type="datetime-local"
+                value={editAppt?.scheduledStart ?? ""}
+                onChange={e => setEditAppt(prev => {
+                  if (!prev) return prev;
+                  const scheduledStart = e.target.value;
+                  // The end follows the start by the length the booking
+                  // already had, so moving a dog an hour later does not
+                  // silently stretch or collapse it. Still editable below.
+                  const previousLength = new Date(prev.scheduledEnd).getTime()
+                    - new Date(prev.scheduledStart).getTime();
+                  const nextEnd = Number.isFinite(previousLength) && previousLength > 0 && scheduledStart
+                    ? brisbaneLocalInputValue(
+                        new Date(parseBrisbaneLocalDateTime(scheduledStart).getTime() + previousLength),
+                      )
+                    : prev.scheduledEnd;
+                  return { ...prev, scheduledStart, scheduledEnd: nextEnd };
+                })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="appt-end">Ends</Label>
+              <Input
+                id="appt-end"
+                type="datetime-local"
+                value={editAppt?.scheduledEnd ?? ""}
+                onChange={e => setEditAppt(prev => prev ? { ...prev, scheduledEnd: e.target.value } : prev)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditAppt(null)}>Cancel</Button>
+            <Button
+              disabled={
+                rescheduleAppointment.isPending
+                || !editAppt?.scheduledStart
+                || !editAppt?.scheduledEnd
+                // A booking that ends before it starts is a typo, not a plan.
+                || new Date(editAppt.scheduledEnd).getTime() <= new Date(editAppt.scheduledStart).getTime()
+              }
+              onClick={() => editAppt && rescheduleAppointment.mutate({
+                appointmentId: editAppt.id,
+                scheduledStart: editAppt.scheduledStart,
+                scheduledEnd: editAppt.scheduledEnd,
+              })}
+            >
+              {rescheduleAppointment.isPending ? "Saving…" : "Save time"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!confirmDeleteAppt} onOpenChange={open => { if (!open) setConfirmDeleteAppt(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
