@@ -1,3 +1,4 @@
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { isActiveStaffValue } from "@/lib/staffStatus";
@@ -818,6 +819,12 @@ export default function Staff() {
   const rightsUtils = trpc.useUtils();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  /**
+   * Which section is showing. Not in the URL: the page is reached from the
+   * sidebar rather than linked to, and a tab that survives a reload would
+   * leave somebody staring at the booking limits when they wanted the team.
+   */
+  const [section, setSection] = useState("team");
   const [form, setForm] = useState({ name: "", email: "", phone: "", role: "groomer", colourHex: "#6366f1" });
 
   const closeStaffProfile = () => {
@@ -876,15 +883,43 @@ export default function Staff() {
           <Button onClick={() => setAddOpen(true)} className="gap-1.5"><Plus className="h-4 w-4" /> Add Staff Member</Button>
         </div>
 
-        {/* Owner-only. The server refuses the data to anyone else; not
-            rendering the card means nobody has to see a permission error to
-            learn the figures exist. */}
-        {ownerView && <RevenueTargets />}
+        {/* Andy, 28/10/2026: "Give a different layout for this so it's not
+            a single page scroll. Separate them into different sections."
+            Four unrelated jobs were stacked down one page — the team, the
+            revenue targets, the online booking limits and the block-out
+            calendar — so reaching the roster meant scrolling past two
+            settings panels that are touched once a month.
 
-        <OnlineBookingControls />
+            The team is the default tab: it is what the page is named after
+            and the only part most staff open it for. */}
+        <Tabs value={section} onValueChange={setSection}>
+          {/* Tabs are an inline-flex row: on a phone they ran past the right
+              edge and took the page with them. Scroll instead. */}
+          <TabsList className="max-w-full justify-start overflow-x-auto">
+            <TabsTrigger value="team">Team</TabsTrigger>
+            {/* Owner-only. The server refuses the data to anyone else; not
+                rendering the tab means nobody has to see a permission error
+                to learn the figures exist. */}
+            {ownerView && <TabsTrigger value="targets">Revenue targets</TabsTrigger>}
+            <TabsTrigger value="booking">Online booking</TabsTrigger>
+            <TabsTrigger value="blockout">Block out</TabsTrigger>
+          </TabsList>
 
-        <BlockoutControls />
+        {ownerView && (
+          <TabsContent value="targets" className="mt-4">
+            <RevenueTargets />
+          </TabsContent>
+        )}
 
+        <TabsContent value="booking" className="mt-4">
+          <OnlineBookingControls />
+        </TabsContent>
+
+        <TabsContent value="blockout" className="mt-4">
+          <BlockoutControls />
+        </TabsContent>
+
+        <TabsContent value="team" className="mt-4 space-y-6">
         {isLoading && <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" /></div>}
 
         {activeStaff.length > 0 && (
@@ -1032,6 +1067,9 @@ export default function Staff() {
             </div>
           </div>
         )}
+
+        </TabsContent>
+        </Tabs>
 
         <Dialog open={selectedId !== null} onOpenChange={open => { if (!open) closeStaffProfile(); }}>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto [&>[data-slot=dialog-close]]:hidden">
