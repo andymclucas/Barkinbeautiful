@@ -1,3 +1,4 @@
+import { petPhotoDeletionVerdict } from "@shared/petPhotoDeletion";
 import { vipPetIds } from "@shared/vipPetIds";
 import { dogsNamedInPlan } from "@shared/membershipCoveredPets";
 import { buildRescheduleUpdate } from "@shared/rescheduleUpdate";
@@ -3495,6 +3496,62 @@ const clientsRouter = router({
         caption: input.caption?.trim() || null,
       }).$returningId();
       return { id: created.id };
+    }),
+
+  /**
+   * Remove a groom photo.
+   *
+   * operationalProcedure, matching how photos actually get ADDED: the
+   * tRPC addPetPhoto is protected, but the route the UI really posts
+   * to — /api/upload/pet-groom-photo — accepts any authenticated user,
+   * so a restricted groomer can create one. Making the undo stricter
+   * than the do would leave the person who made the mistake unable to
+   * fix it, which is the whole reason this exists.
+   *
+   * The caller names the pet as well as the photo. A client record left
+   * open goes stale, and deleting by id alone would remove whatever row
+   * that id points at by the time the button is pressed.
+   */
+  deletePetPhoto: operationalProcedure
+    .input(z.object({
+      photoId: z.number().int().positive(),
+      petId: z.number().int().positive(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      const [photo] = await db
+        .select({ id: petPhotos.id, petId: petPhotos.petId, tenantId: petPhotos.tenantId })
+        .from(petPhotos)
+        .where(eq(petPhotos.id, input.photoId))
+        .limit(1);
+
+      /* The CALLER's salon, resolved from the session — not the photo's
+         own tenant, which would make the cross-tenant check compare a
+         value with itself and always pass. */
+      const tenantId = tenantOf(ctx);
+      const verdict = petPhotoDeletionVerdict(photo, {
+        photoId: input.photoId,
+        petId: input.petId,
+        tenantId,
+      });
+      /* Already gone is success. Two people on the same record will both
+         press delete, and the second must not see an error for a photo
+         that is in the state they asked for. */
+      if (!verdict.allowed && verdict.reason === "not_found") return { deleted: false };
+      if (!verdict.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: verdict.message });
+
+      /* Both ids in the WHERE, not just the one that was checked: the
+         read and the delete are separate statements, so the guard above
+         is advisory and this is what actually binds. */
+      await db.delete(petPhotos).where(
+        and(
+          eq(petPhotos.id, input.photoId),
+          eq(petPhotos.petId, input.petId),
+          eq(petPhotos.tenantId, tenantId),
+        ),
+      );
+      return { deleted: true };
     }),
 
   getProfile: protectedProcedure
