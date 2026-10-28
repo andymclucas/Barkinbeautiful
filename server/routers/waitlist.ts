@@ -448,7 +448,7 @@ export const waitlistRouter = router({
           whenLabel: label,
           url: waitlistOfferUrl(getAppBaseUrl(), token),
         });
-        const result = await sendSms(entry.phone, body, { tenantId });
+        const result = await sendSms(entry.phone, body, { tenantId, trigger: "staff" });
         // Logged either way, so the conversation shows the salon tried
         // and a failure is visible rather than silent.
         await db.insert(smsLogs).values({
@@ -669,13 +669,15 @@ export const waitlistRouter = router({
         // message about nothing, and it costs a segment.
         if (loser.status === "claimed" && loser.phone?.trim()) {
           const body = `Sorry — that spot for ${loser.petName} has gone to another client. You're still on the waitlist.`;
-          const result = await sendSms(loser.phone, body, { tenantId });
-          await db.insert(smsLogs).values({
-            tenantId, clientId: loser.clientId, toNumber: loser.phone, body,
-            twilioSid: result.sid, status: result.success ? "sent" : "failed",
-            type: "custom", direction: "outbound", errorMessage: result.error,
-          });
-          told++;
+          const result = await sendSms(loser.phone, body, { tenantId, trigger: "automated", type: "waitlist_missed" });
+          if (!result.blocked) {
+            await db.insert(smsLogs).values({
+              tenantId, clientId: loser.clientId, toNumber: loser.phone, body,
+              twilioSid: result.sid, status: result.success ? "sent" : "failed",
+              type: "custom", direction: "outbound", errorMessage: result.error,
+            });
+            told++;
+          }
         }
       }
 

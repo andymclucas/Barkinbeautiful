@@ -419,7 +419,7 @@ async function startServer() {
         if (claim.send && phoneKey && db) {
           const claimedDb = db;
           // We hold the only claim for this number, so this send cannot repeat.
-          sendSms(String(From), MISSED_CALL_AUTO_TEXT, { tenantId })
+          sendSms(String(From), MISSED_CALL_AUTO_TEXT, { tenantId, trigger: "automated", type: "missed_call" })
             .then(async result => {
               await claimedDb
                 .update(missedCallAutoTexts)
@@ -441,18 +441,20 @@ async function startServer() {
               // from the rows in it, a known client's whole conversation
               // displayed as a bare +61 number — 61 of 79 outbound rows,
               // 28 of them existing clients.
-              const autoTextCaller = await lookupCallerByPhone(claimedDb, phoneKey, tenantId);
-              await claimedDb.insert(smsLogs).values({
-                tenantId,
-                clientId: autoTextCaller.clientId ?? null,
-                toNumber: phoneKey,
-                body: MISSED_CALL_AUTO_TEXT,
-                twilioSid: result.sid,
-                status: result.success ? "sent" : "failed",
-                type: "custom",
-                direction: "outbound",
-                errorMessage: result.error,
-              });
+              if (!result.blocked) {
+                const autoTextCaller = await lookupCallerByPhone(claimedDb, phoneKey, tenantId);
+                await claimedDb.insert(smsLogs).values({
+                  tenantId,
+                  clientId: autoTextCaller.clientId ?? null,
+                  toNumber: phoneKey,
+                  body: MISSED_CALL_AUTO_TEXT,
+                  twilioSid: result.sid,
+                  status: result.success ? "sent" : "failed",
+                  type: "custom",
+                  direction: "outbound",
+                  errorMessage: result.error,
+                });
+              }
             })
             .catch(err =>
               console.error("[Twilio] Missed-call auto-text send/record failed:", err),

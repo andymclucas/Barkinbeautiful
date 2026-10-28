@@ -1,3 +1,4 @@
+import { automatedSmsAllowed, describeBlockedSms, type AutomatedSmsType } from "@shared/automatedSms";
 import { describePets } from "@shared/pickupGroup";
 import twilio from "twilio";
 import { getAppBaseUrl } from "./appUrl";
@@ -29,8 +30,57 @@ function getClient() {
 export async function sendSms(
   to: string,
   body: string,
-  options: { tenantId?: number } = {},
-): Promise<{ success: boolean; sid?: string; error?: string }> {
+  /**
+   * Every caller says which kind of message this is.
+   *
+   * Andy, 28/10/2026: "No automated text messages to go to clients
+   * other than when dogs are fully groomed and ready to be picked
+   * up." Enforced HERE rather than at each send site, because there
+   * are a dozen of those and the next one has not been written yet.
+   *
+   * `trigger: "staff"` is a person choosing to text a client, which
+   * this rule does not touch. `trigger: "automated"` must name its
+   * type, and is sent only if shared/automatedSms.ts allows it.
+   *
+   * Required, not optional. An optional flag is one a new caller
+   * forgets, and forgetting here means texting a real client.
+   */
+  options: { tenantId?: number } & (
+    | { trigger: "staff" }
+    | { trigger: "automated"; type: AutomatedSmsType }
+  ),
+): Promise<{ success: boolean; sid?: string; error?: string; blocked?: true }> {
+  if (options.trigger === "automated" && !automatedSmsAllowed(options.type)) {
+    // Logged rather than thrown: a blocked message must not break the
+    // check-in, the cron run or the booking that triggered it. Callers
+    // already handle an unsuccessful send, so they need no new branch.
+    //
+    // `blocked` distinguishes "never attempted" from "Twilio refused it",
+    // because the four callers that mirror a send into sms_logs must NOT
+    // write a row for this one. That table IS the Messages thread, and a
+    // failed row for a message nobody tried to send would put a phantom
+    // text in a conversation staff read every day — forty a day from
+    // check-in alone — and read as though Twilio were broken.
+    console.info(`[sms] not sent — ${describeBlockedSms(options.type)}`);
+    return { success: false, blocked: true, error: "blocked_by_policy" };
+  }
+
+  /**
+   * Automation is additionally gated on the environment, so a developer
+   * running against the production database cannot text the salon's
+   * clients. Four of the six automated paths already checked this for
+   * themselves; the missed-call auto-reply and the waitlist "it's gone"
+   * text did NOT, and between them they sent 118 real messages in the
+   * last 30 days. Checking it here covers all six and any future one.
+   *
+   * Production has it set, so this changes nothing live. Staff-sent
+   * messages are not gated: somebody pressing send has decided.
+   */
+  if (options.trigger === "automated" && process.env.SMS_AUTOMATION_ENABLED !== "true") {
+    console.info(`[sms] not sent — SMS_AUTOMATION_ENABLED is not "true", so no automated ${options.type} goes out`);
+    return { success: false, blocked: true, error: "automation_disabled" };
+  }
+
   const client = getClient();
   // Each salon texts from its own number, so a client replying reaches the
   // business that messaged them. Falls back to the shared TWILIO_FROM_NUMBER

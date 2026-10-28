@@ -745,7 +745,7 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
           stage: stage.key,
         });
 
-        const result = await sendSms(row.clientPhone, body, { tenantId: row.tenantId });
+        const result = await sendSms(row.clientPhone, body, { tenantId: row.tenantId, trigger: "automated", type: "reminder" });
 
         if (result.success) {
           await db

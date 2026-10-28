@@ -1594,19 +1594,23 @@ const calendarRouter = router({
             salonName: trackerRecipient.tenantName ?? "Barkin' Beautiful",
             trackerUrl,
           });
-          const result = await sendSms(trackerRecipient.phone, body, { tenantId: appt.tenantId });
-          await db.insert(smsLogs).values({
-            tenantId: appt.tenantId,
-            clientId: appt.clientId,
-            appointmentId: appt.id,
-            toNumber: trackerRecipient.phone,
-            body,
-            twilioSid: result.sid,
-            status: result.success ? "sent" : "failed",
-            type: "tracker",
-            direction: "outbound",
-            errorMessage: result.error,
-          });
+          const result = await sendSms(trackerRecipient.phone, body, { tenantId: appt.tenantId, trigger: "automated", type: "tracker" });
+          // Not logged when policy blocked it: no text was attempted, and
+          // a row here is a visible message in the client's thread.
+          if (!result.blocked) {
+            await db.insert(smsLogs).values({
+              tenantId: appt.tenantId,
+              clientId: appt.clientId,
+              appointmentId: appt.id,
+              toNumber: trackerRecipient.phone,
+              body,
+              twilioSid: result.sid,
+              status: result.success ? "sent" : "failed",
+              type: "tracker",
+              direction: "outbound",
+              errorMessage: result.error,
+            });
+          }
           if (result.success) {
             await db.update(appointments).set({ trackerSmsSent: true }).where(eq(appointments.id, appt.id));
           }
@@ -9483,7 +9487,7 @@ const smsRouter = router({
       const covered = group.appointmentIds.length > 0 ? group.appointmentIds : [appointment.id];
 
       const body = buildReadyForPickupSms({ clientFirstName: recipient.name.split(" ")[0] || "there", petNames });
-      const result = await sendSms(recipient.phone, body, { tenantId: appointment.tenantId });
+      const result = await sendSms(recipient.phone, body, { tenantId: appointment.tenantId, trigger: "staff" });
       // Logged against EVERY dog the text covers, not just the one whose
       // button was pressed. That record is what stops a second prompt when
       // the sibling is marked ready, and what makes the client's SMS
@@ -9505,7 +9509,7 @@ const smsRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
-      const result = await sendSms(input.toNumber, input.body, { tenantId: tenantOf(ctx, input) });
+      const result = await sendSms(input.toNumber, input.body, { tenantId: tenantOf(ctx, input), trigger: "staff" });
       if (db) {
         await db.insert(smsLogs).values({
           tenantId: tenantOf(ctx, input),
@@ -9551,7 +9555,7 @@ const smsRouter = router({
       } else {
         body = input.customMessage ?? "";
       }
-      const result = await sendSms(client.phone, body, { tenantId: tenantOf(ctx, input) });
+      const result = await sendSms(client.phone, body, { tenantId: tenantOf(ctx, input), trigger: "staff" });
       await db.insert(smsLogs).values({ tenantId: tenantOf(ctx, input), clientId: input.clientId, appointmentId: input.appointmentId, toNumber: client.phone, body, twilioSid: result.sid, status: result.success ? "sent" : "failed", type: input.templateType, direction: "outbound", errorMessage: result.error });
       return result;
     }),
@@ -9882,7 +9886,7 @@ const smsRouter = router({
       let sent = 0;
       let failed = 0;
       for (const row of pending) {
-        const result = await sendSms(row.phone, body, { tenantId: tenantOf(ctx, input) });
+        const result = await sendSms(row.phone, body, { tenantId: tenantOf(ctx, input), trigger: "staff" });
         if (result.success) sent += 1; else failed += 1;
 
         await db.update(massTextRecipientRows).set({
