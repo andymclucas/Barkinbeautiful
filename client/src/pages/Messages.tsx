@@ -1013,11 +1013,12 @@ export default function Messages() {
           <CardContent className="p-4 flex items-start gap-3">
             <Clock className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
             <div>
-              <div className="font-medium text-sm text-blue-900 dark:text-blue-200">Automated texts to clients are off</div>
+              <div className="font-medium text-sm text-blue-900 dark:text-blue-200">Almost all automated texts are off</div>
               <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                The only text that reaches a client is "ready for pickup", and a staff member sends it from the
-                workflow board. Booking confirmations, appointment reminders, the Pet Tracker link and the
-                missed-call auto-reply are all switched off, so nothing goes out on its own.
+                The only text that goes out on its own is the missed-call auto-reply, to somebody who rang and
+                got no answer. Each number gets it once, ever. The "ready for pickup" text also reaches clients,
+                but a staff member sends that from the workflow board. Booking confirmations, appointment
+                reminders and the Pet Tracker link are all switched off.
               </p>
               <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
                 You can still text any client yourself from here, as normal.

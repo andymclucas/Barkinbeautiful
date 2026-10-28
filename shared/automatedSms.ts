@@ -4,11 +4,13 @@
  * Andy, 28/10/2026: "No automated text messages to go to clients other
  * than when dogs are fully groomed and ready to be picked up."
  *
- * One list, and it has one entry. Everything the salon sends without a
- * person pressing send — booking confirmations, appointment reminders,
- * the Pet Tracker check-in text, waitlist offers, the missed-call
- * auto-reply, online booking acknowledgements — is off until that list
- * says otherwise.
+ * One list. Everything the salon sends without a person pressing send
+ * — booking confirmations, appointment reminders, the Pet Tracker
+ * check-in text, waitlist offers, online booking acknowledgements — is
+ * off until that list says otherwise.
+ *
+ * Andy, 28/10/2026, asked afterwards for the missed-call auto-reply to
+ * stay on, so the list has two entries rather than one.
  *
  * **Staff-typed messages are untouched.** A person choosing to text a
  * client is not automation, and nothing here stops them.
@@ -34,14 +36,30 @@ export type AutomatedSmsType =
   | "payment_failed";
 
 /**
- * The only automated text a client may receive.
+ * The automated texts a client may receive. Nothing else.
  *
- * A Set of one, deliberately: adding the next one is a decision
- * somebody makes here, in front of this comment, rather than by
- * writing a new send somewhere else.
+ * Short deliberately: adding the next one is a decision somebody makes
+ * here, in front of this comment, rather than by writing a new send
+ * somewhere else. Each entry says who asked and when.
  */
 export const ALLOWED_AUTOMATED_SMS: ReadonlySet<AutomatedSmsType> = new Set<AutomatedSmsType>([
+  // Andy, 28/10/2026: "...other than when dogs are fully groomed and
+  // ready to be picked up." In practice a person presses Send on this
+  // one, so it has no automated caller today; it is allowed so that
+  // automating it later needs no change here.
   "ready_pickup",
+
+  // Andy, 28/10/2026: "Keep the missed call auto reply on." Asked for
+  // explicitly after the rule above, once the volume was known: 118
+  // texts in the preceding 30 days, about four a day, and in one
+  // sample 28 of 40 recipients were existing clients. It answers
+  // somebody who rang the salon rather than starting a conversation
+  // with them, and the text promises a call back.
+  //
+  // Guarded separately against repeats: missed_call_auto_texts is
+  // UNIQUE on the caller's number, so a given number is texted once
+  // ever. See shared/missedCallAutoText.ts.
+  "missed_call",
 ]);
 
 export function automatedSmsAllowed(type: AutomatedSmsType): boolean {

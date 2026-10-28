@@ -35,8 +35,10 @@ export async function sendSms(
    *
    * Andy, 28/10/2026: "No automated text messages to go to clients
    * other than when dogs are fully groomed and ready to be picked
-   * up." Enforced HERE rather than at each send site, because there
-   * are a dozen of those and the next one has not been written yet.
+   * up." Plus the missed-call auto-reply, which he asked to keep on
+   * the same day. Enforced HERE rather than at each send site, because
+   * there are a dozen of those and the next one has not been written
+   * yet.
    *
    * `trigger: "staff"` is a person choosing to text a client, which
    * this rule does not touch. `trigger: "automated"` must name its

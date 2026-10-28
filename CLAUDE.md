@@ -439,8 +439,12 @@ production** unless you intend to text real clients.
 Andy, 28/10/2026: "No automated text messages to go to clients other than when
 dogs are fully groomed and ready to be picked up."
 
+Plus the missed-call auto-reply, which he asked to keep on the same day once
+the volume was known (118 texts in 30 days).
+
 `SMS_AUTOMATION_ENABLED` is no longer the deciding gate. The allow-list in
-**`shared/automatedSms.ts`** is, and it holds one entry, `ready_pickup`.
+**`shared/automatedSms.ts`** is, and it holds two entries, `ready_pickup` and
+`missed_call`. Each carries a comment saying who asked and when.
 `sendSms`'s third argument is **required** and is a discriminated union —
 `{trigger:"staff"}` or `{trigger:"automated", type}` — so `pnpm run check`
 fails on a call that declares neither. An automated send must ALSO have
@@ -448,7 +452,7 @@ fails on a call that declares neither. An automated send must ALSO have
 
 Off: booking confirmations, the 3-stage reminders, the Pet Tracker check-in
 text, the online-booking acknowledgement, the waitlist "that spot has gone"
-text, the missed-call auto-reply. Untouched: anything a person presses send on.
+text. Untouched: anything a person presses send on.
 
 Switching one back on is a **code** change — add its type to the allow-list, in
 front of the comment that explains the rule. Setting an env var is not enough,

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
-  automatedSmsAllowed, ALLOWED_AUTOMATED_SMS, describeBlockedSms,
+  automatedSmsAllowed, automatedSmsPermitted, ALLOWED_AUTOMATED_SMS, describeBlockedSms,
   type AutomatedSmsType,
 } from "../shared/automatedSms";
 import { sendSms } from "./sms";
@@ -10,11 +10,13 @@ describe("automatedSmsAllowed", () => {
    * Andy, 28/10/2026: "No automated text messages to go to clients
    * other than when dogs are fully groomed and ready to be picked up."
    */
-  it("allows the pickup text and nothing else", () => {
+  it("allows the pickup text and the missed-call reply, and nothing else", () => {
     expect(automatedSmsAllowed("ready_pickup")).toBe(true);
+    // Andy, 28/10/2026: "Keep the missed call auto reply on."
+    expect(automatedSmsAllowed("missed_call")).toBe(true);
     const everythingElse: AutomatedSmsType[] = [
       "confirmation", "reminder", "tracker", "waitlist_offer", "waitlist_missed",
-      "missed_call", "online_booking_request", "photo_link", "payment_failed",
+      "online_booking_request", "photo_link", "payment_failed",
     ];
     for (const type of everythingElse) {
       expect(automatedSmsAllowed(type), type).toBe(false);
@@ -22,12 +24,12 @@ describe("automatedSmsAllowed", () => {
   });
 
   /**
-   * The list is the decision. If it ever holds more than the pickup
-   * text, somebody chose that in front of the comment explaining the
-   * rule — which is the point of keeping it in one place.
+   * The list IS the decision, so it is pinned exactly. Growing it means
+   * somebody chose that in front of the comment explaining the rule,
+   * which is the point of keeping it in one place.
    */
-  it("holds exactly one message", () => {
-    expect([...ALLOWED_AUTOMATED_SMS]).toEqual(["ready_pickup"]);
+  it("holds exactly these two messages", () => {
+    expect([...ALLOWED_AUTOMATED_SMS]).toEqual(["ready_pickup", "missed_call"]);
   });
 
   it("says why, in words a person reading the log can use", () => {
@@ -82,7 +84,7 @@ describe("sendSms enforces the automated-message rule", () => {
   it("refuses every other automated message", async () => {
     const blocked: AutomatedSmsType[] = [
       "reminder", "tracker", "waitlist_offer", "waitlist_missed",
-      "missed_call", "online_booking_request", "photo_link", "payment_failed",
+      "online_booking_request", "photo_link", "payment_failed",
     ];
     for (const type of blocked) {
       const result = await sendSms("0400000000", "body", { trigger: "automated", type });
@@ -136,5 +138,34 @@ describe("sendSms enforces the automated-message rule", () => {
     expect(policy.blocked).toBe(true);
     expect(twilio.blocked).toBeUndefined();
     expect(twilio.success).toBe(false);
+  });
+});
+
+describe("the missed-call auto-reply stays on", () => {
+  /**
+   * Andy, 28/10/2026: "Keep the missed call auto reply on." It was the
+   * one blocked path with real volume — 118 texts in 30 days — and it
+   * answers somebody who rang rather than starting a conversation.
+   *
+   * It needs BOTH gates open, because the policy gate alone is not
+   * what the live salon runs on.
+   */
+  it("passes the policy gate when automation is enabled", async () => {
+    const before = process.env.SMS_AUTOMATION_ENABLED;
+    process.env.SMS_AUTOMATION_ENABLED = "true";
+    try {
+      const result = await sendSms("0400000000", "body", { trigger: "automated", type: "missed_call" });
+      expect(result.blocked).toBeUndefined();
+      expect(result.error).toBe("Twilio not configured");
+    } finally {
+      if (before === undefined) delete process.env.SMS_AUTOMATION_ENABLED;
+      else process.env.SMS_AUTOMATION_ENABLED = before;
+    }
+  });
+
+  /** And the caller's ledger row may now be claimed, which it must be. */
+  it("permits the claim that makes it once-ever", () => {
+    expect(automatedSmsPermitted("missed_call", { SMS_AUTOMATION_ENABLED: "true" })).toBe(true);
+    expect(automatedSmsPermitted("missed_call", {})).toBe(false);
   });
 });
