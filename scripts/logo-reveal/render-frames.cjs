@@ -8,26 +8,55 @@
  * the way a compositor would. The artwork itself is untouched — the
  * same traced paths as the favicon and the animated SVG.
  *
- *   node render-frames.cjs            # all frames
- *   node render-frames.cjs --at 3.6   # one frame, for looking at
+ *   node render-frames.cjs                        # landscape, all frames
+ *   node render-frames.cjs --format square       # 1080x1080
+ *   node render-frames.cjs --format portrait     # 1080x1920
+ *   node render-frames.cjs --at 3.6              # one frame, for looking at
  */
 const fs = require("fs");
 const path = require("path");
 const sharp = require("sharp");
 const G = require("./geometry.cjs");
 
-const W = 1920, H = 1080, FPS = 30, DUR = 7.5;
+const FPS = 30, DUR = 7.5;
 const N = Math.round(FPS * DUR);
-const OUT = path.join(__dirname, "frames");
+
+/**
+ * The three cuts.
+ *
+ * `lockup` is the lockup's width as a fraction of the frame's, which is
+ * the only honest way to scale across aspect ratios: the artwork is
+ * 1.69:1 and wider than any of these frames, so width is always what
+ * constrains it. `rise` lifts it off geometric centre, because a
+ * stacked mark with a heavy wordmark at its foot reads as low when it
+ * is centred by arithmetic.
+ */
+const FORMATS = {
+  landscape: { W: 1920, H: 1080, lockup: 0.529, rise: 0.017 },
+  square:    { W: 1080, H: 1080, lockup: 0.780, rise: 0.022 },
+  /* Portrait keeps more air at the sides and sits only slightly above
+     centre: a story has a profile row across the top and a reply bar
+     across the bottom, so the usable band is the middle. */
+  portrait:  { W: 1080, H: 1920, lockup: 0.780, rise: 0.028 },
+};
+const fmtArg = process.argv.indexOf("--format");
+const FORMAT = fmtArg > -1 ? process.argv[fmtArg + 1] : "landscape";
+if (!FORMATS[FORMAT]) { console.error(`unknown --format ${FORMAT}; try ${Object.keys(FORMATS).join(", ")}`); process.exit(2); }
+const { W, H, lockup, rise } = FORMATS[FORMAT];
+const OUT = path.join(__dirname, FORMAT === "landscape" ? "frames" : `frames-${FORMAT}`);
 
 const TEAL = "#12BDBB", BRIGHT = "#9DF6F4", WORD_INK = "#FFFFFF";
 
-/* The lockup sits a little above centre: the word is the base, and
-   optical centre for a stacked mark is higher than geometric. */
-const SCALE = 600 / 1219;
+const SCALE = (W * lockup) / 2064;
 const OX = (W - 2064 * SCALE) / 2;
-const OY = (H - 1219 * SCALE) / 2 - 18;
+const OY = (H - 1219 * SCALE) / 2 - rise * H;
 const place = (inner) => `<g transform="translate(${OX} ${OY}) scale(${SCALE})">${inner}</g>`;
+
+/* Atmosphere is measured in pixels, so it has to be scaled or the
+   square cut gets landscape-sized bloom on a smaller mark. Glow
+   follows the MARK; motes follow the FRAME. */
+const MARK_K = (W * lockup) / 1016;                    // 1016px = the landscape lockup
+const FRAME_K = Math.sqrt((W * H) / (1920 * 1080));
 
 // ── timing ──────────────────────────────────────────────────────────
 const clamp = (v) => Math.max(0, Math.min(1, v));
@@ -54,14 +83,14 @@ const mulberry = (a) => () => {
 const MOTES = (() => {
   const rnd = mulberry(20261028);
   const out = [];
-  for (let i = 0; i < 110; i++) {
+  for (let i = 0; i < Math.round(110 * FRAME_K * FRAME_K); i++) {
     const near = rnd() > 0.62;
     out.push({
       x: rnd() * (W + 200) - 100,
       y: rnd() * (H + 200) - 100,
-      r: near ? 3 + rnd() * 5 : 1 + rnd() * 2.2,
-      rise: (near ? 16 : 7) + rnd() * 12,
-      sway: 10 + rnd() * 26,
+      r: (near ? 3 + rnd() * 5 : 1 + rnd() * 2.2) * FRAME_K,
+      rise: ((near ? 16 : 7) + rnd() * 12) * FRAME_K,
+      sway: (10 + rnd() * 26) * FRAME_K,
       phase: rnd() * Math.PI * 2,
       alpha: (near ? 0.22 : 0.34) + rnd() * 0.24,
       near,
@@ -179,7 +208,7 @@ async function renderFrame(i, groundBuf) {
   const t = i / FPS;
   const [farBuf, nearBuf, logoBuf] = await Promise.all([
     sharp(Buffer.from(motesSvg(t, false))).png().toBuffer(),
-    sharp(Buffer.from(motesSvg(t, true))).blur(7).png().toBuffer(),
+    sharp(Buffer.from(motesSvg(t, true))).blur(Math.max(0.3, 7 * FRAME_K)).png().toBuffer(),
     sharp(Buffer.from(logoSvg(t))).png().toBuffer(),
   ]);
 
@@ -187,8 +216,8 @@ async function renderFrame(i, groundBuf) {
   const pulse = Math.sin(Math.PI * seg(t, ...T.settle));
   const gain = 0.30 + 0.34 * pulse + 0.05 * Math.sin(t * 1.1);
   const [wide, tight] = await Promise.all([
-    glow(logoBuf, 17, gain),
-    glow(logoBuf, 5, gain * 0.55),
+    glow(logoBuf, Math.max(0.3, 17 * MARK_K), gain),
+    glow(logoBuf, Math.max(0.3, 5 * MARK_K), gain * 0.55),
   ]);
 
   const grain = await sharp({
@@ -212,8 +241,8 @@ async function renderFrame(i, groundBuf) {
   if (at > -1) {
     const t = Number(process.argv[at + 1]);
     const buf = await renderFrame(Math.round(t * FPS), groundBuf);
-    fs.writeFileSync(path.join(__dirname, `probe-${t}.png`), buf);
-    console.log("wrote probe-" + t + ".png  (t=" + t + "s)");
+    fs.writeFileSync(path.join(__dirname, `probe-${FORMAT}-${t}.png`), buf);
+    console.log(`wrote probe-${FORMAT}-${t}.png  (${W}x${H}, t=${t}s)`);
     return;
   }
   fs.rmSync(OUT, { recursive: true, force: true });
@@ -223,5 +252,5 @@ async function renderFrame(i, groundBuf) {
     fs.writeFileSync(path.join(OUT, `f${String(i).padStart(4, "0")}.png`), await renderFrame(i, groundBuf));
     if (i % 25 === 0) process.stdout.write(`  ${i}/${N}  ${((Date.now() - started) / 1000).toFixed(0)}s\n`);
   }
-  console.log(`rendered ${N} frames in ${((Date.now() - started) / 1000).toFixed(0)}s -> ${OUT}`);
+  console.log(`rendered ${N} ${W}x${H} frames in ${((Date.now() - started) / 1000).toFixed(0)}s -> ${OUT}`);
 })();

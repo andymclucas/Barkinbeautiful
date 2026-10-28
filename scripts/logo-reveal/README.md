@@ -9,7 +9,7 @@ makes them.
 | Output | Made by | Where it lands |
 | ------ | ------- | -------------- |
 | `groomigo-animated-{dark,light,transparent}.svg` | `build-svg.cjs` | `client/public/` |
-| `groomigo-reveal-1080p.mp4` | `render-frames.cjs` + `encode.swift` | wherever you run it |
+| the reveal, in three cuts | `render-frames.cjs` + `encode.swift` | wherever you run it |
 
 ```bash
 corepack pnpm exec node scripts/logo-reveal/build-svg.cjs        # the SVGs
@@ -17,8 +17,21 @@ corepack pnpm exec node scripts/logo-reveal/render-frames.cjs    # 225 PNGs, ~40
 swift scripts/logo-reveal/encode.swift scripts/logo-reveal/frames out.mp4 30
 ```
 
-`render-frames.cjs --at 3.6` renders a single frame, which is how you
-look at a change without waiting for the whole sequence.
+Three cuts, all from the same timeline — `--format landscape`
+(1920x1080, the default), `square` (1080x1080) and `portrait`
+(1080x1920). Each writes to its own `frames-*` directory; pass that
+directory to the encoder.
+
+`--at 3.6` renders a single frame, which is how you look at a change
+without waiting for the whole sequence. `--format` and `--at` combine.
+
+A cut is a **layout**, not a crop. `FORMATS` gives the lockup's width
+as a fraction of the frame — the artwork is 1.69:1 and wider than any
+of these, so width is always what constrains it — plus how far above
+geometric centre it sits. The atmosphere is scaled as well, and in two
+different ways: bloom follows the mark, motes follow the frame. Scale
+both by the frame and the square cut gets landscape-sized glow on a
+smaller logo.
 
 There is no `ffmpeg` on the build machine, so `encode.swift` does the
 encoding through AVFoundation. It is macOS-only; on Linux, point ffmpeg

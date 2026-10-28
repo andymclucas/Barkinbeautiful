@@ -32,7 +32,10 @@ let settings: [String: Any] = [
     AVVideoWidthKey: W,
     AVVideoHeightKey: H,
     AVVideoCompressionPropertiesKey: [
-        AVVideoAverageBitRateKey: 14_000_000,
+        // Scaled to the frame: 14 Mbps at 1080p. The ground is a
+        // near-flat dark gradient, which is exactly what H.264 bands
+        // in, and the grain gives it plenty to chew.
+        AVVideoAverageBitRateKey: Int(Double(W * H) * 6.75),
         AVVideoMaxKeyFrameIntervalKey: fps,
         AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
     ],
