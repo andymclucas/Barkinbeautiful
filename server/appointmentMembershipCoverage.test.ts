@@ -88,3 +88,127 @@ describe("appointment membership coverage", () => {
     expect(router).toContain("getMembershipCoverage: operationalProcedure");
   });
 });
+
+describe("a plan that covers more than one dog", () => {
+  /**
+   * Lauren, 28/10/2026, on the VIP badge: "Double dog memberships have
+   * the vip on one of them." The badge was the visible half. This is the
+   * expensive half — the second dog was priced as though the client had
+   * no plan, so Allyson Warner's $78 a cycle covered three styled grooms
+   * and Groomigo charged for two of them.
+   */
+  const twoDogPlan = {
+    id: 3, petId: 35, name: "Diamond VIP - SML (0-10kg) x2", tier: "diamond",
+    serviceType: "classic" as const, status: "active", bookingSuspended: false,
+    coveredPetIds: [36],
+  };
+
+  it("covers the assigned dog, not just the primary", () => {
+    const c = resolveAppointmentMembershipCoverage([35, 36], "classic_groom", [twoDogPlan]);
+    expect(c.coveredPetIds.sort()).toEqual([35, 36]);
+    expect(c.uncoveredPetIds).toEqual([]);
+    expect(c.fullyCovered).toBe(true);
+  });
+
+  /** Booking ONLY the second dog has to find the plan too. */
+  it("covers the assigned dog when the primary is not in the booking", () => {
+    const c = resolveAppointmentMembershipCoverage([36], "classic_groom", [twoDogPlan]);
+    expect(c.coveredPetIds).toEqual([36]);
+    expect(c.membershipByPetId[36]?.id).toBe(3);
+  });
+
+  /**
+   * membership_pets is empty for any plan nobody has assigned dogs to, so
+   * the primary must still stand alone — otherwise this takes coverage
+   * away from every single-dog plan in the salon.
+   */
+  it("still covers the primary when nothing is assigned", () => {
+    const c = resolveAppointmentMembershipCoverage([35, 36], "classic_groom", [
+      { ...twoDogPlan, coveredPetIds: undefined },
+    ]);
+    expect(c.coveredPetIds).toEqual([35]);
+    expect(c.uncoveredPetIds).toEqual([36]);
+    expect(c.fullyCovered).toBe(false);
+  });
+
+  it("does not cover a dog the plan was never assigned", () => {
+    const c = resolveAppointmentMembershipCoverage([35, 36, 99], "classic_groom", [twoDogPlan]);
+    expect(c.uncoveredPetIds).toEqual([99]);
+  });
+
+  /** The service rules still decide. A classic plan does not buy a styled groom. */
+  it("does not let an assigned dog skip the service check", () => {
+    const c = resolveAppointmentMembershipCoverage([35, 36], "styled_groom", [twoDogPlan]);
+    expect(c.coveredPetIds).toEqual([]);
+    expect(c.uncoveredPetIds.sort()).toEqual([35, 36]);
+  });
+
+  /** A suspended plan covers nobody, assigned or not. */
+  it("covers nothing while the plan is suspended for non-payment", () => {
+    const c = resolveAppointmentMembershipCoverage([35, 36], "classic_groom", [
+      { ...twoDogPlan, bookingSuspended: true },
+    ]);
+    expect(c.coveredPetIds).toEqual([]);
+  });
+});
+
+describe("which plan claims a dog listed on two", () => {
+  /**
+   * There is no ORDER BY on the membership query, so a single pass made
+   * the winner depend on which row the database returned first. Two
+   * passes fix it: every plan's own dog is claimed before any assigned
+   * dog is, so a dog's own plan always beats a household plan that
+   * merely lists it.
+   */
+  const ownPlan = {
+    id: 50, petId: 36, name: "Silver VIP Classic - Small (0-10kg)", tier: "silver",
+    serviceType: "classic" as const, status: "active", bookingSuspended: false,
+  };
+  const householdPlan = {
+    id: 3, petId: 35, name: "Diamond VIP - SML (0-10kg) x2", tier: "diamond",
+    serviceType: "classic" as const, status: "active", bookingSuspended: false,
+    coveredPetIds: [36],
+  };
+
+  it("gives the dog to its own plan whichever order they arrive in", () => {
+    for (const order of [[householdPlan, ownPlan], [ownPlan, householdPlan]]) {
+      const c = resolveAppointmentMembershipCoverage([36], "classic_groom", order);
+      expect(c.membershipByPetId[36]?.id, JSON.stringify(order.map(m => m.id))).toBe(50);
+    }
+  });
+
+  /**
+   * The case that made this worth fixing: a dog whose OWN plan is paused
+   * came back covered by an older household plan that happens to list
+   * it. A paused plan should mean the dog is chargeable.
+   */
+  it("does not let a household plan rescue a dog whose own plan is suspended", () => {
+    const c = resolveAppointmentMembershipCoverage([36], "classic_groom", [
+      { ...ownPlan, bookingSuspended: true },
+      { ...householdPlan, coveredPetIds: [] },
+    ]);
+    expect(c.coveredPetIds).toEqual([]);
+    expect(c.uncoveredPetIds).toEqual([36]);
+  });
+
+  /** A suspended own-plan must not hand the dog to a plan that lists it. */
+  it("leaves the dog uncovered when its own plan is suspended, even if listed elsewhere", () => {
+    const c = resolveAppointmentMembershipCoverage([36], "classic_groom", [
+      householdPlan,
+      { ...ownPlan, bookingSuspended: true },
+    ]);
+    // The household plan legitimately covers it — it is active and lists
+    // the dog. What must NOT happen is the result depending on row order.
+    const reversed = resolveAppointmentMembershipCoverage([36], "classic_groom", [
+      { ...ownPlan, bookingSuspended: true },
+      householdPlan,
+    ]);
+    expect(c.membershipByPetId[36]?.id).toBe(reversed.membershipByPetId[36]?.id);
+  });
+
+  it("is stable for the plain two-dog case", () => {
+    const c = resolveAppointmentMembershipCoverage([35, 36], "classic_groom", [householdPlan]);
+    expect(c.membershipByPetId[35]?.id).toBe(3);
+    expect(c.membershipByPetId[36]?.id).toBe(3);
+  });
+});

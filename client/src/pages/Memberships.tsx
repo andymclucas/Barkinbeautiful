@@ -1391,11 +1391,6 @@ export default function Memberships() {
         </div>
 
         <MembershipSignupRequests />
-        {/* Above the tabs, beside the sign-up requests: both are "a
-            human has to decide something" and both disappear once
-            nobody does. It renders nothing at all when every plan
-            covers as many dogs as its name says. */}
-        <MembershipPetAssignment />
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           {/* Tabs are an inline-flex row: on a phone they ran past the
               right edge and took the page with them. Scroll instead. */}
@@ -1707,6 +1702,15 @@ export default function Memberships() {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* Below the list, not above it. Andy, 28/10/2026: "Swap the
+            missing dogs underneath the active memberships." It sat above
+            the tabs on the reasoning that it needs a decision — but it
+            pushed the 151 live plans down the page for the sake of a
+            handful of exceptions, and the plans are what the page is
+            for. It still renders nothing when every plan covers as many
+            dogs as its name says. */}
+        <MembershipPetAssignment />
 
         <div className="flex items-center justify-between text-sm text-muted-foreground pt-1">
           <span>Showing {total === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, total)}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>

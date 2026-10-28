@@ -1,3 +1,5 @@
+import { vipPetIds } from "@shared/vipPetIds";
+import { dogsNamedInPlan } from "@shared/membershipCoveredPets";
 import { buildRescheduleUpdate } from "@shared/rescheduleUpdate";
 import { isValidTimeZone } from "@shared/auditTimestamp";
 import { properName } from "@shared/personName";
@@ -272,6 +274,16 @@ async function recordStaffAccessEvent(db: any, event: Omit<typeof staffAccessEve
 }
 
 async function getAppointmentMembershipCoverage(db: any, tenantId: number, clientId: number, petIds: number[], serviceType: AppointmentService) {
+  /**
+   * EVERY plan on this client, not just the ones whose primary dog is in
+   * this booking.
+   *
+   * The old `inArray(memberships.petId, petIds)` meant booking only the
+   * SECOND dog of an "x2" plan fetched no membership at all, so the dog
+   * was priced as though the client had no plan. A client has a handful
+   * of plans, so dropping the filter costs nothing and the resolver
+   * decides which dogs each one covers.
+   */
   const activeMemberships = await db.select({
     id: memberships.id,
     petId: memberships.petId,
@@ -283,9 +295,26 @@ async function getAppointmentMembershipCoverage(db: any, tenantId: number, clien
   }).from(memberships).where(and(
     eq(memberships.tenantId, tenantId),
     eq(memberships.clientId, clientId),
-    inArray(memberships.petId, Array.from(new Set(petIds))),
+  )).orderBy(asc(memberships.id));
+  if (activeMemberships.length === 0) {
+    return resolveAppointmentMembershipCoverage(petIds, serviceType, []);
+  }
+  const assigned = await db.select({
+    membershipId: membershipPets.membershipId,
+    petId: membershipPets.petId,
+  }).from(membershipPets).where(and(
+    eq(membershipPets.tenantId, tenantId),
+    inArray(membershipPets.membershipId, activeMemberships.map((m: { id: number }) => m.id)),
   ));
-  return resolveAppointmentMembershipCoverage(petIds, serviceType, activeMemberships);
+  const coveredByMembership = new Map<number, number[]>();
+  for (const row of assigned) {
+    const list = coveredByMembership.get(row.membershipId) ?? [];
+    list.push(row.petId);
+    coveredByMembership.set(row.membershipId, list);
+  }
+  return resolveAppointmentMembershipCoverage(petIds, serviceType, activeMemberships.map(
+    (m: { id: number }) => ({ ...m, coveredPetIds: coveredByMembership.get(m.id) ?? [] }),
+  ));
 }
 
 // ─── Calendar / Appointments ──────────────────────────────────────────────────
@@ -2232,11 +2261,22 @@ const workflowRouter = router({
       }
 
       const petIdsOnBoard = Array.from(new Set(boardRows.map(row => row.petId).filter((id): id is number => id !== null)));
-      const vipPetIds = new Set<number>();
+      // A plan covers its primary dog AND every dog assigned to it. Reading
+      // memberships.pet_id alone left the second dog on an "x2" plan without
+      // a badge — Lauren, 28/10/2026. See shared/vipPetIds.ts.
+      let vipPetIdSet = new Set<number>();
       if (petIdsOnBoard.length > 0) {
-        const activeMemberships = await db.select({ petId: memberships.petId }).from(memberships)
-          .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard)));
-        for (const m of activeMemberships) vipPetIds.add(m.petId);
+        const [primaries, covered] = await Promise.all([
+          db.select({ petId: memberships.petId }).from(memberships)
+            .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard))),
+          db.select({ petId: membershipPets.petId }).from(membershipPets)
+            .innerJoin(memberships, eq(memberships.id, membershipPets.membershipId))
+            .where(and(eq(membershipPets.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(membershipPets.petId, petIdsOnBoard))),
+        ]);
+        vipPetIdSet = vipPetIds({
+          primaryPetIds: primaries.map(m => m.petId),
+          coveredPetIds: covered.map(m => m.petId),
+        });
       }
 
       return boardRows.map(row => ({
@@ -2245,7 +2285,7 @@ const workflowRouter = router({
         petAlertLevel: normalizePetAlertLevel(row.petAlertLevel),
         groomStyleNote: latestGroomNoteByAppointment.get(row.id)?.note ?? null,
         groomStyleWarnings: latestGroomNoteByAppointment.get(row.id)?.warnings ?? null,
-        isVipMember: row.petId ? vipPetIds.has(row.petId) : false,
+        isVipMember: row.petId ? vipPetIdSet.has(row.petId) : false,
         addOns: addOnsByAppointment.get(row.id) ?? [],
       }));
     }),
@@ -5513,7 +5553,7 @@ const membershipsRouter = router({
       const tenantId = tenantOf(ctx, input);
 
       const [membership] = await db
-        .select({ id: memberships.id, clientId: memberships.clientId, petId: memberships.petId })
+        .select({ id: memberships.id, clientId: memberships.clientId, petId: memberships.petId, name: memberships.name })
         .from(memberships)
         .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantId)))
         .limit(1);
@@ -5523,6 +5563,31 @@ const membershipsRouter = router({
         ...(membership.petId ? [membership.petId] : []),
         ...input.petIds,
       ]));
+
+      /**
+       * Never cover more dogs than the fee is priced for.
+       *
+       * The primary dog is covered whether or not it is ticked, so a plan
+       * the MoeGo import filed under the WRONG dog covers N+1 once the
+       * real dogs are added: Kayla Fellingham's two-dog plan sits under
+       * Jemima while it pays for Latte and Teacup. Ticking those two
+       * would have made one two-dog fee cover three.
+       *
+       * The plan name is the only record of the count, and
+       * membershipCoveredPets is explicit that the count is for blocking
+       * and flagging and never for pricing — blocking is exactly this.
+       * The answer when it fires is to repoint the plan's primary dog,
+       * not to widen the cover.
+       */
+      const named = dogsNamedInPlan(membership.name);
+      if (wanted.length > named) {
+        const primaryTicked = membership.petId ? input.petIds.includes(membership.petId) : true;
+        throw new Error(
+          primaryTicked
+            ? `This plan is priced for ${named} dog${named === 1 ? "" : "s"} and you have picked ${wanted.length}.`
+            : `This plan is priced for ${named} dog${named === 1 ? "" : "s"}. Its own dog is always covered and counts towards that, so picking ${input.petIds.length} more makes ${wanted.length}. If the plan is filed under the wrong dog, change that first.`,
+        );
+      }
 
       /**
        * Every dog must belong to the plan's own client.
