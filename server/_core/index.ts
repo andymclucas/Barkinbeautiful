@@ -1,3 +1,4 @@
+import { automatedSmsPermitted } from "@shared/automatedSms";
 import "dotenv/config";
 import { startPresenceSweeper } from "../presenceRegistry";
 import express from "express";
@@ -394,9 +395,14 @@ async function startServer() {
       let db: Awaited<ReturnType<typeof getDb>> = null;
 
       try {
+        // Asked BEFORE the claim row is written. See classifyClaim: that
+        // row is a once-ever claim keyed UNIQUE on the number, so
+        // claiming it for a blocked text would permanently disqualify a
+        // caller who was never actually texted.
+        const policyAllows = automatedSmsPermitted("missed_call", process.env);
         if (phoneKey) {
           db = await getDb();
-          if (db) {
+          if (db && policyAllows) {
             try {
               await db.insert(missedCallAutoTexts).values({
                 tenantId,
@@ -413,13 +419,13 @@ async function startServer() {
           }
         }
 
-        const claim = classifyClaim({ phoneKey, databaseAvailable: Boolean(db), insert });
+        const claim = classifyClaim({ policyAllows, phoneKey, databaseAvailable: Boolean(db), insert });
         console.log(describeClaim(claim, phoneKey, String(From)));
 
         if (claim.send && phoneKey && db) {
           const claimedDb = db;
           // We hold the only claim for this number, so this send cannot repeat.
-          sendSms(String(From), MISSED_CALL_AUTO_TEXT, { tenantId })
+          sendSms(String(From), MISSED_CALL_AUTO_TEXT, { tenantId, trigger: "automated", type: "missed_call" })
             .then(async result => {
               await claimedDb
                 .update(missedCallAutoTexts)
@@ -441,18 +447,20 @@ async function startServer() {
               // from the rows in it, a known client's whole conversation
               // displayed as a bare +61 number — 61 of 79 outbound rows,
               // 28 of them existing clients.
-              const autoTextCaller = await lookupCallerByPhone(claimedDb, phoneKey, tenantId);
-              await claimedDb.insert(smsLogs).values({
-                tenantId,
-                clientId: autoTextCaller.clientId ?? null,
-                toNumber: phoneKey,
-                body: MISSED_CALL_AUTO_TEXT,
-                twilioSid: result.sid,
-                status: result.success ? "sent" : "failed",
-                type: "custom",
-                direction: "outbound",
-                errorMessage: result.error,
-              });
+              if (!result.blocked) {
+                const autoTextCaller = await lookupCallerByPhone(claimedDb, phoneKey, tenantId);
+                await claimedDb.insert(smsLogs).values({
+                  tenantId,
+                  clientId: autoTextCaller.clientId ?? null,
+                  toNumber: phoneKey,
+                  body: MISSED_CALL_AUTO_TEXT,
+                  twilioSid: result.sid,
+                  status: result.success ? "sent" : "failed",
+                  type: "custom",
+                  direction: "outbound",
+                  errorMessage: result.error,
+                });
+              }
             })
             .catch(err =>
               console.error("[Twilio] Missed-call auto-text send/record failed:", err),

@@ -21,6 +21,7 @@
  * live in shared/bookingConfirmationSms.ts so they are testable without
  * a database or a Twilio key.
  */
+import { automatedSmsPermitted } from "@shared/automatedSms";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { appointments, clients, pets, staff, tenants, smsLogs } from "../drizzle/schema";
 import { sendSms } from "./sms";
@@ -113,6 +114,7 @@ export async function sendBookingConfirmation(
     for (const row of rows) {
       const decision = decideBookingConfirmation({
         automationEnabled: process.env.SMS_AUTOMATION_ENABLED === "true",
+        policyAllows: automatedSmsPermitted("confirmation", process.env),
         confirmationSmsSentAt: row.confirmationSmsSentAt,
         clientPhone: row.clientPhone,
         smsOptedOutAt: row.smsOptedOutAt,
@@ -153,21 +155,27 @@ export async function sendBookingConfirmation(
       return { sent: false, reason: "another send already claimed this booking" };
     }
 
-    const result = await sendSms(first.clientPhone as string, body, { tenantId: first.tenantId });
+    const result = await sendSms(first.clientPhone as string, body, { tenantId: first.tenantId, trigger: "automated", type: "confirmation" });
 
-    await db.insert(smsLogs).values({
-      tenantId: first.tenantId,
-      clientId: first.clientId,
-      appointmentId: first.id,
-      toNumber: first.clientPhone as string,
-      body,
-      twilioSid: result.sid ?? null,
-      status: result.success ? "sent" : "failed",
-      type: "confirmation",
-      direction: "outbound",
-      // So "why didn't Mrs Gerard get a text" has an answer beyond "failed".
-      errorMessage: result.success ? null : (result.error ?? "unknown error"),
-    });
+    // Policy-blocked sends are not logged: nothing was attempted, and the
+    // row would show as a message in the client's conversation. The claim
+    // above is kept, so turning confirmations back on never back-fills a
+    // text for a booking that has since happened.
+    if (!result.blocked) {
+      await db.insert(smsLogs).values({
+        tenantId: first.tenantId,
+        clientId: first.clientId,
+        appointmentId: first.id,
+        toNumber: first.clientPhone as string,
+        body,
+        twilioSid: result.sid ?? null,
+        status: result.success ? "sent" : "failed",
+        type: "confirmation",
+        direction: "outbound",
+        // So "why didn't Mrs Gerard get a text" has an answer beyond "failed".
+        errorMessage: result.success ? null : (result.error ?? "unknown error"),
+      });
+    }
 
     /**
      * The claim is KEPT on failure, deliberately.
@@ -179,6 +187,7 @@ export async function sendBookingConfirmation(
      * sms_logs row records the attempt and its error, and a staff member
      * can send the manual template deliberately.
      */
+    if (result.blocked) return { sent: false, reason: "automated confirmations are switched off" };
     if (!result.success) return { sent: false, reason: result.error ?? "the text could not be sent" };
 
     return { sent: true, to: first.clientPhone as string, pets: rows.length };

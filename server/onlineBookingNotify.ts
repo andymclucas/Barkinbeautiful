@@ -199,7 +199,7 @@ export async function notifyOnlineBooking(
     out.skipped.push("no phone number");
   } else {
     try {
-      const sent = await sendSms(client.phone, buildOnlineBookingRequestSms(copy), { tenantId: input.tenantId });
+      const sent = await sendSms(client.phone, buildOnlineBookingRequestSms(copy), { tenantId: input.tenantId, trigger: "automated", type: "online_booking_request" });
       out.texted = sent.success;
       if (!sent.success) out.skipped.push(`sms: ${sent.error ?? "not sent"}`);
     } catch (err) {

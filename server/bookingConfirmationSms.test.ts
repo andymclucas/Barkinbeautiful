@@ -9,6 +9,7 @@ const FUTURE = new Date("2026-10-29T23:00:00Z"); // Fri 30 Oct, 09:00 Brisbane â
 
 const live = {
   automationEnabled: true,
+  policyAllows: true,
   confirmationSmsSentAt: null,
   clientPhone: "0427030788",
   moegoAppointmentId: null,
@@ -135,7 +136,7 @@ describe("decideBookingConfirmation", () => {
     for (const key of Object.keys(CONFIRMATION_SKIP_LABEL)) {
       expect(CONFIRMATION_SKIP_LABEL[key as keyof typeof CONFIRMATION_SKIP_LABEL]).toBeTruthy();
     }
-    expect(Object.keys(CONFIRMATION_SKIP_LABEL)).toHaveLength(12);
+    expect(Object.keys(CONFIRMATION_SKIP_LABEL)).toHaveLength(13);
   });
 });
 
@@ -249,6 +250,7 @@ describe("the live booking path actually sends", () => {
 describe("not texting a booking the client already has", () => {
   const base = {
     automationEnabled: true,
+    policyAllows: true,
     confirmationSmsSentAt: null,
     clientPhone: "0400000000",
     moegoAppointmentId: null,
@@ -302,5 +304,34 @@ describe("not texting a booking the client already has", () => {
       ...base, scheduledStart: new Date("2026-10-27T23:00:00Z"),
     });
     expect(decision.send === false && decision.reason).toBe("in_the_past");
+  });
+});
+
+describe("the confirmation claim is not spent on a blocked text", () => {
+  /**
+   * Andy, 28/10/2026: "No automated text messages to go to clients
+   * other than when dogs are fully groomed and ready to be picked up."
+   *
+   * Decided here rather than inside sendSms so the caller never claims
+   * confirmation_sms_sent_at. Claiming it for a blocked text puts the
+   * column back in the state bookingConfirmation.ts's own comment calls
+   * a past bug: saying "sent" with nothing in sms_logs.
+   */
+  it("refuses when the allow-list does not permit a confirmation", () => {
+    const decision = decideBookingConfirmation({ ...live, policyAllows: false });
+    expect(decision.send).toBe(false);
+    expect(decision.send === false && decision.reason).toBe("policy_off");
+  });
+
+  it("explains itself in words a staff member can read", () => {
+    expect(CONFIRMATION_SKIP_LABEL.policy_off).toMatch(/switched off/);
+  });
+
+  /** Still refuses for the original reason when both apply. */
+  it("keeps refusing a MoeGo import when policy is off too", () => {
+    const decision = decideBookingConfirmation({
+      ...live, policyAllows: false, moegoAppointmentId: "124259135",
+    });
+    expect(decision.send).toBe(false);
   });
 });

@@ -293,9 +293,9 @@ export default function Settings() {
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-3 text-sm">
                 {[
-                  { label: "Send Pet Tracker SMS on check-in", desc: "Automatically send the Pet Tracker link when a dog is checked in" },
+                  { label: "Send Pet Tracker SMS on check-in", desc: "OFF — automated texts to clients are switched off; only \u201cready for pickup\u201d goes out, and staff send it" },
                   { label: "Failed payment alerts", desc: "Notify staff when a membership payment fails" },
-                  { label: "Appointment reminders", desc: "Send clients an SMS reminder 24h before their appointment" },
+                  { label: "Appointment reminders", desc: "OFF — automated texts to clients are switched off" },
                   { label: "Low stock alerts", desc: "Alert when retail products reach the reorder threshold" },
                 ].map(n => (
                   <div key={n.label} className="flex items-start justify-between gap-4 py-2 border-b last:border-0">

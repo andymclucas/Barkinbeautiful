@@ -97,7 +97,7 @@ export const clientPhotosRouter = router({
 
       const url = clientPhotoUrl(getAppBaseUrl(), token);
       const body = photoRequestSms(client.salonName ?? "Your groomer", url);
-      const result = await sendSms(client.phone, body, { tenantId });
+      const result = await sendSms(client.phone, body, { tenantId, trigger: "staff" });
 
       // Logged whether or not Twilio took it, so the conversation shows
       // that the salon tried and a failure is visible rather than silent.

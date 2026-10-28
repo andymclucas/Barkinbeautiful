@@ -96,7 +96,7 @@ describe("autoTextPhoneKey", () => {
 });
 
 describe("classifyClaim", () => {
-  const base = { phoneKey: "+61427030788", databaseAvailable: true } as const;
+  const base = { policyAllows: true, phoneKey: "+61427030788", databaseAvailable: true } as const;
 
   it("sends only when the claim insert won", () => {
     expect(classifyClaim({ ...base, insert: "won" })).toEqual({
@@ -116,7 +116,7 @@ describe("classifyClaim", () => {
     // The old guard did the opposite: with no database it left
     // alreadySentBefore = false and texted the caller, every single call.
     expect(
-      classifyClaim({ phoneKey: "+61427030788", databaseAvailable: false, insert: "not-attempted" }),
+      classifyClaim({ policyAllows: true, phoneKey: "+61427030788", databaseAvailable: false, insert: "not-attempted" }),
     ).toEqual({ send: false, reason: "no-database" });
   });
 
@@ -130,7 +130,7 @@ describe("classifyClaim", () => {
 
   it("never sends to a number it cannot key", () => {
     for (const insert of ["won", "duplicate", "error", "not-attempted"] as const) {
-      expect(classifyClaim({ phoneKey: null, databaseAvailable: true, insert }).send).toBe(false);
+      expect(classifyClaim({ policyAllows: true, phoneKey: null, databaseAvailable: true, insert }).send).toBe(false);
     }
   });
 
@@ -201,5 +201,38 @@ describe("MISSED_CALL_AUTO_TEXT", () => {
   it("is a single SMS segment's worth of sense and mentions a reply", () => {
     expect(MISSED_CALL_AUTO_TEXT).toContain("Barkin' Beautiful");
     expect(MISSED_CALL_AUTO_TEXT).toMatch(/reply text/i);
+  });
+});
+
+describe("the missed-call claim is not spent on a blocked text", () => {
+  /**
+   * The bug this guards. The row is UNIQUE on the number and a second
+   * insert reads as "already-sent", so claiming it for a text that
+   * policy blocks disqualifies a caller who was never texted — about
+   * four a day, and nothing in the app reads the table to show it.
+   */
+  it("withholds without claiming when automated texts are off", () => {
+    const claim = classifyClaim({
+      policyAllows: false, phoneKey: "+61427030788",
+      databaseAvailable: true, insert: "not-attempted",
+    });
+    expect(claim).toEqual({ send: false, reason: "policy-off" });
+  });
+
+  it("says in the log that the caller is still eligible", () => {
+    const claim = classifyClaim({
+      policyAllows: false, phoneKey: "+61427030788",
+      databaseAvailable: true, insert: "not-attempted",
+    });
+    expect(describeClaim(claim, "+61427030788", "+61427030788")).toContain("still eligible");
+  });
+
+  /** Policy is asked first, so it outranks every other reason. */
+  it("reports policy rather than the database when both are against it", () => {
+    const claim = classifyClaim({
+      policyAllows: false, phoneKey: null,
+      databaseAvailable: false, insert: "error",
+    });
+    expect(claim.reason).toBe("policy-off");
   });
 });
