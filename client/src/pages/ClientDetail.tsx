@@ -46,7 +46,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dog, Phone, Mail, MapPin, CalendarDays, CreditCard, ArrowLeft,
-  AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil
+  AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil, X
 } from "lucide-react";
 import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe } from "lucide-react";
 import { Link } from "wouter";
@@ -311,6 +311,19 @@ export default function ClientDetail() {
   // window.confirm — the same shape the calendar's Delete booking uses.
   const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string } | null>(null);
   /**
+   * Removing a groom photo, with the same named confirm a booking gets.
+   *
+   * Charlie, 29/10/2026: "How do we delete photos. I accidentally picked
+   * the wrong photo, it's the wrong dog." There was no delete path at
+   * all — the upload route could create a row and nothing could remove
+   * one — so a mis-picked photo stayed on the dog's record for good.
+   *
+   * The image is held in the row itself, not in S3, so this really is
+   * gone afterwards. Hence the confirm, and hence naming the dog in it:
+   * picking the wrong dog is exactly how the wrong photo got there.
+   */
+  const [confirmDeletePhoto, setConfirmDeletePhoto] = useState<{ photoId: number; petId: number; petName: string } | null>(null);
+  /**
    * Adjusting a booking's time without leaving the client.
    *
    * Andy, 28/10/2026: "Poppy is set for the wrong time today and I need to
@@ -557,6 +570,15 @@ export default function ClientDetail() {
       setUploadingPhotoForPetId(null);
     }
   };
+
+  const deletePetPhoto = trpc.clients.deletePetPhoto.useMutation({
+    onSuccess: async result => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      setConfirmDeletePhoto(null);
+      toast.success(result.deleted ? "Photo removed" : "That photo had already been removed");
+    },
+    onError: error => toast.error(error.message),
+  });
 
   // Family Link state (must be before early returns)
   const [familyLinkPetId, setFamilyLinkPetId] = useState<number | null>(null);
@@ -1204,9 +1226,24 @@ export default function ClientDetail() {
                       <PetNoteArchive appointments={appointments} styleNotes={styleNotes} petId={pet.id} petName={pet.name} />
                       <div className="flex items-start gap-2 overflow-x-auto pb-1">
                         {(photosByPet[pet.id] ?? []).slice(0, 6).map(photo => (
-                          <a key={photo.id} href={photo.url} target="_blank" rel="noreferrer" className="block shrink-0 group" title={photo.caption ?? "View groom photo"}>
-                            <img src={photo.url} alt={photo.caption ?? `${pet.name} groom photo`} className="h-16 w-16 rounded-lg object-cover border transition-transform duration-200 group-hover:scale-105" />
-                          </a>
+                          <div key={photo.id} className="relative shrink-0 group">
+                            <a href={photo.url} target="_blank" rel="noreferrer" className="block" title={photo.caption ?? "View groom photo"}>
+                              <img src={photo.url} alt={photo.caption ?? `${pet.name} groom photo`} className="h-16 w-16 rounded-lg object-cover border transition-transform duration-200 group-hover:scale-105" />
+                            </a>
+                            {/* Always visible rather than revealed on hover: the
+                                salon floor works on tablets and phones, where
+                                there is no hover and a hidden control is no
+                                control at all. */}
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeletePhoto({ photoId: photo.id, petId: pet.id, petName: pet.name })}
+                              aria-label={`Remove this photo from ${pet.name}`}
+                              title={`Remove this photo from ${pet.name}`}
+                              className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-background bg-foreground/75 text-background shadow-sm transition-colors hover:bg-destructive hover:text-destructive-foreground"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
                         ))}
                         <label className="h-16 w-16 shrink-0 cursor-pointer rounded-lg border border-dashed border-primary/40 bg-primary/5 text-primary flex flex-col items-center justify-center gap-1 text-[10px] font-medium hover:bg-primary/10 transition-colors">
                           <ImagePlus className="h-4 w-4" />
@@ -2259,6 +2296,28 @@ export default function ClientDetail() {
               onClick={() => confirmDeleteAppt && deleteAppointment.mutate({ appointmentId: confirmDeleteAppt.id })}
             >
               {deleteAppointment.isPending ? "Deleting…" : "Delete booking"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!confirmDeletePhoto} onOpenChange={open => { if (!open) setConfirmDeletePhoto(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove this photo?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This removes the photo from{" "}
+            <strong className="text-foreground">{confirmDeletePhoto?.petName}</strong>&rsquo;s record.
+            The image is stored on the record itself, so this cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeletePhoto(null)}>Keep it</Button>
+            <Button
+              variant="destructive"
+              disabled={deletePetPhoto.isPending}
+              onClick={() => confirmDeletePhoto && deletePetPhoto.mutate({ photoId: confirmDeletePhoto.photoId, petId: confirmDeletePhoto.petId })}
+            >
+              {deletePetPhoto.isPending ? "Removing\u2026" : "Remove photo"}
             </Button>
           </DialogFooter>
         </DialogContent>
