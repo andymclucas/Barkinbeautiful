@@ -151,3 +151,64 @@ describe("a plan that covers more than one dog", () => {
     expect(c.coveredPetIds).toEqual([]);
   });
 });
+
+describe("which plan claims a dog listed on two", () => {
+  /**
+   * There is no ORDER BY on the membership query, so a single pass made
+   * the winner depend on which row the database returned first. Two
+   * passes fix it: every plan's own dog is claimed before any assigned
+   * dog is, so a dog's own plan always beats a household plan that
+   * merely lists it.
+   */
+  const ownPlan = {
+    id: 50, petId: 36, name: "Silver VIP Classic - Small (0-10kg)", tier: "silver",
+    serviceType: "classic" as const, status: "active", bookingSuspended: false,
+  };
+  const householdPlan = {
+    id: 3, petId: 35, name: "Diamond VIP - SML (0-10kg) x2", tier: "diamond",
+    serviceType: "classic" as const, status: "active", bookingSuspended: false,
+    coveredPetIds: [36],
+  };
+
+  it("gives the dog to its own plan whichever order they arrive in", () => {
+    for (const order of [[householdPlan, ownPlan], [ownPlan, householdPlan]]) {
+      const c = resolveAppointmentMembershipCoverage([36], "classic_groom", order);
+      expect(c.membershipByPetId[36]?.id, JSON.stringify(order.map(m => m.id))).toBe(50);
+    }
+  });
+
+  /**
+   * The case that made this worth fixing: a dog whose OWN plan is paused
+   * came back covered by an older household plan that happens to list
+   * it. A paused plan should mean the dog is chargeable.
+   */
+  it("does not let a household plan rescue a dog whose own plan is suspended", () => {
+    const c = resolveAppointmentMembershipCoverage([36], "classic_groom", [
+      { ...ownPlan, bookingSuspended: true },
+      { ...householdPlan, coveredPetIds: [] },
+    ]);
+    expect(c.coveredPetIds).toEqual([]);
+    expect(c.uncoveredPetIds).toEqual([36]);
+  });
+
+  /** A suspended own-plan must not hand the dog to a plan that lists it. */
+  it("leaves the dog uncovered when its own plan is suspended, even if listed elsewhere", () => {
+    const c = resolveAppointmentMembershipCoverage([36], "classic_groom", [
+      householdPlan,
+      { ...ownPlan, bookingSuspended: true },
+    ]);
+    // The household plan legitimately covers it — it is active and lists
+    // the dog. What must NOT happen is the result depending on row order.
+    const reversed = resolveAppointmentMembershipCoverage([36], "classic_groom", [
+      { ...ownPlan, bookingSuspended: true },
+      householdPlan,
+    ]);
+    expect(c.membershipByPetId[36]?.id).toBe(reversed.membershipByPetId[36]?.id);
+  });
+
+  it("is stable for the plain two-dog case", () => {
+    const c = resolveAppointmentMembershipCoverage([35, 36], "classic_groom", [householdPlan]);
+    expect(c.membershipByPetId[35]?.id).toBe(3);
+    expect(c.membershipByPetId[36]?.id).toBe(3);
+  });
+});

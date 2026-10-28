@@ -43,11 +43,33 @@ export function resolveAppointmentMembershipCoverage(
   memberships: ActivePetMembership[],
 ): AppointmentMembershipCoverage {
   const membershipByPetId: Record<number, ActivePetMembership> = {};
-  for (const membership of memberships) {
-    if (membership.status !== "active" || membership.bookingSuspended || !membershipCoversService(membership.serviceType, appointmentService)) continue;
-    // The primary AND every assigned dog. First plan wins per dog, which
-    // is the behaviour this already had when two plans named one dog.
-    for (const petId of [membership.petId, ...(membership.coveredPetIds ?? [])]) {
+  const usable = memberships.filter((membership) =>
+    membership.status === "active"
+    && !membership.bookingSuspended
+    && membershipCoversService(membership.serviceType, appointmentService));
+
+  /**
+   * TWO passes, and the order matters.
+   *
+   * A dog can be the primary of its own plan and also listed on a
+   * household plan. Taking them in one pass made the winner depend on
+   * which row the database happened to return first — there is no
+   * ORDER BY on that query — so a dog whose own plan was paused could
+   * still come back covered by an older household plan that merely
+   * lists it. "Oldest plan in the household beats the dog's own plan"
+   * is not a rule anybody chose.
+   *
+   * So: every plan's PRIMARY dog is claimed first, then the assigned
+   * dogs fill the gaps. A dog's own plan always wins, and `??=` keeps
+   * first-wins within each pass, which is what this did before.
+   */
+  for (const membership of usable) {
+    if (typeof membership.petId === "number" && Number.isFinite(membership.petId)) {
+      membershipByPetId[membership.petId] ??= membership;
+    }
+  }
+  for (const membership of usable) {
+    for (const petId of membership.coveredPetIds ?? []) {
       if (typeof petId === "number" && Number.isFinite(petId)) membershipByPetId[petId] ??= membership;
     }
   }
