@@ -50,7 +50,7 @@ import {
 } from "lucide-react";
 import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe } from "lucide-react";
 import { Link } from "wouter";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { HeartCrack, History, Replace, Unlink } from "lucide-react";
 import { getDepartedMembershipBillingImpact, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
@@ -302,7 +302,37 @@ export default function ClientDetail() {
   const [addCreditSignal, setAddCreditSignal] = useState(0);
   // Overview first: the figures and the notes are what someone opening a
   // client actually came for.
-  const [activeClientTab, setActiveClientTab] = useState("overview");
+  /**
+   * `?pet=` opens this record on Pets, with that dog scrolled to.
+   *
+   * A dog's name is a link everywhere in the app now, and there is no
+   * route for a pet — this page is the only thing that holds one. So a
+   * dog link lands here, and without this it would land on the top of
+   * the Overview tab, which is not the dog anybody clicked.
+   */
+  const petFromUrl = (() => {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("pet");
+    const id = Number(raw);
+    return raw && Number.isInteger(id) && id > 0 ? id : null;
+  })();
+  const [activeClientTab, setActiveClientTab] = useState(petFromUrl ? "pets" : "overview");
+  /**
+   * Scrolled to and ringed. A client with eight dogs otherwise opens
+   * the right tab and still leaves the one that was clicked somewhere
+   * below the fold.
+   *
+   * A callback ref rather than an effect, because the card mounts when
+   * the Pets tab renders and an effect would have to guess when that
+   * happened. `scrolledToPet` keeps it to once, so re-renders do not
+   * drag the page back while somebody is reading.
+   */
+  const scrolledToPet = useRef(false);
+  const highlightedPetRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node || scrolledToPet.current) return;
+    scrolledToPet.current = true;
+    node.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, []);
   // Bookings sub-view. Ten a page, matching MoeGo, so a salon moving
   // across finds the same rows in the same places.
   const [bookingTab, setBookingTab] = useState<BookingBucket>("upcoming");
@@ -1159,7 +1189,11 @@ export default function ClientDetail() {
                 const pMemberships = petMemberships[pet.id] ?? [];
                 const activePetMembership = pMemberships.find(m => m.status === "active");
                 return (
-                  <Card key={pet.id} className={`relative overflow-hidden ${pet.status === "departed" ? "border-amber-300 dark:border-amber-800 bg-gradient-to-br from-amber-50/80 dark:from-amber-950/80 via-card to-red-50/50 dark:to-red-950/50 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]" : ""}`}>
+                  <Card
+                    key={pet.id}
+                    id={`pet-${pet.id}`}
+                    ref={pet.id === petFromUrl ? highlightedPetRef : undefined}
+                    className={`relative overflow-hidden ${pet.id === petFromUrl ? "ring-2 ring-primary/60" : ""} ${pet.status === "departed" ? "border-amber-300 dark:border-amber-800 bg-gradient-to-br from-amber-50/80 dark:from-amber-950/80 via-card to-red-50/50 dark:to-red-950/50 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]" : ""}`}>
                     {/* Colour strip */}
                     <div className="h-1.5 w-full" style={{ background: pet.status === "departed" ? "#d97706" : activePetMembership ? (TIER_COLOURS[activePetMembership.tier]?.text.replace("text-", "var(--") ?? "#6366f1") : "#6366f1" }} />
                     {pet.status === "departed" && (

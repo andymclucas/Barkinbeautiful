@@ -91,9 +91,23 @@ describe("DogBoardHoverCard", () => {
     expect(screen.getByTestId("hover-codes").textContent).toContain("SENSITIVE");
   });
 
-  it("points at the dialog for the rest", () => {
+  /**
+   * This card used to end "Click the name for the full record", which
+   * was not true: the name on the board is a button that opens grooming
+   * notes. The way to the record is this link, which is why the footer
+   * is now a link rather than a sentence.
+   */
+  it("offers a way through to the client record", () => {
+    render(<DogBoardHoverCard row={{ ...BASE, notes: "something", clientId: 7, petId: 19 }} />);
+    const link = screen.getByRole("link", { name: /open .*record/i });
+    expect(link).toHaveAttribute("href", "/clients/7?pet=19");
+  });
+
+  /** A board row with no client still shows the card, without a dead link. */
+  it("says the dog's name without a link when there is no client on the row", () => {
     render(<DogBoardHoverCard row={{ ...BASE, notes: "something" }} />);
-    expect(screen.getByTestId("dog-hover").textContent).toContain("Click the name for the full record");
+    expect(screen.getByTestId("dog-hover").textContent).toMatch(/record/i);
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("shows a danger flag even with no text behind it", () => {

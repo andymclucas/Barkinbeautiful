@@ -1,4 +1,5 @@
-import { AlertTriangle, Clock, Scissors, Sparkles, StickyNote } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Clock, Scissors, Sparkles, StickyNote } from "lucide-react";
+import { PetLink } from "./RecordLink";
 import { dogBoardSummary, type DogBoardRow } from "@shared/dogBoardSummary";
 import { collectByTone } from "@shared/collectBy";
 
@@ -17,13 +18,44 @@ import { collectByTone } from "@shared/collectBy";
  * to decide whether to open the dialog, and the card says so when there
  * is more to read.
  */
-export function DogBoardHoverCard({ row }: { row: DogBoardRow }) {
+/**
+ * The row also carries the ids the board already queries, which the
+ * summary type has no reason to know about.
+ */
+type HoverRow = DogBoardRow & { clientId?: number | null; petId?: number | null };
+
+export function DogBoardHoverCard({ row }: { row: HoverRow }) {
   const s = dogBoardSummary(row);
+
+  /**
+   * The way to the client's record FROM the board.
+   *
+   * The dog's name on the board is a button that opens grooming notes —
+   * staff press it all day and it must keep doing that. So the record
+   * link lives here, one hover away, rather than taking the name's job.
+   *
+   * This replaces a footer that read "Click the name for the full
+   * record", which was simply untrue: clicking the name opened the
+   * notes.
+   */
+  const recordLink = (
+    <p className="border-t pt-1.5 text-[10px]">
+      <PetLink
+        clientId={row.clientId}
+        petId={row.petId}
+        className="inline-flex items-center gap-0.5 font-medium text-muted-foreground"
+        title={`Open ${row.petName ?? "this dog"}'s record`}
+      >
+        Open {row.petName ?? "this dog"}&rsquo;s record <ArrowUpRight className="h-2.5 w-2.5" />
+      </PetLink>
+    </p>
+  );
 
   if (s.isEmpty) {
     return (
-      <div className="w-64 p-1 text-xs text-muted-foreground" data-testid="dog-hover">
-        Nothing recorded for {row.petName ?? "this dog"} yet.
+      <div className="w-64 space-y-2 p-1 text-xs text-muted-foreground" data-testid="dog-hover">
+        <p>Nothing recorded for {row.petName ?? "this dog"} yet.</p>
+        {recordLink}
       </div>
     );
   }
@@ -115,7 +147,7 @@ export function DogBoardHoverCard({ row }: { row: DogBoardRow }) {
         </div>
       )}
 
-      <p className="border-t pt-1.5 text-[10px] text-muted-foreground">Click the name for the full record.</p>
+      {recordLink}
     </div>
   );
 }
