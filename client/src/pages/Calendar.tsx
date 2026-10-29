@@ -4100,8 +4100,29 @@ export default function Calendar() {
                 </div>
                 {/* Extras done on the day. Each one becomes its own line on
                     the invoice rather than disappearing into the price. Sits
-                    with the service it belongs to, above the times. */}
-                {editAppt && <AppointmentAddOns appointmentId={editAppt.id} />}
+                    with the service it belongs to, above the times.
+
+                    One box per dog, like Groomer and Service above. It used
+                    to be a single box bound to whichever dog's row was
+                    opened, so on a two-dog booking an extra silently went on
+                    one of them — Lauren, 29/10/2026: "I still need to put in
+                    2 x ultra teeth service instead of allocating to each
+                    dog... I separated the dogs to groomer and then went into
+                    each groomers box to add it separately." */}
+                {editAppt && (editSiblings.length > 0
+                  ? <div className="space-y-2">
+                      {[editAppt, ...editSiblings].map(pet => (
+                        <AppointmentAddOns
+                          key={pet.id}
+                          appointmentId={pet.id}
+                          petName={pet.petName ?? "Unnamed dog"}
+                          siblings={[editAppt, ...editSiblings]
+                            .filter(other => other.id !== pet.id)
+                            .map(other => ({ appointmentId: other.id, petName: other.petName ?? "Unnamed dog" }))}
+                        />
+                      ))}
+                    </div>
+                  : <AppointmentAddOns appointmentId={editAppt.id} />)}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Start</Label>

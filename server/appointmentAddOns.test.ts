@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
-  toCents, centsToAmount, addOnRequiresManualPrice,
-  buildInvoiceLines, appointmentTotal, addOnsTotal, billableTotal,
-  billableTotalsByAppointment, isUsableBilledOverride } from "@shared/appointmentAddOns";
+  toCents,
+  centsToAmount,
+  addOnRequiresManualPrice,
+  buildInvoiceLines,
+  appointmentTotal,
+  addOnsTotal,
+  billableTotal,
+  billableTotalsByAppointment,
+  isUsableBilledOverride,
+  addOnTargets,
+  describeAddOnWrite,
+} from "@shared/appointmentAddOns";
 
 describe("money arrives as decimal strings and must stay exact", () => {
   it("converts both strings and numbers", () => {
@@ -401,5 +410,60 @@ describe("addOnsTotal nets off discounts", () => {
 
   it("is unchanged when nothing is discounted", () => {
     expect(addOnsTotal([{ name: "Teeth Clean", unitPrice: "35.00", quantity: 2 }])).toBe("70.00");
+  });
+});
+
+describe("addOnTargets", () => {
+  const self = { appointmentId: 1, petName: "Libby" };
+  const jimmy = { appointmentId: 2, petName: "Jimmy" };
+
+  it("writes to one dog when that is all there is", () => {
+    expect(addOnTargets(self, [], true)).toEqual([self]);
+    expect(addOnTargets(self, [], false)).toEqual([self]);
+  });
+
+  it("writes to every dog on the booking when asked", () => {
+    expect(addOnTargets(self, [jimmy], true)).toEqual([self, jimmy]);
+  });
+
+  it("writes only to this dog when not asked", () => {
+    expect(addOnTargets(self, [jimmy], false)).toEqual([self]);
+  });
+
+  it("keeps the opened dog first, so the toast names it first", () => {
+    expect(addOnTargets(jimmy, [self], true)[0]).toEqual(jimmy);
+  });
+
+  /**
+   * Two dogs in one family are often called the same thing — Steve
+   * Bellotti has two Milos. Deduping on the name would silently skip
+   * the second dog; deduping on the id is what stops a double charge.
+   */
+  it("charges each appointment once, even when two dogs share a name", () => {
+    const milo1 = { appointmentId: 7, petName: "Milo" };
+    const milo2 = { appointmentId: 8, petName: "Milo" };
+    expect(addOnTargets(milo1, [milo2], true)).toEqual([milo1, milo2]);
+  });
+
+  it("never charges the same appointment twice", () => {
+    expect(addOnTargets(self, [self, jimmy], true)).toEqual([self, jimmy]);
+  });
+});
+
+describe("describeAddOnWrite", () => {
+  it("says nothing about counts for a single dog", () => {
+    expect(describeAddOnWrite({ name: "Teeth Ultra Clean", attempted: 1, succeeded: 1 }))
+      .toBe("Teeth Ultra Clean added");
+  });
+
+  it("names the number of dogs charged", () => {
+    expect(describeAddOnWrite({ name: "Teeth Ultra Clean", attempted: 2, succeeded: 2 }))
+      .toBe("Teeth Ultra Clean added to 2 dogs");
+  });
+
+  /** A half-written billing action must not report as a whole one. */
+  it("reports a partial write as partial", () => {
+    expect(describeAddOnWrite({ name: "Nail Trim", attempted: 3, succeeded: 2 }))
+      .toBe("Nail Trim added to 2 of 3 dogs");
   });
 });
