@@ -211,6 +211,11 @@ export const workflowTimingReviewThresholds = mysqlTable("workflow_timing_review
   scopeKey: varchar("scope_key", { length: 120 }).notNull(),
   petSize: varchar("pet_size", { length: 32 }),
   breedName: varchar("breed_name", { length: 100 }),
+  /* How long a dog may wait between drop-off and the start of its bath.
+     Added 29/10/2026: the other four measure how long a stage TOOK, and
+     nothing measured the queue in front of it. Defaulted rather than
+     nullable so every existing row is valid the moment it is added. */
+  waitMinutes: int("wait_minutes").default(90).notNull(),
   bathMinutes: int("bath_minutes").notNull(),
   dryMinutes: int("dry_minutes").notNull(),
   groomMinutes: int("groom_minutes").notNull(),

@@ -211,3 +211,97 @@ describe("stage colours", () => {
     expect(DAY_TIMING_STAGE_STATE.waitGroom).not.toBe(DAY_TIMING_STAGE_STATE.grooming);
   });
 });
+
+describe("the configurable wait ceiling", () => {
+  const ceiling = (over: Partial<DayTimingInput>, now?: number) => dogDayTiming(row(over), now);
+
+  it("flags a dog past its own ceiling and names the figure", () => {
+    const d = ceiling({ checkedInAt: at("09:23"), bathingStartedAt: at("11:53"), waitThresholdMinutes: 90 });
+    expect(d.waitForBathMinutes).toBe(150);
+    expect(d.waitThresholdMinutes).toBe(90);
+    expect(d.overWait).toBe(true);
+  });
+
+  it("leaves a dog inside its ceiling unflagged", () => {
+    expect(ceiling({ waitThresholdMinutes: 90 }).overWait).toBe(false);   // 15m
+  });
+
+  it("treats the ceiling as a limit to exceed, not to reach", () => {
+    const d = ceiling({ checkedInAt: at("08:00"), bathingStartedAt: at("09:30"), waitThresholdMinutes: 90 });
+    expect(d.waitForBathMinutes).toBe(90);
+    expect(d.overWait).toBe(false);
+  });
+
+  /**
+   * Null, not false. A salon that has configured nothing has not
+   * decided every dog is fine, and "within target" on an unjudged dog
+   * is a claim the data does not support.
+   */
+  it("judges nothing when no ceiling resolved", () => {
+    const d = ceiling({ checkedInAt: at("09:23"), bathingStartedAt: at("11:53") });
+    expect(d.waitThresholdMinutes).toBeNull();
+    expect(d.overWait).toBeNull();
+  });
+
+  it("ignores a nonsense ceiling rather than flagging everything", () => {
+    expect(ceiling({ waitThresholdMinutes: 0 }).overWait).toBeNull();
+    expect(ceiling({ waitThresholdMinutes: -5 }).overWait).toBeNull();
+    expect(ceiling({ waitThresholdMinutes: null }).overWait).toBeNull();
+  });
+
+  /**
+   * The dog you most want flagged is the one STILL in the queue — it
+   * has no bath-start stamp, so judging only finished waits would stay
+   * silent about exactly the dog someone could still go and rescue.
+   */
+  it("flags a dog still queueing, counting from now", () => {
+    const d = ceiling({
+      workflowState: "checked_in", checkedInAt: at("08:00"), bathingStartedAt: null,
+      bathingCompletedAt: null, dryingStartedAt: null, dryingCompletedAt: null,
+      groomingStartedAt: null, groomingCompletedAt: null, readyAt: null, completedAt: null,
+      waitThresholdMinutes: 90,
+    }, at("10:00"));
+    expect(d.waitForBathMinutes).toBeNull();   // no bath yet
+    expect(d.overWait).toBe(true);             // but two hours in the queue
+  });
+
+  it("does not flag a dog that has only just arrived", () => {
+    const d = ceiling({
+      workflowState: "checked_in", checkedInAt: at("08:00"), bathingStartedAt: null,
+      bathingCompletedAt: null, dryingStartedAt: null, dryingCompletedAt: null,
+      groomingStartedAt: null, groomingCompletedAt: null, readyAt: null, completedAt: null,
+      waitThresholdMinutes: 90,
+    }, at("08:20"));
+    expect(d.overWait).toBe(false);
+  });
+
+  /** A finished dog is not still queueing, however little was recorded. */
+  it("does not count a completed dog with no bath as still waiting", () => {
+    const d = ceiling({
+      workflowState: "complete", checkedInAt: at("08:00"), bathingStartedAt: null,
+      bathingCompletedAt: null, waitThresholdMinutes: 90,
+    }, at("23:00"));
+    expect(d.overWait).toBeNull();
+  });
+});
+
+describe("dayTimingSummary with ceilings", () => {
+  it("counts the breaches against the dogs it could judge", () => {
+    const dogs = [
+      dogDayTiming(row({ appointmentId: 1, petName: "Frankie", waitThresholdMinutes: 90 })),
+      dogDayTiming(row({ appointmentId: 2, petName: "Radley", waitThresholdMinutes: 90,
+        checkedInAt: at("09:23"), bathingStartedAt: at("11:53") })),
+      dogDayTiming(row({ appointmentId: 3, petName: "Unjudged" })),   // no ceiling
+    ];
+    const s = dayTimingSummary(dogs);
+    expect(s.dogs).toBe(3);
+    expect(s.judged).toBe(2);
+    expect(s.overWait).toBe(1);
+  });
+
+  it("reads zero of zero for a salon that has configured nothing", () => {
+    const s = dayTimingSummary([dogDayTiming(row())]);
+    expect(s.judged).toBe(0);
+    expect(s.overWait).toBe(0);
+  });
+});

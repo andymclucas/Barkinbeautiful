@@ -29,7 +29,7 @@ export default function Settings() {
   const [timingScope, setTimingScope] = useState<"default" | "size" | "breed">("default");
   const [timingSize, setTimingSize] = useState("small");
   const [timingBreed, setTimingBreed] = useState("");
-  const [timingMinutes, setTimingMinutes] = useState({ bath: "90", dry: "75", groom: "150", total: "240" });
+  const [timingMinutes, setTimingMinutes] = useState({ wait: "90", bath: "90", dry: "75", groom: "150", total: "240" });
   useEffect(() => {
     if (tenant) setBrand({ primary: tenant.brandPrimary ?? "#d61572", accent: tenant.brandAccent ?? "#f9d4e7", sidebar: tenant.brandSidebar ?? "#2b1830", font: tenant.brandFont ?? "Inter", logoUrl: tenant.logoUrl ?? "" });
     if (tenant) setPublicReviewUrl((tenant as { publicReviewUrl?: string | null }).publicReviewUrl ?? "");
@@ -37,9 +37,9 @@ export default function Settings() {
   useEffect(() => {
     const scopeKey = timingScope === "default" ? "default" : timingScope === "size" ? `size:${timingSize}` : `breed:${timingBreed.trim().toLocaleLowerCase("en-AU").replace(/\s+/g, " ")}`;
     const saved = timingReviewSettings?.rules.find((rule) => rule.scopeKey === scopeKey);
-    const fallback = timingReviewSettings?.defaults ?? { bathMinutes: 90, dryMinutes: 75, groomMinutes: 150, totalMinutes: 240 };
+    const fallback = timingReviewSettings?.defaults ?? { waitMinutes: 90, bathMinutes: 90, dryMinutes: 75, groomMinutes: 150, totalMinutes: 240 };
     const values = saved ?? fallback;
-    setTimingMinutes({ bath: String(values.bathMinutes), dry: String(values.dryMinutes), groom: String(values.groomMinutes), total: String(values.totalMinutes) });
+    setTimingMinutes({ wait: String(values.waitMinutes ?? fallback.waitMinutes), bath: String(values.bathMinutes), dry: String(values.dryMinutes), groom: String(values.groomMinutes), total: String(values.totalMinutes) });
   }, [timingReviewSettings, timingScope, timingSize, timingBreed]);
   const applyBrand = (next: typeof brand) => { applyBrandTheme(next); };
 
@@ -123,6 +123,7 @@ export default function Settings() {
     scope: timingScope,
     petSize: timingScope === "size" ? timingSize as any : undefined,
     breedName: timingScope === "breed" ? timingBreed.trim() : undefined,
+    waitMinutes: Math.max(1, Number(timingMinutes.wait) || 1),
     bathMinutes: Math.max(1, Number(timingMinutes.bath) || 1),
     dryMinutes: Math.max(1, Number(timingMinutes.dry) || 1),
     groomMinutes: Math.max(1, Number(timingMinutes.groom) || 1),
@@ -251,8 +252,8 @@ export default function Settings() {
                   {timingScope === "breed" && <div className="space-y-1.5"><Label>Breed</Label><BreedInput value={timingBreed} onChange={setTimingBreed} placeholder="e.g. Standard Poodle" /></div>}
                   {timingScope === "default" && <div className="self-end rounded-lg bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">Applies when no matching size preset or breed override exists.</div>}
                 </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{([
-                  { key: "bath", label: "Bath", hint: "active bath" }, { key: "dry", label: "Dry", hint: "active dry" }, { key: "groom", label: "Groom", hint: "active groom" }, { key: "total", label: "Total", hint: "check-in to complete" },
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{([
+                  { key: "wait", label: "Wait for bath", hint: "drop-off to bath start" }, { key: "bath", label: "Bath", hint: "active bath" }, { key: "dry", label: "Dry", hint: "active dry" }, { key: "groom", label: "Groom", hint: "active groom" }, { key: "total", label: "Total", hint: "check-in to complete" },
                 ] as const).map((metric) => <div key={metric.key} className="rounded-lg border bg-card p-3"><Label htmlFor={`timing-${metric.key}`} className="text-sm">{metric.label}</Label><div className="mt-1.5 flex items-center gap-1"><Input id={`timing-${metric.key}`} type="number" min="1" max="1440" value={timingMinutes[metric.key]} onChange={(event) => setTimingMinutes((current) => ({ ...current, [metric.key]: event.target.value }))} /><span className="text-xs text-muted-foreground">min</span></div><p className="mt-1 text-[11px] text-muted-foreground">{metric.hint}</p></div>)}</div>
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/60 p-3"><p className="text-sm text-amber-950 dark:text-amber-100"><span className="font-semibold">Editing:</span> {timingScopeLabel}</p><div className="flex gap-2"><Button variant="outline" size="sm" className="gap-1 border-amber-300 dark:border-amber-800 bg-card text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-950/50" onClick={() => resetTimingThreshold.mutate({ scope: timingScope, petSize: timingScope === "size" ? timingSize as any : undefined, breedName: timingScope === "breed" ? timingBreed.trim() : undefined })} disabled={resetTimingThreshold.isPending || !canSaveTiming}><RotateCcw className="h-3.5 w-3.5" /> Reset</Button><Button size="sm" onClick={saveTiming} disabled={!canSaveTiming || saveTimingThreshold.isPending || timingReviewSettingsLoading}>{saveTimingThreshold.isPending ? "Saving…" : "Save trigger"}</Button></div></div>
                 {(timingReviewSettings?.rules.length ?? 0) > 0 && <div className="rounded-lg border bg-card p-3"><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Saved overrides</p><div className="flex flex-wrap gap-2">{timingReviewSettings?.rules.map((rule) => <span key={rule.scopeKey} className="rounded-full border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-xs text-amber-900 dark:text-amber-200">{rule.scope === "default" ? "Salon default" : rule.scope === "size" ? `Size · ${rule.petSize}` : `Breed · ${rule.breedName}`}</span>)}</div></div>}

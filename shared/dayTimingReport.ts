@@ -28,6 +28,10 @@ export type DayTimingInput = {
   groomerName?: string | null;
   serviceType?: string | null;
   workflowState: string;
+  /** This dog's own ceiling, resolved from the salon's rules. A Giant
+      may be given more room than a Toy, so it cannot be one number for
+      the whole day. Absent when the caller has not resolved one. */
+  waitThresholdMinutes?: number | null;
   checkedInAt: Millis;
   bathingStartedAt: Millis;
   bathingCompletedAt: Millis;
@@ -100,6 +104,14 @@ export type DogDayTiming = {
   stages: DayTimingStage[];
   /** Drop-off to the start of the bath — the measure Lauren asked for. */
   waitForBathMinutes: number | null;
+  /** The configured ceiling for THIS dog, or null when none applies. */
+  waitThresholdMinutes: number | null;
+  /**
+   * Past its ceiling. Null, not false, when there is nothing to judge:
+   * a dog with no bath yet has not passed anything, and saying "within
+   * target" of a dog nobody has started is worse than saying nothing.
+   */
+  overWait: boolean | null;
   /** Every gap added up, including the ones mid-groom. */
   totalWaitMinutes: number | null;
   /** Check-in to complete. Null until the dog has actually left. */
@@ -108,7 +120,7 @@ export type DogDayTiming = {
   finished: boolean;
 };
 
-export function dogDayTiming(row: DayTimingInput): DogDayTiming {
+export function dogDayTiming(row: DayTimingInput, now: number = Date.now()): DogDayTiming {
   const stages = DAY_TIMING_STAGES.map(def => ({
     key: def.key,
     label: def.label,
@@ -118,6 +130,18 @@ export function dogDayTiming(row: DayTimingInput): DogDayTiming {
 
   const waits = stages.filter(s => s.isWait && s.minutes !== null);
   const finished = row.workflowState === "complete";
+  const waitForBath = stageMinutes(row.checkedInAt, row.bathingStartedAt);
+  const ceiling = typeof row.waitThresholdMinutes === "number" && row.waitThresholdMinutes > 0
+    ? row.waitThresholdMinutes
+    : null;
+
+  /* A dog still queueing has already waited this long, even though the
+     bath has not started — otherwise the one dog you most want flagged
+     is the one the report stays silent about. */
+  const queueingFor = !waitForBath && row.checkedInAt && !row.bathingStartedAt && !finished
+    ? stageMinutes(row.checkedInAt, now)
+    : null;
+  const judged = waitForBath ?? queueingFor;
 
   return {
     appointmentId: row.appointmentId,
@@ -129,7 +153,9 @@ export function dogDayTiming(row: DayTimingInput): DogDayTiming {
     arrivedAt: row.checkedInAt ?? null,
     finishedAt: row.completedAt ?? null,
     stages,
-    waitForBathMinutes: stageMinutes(row.checkedInAt, row.bathingStartedAt),
+    waitForBathMinutes: waitForBath,
+    waitThresholdMinutes: ceiling,
+    overWait: ceiling === null || judged === null ? null : judged > ceiling,
     totalWaitMinutes: waits.length ? waits.reduce((sum, s) => sum + (s.minutes ?? 0), 0) : null,
     totalMinutes: stageMinutes(row.checkedInAt, row.completedAt),
     finished,
@@ -139,11 +165,17 @@ export function dogDayTiming(row: DayTimingInput): DogDayTiming {
 /**
  * The shape of the day, for the header.
  *
- * Deliberately NO pass/fail threshold. The salon's configured timing
- * rules cover bath, dry, groom and total duration — there is no
- * agreed figure for an acceptable wait, and inventing one here would
- * put a number in front of staff that nobody chose. The median and the
- * worst case say where the day went without pretending to a standard.
+ * The median and the worst case are reported whether or not a wait
+ * threshold is configured: they describe the day without needing a
+ * standard to judge it against.
+ *
+ * `overWait` is counted only over the dogs whose own ceiling resolved,
+ * and `judged` is that denominator — "3 of 12" is honest where a bare
+ * "3" would not say out of what. In practice the salon always has a
+ * ceiling, because `resolveTimingReviewThreshold` falls back to the
+ * shipped default when nothing is configured; `judged` reaches 0 only
+ * when a caller passes dogs with no threshold resolved at all, as the
+ * unit tests do.
  */
 export function dayTimingSummary(dogs: readonly DogDayTiming[]) {
   const waits = dogs
@@ -161,6 +193,8 @@ export function dayTimingSummary(dogs: readonly DogDayTiming[]) {
     return d.waitForBathMinutes > worst.waitForBathMinutes ? d : worst;
   }, null);
 
+  const judged = dogs.filter(d => d.overWait !== null);
+
   return {
     dogs: dogs.length,
     /** How many had both a check-in and a bath start to measure between. */
@@ -168,6 +202,9 @@ export function dayTimingSummary(dogs: readonly DogDayTiming[]) {
     medianWaitMinutes: median,
     longestWaitMinutes: longest?.waitForBathMinutes ?? null,
     longestWaitPet: longest?.petName ?? null,
+    /** Dogs with a resolved ceiling — the denominator for `overWait`. */
+    judged: judged.length,
+    overWait: judged.filter(d => d.overWait).length,
   };
 }
 

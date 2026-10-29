@@ -58,6 +58,11 @@ export function DayTimingReport({ dogs }: { dogs: readonly DogDayTiming[] }) {
               {formatMinutes(summary.medianWaitMinutes)}
             </span>
           </span>
+          {summary.judged > 0 && (
+            <span className={summary.overWait > 0 ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground"}>
+              {summary.overWait} of {summary.judged} over the salon's limit
+            </span>
+          )}
           {summary.longestWaitPet && (
             <span className="text-muted-foreground">
               Longest{" "}
@@ -133,7 +138,18 @@ export function DayTimingReport({ dogs }: { dogs: readonly DogDayTiming[] }) {
 
               <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-[11px] text-muted-foreground">
                 <span className="tabular-nums">
-                  Waited <span className="font-medium text-foreground">{formatMinutes(dog.waitForBathMinutes)}</span> for a bath
+                  Waited{" "}
+                  <span className={`font-medium ${dog.overWait ? "text-amber-700 dark:text-amber-400" : "text-foreground"}`}>
+                    {formatMinutes(dog.waitForBathMinutes)}
+                  </span>{" "}
+                  for a bath
+                  {/* The limit is named beside the breach, so the number
+                      is arguable rather than a verdict from nowhere. */}
+                  {dog.overWait && dog.waitThresholdMinutes !== null && (
+                    <span className="ml-1 text-amber-700 dark:text-amber-400">
+                      (over {formatMinutes(dog.waitThresholdMinutes)})
+                    </span>
+                  )}
                 </span>
                 {dog.totalWaitMinutes !== null && (
                   <span className="tabular-nums">{formatMinutes(dog.totalWaitMinutes)} waiting in all</span>
