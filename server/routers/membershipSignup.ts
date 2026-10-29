@@ -36,6 +36,7 @@ import {
   staffBlockouts as staffBlockoutsTable,
 } from "../../drizzle/schema";
 import { nanoid } from "nanoid";
+import { departedBookingMessage } from "@shared/petBookable";
 import { MEMBERSHIP_PACKAGES } from "@shared/membershipPackages";
 import { properName } from "@shared/personName";
 import {
@@ -586,6 +587,14 @@ export const membershipSignupRouter = router({
           .set({ membershipId })
           .where(eq(membershipSignupRequestPets.id, line.id));
       }
+
+      /* Approving a sign-up books the whole plan forward, so a departed
+         dog would get every occurrence of it. Checked once here rather
+         than inside the loop: it must fail before anything is written. */
+      const signupPets = await db.select({ id: pets.id, name: pets.name, status: pets.status })
+        .from(pets).where(inArray(pets.id, lines.map((l: { petId: number }) => l.petId)));
+      const signupDeparted = departedBookingMessage(signupPets);
+      if (signupDeparted) throw new TRPCError({ code: "BAD_REQUEST", message: signupDeparted });
 
       const sessionId = lines.length > 1 ? nanoid(16) : null;
       let bookedCount = 0;

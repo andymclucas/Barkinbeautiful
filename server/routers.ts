@@ -8916,8 +8916,14 @@ const onlineBookingRouter = router({
   }),
   create: publicProcedure.input(z.object({ tenantId: z.number().default(1), clientId: z.number(), petId: z.number(), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), scheduledStart: z.coerce.date(), notes: z.string().max(1000).optional() })).mutation(async ({ input, ctx }) => {
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
-    const [pet] = await db.select({ id: pets.id, weightKg: pets.weightKg, weight: pets.weight }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
+    const [pet] = await db.select({ id: pets.id, name: pets.name, status: pets.status, weightKg: pets.weightKg, weight: pets.weight }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
     if (!pet) throw new Error("Pet does not belong to the selected client");
+    /* The staff booking paths have refused a departed dog since
+       19/10/2026; this one never did, and it is the PUBLIC one — a
+       family could book the dog they had just lost, from the portal,
+       with nothing in the way. */
+    const onlineDeparted = departedBookingMessage([pet]);
+    if (onlineDeparted) throw new Error(onlineDeparted);
     const petWeight = pet.weightKg ?? pet.weight;
     if (!isEligibleOnlineBookingService(input.serviceType, petWeight)) throw new Error("This pet needs a recorded weight between 0 and 80kg before online booking");
     const capacity = await checkOnlineCapacity({ ...input, petWeightKg: Number(petWeight) }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
@@ -8953,7 +8959,14 @@ const onlineBookingRouter = router({
       const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...properName(input), phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
-    const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    /* A guest booking reuses the dog already on file when the name
+       matches, so naming a departed dog would book it. A new pet is
+       created active and cannot be departed. */
+    if (existingPet) {
+      const guestDeparted = departedBookingMessage([existingPet]);
+      if (guestDeparted) throw new Error(guestDeparted);
+    }
     let petId = existingPet?.id;
     if (!petId) {
       const [createdPet] = await db.insert(pets).values({ tenantId: tenantOf(ctx, input), clientId: client.id, name: input.petName, breed: input.breed || null, weightKg: String(input.weightKg), weight: String(input.weightKg) });
@@ -8995,7 +9008,14 @@ const onlineBookingRouter = router({
       const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...properName(input), phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
-    const [existingPet] = await db.select({ id: pets.id }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    /* A guest booking reuses the dog already on file when the name
+       matches, so naming a departed dog would book it. A new pet is
+       created active and cannot be departed. */
+    if (existingPet) {
+      const guestDeparted = departedBookingMessage([existingPet]);
+      if (guestDeparted) throw new Error(guestDeparted);
+    }
     let petId = existingPet?.id;
     if (!petId) {
       const [createdPet] = await db.insert(pets).values({ tenantId: tenantOf(ctx, input), clientId: client.id, name: input.petName, breed: input.breed || null, weightKg: String(input.weightKg), weight: String(input.weightKg) });
