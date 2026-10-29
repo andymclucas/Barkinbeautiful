@@ -91,6 +91,7 @@ import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
+import { SessionDogCounts } from "@/components/SessionDogCounts";
 import { liveSiblings } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
@@ -3048,6 +3049,17 @@ export default function Calendar() {
             </Button>
           </div>
         </div>
+
+        {/* How the day divides, as a number.
+
+            Andy, 29/10/2026: "Show the total number of dogs for the
+            morning and afternoon sessions as a noticeable number."
+            Day view only — the split is a property of one day, and a
+            week's worth summed together would answer nothing.
+
+            It reads the same rule that positions the red line below,
+            so the figure and the line cannot disagree. */}
+        {viewMode === "day" && <SessionDogCounts rows={dayViewAppts} />}
 
         {/* Calendar, with the persistent left rail beside it.
             The month only existed inside a popover, so picking a date meant

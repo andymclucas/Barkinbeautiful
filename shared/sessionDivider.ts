@@ -88,10 +88,16 @@ export type SessionDividerRow = {
  * dogs, or an empty board. A line above the first row does not divide
  * anything.
  */
-export function afternoonSessionRowIndex(
-  rows: readonly SessionDividerRow[],
-  opts: { timeZone?: string; split?: { hour: number; minute: number } } = {},
-): number | null {
+type SessionOpts = { timeZone?: string; split?: { hour: number; minute: number } };
+
+/**
+ * Which session each row belongs to, by its family cohort's time.
+ *
+ * The one place that decides. The divider's position and the session
+ * counts both read this, so a board cannot show five dogs above the
+ * line and call it four.
+ */
+function sessionOf(rows: readonly SessionDividerRow[], opts: SessionOpts): ("morning" | "afternoon" | "unknown")[] {
   const split = opts.split ?? AFTERNOON_SESSION_START;
   const cutoff = split.hour * 60 + split.minute;
 
@@ -104,16 +110,47 @@ export function afternoonSessionRowIndex(
     anchors.set(family, Math.min(anchors.get(family) ?? at, at));
   }
 
-  const index = rows.findIndex((row) => {
+  return rows.map((row) => {
     const family = row.petFamilyGroupId;
-    const when = family != null && anchors.has(family)
-      ? anchors.get(family)!
-      : row.scheduledStart;
+    const when = family != null && anchors.has(family) ? anchors.get(family)! : row.scheduledStart;
     const minutes = minutesIntoLocalDay(when, opts.timeZone);
-    return minutes !== null && minutes >= cutoff;
+    if (minutes === null) return "unknown";
+    return minutes >= cutoff ? "afternoon" : "morning";
   });
+}
 
+export function afternoonSessionRowIndex(
+  rows: readonly SessionDividerRow[],
+  opts: SessionOpts = {},
+): number | null {
+  const index = sessionOf(rows, opts).indexOf("afternoon");
   /* 0 means every dog is in the afternoon; -1 means none is. Neither
      divides a day. */
   return index <= 0 ? null : index;
+}
+
+/**
+ * How many dogs are in each half of the day.
+ *
+ * Lauren, 29/10/2026, on why the line exists at all: "Our goal is to
+ * divide the day. Today turned to shit cause too many were booked in
+ * the morning." The line shows WHERE the split falls; this is the
+ * number that says whether the day is actually balanced, which is the
+ * thing she was trying to judge.
+ *
+ * `unknown` is counted separately rather than folded into the morning.
+ * A dog with an unreadable time is not evidence about either session,
+ * and silently adding it to one would overstate that half.
+ */
+export function sessionDogCounts(
+  rows: readonly SessionDividerRow[],
+  opts: SessionOpts = {},
+): { morning: number; afternoon: number; unknown: number; total: number } {
+  const sessions = sessionOf(rows, opts);
+  return {
+    morning: sessions.filter((s) => s === "morning").length,
+    afternoon: sessions.filter((s) => s === "afternoon").length,
+    unknown: sessions.filter((s) => s === "unknown").length,
+    total: rows.length,
+  };
 }
