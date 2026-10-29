@@ -126,3 +126,64 @@ export function buildBathPriorityQueue<T extends BathPriorityQueueRow>(rows: T[]
     // booking are one item and so share a position — they go in together.
     .map((item, index) => ({ ...item, position: index + 1 }));
 }
+
+export type BathPriorityAnchor = {
+  id: number;
+  bathGroupId?: string | null;
+  sessionId?: string | null;
+  petFamilyGroupId?: number | null;
+};
+
+export type BathPriorityScope =
+  | { kind: "alone"; appointmentId: number }
+  | { kind: "bathGroup"; bathGroupId: string }
+  | { kind: "session"; sessionId: string }
+  | { kind: "family"; petFamilyGroupId: number };
+
+/**
+ * Which dogs a priority change should reach.
+ *
+ * Lauren, 30/10/2026: "I wanted bear & Abby to be bathed together cause
+ * they are small.. but Abby & Ollie are family and it won't let me
+ * in-group their bathing number. I wanted Ollie to be 3."
+ *
+ * Abby and Ollie are one family booked at one time, so the board treats
+ * them as a single queue item and a change to either moved both. There
+ * was no way to say "this dog only" — the board always asked for the
+ * whole cohort.
+ *
+ * The order is deliberate and unchanged: an explicit bath group beats a
+ * session, which beats the automatic same-time family cohort. What is
+ * new is `alone`, for a dog being given a number of its own.
+ */
+export function bathPriorityScope(
+  anchor: BathPriorityAnchor,
+  applyToLinkedDogs: boolean,
+): BathPriorityScope {
+  if (!applyToLinkedDogs) return { kind: "alone", appointmentId: anchor.id };
+  if (anchor.bathGroupId?.trim()) return { kind: "bathGroup", bathGroupId: anchor.bathGroupId.trim() };
+  if (anchor.sessionId?.trim()) return { kind: "session", sessionId: anchor.sessionId.trim() };
+  if (anchor.petFamilyGroupId) return { kind: "family", petFamilyGroupId: anchor.petFamilyGroupId };
+  return { kind: "alone", appointmentId: anchor.id };
+}
+
+/**
+ * Whether a dog swept up by a SESSION or FAMILY change should actually
+ * be changed.
+ *
+ * No, when it carries a bath group of its own. Putting Abby in a group
+ * with Bear is an explicit instruction about Abby's bathing; a later
+ * change to her brother Ollie — who is in no group, so the automatic
+ * family rule applies to him — must not reach across and undo it.
+ *
+ * Without this the two halves of Lauren's request fight: grouping
+ * Bear+Abby works, and then numbering Ollie silently pulls Abby back.
+ */
+export function bathPriorityChangeReaches(
+  scope: BathPriorityScope,
+  candidate: { id: number; bathGroupId?: string | null },
+): boolean {
+  if (scope.kind === "alone") return candidate.id === scope.appointmentId;
+  if (scope.kind === "bathGroup") return true;
+  return !candidate.bathGroupId?.trim();
+}
