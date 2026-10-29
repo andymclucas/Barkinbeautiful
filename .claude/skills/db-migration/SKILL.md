@@ -8,9 +8,27 @@ description: Safely change the Drizzle schema and hand-write a migration for Bar
 The database holds a real salon's clients, pets, appointments and financial
 ledger. Two rules govern everything here:
 
-1. **Applying a migration is the operator's decision.** You do **not** run
-   `drizzle-kit migrate`, `db:push` or `drizzle-kit push` against any real
-   database. `.claude/settings.json` denies these commands.
+1. **Applying a migration is the operator's decision.** Do **not** run
+   `drizzle-kit migrate` against a real database off your own judgement —
+   propose it, hand over the pre-flight, and let Andy decide. He can and
+   does ask for it directly, and on 29/10/2026 he did: migration `0147`
+   was applied that way, after the §6 ledger check printed `1 outstanding`
+   and named it.
+
+   **Do not rely on `.claude/settings.json` to stop you.** An earlier
+   version of this file said it denied these commands. It does not, and
+   the real lists matter because two of them are traps:
+
+   | Command | settings.json | Safe to run? |
+   | ------- | ------------- | ------------ |
+   | `drizzle-kit migrate` | **allow** | Yes, with the §6 ledger pre-flight and the operator's say-so |
+   | `drizzle-kit generate` | **allow** | **No — broken, see below. Nothing blocks it but you** |
+   | `pnpm run db:push` | deny | No. It is `generate && migrate` |
+   | `drizzle-kit push:*` | deny | No |
+
+   So the only two commands the settings actually stop are the two `push`
+   forms. `generate` is the dangerous one: it is allowed, it is broken, and
+   the sole thing standing between it and production is you reading this.
 
    **`drizzle-kit generate` is broken in this repo — do not run it either.**
    The snapshot chain stops at `0043`, so it re-emits ten migrations' worth of
@@ -105,7 +123,11 @@ corepack pnpm test
 
 ### 6. Hand over to the operator
 
-Do not apply the migration. Report:
+Do not apply it unasked. Report the following, and if Andy then says to run
+it, do the pre-flight immediately before — not earlier in the session, for
+the reason in the pre-flight bullet below.
+
+Report:
 
 - **What changed**, in one or two sentences.
 - **The exact SQL** that will run.
@@ -114,13 +136,27 @@ Do not apply the migration. Report:
 - **Destructive operations**, each named, with the data at risk.
 - **Rollback** — how to reverse it, or a plain statement that it cannot be.
   Dropping a column is DDL and cannot be rolled back; revert the code first.
-- **The pre-flight they must run first.** `migrate` replays every journal entry
-  newer than the newest `created_at` in `__drizzle_migrations`, and does not
-  check whether the change is already present. On 30/09/2026 that table held a
-  single row from 2 August while the journal had 56 entries, so `migrate` would
-  have replayed 55 migrations against production and failed part way through
-  with no rollback. CLAUDE.md §6 has the one-liner that prints the outstanding
-  count; it must read 0.
+- **The pre-flight, run immediately before applying.** `migrate` replays every
+  journal entry newer than the newest `created_at` in `__drizzle_migrations`,
+  and does not check whether the change is already present. On 30/09/2026 that
+  table held a single row from 2 August while the journal had 56 entries, so
+  `migrate` would have replayed 55 migrations against production and failed
+  part way through with no rollback.
+
+  CLAUDE.md §6 has the one-liner that prints the outstanding count. **It must
+  equal the number of migrations you are about to apply, and name them** — for
+  a single new migration that is `1`, not `0`.
+
+  An earlier version of this file said it must read 0. That is what you see
+  **before** you have added your journal entry, and it is how 29/10/2026 was
+  nearly waved through on a check that had been run an hour earlier against a
+  journal that did not yet contain `0147`. Run it after the entry exists, and
+  read the tag it prints — a count alone cannot tell you it is YOUR migration
+  that is pending rather than somebody else's.
+
+  Then check the rest of the state in the same breath: the column must not
+  already exist, and any table another unapplied migration touches must still
+  be in the shape that migration expects.
 - **The command they will run:** `corepack pnpm exec drizzle-kit migrate`
   — never `db:push`, which runs the broken `generate` first.
 

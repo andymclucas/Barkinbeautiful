@@ -266,13 +266,32 @@ way through with no rollback. The ledger was backfilled the same day, so it is
 correct now, but verify before trusting it:
 
 ```bash
-# Should print 0. Anything else means migrate would re-run applied migrations.
+# Prints the pending count AND names them, because the count alone cannot
+# tell you WHICH migration is pending.
+#
+#   Nothing of your own to apply  -> 0 outstanding
+#   Your one new migration        -> 1 outstanding, and it names your tag
+#
+# Anything pending that you did not write means migrate would also run
+# somebody else's work, or re-run migrations already applied by hand.
 node -e 'require("dotenv").config({quiet:true});const m=require("mysql2/promise"),f=require("fs");
 (async()=>{const c=await m.createConnection({uri:process.env.DATABASE_URL,ssl:{minVersion:"TLSv1.2",rejectUnauthorized:true}});
 const [[r]]=await c.query("SELECT MAX(created_at) n FROM __drizzle_migrations");
 const j=JSON.parse(f.readFileSync("drizzle/meta/_journal.json","utf8"));
-console.log(j.entries.filter(e=>e.when>Number(r.n)).length,"outstanding");await c.end();})()'
+const out=j.entries.filter(e=>e.when>Number(r.n));
+console.log(out.length,"outstanding:",out.map(e=>e.tag).join(", ")||"(none)");await c.end();})()'
 ```
+
+**Run it AFTER adding your journal entry, immediately before migrating.** An
+earlier version of this file said it should print 0 full stop. 0 is what you
+see *before* your entry exists, so a check run early in a session reads clean
+and proves nothing — that nearly waved `0147` through on 29/10/2026.
+
+`migrate` also compares **strictly** (`ledgerMax < when`), so a journal entry
+whose `when` merely *equals* the ledger max is **skipped, not rejected**:
+`migrate` exits 0, the DDL never runs, and `schema.ts` still names the column.
+Two migrations must never share a `when`. `server/migrationJournal.test.ts`
+fails if any two do.
 
 A ledger row is `hash` = `sha256` of the `.sql` file's full contents, and
 `created_at` = the journal entry's `when`.
