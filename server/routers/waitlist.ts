@@ -40,6 +40,7 @@ import { requireApprovedStaffTenant } from "../staffAccess";
 import { sendSms } from "../sms";
 import { getAppBaseUrl } from "../appUrl";
 import { nanoid } from "nanoid";
+import { departedBookingMessage } from "@shared/petBookable";
 import { brisbaneDateKey } from "@shared/localDateTime";
 import { properName } from "@shared/personName";
 import {
@@ -618,6 +619,13 @@ export const waitlistRouter = router({
           });
         }
       }
+
+      /* An offer can sit for days before it is accepted, and the dog can
+         be recorded as passed away in between. */
+      const [offerPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status })
+        .from(pets).where(eq(pets.id, offer.petId)).limit(1);
+      const offerDeparted = offerPet ? departedBookingMessage([offerPet]) : null;
+      if (offerDeparted) throw new TRPCError({ code: "BAD_REQUEST", message: offerDeparted });
 
       const [created] = await db.insert(appointments).values({
         tenantId, clientId: offer.clientId, petId: offer.petId,
