@@ -78,6 +78,7 @@ import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stri
 import { createCardSetupLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl, getPortalBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
@@ -7264,6 +7265,81 @@ const analyticsRouter = router({
       });
 
       return { stages, sampleSize: rows.length };
+    }),
+
+  /**
+   * One grooming day, dog by dog.
+   *
+   * `workflowTiming` above averages a date range, which is the right
+   * shape for "are we getting slower" and the wrong shape for "where
+   * did today go wrong" — one bad morning vanishes into a month. It
+   * also only measures how long each stage TOOK; the gaps BETWEEN
+   * stages, which is where a pile-up actually shows, are not in it.
+   *
+   * Asked for by Lauren on 29/10/2026, the day Radley and Harvey each
+   * sat 150 minutes between drop-off and bath while every bath that
+   * day ran comfortably inside the configured thresholds.
+   *
+   * Every dog on the day, not just the finished ones: a dog still
+   * waiting at 3pm is exactly who you want to see.
+   */
+  dayTiming: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), date: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return { dogs: [], date: input.date };
+      const { from, to } = brisbaneExplicitRange(input.date, input.date);
+
+      const rows = await db.select({
+        appointmentId: appointments.id,
+        petName: pets.name,
+        clientFirstName: clients.firstName,
+        clientLastName: clients.lastName,
+        groomerName: staff.name,
+        serviceType: appointments.serviceType,
+        workflowState: appointments.workflowState,
+        checkedInAt: appointments.checkedInAt,
+        bathingStartedAt: appointments.bathingStartedAt,
+        bathingCompletedAt: appointments.bathingCompletedAt,
+        dryingStartedAt: appointments.dryingStartedAt,
+        dryingCompletedAt: appointments.dryingCompletedAt,
+        groomingStartedAt: appointments.groomingStartedAt,
+        groomingCompletedAt: appointments.groomingCompletedAt,
+        readyAt: appointments.readyAt,
+        completedAt: appointments.completedAt,
+      })
+        .from(appointments)
+        .leftJoin(pets, eq(appointments.petId, pets.id))
+        .leftJoin(clients, eq(appointments.clientId, clients.id))
+        .leftJoin(staff, eq(appointments.staffId, staff.id))
+        .where(and(
+          eq(appointments.tenantId, tenantOf(ctx, input)),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
+          notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+          gte(appointments.scheduledStart, from),
+          lte(appointments.scheduledStart, to),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
+        ));
+
+      const dogs = rows.map((r) => dogDayTiming({
+        appointmentId: r.appointmentId,
+        petName: r.petName,
+        clientName: [r.clientFirstName, r.clientLastName].filter(Boolean).join(" ") || null,
+        groomerName: r.groomerName,
+        serviceType: r.serviceType,
+        workflowState: r.workflowState,
+        checkedInAt: r.checkedInAt as number | null,
+        bathingStartedAt: r.bathingStartedAt as number | null,
+        bathingCompletedAt: r.bathingCompletedAt as number | null,
+        dryingStartedAt: r.dryingStartedAt as number | null,
+        dryingCompletedAt: r.dryingCompletedAt as number | null,
+        groomingStartedAt: r.groomingStartedAt as number | null,
+        groomingCompletedAt: r.groomingCompletedAt as number | null,
+        readyAt: r.readyAt as number | null,
+        completedAt: r.completedAt as number | null,
+      }));
+
+      return { dogs: byArrival(dogs), date: input.date };
     }),
 
   membershipBreakdown: protectedProcedure
