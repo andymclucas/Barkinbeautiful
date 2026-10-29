@@ -58,30 +58,43 @@ describe("daycarePresence", () => {
 });
 
 describe("daycareTimes", () => {
-  it("shows the booked start until the dog actually turns up", () => {
+  it("shows the booked window before the dog turns up", () => {
     const times = daycareTimes(row());
     expect(times.in.toISOString()).toBe("2026-10-28T21:30:00.000Z");
-    expect(times.arrived).toBe(false);
+    expect(times.out.toISOString()).toBe("2026-10-29T06:00:00.000Z");
+    expect(times.arrivedAt).toBeNull();
+    expect(times.arrivedLate).toBe(false);
   });
 
   /**
-   * A board showing 7:30 for a dog that arrived at 8:10 is telling the
-   * floor something untrue.
+   * The bug this replaced: "In" used to become the real arrival, so
+   * Lola and Ollie — booked 10 to 11, checked in at 12:16 — rendered as
+   * "In 12:16 pm · Out 11:00 am". Out before in is not a time anyone
+   * can act on, and the booked window is what the owner agreed to.
    */
-  it("shows the real arrival once there is one", () => {
-    const times = daycareTimes(row({ checkedInAt: at("2026-10-28T22:10:00Z") }));
-    expect(times.in.toISOString()).toBe("2026-10-28T22:10:00.000Z");
-    expect(times.arrived).toBe(true);
+  it("keeps showing the BOOKED start after a late arrival", () => {
+    const times = daycareTimes(row({ checkedInAt: at("2026-10-29T02:16:00Z") }));
+    expect(times.in.toISOString()).toBe("2026-10-28T21:30:00.000Z");
+    expect(times.out.toISOString()).toBe("2026-10-29T06:00:00.000Z");
+    expect(times.in.getTime()).toBeLessThan(times.out.getTime());
   });
 
-  it("always shows the booked end, which is who is still to collect", () => {
-    expect(daycareTimes(row({ checkedInAt: at("2026-10-28T22:10:00Z") })).out.toISOString())
-      .toBe("2026-10-29T06:00:00.000Z");
+  it("hands the real arrival back separately so it can be shown alongside", () => {
+    const times = daycareTimes(row({ checkedInAt: at("2026-10-28T22:10:00Z") }));
+    expect(times.arrivedAt?.toISOString()).toBe("2026-10-28T22:10:00.000Z");
+    expect(times.arrivedLate).toBe(true);
+  });
+
+  it("does not call a dog late for arriving within a minute of its booking", () => {
+    // Staff reaching the button, not a late arrival worth showing.
+    const times = daycareTimes(row({ checkedInAt: at("2026-10-28T21:30:30Z") }));
+    expect(times.arrivedAt).not.toBeNull();
+    expect(times.arrivedLate).toBe(false);
   });
 
   it("ignores an unreadable check-in rather than showing Invalid Date", () => {
     const times = daycareTimes(row({ checkedInAt: "not a date" }));
-    expect(times.arrived).toBe(false);
+    expect(times.arrivedAt).toBeNull();
     expect(Number.isNaN(times.in.getTime())).toBe(false);
   });
 });
@@ -118,8 +131,10 @@ describe("timestamps arriving as epoch milliseconds", () => {
       scheduledEnd: Date.UTC(2026, 9, 29, 6, 0),
       checkedInAt: arrivedAt,
     });
-    expect(times.arrived).toBe(true);
-    expect(times.in.getTime()).toBe(arrivedAt);
+    expect(times.arrivedAt?.getTime()).toBe(arrivedAt);
+    expect(times.arrivedLate).toBe(true);
+    // Still the booked window, not the arrival.
+    expect(times.in.getTime()).toBe(Date.UTC(2026, 9, 28, 21, 30));
     expect(times.out.getTime()).toBe(Date.UTC(2026, 9, 29, 6, 0));
   });
 
@@ -129,7 +144,7 @@ describe("timestamps arriving as epoch milliseconds", () => {
       scheduledEnd: Date.UTC(2026, 9, 29, 6, 0),
       checkedInAt: null,
     });
-    expect(times.arrived).toBe(false);
+    expect(times.arrivedAt).toBeNull();
     expect(times.in.getTime()).toBe(Date.UTC(2026, 9, 28, 21, 30));
   });
 

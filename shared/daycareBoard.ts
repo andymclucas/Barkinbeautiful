@@ -71,26 +71,42 @@ export function daycarePresence(row: Pick<BoardRow, "workflowState" | "status" |
 }
 
 /**
- * The two times the section exists to show.
+ * The times the section exists to show.
  *
- * `in` is when the dog actually arrived once it has, and the booked
- * start until then — a board showing 7:30 for a dog that turned up at
- * 8:10 is telling the floor something untrue. `out` is always the
- * booked end: when the dog actually left is not what anyone standing
- * at the board needs, they need to know who is still to collect.
+ * `in` and `out` are the BOOKED window, always. A day care booking is
+ * an agreement about a window — "in from 10, out by 11" — and that is
+ * what the floor and the owner both mean by the dog's times.
+ *
+ * This used to put the real arrival in `in`, on the reasoning that a
+ * board showing 7:30 for a dog that turned up at 8:10 tells the floor
+ * something untrue. That reasoning holds for grooming, where the
+ * question is when work started. It does not hold here, and it
+ * produced a row reading "In 12:16 pm · Out 11:00 am" for Lola and
+ * Ollie on 29/10/2026 — booked 10 to 11, checked in at 12:16. Out
+ * before in is not a time anyone can act on.
+ *
+ * The real arrival is still worth seeing when it is not the booked
+ * one, so it comes back separately as `arrivedAt` for the caller to
+ * show alongside rather than instead.
  */
 export function daycareTimes(row: Pick<BoardRow, "scheduledStart" | "scheduledEnd" | "checkedInAt">): {
   in: Date;
   out: Date;
-  /** True when `in` is the real arrival rather than the booking. */
-  arrived: boolean;
+  /** When the dog actually arrived, if it has and the value is usable. */
+  arrivedAt: Date | null;
+  /** True when the arrival is known and differs from the booked start. */
+  arrivedLate: boolean;
 } {
   const arrival = row.checkedInAt ? new Date(row.checkedInAt) : null;
   const usable = arrival && !Number.isNaN(arrival.getTime()) ? arrival : null;
+  const bookedIn = new Date(row.scheduledStart);
   return {
-    in: usable ?? new Date(row.scheduledStart),
+    in: bookedIn,
     out: new Date(row.scheduledEnd),
-    arrived: usable !== null,
+    arrivedAt: usable,
+    /* A minute either side is the staff member reaching the button, not
+       a late arrival worth putting on the board. */
+    arrivedLate: usable !== null && Math.abs(usable.getTime() - bookedIn.getTime()) > 60_000,
   };
 }
 
