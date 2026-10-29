@@ -2765,6 +2765,18 @@ export default function Calendar() {
     () => summariseCalendar(viewMode === "day" ? dayViewAppts : filteredAppts),
     [viewMode, dayViewAppts, filteredAppts],
   );
+  /* The dots on the rail. Keyed to the month the rail is SHOWING, which
+     is the selected date's month — the rail is a controlled month, so a
+     jump to March fetches March. */
+  const railMonth = `${(viewMode === "day" ? dayDate : weekStart).getFullYear()}-${String((viewMode === "day" ? dayDate : weekStart).getMonth() + 1).padStart(2, "0")}`;
+  const { data: monthCapacity } = trpc.calendar.monthCapacity.useQuery({ month: railMonth });
+  const capacityByDate = useMemo(() => {
+    if (!monthCapacity) return undefined;
+    const out: Record<string, { state: any; summary: string }> = {};
+    for (const d of monthCapacity.days) out[d.date] = { state: d.state, summary: d.summary };
+    return out;
+  }, [monthCapacity]);
+
   const weekLabel = viewMode === "week"
     ? `${weekDays[0].toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}`
     : fmtDateShort(dayDate);
@@ -3100,6 +3112,7 @@ export default function Calendar() {
             }}
             summary={sidebarSummary}
             summaryLabel={viewMode === "day" ? fmtDateShort(dayDate) : `Week of ${weekLabel}`}
+            capacityByDate={capacityByDate}
           />
           <div className={viewMode === "day" ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1"}>
             {viewMode === "week" ? renderWeekView() : renderDayView()}

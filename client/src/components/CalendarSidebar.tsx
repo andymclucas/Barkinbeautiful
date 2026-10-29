@@ -3,6 +3,42 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
 
 import type { CalendarSummaryFigures } from "@shared/calendarSummary";
+import type { CapacityState } from "@shared/dayCapacity";
+
+/** One day's load, keyed "YYYY-MM-DD", as the rail needs it. */
+export type CapacityByDate = Record<string, { state: CapacityState; summary: string }>;
+
+/**
+ * The dot on each day.
+ *
+ * Lauren, 30/10/2026: "Moego has a green dot on the whole month calendar
+ * on days that aren't at full capacity."
+ *
+ * Four colours rather than MoeGo's one, because "full" and "somebody is
+ * already overbooked" are different problems, and a day with one clip
+ * left should not look as open as a day with twenty. A closed day gets
+ * no dot at all — an absent dot reads as "nothing here", which is right,
+ * where a grey one would read as a state worth checking.
+ */
+const DOT_CLASS: Record<CapacityState, string> = {
+  room:   "relative after:absolute after:bottom-[3px] after:left-1/2 after:h-[5px] after:w-[5px] after:-translate-x-1/2 after:rounded-full after:bg-emerald-500 after:content-['']",
+  tight:  "relative after:absolute after:bottom-[3px] after:left-1/2 after:h-[5px] after:w-[5px] after:-translate-x-1/2 after:rounded-full after:bg-amber-500 after:content-['']",
+  full:   "relative after:absolute after:bottom-[3px] after:left-1/2 after:h-[5px] after:w-[5px] after:-translate-x-1/2 after:rounded-full after:bg-slate-400 after:content-['']",
+  over:   "relative after:absolute after:bottom-[3px] after:left-1/2 after:h-[5px] after:w-[5px] after:-translate-x-1/2 after:rounded-full after:bg-red-500 after:content-['']",
+  closed: "",
+};
+
+const LEGEND: { state: CapacityState; dot: string; label: string }[] = [
+  { state: "room",  dot: "bg-emerald-500", label: "Room" },
+  { state: "tight", dot: "bg-amber-500",   label: "Nearly full" },
+  { state: "full",  dot: "bg-slate-400",   label: "Full" },
+  { state: "over",  dot: "bg-red-500",     label: "Over" },
+];
+
+const localDay = (key: string) => {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
 /**
  * The persistent left rail on the Appointments page.
  *
@@ -52,6 +88,7 @@ export function CalendarSidebar({
   onSelectDate,
   summary,
   summaryLabel,
+  capacityByDate,
   className,
 }: {
   selected: Date;
@@ -59,8 +96,23 @@ export function CalendarSidebar({
   summary: CalendarSummary;
   /** "Wed, 30 Sept" or "Week of 28 Sept" - says what the figures cover. */
   summaryLabel: string;
+  /** Per-day load for the dots. Absent while it loads, and the rail
+      renders exactly as it did before — no reserved gap, no flicker. */
+  capacityByDate?: CapacityByDate;
   className?: string;
 }) {
+  const capacityModifiers = (() => {
+    if (!capacityByDate) return undefined;
+    const buckets: Record<string, Date[]> = { room: [], tight: [], full: [], over: [] };
+    for (const [key, v] of Object.entries(capacityByDate)) {
+      if (v.state === "closed") continue;
+      buckets[v.state]?.push(localDay(key));
+    }
+    return buckets;
+  })();
+
+  const selectedKey = `${selected.getFullYear()}-${String(selected.getMonth() + 1).padStart(2, "0")}-${String(selected.getDate()).padStart(2, "0")}`;
+  const selectedCapacity = capacityByDate?.[selectedKey];
   const jumpWeeks = (weeks: number) => {
     const target = new Date(selected);
     target.setDate(target.getDate() + weeks * 7);
@@ -104,7 +156,26 @@ export function CalendarSidebar({
           // the same specificity, so which wins depends on stylesheet order.
           className="mx-auto w-fit p-0"
           style={{ "--cell-size": "30px" } as CSSProperties}
+          modifiers={capacityModifiers}
+          modifiersClassNames={{
+            room: DOT_CLASS.room, tight: DOT_CLASS.tight,
+            full: DOT_CLASS.full, over: DOT_CLASS.over,
+          }}
         />
+
+        {capacityByDate && (
+          <div
+            data-testid="capacity-legend"
+            className="mt-1 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 px-1 pb-0.5 text-[10px] text-muted-foreground"
+          >
+            {LEGEND.map((l) => (
+              <span key={l.state} className="flex items-center gap-1">
+                <span className={cn("h-1.5 w-1.5 rounded-full", l.dot)} aria-hidden="true" />
+                {l.label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="shrink-0 rounded-2xl border border-border bg-card/80 p-3 shadow-sm shadow-slate-200/60">
@@ -133,6 +204,29 @@ export function CalendarSidebar({
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {summaryLabel}
         </p>
+        {/* The dot in words, for the day that is selected.
+
+            The dot alone says "there is room"; this says how much and
+            who has it, which is what turns it into a booking decision.
+            It carries an overbooked groomer too — that no longer
+            changes the dot's colour on an otherwise open day, so this
+            is the only place it shows. */}
+        {selectedCapacity && (
+          <p
+            data-testid="capacity-summary"
+            className={cn(
+              "mb-2 rounded-lg border px-2 py-1.5 text-[11px] leading-snug",
+              selectedCapacity.state === "over" ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300"
+                : selectedCapacity.state === "full" ? "border-border bg-muted text-muted-foreground"
+                : selectedCapacity.state === "tight" ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200"
+                : selectedCapacity.state === "closed" ? "border-dashed border-border bg-transparent text-muted-foreground"
+                : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200",
+            )}
+          >
+            {selectedCapacity.summary}
+          </p>
+        )}
+
         <dl className="space-y-1.5">
           <Row label="Total appts" value={String(summary.totalAppointments)} />
           <Row label="Total pets" value={String(summary.totalPets)} />

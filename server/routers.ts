@@ -79,6 +79,7 @@ import { createCardSetupLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
+import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl, getPortalBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
@@ -934,6 +935,98 @@ const calendarRouter = router({
         lastAppointmentDate: r.petId !== null ? (lastAppointmentMap[r.petId] ?? null) : null,
         reminderStatus: reminderStatusByAppointment[r.id] ?? (r.reminderSentAt ? "sent" : null),
       }));
+    }),
+
+  /**
+   * How full each day of a month is, for the dots on the calendar rail.
+   *
+   * Lauren, 30/10/2026: "we need something similar to see at a glance
+   * days that aren't at full Capacity. Moego has a green dot on the
+   * whole month calendar on days that aren't at full capacity."
+   *
+   * Counted per groomer against their own `dailyClipCapacity`, because
+   * the salon-wide total hides the answer — 06/01/2027 holds 24 dogs
+   * against a nominal 33 and reads busy, while Brooklyn and Zakaria
+   * have nine clips free between them.
+   *
+   * One query per month rather than per day: the rail redraws on every
+   * month change and this is a hot path.
+   */
+  monthCapacity: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** Any day inside the month wanted. */
+      month: z.string().regex(/^\d{4}-\d{2}$/),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return { days: [] as any[] };
+      const tenant = tenantOf(ctx, input);
+
+      const from = parseBrisbaneLocalDateTime(`${input.month}-01T00:00:00`);
+      const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 1));
+
+      const [bookings, roster, away] = await Promise.all([
+        db.select({
+          staffId: appointments.staffId,
+          /* DATE_FORMAT, not DATE: mysql2 hands a bare DATE back as a Date
+             OBJECT, so String() on it yields "Mon Jul 22" and every key
+             misses. Formatting in SQL returns a real string. */
+          day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`,
+        }).from(appointments).where(and(
+          eq(appointments.tenantId, tenant),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
+          notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+          gte(appointments.scheduledStart, from),
+          lt(appointments.scheduledStart, to),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
+        )),
+        db.select({
+          id: staff.id, name: staff.name,
+          dailyClipCapacity: staff.dailyClipCapacity, isActive: staff.isActive,
+        }).from(staff).where(eq(staff.tenantId, tenant)),
+        db.select({
+          staffId: staffBlockouts.staffId,
+          day: sql<string>`DATE_FORMAT(${staffBlockouts.blockoutDate}, '%Y-%m-%d')`,
+        }).from(staffBlockouts).where(and(
+          eq(staffBlockouts.tenantId, tenant),
+          eq(staffBlockouts.isFullDay, true),
+          gte(staffBlockouts.blockoutDate, from),
+          lt(staffBlockouts.blockoutDate, to),
+        )),
+      ]);
+
+      const byDay = new Map<string, { staffId: number | null }[]>();
+      for (const b of bookings) {
+        const key = String(b.day);
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key)!.push({ staffId: b.staffId ?? null });
+      }
+      const awayByDay = new Map<string, number[]>();
+      for (const a of away) {
+        const key = String(a.day);
+        if (!awayByDay.has(key)) awayByDay.set(key, []);
+        awayByDay.get(key)!.push(a.staffId);
+      }
+
+      /* Every day of the month, not only the booked ones: an empty
+         trading day is exactly the day Lauren is looking for. */
+      const days: any[] = [];
+      for (let d = new Date(from); d < to; d = new Date(d.getTime() + 86_400_000)) {
+        const key = new Date(d.getTime() + 10 * 3_600_000).toISOString().slice(0, 10);
+        const capacity = dayCapacity(byDay.get(key) ?? [], roster, awayByDay.get(key) ?? []);
+        days.push({
+          date: key,
+          state: capacityState(capacity),
+          summary: describeCapacity(capacity),
+          booked: capacity.booked,
+          capacity: capacity.capacity,
+          remaining: capacity.remaining,
+          unassigned: capacity.unassigned,
+          perGroomer: capacity.perGroomer,
+        });
+      }
+      return { days };
     }),
 
   createAppointment: operationalProcedure
