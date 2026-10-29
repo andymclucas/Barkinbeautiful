@@ -779,6 +779,11 @@ const calendarRouter = router({
           serviceType: appointments.serviceType,
           notes: appointments.notes,
           price: appointments.price,
+          /* So the calendar can show at a glance which dogs are settled.
+             Named explicitly rather than relying on a bare select — the
+             column has existed for a long time, it simply was not asked
+             for here. */
+          paymentStatus: appointments.paymentStatus,
           /**
            * The covering plan's rate and tier, so the sidebar can value
            * a covered groom. A LEFT JOIN would be 1:1 here, but the
