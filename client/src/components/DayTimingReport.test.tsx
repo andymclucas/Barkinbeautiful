@@ -105,3 +105,47 @@ describe("DayTimingReport", () => {
     expect(screen.getByText("No dogs on this day.")).toBeInTheDocument();
   });
 });
+
+describe("the configurable wait ceiling", () => {
+  const over = dogDayTiming({
+    appointmentId: 9, petName: "Radley", clientName: "A Client",
+    groomerName: "Charlotte Purcell", serviceType: "classic_groom",
+    workflowState: "complete", waitThresholdMinutes: 90,
+    checkedInAt: at("09:23"), bathingStartedAt: at("11:53"), bathingCompletedAt: at("12:05"),
+    dryingStartedAt: at("12:05"), dryingCompletedAt: at("12:17"),
+    groomingStartedAt: at("12:17"), groomingCompletedAt: at("13:01"),
+    readyAt: at("14:32"), completedAt: at("14:50"),
+  });
+  const under = dogDayTiming({
+    appointmentId: 10, petName: "Frankie", clientName: "A Client",
+    groomerName: "Megs Graham", serviceType: "classic_groom",
+    workflowState: "complete", waitThresholdMinutes: 90,
+    checkedInAt: at("07:28"), bathingStartedAt: at("07:43"), bathingCompletedAt: at("08:14"),
+    dryingStartedAt: at("08:14"), dryingCompletedAt: at("08:30"),
+    groomingStartedAt: at("08:30"), groomingCompletedAt: at("09:28"),
+    readyAt: at("10:29"), completedAt: at("10:45"),
+  });
+
+  it("counts the breaches in the header", () => {
+    render(<DayTimingReport dogs={[under, over]} />);
+    expect(screen.getByText("1 of 2 over the salon's limit")).toBeInTheDocument();
+  });
+
+  /** The limit is named beside the breach so the number is arguable. */
+  it("names the limit the dog went past", () => {
+    render(<DayTimingReport dogs={[over]} />);
+    expect(screen.getByText("(over 1h 30m)")).toBeInTheDocument();
+  });
+
+  it("says nothing about limits when none is configured", () => {
+    render(<DayTimingReport dogs={[dog()]} />);
+    expect(screen.queryByText(/over the salon's limit/)).toBeNull();
+    expect(screen.queryByText(/\(over /)).toBeNull();
+  });
+
+  it("leaves a dog inside the limit unmarked", () => {
+    render(<DayTimingReport dogs={[under]} />);
+    expect(screen.getByText("0 of 1 over the salon's limit")).toBeInTheDocument();
+    expect(screen.queryByText(/\(over /)).toBeNull();
+  });
+});

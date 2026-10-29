@@ -2852,6 +2852,7 @@ const timingReviewThresholdInput = z.object({
   scope: z.enum(["default", "size", "breed"]),
   petSize: z.enum(["small", "small_medium", "medium", "large", "extra_large", "giant"]).optional(),
   breedName: z.string().trim().min(1).max(100).optional(),
+  waitMinutes: z.number().int().min(1).max(1440),
   bathMinutes: z.number().int().min(1).max(1440),
   dryMinutes: z.number().int().min(1).max(1440),
   groomMinutes: z.number().int().min(1).max(1440),
@@ -2864,6 +2865,7 @@ function timingReviewRules(rows: Array<typeof workflowTimingReviewThresholds.$in
     scopeKey: row.scopeKey,
     petSize: row.petSize,
     breedName: row.breedName,
+    waitMinutes: row.waitMinutes,
     bathMinutes: row.bathMinutes,
     dryMinutes: row.dryMinutes,
     groomMinutes: row.groomMinutes,
@@ -2927,11 +2929,12 @@ const workflowReviewRouter = router({
         scopeKey,
         petSize,
         breedName,
+        waitMinutes: input.waitMinutes,
         bathMinutes: input.bathMinutes,
         dryMinutes: input.dryMinutes,
         groomMinutes: input.groomMinutes,
         totalMinutes: input.totalMinutes,
-      }).onDuplicateKeyUpdate({ set: { petSize, breedName, bathMinutes: input.bathMinutes, dryMinutes: input.dryMinutes, groomMinutes: input.groomMinutes, totalMinutes: input.totalMinutes } });
+      }).onDuplicateKeyUpdate({ set: { petSize, breedName, waitMinutes: input.waitMinutes, bathMinutes: input.bathMinutes, dryMinutes: input.dryMinutes, groomMinutes: input.groomMinutes, totalMinutes: input.totalMinutes } });
       return { success: true, scopeKey };
     }),
 
@@ -7290,9 +7293,16 @@ const analyticsRouter = router({
       if (!db) return { dogs: [], date: input.date };
       const { from, to } = brisbaneExplicitRange(input.date, input.date);
 
+      const thresholdRows = await db.select().from(workflowTimingReviewThresholds)
+        .where(eq(workflowTimingReviewThresholds.tenantId, tenantOf(ctx, input)));
+      const rules = timingReviewRules(thresholdRows);
+
       const rows = await db.select({
         appointmentId: appointments.id,
         petName: pets.name,
+        petBreed: pets.breed,
+        petWeightKg: pets.weightKg,
+        petWeight: pets.weight,
         clientFirstName: clients.firstName,
         clientLastName: clients.lastName,
         groomerName: staff.name,
@@ -7322,6 +7332,9 @@ const analyticsRouter = router({
         ));
 
       const dogs = rows.map((r) => dogDayTiming({
+        waitThresholdMinutes: resolveTimingReviewThreshold(
+          { breed: r.petBreed, weightKg: r.petWeightKg, weight: r.petWeight }, rules,
+        ).thresholds.waitMinutes,
         appointmentId: r.appointmentId,
         petName: r.petName,
         clientName: [r.clientFirstName, r.clientLastName].filter(Boolean).join(" ") || null,

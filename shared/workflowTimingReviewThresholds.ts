@@ -1,6 +1,8 @@
 import { getPetWeightBand, type PetWeightBand } from "./onlineBookingWeightEligibility";
 
 export type TimingReviewThresholds = {
+  /** Drop-off to the start of the bath. The queue, not the work. */
+  waitMinutes: number;
   bathMinutes: number;
   dryMinutes: number;
   groomMinutes: number;
@@ -15,6 +17,16 @@ export type TimingReviewThresholdRule = TimingReviewThresholds & {
 };
 
 export const DEFAULT_TIMING_REVIEW_THRESHOLDS: TimingReviewThresholds = {
+  /**
+   * 90 minutes, measured rather than chosen: 841 waits across 34
+   * trading days to 29/10/2026 ran p25 13, median 44, p90 112, worst
+   * 372. At 90 it flags 19% of dogs, which is a list someone can act
+   * on; at 30 it would flag 61% and be ignored within a week.
+   *
+   * It is a starting point, not a ruling — Settings overrides it per
+   * salon, per pet size and per breed.
+   */
+  waitMinutes: 90,
   bathMinutes: 90,
   dryMinutes: 75,
   groomMinutes: 150,
@@ -56,6 +68,10 @@ export function resolveTimingReviewThreshold(input: { breed?: string | null; wei
 
 function toThresholds(rule: TimingReviewThresholdRule): TimingReviewThresholds {
   return {
+    /* A row written before wait_minutes existed carries the column's
+       own default; a row read from an older deploy may carry nothing
+       at all, so fall back rather than render undefined. */
+    waitMinutes: rule.waitMinutes ?? DEFAULT_TIMING_REVIEW_THRESHOLDS.waitMinutes,
     bathMinutes: rule.bathMinutes,
     dryMinutes: rule.dryMinutes,
     groomMinutes: rule.groomMinutes,

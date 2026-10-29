@@ -27,7 +27,7 @@ Every transition now records timestamps for check-in, bathing, drying, grooming,
 - **Stage duration:** bath, dry, groom, and ready/waiting time on the pet-detail panel.
 - **Daily production snapshot:** completed average durations by assigned bather and groomer, with amber review flags for unusually long stages or total visits.
 
-Initial review thresholds are operational prompts rather than automatic performance judgements: bath over 90 minutes, dry over 75 minutes, groom over 150 minutes, or total visit over 240 minutes. These values should be reviewed with Lauren after real salon use and may differ by breed, coat condition, service, and pet behaviour.
+Initial review thresholds are operational prompts rather than automatic performance judgements: wait for a bath over 90 minutes, bath over 90 minutes, dry over 75 minutes, groom over 150 minutes, or total visit over 240 minutes. The wait threshold was added 29/10/2026 — the other four measure how long a stage took, and none of them saw the queue in front of it. These values should be reviewed with Lauren after real salon use and may differ by breed, coat condition, service, and pet behaviour.
 
 ## Future public online booking controls
 
