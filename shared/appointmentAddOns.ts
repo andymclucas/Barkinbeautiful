@@ -151,7 +151,26 @@ export function appointmentTotal(
 ): string {
   let cents = toCents(servicePrice);
   for (const addOn of addOns) {
-    cents += toCents(addOn.unitPrice) * Math.max(1, Math.round(addOn.quantity ?? 1));
+    const gross = toCents(addOn.unitPrice) * Math.max(1, Math.round(addOn.quantity ?? 1));
+    /**
+     * NET, like addOnsTotal and buildInvoiceLines beside it.
+     *
+     * This summed the full rate and ignored the discount, so a line
+     * struck through to $0.00 on screen still had to be paid for.
+     * Lauren, 30/10/2026, on Greg Blackaby's booking that morning:
+     * "I's done free drop off and pick up discounted the price.. but
+     * at the bottom it still says $35." Ruby's $25 pick-up and
+     * Charlie's $10 day care were both discounted to nothing, and the
+     * counter was being asked for $35.
+     *
+     * The invoice was always right — buildInvoiceLines discounts
+     * properly — so the two figures disagreed, and the one staff take
+     * money from was the wrong one.
+     */
+    cents += applyLineDiscount(
+      centsToAmount(gross),
+      discountFromColumns(addOn.discountPercent, addOn.discountAmount),
+    ).netCents;
   }
   return centsToAmount(cents);
 }
