@@ -248,3 +248,56 @@ export function billableTotalsByAppointment(
   }
   return totals;
 }
+
+export type AddOnTarget = { appointmentId: number; petName: string };
+
+/**
+ * Which appointments one press of Add should write to.
+ *
+ * A booking with two dogs is two appointment rows, and an extra is
+ * recorded against a row. The Calendar dialog used to render a single
+ * Add-ons box bound to whichever dog's row happened to be open, so on
+ * 29/10/2026 a teeth clean went on one of Heidi Robertson's two dogs
+ * and Lauren had to split them across groomers to reach the other.
+ *
+ * Deliberately returns the dogs rather than a count: the caller names
+ * them in the confirmation, and a count alone cannot say which dog a
+ * failed write missed.
+ */
+export function addOnTargets(
+  self: AddOnTarget,
+  siblings: readonly AddOnTarget[],
+  applyToAll: boolean,
+): AddOnTarget[] {
+  if (!applyToAll || siblings.length === 0) return [self];
+  /* Guard the id, not the name: two dogs in one family are often
+     called the same thing, and writing an extra twice to one row
+     bills it twice. */
+  const seen = new Set([self.appointmentId]);
+  const out = [self];
+  for (const sibling of siblings) {
+    if (seen.has(sibling.appointmentId)) continue;
+    seen.add(sibling.appointmentId);
+    out.push(sibling);
+  }
+  return out;
+}
+
+/**
+ * What to tell staff after writing to one or more dogs.
+ *
+ * A partial write is reported as a partial write. These are separate
+ * invoice lines on separate appointments, so a failure on the second
+ * dog does not undo the first, and "added" after half a write leaves
+ * somebody under-charged with nothing on screen to say so.
+ */
+export function describeAddOnWrite(opts: {
+  name: string;
+  attempted: number;
+  succeeded: number;
+}): string {
+  const { name, attempted, succeeded } = opts;
+  if (attempted <= 1) return `${name} added`;
+  if (succeeded === attempted) return `${name} added to ${attempted} dogs`;
+  return `${name} added to ${succeeded} of ${attempted} dogs`;
+}

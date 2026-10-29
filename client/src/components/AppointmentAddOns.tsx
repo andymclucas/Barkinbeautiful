@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { addOnRequiresManualPrice, addOnsTotal } from "@shared/appointmentAddOns";
+import { addOnRequiresManualPrice, addOnsTotal, addOnTargets, describeAddOnWrite } from "@shared/appointmentAddOns";
 import { applyLineDiscount, discountFromColumns, describeLineDiscount, validateLineDiscount } from "@shared/lineDiscount";
 
 /**
@@ -22,7 +22,15 @@ import { applyLineDiscount, discountFromColumns, describeLineDiscount, validateL
  * catalogue at that moment, so a price rise next year does not reach back
  * and change what this client was charged today.
  */
-export function AppointmentAddOns({ appointmentId }: { appointmentId: number }) {
+export type AddOnSibling = { appointmentId: number; petName: string };
+
+export function AppointmentAddOns({ appointmentId, petName, siblings = [] }: {
+  appointmentId: number;
+  /** The dog this box belongs to. Omitted when it is the only dog. */
+  petName?: string | null;
+  /** The other dogs on the same booking, for "add to all". */
+  siblings?: readonly AddOnSibling[];
+}) {
   const utils = trpc.useUtils();
   const { data: catalogue } = trpc.appointmentAddOns.catalogue.useQuery({});
   const { data, isLoading } = trpc.appointmentAddOns.list.useQuery({ appointmentId });
@@ -32,24 +40,71 @@ export function AppointmentAddOns({ appointmentId }: { appointmentId: number }) 
   const [picked, setPicked] = useState("");
   const [manualPrice, setManualPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
+  /* Lauren, 29/10/2026: a teeth clean on a two-dog booking had to be
+     added twice, from two different dialogs. Most extras done on a
+     family are done on all of them, so this defaults ON when there is
+     more than one dog — but the button says how many it will charge
+     before it is pressed, because each one is an invoice line. */
+  const [applyToAll, setApplyToAll] = useState(true);
 
   const refresh = () => {
-    void utils.appointmentAddOns.list.invalidate({ appointmentId });
+    /* No input: an "add to all" writes to the siblings' lists too, and
+       those boxes are mounted right beside this one. */
+    void utils.appointmentAddOns.list.invalidate();
     void utils.calendar.invalidate();
   };
 
-  const addMutation = trpc.appointmentAddOns.add.useMutation({
-    onSuccess: (r) => {
-      toast.success(`${r.name} added`, { description: `$${r.unitPrice} — it will appear as its own line on the invoice.` });
-      setPicked(""); setManualPrice(""); setQuantity("1");
-      refresh();
-    },
-    onError: (e) => toast.error(e.message),
-  });
+  /* No onSuccess toast: an "add to all" fires this once per dog, and
+     three toasts for one press reads as three mistakes. The call sites
+     below report once, for however many dogs they wrote to. */
+  const addMutation = trpc.appointmentAddOns.add.useMutation();
   const removeMutation = trpc.appointmentAddOns.remove.useMutation({
     onSuccess: () => { toast.success("Add-on removed"); refresh(); },
     onError: (e) => toast.error(e.message),
   });
+
+  const targets = addOnTargets(
+    { appointmentId, petName: petName ?? "this dog" }, siblings, applyToAll,
+  );
+
+  /**
+   * Add the chosen extra to every dog it is meant for.
+   *
+   * allSettled, not all: these are separate invoice lines on separate
+   * appointments, so a failure on the second dog does NOT undo the
+   * first. Saying "added" after a partial write would leave somebody
+   * under-charged with nothing on screen to say so.
+   */
+  const handleAdd = async () => {
+    const payload = {
+      pricingServiceId: Number(picked),
+      quantity: Math.max(1, Math.min(20, parseInt(quantity) || 1)),
+      ...(needsPrice ? { unitPrice: parseFloat(manualPrice) } : {}),
+    };
+    const results = await Promise.allSettled(
+      targets.map(t => addMutation.mutateAsync({ appointmentId: t.appointmentId, ...payload })),
+    );
+
+    const done = results.filter(r => r.status === "fulfilled");
+    const failed = results
+      .map((r, i) => ({ r, dog: targets[i].petName }))
+      .filter(({ r }) => r.status === "rejected");
+    const name = done.length > 0
+      ? (done[0] as PromiseFulfilledResult<{ name: string; unitPrice: string }>).value.name
+      : chosen?.name ?? "Add-on";
+
+    if (done.length > 0) {
+      toast.success(
+        describeAddOnWrite({ name, attempted: targets.length, succeeded: done.length }),
+        { description: "It will appear as its own line on the invoice." },
+      );
+      setPicked(""); setManualPrice(""); setQuantity("1");
+      refresh();
+    }
+    for (const { r, dog } of failed) {
+      toast.error(`${dog}: ${(r as PromiseRejectedResult).reason?.message ?? "could not add that extra"}`);
+    }
+  };
 
   const chosen = catalogue?.find(c => String(c.id) === picked);
   const needsPrice = chosen ? addOnRequiresManualPrice(chosen.priceMode) : false;
@@ -63,6 +118,7 @@ export function AppointmentAddOns({ appointmentId }: { appointmentId: number }) 
       <div className="flex items-center justify-between">
         <Label className="flex items-center gap-1.5 text-sm">
           <Sparkles className="h-3.5 w-3.5 text-primary" /> Add-ons
+          {petName && <span className="font-normal text-muted-foreground">· {petName}</span>}
         </Label>
         {addOns.length > 0 && (
           <span className="text-xs font-medium">Extras: ${total}</span>
@@ -173,16 +229,29 @@ export function AppointmentAddOns({ appointmentId }: { appointmentId: number }) 
         <Button
           size="sm" variant="outline" className="h-8 shrink-0 gap-1"
           disabled={!canAdd || addMutation.isPending}
-          onClick={() => addMutation.mutate({
-            appointmentId,
-            pricingServiceId: Number(picked),
-            quantity: Math.max(1, Math.min(20, parseInt(quantity) || 1)),
-            ...(needsPrice ? { unitPrice: parseFloat(manualPrice) } : {}),
-          })}
+          onClick={handleAdd}
         >
-          <Plus className="h-3.5 w-3.5" /> Add
+          {/* The count is in the label, so what is about to be charged
+              is readable before the press rather than after it. */}
+          <Plus className="h-3.5 w-3.5" />
+          {targets.length > 1 ? `Add to ${targets.length} dogs` : "Add"}
         </Button>
       </div>
+
+      {siblings.length > 0 && (
+        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+          <input
+            type="checkbox"
+            className="h-3 w-3 accent-primary"
+            checked={applyToAll}
+            onChange={e => setApplyToAll(e.target.checked)}
+          />
+          Add to every dog on this booking
+          <span className="truncate">
+            ({[petName ?? "this dog", ...siblings.map(s => s.petName)].join(", ")})
+          </span>
+        </label>
+      )}
 
       {needsPrice && (
         <p className="text-xs text-muted-foreground">
