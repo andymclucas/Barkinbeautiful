@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   sessionDividerTop, AFTERNOON_SESSION_START,
-  minutesIntoLocalDay, afternoonSessionRowIndex,
+  minutesIntoLocalDay, afternoonSessionRowIndex, sessionDogCounts,
 } from "@shared/sessionDivider";
 
 const grid = { dayStartHour: 7, dayEndHour: 19, hourHeight: 72 };
@@ -104,5 +104,67 @@ describe("afternoonSessionRowIndex", () => {
   it("honours a salon that splits its day somewhere else", () => {
     const rows = [row(1, "09:00"), row(2, "10:00"), row(3, "11:30")];
     expect(afternoonSessionRowIndex(rows, { split: { hour: 10, minute: 0 } })).toBe(1);
+  });
+});
+
+describe("sessionDogCounts", () => {
+  const at = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return new Date(Date.UTC(2026, 9, 30, h - 10, m)).toISOString();
+  };
+  const row = (id: number, time: string, family?: number) =>
+    ({ id, scheduledStart: at(time), petFamilyGroupId: family ?? null });
+
+  it("counts each half of the day", () => {
+    const rows = [row(1, "09:00"), row(2, "09:30"), row(3, "11:30"), row(4, "14:00")];
+    expect(sessionDogCounts(rows)).toEqual({ morning: 2, afternoon: 2, unknown: 0, total: 4 });
+  });
+
+  it("puts 11:30 itself in the afternoon", () => {
+    expect(sessionDogCounts([row(1, "11:29"), row(2, "11:30")]))
+      .toMatchObject({ morning: 1, afternoon: 1 });
+  });
+
+  it("counts a whole day in one session", () => {
+    expect(sessionDogCounts([row(1, "08:00"), row(2, "09:00")]))
+      .toMatchObject({ morning: 2, afternoon: 0 });
+    expect(sessionDogCounts([row(1, "13:00"), row(2, "15:00")]))
+      .toMatchObject({ morning: 0, afternoon: 2 });
+  });
+
+  it("is zero all round for an empty day", () => {
+    expect(sessionDogCounts([])).toEqual({ morning: 0, afternoon: 0, unknown: 0, total: 0 });
+  });
+
+  /** A family counts where its cohort sits, the same as the line. */
+  it("counts a straddling family entirely in the morning", () => {
+    const rows = [row(1, "09:00"), row(2, "11:00", 42), row(3, "11:45", 42), row(4, "12:00")];
+    expect(sessionDogCounts(rows)).toMatchObject({ morning: 3, afternoon: 1 });
+  });
+
+  it("holds an unreadable time apart rather than inflating a session", () => {
+    const rows = [row(1, "09:00"), { id: 2, scheduledStart: "rubbish", petFamilyGroupId: null }];
+    expect(sessionDogCounts(rows)).toEqual({ morning: 1, afternoon: 0, unknown: 1, total: 2 });
+  });
+
+  /**
+   * The invariant that matters on screen: the divider's index IS the
+   * number of dogs above it. A board showing five rows before the line
+   * and "Morning 4" would be worse than showing neither.
+   */
+  it("agrees with where the divider is drawn", () => {
+    const days = [
+      [row(1, "09:00"), row(2, "09:30"), row(3, "11:30"), row(4, "14:00")],
+      [row(1, "09:00"), row(2, "11:00", 42), row(3, "11:45", 42), row(4, "12:00")],
+      [row(1, "08:00"), row(2, "09:00")],
+      [row(1, "13:00"), row(2, "15:00")],
+      [row(1, "09:00"), row(2, "11:30"), row(3, "11:30"), row(4, "11:45", 9), row(5, "12:30", 9)],
+    ];
+    for (const rows of days) {
+      const index = afternoonSessionRowIndex(rows);
+      const { morning } = sessionDogCounts(rows);
+      if (index !== null) expect(index, JSON.stringify(rows.map(r => r.scheduledStart))).toBe(morning);
+      else expect(morning === 0 || morning === rows.length).toBe(true);
+    }
   });
 });

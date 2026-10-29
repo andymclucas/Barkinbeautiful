@@ -20,6 +20,7 @@ import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
 import { shouldShowWorkflowRow } from "@/lib/workflowTerminalStates";
 import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresholds";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
+import { SessionDogCounts } from "@/components/SessionDogCounts";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, bathQueuePositionMeta, buildBathPriorityQueue, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Save, Star, Sun, Tv2, Unlink, UserPlus, Users, X } from "lucide-react";
@@ -534,6 +535,8 @@ export default function WorkflowBoard() {
             })}
           </div>
 
+          <SessionDogCounts rows={rows} className="mb-4" />
+
           <WorkflowBoardTable
             rows={rows}
             now={now}
@@ -741,6 +744,11 @@ export default function WorkflowBoard() {
             </button>
           </div>
         )}
+
+        {/* How the day is split. The red line in the table shows WHERE
+            the morning ends; these say whether it is balanced, which is
+            the question that prompted the line in the first place. */}
+        <SessionDogCounts rows={rows} className="mb-3" />
 
         {/* Main whiteboard table */}
         <WorkflowBoardTable
