@@ -140,3 +140,84 @@ export function describeCapacity(day: DayCapacity): string {
   if (day.unassigned) parts.push(`${day.unassigned} unassigned`);
   return parts.join(" · ");
 }
+
+/**
+ * Services that put a dog through the bath.
+ *
+ * Nearly everything does: the workflow runs bath → dry → groom, and 37
+ * of the 39 dogs on 29/10/2026 were bathed. A nail trim and a day care
+ * stay are the exceptions, and counting them would overstate the queue.
+ */
+export function needsBath(serviceType: string | null | undefined): boolean {
+  const t = (serviceType ?? "").toLowerCase();
+  if (t === "nail_trim" || t === "daycare") return false;
+  return true;
+}
+
+export type BathCapacityBooking = {
+  serviceType?: string | null;
+};
+
+export type BathDayCapacity = {
+  capacity: number;
+  booked: number;
+  remaining: number;
+  hasRoom: boolean;
+  over: number;
+  /** Nobody on the bathing team is in — not the same as being full. */
+  closed: boolean;
+};
+
+/**
+ * The bath queue's day, as a salon total rather than per person.
+ *
+ * Deliberately different in shape from `dayCapacity`. A groom belongs
+ * to one named groomer and "can Charlotte take this dog" is the real
+ * question; a bath is handed to whoever is free, so the question is
+ * whether the TEAM can get through the day. Modelling it per bather
+ * would invent an assignment the salon does not make at booking time.
+ *
+ * Why this exists at all: the salon has had a clip capacity per
+ * groomer since the online-booking work and nothing for bathing, yet
+ * the bath queue is what the floor waits on. On 29/10/2026 every bath
+ * ran 13-33 minutes, inside every threshold, while dogs sat up to
+ * 2h30 waiting for one.
+ */
+export function bathDayCapacity(
+  bookings: readonly BathCapacityBooking[],
+  staff: readonly (CapacityStaff & { dailyBathCapacity?: number | null })[],
+  awayStaffIds: readonly number[] = [],
+): BathDayCapacity {
+  const away = new Set(awayStaffIds);
+  const capacity = staff
+    .filter((s) => active(s) && typeof s.dailyBathCapacity === "number" && s.dailyBathCapacity > 0 && !away.has(s.id))
+    .reduce((n, s) => n + (s.dailyBathCapacity as number), 0);
+
+  const booked = bookings.filter((b) => needsBath(b.serviceType)).length;
+
+  /* No bath capacity configured is NOT a full bath queue. Until Andy
+     and Lauren set the figures this reads as "not measured" and never
+     as "stop booking" — without the guard an unconfigured salon shows
+     every dog as over, which is the false alarm this is meant to
+     avoid. */
+  if (capacity === 0) {
+    return { capacity: 0, booked, remaining: 0, hasRoom: false, over: 0, closed: true };
+  }
+
+  return {
+    capacity,
+    booked,
+    remaining: Math.max(0, capacity - booked),
+    hasRoom: booked < capacity,
+    over: Math.max(0, booked - capacity),
+    closed: false,
+  };
+}
+
+export function describeBathCapacity(day: BathDayCapacity): string {
+  if (day.closed) return "No bath capacity set";
+  const parts = [`${day.booked} of ${day.capacity} baths`];
+  if (day.remaining > 0) parts.push(`${day.remaining} free`);
+  if (day.over > 0) parts.push(`${day.over} over`);
+  return parts.join(" · ");
+}

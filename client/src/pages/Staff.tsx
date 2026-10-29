@@ -332,6 +332,10 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
       onlineServices: (() => { try { return ((data as any).onlineServices ? JSON.parse((data as any).onlineServices) : []).join(", "); } catch { return ""; } })(),
       onlineMaxDogsPerSlot: String((data as any).onlineMaxDogsPerSlot ?? 1),
       onlineMaxDogsPerDay: String((data as any).onlineMaxDogsPerDay ?? 0),
+      // Blank, not 0 — a bather genuinely has no clip figure and a 0
+      // would read as "can clip none" rather than "does not clip".
+      dailyClipCapacity: (data as any).dailyClipCapacity == null ? "" : String((data as any).dailyClipCapacity),
+      dailyBathCapacity: (data as any).dailyBathCapacity == null ? "" : String((data as any).dailyBathCapacity),
     });
     setEditing(true);
   };
@@ -355,6 +359,10 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
       onlineBio: form.onlineBio || null,
       onlineServices: JSON.stringify(form.onlineServices.split(",").map(s => s.trim()).filter(Boolean)),
       onlineMaxDogsPerSlot: Math.max(1, Number(form.onlineMaxDogsPerSlot) || 1),
+      // form is Record<string, string>, so TypeScript cannot see a
+      // missing key and .trim() on undefined would throw.
+      dailyClipCapacity: (form.dailyClipCapacity ?? "").trim() === "" ? null : Math.max(0, Number(form.dailyClipCapacity) || 0),
+      dailyBathCapacity: (form.dailyBathCapacity ?? "").trim() === "" ? null : Math.max(0, Number(form.dailyBathCapacity) || 0),
       onlineMaxDogsPerDay: Math.max(0, Number(form.onlineMaxDogsPerDay) || 0),
     });
   };
@@ -537,6 +545,27 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             </div>
             <div className="col-span-2"><Label>Online services</Label><Input className="mt-1" value={form.onlineServices} onChange={e => setForm(p => ({ ...p, onlineServices: e.target.value }))} placeholder="classic_groom, styled_groom, bath_only" /><p className="mt-1 text-xs text-muted-foreground">Leave blank to allow every service. Use service names separated by commas.</p></div>
             <div><Label>Dogs per time slot</Label><Input className="mt-1" type="number" min="1" max="10" value={form.onlineMaxDogsPerSlot} onChange={e => setForm(p => ({ ...p, onlineMaxDogsPerSlot: e.target.value }))} /></div>
+            {/* A day's work, per person. Both were set straight in the
+                database until 30/10/2026 and could not be corrected
+                without a developer. Blank means "does not do that job",
+                which is what keeps each capacity counting the right
+                people — a bather has no clip figure, a groomer no bath
+                figure. */}
+            <div>
+              <Label htmlFor="daily-clip">Clips a day</Label>
+              <Input id="daily-clip" className="mt-1" type="number" min="0" max="50" placeholder="Does not clip"
+                value={form.dailyClipCapacity ?? ""}
+                onChange={e => setForm(p => ({ ...p, dailyClipCapacity: e.target.value }))} />
+            </div>
+            <div>
+              <Label htmlFor="daily-bath">Baths a day</Label>
+              <Input id="daily-bath" className="mt-1" type="number" min="0" max="50" placeholder="Does not bath"
+                value={form.dailyBathCapacity ?? ""}
+                onChange={e => setForm(p => ({ ...p, dailyBathCapacity: e.target.value }))} />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Measured over 90 days to 30/10/2026: Stephanie 9, Sabina 14, Akilah 10, Bailey 14 on a busy day.
+              </p>
+            </div>
             <div><Label>Online dogs per day</Label><Input className="mt-1" type="number" min="0" max="50" value={form.onlineMaxDogsPerDay} onChange={e => setForm(p => ({ ...p, onlineMaxDogsPerDay: e.target.value }))} /><p className="mt-1 text-xs text-muted-foreground">0 = no daily cap</p></div>
             <div className="col-span-2"><Label>Notes</Label><textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-ring" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Internal notes..." /></div>
           </div>

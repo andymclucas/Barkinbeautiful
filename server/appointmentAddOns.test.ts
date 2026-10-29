@@ -467,3 +467,60 @@ describe("describeAddOnWrite", () => {
       .toBe("Nail Trim added to 2 of 3 dogs");
   });
 });
+
+describe("a discounted extra must not still be billed", () => {
+  /**
+   * Greg Blackaby, 30/10/2026. Ruby's $25 pick-up and Charlie's $10 day
+   * care were both discounted to nothing and both grooms were $0, yet
+   * the payment panel asked for $35.
+   *
+   * Lauren: "I's done free drop off and pick up discounted the price..
+   * but at the bottom it still says $35."
+   */
+  const RUBY = { name: "Pick Up or Delivery (each way)", unitPrice: "25.00", quantity: 1, discountAmount: "25.00" };
+  const CHARLIE = { name: "Daycare (per session)", unitPrice: "10.00", quantity: 1, discountAmount: "10.00" };
+
+  it("charges nothing for a line discounted to nothing", () => {
+    expect(appointmentTotal("0.00", [RUBY])).toBe("0.00");
+    expect(appointmentTotal("0.00", [CHARLIE])).toBe("0.00");
+  });
+
+  it("agrees with the figure shown beside the extra", () => {
+    // addOnsTotal was always right; appointmentTotal was not, and the
+    // two disagreeing is what staff saw.
+    expect(appointmentTotal("0.00", [RUBY])).toBe(addOnsTotal([RUBY] as any));
+  });
+
+  it("agrees with what the invoice would charge", () => {
+    // The invoice was always right; the payment panel was not, and the
+    // two disagreeing is the whole bug.
+    const invoice = buildInvoiceLines({
+      petName: "Ruby", serviceLabel: "Classic Groom", servicePrice: "0.00", addOns: [RUBY],
+    });
+    expect(appointmentTotal("0.00", [RUBY])).toBe(invoice.subtotal);
+  });
+
+  it("owes nothing for the whole booking", () => {
+    expect(billableTotal("0.00", [RUBY])).toBe("0.00");
+    expect(billableTotal("0.00", [CHARLIE])).toBe("0.00");
+  });
+
+  it("still bills a part discount at the reduced rate, not zero and not full", () => {
+    const half = { name: "Teeth", unitPrice: "60.00", quantity: 1, discountPercent: "50" };
+    expect(appointmentTotal("0.00", [half])).toBe("30.00");
+  });
+
+  it("applies the discount after quantity, like the invoice does", () => {
+    const two = { name: "Teeth", unitPrice: "30.00", quantity: 2, discountPercent: "50" };
+    expect(appointmentTotal("0.00", [two])).toBe("30.00");
+  });
+
+  it("leaves an undiscounted extra at its full rate", () => {
+    expect(appointmentTotal("100.00", [{ name: "Teeth", unitPrice: "35.00", quantity: 1 }])).toBe("135.00");
+  });
+
+  /** An override still wins — "this one is on us" is somebody's decision. */
+  it("lets a typed total override a discounted line", () => {
+    expect(billableTotal("0.00", [RUBY], "15.00")).toBe("15.00");
+  });
+});

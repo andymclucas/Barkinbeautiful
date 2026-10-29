@@ -1,0 +1,21 @@
+-- How many dogs a bather can get through in a day.
+--
+-- The salon has had a clip capacity per groomer since the online
+-- booking work, and nothing at all for bathing — yet the bath queue is
+-- what the floor actually waits on. On 29/10/2026 every bath took
+-- 13-33 minutes, inside every configured threshold, while dogs sat up
+-- to 2h30 waiting for one.
+--
+-- Nullable with no default, deliberately. Only the bathing team get a
+-- figure; a groomer who occasionally rinses a dog is not a bather, and
+-- a default would give all thirteen staff a bath capacity they do not
+-- have. Null means "does not bath", the same shape daily_clip_capacity
+-- already uses for "does not clip".
+--
+-- Measured, per bather per working day over 90 days (median/p75/p90/max):
+--   Stephanie 8/9/11/15   Akilah 6/10/14/15
+--   Sabina    9/14/16/18  Bailey 12/14/15/18
+-- The spread is mostly hours worked rather than speed, so the figures
+-- are set per person in Settings rather than inferred here.
+ALTER TABLE `staff`
+  ADD COLUMN `daily_bath_capacity` INT NULL;

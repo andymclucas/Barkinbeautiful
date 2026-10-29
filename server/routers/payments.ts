@@ -201,6 +201,12 @@ async function loadBillableTotals(db: any, appointmentIds: number[]) {
       name: appointmentAddOns.name,
       unitPrice: appointmentAddOns.unitPrice,
       quantity: appointmentAddOns.quantity,
+      /* Without these the totals are computed from the full rate and a
+         discounted extra is still billed — Greg Blackaby, 30/10/2026.
+         addOnsTotal and appointmentTotal both read them; neither was
+         being given them. */
+      discountPercent: appointmentAddOns.discountPercent,
+      discountAmount: appointmentAddOns.discountAmount,
     })
     .from(appointmentAddOns)
     .where(inArray(appointmentAddOns.appointmentId, appointmentIds));
@@ -246,6 +252,12 @@ async function loadBillingBreakdown(db: any, appointmentIds: number[]) {
       name: appointmentAddOns.name,
       unitPrice: appointmentAddOns.unitPrice,
       quantity: appointmentAddOns.quantity,
+      /* Without these the totals are computed from the full rate and a
+         discounted extra is still billed — Greg Blackaby, 30/10/2026.
+         addOnsTotal and appointmentTotal both read them; neither was
+         being given them. */
+      discountPercent: appointmentAddOns.discountPercent,
+      discountAmount: appointmentAddOns.discountAmount,
     })
     .from(appointmentAddOns)
     .where(inArray(appointmentAddOns.appointmentId, appointmentIds));

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { dayCapacity, capacityState, describeCapacity, type CapacityStaff } from "../shared/dayCapacity";
+import {
+  dayCapacity, capacityState, describeCapacity,
+  bathDayCapacity, describeBathCapacity, needsBath,
+  type CapacityStaff,
+} from "../shared/dayCapacity";
 
 /** The real roster on 30/10/2026. Stephanie baths and does not clip. */
 const roster: CapacityStaff[] = [
@@ -125,5 +129,77 @@ describe("describeCapacity", () => {
 
   it("says nobody is rostered rather than quoting zero of zero", () => {
     expect(describeCapacity(dayCapacity([], roster, [2, 3, 4, 5, 6]))).toBe("Nobody rostered");
+  });
+});
+
+describe("needsBath", () => {
+  it("counts the services that go through the bath", () => {
+    for (const t of ["classic_groom", "styled_groom", "bath_only", "fft", "deshed", null, undefined]) {
+      expect(needsBath(t), String(t)).toBe(true);
+    }
+  });
+
+  /** 37 of 39 dogs were bathed on 29/10/2026; these two are the rest. */
+  it("leaves out the two that do not", () => {
+    expect(needsBath("nail_trim")).toBe(false);
+    expect(needsBath("daycare")).toBe(false);
+  });
+});
+
+describe("bathDayCapacity", () => {
+  const bathers = [
+    ...roster,
+    { id: 7, name: "Stephanie Baldwin", dailyClipCapacity: null, dailyBathCapacity: 9, isActive: 1 },
+    { id: 8, name: "Sabina Orjuela", dailyClipCapacity: null, dailyBathCapacity: 14, isActive: 1 },
+    { id: 9, name: "Akilah McDonell-Taylor", dailyClipCapacity: null, dailyBathCapacity: 10, isActive: 1 },
+  ];
+  const dogs = (n: number, serviceType = "classic_groom") =>
+    Array.from({ length: n }, () => ({ serviceType }));
+
+  it("adds up the bathing team, as a salon total", () => {
+    // Stephanie's duplicate in `roster` carries no bath figure, so only
+    // the three with one count: 9 + 14 + 10.
+    expect(bathDayCapacity([], bathers).capacity).toBe(33);
+  });
+
+  it("counts the dogs that need a bath and no others", () => {
+    const day = bathDayCapacity([...dogs(20), ...dogs(3, "nail_trim"), ...dogs(2, "daycare")], bathers);
+    expect(day.booked).toBe(20);
+    expect(day.remaining).toBe(13);
+    expect(day.hasRoom).toBe(true);
+  });
+
+  /** 29/10/2026: 39 dogs, 37 of them bathed, against a team of 33. */
+  it("reports the overload rather than clamping it", () => {
+    const day = bathDayCapacity(dogs(37), bathers);
+    expect(day.over).toBe(4);
+    expect(day.remaining).toBe(0);
+    expect(day.hasRoom).toBe(false);
+  });
+
+  it("drops a bather who is away", () => {
+    expect(bathDayCapacity([], bathers, [8]).capacity).toBe(19);
+  });
+
+  /**
+   * Until Andy and Lauren set the figures there is no bath capacity at
+   * all, and that must read as "not measured" — never as a reason to
+   * stop booking.
+   */
+  it("treats an unconfigured salon as unmeasured, not as full", () => {
+    const day = bathDayCapacity(dogs(40), roster);
+    expect(day.closed).toBe(true);
+    expect(day.over).toBe(0);
+    expect(describeBathCapacity(day)).toBe("No bath capacity set");
+  });
+
+  it("ignores a groomer who does not bath", () => {
+    // Everyone in `roster` has a clip figure and no bath figure.
+    expect(bathDayCapacity([], roster).capacity).toBe(0);
+  });
+
+  it("says the day in words", () => {
+    expect(describeBathCapacity(bathDayCapacity(dogs(20), bathers))).toBe("20 of 33 baths · 13 free");
+    expect(describeBathCapacity(bathDayCapacity(dogs(37), bathers))).toBe("37 of 33 baths · 4 over");
   });
 });

@@ -166,6 +166,11 @@ export const staff = mysqlTable("staff", {
    * NULL means nobody has said, which is not the same as zero.
    */
   dailyClipCapacity: int("daily_clip_capacity"),
+  /* Dogs this person can bath in a day. Null means they do not bath —
+     the same shape dailyClipCapacity uses for "does not clip". Added
+     30/10/2026: the bath queue is what the floor waits on and nothing
+     measured it. */
+  dailyBathCapacity: int("daily_bath_capacity"),
   revenueTarget: decimal("revenue_target", { precision: 10, scale: 2 }),
   /**
    * What the amount above is EXPRESSED in, not how it is viewed. The staff

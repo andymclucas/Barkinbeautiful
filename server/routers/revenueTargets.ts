@@ -20,6 +20,8 @@ import { router, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointmentAddOns, appointments, pets, staff } from "../../drizzle/schema";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
+import { applyLineDiscount, discountFromColumns } from "@shared/lineDiscount";
+import { toCents, centsToAmount } from "@shared/appointmentAddOns";
 import { canEditSection } from "@shared/staffPermissions";
 import {
   TARGET_PERIODS, type TargetPeriod,
@@ -155,6 +157,11 @@ export const revenueTargetsRouter = router({
           at: appointments.scheduledStart,
           unitPrice: appointmentAddOns.unitPrice,
           quantity: appointmentAddOns.quantity,
+          /* A discounted extra was counting toward a groomer's revenue
+             at its full rate. Same miss as the payment panel on
+             30/10/2026 — the columns simply were not asked for. */
+          discountPercent: appointmentAddOns.discountPercent,
+          discountAmount: appointmentAddOns.discountAmount,
         })
         .from(appointmentAddOns)
         .innerJoin(appointments, eq(appointments.id, appointmentAddOns.appointmentId))
@@ -225,7 +232,12 @@ export const revenueTargetsRouter = router({
         if (!extrasByStaff.has(key)) extrasByStaff.set(key, []);
         extrasByStaff.get(key)!.push({
           day: dateKey(row.at),
-          amount: Number(row.unitPrice ?? 0) * Math.max(1, Number(row.quantity ?? 1)),
+          // NET. Revenue is what the salon actually charged, not what
+          // the price list says before the discount came off.
+          amount: Number(applyLineDiscount(
+            centsToAmount(toCents(row.unitPrice) * Math.max(1, Number(row.quantity ?? 1))),
+            discountFromColumns(row.discountPercent, row.discountAmount),
+          ).netCents) / 100,
         });
       }
 
