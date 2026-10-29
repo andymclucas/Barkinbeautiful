@@ -112,19 +112,22 @@ export function DaycareBoardSection({
                 <PetCodeChips codes={row.petMoegoCodeLabels} size="xs" className="mt-0.5" />
               </div>
 
-              {/* The two times the section exists for. "In" is the real
-                  arrival once there is one — a board showing 7:30 for a
-                  dog that came at 8:10 is telling the floor something
-                  untrue. "Out" is always the booked end, because that
-                  is the question: who is still to collect. */}
+              {/* The BOOKED window, both ends. That is what the owner
+                  agreed to and what the floor plans around. Putting the
+                  real arrival in "In" made Lola and Ollie read as
+                  "In 12:16 pm · Out 11:00 am" — out before in — so the
+                  arrival now sits beside the booking instead of
+                  replacing it, and only when it differs. */}
               <div className="flex items-center gap-4 text-xs tabular-nums">
                 <span className="flex items-center gap-1">
                   <LogIn className="h-3 w-3 text-muted-foreground" />
                   <span className="text-muted-foreground">In</span>
-                  <span className={`font-semibold ${times.arrived ? "" : "text-muted-foreground"}`}>
-                    {fmtTime(times.in)}
-                  </span>
-                  {!times.arrived && <span className="text-[10px] text-muted-foreground">(booked)</span>}
+                  <span className="font-semibold">{fmtTime(times.in)}</span>
+                  {times.arrivedLate && times.arrivedAt && (
+                    <span className="text-[10px] text-amber-700 dark:text-amber-300">
+                      arrived {fmtTime(times.arrivedAt)}
+                    </span>
+                  )}
                 </span>
                 <span className="flex items-center gap-1">
                   <LogOut className="h-3 w-3 text-muted-foreground" />
