@@ -7,6 +7,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
 import { WorkflowTimingChart } from "@/components/WorkflowTimingChart";
+import { DayTimingReport } from "@/components/DayTimingReport";
+import { brisbaneDateKey, localCalendarDay, localCalendarDayKey } from "@shared/localDateTime";
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -38,6 +40,20 @@ export default function Reporting() {
   const { data: timing, isLoading: loadingTiming } = trpc.analytics.workflowTiming.useQuery({
     dateFrom: from, dateTo: to,
   });
+
+  /* The per-day report runs on its own date, not the 30-day range above.
+     "Where did today go wrong" is a question about one day; averaging a
+     month is what hid it in the first place. */
+  const [timingDay, setTimingDay] = useState(() => brisbaneDateKey(new Date()));
+  const { data: dayTiming, isLoading: loadingDayTiming } = trpc.analytics.dayTiming.useQuery({
+    date: timingDay,
+  });
+  const shiftDay = (days: number) => {
+    const d = localCalendarDay(timingDay);
+    d.setDate(d.getDate() + days);
+    setTimingDay(localCalendarDayKey(d));
+  };
+  const isToday = timingDay === brisbaneDateKey(new Date());
 
   const [exporting, setExporting] = useState(false);
   const handleExport = async () => {
@@ -253,6 +269,51 @@ export default function Reporting() {
               </div>
             ) : (
               <WorkflowTimingChart stages={timing.stages} sampleSize={timing.sampleSize} />
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Per-dog timing for one day */}
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Clock className="h-4 w-4 text-primary" /> Where the day went
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Every dog on one day, stage by stage — including how long each waited before a bath.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => shiftDay(-1)}>
+                ‹ <span className="sr-only">Previous day</span>
+              </Button>
+              <input
+                type="date"
+                value={timingDay}
+                onChange={(e) => e.target.value && setTimingDay(e.target.value)}
+                aria-label="Day to report on"
+                className="h-8 rounded-md border bg-background px-2 text-sm"
+              />
+              <Button
+                variant="outline" size="sm" className="h-8 px-2"
+                disabled={isToday}
+                onClick={() => shiftDay(1)}
+              >
+                › <span className="sr-only">Next day</span>
+              </Button>
+              {!isToday && (
+                <Button variant="ghost" size="sm" className="h-8"
+                  onClick={() => setTimingDay(brisbaneDateKey(new Date()))}>
+                  Today
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {loadingDayTiming ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">Loading…</div>
+            ) : (
+              <DayTimingReport dogs={dayTiming?.dogs ?? []} />
             )}
           </CardContent>
         </Card>
