@@ -91,6 +91,7 @@ import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
+import { appointmentPaymentDisplay } from "@shared/appointmentPaymentDisplay";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
 import { liveSiblings } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
@@ -395,6 +396,12 @@ function ApptBlock({
     ? storedSharedPrices[0].formattedAmount
     : sharedPriceBreakdown[0]?.formattedTotal ?? null;
 
+  /* Lauren, 30/10/2026: "Can the box change colour completely? Cause I
+     can't see unless I go through each appointment on the day to see if
+     it's invoiced." Only a settled dog recolours — an unpaid one keeps
+     its service colour, which is what makes a day readable to book. */
+  const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
+
   const block = (
     <div
       draggable={canDrag}
@@ -409,9 +416,14 @@ function ApptBlock({
         // white-on-red badge - so a cancelled dog drew more attention than
         // the ones actually coming in. Now they keep the service colour at
         // low opacity so they read as "was here, gone" at a glance.
-        background: isCancelled ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`,
+        background: isCancelled
+          ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)"
+          : pay.background ?? `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`,
+        /* The service colour does not vanish when a dog is paid — it
+           moves to the spine, so the day can still be read by service
+           after the money has come in. */
         borderLeft: `4px ${isCancelled ? "dashed #cbd5e1" : `solid ${svc.border}`}`,
-        boxShadow: isCancelled ? "none" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}`,
+        boxShadow: isCancelled ? "none" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${pay.accent ?? svc.border}`,
         opacity: isCancelled ? 0.45 : 1,
         zIndex: 2,
       }}
@@ -422,6 +434,15 @@ function ApptBlock({
     >
       <div className="px-2 py-1 h-full overflow-hidden leading-tight">
         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
+        {pay.label && (
+          <div
+            data-testid={`appt-payment-${pay.key}`}
+            className="mb-1 inline-flex rounded-sm border bg-white/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em]"
+            style={{ color: pay.accent ?? undefined, borderColor: pay.accent ?? undefined }}
+          >
+            {pay.label}
+          </div>
+        )}
         {siblings && siblings.length > 0 ? (
           <>
             <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
