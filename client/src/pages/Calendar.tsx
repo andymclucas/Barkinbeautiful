@@ -1,3 +1,4 @@
+import { sessionDividerTop, AFTERNOON_SESSION_LABEL } from "@shared/sessionDivider";
 import { applyStaffOrder, moveStaff } from "@shared/staffColumnOrder";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MoegoBadge } from "@/components/MoegoBadge";
@@ -529,6 +530,34 @@ function GridLines({ cols }: { cols: number }) {
         />
       ))}
     </>
+  );
+}
+
+// ── Where the afternoon session starts ────────────────────────────────────────
+/**
+ * Lauren, 29/10/2026: "a red line at the start of the 11:30am dogs as
+ * that's the start of the afternoon session. Our goal is to divide the
+ * day. Today turned to shit cause too many were booked in the morning."
+ *
+ * Dashed and labelled, so it does not read as a second NowLine — that
+ * one is solid with a dot and means "it is this time now". This one is
+ * a boundary, and it has to be legible as a different kind of thing at
+ * a glance from across the salon.
+ */
+function SessionDivider() {
+  const top = sessionDividerTop({
+    dayStartHour: HOURS[0],
+    dayEndHour: HOURS[HOURS.length - 1] + 1,
+    hourHeight: HOUR_HEIGHT,
+  });
+  if (top === null) return null;
+  return (
+    <div className="absolute left-0 right-0 z-[9] pointer-events-none" style={{ top }}>
+      <div className="h-0 border-t-2 border-dashed border-red-500/70 w-full" />
+      <span className="absolute left-1 -top-2 rounded bg-red-500 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+        {AFTERNOON_SESSION_LABEL}
+      </span>
+    </div>
   );
 }
 
@@ -2594,6 +2623,7 @@ export default function Calendar() {
                     </div>
                   )}
                   {/* Now line */}
+                  <SessionDivider />
                   <NowLine totalGridWidth={0} />
                   {/* Blockout banners */}
                   {(blockouts ?? []).filter(b => {
