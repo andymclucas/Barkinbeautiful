@@ -9,6 +9,8 @@ import { NetSalesPerformance } from "@/components/NetSalesPerformance";
 import { TrendingUp, Users, CreditCard, CalendarDays, Scissors, Heart, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
+import { StaffPerformanceCard } from "@/components/StaffPerformanceCard";
+import { averagePerAppointment, revenueShare } from "@shared/staffPerformance";
 
 export default function Analytics() {
   const { resolvedTheme } = useTheme();
@@ -66,7 +68,10 @@ export default function Analytics() {
       ["TOTAL", "", `$${membershipBreakdown?.totalWeeklyRevenue?.toFixed(2) ?? "0.00"}`, `$${membershipBreakdown?.totalMonthlyRevenue?.toFixed(2) ?? "0.00"}`],
       [],
       ["Staff Performance", "Appointments", "Revenue", "Avg per Appt"],
-      ...staffChartData.map(s => [s.name, s.appointments, `$${s.revenue.toFixed(2)}`, s.appointments > 0 ? `$${(s.revenue / s.appointments).toFixed(2)}` : "—"]),
+      ...staffChartData.map(s => {
+        const avg = averagePerAppointment(s);
+        return [s.name, s.appointments, `$${s.revenue.toFixed(2)}`, avg !== null ? `$${avg.toFixed(2)}` : "—"];
+      }),
     ];
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -89,7 +94,10 @@ export default function Analytics() {
   };
 
   const staffChartData = staffProductivity?.map(s => ({
+    /* The chart axis and the table both want a short label; the phone
+       card has room for the whole name and reads better with it. */
     name: (s.staffName ?? "Unassigned").split(" ")[0],
+    fullName: s.staffName ?? "Unassigned",
     appointments: s.appointmentCount,
     revenue: parseFloat(s.revenue ?? "0"),
     colour: s.staffColour ?? "#6366f1",
@@ -406,13 +414,28 @@ export default function Analytics() {
             <CardTitle className="text-sm font-semibold">Staff Performance — Combined Revenue Contribution</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            {/* The table was 386px wide inside a 375px phone, so the PAGE
-                scrolled sideways and the columns ran into each other —
-                "45$3,783.00" with no gap, and Share clipped off the edge.
-                It scrolls inside its own card now, the same answer the
-                calendar tabs got. Cells gained horizontal padding so wide
-                figures cannot touch, and nowrap so none of them wrap. */}
-            <div className="-mx-4 overflow-x-auto px-4">
+            {/* Cards on a phone, the table from sm up.
+                Five columns of figures do not fit 375px. Padding and
+                nowrap stopped them running into each other ("45$3,783.00"
+                with no gap), and the scroller below stopped the PAGE
+                sliding sideways — but that left Revenue, the column this
+                table is named after, off the edge until you swiped. */}
+            <div className="divide-y sm:hidden">
+              {staffChartData.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted-foreground">No data for this period.</p>
+              )}
+              {staffChartData.map((s, idx) => (
+                <StaffPerformanceCard
+                  key={idx}
+                  staff={{ name: s.fullName, appointments: s.appointments, revenue: s.revenue, colour: s.colour }}
+                  totalRevenue={totalRevenue}
+                />
+              ))}
+            </div>
+
+            {/* The scroller stays: it costs nothing and a long enough name
+                can still push the table past a narrow tablet. */}
+            <div className="-mx-4 hidden overflow-x-auto px-4 sm:block">
             <table className="w-full min-w-[30rem] text-sm">
               <thead>
                 <tr className="border-b">
@@ -438,10 +461,10 @@ export default function Analytics() {
                     <td className="py-2.5 pl-3 text-right font-medium tabular-nums whitespace-nowrap">{s.appointments}</td>
                     <td className="py-2.5 pl-3 text-right font-medium tabular-nums whitespace-nowrap">${s.revenue.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="py-2.5 pl-3 text-right text-muted-foreground tabular-nums whitespace-nowrap">
-                      {s.appointments > 0 ? `$${(s.revenue / s.appointments).toFixed(0)}` : "—"}
+                      {(avg => avg !== null ? `$${avg.toFixed(0)}` : "—")(averagePerAppointment(s))}
                     </td>
                     <td className="py-2.5 pl-3 text-right text-muted-foreground tabular-nums whitespace-nowrap">
-                      {totalRevenue > 0 ? `${((s.revenue / totalRevenue) * 100).toFixed(1)}%` : "—"}
+                      {(pct => pct !== null ? `${pct.toFixed(1)}%` : "—")(revenueShare(s, totalRevenue))}
                     </td>
                   </tr>
                 ))}
