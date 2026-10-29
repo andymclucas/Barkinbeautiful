@@ -200,3 +200,67 @@ describe("the contact person", () => {
     expect(screen.getByText("Tulley-Smith")).toBeInTheDocument();
   });
 });
+
+describe("the afternoon session divider", () => {
+  /** Brisbane wall-clock on 30/10/2026. */
+  const at = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return new Date(Date.UTC(2026, 9, 30, h - 10, m));
+  };
+  const dog = (id: number, name: string, time: string, family?: number) =>
+    row({ id, petId: id * 10, petName: name, scheduledStart: at(time),
+          scheduledEnd: at(time), petFamilyGroupId: family ?? null });
+
+  /** Positions of the divider and the dogs, in render order. */
+  const order = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll("tbody tr")).map((tr) =>
+      tr.getAttribute("aria-hidden") === "true"
+        ? "——— divider ———"
+        : tr.querySelector("td:nth-child(4)")?.textContent?.match(/[A-Z][a-z]+/)?.[0] ?? "?");
+
+  it("draws the line between the morning and the afternoon", () => {
+    const { container } = renderBoard({}, [
+      dog(1, "Pippa", "09:30"), dog(2, "Pepper", "10:00"),
+      dog(3, "Peaches", "11:30"), dog(4, "Smidge", "11:30"),
+    ]);
+    expect(order(container)).toEqual(["Pippa", "Pepper", "——— divider ———", "Peaches", "Smidge"]);
+  });
+
+  it("labels it so nobody has to guess what the red line means", () => {
+    renderBoard({}, [dog(1, "Pepper", "10:00"), dog(2, "Peaches", "11:30")]);
+    expect(screen.getByText("Afternoon")).toBeInTheDocument();
+  });
+
+  it("draws nothing when every dog is in the same session", () => {
+    const { container } = renderBoard({}, [dog(1, "Pippa", "09:30"), dog(2, "Pepper", "10:00")]);
+    expect(order(container)).toEqual(["Pippa", "Pepper"]);
+    expect(screen.queryByText("Afternoon")).toBeNull();
+  });
+
+  it("draws nothing above the first row when the whole day is afternoon", () => {
+    const { container } = renderBoard({}, [dog(1, "Peaches", "11:30"), dog(2, "Smidge", "13:00")]);
+    expect(order(container)).toEqual(["Peaches", "Smidge"]);
+  });
+
+  /**
+   * The bracket that joins siblings is drawn across adjacent rows, so a
+   * divider between them would cut it in half. The cohort is anchored to
+   * its earliest dog, so both belong to the morning here.
+   */
+  it("does not cut through a family whose dogs straddle 11:30", () => {
+    const { container } = renderBoard({}, [
+      dog(1, "Pippa", "09:30"),
+      dog(2, "Luna", "11:00", 42), dog(3, "Ruby", "11:45", 42),
+      dog(4, "Peaches", "12:00"),
+    ]);
+    expect(order(container)).toEqual(["Pippa", "Luna", "Ruby", "——— divider ———", "Peaches"]);
+  });
+
+  /** It is decoration, so it must not be announced as a row of data. */
+  it("is hidden from screen readers", () => {
+    const { container } = renderBoard({}, [dog(1, "Pepper", "10:00"), dog(2, "Peaches", "11:30")]);
+    const divider = container.querySelector('tbody tr[aria-hidden="true"]');
+    expect(divider).not.toBeNull();
+    expect(divider?.querySelector("td")?.getAttribute("colspan")).toBe("13");
+  });
+});

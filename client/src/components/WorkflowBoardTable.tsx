@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WORKFLOW_STAGE_COLOURS } from "@shared/workflowStageColours";
+import { afternoonSessionRowIndex, AFTERNOON_SESSION_LABEL } from "@shared/sessionDivider";
 import { workflowStateLabel, workflowStateShortLabel } from "@shared/workflowStateLabels";
 import { PetAvatar } from "@/components/PetAvatar";
 import { StaffAvatar } from "@/components/StaffAvatar";
@@ -16,7 +17,7 @@ import { PetAlertButton } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
 import { Check, CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
 /**
@@ -329,6 +330,33 @@ function BathPriorityCell({ value, coordinated, onSave, onManageGroup, disabled,
   );
 }
 
+/**
+ * The afternoon session, drawn between two rows.
+ *
+ * Lauren, 29/10/2026, after the same line landed on the calendar:
+ * "Red line to show up in the workflow too pretty please. After
+ * pepper... before peaches."
+ *
+ * A table cannot take the calendar's positioned line, so the divider
+ * is a row of its own. It spans every column so the eye cannot slip
+ * past it, which is the whole job.
+ */
+function SessionDividerRowTr() {
+  return (
+    <tr aria-hidden="true" className="border-t-0">
+      <td colSpan={13} className="p-0">
+        <div className="flex items-center gap-2 bg-red-50/70 px-2 py-1 dark:bg-red-950/40">
+          <span className="h-[3px] flex-1 rounded-full bg-red-500" />
+          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">
+            {AFTERNOON_SESSION_LABEL}
+          </span>
+          <span className="h-[3px] flex-1 rounded-full bg-red-500" />
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export function WorkflowBoardTable({
   rows,
   now,
@@ -344,6 +372,9 @@ export function WorkflowBoardTable({
   onRestoreCompleted,
   restorePending = false,
 }: WorkflowBoardTableProps) {
+  /* Where the afternoon session begins, measured by each dog's family
+     cohort rather than its own slot — see afternoonSessionRowIndex. */
+  const afternoonStartsAt = afternoonSessionRowIndex(rows);
   // A read-only board never reaches these, so a no-op keeps the JSX identical
   // rather than sprinkling `actions?.` through four hundred lines of markup.
   const noop = () => {};
@@ -447,6 +478,7 @@ export function WorkflowBoardTable({
                 </tr>
               )}
               {rows.map((appt, idx) => {
+                const startsAfternoon = idx === afternoonStartsAt;
                 const stage = ALL_STAGE_OPTIONS.find(s => s.key === appt.workflowState) ?? STAGES[0];
                 const nextStage = NEXT_STAGE[appt.workflowState as StageKey];
                 const prevStage = PREV_STAGE[appt.workflowState as StageKey];
@@ -476,8 +508,9 @@ export function WorkflowBoardTable({
                   : idx % 2 === 0 ? "bg-card" : "bg-muted/50";
 
                 return (
+                  <Fragment key={appt.id}>
+                  {startsAfternoon && <SessionDividerRowTr />}
                   <tr
-                    key={appt.id}
                     id={`workflow-appointment-${appt.id}`}
                     data-review-focused={isReviewFocused ? "true" : undefined}
                     className={`${rowBg} ${isReviewFocused ? "bg-amber-100/80 dark:bg-amber-950/80 shadow-[inset_0_0_0_2px_rgb(245_158_11)]" : ""} border-t transition-colors ${readOnly ? "" : "hover:bg-primary/5 cursor-grab active:cursor-grabbing"}`}
@@ -1010,6 +1043,7 @@ export function WorkflowBoardTable({
 
                     {/* Family Link */}
                   </tr>
+                  </Fragment>
                 );
               })}
             </tbody>

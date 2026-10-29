@@ -40,3 +40,80 @@ export function sessionDividerTop(opts: {
   if (hours < opts.dayStartHour || hours > opts.dayEndHour) return null;
   return (hours - opts.dayStartHour) * opts.hourHeight;
 }
+
+/**
+ * Minutes past local midnight, in the salon's timezone.
+ *
+ * Via Intl rather than `getHours()`, which reads the viewer's machine.
+ * A groomer checking the board from a phone still on UK time would
+ * otherwise see the divider in a different place from the salon iPad
+ * standing next to them (`e6a4662` is the same bug on reminders).
+ */
+export function minutesIntoLocalDay(
+  value: Date | string | number,
+  timeZone: string = "Australia/Brisbane",
+): number | null {
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(at);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour * 60 + minute;
+}
+
+export type SessionDividerRow = {
+  id: number;
+  scheduledStart: Date | string | number;
+  petFamilyGroupId?: number | null;
+};
+
+/**
+ * Which row the afternoon starts at, for a LIST rather than a grid.
+ *
+ * The calendar can put the line at a pixel offset; the workflow board
+ * is a table, so the line goes between two rows and the only question
+ * is which pair.
+ *
+ * It measures a row by its COHORT's time, not its own. `groupFamilyWorkflowRows`
+ * anchors a family to its earliest member and keeps the siblings
+ * adjacent, so a pair booked 11:00 and 11:45 both sit at the 11:00
+ * anchor. Measuring each dog separately would put the divider between
+ * them — through the middle of the bracket that says they go home
+ * together.
+ *
+ * Null when the line would say nothing: no afternoon dogs, no morning
+ * dogs, or an empty board. A line above the first row does not divide
+ * anything.
+ */
+export function afternoonSessionRowIndex(
+  rows: readonly SessionDividerRow[],
+  opts: { timeZone?: string; split?: { hour: number; minute: number } } = {},
+): number | null {
+  const split = opts.split ?? AFTERNOON_SESSION_START;
+  const cutoff = split.hour * 60 + split.minute;
+
+  const anchors = new Map<number, number>();
+  for (const row of rows) {
+    const family = row.petFamilyGroupId;
+    if (family == null) continue;
+    const at = new Date(row.scheduledStart).getTime();
+    if (Number.isNaN(at)) continue;
+    anchors.set(family, Math.min(anchors.get(family) ?? at, at));
+  }
+
+  const index = rows.findIndex((row) => {
+    const family = row.petFamilyGroupId;
+    const when = family != null && anchors.has(family)
+      ? anchors.get(family)!
+      : row.scheduledStart;
+    const minutes = minutesIntoLocalDay(when, opts.timeZone);
+    return minutes !== null && minutes >= cutoff;
+  });
+
+  /* 0 means every dog is in the afternoon; -1 means none is. Neither
+     divides a day. */
+  return index <= 0 ? null : index;
+}
