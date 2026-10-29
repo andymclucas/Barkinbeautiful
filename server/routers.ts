@@ -2568,10 +2568,14 @@ const workflowRouter = router({
         const linkedRows = await db.select({ id: appointments.id }).from(appointments).where(and(
           eq(appointments.tenantId, appointment.tenantId),
           eq(appointments.sessionId, appointment.sessionId),
+          /* A dog with a bath group of its own has been deliberately
+             coordinated elsewhere; a session-wide change must not reach
+             across and undo that. See bathPriorityChangeReaches. */
+          sql`(${appointments.bathGroupId} IS NULL OR TRIM(${appointments.bathGroupId}) = '')`,
           sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
           sql`${appointments.workflowState} <> 'complete'`,
         ));
-        targetIds = linkedRows.map((row: { id: number }) => row.id);
+        targetIds = Array.from(new Set([appointment.id, ...linkedRows.map((row: { id: number }) => row.id)]));
       } else if (input.applyToLinkedDogs && appointment.petFamilyGroupId) {
         const linkedRows = await db.select({ id: appointments.id }).from(appointments)
           .leftJoin(pets, eq(appointments.petId, pets.id))
@@ -2579,10 +2583,15 @@ const workflowRouter = router({
             eq(appointments.tenantId, appointment.tenantId),
             eq(pets.familyGroupId, appointment.petFamilyGroupId),
             eq(appointments.scheduledStart, appointment.scheduledStart),
+            /* Lauren, 30/10/2026: Bear and Abby grouped to bath
+               together, then Ollie numbered. Ollie's change runs on the
+               family rule and used to pull his sister Abby back out of
+               the group she had just been put in. */
+            sql`(${appointments.bathGroupId} IS NULL OR TRIM(${appointments.bathGroupId}) = '')`,
             sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
             sql`${appointments.workflowState} <> 'complete'`,
           ));
-        targetIds = linkedRows.map((row: { id: number }) => row.id);
+        targetIds = Array.from(new Set([appointment.id, ...linkedRows.map((row: { id: number }) => row.id)]));
       }
       targetIds = Array.from(new Set(targetIds));
       await db.update(appointments).set({ bathPriority: input.bathPriority, bathQueueOrder: null }).where(and(
@@ -2611,6 +2620,15 @@ const workflowRouter = router({
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       linkedAppointmentIds: z.array(z.number()).max(12),
       bathPriority: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).nullable().optional(),
+      /**
+       * Give this ONE dog a bath group of its own, so it leaves the
+       * automatic same-time family cohort and can be numbered alone.
+       *
+       * Without it a single-dog call means "remove coordination", which
+       * drops the dog straight back into the family cohort — which is
+       * exactly what Lauren could not get out of on 30/10/2026.
+       */
+      separate: z.boolean().default(false),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -2657,7 +2675,9 @@ const workflowRouter = router({
         ));
       }
 
-      const groupId = targetIds.length > 1 ? `bath-${nanoid(12)}` : null;
+      const groupId = targetIds.length > 1 || (input.separate && targetIds.length === 1)
+        ? `bath-${nanoid(12)}`
+        : null;
       const inheritedPriority = input.bathPriority !== undefined
         ? input.bathPriority
         : anchor.bathPriority ?? targetRows.find((row: any) => row.bathPriority !== null)?.bathPriority ?? null;
