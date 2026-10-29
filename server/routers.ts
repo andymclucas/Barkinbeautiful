@@ -4710,6 +4710,9 @@ const staffRouter = router({
         // So the calendar column can show clips booked against what this
         // groomer said they can do.
         dailyClipCapacity: staff.dailyClipCapacity,
+        // The same for the bath queue, which is what the floor actually
+        // waits on.
+        dailyBathCapacity: staff.dailyBathCapacity,
         // Inactive staff are off the roster, so they get no calendar column
         // and cannot be assigned work. Christie and Nathan are on the
         // platform to watch it, not to groom.
@@ -4953,6 +4956,17 @@ const staffRouter = router({
       onlineServices: z.string().optional().nullable(),
       onlineMaxDogsPerSlot: z.number().int().min(1).max(10).optional(),
       onlineMaxDogsPerDay: z.number().int().min(0).max(50).optional(),
+      /**
+       * A day's work, per person. Null means they do not do that job —
+       * a bather has no clip figure and a groomer no bath figure, which
+       * is what keeps each capacity counting the right people.
+       *
+       * Neither was reachable from the app before 30/10/2026; both had
+       * been set straight in the database, so nobody could correct one
+       * without a developer.
+       */
+      dailyClipCapacity: z.number().int().min(0).max(50).nullable().optional(),
+      dailyBathCapacity: z.number().int().min(0).max(50).nullable().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       // Editing ANOTHER person's record. Your own goes through
@@ -5019,6 +5033,11 @@ const staffRouter = router({
       if (fields.onlineServices !== undefined) updateData.onlineServices = fields.onlineServices;
       if (fields.onlineMaxDogsPerSlot !== undefined) updateData.onlineMaxDogsPerSlot = fields.onlineMaxDogsPerSlot;
       if (fields.onlineMaxDogsPerDay !== undefined) updateData.onlineMaxDogsPerDay = fields.onlineMaxDogsPerDay;
+      /* 0 is a real answer — "this person does not clip" — and null is
+         the same thing said another way, so both must reach the column
+         rather than being treated as "field absent". */
+      if (fields.dailyClipCapacity !== undefined) updateData.dailyClipCapacity = fields.dailyClipCapacity;
+      if (fields.dailyBathCapacity !== undefined) updateData.dailyBathCapacity = fields.dailyBathCapacity;
 
       // The role is the one field here the person themselves should hear
       // about: it is how the salon describes them, and at invitation time
