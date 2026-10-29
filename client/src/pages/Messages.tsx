@@ -28,6 +28,7 @@ import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, Refre
 import { getActiveTimeZone } from "@/lib/timezone";
 import { EmojiPicker } from "@/components/EmojiPicker";
 import { calculateSmsCost } from "@shared/smsSegments";
+import { ClientLink } from "@/components/RecordLink";
 import { MessageThread, contactColour, contactInitials } from "@/components/MessageThread";
 
 const SMS_TEMPLATES = [
@@ -265,18 +266,45 @@ export default function Messages() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * This conversation's WHOLE history, fetched for the open thread.
+   *
+   * It used to be sliced out of `logs`, the page's most recent 100 SMS
+   * rows, so a client whose messages had scrolled past that appeared
+   * never to have been spoken to. 147 clients had messages outside that
+   * window; thirteen of client 277's were there and none were showing.
+   */
+  const { data: conversation } = trpc.sms.getConversation.useQuery(
+    { clientId: openThread?.clientId ?? undefined, toNumber: openThread?.toNumber },
+    { enabled: !!openThread },
+  );
+
   const threadMessages = useMemo(() => {
-    if (!openThread || !logs) return [];
+    if (!openThread || !conversation) return [];
+    const texts = conversation.sms.map((m: any) => ({ ...m, at: new Date(m.sentAt).getTime() }));
+    /* A call is correspondence. Voicemails used to sit in their own
+       panel at the top of the page, so a message and the call it
+       answered were never beside each other. */
+    const calls = conversation.calls.map((c: any) => ({
+      id: `call-${c.id}`,
+      direction: "inbound" as const,
+      sentAt: c.receivedAt,
+      at: new Date(c.receivedAt).getTime(),
+      isCall: true,
+      recordingUrl: c.recordingUrl,
+      body: c.transcriptText?.trim()
+        ? `\u260E Voicemail — “${c.transcriptText.trim()}”`
+        : "\u260E Missed call — no voicemail left.",
+    }));
     // collapseBySend: one Twilio send is one message. The pickup text is
     // logged against every dog it covers, so a two-dog family read as a
     // double text and the salon rang a client to apologise for it.
-    return collapseBySend(
-      logs
-        .filter((l: any) => (openThread.clientId ? l.clientId === openThread.clientId : l.toNumber === openThread.toNumber))
-        .slice()
-        .sort((a: any, b: any) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()),
-    );
-  }, [openThread, logs]);
+    const collapsed = collapseBySend(texts.slice().sort((a: any, b: any) => a.at - b.at));
+    /* Ties break towards the call: a voicemail and the auto-reply it
+       triggered land in the same second. */
+    return [...collapsed, ...calls].sort((a: any, b: any) =>
+      a.at - b.at || (a.isCall === b.isCall ? 0 : a.isCall ? -1 : 1));
+  }, [openThread, conversation]);
 
 
   const sendMutation = trpc.sms.send.useMutation({
@@ -410,8 +438,19 @@ export default function Messages() {
                     {contactInitials(openThread?.clientName, openThread?.toNumber ?? "")}
                   </span>
                   <div className="min-w-0 flex-1">
+                    {/* Andy, 29/10/2026: "Make the client name in the
+                        conversation clickable if staff need to get to the
+                        client card quickly from there." ClientLink falls
+                        back to plain text when the number has no client
+                        behind it, which is most of the unknown callers. */}
                     <p className="truncate text-[15px] font-semibold leading-tight">
-                      {openThread?.clientName?.trim() || openThread?.toNumber}
+                      <ClientLink
+                        clientId={openThread?.clientId}
+                        className="hover:underline"
+                        title={openThread?.clientName ? `Open ${openThread.clientName.trim()}’s record` : undefined}
+                      >
+                        {openThread?.clientName?.trim() || openThread?.toNumber}
+                      </ClientLink>
                     </p>
                     {openThread?.clientName && (
                       <p className="truncate text-[11px] font-normal text-muted-foreground">{openThread.toNumber}</p>

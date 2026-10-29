@@ -9711,6 +9711,68 @@ const smsRouter = router({
         .where(and(...conditions)).orderBy(desc(smsLogs.sentAt)).limit(input.limit);
     }),
 
+  /**
+   * One contact's WHOLE correspondence — every text, and every call.
+   *
+   * Andy, 29/10/2026: "add in any previous correspondence (texts phone
+   * calls etc) that the client has had with the salon."
+   *
+   * The thread used to be sliced out of the page's last 100 SMS rows,
+   * so a client whose messages had scrolled past that looked as though
+   * the salon had never spoken to them. There are 498 messages and 147
+   * clients had some outside that window; client 277 has thirteen and
+   * was showing none.
+   *
+   * Matching is by clientId when there is one and by number otherwise,
+   * because a number can reach the salon before anybody has made it a
+   * client — and the missed-call rows for that number are still part of
+   * the conversation when they do.
+   */
+  getConversation: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      clientId: z.number().optional(),
+      toNumber: z.string().optional(),
+      limit: z.number().max(1000).default(400),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return { sms: [], calls: [] };
+      if (!input.clientId && !input.toNumber) return { sms: [], calls: [] };
+      const tenant = tenantOf(ctx, input);
+
+      /* Last nine digits: Twilio sends +61416207175 and the client record
+         holds 0416207175. Same rule as phoneMatchKey. */
+      const tail = input.toNumber ? input.toNumber.replace(/\D/g, "").slice(-9) : null;
+      const numberMatch = (col: typeof smsLogs.toNumber | typeof missedCalls.fromNumber) =>
+        sql`RIGHT(REGEXP_REPLACE(${col}, '[^0-9]', ''), 9) = ${tail}`;
+
+      const smsWhere = input.clientId
+        ? (tail ? or(eq(smsLogs.clientId, input.clientId), numberMatch(smsLogs.toNumber)) : eq(smsLogs.clientId, input.clientId))
+        : numberMatch(smsLogs.toNumber);
+      const callWhere = input.clientId
+        ? (tail ? or(eq(missedCalls.clientId, input.clientId), numberMatch(missedCalls.fromNumber)) : eq(missedCalls.clientId, input.clientId))
+        : numberMatch(missedCalls.fromNumber);
+
+      const [sms, calls] = await Promise.all([
+        db.select({
+          id: smsLogs.id, body: smsLogs.body, direction: smsLogs.direction,
+          status: smsLogs.status, type: smsLogs.type, sentAt: smsLogs.sentAt,
+          toNumber: smsLogs.toNumber,
+        }).from(smsLogs)
+          .where(and(eq(smsLogs.tenantId, tenant), smsWhere))
+          .orderBy(desc(smsLogs.sentAt)).limit(input.limit),
+        db.select({
+          id: missedCalls.id, transcriptText: missedCalls.transcriptText,
+          recordingUrl: missedCalls.recordingUrl, callerName: missedCalls.callerName,
+          receivedAt: missedCalls.receivedAt, fromNumber: missedCalls.fromNumber,
+        }).from(missedCalls)
+          .where(and(eq(missedCalls.tenantId, tenant), callWhere))
+          .orderBy(desc(missedCalls.receivedAt)).limit(input.limit),
+      ]);
+      return { sms, calls };
+    }),
+
   // Conversation threads: one row per client/number, with their most recent
   // message and how many inbound messages from them are still unread.
   getThreads: protectedProcedure
