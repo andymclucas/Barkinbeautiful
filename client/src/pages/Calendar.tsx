@@ -1896,6 +1896,15 @@ export default function Calendar() {
   }, [newAppt.scheduledStart, newAppt.scheduledEnd]);
 
   /** Every offered slot, marked with what a booking there would run into. */
+  const newApptMonthKey = (() => {
+    const { date } = splitLocalDateTime(newAppt.scheduledStart);
+    return date ? date.slice(0, 7) : null;
+  })();
+  const { data: newApptMonthCapacity } = trpc.calendar.monthCapacity.useQuery(
+    { month: newApptMonthKey ?? "2026-01" },
+    { enabled: Boolean(newApptMonthKey) },
+  );
+
   const timeSlotsWithAvailability = useMemo(
     () => annotateSlots(
       buildTimeSlots({ include: splitLocalDateTime(newAppt.scheduledStart).time }),
@@ -1905,6 +1914,60 @@ export default function Calendar() {
     ),
     [newAppt.scheduledStart, groomerBusy, bookingDurationMinutes],
   );
+
+  /**
+   * "Next available" — the first slot this booking actually fits in.
+   *
+   * Andy, 30/10/2026: smart scheduling, like MoeGo. The dropdown lists
+   * every half hour whether or not anyone is free, so finding a gap
+   * meant opening days one at a time.
+   *
+   * Asked for on demand rather than watched: it reads up to 60 days of
+   * diary, and nobody wants that running on every keystroke in the
+   * price box.
+   */
+  const [nextSlotNote, setNextSlotNote] = useState<string | null>(null);
+  const [findingSlot, setFindingSlot] = useState(false);
+  const findNextSlot = useCallback(async () => {
+    const { date } = splitLocalDateTime(newAppt.scheduledStart);
+    const from = date || new Date().toLocaleDateString("en-CA", { timeZone: getActiveTimeZone() });
+    setFindingSlot(true);
+    setNextSlotNote(null);
+    try {
+      const result = await utils.calendar.nextAvailable.fetch({
+        staffIds: bookingStaffIds,
+        durationMinutes: bookingDurationMinutes,
+        fromDate: from,
+      });
+      if (!result.found) { setNextSlotNote(result.message || "Nothing free."); return; }
+      setNewAppt(p => ({ ...p, scheduledStart: joinLocalDateTime(result.found!.date, result.found!.time) }));
+      toast.success(result.found.daysAhead === 0
+        ? "Found a slot that day"
+        : `Found a slot ${result.found.daysAhead} day${result.found.daysAhead === 1 ? "" : "s"} later`);
+    } catch (e) {
+      setNextSlotNote((e as Error).message);
+    } finally {
+      setFindingSlot(false);
+    }
+  }, [newAppt.scheduledStart, bookingStaffIds, bookingDurationMinutes, utils]);
+
+  /**
+   * How full the chosen groomer's chosen day already is.
+   *
+   * Clashes were already shown; capacity was not, and it is the half
+   * that cannot be seen by looking at the grid — a groomer at eight of
+   * eight clips has no room at 2pm however empty 2pm looks.
+   */
+  const bookingDayCapacity = useMemo(() => {
+    const { date } = splitLocalDateTime(newAppt.scheduledStart);
+    if (!date || !newApptMonthCapacity) return null;
+    const day = newApptMonthCapacity.days.find((d: any) => d.date === date);
+    if (!day) return null;
+    const mine = newAppt.staffId
+      ? day.perGroomer.find((g: any) => String(g.staffId) === newAppt.staffId)
+      : null;
+    return { day, mine };
+  }, [newAppt.scheduledStart, newAppt.staffId, newApptMonthCapacity]);
 
   /** What the time currently chosen runs into. Empty means it is free. */
   const bookingClashes = useMemo(() => {
@@ -3584,7 +3647,23 @@ export default function Calendar() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Start time *</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Start time *</Label>
+                  {/* Andy, 30/10/2026: smart scheduling, like MoeGo. It
+                      searches forward from the chosen date — or today —
+                      for the first slot every groomer on this booking is
+                      free for AND has clips left on. */}
+                  <button
+                    type="button"
+                    data-testid="next-available"
+                    onClick={findNextSlot}
+                    disabled={findingSlot || bookingDurationMinutes <= 0}
+                    className="flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Search className="h-3 w-3" />
+                    {findingSlot ? "Looking…" : "Next available"}
+                  </button>
+                </div>
                 <Select
                   value={splitLocalDateTime(newAppt.scheduledStart).time}
                   onValueChange={v => setNewAppt(p => {
@@ -3622,6 +3701,24 @@ export default function Calendar() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                {nextSlotNote && (
+                  <p data-testid="next-available-note" className="text-[11px] text-amber-700 dark:text-amber-400">{nextSlotNote}</p>
+                )}
+
+                {/* The half the grid cannot show. A groomer at eight of
+                    eight clips has no room at 2pm however empty 2pm looks. */}
+                {bookingDayCapacity?.mine && (
+                  <p
+                    data-testid="booking-day-capacity"
+                    className={`text-[11px] ${bookingDayCapacity.mine.remaining === 0 ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}
+                  >
+                    {bookingDayCapacity.mine.name}: {bookingDayCapacity.mine.booked} of {bookingDayCapacity.mine.capacity} clips that day
+                    {bookingDayCapacity.mine.remaining === 0
+                      ? bookingDayCapacity.mine.over > 0 ? ` — ${bookingDayCapacity.mine.over} over` : " — full"
+                      : ` · ${bookingDayCapacity.mine.remaining} left`}
+                  </p>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

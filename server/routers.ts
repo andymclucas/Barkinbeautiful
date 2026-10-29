@@ -80,6 +80,14 @@ import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPri
 import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
+import { firstFreeSlot, describeNoSlot, tradingWeekdays, type DayAvailability } from "../shared/nextAvailableSlot";
+import { buildTimeSlots, minutesToTimeValue } from "../shared/bookingTimeSlots";
+
+/** The staff dialog's own grid, so the button cannot offer a time the
+    dropdown does not have. */
+const STAFF_SLOT_STARTS = buildTimeSlots()
+  .map((slot) => timeValueToMinutes(slot.value))
+  .filter((m): m is number => m !== null);
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl, getPortalBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
@@ -1027,6 +1035,181 @@ const calendarRouter = router({
         });
       }
       return { days };
+    }),
+
+  /**
+   * The first slot this booking will actually fit in.
+   *
+   * Andy, 30/10/2026, asking for MoeGo's smart scheduling. The staff
+   * dialog offers every half hour from 7am to 6pm and knows nothing
+   * about who is free, so finding a gap means opening days one at a
+   * time — which is why Lauren was still rebooking in MoeGo.
+   *
+   * Every groomer on the booking must be free, not just the first: a
+   * two-dog family routinely spans two people, and a slot that suits
+   * only one of them is not a slot.
+   *
+   * CAPACITY is checked as well as clashes, and it is the half the
+   * board could not see. A groomer with eight of eight clips booked
+   * has no room at 2pm however empty 2pm looks.
+   */
+  nextAvailable: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      staffIds: z.array(z.number().int().positive()).max(12).default([]),
+      durationMinutes: z.number().int().min(15).max(600),
+      /** Search starts here, inclusive. */
+      fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      days: z.number().int().min(1).max(90).default(60),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return { found: null as null | { date: string; time: string; daysAhead: number }, searchedDays: 0, message: "" };
+      const tenantId = tenantOf(ctx, input);
+      if (ctx.user.role === "staff") {
+        const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+        if (portalStaff && portalStaff.tenantId !== tenantId) {
+          throw new Error("This calendar is not available to your salon staff profile");
+        }
+      }
+
+      const from = parseBrisbaneLocalDateTime(`${input.fromDate}T00:00:00`);
+      const to = new Date(from.getTime() + input.days * 86_400_000);
+
+      const minutesInSalonDay = (at: Date): number => {
+        const parts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false,
+        }).formatToParts(at);
+        return Number(parts.find((p) => p.type === "hour")?.value ?? "0") * 60
+          + Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+      };
+
+      const wantStaff = Array.from(new Set(input.staffIds));
+      const roster = await db.select({
+        id: staff.id, name: staff.name,
+        dailyClipCapacity: staff.dailyClipCapacity, isActive: staff.isActive,
+      }).from(staff).where(eq(staff.tenantId, tenantId));
+      /* No groomer chosen yet: anyone who clips will do, so the search
+         asks whether the SALON has room rather than one person. */
+      const searchStaff = wantStaff.length > 0
+        ? roster.filter((r) => wantStaff.includes(r.id))
+        : roster.filter((r) => r.isActive && typeof r.dailyClipCapacity === "number" && r.dailyClipCapacity > 0);
+      if (searchStaff.length === 0) return { found: null, searchedDays: 0, message: "No groomer to look at." };
+      const searchIds = searchStaff.map((r) => r.id);
+
+      /* Which weekdays this salon trades on, learned from its own
+         diary. Closed days are not blockouts — they simply have no
+         bookings — so without this the search offered Saturday
+         31/10/2026, a day the salon is shut. */
+      const WEEKS_OBSERVED = 8;
+      const tradingRows = await db.select({
+        weekday: sql<number>`DAYOFWEEK(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')) - 1`,
+        daysTraded: sql<number>`COUNT(DISTINCT DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')))`,
+      }).from(appointments).where(and(
+        eq(appointments.tenantId, tenantId),
+        notInArray(appointments.status, ["cancelled", "no_show"]),
+        gte(appointments.scheduledStart, new Date(Date.now() - WEEKS_OBSERVED * 7 * 86_400_000)),
+        lt(appointments.scheduledStart, new Date()),
+      )).groupBy(sql`DAYOFWEEK(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'))`);
+      const trading = tradingWeekdays(
+        Object.fromEntries(tradingRows.map((r) => [Number(r.weekday), Number(r.daysTraded)])),
+        WEEKS_OBSERVED,
+      );
+
+      const [booked, leave] = await Promise.all([
+        db.select({
+          staffId: appointments.staffId,
+          day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`,
+          scheduledStart: appointments.scheduledStart,
+          scheduledEnd: appointments.scheduledEnd,
+          petName: pets.name,
+        }).from(appointments).leftJoin(pets, eq(appointments.petId, pets.id)).where(and(
+          eq(appointments.tenantId, tenantId),
+          inArray(appointments.staffId, searchIds),
+          gte(appointments.scheduledStart, from),
+          lt(appointments.scheduledStart, to),
+          ne(appointments.status, "cancelled"),
+          ne(appointments.workflowState, "cancelled"),
+        )),
+        db.select({
+          staffId: staffBlockouts.staffId,
+          day: sql<string>`DATE_FORMAT(${staffBlockouts.blockoutDate}, '%Y-%m-%d')`,
+          isFullDay: staffBlockouts.isFullDay,
+          startTime: staffBlockouts.startTime,
+          endTime: staffBlockouts.endTime,
+          reason: staffBlockouts.reason,
+        }).from(staffBlockouts).where(and(
+          eq(staffBlockouts.tenantId, tenantId),
+          inArray(staffBlockouts.staffId, searchIds),
+          gte(staffBlockouts.blockoutDate, from),
+          lt(staffBlockouts.blockoutDate, to),
+        )),
+      ]);
+
+      const busyByDay = new Map<string, BusyInterval[]>();
+      const bookedByDayStaff = new Map<string, number>();
+      for (const row of booked) {
+        if (row.staffId == null || !row.scheduledStart || !row.scheduledEnd) continue;
+        const key = String(row.day);
+        bookedByDayStaff.set(`${key}:${row.staffId}`, (bookedByDayStaff.get(`${key}:${row.staffId}`) ?? 0) + 1);
+        /* Only a chosen groomer's own bookings block a slot. With nobody
+           chosen the salon is the unit, and one person being busy does
+           not stop another taking the dog. */
+        if (wantStaff.length === 0) continue;
+        const startMinutes = minutesInSalonDay(new Date(row.scheduledStart));
+        const endMinutes = Math.max(startMinutes + 1, minutesInSalonDay(new Date(row.scheduledEnd)));
+        if (!busyByDay.has(key)) busyByDay.set(key, []);
+        busyByDay.get(key)!.push({ startMinutes, endMinutes, kind: "appointment", label: row.petName ?? "A dog" });
+      }
+      const awayByDayStaff = new Set<string>();
+      for (const row of leave) {
+        const key = String(row.day);
+        if (row.isFullDay) awayByDayStaff.add(`${key}:${row.staffId}`);
+        if (wantStaff.length === 0) continue;
+        const startMinutes = row.isFullDay ? 0 : timeValueToMinutes(row.startTime ?? "") ?? 0;
+        const endMinutes = row.isFullDay ? 24 * 60 : timeValueToMinutes(row.endTime ?? "") ?? 24 * 60;
+        if (!busyByDay.has(key)) busyByDay.set(key, []);
+        busyByDay.get(key)!.push({ startMinutes, endMinutes, kind: "blockout", label: row.reason ?? "Leave" });
+      }
+
+      const days: DayAvailability[] = [];
+      for (let i = 0; i < input.days; i++) {
+        const at = new Date(from.getTime() + i * 86_400_000);
+        const dateKey = new Date(at.getTime() + 10 * 3_600_000).toISOString().slice(0, 10);
+        /* Every chosen groomer must have room; with nobody chosen, any
+           one of them having room is enough. */
+        const loads = searchStaff
+          .filter((r) => !awayByDayStaff.has(`${dateKey}:${r.id}`))
+          .map((r) => ({
+            capacity: typeof r.dailyClipCapacity === "number" ? r.dailyClipCapacity : null,
+            booked: bookedByDayStaff.get(`${dateKey}:${r.id}`) ?? 0,
+          }));
+        const withRoom = loads.filter((l) => l.capacity === null || l.booked < l.capacity);
+        const hasRoom = wantStaff.length === 0 ? withRoom.length > 0 : withRoom.length === loads.length && loads.length > 0;
+        const [y, mo, d] = dateKey.split("-").map(Number);
+        const weekday = new Date(Date.UTC(y!, mo! - 1, d!)).getUTCDay();
+        days.push({
+          dateKey,
+          busy: busyByDay.get(dateKey) ?? [],
+          booked: loads.reduce((n, l) => n + l.booked, 0),
+          capacity: hasRoom ? Number.MAX_SAFE_INTEGER : 0,
+          closed: loads.length === 0 || !trading.has(weekday),
+        });
+      }
+
+      const todayKey = brisbaneDateKey(new Date());
+      const nowMinutes = minutesInSalonDay(new Date());
+      const found = firstFreeSlot(days, {
+        durationMinutes: input.durationMinutes,
+        slotStartsFor: () => STAFF_SLOT_STARTS,
+        todayKey, nowMinutes,
+      });
+
+      return {
+        found: found ? { date: found.dateKey, time: minutesToTimeValue(found.startMinutes), daysAhead: found.daysAhead } : null,
+        searchedDays: days.length,
+        message: found ? "" : describeNoSlot(days),
+      };
     }),
 
   createAppointment: operationalProcedure
