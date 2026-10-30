@@ -57,6 +57,11 @@ const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
  */
 function serviceType(text: string): string | null {
   const t = text.toLowerCase();
+  /* Upcharges that are NOT a dog's service. "Styled Groom EXTRA" sits
+     in the same comma list as the real services and matches /style/,
+     so Marcelle Arkadieff's three dogs came out as four services and
+     the booking could not be aligned. */
+  if (/\bextra\b|surcharge|add ?on|teeth|anal gland|nail paint/.test(t)) return null;
   if (/de-?shed/.test(t)) return "deshed";
   if (/\bbath\b/.test(t)) return "bath_only";
   if (/nail clip|nail trim/.test(t)) return "nail_trim";
