@@ -36,6 +36,9 @@ export type InvoiceEmailTarget =
       /** "Separate Bills" raises one invoice per dog. */
       invoiceCount?: number;
       invoiceNumbers?: readonly string[];
+      /** Across EVERY bill on the booking, not just the first. */
+      bookingTotal?: number;
+      bookingAmountDue?: number;
     };
 
 export type InvoiceEmailPrompt = {
@@ -76,11 +79,19 @@ export function describeInvoiceEmailPrompt(
     };
   }
 
-  const amount = target.paidInFull
-    ? `${money(target.total)}, paid in full`
-    : `${money(target.amountDue)} due`;
+  /* On a booking billed as separate bills, the figures in the box have
+     to be the booking's, not the first bill's. Saying "$80, paid in
+     full" while a second $90 bill is about to go out unpaid would be
+     worse than saying nothing. */
+  const shownTotal = target.bookingTotal ?? target.total;
+  const shownDue = target.bookingAmountDue ?? target.amountDue;
+  const settled = Math.round(shownDue * 100) <= 0 && shownTotal > 0;
 
-  const noun = target.paidInFull ? "receipt" : "invoice";
+  const amount = settled
+    ? `${money(shownTotal)}, paid in full`
+    : `${money(shownDue)} due`;
+  const noun = settled ? "receipt" : "invoice";
+
   const email = (target.email ?? "").trim();
   const count = target.invoiceCount ?? 1;
   const plural = count > 1;
