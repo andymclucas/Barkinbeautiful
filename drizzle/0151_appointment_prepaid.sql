@@ -1,0 +1,46 @@
+-- Money that arrived before the dog did.
+--
+-- Clients pay ahead — in MoeGo while the two systems run side by side,
+-- or by transfer when they book. Groomigo had nowhere to record that,
+-- so the counter asked a client who had already paid, and the day panel
+-- counted the work under "Still to collect" for money that was already
+-- banked.
+--
+-- A TIMESTAMP rather than a boolean, with the user beside it. "Is this
+-- paid" and "who said so, and when" are the same question for anything
+-- that moves money, and a boolean answers only the first. It also makes
+-- unticking a mistake visible as a change rather than a silent revert
+-- to the default.
+--
+-- Nullable with no default, so rows written by the currently deployed
+-- code stay valid and every existing booking reads as not pre-paid,
+-- which is what they are.
+--
+-- Both are ADD COLUMN, so they belong in one ALTER: MySQL/TiDB DDL is
+-- not transactional, and separate statements can leave the first
+-- applied, the migration unrecorded, and a re-run failing on
+-- "Duplicate column name".
+--
+-- ── Renumbered from 0147 on 30/10/2026 ───────────────────────────────
+--
+-- This was written as `0147_appointment_prepaid`, idx 147, when
+-- 1791834787562. Both were taken in the meantime by
+-- `0147_timing_review_wait_minutes`, which has since been applied, and
+-- the ledger's newest row is now 1793329883781 — far above that stamp.
+--
+-- `drizzle-kit migrate` selects pending work with a STRICT comparison
+-- (ledgerMax < entry.when), so an entry stamped below the ledger max is
+-- SKIPPED rather than rejected: migrate prints success and exits 0, the
+-- DDL never runs, and `schema.ts` still names the columns. Every bare
+-- select and insert on `appointments` would then fail — the 17
+-- procedures behind requireApprovedStaffAppointmentAccess,
+-- updateWorkflowState, and every booking insert. That is commit
+-- b848737's shape on the busiest table in the database.
+--
+-- The DDL below is unchanged from the original. Only the number and the
+-- journal stamp moved. `server/migrationJournal.test.ts` fails if any
+-- two entries ever share a `when` again.
+
+ALTER TABLE `appointments`
+  ADD COLUMN `prepaid_at` DATETIME NULL,
+  ADD COLUMN `prepaid_by_user_id` INT NULL;
