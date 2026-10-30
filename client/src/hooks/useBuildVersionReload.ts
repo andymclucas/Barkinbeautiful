@@ -21,6 +21,24 @@ import { extractBuildId, isNewBuild } from "@shared/buildVersion";
  * in the salon AND typed into, and with no check at all it was running
  * whichever bundle it loaded days ago.
  */
+/**
+ * Which mode a screen wants.
+ *
+ * A screen nobody types into reloads itself; one staff type into asks
+ * first, because a reload mid-sentence loses what was being entered.
+ *
+ * Pinned as its own rule because getting it wrong is silent. The
+ * staff board asked for "notify" in BOTH modes, and its TV mode is an
+ * early return whose JSX does not include the "running an old
+ * version" banner — so the wall screen was notified into a void and
+ * ran the same bundle for weeks. Andy, 30/10/2026, sent a photo of
+ * the salon TV rendering a badge in a format this codebase no longer
+ * produces.
+ */
+export function buildReloadMode(unattended: boolean): "reload" | "notify" {
+  return unattended ? "reload" : "notify";
+}
+
 export function useBuildVersionReload(
   options: { intervalMs?: number; mode?: "reload" | "notify"; onNewBuild?: () => void } = {},
 ): void {

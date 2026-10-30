@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useBuildVersionReload } from "./useBuildVersionReload";
+import { useBuildVersionReload, buildReloadMode } from "./useBuildVersionReload";
 
 /**
  * The TV is the whole point, so these drive the real polling loop
@@ -116,5 +116,21 @@ describe("useBuildVersionReload", () => {
     unmount();
     await vi.advanceTimersByTimeAsync(5000);
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildReloadMode", () => {
+  /**
+   * The rule that was wrong. TV mode is an early return whose JSX has
+   * no "running an old version" banner, so notifying it reaches
+   * nobody — the screen just keeps running whatever it loaded.
+   */
+  it("reloads a screen nobody is standing at", () => {
+    expect(buildReloadMode(true)).toBe("reload");
+  });
+
+  /** And still asks the board staff type into. */
+  it("asks before reloading a screen somebody is using", () => {
+    expect(buildReloadMode(false)).toBe("notify");
   });
 });
