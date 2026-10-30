@@ -24,6 +24,7 @@ import { appRouter } from "../server/routers";
 import { getDb } from "../server/db";
 import { users, staffBlockouts, appointments } from "../drizzle/schema";
 import { and, eq, gte, lte, sql, notInArray } from "drizzle-orm";
+import { blockoutDateValue } from "../shared/staffBlockouts";
 
 const APPLY = process.argv.includes("--apply");
 const ACTOR_EMAIL = "mclucas.andy@gmail.com";
@@ -62,8 +63,8 @@ async function main() {
     const existing = await db.select({ n: sql<number>`COUNT(*)` })
       .from(staffBlockouts).where(and(
         eq(staffBlockouts.tenantId, 1),
-        gte(staffBlockouts.blockoutDate, c.startDate as unknown as Date),
-        lte(staffBlockouts.blockoutDate, c.endDate as unknown as Date),
+        gte(staffBlockouts.blockoutDate, blockoutDateValue(c.startDate)),
+        lte(staffBlockouts.blockoutDate, blockoutDateValue(c.endDate)),
       ));
 
     console.log(`${c.label}  ${c.startDate} -> ${c.endDate}  ("${c.reason}")`);
