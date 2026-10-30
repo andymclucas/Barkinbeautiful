@@ -388,7 +388,7 @@ export default function ClientDetail() {
   const [portalAccountRevokeConfirm, setPortalAccountRevokeConfirm] = useState(false);
   const [contactForm, setContactForm] = useState({ name: "", phone: "", email: "", relationship: "" });
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
-  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", address: "", notes: "", referralSource: "" });
+  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "" });
   const updateClientDetails = trpc.clients.updateDetails.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -957,6 +957,7 @@ export default function ClientDetail() {
                 onClick={() => {
                   setEditDetailsForm({
                     email: client.email ?? "",
+                    phone: client.phone ?? "",
                     address: client.address ?? "",
                     notes: client.notes ?? "",
                     referralSource: client.referralSource ?? "",
@@ -982,6 +983,7 @@ export default function ClientDetail() {
                 onClick={() => {
                   setEditDetailsForm({
                     email: client.email ?? "",
+                    phone: client.phone ?? "",
                     address: client.address ?? "",
                     notes: client.notes ?? "",
                     referralSource: client.referralSource ?? "",
@@ -1002,6 +1004,19 @@ export default function ClientDetail() {
               <div>
                 <Label>Email</Label>
                 <Input value={editDetailsForm.email} onChange={e => setEditDetailsForm(f => ({ ...f, email: e.target.value }))} placeholder="client@example.com" />
+              </div>
+              <div>
+                {/* Until 30/10/2026 there was no way to change this —
+                    anywhere. A number typed wrong at the counter was
+                    permanent, and it is the number the salon rings and
+                    texts. */}
+                <Label>Phone</Label>
+                <Input
+                  inputMode="tel"
+                  value={editDetailsForm.phone}
+                  onChange={e => setEditDetailsForm(f => ({ ...f, phone: e.target.value }))}
+                  placeholder="0431 322 218"
+                />
               </div>
               <div>
                 <Label>Address</Label>

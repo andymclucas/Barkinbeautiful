@@ -1212,6 +1212,34 @@ export default function Calendar() {
     [editAppt, editContacts.data],
   );
 
+  /* Fixing a number that is already on file, which was impossible until
+     30/10/2026: there was addContact and removeContact and nothing in
+     between, and clients.phone had no update path at all. Lauren: "It
+     won't let me edit the phone number."
+
+     Which of the two it saves to depends on who is selected. The first
+     option IS the client, whose number lives on clients.phone; everyone
+     else is a row in client_contacts. */
+  const [editingContactPhone, setEditingContactPhone] = useState<string | null>(null);
+  const selectedContact = editContactOptions.find(
+    (o) => (o.id ?? null) === (editForm.contactId ?? null),
+  );
+  const savedContactPhone = () => {
+    toast.success("Phone number updated");
+    setEditingContactPhone(null);
+    editContacts.refetch();
+    utils.calendar.getAppointments.invalidate();
+  };
+  const updateClientPhone = trpc.clients.updateDetails.useMutation({
+    onSuccess: savedContactPhone,
+    onError: (e) => toast.error(e.message),
+  });
+  const updateContactPhone = trpc.clients.updateContact.useMutation({
+    onSuccess: savedContactPhone,
+    onError: (e) => toast.error(e.message),
+  });
+  const savingContactPhone = updateClientPhone.isPending || updateContactPhone.isPending;
+
   const addClientContact = trpc.clients.addContact.useMutation({
     onSuccess: (created) => {
       toast.success("Contact added");
@@ -4075,6 +4103,70 @@ export default function Calendar() {
                           <SelectItem value="__add__">➕ Add someone else…</SelectItem>
                         </SelectContent>
                       </Select>
+                      {/* Fix a number without leaving the booking. Lauren,
+                          30/10/2026: "It won't let me edit the phone
+                          number." It could not — not here and not on the
+                          client record, which a restricted groomer cannot
+                          open anyway. */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        title={`Edit ${selectedContact?.name ?? "this contact"}'s phone number`}
+                        aria-label="Edit this contact's phone number"
+                        onClick={() => setEditingContactPhone(selectedContact?.phone ?? "")}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                  {editingContactPhone !== null && (
+                    <div className="rounded-md border bg-card p-2 space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        Phone number for <strong>{selectedContact?.name ?? "this contact"}</strong>
+                        {selectedContact?.id === null || selectedContact?.id === undefined
+                          ? " — this is the client's own number, so it changes everywhere."
+                          : " — used for this booking."}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="h-7 text-xs flex-1"
+                          inputMode="tel"
+                          autoFocus
+                          placeholder="0431 322 218"
+                          aria-label="Phone number"
+                          value={editingContactPhone}
+                          onChange={(e) => setEditingContactPhone(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setEditingContactPhone(null); } }}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={savingContactPhone || editingContactPhone.trim().length < 6}
+                          onClick={() => {
+                            const phone = editingContactPhone.trim();
+                            const id = selectedContact?.id ?? null;
+                            if (id === null) {
+                              if (editAppt) updateClientPhone.mutate({ clientId: editAppt.clientId, phone });
+                            } else {
+                              updateContactPhone.mutate({ contactId: id, phone });
+                            }
+                          }}
+                        >
+                          {savingContactPhone ? "Saving…" : "Save"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setEditingContactPhone(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
                     </div>
                   )}
                   {/* Inline, because the "Pickup contacts" form lives on the
