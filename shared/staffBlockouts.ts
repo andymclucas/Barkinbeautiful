@@ -18,7 +18,15 @@
  */
 
 /** The reasons offered when someone blocks out their own calendar. */
-export const BLOCKOUT_REASONS = ["Annual leave", "Personal leave", "Other"] as const;
+export const BLOCKOUT_REASONS = [
+  "Annual leave", "Personal leave",
+  /* Lauren, 30/10/2026: "Also need block out days fully for Xmas break
+     and public holidays." A closed salon is not somebody's leave, and
+     reading it as leave on the roster misattributes a shut shop to a
+     person being away. */
+  "Public holiday", "Salon closed",
+  "Other",
+] as const;
 export type BlockoutReason = (typeof BLOCKOUT_REASONS)[number];
 
 /**
