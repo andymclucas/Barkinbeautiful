@@ -689,6 +689,21 @@ function BlockoutControls() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<BlockoutEditing | null>(null);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeFrom, setCloseFrom] = useState("");
+  const [closeTo, setCloseTo] = useState("");
+  const [closeReason, setCloseReason] = useState("Salon closed");
+  const closeSalon = trpc.staff.closeSalon.useMutation({
+    onSuccess: (r) => {
+      toast.success(
+        `Salon closed for ${r.days} day${r.days === 1 ? "" : "s"}`,
+        { description: `${r.created} blockouts across ${r.staff} staff${r.alreadyBlocked ? ` · ${r.alreadyBlocked} already blocked` : ""}` },
+      );
+      setCloseOpen(false); setCloseFrom(""); setCloseTo("");
+      void refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const activeStaff = (staffList ?? []).filter(s => isActiveStaffValue(s.isActive));
 
@@ -744,14 +759,66 @@ function BlockoutControls() {
             bookings and client reschedules.
           </p>
         </div>
-        <Button
-          size="sm" variant="outline"
-          className="shrink-0 gap-1.5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40"
-          onClick={() => { setEditing(null); setOpen(true); }}
-        >
-          <Plus className="h-4 w-4" /> Block out
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          {/* Lauren, 30/10/2026: "Also need block out days fully for
+              Xmas break and public holidays." A closure is every
+              groomer away at once, which is what staff_blockouts
+              already models — so bookings, the calendar, next
+              available and the capacity dots all honour it without
+              being taught anything new. */}
+          <Button
+            size="sm" variant="outline"
+            className="shrink-0 gap-1.5"
+            onClick={() => setCloseOpen(true)}
+          >
+            <Ban className="h-4 w-4" /> Close the salon
+          </Button>
+          <Button
+            size="sm" variant="outline"
+            className="shrink-0 gap-1.5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40"
+            onClick={() => { setEditing(null); setOpen(true); }}
+          >
+            <Plus className="h-4 w-4" /> Block out
+          </Button>
+        </div>
       </div>
+
+      {closeOpen && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
+          <p className="text-sm font-semibold">Close the salon</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Blocks every active groomer for these days — Christmas, a public holiday, a shutdown.
+            It is refused if any dog is still booked in, so move those first.
+          </p>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <div>
+              <Label htmlFor="close-from" className="text-xs">From</Label>
+              <Input id="close-from" type="date" className="mt-1 h-9" value={closeFrom}
+                onChange={(e) => setCloseFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="close-to" className="text-xs">To</Label>
+              <Input id="close-to" type="date" className="mt-1 h-9" value={closeTo}
+                onChange={(e) => setCloseTo(e.target.value)} />
+            </div>
+            <div className="min-w-[160px]">
+              <Label htmlFor="close-why" className="text-xs">Reason</Label>
+              <select id="close-why" value={closeReason} onChange={(e) => setCloseReason(e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm">
+                <option>Salon closed</option>
+                <option>Public holiday</option>
+              </select>
+            </div>
+            <Button size="sm" disabled={!closeFrom || closeSalon.isPending}
+              onClick={() => closeSalon.mutate({
+                startDate: closeFrom, endDate: closeTo || closeFrom, reason: closeReason,
+              })}>
+              {closeSalon.isPending ? "Closing…" : "Close these days"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setCloseOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
 
       {currentRuns.length === 0 ? (
         <p className="text-sm text-muted-foreground py-2">Nobody is away at the moment.</p>

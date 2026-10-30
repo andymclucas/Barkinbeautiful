@@ -5642,6 +5642,102 @@ const staffRouter = router({
         .orderBy(asc(staffBlockouts.blockoutDate));
     }),
 
+  /**
+   * Shut the whole salon for a run of days.
+   *
+   * Lauren, 30/10/2026: "Also need block out days fully for Xmas break
+   * and public holidays."
+   *
+   * There is no salon-wide closure in the schema and this does not add
+   * one. A closed day is every groomer being unavailable, which
+   * staff_blockouts already models — and because it does, everything
+   * downstream already honours it: bookings are refused, the calendar
+   * draws it, nextAvailable skips the day and the capacity dots read
+   * it as closed rather than full. A new table would have had to be
+   * taught to all four.
+   *
+   * One groupId across every staff member and every day, so the whole
+   * closure can be lifted as the single decision it was.
+   */
+  closeSalon: adminProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      reason: z.string().min(1).max(120).default("Salon closed"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+
+      const endDate = input.endDate ?? input.startDate;
+      const span = rangeLengthInDays(input.startDate, endDate);
+      if (span === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "The last day cannot be before the first day" });
+      if (span > MAX_BLOCKOUT_DAYS) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `That is ${span} days. Closures are limited to ${MAX_BLOCKOUT_DAYS} days at a time.` });
+      }
+      const days = expandDateRange(input.startDate, endDate);
+
+      /* Refuse rather than close over the top of booked dogs. Shutting
+         a day that has clients coming is a decision about those
+         clients, not about the diary, and it is not this button's to
+         make. */
+      const booked = await db.select({
+        day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`,
+        dogs: sql<number>`COUNT(*)`,
+      }).from(appointments).where(and(
+        eq(appointments.tenantId, tenantId),
+        notInArray(appointments.status, ["cancelled", "no_show"]),
+        notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+        gte(appointments.scheduledStart, parseBrisbaneLocalDateTime(`${days[0]}T00:00:00`)),
+        lt(appointments.scheduledStart, parseBrisbaneLocalDateTime(`${days[days.length - 1]}T23:59:59`)),
+      )).groupBy(sql`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`);
+      if (booked.length > 0) {
+        const detail = booked.map((b) => `${b.day} (${b.dogs})`).join(", ");
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `There are dogs booked on ${detail}. Move or cancel them before closing those days.`,
+        });
+      }
+
+      const roster = await db.select({ id: staff.id }).from(staff)
+        .where(and(eq(staff.tenantId, tenantId), eq(staff.isActive, true)));
+      if (roster.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "No active staff to close" });
+
+      const groupId = randomUUID();
+      const existing = await db.select({
+        staffId: staffBlockouts.staffId, blockoutDate: staffBlockouts.blockoutDate,
+      }).from(staffBlockouts).where(and(
+        eq(staffBlockouts.tenantId, tenantId),
+        gte(staffBlockouts.blockoutDate, blockoutDateValue(days[0])),
+        lte(staffBlockouts.blockoutDate, blockoutDateValue(days[days.length - 1])),
+      ));
+      /* Re-running a closure that was half-entered by hand fills the
+         gaps rather than drawing a second set over the done days. */
+      const taken = new Set(existing.map((r) => `${r.staffId}|${blockoutDateKey(r.blockoutDate as Date)}`));
+
+      const rows = [];
+      for (const member of roster) {
+        for (const dateKey of days) {
+          if (taken.has(`${member.id}|${dateKey}`)) continue;
+          rows.push({
+            tenantId, staffId: member.id, blockoutDate: blockoutDateValue(dateKey),
+            isFullDay: true, startTime: null, endTime: null,
+            reason: input.reason, groupId,
+          });
+        }
+      }
+      if (rows.length > 0) await db.insert(staffBlockouts).values(rows);
+
+      return {
+        success: true, groupId,
+        days: days.length, staff: roster.length,
+        created: rows.length,
+        alreadyBlocked: days.length * roster.length - rows.length,
+      };
+    }),
+
   createBlockout: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),

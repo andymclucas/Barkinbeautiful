@@ -122,8 +122,23 @@ describe("whether a blockout stops a booking", () => {
 });
 
 describe("the reasons offered", () => {
-  it("are the three asked for, in order", () => {
-    expect(BLOCKOUT_REASONS).toEqual(["Annual leave", "Personal leave", "Other"]);
+  /**
+   * Was the three originally asked for. Lauren added two on
+   * 30/10/2026: "Also need block out days fully for Xmas break and
+   * public holidays."
+   *
+   * A closed salon is not somebody's leave. Filing Christmas under
+   * "Annual leave" would read on the roster as twelve people each
+   * choosing to be away on the same day.
+   */
+  it("are the five asked for, in order", () => {
+    expect(BLOCKOUT_REASONS).toEqual([
+      "Annual leave", "Personal leave", "Public holiday", "Salon closed", "Other",
+    ]);
+  });
+
+  it("keeps Other last, so the open-ended one is not in the middle", () => {
+    expect(BLOCKOUT_REASONS[BLOCKOUT_REASONS.length - 1]).toBe("Other");
   });
 });
 
