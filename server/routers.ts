@@ -8847,6 +8847,10 @@ const settingsRouter = router({
           phone: tenants.phone,
           email: tenants.email,
           address: tenants.address,
+          /** Printed on invoices. An Australian tax invoice over $82.50
+              must show it, and it lived only inside the service-agreement
+              seed text until 30/10/2026. */
+          abn: tenants.abn,
           logoUrl: tenants.logoUrl,
           brandFont: tenants.brandFont,
           brandPrimary: tenants.brandPrimary,
@@ -8942,6 +8946,9 @@ const settingsRouter = router({
       phone: z.string().optional(),
       email: z.string().optional(),
       address: z.string().optional(),
+      /** Free text: an ABN is 11 digits but is written "50 517 623 260",
+          and this field also has to hold another country's equivalent. */
+      abn: z.string().trim().max(20).optional(),
       /**
        * An absolute URL (an uploaded logo on S3) or a root-relative
        * path (one served from the app itself). The client already
@@ -8964,6 +8971,9 @@ const settingsRouter = router({
         phone: input.phone,
         email: input.email,
         address: input.address,
+        // Empty clears it; the invoice then omits the line rather than
+        // printing a bare "ABN".
+        ...(input.abn === undefined ? {} : { abn: input.abn.trim() || null }),
         logoUrl: input.logoUrl,
         brandFont: input.brandFont,
         brandPrimary: input.brandPrimary,

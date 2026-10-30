@@ -24,6 +24,12 @@ export const tenants = mysqlTable("tenants", {
   phone: varchar("phone", { length: 30 }),
   email: varchar("email", { length: 320 }),
   address: text("address"),
+  /**
+   * Shown on invoices. An Australian tax invoice over $82.50 must carry
+   * the supplier's ABN. Nullable: a salon that has not entered one yet
+   * gets an invoice without the line rather than an empty label.
+   */
+  abn: varchar("abn", { length: 20 }),
   logoUrl: text("logo_url"),
   /**
    * Where a happy client is sent to leave a PUBLIC review — usually a Google
@@ -822,6 +828,16 @@ export const invoices = mysqlTable("invoices", {
   stripeCheckoutUrl: text("stripe_checkout_url"),
   paidAt: timestamp("paid_at"),
   dueAt: timestamp("due_at"),
+  /**
+   * When this invoice was emailed, and where to. `status` has a 'sent'
+   * value that nothing ever wrote, so until now "has the client been
+   * sent their bill?" could only be answered from somebody's sent folder.
+   * The address is kept as well as the time because it is often typed at
+   * the counter, and a bill that went to a typo needs to be visible as
+   * such.
+   */
+  emailedAt: timestamp("emailed_at"),
+  emailedTo: varchar("emailed_to", { length: 320 }),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),

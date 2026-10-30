@@ -1,0 +1,16 @@
+-- When an invoice was emailed, and to what address.
+--
+-- invoices.status already has a 'sent' value that nothing has ever
+-- written, so "has this client been sent their bill?" was unanswerable.
+-- Staff asking that question were reading their own sent folder.
+--
+-- The ADDRESS is recorded, not just the time, because 73% of this
+-- salon's clients have no email on file and the address is often typed
+-- at the counter. Knowing the bill went to a typo'd address is the
+-- whole point; a bare timestamp would say it was sent and leave nobody
+-- able to see where.
+--
+-- Two ADD COLUMNs, one ALTER, one statement: MySQL/TiDB DDL is not
+-- transactional, so splitting them risks the first applying while the
+-- migration goes unrecorded.
+ALTER TABLE `invoices` ADD COLUMN `emailed_at` TIMESTAMP NULL, ADD COLUMN `emailed_to` VARCHAR(320) NULL;

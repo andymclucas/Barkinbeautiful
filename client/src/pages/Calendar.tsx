@@ -122,6 +122,7 @@ import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
 import { getActiveTimeZone } from "@/lib/timezone";
 
 import { PetCodeChips } from "@/components/PetCodeChips";
+import { EmailInvoiceButton } from "@/components/EmailInvoiceButton";
 // ── Constants ────────────────────────────────────────────────────────────────
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7am–7pm (13 rows)
 const HOUR_HEIGHT = 72; // px per hour
@@ -4445,6 +4446,10 @@ export default function Calendar() {
                           ? "Creating..."
                           : allPets.length > 1 ? "Separate Bills" : "Create Bill"}
                       </Button>
+                      {/* Delivery, next to the buttons that raise the bill.
+                          It does not raise one itself — those two run a
+                          duplicate-bill guard this would go round. */}
+                      {editAppt && <EmailInvoiceButton appointmentId={editAppt.id} />}
                       </>
                     );
                   })()}

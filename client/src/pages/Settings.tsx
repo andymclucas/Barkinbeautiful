@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Bell, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck, Clock3, RotateCcw, Star } from "lucide-react";
+import { Building2, Bell, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck, Clock3, RotateCcw, Star, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { applyBrandTheme, readLogoColours, readLogoColoursFromUrl } from "@/lib/brandTheme";
@@ -26,6 +26,10 @@ export default function Settings() {
   // `brand` because it is saved on its own — a salon pasting a review link
   // should not have to press "Save branding".
   const [publicReviewUrl, setPublicReviewUrl] = useState("");
+  /* What goes in the invoice footer. Until 30/10/2026 the ABN and the
+     street address existed only inside the service-agreement seed text,
+     hardcoded, while the saved address read "Brisbane, QLD, Australia". */
+  const [business, setBusiness] = useState({ abn: "", address: "", phone: "", email: "" });
   const [timingScope, setTimingScope] = useState<"default" | "size" | "breed">("default");
   const [timingSize, setTimingSize] = useState("small");
   const [timingBreed, setTimingBreed] = useState("");
@@ -33,6 +37,12 @@ export default function Settings() {
   useEffect(() => {
     if (tenant) setBrand({ primary: tenant.brandPrimary ?? "#d61572", accent: tenant.brandAccent ?? "#f9d4e7", sidebar: tenant.brandSidebar ?? "#2b1830", font: tenant.brandFont ?? "Inter", logoUrl: tenant.logoUrl ?? "" });
     if (tenant) setPublicReviewUrl((tenant as { publicReviewUrl?: string | null }).publicReviewUrl ?? "");
+    if (tenant) setBusiness({
+      abn: (tenant as { abn?: string | null }).abn ?? "",
+      address: tenant.address ?? "",
+      phone: tenant.phone ?? "",
+      email: tenant.email ?? "",
+    });
   }, [tenant]);
   useEffect(() => {
     const scopeKey = timingScope === "default" ? "default" : timingScope === "size" ? `size:${timingSize}` : `breed:${timingBreed.trim().toLocaleLowerCase("en-AU").replace(/\s+/g, " ")}`;
@@ -202,6 +212,76 @@ export default function Settings() {
                   <span className="rounded-lg px-4 py-2 font-semibold" style={{ background: brand.primary }}>Save the look</span>
                 </div>
                 <Button disabled={updateBrand.isPending} onClick={() => updateBrand.mutate({ brandPrimary: brand.primary, brandAccent: brand.accent, brandSidebar: brand.sidebar, brandFont: brand.font as any, logoUrl: brand.logoUrl || undefined })}>{updateBrand.isPending ? "Saving…" : "Save branding"}</Button>
+              </CardContent>
+            </Card>
+
+            <Card className="mt-4">
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Receipt className="h-5 w-5 text-sky-600" /> Business details
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Printed in the footer of every invoice you email. An Australian tax invoice
+                  over $82.50 has to show an ABN.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3 px-4 pb-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="salon-abn">ABN</Label>
+                    <Input
+                      id="salon-abn"
+                      placeholder="50 517 623 260"
+                      value={business.abn}
+                      onChange={(e) => setBusiness((b) => ({ ...b, abn: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="salon-phone">Phone</Label>
+                    <Input
+                      id="salon-phone"
+                      inputMode="tel"
+                      placeholder="07 3823 4567"
+                      value={business.phone}
+                      onChange={(e) => setBusiness((b) => ({ ...b, phone: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="salon-address">Street address</Label>
+                  <Input
+                    id="salon-address"
+                    placeholder="Shop 2/11 Dan Street, Capalaba QLD 4157"
+                    value={business.address}
+                    onChange={(e) => setBusiness((b) => ({ ...b, address: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="salon-email">Email clients reply to</Label>
+                  <Input
+                    id="salon-email"
+                    type="email"
+                    inputMode="email"
+                    placeholder="info@barkinbeautiful.com.au"
+                    value={business.email}
+                    onChange={(e) => setBusiness((b) => ({ ...b, email: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Invoices send from the salon&rsquo;s verified address, but a client pressing
+                    reply reaches this one.
+                  </p>
+                </div>
+                <Button
+                  disabled={updateBrand.isPending}
+                  onClick={() => updateBrand.mutate({
+                    abn: business.abn.trim(),
+                    address: business.address.trim(),
+                    phone: business.phone.trim(),
+                    email: business.email.trim(),
+                  })}
+                >
+                  {updateBrand.isPending ? "Saving…" : "Save business details"}
+                </Button>
               </CardContent>
             </Card>
 

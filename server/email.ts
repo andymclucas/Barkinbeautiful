@@ -13,25 +13,53 @@ const resend = process.env.RESEND_API_KEY
 const FROM_EMAIL =
   process.env.RESEND_FROM_EMAIL ?? "noreply@barkinbeautiful.com.au";
 
+/**
+ * Put a readable name in front of the verified address.
+ *
+ * FROM_EMAIL is `noreply@barkinbeautiful.com.au`, so without this a
+ * client's inbox lists the sender as "noreply". On an invoice that is
+ * actively bad: it reads as automated junk, and it is the one email
+ * where you most want the salon's name in the list.
+ *
+ * The address itself is untouched — it has to stay the domain verified
+ * with Resend. Quotes and backslashes are stripped rather than escaped,
+ * because a salon name is not worth a header-injection argument.
+ */
+function fromHeader(displayName?: string | null): string {
+  const name = (displayName ?? "").replace(/[\r\n"\\<>]/g, "").trim();
+  return name ? `${name} <${FROM_EMAIL}>` : FROM_EMAIL;
+}
+
 export async function sendEmail({
   to,
   subject,
   html,
+  fromName,
+  replyTo,
 }: {
   to: string;
   subject: string;
   html: string;
+  /** Shown instead of "noreply" in the recipient's inbox. */
+  fromName?: string | null;
+  /**
+   * Where a reply goes. Without it a client answering their invoice —
+   * "can I pay Friday?" — writes to noreply@ and nobody ever sees it.
+   */
+  replyTo?: string | null;
 }): Promise<boolean> {
   if (!resend) {
     console.warn("[Email] RESEND_API_KEY not set — email not sent:", subject);
     return false;
   }
   try {
+    const cleanReplyTo = (replyTo ?? "").replace(/[\r\n]/g, "").trim();
     const { error } = await resend.emails.send({
-      from: FROM_EMAIL,
+      from: fromHeader(fromName),
       to,
       subject,
       html,
+      ...(cleanReplyTo ? { replyTo: cleanReplyTo } : {}),
     });
     if (error) {
       console.error("[Email] Resend error:", error);
