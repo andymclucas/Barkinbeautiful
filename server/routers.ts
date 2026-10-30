@@ -1102,15 +1102,19 @@ const calendarRouter = router({
          bookings — so without this the search offered Saturday
          31/10/2026, a day the salon is shut. */
       const WEEKS_OBSERVED = 8;
+      /* Grouped by the select ALIAS — see the note on closeSalon's guard.
+         Drizzle qualifies a column differently in the select list than in
+         the group by, and ONLY_FULL_GROUP_BY rejects the mismatch, so
+         this whole procedure returned a 500 until 30/10/2026. */
       const tradingRows = await db.select({
-        weekday: sql<number>`DAYOFWEEK(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')) - 1`,
-        daysTraded: sql<number>`COUNT(DISTINCT DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')))`,
+        weekday: sql<number>`DAYOFWEEK(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')) - 1`.as("weekday"),
+        daysTraded: sql<number>`COUNT(DISTINCT DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')))`.as("days_traded"),
       }).from(appointments).where(and(
         eq(appointments.tenantId, tenantId),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, new Date(Date.now() - WEEKS_OBSERVED * 7 * 86_400_000)),
         lt(appointments.scheduledStart, new Date()),
-      )).groupBy(sql`DAYOFWEEK(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'))`);
+      )).groupBy(sql`weekday`);
       const trading = tradingWeekdays(
         Object.fromEntries(tradingRows.map((r) => [Number(r.weekday), Number(r.daysTraded)])),
         WEEKS_OBSERVED,
@@ -5683,16 +5687,24 @@ const staffRouter = router({
          a day that has clients coming is a decision about those
          clients, not about the diary, and it is not this button's to
          make. */
+      /* Grouped by the select ALIAS, not by a repeat of the expression.
+         Drizzle renders a column inside a sql`` template WITHOUT the
+         table prefix in the select list and WITH it everywhere else, so
+         the two texts differ and ONLY_FULL_GROUP_BY — which this TiDB
+         has on — rejects the pair outright. Verified against the live
+         database: alias passes, repeated expression passes, and the
+         mismatched pair drizzle actually emits fails with
+         ER_WRONG_FIELD_WITH_GROUP. The hermetic suite cannot see this. */
       const booked = await db.select({
-        day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`,
-        dogs: sql<number>`COUNT(*)`,
+        day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`.as("day"),
+        dogs: sql<number>`COUNT(*)`.as("dogs"),
       }).from(appointments).where(and(
         eq(appointments.tenantId, tenantId),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         notInArray(appointments.workflowState, ["cancelled", "no_show"]),
         gte(appointments.scheduledStart, parseBrisbaneLocalDateTime(`${days[0]}T00:00:00`)),
         lt(appointments.scheduledStart, parseBrisbaneLocalDateTime(`${days[days.length - 1]}T23:59:59`)),
-      )).groupBy(sql`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`);
+      )).groupBy(sql`day`);
       if (booked.length > 0) {
         const detail = booked.map((b) => `${b.day} (${b.dogs})`).join(", ");
         throw new TRPCError({

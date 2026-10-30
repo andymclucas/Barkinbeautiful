@@ -252,6 +252,38 @@ This makes **`pnpm run db:push` unsafe**, because it is `generate && migrate`.
 - If `generate` is ever run by accident it leaves a stray `00NN_*.sql`, a
   `00NN_snapshot.json` and a journal entry. Delete all three.
 
+### `GROUP BY` must name the select ALIAS, never repeat the expression
+
+TiDB runs with `ONLY_FULL_GROUP_BY`. Drizzle renders a column interpolated
+into a ``sql`` `` template **without** the table prefix in the select list and
+**with** it everywhere else, so
+
+```ts
+db.select({ day: sql`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, …))` })
+  .groupBy(sql`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, …))`)
+```
+
+emits `` `scheduled_start` `` in one clause and `` `appointments`.`scheduled_start` ``
+in the other. The texts differ, so MySQL rejects the whole query with
+`ER_WRONG_FIELD_WITH_GROUP` and the procedure returns a 500.
+
+Alias the expression and group by the alias:
+
+```ts
+db.select({ day: sql<string>`…`.as("day"), dogs: sql<number>`COUNT(*)`.as("dogs") })
+  .groupBy(sql`day`)
+```
+
+**The hermetic suite cannot catch this** — it has no database — so a green
+`pnpm test` says nothing about it. On 30/10/2026 both `calendar.nextAvailable`
+and `staff.closeSalon` shipped to production broken this way and threw on
+every call. Grouping by a plain column object is unaffected; `dailyNetSales`
+(`routers.ts` ~8038) dodges it a third way, by writing the qualified column
+name as literal text inside the template.
+
+Any new query that groups by a computed expression should be run **once**
+against the real database before it merges.
+
 ### Always check `__drizzle_migrations` before running `migrate`
 
 `migrate` runs every journal entry whose `when` is newer than the newest
