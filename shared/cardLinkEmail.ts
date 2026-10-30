@@ -7,6 +7,8 @@
  * getAppBaseUrl().
  */
 
+import { isStripeHostedUrl } from "./stripeHostedUrl";
+
 export type CardLinkEmailInput = {
   /** The client's first name. Blank or missing is fine. */
   firstName?: string | null;
@@ -20,16 +22,17 @@ export type CardLinkEmailInput = {
 
 export type BuiltEmail = { subject: string; html: string };
 
-/** Stripe Checkout links are https and live on Stripe's own domains. */
+
+/**
+ * Stripe Checkout links are https and live on Stripe's own domains.
+ *
+ * The check moved to `shared/stripeHostedUrl.ts` when the invoice email
+ * needed the same one. Kept as a named export because this file's own
+ * tests and callers use it, and because "is this an acceptable card
+ * link" reads better at those call sites than the general name.
+ */
 export function isAcceptableCardLink(url: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "https:") return false;
-  return parsed.hostname === "checkout.stripe.com" || parsed.hostname.endsWith(".stripe.com");
+  return isStripeHostedUrl(url);
 }
 
 function escapeHtml(value: string): string {

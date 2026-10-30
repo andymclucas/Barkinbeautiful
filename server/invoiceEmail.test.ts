@@ -244,3 +244,51 @@ describe("allocatePayments", () => {
     expect(allocatePayments([NaN, 90], 90)).toEqual([0, 90]);
   });
 });
+
+/**
+ * A Pay button only on a bill that is owed, only when the link is one
+ * we can vouch for. A receipt with a Pay button reads as a second
+ * demand, and an unverified link in a payment email is a phishing
+ * template somebody else gets to fill in.
+ */
+describe("the pay now button", () => {
+  const STRIPE = "https://checkout.stripe.com/c/pay/cs_live_a1b2c3";
+
+  it("appears on an unpaid invoice and says what it will take", () => {
+    const r = buildInvoiceEmail({ ...base, payUrl: STRIPE });
+    expect(r.hasPayButton).toBe(true);
+    expect(r.html).toContain(STRIPE);
+    expect(r.html).toContain("Pay $150.00 now");
+    expect(r.html).toContain("never sees your card number");
+  });
+
+  it("is absent on a receipt, which is not a demand", () => {
+    const r = buildInvoiceEmail({ ...base, amountPaid: 150, payUrl: STRIPE });
+    expect(r.hasPayButton).toBe(false);
+    expect(r.html).not.toContain(STRIPE);
+  });
+
+  it("is absent when no link was given", () => {
+    expect(buildInvoiceEmail(base).hasPayButton).toBe(false);
+    expect(buildInvoiceEmail({ ...base, payUrl: null }).hasPayButton).toBe(false);
+  });
+
+  /** The invoice still goes out; only the button is dropped. */
+  it("drops a link that is not Stripe's, and still sends the invoice", () => {
+    const r = buildInvoiceEmail({ ...base, payUrl: "https://pay.attacker.net/invoice/1042" });
+    expect(r.hasPayButton).toBe(false);
+    expect(r.html).not.toContain("attacker.net");
+    expect(r.html).toContain("INV-1042");
+    expect(r.html).toContain("$150.00 DUE");
+  });
+
+  it("asks for what is left after a part payment, not the whole bill", () => {
+    const r = buildInvoiceEmail({ ...base, amountPaid: 50, payUrl: STRIPE });
+    expect(r.html).toContain("Pay $100.00 now");
+  });
+
+  it("wears the salon's colour, like the rest of the invoice", () => {
+    expect(buildInvoiceEmail({ ...base, payUrl: STRIPE }).html)
+      .toContain(`background:#e70f76;color:#ffffff`);
+  });
+});

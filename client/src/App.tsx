@@ -57,6 +57,7 @@ const GroomingCard = lazyPage(() => import("./pages/GroomingCard"));
 const ClientPortalLogin = lazyPage(() => import("./pages/ClientPortalLogin"));
 const ClientPortalSetup = lazyPage(() => import("./pages/ClientPortalSetup"));
 const ClientPortalCardResult = lazyPage(() => import("./pages/ClientPortalCardResult"));
+const ClientInvoiceResult = lazyPage(() => import("./pages/ClientInvoiceResult"));
 
 /** Small, immediate visual feedback while a page chunk downloads — never
  * leaves the screen blank, even on a slow connection. */
@@ -126,6 +127,11 @@ function Router() {
       {/* Admin preview of a client's portal. Two segments, so it cannot be
           mistaken for a one-segment access token. */}
       <Route path="/portal/preview/:previewClientId" component={ClientPortal} />
+      {/* Same trap, same rule: these must stay above "/portal/:token", or
+          "invoice-paid" is read as an access token and a client who has
+          just paid is shown an error. */}
+      <Route path="/portal/invoice-paid">{() => <ClientInvoiceResult paid />}</Route>
+      <Route path="/portal/invoice-cancelled">{() => <ClientInvoiceResult paid={false} />}</Route>
       <Route path="/portal/card-saved">{() => <ClientPortalCardResult saved />}</Route>
       <Route path="/portal/card-cancelled">{() => <ClientPortalCardResult saved={false} />}</Route>
       <Route path="/portal/:token" component={ClientPortal} />
