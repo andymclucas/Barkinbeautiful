@@ -2,6 +2,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+
+/**
+ * Typing with no inter-keystroke delay.
+ *
+ * setupUser() schedules each keystroke through real timers.
+ * Under a loaded vitest worker those keystrokes arrive late, the
+ * component has not re-rendered by the time the next assertion runs,
+ * and a test fails on timing rather than on behaviour.
+ *
+ * It bit on 30/10/2026: this file failed twice in full-suite runs — a
+ * DIFFERENT test each time — then passed three runs straight. A suite
+ * that fails at random is worse than a slow one, because CLAUDE.md §7
+ * tells the next person that any failure here is real.
+ *
+ * delay: null dispatches the events synchronously. Nothing these
+ * tests assert changes.
+ */
+const setupUser = () => userEvent.setup({ delay: null });
+
 const createClient = vi.fn();
 const createPet = vi.fn();
 
@@ -45,7 +64,7 @@ describe("NewClientQuickAdd", () => {
   };
 
   it("will not save until it has a name and a dog", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
 
     const save = screen.getByRole("button", { name: /add and book/i });
@@ -63,7 +82,7 @@ describe("NewClientQuickAdd", () => {
   });
 
   it("creates the client, then the dog, and hands both back", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onCreated = vi.fn();
     render(<NewClientQuickAdd onCreated={onCreated} onCancel={vi.fn()} />);
 
@@ -85,7 +104,7 @@ describe("NewClientQuickAdd", () => {
   });
 
   it("trims what was typed", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
 
     await user.type(screen.getByLabelText("First name *"), "  Kim  ");
@@ -100,7 +119,7 @@ describe("NewClientQuickAdd", () => {
   });
 
   it("sends a phone number only when one was given", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
     await fill(user);
     await user.type(screen.getByLabelText("Phone"), "0417767765");
@@ -114,7 +133,7 @@ describe("NewClientQuickAdd", () => {
   it("keeps the client when creating the dog fails", async () => {
     // Deliberate: the client is already saved, so losing them because the
     // pet insert failed would throw away details taken over the phone.
-    const user = userEvent.setup();
+    const user = setupUser();
     const onCreated = vi.fn();
     createPet.mockRejectedValue(new Error("Pet name is required"));
     render(<NewClientQuickAdd onCreated={onCreated} onCancel={vi.fn()} />);
@@ -129,7 +148,7 @@ describe("NewClientQuickAdd", () => {
   });
 
   it("does not create anything when cancelled", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onCancel = vi.fn();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={onCancel} />);
 
@@ -149,7 +168,7 @@ describe("NewClientQuickAdd", () => {
  */
 describe("a family with more than one dog", () => {
   it("adds another dog row on demand", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getAllByTestId("qa-dog")).toHaveLength(1);
     await user.click(screen.getByTestId("qa-add-dog"));
@@ -157,7 +176,7 @@ describe("a family with more than one dog", () => {
   });
 
   it("creates every dog, in the order they were typed", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onCreated = vi.fn();
     createPet.mockReset()
       .mockResolvedValueOnce({ success: true, id: 101 })
@@ -181,7 +200,7 @@ describe("a family with more than one dog", () => {
   });
 
   it("ignores an empty extra row rather than creating a nameless dog", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
     await user.type(screen.getByLabelText("First name *"), "Kim");
     await user.type(screen.getByLabelText("Last name *"), "Dahl");
@@ -192,7 +211,7 @@ describe("a family with more than one dog", () => {
   });
 
   it("lets a row be removed again", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
     await user.click(screen.getByTestId("qa-add-dog"));
     await user.click(screen.getByLabelText("Remove dog 2"));
@@ -209,7 +228,7 @@ describe("breed", () => {
   it("is asked for, and sent", async () => {
     // It was omitted on purpose and the omission was wrong: breed is
     // asked on the phone anyway, so not capturing it means typing twice.
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
     await user.type(screen.getByLabelText("First name *"), "Kim");
     await user.type(screen.getByLabelText("Last name *"), "Dahl");
@@ -221,7 +240,7 @@ describe("breed", () => {
   });
 
   it("is left out of the payload when blank", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
     await user.type(screen.getByLabelText("First name *"), "Kim");
     await user.type(screen.getByLabelText("Last name *"), "Dahl");
@@ -236,7 +255,7 @@ describe("the name handed back", () => {
     // Without it the booking dialog showed "Client #420002": the picker
     // looks names up in a SEARCH query, and a client created a second
     // ago is not in those results.
-    const user = userEvent.setup();
+    const user = setupUser();
     const onCreated = vi.fn();
     render(<NewClientQuickAdd onCreated={onCreated} onCancel={vi.fn()} />);
     await user.type(screen.getByLabelText("First name *"), "Kim");
