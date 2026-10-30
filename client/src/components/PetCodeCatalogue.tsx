@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Plus, Pencil, Trash2, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { readableTextOn } from "@shared/readableTextOn";
+import { InlineEmojiPicker } from "@/components/InlineEmojiPicker";
 
 /**
  * The salon's pet-code vocabulary, managed here.
@@ -46,6 +47,10 @@ export function PetCodeCatalogue() {
   const list = trpc.petCodes.list.useQuery({});
   const rows = (list.data ?? []) as CodeRow[];
   const [editor, setEditor] = useState<{ record: CodeRow | null; form: FormState } | null>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+  /* Which emoji THIS salon already uses, so the picker opens on the
+     ones its own board is written in rather than on a generic row. */
+  const codesInUse = rows.map((r) => r.code);
 
   const refresh = () => utils.petCodes.list.invalidate();
   const create = trpc.petCodes.create.useMutation({
@@ -155,11 +160,25 @@ export function PetCodeCatalogue() {
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <Label>Code</Label>
-                <Input
-                  value={editor.form.code}
-                  onChange={(e) => setEditor((c) => c && { ...c, form: { ...c.form, code: e.target.value } })}
-                  placeholder="SENSITIVE"
-                />
+                {/* The code itself is often an emoji here — 💊, 💥, 📢 and
+                    fourteen others are live in the catalogue — so the picker
+                    belongs on this field rather than on the description. */}
+                <div className="flex flex-wrap items-start gap-2">
+                  <Input
+                    ref={codeRef}
+                    className="flex-1"
+                    value={editor.form.code}
+                    onChange={(e) => setEditor((c) => c && { ...c, form: { ...c.form, code: e.target.value } })}
+                    placeholder="SENSITIVE"
+                  />
+                  <InlineEmojiPicker
+                    value={editor.form.code}
+                    onChange={(code) => setEditor((c) => c && { ...c, form: { ...c.form, code } })}
+                    inputRef={codeRef}
+                    recentFrom={codesInUse}
+                    label="Insert an emoji into the code"
+                  />
+                </div>
                 {renaming && editor.record && editor.record.dogsUsing > 0 && (
                   <p className="text-xs font-medium text-amber-700 dark:text-amber-300" data-testid="rename-warning">
                     Renaming will update this code on {editor.record.dogsUsing} dog

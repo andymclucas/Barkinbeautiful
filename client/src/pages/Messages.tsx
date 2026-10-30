@@ -27,6 +27,7 @@ const MAX_THREAD_LIMIT = 500;
 import { MessageSquare, Send, Phone, CheckCircle2, XCircle, Clock, Search, RefreshCw, Trash2, PhoneMissed, X, Mic, ChevronDown, ChevronUp, Star, Loader2, RotateCcw } from "lucide-react";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { EmojiPicker } from "@/components/EmojiPicker";
+import { insertAtCaret } from "@shared/emojiPalette";
 import { calculateSmsCost } from "@shared/smsSegments";
 import { ClientLink } from "@/components/RecordLink";
 import { MessageThread, contactColour, contactInitials } from "@/components/MessageThread";
@@ -67,17 +68,18 @@ export default function Messages() {
   const insertAtCursor = useCallback((emoji: string) => {
     const el = composerRef.current;
     setCustomBody((body) => {
-      if (!el) return body + emoji;
-      const start = el.selectionStart ?? body.length;
-      const end = el.selectionEnd ?? start;
-      const next = body.slice(0, start) + emoji + body.slice(end);
+      // The slicing lives in shared/emojiPalette.ts, where it is unit
+      // tested — the pet-code picker needs exactly the same maths and
+      // two copies of it would drift.
+      const { value, caret } = insertAtCaret(
+        body, emoji, el?.selectionStart ?? null, el?.selectionEnd ?? null,
+      );
       // Restore the caret after React has re-rendered with the new value.
-      requestAnimationFrame(() => {
+      if (el) requestAnimationFrame(() => {
         el.focus();
-        const pos = start + emoji.length;
-        try { el.setSelectionRange(pos, pos); } catch { /* detached */ }
+        try { el.setSelectionRange(caret, caret); } catch { /* detached */ }
       });
-      return next;
+      return value;
     });
   }, []);
 
