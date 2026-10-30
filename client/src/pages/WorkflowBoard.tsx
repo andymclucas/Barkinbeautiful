@@ -3,7 +3,7 @@ import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
 import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCascade";
 import { trpc } from "@/lib/trpc";
 import { splitDaycare } from "@shared/daycareBoard";
-import { useBuildVersionReload } from "@/hooks/useBuildVersionReload";
+import { useBuildVersionReload, buildReloadMode } from "@/hooks/useBuildVersionReload";
 import { DaycareBoardSection } from "@/components/DaycareBoardSection";
 import { useTimezone } from "@/lib/timezone";
 import { dayInZone, timeOfDayInZone } from "@shared/calendarDay";
@@ -47,9 +47,23 @@ export default function WorkflowBoard() {
    * so it goes just as stale as the wall display did — but staff type
    * into it, so it says so rather than reloading under them.
    */
+  const [tvMode, setTvMode] = useState(false);
   const [newBuildAvailable, setNewBuildAvailable] = useState(false);
+  /**
+   * TV mode reloads itself; the staff board asks first.
+   *
+   * It used to ask in both. But TV mode is an early return with its
+   * own JSX and the "running an old version" banner lives in the other
+   * branch, so the wall screen was notified into a void — it never
+   * reloaded and nothing ever said so. Andy, 30/10/2026, sent a photo
+   * of the TV showing a collect-by badge in a format this codebase no
+   * longer produces.
+   *
+   * Safe because TV mode renders the table readOnly: nobody is typing
+   * into it, which is the whole reason the staff board only notifies.
+   */
   useBuildVersionReload({
-    mode: "notify",
+    mode: buildReloadMode(tvMode),
     onNewBuild: useCallback(() => setNewBuildAvailable(true), []),
   });
   const [location, navigate] = useLocation();
@@ -72,7 +86,6 @@ export default function WorkflowBoard() {
     if (reviewDate && /^\d{4}-\d{2}-\d{2}$/.test(reviewDate)) return reviewDate;
     return dayInZone(Date.now(), salonTimezone) ?? new Date().toISOString().slice(0, 10);
   });
-  const [tvMode, setTvMode] = useState(false);
 
   // Shared with the standalone TV display page, so a device keeps one choice
   // across both. Light by default — staff asked for the white background.
