@@ -60,6 +60,24 @@ export function SessionDogCounts({
     <div className={`flex flex-wrap items-stretch gap-2 ${className}`}>
       <Half label="Morning" value={counts.morning} tone="morning" hint={`before ${split}`} />
       <Half label="Afternoon" value={counts.afternoon} tone="afternoon" hint={`${split} on`} />
+      {/* Said out loud rather than left as a silent gap. These halves
+          count dogs who are COMING, so they no longer add up to the
+          "N appointments" beside them — and two numbers that disagree
+          with no explanation is how somebody decides one is broken. */}
+      {counts.excluded > 0 && (
+        <div
+          data-testid="session-count-excluded"
+          className="flex min-w-0 items-baseline gap-2 rounded-lg border border-dashed px-3 py-1.5"
+          title="Cancelled and no-show dogs still show on the board, but are not counted as work."
+        >
+          <span className="text-2xl font-bold leading-none tabular-nums text-muted-foreground">
+            {counts.excluded}
+          </span>
+          <span className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Not coming
+          </span>
+        </div>
+      )}
       {/* Only when there is one. A dog whose time cannot be read belongs
           to neither session, and folding it into one would overstate
           that half — but it must not simply vanish from the day. */}

@@ -17,6 +17,8 @@
  * CLAUDE.md §6), so the constant lives here in ONE place until then
  * rather than being spelled into the calendar.
  */
+import { isDeadAppointment } from "./calendarSummary";
+
 export const AFTERNOON_SESSION_START = { hour: 11, minute: 30 } as const;
 
 export const AFTERNOON_SESSION_LABEL = "Afternoon";
@@ -68,6 +70,9 @@ export type SessionDividerRow = {
   id: number;
   scheduledStart: Date | string | number;
   petFamilyGroupId?: number | null;
+  /** Both are read, because they are written independently. Absent is fine. */
+  status?: string | null;
+  workflowState?: string | null;
 };
 
 /**
@@ -142,15 +147,42 @@ export function afternoonSessionRowIndex(
  * A dog with an unreadable time is not evidence about either session,
  * and silently adding it to one would overstate that half.
  */
+/**
+ * How many DOGS are in each half of the day.
+ *
+ * Dogs, not bookings. Appointments are stored one row per dog, so a
+ * family booking of two is two here and the Mcconnons' booking of four
+ * is four. That is the number Lauren is after: "27 this morning" has to
+ * mean twenty-seven dogs through the bath, not twenty-seven cars in the
+ * car park.
+ *
+ * **Cancelled and no-show dogs are excluded.** They still render on the
+ * board — staff want to see that a slot came free — but they are not
+ * work, and counting them inflated the morning by every dog who was not
+ * coming. On 30/10/2026 the header read 38 where 36 dogs were due.
+ *
+ * `total` is therefore the dogs actually expected, and
+ * `morning + afternoon + unknown === total`. `excluded` reports how many
+ * were dropped, so a caller can say "38 booked, 2 cancelled" rather than
+ * quietly disagreeing with a number printed next to it.
+ */
 export function sessionDogCounts(
   rows: readonly SessionDividerRow[],
   opts: SessionOpts = {},
-): { morning: number; afternoon: number; unknown: number; total: number } {
-  const sessions = sessionOf(rows, opts);
+): { morning: number; afternoon: number; unknown: number; total: number; excluded: number } {
+  /* The same rule the sidebar totals use, imported rather than
+     restated — two copies of "which dogs are not coming" is exactly
+     the kind of duplication that drifts and leaves two numbers on one
+     screen disagreeing. */
+  const live = rows.filter((r) => !isDeadAppointment(r));
+  const sessions = sessionOf(live, opts);
   return {
     morning: sessions.filter((s) => s === "morning").length,
     afternoon: sessions.filter((s) => s === "afternoon").length,
     unknown: sessions.filter((s) => s === "unknown").length,
-    total: rows.length,
+    total: live.length,
+    excluded: rows.length - live.length,
   };
 }
+
+
