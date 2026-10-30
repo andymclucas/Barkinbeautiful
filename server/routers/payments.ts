@@ -24,7 +24,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { router, operationalProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointmentAddOns, appointmentPayments, appointments, clients, pets } from "../../drizzle/schema";
-import { billableTotalsByAppointment, addOnsTotal, isUsableBilledOverride } from "@shared/appointmentAddOns";
+import { billableTotalsByAppointment, addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import {
   PAYMENT_METHODS,
@@ -73,6 +73,12 @@ export interface BookingAppointmentPayments {
   outstanding: number | null;
   status: "unpaid" | "partial" | "paid" | null;
   overpaid: boolean;
+  /**
+   * Cancelled or a no-show: still listed, so a payment already taken
+   * against it stays visible and refundable, but owing nothing and out
+   * of the booking total.
+   */
+  cancelled: boolean;
   lines: BookingPaymentLine[];
 }
 
@@ -191,6 +197,10 @@ async function loadBillableTotals(db: any, appointmentIds: number[]) {
       id: appointments.id,
       price: appointments.price,
       billedTotalOverride: appointments.billedTotalOverride,
+      /* A cancelled dog is still on the panel — so a payment already
+         taken against it stays visible — but owes nothing. */
+      status: appointments.status,
+      workflowState: appointments.workflowState,
     })
     .from(appointments)
     .where(inArray(appointments.id, appointmentIds));
@@ -211,7 +221,13 @@ async function loadBillableTotals(db: any, appointmentIds: number[]) {
     .from(appointmentAddOns)
     .where(inArray(appointmentAddOns.appointmentId, appointmentIds));
 
-  return billableTotalsByAppointment(rows, addOns);
+  const totals = billableTotalsByAppointment(rows, addOns);
+  /* null is the existing "not part of the total" signal — see the
+     comment on billableTotal. A cancelled dog takes it too. */
+  for (const row of rows as any[]) {
+    if (!countsTowardBooking(row)) totals.set(row.id, null);
+  }
+  return totals;
 }
 
 /**
@@ -317,6 +333,10 @@ export const paymentsRouter = router({
           billedTotalOverride: breakdown.get(row.id)?.billedTotalOverride ?? null,
           billedOverrideReason: breakdown.get(row.id)?.billedOverrideReason ?? null,
           ...summarisePayments(totals.get(row.id) ?? null, own),
+          /* So the panel can say "cancelled" rather than leaving a dog
+             looking merely unpriced. Jen Cardaci's Freddie died; the
+             screen should not imply somebody forgot to price him. */
+          cancelled: !countsTowardBooking(row),
           lines: own,
         };
       });
@@ -324,10 +344,14 @@ export const paymentsRouter = router({
       // The booking total ignores dogs with no price rather than counting them
       // as free: a missing price is unknown, and adding it as zero would show
       // a balance of nothing owing on a booking nobody has priced yet.
-      const priced = perAppointment.filter((a) => a.total !== null);
+      //
+      // A cancelled dog is not "unpriced" — it is settled at nothing — so it
+      // is kept out of that warning as well as out of the total.
+      const counted = perAppointment.filter((a) => !a.cancelled);
+      const priced = counted.filter((a) => a.total !== null);
       return {
         appointments: perAppointment,
-        anyUnpriced: priced.length !== perAppointment.length,
+        anyUnpriced: priced.length !== counted.length,
         bookingTotal: priced.reduce((sum, a) => sum + (a.total ?? 0), 0),
         bookingPaid: perAppointment.reduce((sum, a) => sum + a.paid, 0),
         bookingOutstanding: priced.reduce((sum, a) => sum + (a.outstanding ?? 0), 0),

@@ -11,6 +11,7 @@ import {
   isUsableBilledOverride,
   addOnTargets,
   describeAddOnWrite,
+  countsTowardBooking,
 } from "@shared/appointmentAddOns";
 
 describe("money arrives as decimal strings and must stay exact", () => {
@@ -522,5 +523,42 @@ describe("a discounted extra must not still be billed", () => {
   /** An override still wins — "this one is on us" is somebody's decision. */
   it("lets a typed total override a discounted line", () => {
     expect(billableTotal("0.00", [RUBY], "15.00")).toBe("15.00");
+  });
+});
+
+describe("a cancelled dog must not be billed", () => {
+  /**
+   * Jen Cardaci, 30/10/2026. Freddie died and was marked departed a
+   * fortnight earlier; his appointment was duly cancelled. The payment
+   * panel still asked for his $163 inside a $371 booking total, and
+   * Lauren was about to zero him by hand.
+   *
+   * Nothing here is specific to a dog that has died — ANY cancelled dog
+   * on a multi-dog booking was being charged for.
+   */
+  it("drops a cancelled dog from what is owed", () => {
+    expect(countsTowardBooking({ status: "cancelled", workflowState: "cancelled" })).toBe(false);
+  });
+
+  it("drops a no-show too", () => {
+    expect(countsTowardBooking({ status: "no_show", workflowState: "scheduled" })).toBe(false);
+    expect(countsTowardBooking({ status: "confirmed", workflowState: "no_show" })).toBe(false);
+  });
+
+  /** Either column alone is enough — a half-set row is still cancelled. */
+  it("believes whichever column says so", () => {
+    expect(countsTowardBooking({ status: "cancelled", workflowState: null })).toBe(false);
+    expect(countsTowardBooking({ status: null, workflowState: "cancelled" })).toBe(false);
+  });
+
+  it("keeps every dog that is actually coming", () => {
+    for (const state of ["scheduled", "checked_in", "bathing", "grooming", "ready", "complete"]) {
+      expect(countsTowardBooking({ status: "confirmed", workflowState: state }), state).toBe(true);
+    }
+  });
+
+  it("counts a dog whose state is not set yet", () => {
+    expect(countsTowardBooking({})).toBe(true);
+    expect(countsTowardBooking({ status: null, workflowState: null })).toBe(true);
   });
 });
