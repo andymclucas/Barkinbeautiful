@@ -320,3 +320,30 @@ export function describeAddOnWrite(opts: {
   if (succeeded === attempted) return `${name} added to ${attempted} dogs`;
   return `${name} added to ${succeeded} of ${attempted} dogs`;
 }
+
+
+/**
+ * Whether a dog on a booking should contribute to what is owed.
+ *
+ * No, once it has been cancelled or marked a no-show. The row stays on
+ * the panel so a payment already taken against it is still visible and
+ * refundable — it simply stops being charged for.
+ *
+ * Lauren, 30/10/2026: Jen Cardaci's Freddie died and was marked
+ * departed a fortnight ago. His 30/10 appointment was duly cancelled,
+ * and the payment panel still asked for his $163 inside a $371
+ * booking total. She was about to zero him by hand.
+ *
+ * Nothing about this is specific to a dog that has died. ANY cancelled
+ * dog on a multi-dog booking was being billed; a bereaved client is
+ * just the worst way to find that out.
+ */
+export function countsTowardBooking(appointment: {
+  status?: string | null;
+  workflowState?: string | null;
+}): boolean {
+  const terminal = new Set(["cancelled", "no_show"]);
+  if (appointment.status && terminal.has(appointment.status)) return false;
+  if (appointment.workflowState && terminal.has(appointment.workflowState)) return false;
+  return true;
+}
