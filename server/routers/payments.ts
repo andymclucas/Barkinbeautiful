@@ -14,16 +14,28 @@
  * so it can never disagree with the money. The arithmetic itself is in
  * shared/splitPayments.ts and unit-tested there.
  *
- * Everything here is `operationalProcedure`: taking payment is a salon-floor
- * job, so a receptionist or groomer on a restricted staff account must be
- * able to do it. Every procedure therefore re-checks appointment access - the
- * procedure type only proves the caller is signed in.
+ * Taking payment is `operationalProcedure`: it is a salon-floor job, so a
+ * receptionist or groomer on a restricted staff account must be able to do
+ * it. Those procedures therefore re-check appointment access - the procedure
+ * type only proves the caller is signed in.
+ *
+ * EMAILING the invoice is `protectedProcedure`, which rejects restricted
+ * staff. Sending a client their bill is a front-desk and owner job, not
+ * something a groomer confined to their own dogs should be able to do: it
+ * leaves the building, it cannot be unsent, and it can change a client's
+ * saved email address on the way past.
  */
 import { z } from "zod";
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { router, operationalProcedure } from "../_core/trpc";
+import { TRPCError } from "@trpc/server";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { router, operationalProcedure, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
-import { appointmentAddOns, appointmentPayments, appointments, clients, pets } from "../../drizzle/schema";
+import {
+  appointmentAddOns, appointmentPayments, appointments, clients, pets,
+  invoices, invoiceAppointments, invoiceLineItems, tenants,
+} from "../../drizzle/schema";
+import { sendEmail } from "../email";
+import { buildInvoiceEmail, type InvoiceEmailLine } from "@shared/invoiceEmail";
 import { billableTotalsByAppointment, addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import {
@@ -292,6 +304,110 @@ async function loadBillingBreakdown(db: any, appointmentIds: number[]) {
   return breakdown;
 }
 
+
+/* ── Emailing the invoice ─────────────────────────────────────────────
+ *
+ * Lauren, 30/10/2026: "This customer - I email the invoice to usually."
+ *
+ * Deliberately does NOT raise an invoice. The edit dialog already has
+ * Create Bill and One Bill for All, and those run a duplicate-bill
+ * guard (countInvoicesCovering) that a side-effect raise here would go
+ * round. Emailing is delivery; raising is billing. If there is no bill
+ * yet, this says so and names the button.
+ */
+
+/** A date in the SALON's timezone, not the server's or the reader's. */
+function formatSalonDate(instant: Date | null | undefined, timeZone: string): string {
+  if (!instant) return "";
+  try {
+    return new Intl.DateTimeFormat("en-AU", {
+      timeZone, day: "numeric", month: "long", year: "numeric",
+    }).format(instant);
+  } catch {
+    // An unknown timezone must not stop a bill going out.
+    return new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "long", year: "numeric" }).format(instant);
+  }
+}
+
+/**
+ * EVERY invoice covering this booking, however it was linked.
+ *
+ * Two link paths exist and both are live: an auto-raised single invoice
+ * sets only `invoices.appointment_id`, while a combined household bill
+ * leaves that NULL and links through `invoice_appointments`. Reading
+ * one and not the other silently misses half the bills. 13,051 of this
+ * salon's invoices are in fact linked BOTH ways, so the join also has
+ * to be deduplicated by invoice id.
+ *
+ * Plural, not singular, because "Separate Bills" raises one invoice PER
+ * DOG. Taking the first of those and calling it "the" invoice would
+ * email one dog's bill, mark it sent, and leave the other owing with
+ * nothing on screen to say so.
+ */
+async function findBookingInvoices(db: any, tenantId: number, appointmentIds: number[]) {
+  if (appointmentIds.length === 0) return [];
+  const rows = await db
+    .select({
+      id: invoices.id,
+      invoiceNumber: invoices.invoiceNumber,
+      clientId: invoices.clientId,
+      total: invoices.total,
+      status: invoices.status,
+      dueAt: invoices.dueAt,
+      createdAt: invoices.createdAt,
+      emailedAt: invoices.emailedAt,
+      emailedTo: invoices.emailedTo,
+    })
+    .from(invoices)
+    .leftJoin(invoiceAppointments, eq(invoiceAppointments.invoiceId, invoices.id))
+    .where(and(
+      eq(invoices.tenantId, tenantId),
+      sql`${invoices.status} <> 'cancelled'`,
+      or(
+        inArray(invoices.appointmentId, appointmentIds),
+        inArray(invoiceAppointments.appointmentId, appointmentIds),
+      ),
+    ))
+    .orderBy(asc(invoices.id));
+
+  const seen = new Set<number>();
+  return rows.filter((r: any) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
+}
+
+/** Everything the email needs, gathered once so the query and the send agree. */
+async function gatherInvoiceEmail(db: any, tenantId: number, appointmentId: number) {
+  const { appointment, rows } = await loadBookingAppointments(db, appointmentId);
+  const ids = rows.map((r: any) => r.id);
+
+  const bookingInvoices = await findBookingInvoices(db, tenantId, ids);
+  const invoice = bookingInvoices[0] ?? null;
+  const [client] = await db
+    .select({
+      id: clients.id,
+      firstName: clients.firstName,
+      lastName: clients.lastName,
+      email: clients.email,
+    })
+    .from(clients)
+    .where(eq(clients.id, appointment.clientId))
+    .limit(1);
+
+  const [salon] = await db
+    .select({
+      name: tenants.name, abn: tenants.abn, address: tenants.address,
+      phone: tenants.phone, email: tenants.email, timezone: tenants.timezone,
+      brandPrimary: tenants.brandPrimary, brandAccent: tenants.brandAccent,
+    })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1);
+
+  const paymentLines = await loadLines(db, ids);
+  const paid = paymentLines.reduce((sum: number, p: any) => sum + Number(p.amount ?? 0), 0);
+
+  return { appointment, rows, ids, invoice, bookingInvoices, client, salon, paid };
+}
+
 export const paymentsRouter = router({
   /**
    * Everything the payment panel needs for one booking: each dog with what it
@@ -493,6 +609,215 @@ export const paymentsRouter = router({
 
       const status = await refreshPaymentStatus(db, appointment.id);
       return { id: Number((result as any).insertId), amount: check.amount, paymentStatus: status };
+    }),
+
+
+  /**
+   * What the "Email invoice" confirmation box needs to tell the truth:
+   * which address it would go to, whether there IS one, what the bill
+   * comes to, and whether it has already been sent.
+   *
+   * It never sends. Staff see the address before they commit — 73% of
+   * this salon's clients have no email on file, so "is there one?" is
+   * the common question, not the rare one.
+   */
+  invoiceEmailTarget: protectedProcedure
+    .input(z.object({ tenantId: z.number().optional(), appointmentId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+
+      const { invoice, bookingInvoices, client, paid } =
+        await gatherInvoiceEmail(db, tenantId, input.appointmentId);
+      const name = [client?.firstName, client?.lastName].filter(Boolean).join(" ").trim();
+      const email = (client?.email ?? "").trim();
+
+      if (!invoice) {
+        return {
+          ready: false as const,
+          reason: "no-invoice" as const,
+          clientId: client?.id ?? null,
+          clientName: name || null,
+          email: email || null,
+        };
+      }
+
+      const total = Number(invoice.total ?? 0);
+      const dueCents = Math.max(0, Math.round(total * 100) - Math.round(paid * 100));
+
+      return {
+        ready: true as const,
+        reason: null,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        clientId: client?.id ?? null,
+        clientName: name || null,
+        /** Null means nothing is on file and the box must ask for one. */
+        email: email || null,
+        total,
+        amountPaid: paid,
+        amountDue: dueCents / 100,
+        paidInFull: dueCents === 0 && total > 0,
+        emailedAt: invoice.emailedAt ?? null,
+        emailedTo: invoice.emailedTo ?? null,
+        /* "Separate Bills" raises one per dog. The box has to say so,
+           or staff send one and believe they sent them all. */
+        invoiceCount: bookingInvoices.length,
+        invoiceNumbers: bookingInvoices.map((i: any) => i.invoiceNumber),
+      };
+    }),
+
+  /**
+   * Send it.
+   *
+   * `email` is only needed when the client has none saved; passing one
+   * for a client who does have an address overrides it for this send.
+   * `saveToClient` writes it back, which is how the gap actually
+   * closes — without it the same address is retyped every visit.
+   */
+  emailInvoice: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().optional(),
+      appointmentId: z.number(),
+      email: z.string().trim().email("That does not look like an email address").optional(),
+      saveToClient: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+
+      const { invoice, bookingInvoices, client, salon, paid, ids } =
+        await gatherInvoiceEmail(db, tenantId, input.appointmentId);
+
+      if (!invoice) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "There is no bill for this booking yet. Create one first, then email it.",
+        });
+      }
+
+      const recipient = (input.email ?? client?.email ?? "").trim();
+      if (!recipient) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This client has no email address. Add one to send the invoice.",
+        });
+      }
+
+      const tz = salon?.timezone ?? "Australia/Brisbane";
+      const [firstAppointment] = await db
+        .select({ scheduledStart: appointments.scheduledStart })
+        .from(appointments)
+        .where(inArray(appointments.id, ids))
+        .orderBy(asc(appointments.scheduledStart))
+        .limit(1);
+      const servicedOn = formatSalonDate(firstAppointment?.scheduledStart, tz) || null;
+      const clientName = [client?.firstName, client?.lastName].filter(Boolean).join(" ") || null;
+
+      /* Every bill covering this booking, not just the first.
+         "Separate Bills" raises one per dog, and sending one while
+         marking the job done is how the second dog goes unbilled. */
+      const results: { invoiceNumber: string; paidInFull: boolean; amountDue: number }[] = [];
+      for (const [index, bill] of bookingInvoices.entries()) {
+        /* The lines as billed, not recomputed. An invoice is a record of
+           what was charged; rebuilding it from today's prices would mail
+           a different document to the one in the ledger. */
+        const stored = await db
+          .select({
+            description: invoiceLineItems.description,
+            quantity: invoiceLineItems.quantity,
+            lineTotal: invoiceLineItems.lineTotal,
+          })
+          .from(invoiceLineItems)
+          .where(eq(invoiceLineItems.invoiceId, bill.id));
+
+        const lines: InvoiceEmailLine[] = stored.map((l: any) => ({
+          description: String(l.description ?? "Grooming"),
+          quantity: Number(l.quantity ?? 1),
+          amount: Number(l.lineTotal ?? 0),
+        }));
+
+        /* Payments are recorded against the BOOKING, not against an
+           individual bill, so they can only be set against the total
+           once. Applying them to each of two separate bills would show
+           the same money twice and report both as paid. */
+        const built = buildInvoiceEmail({
+          salon: {
+            name: salon?.name ?? "",
+            abn: salon?.abn ?? null,
+            address: salon?.address ?? null,
+            phone: salon?.phone ?? null,
+            email: salon?.email ?? null,
+            brandPrimary: salon?.brandPrimary ?? null,
+            brandAccent: salon?.brandAccent ?? null,
+          },
+          clientName,
+          invoiceNumber: bill.invoiceNumber,
+          issuedOn: formatSalonDate(bill.createdAt ?? new Date(), tz),
+          dueOn: formatSalonDate(bill.dueAt, tz) || null,
+          serviceOn: servicedOn,
+          lines,
+          total: Number(bill.total ?? 0),
+          amountPaid: index === 0 ? paid : 0,
+        });
+
+        const sent = await sendEmail({
+          to: recipient,
+          subject: built.subject,
+          html: built.html,
+          // The salon's name, not "noreply", and replies reach a person.
+          fromName: salon?.name ?? null,
+          replyTo: salon?.email ?? null,
+        });
+
+        /* sendEmail never throws and returns false when Resend is not
+           configured or rejects. Recording a send that did not happen
+           would be worse than not recording one that did: staff would
+           stop chasing a bill nobody ever received.
+
+           On a multi-bill booking this stops at the first failure and
+           reports how many did go, rather than claiming all of them. */
+        if (!sent) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: results.length === 0
+              ? "The invoice could not be sent. Nothing was recorded — try again."
+              : `Sent ${results.length} of ${bookingInvoices.length}, then ${bill.invoiceNumber} failed. Only the sent ones were recorded.`,
+          });
+        }
+
+        await db.update(invoices)
+          .set({ emailedAt: new Date(), emailedTo: recipient })
+          .where(and(eq(invoices.id, bill.id), eq(invoices.tenantId, tenantId)));
+
+        results.push({
+          invoiceNumber: bill.invoiceNumber,
+          paidInFull: built.paidInFull,
+          amountDue: built.amountDue,
+        });
+      }
+
+      let savedToClient = false;
+      if (input.saveToClient && client?.id && recipient !== (client.email ?? "").trim()) {
+        await db.update(clients)
+          .set({ email: recipient })
+          .where(and(eq(clients.id, client.id), eq(clients.tenantId, tenantId)));
+        savedToClient = true;
+      }
+
+      return {
+        success: true,
+        sentTo: recipient,
+        savedToClient,
+        sentCount: results.length,
+        invoiceNumber: results.map((r) => r.invoiceNumber).join(", "),
+        paidInFull: results.every((r) => r.paidInFull),
+        amountDue: results.reduce((sum, r) => sum + r.amountDue, 0),
+      };
     }),
 
   remove: operationalProcedure

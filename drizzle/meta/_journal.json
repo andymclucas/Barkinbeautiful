@@ -1044,6 +1044,20 @@
       "when": 1793317139353,
       "tag": "0148_staff_daily_bath_capacity",
       "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "5",
+      "when": 1793329883780,
+      "tag": "0149_tenant_abn",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "5",
+      "when": 1793329883781,
+      "tag": "0150_invoice_emailed",
+      "breakpoints": true
     }
   ]
 }

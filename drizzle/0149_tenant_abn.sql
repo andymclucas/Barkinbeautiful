@@ -1,0 +1,11 @@
+-- An Australian tax invoice over $82.50 must show the supplier's ABN.
+--
+-- Barkin' Beautiful's ABN and its real street address existed only
+-- inside the service-agreement body text (server/seed/agreementBodies.ts),
+-- hardcoded, while tenants.address said "Brisbane, QLD, Australia".
+-- Neither is editable and neither can appear on another salon's invoice.
+--
+-- Nullable with no default: a salon that has not entered one yet keeps
+-- working, and the invoice simply omits the line rather than printing
+-- an empty label.
+ALTER TABLE `tenants` ADD COLUMN `abn` VARCHAR(20) NULL;
