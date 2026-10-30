@@ -140,16 +140,49 @@ function DialogContent({
         onEscapeKeyDown={handleEscapeKeyDown}
         {...props}
       >
-        {children}
+        {/*
+          STICKY, not absolute.
+
+          Andy, 30/10/2026: "When scrolling down the appt card, ensure the
+          'X' always is in the top right corner so it's easy for the staff
+          member to close it quickly."
+
+          This element scrolls: max-h + overflow-y-auto are on the Content
+          itself (see the note above), so an absolutely positioned close
+          button is placed against the CONTENT box and slides out of sight
+          the moment anybody scrolls. On the appointment editor — the
+          longest dialog in the app, and the one staff open and shut all
+          day — the X was gone before you reached the groomer picker.
+
+          It sits in a zero-height sticky strip ABOVE the children rather
+          than being a grid item of its own, because an explicitly placed
+          grid item pushes every auto-placed sibling down a row.
+
+          The strip is still a row, so it still gets the container's
+          `gap-4`. `[&+*]:-mt-4` takes that 16px back off whatever follows
+          it — measured, not assumed: without it every one of the 40-odd
+          dialogs in the app grew a 16px gap above its title.
+
+          `top-0` rather than `top-4`: a sticky offset is measured from
+          inside the scroll container's padding, so 0 already lands it on
+          the p-6 line — level with the title, and in exactly the same
+          place pinned as unpinned. `top-4` pushed it 16px FURTHER down.
+
+          It keeps a background, because once it floats over the content
+          there is text behind it.
+        */}
         {showCloseButton && (
-          <DialogPrimitive.Close
-            data-slot="dialog-close"
-            className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
-          >
-            <XIcon />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
+          <div className="pointer-events-none sticky top-0 z-20 flex h-0 items-start justify-end [&+*]:-mt-4">
+            <DialogPrimitive.Close
+              data-slot="dialog-close"
+              className="ring-offset-background focus:ring-ring data-[state=open]:text-muted-foreground bg-background/85 pointer-events-auto -mr-2 rounded-full p-1.5 opacity-70 shadow-sm backdrop-blur-sm transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            >
+              <XIcon />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          </div>
         )}
+        {children}
       </DialogPrimitive.Content>
     </DialogPortal>
   );
