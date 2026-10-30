@@ -131,3 +131,56 @@ describe("looksLikeEmail", () => {
     expect(looksLikeEmail("a_b-c@sub.domain.co")).toBe(true);
   });
 });
+
+/**
+ * "Separate Bills" raises one invoice per dog. The box used to name one
+ * of them and the send used to deliver only that one, marking the job
+ * done — the second dog's bill would never have gone out and nothing on
+ * screen would have said so.
+ */
+describe("a booking billed as separate bills", () => {
+  const two: InvoiceEmailTarget = {
+    ready: true,
+    invoiceNumber: "GROOM-BELLE-301026",
+    invoiceCount: 2,
+    invoiceNumbers: ["GROOM-BELLE-301026", "GROOM-PIPPA-301026"],
+    clientName: "Marie Hodson",
+    email: "marie@example.com",
+    total: 150,
+    amountDue: 150,
+    paidInFull: false,
+  };
+
+  it("says there are two, and names both", () => {
+    const p = describeInvoiceEmailPrompt(two);
+    expect(p.title).toBe("Email 2 bills to Marie Hodson?");
+    expect(p.body).toContain("GROOM-BELLE-301026");
+    expect(p.body).toContain("GROOM-PIPPA-301026");
+    expect(p.body).toContain("Each will be emailed separately");
+    expect(p.confirmLabel).toBe("Email 2 bills");
+  });
+
+  it("still reports the total owed across both", () => {
+    expect(describeInvoiceEmailPrompt(two).body).toContain("$150.00 due");
+  });
+
+  it("asks for an address for both when the client has none", () => {
+    const p = describeInvoiceEmailPrompt({ ...two, email: null });
+    expect(p.needsEmail).toBe(true);
+    expect(p.body).toContain("2 separate bills");
+    expect(p.confirmLabel).toBe("Save and send 2 bills");
+  });
+
+  it("reads as a single invoice when there is only one", () => {
+    const p = describeInvoiceEmailPrompt({ ...two, invoiceCount: 1, invoiceNumbers: ["GROOM-BELLE-301026"] });
+    expect(p.title).toBe("Email invoice to Marie Hodson?");
+    expect(p.confirmLabel).toBe("Email invoice");
+  });
+
+  /** Older callers that do not send a count must not suddenly pluralise. */
+  it("treats a missing count as one", () => {
+    const { invoiceCount, invoiceNumbers, ...noCount } = two;
+    expect(describeInvoiceEmailPrompt(noCount as InvoiceEmailTarget).title)
+      .toBe("Email invoice to Marie Hodson?");
+  });
+});

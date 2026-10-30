@@ -330,16 +330,23 @@ function formatSalonDate(instant: Date | null | undefined, timeZone: string): st
 }
 
 /**
- * The invoice covering this booking, however it was linked.
+ * EVERY invoice covering this booking, however it was linked.
  *
  * Two link paths exist and both are live: an auto-raised single invoice
  * sets only `invoices.appointment_id`, while a combined household bill
  * leaves that NULL and links through `invoice_appointments`. Reading
- * one and not the other silently misses half the bills.
+ * one and not the other silently misses half the bills. 13,051 of this
+ * salon's invoices are in fact linked BOTH ways, so the join also has
+ * to be deduplicated by invoice id.
+ *
+ * Plural, not singular, because "Separate Bills" raises one invoice PER
+ * DOG. Taking the first of those and calling it "the" invoice would
+ * email one dog's bill, mark it sent, and leave the other owing with
+ * nothing on screen to say so.
  */
-async function findBookingInvoice(db: any, tenantId: number, appointmentIds: number[]) {
-  if (appointmentIds.length === 0) return null;
-  const [row] = await db
+async function findBookingInvoices(db: any, tenantId: number, appointmentIds: number[]) {
+  if (appointmentIds.length === 0) return [];
+  const rows = await db
     .select({
       id: invoices.id,
       invoiceNumber: invoices.invoiceNumber,
@@ -361,9 +368,10 @@ async function findBookingInvoice(db: any, tenantId: number, appointmentIds: num
         inArray(invoiceAppointments.appointmentId, appointmentIds),
       ),
     ))
-    .orderBy(asc(invoices.id))
-    .limit(1);
-  return row ?? null;
+    .orderBy(asc(invoices.id));
+
+  const seen = new Set<number>();
+  return rows.filter((r: any) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
 }
 
 /** Everything the email needs, gathered once so the query and the send agree. */
@@ -371,7 +379,8 @@ async function gatherInvoiceEmail(db: any, tenantId: number, appointmentId: numb
   const { appointment, rows } = await loadBookingAppointments(db, appointmentId);
   const ids = rows.map((r: any) => r.id);
 
-  const invoice = await findBookingInvoice(db, tenantId, ids);
+  const bookingInvoices = await findBookingInvoices(db, tenantId, ids);
+  const invoice = bookingInvoices[0] ?? null;
   const [client] = await db
     .select({
       id: clients.id,
@@ -396,7 +405,7 @@ async function gatherInvoiceEmail(db: any, tenantId: number, appointmentId: numb
   const paymentLines = await loadLines(db, ids);
   const paid = paymentLines.reduce((sum: number, p: any) => sum + Number(p.amount ?? 0), 0);
 
-  return { appointment, rows, ids, invoice, client, salon, paid };
+  return { appointment, rows, ids, invoice, bookingInvoices, client, salon, paid };
 }
 
 export const paymentsRouter = router({
@@ -620,7 +629,8 @@ export const paymentsRouter = router({
       const tenantId = tenantOf(ctx, input);
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
 
-      const { invoice, client, paid } = await gatherInvoiceEmail(db, tenantId, input.appointmentId);
+      const { invoice, bookingInvoices, client, paid } =
+        await gatherInvoiceEmail(db, tenantId, input.appointmentId);
       const name = [client?.firstName, client?.lastName].filter(Boolean).join(" ").trim();
       const email = (client?.email ?? "").trim();
 
@@ -652,6 +662,10 @@ export const paymentsRouter = router({
         paidInFull: dueCents === 0 && total > 0,
         emailedAt: invoice.emailedAt ?? null,
         emailedTo: invoice.emailedTo ?? null,
+        /* "Separate Bills" raises one per dog. The box has to say so,
+           or staff send one and believe they sent them all. */
+        invoiceCount: bookingInvoices.length,
+        invoiceNumbers: bookingInvoices.map((i: any) => i.invoiceNumber),
       };
     }),
 
@@ -676,7 +690,7 @@ export const paymentsRouter = router({
       const tenantId = tenantOf(ctx, input);
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
 
-      const { invoice, client, salon, paid, ids } =
+      const { invoice, bookingInvoices, client, salon, paid, ids } =
         await gatherInvoiceEmail(db, tenantId, input.appointmentId);
 
       if (!invoice) {
@@ -694,24 +708,6 @@ export const paymentsRouter = router({
         });
       }
 
-      /* The lines as billed, not recomputed. An invoice is a record of
-         what was charged; rebuilding it from today's prices would mail
-         a different document to the one in the ledger. */
-      const stored = await db
-        .select({
-          description: invoiceLineItems.description,
-          quantity: invoiceLineItems.quantity,
-          lineTotal: invoiceLineItems.lineTotal,
-        })
-        .from(invoiceLineItems)
-        .where(eq(invoiceLineItems.invoiceId, invoice.id));
-
-      const lines: InvoiceEmailLine[] = stored.map((l: any) => ({
-        description: String(l.description ?? "Grooming"),
-        quantity: Number(l.quantity ?? 1),
-        amount: Number(l.lineTotal ?? 0),
-      }));
-
       const tz = salon?.timezone ?? "Australia/Brisbane";
       const [firstAppointment] = await db
         .select({ scheduledStart: appointments.scheduledStart })
@@ -719,50 +715,91 @@ export const paymentsRouter = router({
         .where(inArray(appointments.id, ids))
         .orderBy(asc(appointments.scheduledStart))
         .limit(1);
+      const servicedOn = formatSalonDate(firstAppointment?.scheduledStart, tz) || null;
+      const clientName = [client?.firstName, client?.lastName].filter(Boolean).join(" ") || null;
 
-      const built = buildInvoiceEmail({
-        salon: {
-          name: salon?.name ?? "",
-          abn: salon?.abn ?? null,
-          address: salon?.address ?? null,
-          phone: salon?.phone ?? null,
-          email: salon?.email ?? null,
-          brandPrimary: salon?.brandPrimary ?? null,
-          brandAccent: salon?.brandAccent ?? null,
-        },
-        clientName: [client?.firstName, client?.lastName].filter(Boolean).join(" ") || null,
-        invoiceNumber: invoice.invoiceNumber,
-        issuedOn: formatSalonDate(invoice.createdAt ?? new Date(), tz),
-        dueOn: formatSalonDate(invoice.dueAt, tz) || null,
-        serviceOn: formatSalonDate(firstAppointment?.scheduledStart, tz) || null,
-        lines,
-        total: Number(invoice.total ?? 0),
-        amountPaid: paid,
-      });
+      /* Every bill covering this booking, not just the first.
+         "Separate Bills" raises one per dog, and sending one while
+         marking the job done is how the second dog goes unbilled. */
+      const results: { invoiceNumber: string; paidInFull: boolean; amountDue: number }[] = [];
+      for (const [index, bill] of bookingInvoices.entries()) {
+        /* The lines as billed, not recomputed. An invoice is a record of
+           what was charged; rebuilding it from today's prices would mail
+           a different document to the one in the ledger. */
+        const stored = await db
+          .select({
+            description: invoiceLineItems.description,
+            quantity: invoiceLineItems.quantity,
+            lineTotal: invoiceLineItems.lineTotal,
+          })
+          .from(invoiceLineItems)
+          .where(eq(invoiceLineItems.invoiceId, bill.id));
 
-      const sent = await sendEmail({
-        to: recipient,
-        subject: built.subject,
-        html: built.html,
-        // The salon's name, not "noreply", and replies reach a person.
-        fromName: salon?.name ?? null,
-        replyTo: salon?.email ?? null,
-      });
+        const lines: InvoiceEmailLine[] = stored.map((l: any) => ({
+          description: String(l.description ?? "Grooming"),
+          quantity: Number(l.quantity ?? 1),
+          amount: Number(l.lineTotal ?? 0),
+        }));
 
-      /* sendEmail never throws and returns false when Resend is not
-         configured or rejects. Recording a send that did not happen
-         would be worse than not recording one that did: staff would
-         stop chasing a bill nobody ever received. */
-      if (!sent) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "The invoice could not be sent. Nothing was recorded — try again.",
+        /* Payments are recorded against the BOOKING, not against an
+           individual bill, so they can only be set against the total
+           once. Applying them to each of two separate bills would show
+           the same money twice and report both as paid. */
+        const built = buildInvoiceEmail({
+          salon: {
+            name: salon?.name ?? "",
+            abn: salon?.abn ?? null,
+            address: salon?.address ?? null,
+            phone: salon?.phone ?? null,
+            email: salon?.email ?? null,
+            brandPrimary: salon?.brandPrimary ?? null,
+            brandAccent: salon?.brandAccent ?? null,
+          },
+          clientName,
+          invoiceNumber: bill.invoiceNumber,
+          issuedOn: formatSalonDate(bill.createdAt ?? new Date(), tz),
+          dueOn: formatSalonDate(bill.dueAt, tz) || null,
+          serviceOn: servicedOn,
+          lines,
+          total: Number(bill.total ?? 0),
+          amountPaid: index === 0 ? paid : 0,
+        });
+
+        const sent = await sendEmail({
+          to: recipient,
+          subject: built.subject,
+          html: built.html,
+          // The salon's name, not "noreply", and replies reach a person.
+          fromName: salon?.name ?? null,
+          replyTo: salon?.email ?? null,
+        });
+
+        /* sendEmail never throws and returns false when Resend is not
+           configured or rejects. Recording a send that did not happen
+           would be worse than not recording one that did: staff would
+           stop chasing a bill nobody ever received.
+
+           On a multi-bill booking this stops at the first failure and
+           reports how many did go, rather than claiming all of them. */
+        if (!sent) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: results.length === 0
+              ? "The invoice could not be sent. Nothing was recorded — try again."
+              : `Sent ${results.length} of ${bookingInvoices.length}, then ${bill.invoiceNumber} failed. Only the sent ones were recorded.`,
+          });
+        }
+
+        await db.update(invoices)
+          .set({ emailedAt: new Date(), emailedTo: recipient })
+          .where(and(eq(invoices.id, bill.id), eq(invoices.tenantId, tenantId)));
+
+        results.push({
+          invoiceNumber: bill.invoiceNumber,
+          paidInFull: built.paidInFull,
+          amountDue: built.amountDue,
         });
       }
-
-      await db.update(invoices)
-        .set({ emailedAt: new Date(), emailedTo: recipient })
-        .where(and(eq(invoices.id, invoice.id), eq(invoices.tenantId, tenantId)));
 
       let savedToClient = false;
       if (input.saveToClient && client?.id && recipient !== (client.email ?? "").trim()) {
@@ -776,9 +813,10 @@ export const paymentsRouter = router({
         success: true,
         sentTo: recipient,
         savedToClient,
-        invoiceNumber: invoice.invoiceNumber,
-        paidInFull: built.paidInFull,
-        amountDue: built.amountDue,
+        sentCount: results.length,
+        invoiceNumber: results.map((r) => r.invoiceNumber).join(", "),
+        paidInFull: results.every((r) => r.paidInFull),
+        amountDue: results.reduce((sum, r) => sum + r.amountDue, 0),
       };
     }),
 

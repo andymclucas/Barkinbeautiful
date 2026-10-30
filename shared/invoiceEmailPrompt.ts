@@ -33,6 +33,9 @@ export type InvoiceEmailTarget =
       paidInFull: boolean;
       emailedAt?: Date | string | null;
       emailedTo?: string | null;
+      /** "Separate Bills" raises one invoice per dog. */
+      invoiceCount?: number;
+      invoiceNumbers?: readonly string[];
     };
 
 export type InvoiceEmailPrompt = {
@@ -79,6 +82,15 @@ export function describeInvoiceEmailPrompt(
 
   const noun = target.paidInFull ? "receipt" : "invoice";
   const email = (target.email ?? "").trim();
+  const count = target.invoiceCount ?? 1;
+  const plural = count > 1;
+  /* A booking billed with "Separate Bills" has one invoice per dog.
+     Saying "invoice INV-1042" and sending two would be a lie; saying
+     it and sending one would leave the other dog unbilled with nothing
+     on screen to say so. */
+  const what = plural
+    ? `${count} separate bills (${(target.invoiceNumbers ?? []).join(", ")})`
+    : `${noun} ${target.invoiceNumber}`;
 
   /* Already sent is a warning, not a block. Re-sending is a normal
      thing to want — the first one went to a typo, or the client says
@@ -91,21 +103,25 @@ export function describeInvoiceEmailPrompt(
   if (!email) {
     return {
       title: `No email for ${who(target.clientName)}`,
-      body: `There is no email address on file. Add one to send ${noun} ${target.invoiceNumber} — ${amount}. It will be saved to their record.`,
+      body: `There is no email address on file. Add one to send ${what} — ${amount}. It will be saved to their record.`,
       needsEmail: true,
       canSend: false,
       warning,
-      confirmLabel: `Save and send ${noun}`,
+      confirmLabel: plural ? `Save and send ${count} bills` : `Save and send ${noun}`,
     };
   }
 
   return {
-    title: `Email ${noun} to ${who(target.clientName)}?`,
-    body: `${noun === "receipt" ? "Receipt" : "Invoice"} ${target.invoiceNumber} — ${amount} — will be emailed to ${email}.`,
+    title: plural
+      ? `Email ${count} bills to ${who(target.clientName)}?`
+      : `Email ${noun} to ${who(target.clientName)}?`,
+    body: plural
+      ? `This booking has ${what}, totalling ${amount}. Each will be emailed separately to ${email}.`
+      : `${noun === "receipt" ? "Receipt" : "Invoice"} ${target.invoiceNumber} — ${amount} — will be emailed to ${email}.`,
     needsEmail: false,
     canSend: true,
     warning,
-    confirmLabel: `Email ${noun}`,
+    confirmLabel: plural ? `Email ${count} bills` : `Email ${noun}`,
   };
 }
 
