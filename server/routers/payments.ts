@@ -36,6 +36,7 @@ import {
 } from "../../drizzle/schema";
 import { sendEmail } from "../email";
 import { buildInvoiceEmail, type InvoiceEmailLine } from "@shared/invoiceEmail";
+import { INVOICE_EMAIL_ENABLED, INVOICE_EMAIL_HELD_MESSAGE } from "@shared/invoiceEmailGate";
 import { billableTotalsByAppointment, addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import {
@@ -685,6 +686,13 @@ export const paymentsRouter = router({
       saveToClient: z.boolean().default(true),
     }))
     .mutation(async ({ input, ctx }) => {
+      /* Held, by Andy, until the figures have been checked. FIRST, before
+         anything is loaded: a hold that only covers the Resend call still
+         lets a half-finished feature mark bills as emailed. */
+      if (!INVOICE_EMAIL_ENABLED) {
+        throw new TRPCError({ code: "FORBIDDEN", message: INVOICE_EMAIL_HELD_MESSAGE });
+      }
+
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const tenantId = tenantOf(ctx, input);
