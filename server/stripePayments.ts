@@ -20,7 +20,22 @@ export type StripeCheckoutRequest = {
   clientEmail: string | null;
   membershipId: number | null;
   tenantId: number;
-  origin: string;
+  /**
+   * Where Stripe sends the payer afterwards.
+   *
+   * Supplied by the caller rather than derived here, because the two
+   * callers send different people. Staff pressing "take payment" belong
+   * back on the Memberships screen; a CLIENT following a pay link in
+   * their invoice must never be sent to a staff page — they would hit a
+   * login wall having just paid.
+   *
+   * These used to be built from the request's `origin` header, which is
+   * set by whoever made the request. CLAUDE.md section 8 requires
+   * client-facing links to come from getAppBaseUrl(), and both callers
+   * now do.
+   */
+  successUrl: string;
+  cancelUrl: string;
 };
 
 // requireStripeClient moved to ./stripeClient so stripeCards can share it.
@@ -98,8 +113,8 @@ export async function createInvoiceCheckout(input: StripeCheckoutRequest) {
         product_data: { name: `Groomigo invoice ${input.invoiceNumber}` },
       },
     }],
-    success_url: `${input.origin}/memberships?stripe_checkout=success&invoice=${input.invoiceId}`,
-    cancel_url: `${input.origin}/memberships?stripe_checkout=cancelled&invoice=${input.invoiceId}`,
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
   }, stripeAccount);
   if (!session.url) throw new Error("Stripe did not return a Checkout URL");
   await db.update(invoices).set({ stripeCheckoutSessionId: session.id, stripeCheckoutUrl: session.url }).where(eq(invoices.id, input.invoiceId));

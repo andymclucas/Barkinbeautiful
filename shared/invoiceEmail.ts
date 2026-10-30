@@ -23,16 +23,18 @@
  * blocks, Outlook renders with Word, and neither does flexbox or grid.
  * This looks like 2004 HTML because email still is.
  *
- * **No "pay now" button.** `invoices.stripeCheckoutUrl` is built from
- * the request's Origin header rather than `getAppBaseUrl()`, so a link
- * made during a staff session can carry whatever host that session was
- * on. Mailing it to a client would publish that mistake. The invoice
- * tells them what is owed and lets the salon take it the way they
- * already do; the button can come once that URL is built properly.
+ * **The "pay now" button is optional and never reused.** It appears
+ * only when the caller hands over a fresh Stripe Checkout URL, and only
+ * on a bill that is actually owed — a receipt with a Pay button on it
+ * reads as a second demand. The URL is checked to be Stripe-hosted
+ * before it goes anywhere near a client; anything else is dropped and
+ * the invoice still sends, because a payment link that cannot be
+ * vouched for is worse than no link and far worse than no invoice.
  */
 
 import { escapeHtml } from "./escapeHtml";
 import { gstBreakdown } from "./gst";
+import { isStripeHostedUrl } from "./stripeHostedUrl";
 
 export type InvoiceEmailSalon = {
   name: string;
@@ -69,6 +71,14 @@ export type InvoiceEmailInput = {
   total: number;
   /** Already received against this bill. */
   amountPaid: number;
+  /**
+   * A Stripe Checkout URL for what is still owed.
+   *
+   * Optional. Anything that is not a Stripe-hosted https URL is
+   * ignored rather than rendered, and nothing is shown on a bill that
+   * is already settled.
+   */
+  payUrl?: string | null;
 };
 
 export type BuiltInvoiceEmail = {
@@ -77,6 +87,8 @@ export type BuiltInvoiceEmail = {
   /** What is still owed, after payments. Never negative. */
   amountDue: number;
   paidInFull: boolean;
+  /** False when no link was given, it was not Stripe's, or nothing is owed. */
+  hasPayButton: boolean;
 };
 
 /**
@@ -144,6 +156,14 @@ export function buildInvoiceEmail(input: InvoiceEmailInput): BuiltInvoiceEmail {
   const subject = paidInFull
     ? `Your receipt from ${salonName} — ${input.invoiceNumber}`
     : `Your invoice from ${salonName} — ${input.invoiceNumber}`;
+
+  /* Only on a bill that is owed, and only when the link is one we can
+     vouch for. `isStripeHostedUrl` is the same check the card-link
+     email uses — a payment button is the single most impersonatable
+     thing in an email, so the host is verified rather than trusted. */
+  const payUrl = !paidInFull && input.payUrl && isStripeHostedUrl(input.payUrl)
+    ? input.payUrl
+    : null;
 
   const statusPill = paidInFull
     ? pill("PAID IN FULL", "#0f7a4d", "#e4f6ed")
@@ -248,6 +268,17 @@ export function buildInvoiceEmail(input: InvoiceEmailInput): BuiltInvoiceEmail {
         <p style="margin:12px 0 0;font-size:11px;color:${MUTED};">All prices include GST.</p>
       </td></tr>
 
+      ${payUrl ? `
+      <tr><td style="padding:18px 24px 0;" align="center">
+        <a href="${escapeHtml(payUrl)}"
+           style="display:inline-block;background:${primary};color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:13px 30px;border-radius:10px;">
+          Pay ${escapeHtml(formatMoney(amountDue))} now
+        </a>
+        <p style="margin:10px 0 0;font-size:11px;color:${MUTED};">
+          Card payment, handled by Stripe. ${escapeHtml(salonName)} never sees your card number.
+        </p>
+      </td></tr>` : ""}
+
       <tr><td style="padding:22px 24px 24px;">
         <div style="border-top:1px solid ${HAIRLINE};padding-top:14px;font-size:11px;line-height:1.7;color:${MUTED};">
           <strong style="color:${INK};font-weight:600;">${escapeHtml(salonName)}</strong><br>
@@ -261,7 +292,7 @@ export function buildInvoiceEmail(input: InvoiceEmailInput): BuiltInvoiceEmail {
 </body>
 </html>`;
 
-  return { subject, html, amountDue, paidInFull };
+  return { subject, html, amountDue, paidInFull, hasPayButton: payUrl !== null };
 }
 
 function pill(label: string, fg: string, bg: string): string {

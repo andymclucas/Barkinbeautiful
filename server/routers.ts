@@ -9068,11 +9068,19 @@ const stripeBillingRouter = router({
       }).from(invoices).innerJoin(clients, eq(invoices.clientId, clients.id)).where(and(eq(invoices.id, input.invoiceId), eq(invoices.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!invoice) throw new Error("Invoice not found");
       if (invoice.status === "paid" || invoice.status === "cancelled") throw new Error("This invoice is no longer available for payment");
-      const origin = typeof ctx.req.headers.origin === "string" ? ctx.req.headers.origin : getAppBaseUrl();
+      /* getAppBaseUrl(), not the request's Origin header. The header is
+         set by whoever made the request, so a staff session on a preview
+         deploy produced a Stripe session that sent the payer back to that
+         preview — and CLAUDE.md section 8 requires client-facing links to
+         come from the helper. This is the STAFF path, so it returns to the
+         staff screen they started on. */
+      const base = getAppBaseUrl();
       return createInvoiceCheckout({
         invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, totalCents: Math.round(Number(invoice.total) * 100),
         clientId: invoice.clientId, clientName: `${invoice.clientFirstName} ${invoice.clientLastName}`.trim(), clientEmail: invoice.clientEmail,
-        membershipId: invoice.membershipId, tenantId: invoice.tenantId, origin,
+        membershipId: invoice.membershipId, tenantId: invoice.tenantId,
+        successUrl: `${base}/memberships?stripe_checkout=success&invoice=${invoice.id}`,
+        cancelUrl: `${base}/memberships?stripe_checkout=cancelled&invoice=${invoice.id}`,
       });
     }),
 });

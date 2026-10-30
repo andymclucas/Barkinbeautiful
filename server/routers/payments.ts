@@ -41,6 +41,8 @@ import {
 import { sendEmail } from "../email";
 import { buildInvoiceEmail, allocatePayments, type InvoiceEmailLine } from "@shared/invoiceEmail";
 import { INVOICE_EMAIL_ENABLED, INVOICE_EMAIL_HELD_MESSAGE } from "@shared/invoiceEmailGate";
+import { createInvoiceCheckout } from "../stripePayments";
+import { getAppBaseUrl } from "../appUrl";
 import { billableTotalsByAppointment, addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import {
@@ -798,7 +800,7 @@ export const paymentsRouter = router({
         bookingInvoices.map((b: any) => Number(b.total ?? 0)), paid,
       );
 
-      const results: { invoiceNumber: string; paidInFull: boolean; amountDue: number }[] = [];
+      const results: { invoiceNumber: string; paidInFull: boolean; amountDue: number; hasPayButton: boolean }[] = [];
       for (const [index, bill] of bookingInvoices.entries()) {
         /* The lines as billed, not recomputed. An invoice is a record of
            what was charged; rebuilding it from today's prices would mail
@@ -818,6 +820,40 @@ export const paymentsRouter = router({
           amount: Number(l.lineTotal ?? 0),
         }));
 
+        /* A FRESH Checkout session per send, never the stored
+           `invoices.stripeCheckoutUrl`. Stripe expires a session within
+           24 hours, so a URL saved when the bill was raised is usually
+           dead by the time anybody emails it — and a Pay button that
+           goes nowhere is worse than no button.
+
+           It fails SOFT. Stripe being unconfigured, rate-limited or
+           simply down must not stop a client getting their invoice;
+           they can still pay the way they always have. */
+        const owedCents = Math.max(0, Math.round(Number(bill.total ?? 0) * 100) - Math.round((allocated[index] ?? 0) * 100));
+        let payUrl: string | null = null;
+        if (owedCents > 0) {
+          try {
+            const base = getAppBaseUrl();
+            const checkout = await createInvoiceCheckout({
+              invoiceId: bill.id,
+              invoiceNumber: bill.invoiceNumber,
+              totalCents: owedCents,
+              clientId: client!.id,
+              clientName: clientName ?? "",
+              clientEmail: recipient,
+              membershipId: null,
+              tenantId,
+              /* A CLIENT follows this, not a staff member — so it must
+                 not land them on a staff screen behind a login. */
+              successUrl: `${base}/portal/invoice-paid`,
+              cancelUrl: `${base}/portal/invoice-cancelled`,
+            });
+            payUrl = checkout.checkoutUrl ?? null;
+          } catch (err) {
+            console.error("[invoice email] could not create a pay link for", bill.invoiceNumber, err);
+          }
+        }
+
         const built = buildInvoiceEmail({
           salon: {
             name: salon?.name ?? "",
@@ -836,6 +872,7 @@ export const paymentsRouter = router({
           lines,
           total: Number(bill.total ?? 0),
           amountPaid: allocated[index] ?? 0,
+          payUrl,
         });
 
         const sent = await sendEmail({
@@ -871,6 +908,7 @@ export const paymentsRouter = router({
           invoiceNumber: bill.invoiceNumber,
           paidInFull: built.paidInFull,
           amountDue: built.amountDue,
+          hasPayButton: built.hasPayButton,
         });
       }
 
@@ -896,6 +934,10 @@ export const paymentsRouter = router({
         invoiceNumber: results.map((r) => r.invoiceNumber).join(", "),
         paidInFull: results.every((r) => r.paidInFull),
         amountDue: results.reduce((sum, r) => sum + r.amountDue, 0),
+        /* Reported so staff know whether the client got a Pay button.
+           "Did they get a link?" is the first thing asked when somebody
+           says they cannot pay. */
+        payButtons: results.filter((r) => r.hasPayButton).length,
       };
     }),
 
