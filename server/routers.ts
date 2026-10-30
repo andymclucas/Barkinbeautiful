@@ -3618,19 +3618,44 @@ const clientsRouter = router({
     .input(z.object({
       clientId: z.number(),
       email: z.string().email().optional().or(z.literal("")).nullable(),
+      /**
+       * Lauren, 30/10/2026: "It won't let me edit the phone number."
+       *
+       * It could not — not here, not on the client record, not anywhere.
+       * `clients.phone` was written when a client was created and never
+       * updated again, so a number typed wrong at the counter or changed
+       * by the client was permanent. It is also the number the salon
+       * rings and texts, so a wrong one is not cosmetic.
+       *
+       * Deliberately not validated into a format. Australian numbers are
+       * written half a dozen ways in this database already, people put
+       * "0431 322 218 (mum)" in the field, and a regex that rejects a
+       * real number is worse than a tidy one that never gets saved.
+       */
+      phone: z.string().trim().max(30).optional().nullable(),
       address: z.string().optional().nullable(),
       notes: z.string().optional().nullable(),
       referralSource: z.string().optional().nullable(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
+      // No tenantId on the input on purpose: this takes the caller's own
+      // salon and nothing else, so there is no number a client could send.
+      const tenantId = tenantOf(ctx);
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       if (input.email !== undefined) updates.email = input.email || null;
+      if (input.phone !== undefined) updates.phone = input.phone || null;
       if (input.address !== undefined) updates.address = input.address;
       if (input.notes !== undefined) updates.notes = input.notes;
       if (input.referralSource !== undefined) updates.referralSource = input.referralSource;
-      await db.update(clients).set(updates).where(eq(clients.id, input.clientId));
+      /* Scoped to the caller's own salon. This filtered on id alone, so
+         an admin of one salon could edit another salon's client by id —
+         harmless with one salon, not something to leave in place now
+         that signup creates them. */
+      await db.update(clients)
+        .set(updates)
+        .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, tenantId)));
       return { success: true };
     }),
 
@@ -4140,6 +4165,62 @@ const clientsRouter = router({
         relationship: input.relationship?.trim() || null,
       });
       return { id: Number((result as any).insertId) };
+    }),
+
+
+  /**
+   * Correct a contact already on a client.
+   *
+   * Lauren, 30/10/2026: "It won't let me edit the phone number." There
+   * was `addContact` and `removeContact` and nothing in between, so a
+   * mistyped number could only be fixed by deleting the contact and
+   * typing it again — which loses the record on any booking pointing at
+   * it, because `appointments.contact_id` references the row.
+   *
+   * `operationalProcedure`, matching addContact: the groomer who took
+   * the number down wrong is the one who notices, and sending them to
+   * find an owner to fix a typo is how the wrong number survives.
+   */
+  updateContact: operationalProcedure
+    .input(z.object({
+      contactId: z.number().int().positive(),
+      name: z.string().trim().min(1).max(255).optional(),
+      /** Same reasoning as clients.updateDetails: no format is enforced. */
+      phone: z.string().trim().min(6).max(30).optional(),
+      email: z.string().email().optional().or(z.literal("")),
+      relationship: z.string().trim().max(100).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      // The same two-step guard addContact uses: role first, then the
+      // caller's own salon.
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      const callerTenantId = ctx.tenantId ?? null;
+      if (callerTenantId === null) throw new Error("No salon on this session");
+      if (portalStaff && portalStaff.tenantId !== callerTenantId) {
+        throw new Error("This client is not available to your salon staff profile");
+      }
+
+      const [contact] = await db
+        .select({ id: clientContacts.id, tenantId: clientContacts.tenantId, clientId: clientContacts.clientId })
+        .from(clientContacts)
+        .where(eq(clientContacts.id, input.contactId))
+        .limit(1);
+      if (!contact || contact.tenantId !== callerTenantId) throw new Error("Contact not found");
+
+      const updates: Record<string, unknown> = {};
+      if (input.name !== undefined) updates.name = input.name;
+      if (input.phone !== undefined) updates.phone = input.phone;
+      if (input.email !== undefined) updates.email = input.email.trim() || null;
+      if (input.relationship !== undefined) updates.relationship = input.relationship.trim() || null;
+      // Nothing to change is not an error — it just does nothing.
+      if (Object.keys(updates).length > 0) {
+        await db.update(clientContacts)
+          .set(updates)
+          .where(and(eq(clientContacts.id, contact.id), eq(clientContacts.tenantId, callerTenantId)));
+      }
+      return { success: true, clientId: contact.clientId };
     }),
 
   removeContact: adminProcedure
