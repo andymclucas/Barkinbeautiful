@@ -117,7 +117,7 @@ describe("sessionDogCounts", () => {
 
   it("counts each half of the day", () => {
     const rows = [row(1, "09:00"), row(2, "09:30"), row(3, "11:30"), row(4, "14:00")];
-    expect(sessionDogCounts(rows)).toEqual({ morning: 2, afternoon: 2, unknown: 0, total: 4 });
+    expect(sessionDogCounts(rows)).toEqual({ morning: 2, afternoon: 2, unknown: 0, total: 4, excluded: 0 });
   });
 
   it("puts 11:30 itself in the afternoon", () => {
@@ -133,7 +133,7 @@ describe("sessionDogCounts", () => {
   });
 
   it("is zero all round for an empty day", () => {
-    expect(sessionDogCounts([])).toEqual({ morning: 0, afternoon: 0, unknown: 0, total: 0 });
+    expect(sessionDogCounts([])).toEqual({ morning: 0, afternoon: 0, unknown: 0, total: 0, excluded: 0 });
   });
 
   /** A family counts where its cohort sits, the same as the line. */
@@ -144,7 +144,7 @@ describe("sessionDogCounts", () => {
 
   it("holds an unreadable time apart rather than inflating a session", () => {
     const rows = [row(1, "09:00"), { id: 2, scheduledStart: "rubbish", petFamilyGroupId: null }];
-    expect(sessionDogCounts(rows)).toEqual({ morning: 1, afternoon: 0, unknown: 1, total: 2 });
+    expect(sessionDogCounts(rows)).toEqual({ morning: 1, afternoon: 0, unknown: 1, total: 2, excluded: 0 });
   });
 
   /**
@@ -166,5 +166,58 @@ describe("sessionDogCounts", () => {
       if (index !== null) expect(index, JSON.stringify(rows.map(r => r.scheduledStart))).toBe(morning);
       else expect(morning === 0 || morning === rows.length).toBe(true);
     }
+  });
+});
+
+/**
+ * A cancelled dog still renders on the board — staff want to see that a
+ * slot came free — but it is not work. Counting them inflated the
+ * morning by every dog who was not coming: on 30/10/2026 the calendar
+ * header read 38 against 36 dogs actually due, and the morning figure
+ * next to it included both cancellations.
+ */
+describe("dogs who are not coming", () => {
+  const at = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return new Date(Date.UTC(2026, 9, 30, h - 10, m)).toISOString();
+  };
+  const row = (id: number, time: string, extra: Record<string, unknown> = {}) =>
+    ({ id, scheduledStart: at(time), petFamilyGroupId: null, ...extra });
+
+  it("leaves a cancelled dog out of the morning", () => {
+    const rows = [row(1, "09:00"), row(2, "09:30", { status: "cancelled" }), row(3, "10:00")];
+    expect(sessionDogCounts(rows)).toMatchObject({ morning: 2, total: 2, excluded: 1 });
+  });
+
+  it("reads either column, because they are written independently", () => {
+    expect(sessionDogCounts([row(1, "09:00", { workflowState: "cancelled" })]).excluded).toBe(1);
+    expect(sessionDogCounts([row(1, "09:00", { status: "no_show" })]).excluded).toBe(1);
+    expect(sessionDogCounts([row(1, "09:00", { workflowState: "no_show" })]).excluded).toBe(1);
+  });
+
+  it("keeps a dog who is simply not finished yet", () => {
+    for (const state of ["scheduled", "checked_in", "bathing", "ready", "complete"]) {
+      expect(sessionDogCounts([row(1, "09:00", { workflowState: state })]).total, state).toBe(1);
+    }
+  });
+
+  it("counts a family booking as its dogs, not as one booking", () => {
+    // The Mcconnons on 30/10/2026: four dogs, one booking.
+    const rows = [
+      row(1, "08:00", { petFamilyGroupId: 9 }), row(2, "08:00", { petFamilyGroupId: 9 }),
+      row(3, "08:00", { petFamilyGroupId: 9 }), row(4, "08:00", { petFamilyGroupId: 9 }),
+    ];
+    expect(sessionDogCounts(rows)).toMatchObject({ morning: 4, total: 4 });
+  });
+
+  it("still adds up", () => {
+    const rows = [
+      row(1, "09:00"), row(2, "09:30", { status: "cancelled" }),
+      row(3, "12:00"), row(4, "13:00", { workflowState: "no_show" }),
+      { id: 5, scheduledStart: "rubbish", petFamilyGroupId: null },
+    ];
+    const c = sessionDogCounts(rows);
+    expect(c.morning + c.afternoon + c.unknown).toBe(c.total);
+    expect(c.total + c.excluded).toBe(rows.length);
   });
 });

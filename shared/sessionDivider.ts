@@ -68,6 +68,9 @@ export type SessionDividerRow = {
   id: number;
   scheduledStart: Date | string | number;
   petFamilyGroupId?: number | null;
+  /** Both are read, because they are written independently. Absent is fine. */
+  status?: string | null;
+  workflowState?: string | null;
 };
 
 /**
@@ -142,15 +145,51 @@ export function afternoonSessionRowIndex(
  * A dog with an unreadable time is not evidence about either session,
  * and silently adding it to one would overstate that half.
  */
+/**
+ * How many DOGS are in each half of the day.
+ *
+ * Dogs, not bookings. Appointments are stored one row per dog, so a
+ * family booking of two is two here and the Mcconnons' booking of four
+ * is four. That is the number Lauren is after: "27 this morning" has to
+ * mean twenty-seven dogs through the bath, not twenty-seven cars in the
+ * car park.
+ *
+ * **Cancelled and no-show dogs are excluded.** They still render on the
+ * board — staff want to see that a slot came free — but they are not
+ * work, and counting them inflated the morning by every dog who was not
+ * coming. On 30/10/2026 the header read 38 where 36 dogs were due.
+ *
+ * `total` is therefore the dogs actually expected, and
+ * `morning + afternoon + unknown === total`. `excluded` reports how many
+ * were dropped, so a caller can say "38 booked, 2 cancelled" rather than
+ * quietly disagreeing with a number printed next to it.
+ */
 export function sessionDogCounts(
   rows: readonly SessionDividerRow[],
   opts: SessionOpts = {},
-): { morning: number; afternoon: number; unknown: number; total: number } {
-  const sessions = sessionOf(rows, opts);
+): { morning: number; afternoon: number; unknown: number; total: number; excluded: number } {
+  const live = rows.filter((r) => !isCancelledRow(r));
+  const sessions = sessionOf(live, opts);
   return {
     morning: sessions.filter((s) => s === "morning").length,
     afternoon: sessions.filter((s) => s === "afternoon").length,
     unknown: sessions.filter((s) => s === "unknown").length,
-    total: rows.length,
+    total: live.length,
+    excluded: rows.length - live.length,
   };
+}
+
+/**
+ * A dog who is not coming.
+ *
+ * Both columns are checked because they are written independently and
+ * have been seen to disagree: the MoeGo sync sets `status` and the
+ * board sets `workflowState`.
+ */
+function isCancelledRow(row: SessionDividerRow): boolean {
+  const dead = new Set(["cancelled", "no_show"]);
+  const r = row as { status?: string | null; workflowState?: string | null };
+  if (r.status && dead.has(r.status)) return true;
+  if (r.workflowState && dead.has(r.workflowState)) return true;
+  return false;
 }
