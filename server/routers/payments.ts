@@ -33,7 +33,11 @@ import { getDb } from "../db";
 import {
   appointmentAddOns, appointmentPayments, appointments, clients, pets,
   invoices, invoiceAppointments, invoiceLineItems, tenants,
+  storeCreditTransactions,
 } from "../../drizzle/schema";
+import {
+  creditEntryForPayment, reversalEntryForPayment, describeCreditShortfall,
+} from "@shared/storeCreditSpend";
 import { sendEmail } from "../email";
 import { buildInvoiceEmail, type InvoiceEmailLine } from "@shared/invoiceEmail";
 import { INVOICE_EMAIL_ENABLED, INVOICE_EMAIL_HELD_MESSAGE } from "@shared/invoiceEmailGate";
@@ -608,8 +612,52 @@ export const paymentsRouter = router({
         recordedByUserId: ctx.user.id,
       });
 
+      /* Spending store credit has to come OFF the balance.
+         Until 30/10/2026 it did not, so the same credit could be spent
+         twice: Mike Graham's ledger read $840 with $40 already used.
+         The debit goes against the PAYER, who is not always the
+         appointment's own client on a household booking. */
+      const creditEntry = creditEntryForPayment({
+        method: input.method,
+        amount: check.amount,
+        appointmentId: appointment.id,
+      });
+      let creditBalance: number | null = null;
+      let creditWarning: string | null = null;
+      if (creditEntry) {
+        await db.insert(storeCreditTransactions).values({
+          tenantId: appointment.tenantId,
+          clientId: payerClientId,
+          amount: creditEntry.amount,
+          type: creditEntry.type,
+          appointmentId: appointment.id,
+          note: creditEntry.note,
+          createdByUserId: ctx.user.id,
+        });
+        const [row] = await db
+          .select({ total: sql<string>`COALESCE(SUM(${storeCreditTransactions.amount}), 0)` })
+          .from(storeCreditTransactions)
+          .where(and(
+            eq(storeCreditTransactions.tenantId, appointment.tenantId),
+            eq(storeCreditTransactions.clientId, payerClientId),
+          ));
+        creditBalance = Number(row?.total ?? 0);
+        /* Reported, never refused. Credit is still being carried over
+           from MoeGo by hand, so a client can hold credit this system
+           has not heard of — blocking would stop the counter. */
+        creditWarning = describeCreditShortfall(
+          creditBalance + check.amount, check.amount,
+        ).message;
+      }
+
       const status = await refreshPaymentStatus(db, appointment.id);
-      return { id: Number((result as any).insertId), amount: check.amount, paymentStatus: status };
+      return {
+        id: Number((result as any).insertId),
+        amount: check.amount,
+        paymentStatus: status,
+        creditBalance,
+        creditWarning,
+      };
     }),
 
 
@@ -834,7 +882,14 @@ export const paymentsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [line] = await db
-        .select({ id: appointmentPayments.id, appointmentId: appointmentPayments.appointmentId })
+        .select({
+          id: appointmentPayments.id,
+          appointmentId: appointmentPayments.appointmentId,
+          tenantId: appointmentPayments.tenantId,
+          clientId: appointmentPayments.clientId,
+          amount: appointmentPayments.amount,
+          method: appointmentPayments.method,
+        })
         .from(appointmentPayments)
         .where(eq(appointmentPayments.id, input.paymentId))
         .limit(1);
@@ -842,7 +897,29 @@ export const paymentsRouter = router({
       await requireApprovedStaffAppointmentAccess(db, ctx.user, line.appointmentId);
 
       await db.delete(appointmentPayments).where(eq(appointmentPayments.id, line.id));
+
+      /* Taking the payment off has to put the credit back, or removing
+         a mistyped store-credit payment quietly destroys the client's
+         balance. An entry, not a delete: the ledger is an audit trail
+         and the original debit really did happen. */
+      const back = reversalEntryForPayment({
+        method: line.method,
+        amount: Number(line.amount ?? 0),
+        appointmentId: line.appointmentId,
+      });
+      if (back) {
+        await db.insert(storeCreditTransactions).values({
+          tenantId: line.tenantId,
+          clientId: line.clientId,
+          amount: back.amount,
+          type: back.type,
+          appointmentId: line.appointmentId,
+          note: back.note,
+          createdByUserId: ctx.user.id,
+        });
+      }
+
       const status = await refreshPaymentStatus(db, line.appointmentId);
-      return { success: true, paymentStatus: status };
+      return { success: true, paymentStatus: status, creditReturned: back ? Number(back.amount) : 0 };
     }),
 });
