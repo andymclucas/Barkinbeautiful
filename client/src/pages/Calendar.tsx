@@ -2820,7 +2820,11 @@ export default function Calendar() {
     return filteredAppts.filter(a => aestDateKey(new Date(a.scheduledStart)) === key);
   }, [viewMode, filteredAppts, dayDate]);
 
-  const totalThisView = viewMode === "day" ? dayViewAppts.length : filteredAppts.length;
+  /* Deliberately NOT a second count of the same list. This used to be
+     `dayViewAppts.length`, which included cancelled dogs, so the header
+     said 38 while the sidebar two inches away said 36 and the morning
+     and afternoon figures agreed with neither. It now reads the same
+     number the sidebar prints, so they cannot drift apart again. */
   // Figures for the sidebar, over whichever period is on screen. The maths
   // lives in shared/ because the distinctions - appointments vs dogs, earned
   // vs expected, and excluding cancellations from both - are easy to fudge
@@ -2889,7 +2893,17 @@ export default function Calendar() {
               <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
               {weekLabel}
             </span>
-            <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">{totalThisView} appointments</span>
+            <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+              {sidebarSummary.totalAppointments} appointment{sidebarSummary.totalAppointments === 1 ? "" : "s"}
+              {/* Named rather than silently subtracted. A cancelled dog
+                  is still drawn on the board, so a count that quietly
+                  skipped it would look wrong to anyone counting blocks. */}
+              {sidebarSummary.cancelledCount > 0 && (
+                <span className="ml-1 font-normal text-muted-foreground">
+                  · {sidebarSummary.cancelledCount} cancelled
+                </span>
+              )}
+            </span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Popover open={apptSearchOpen} onOpenChange={(open) => { setApptSearchOpen(open); if (!open) setApptSearchTerm(""); }}>

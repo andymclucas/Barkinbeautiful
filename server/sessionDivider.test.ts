@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { summariseCalendar } from "@shared/calendarSummary";
 import {
   sessionDividerTop, AFTERNOON_SESSION_START,
   minutesIntoLocalDay, afternoonSessionRowIndex, sessionDogCounts,
@@ -219,5 +220,45 @@ describe("dogs who are not coming", () => {
     const c = sessionDogCounts(rows);
     expect(c.morning + c.afternoon + c.unknown).toBe(c.total);
     expect(c.total + c.excluded).toBe(rows.length);
+  });
+});
+
+/**
+ * The three numbers on the calendar header disagreed with each other:
+ * 38 appointments, 36 in the sidebar, and a morning + afternoon that
+ * matched neither. They are all meant to answer "how many dogs today".
+ *
+ * Pinned at the shared level, over the same list, because that is the
+ * only place the agreement can be checked without rendering a page.
+ */
+describe("the day's counters agree", () => {
+  const at = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return new Date(Date.UTC(2026, 9, 30, h - 10, m)).toISOString();
+  };
+  const row = (id: number, time: string, extra: Record<string, unknown> = {}) =>
+    ({ id, petId: id, scheduledStart: at(time), petFamilyGroupId: null, price: "80.00", ...extra });
+
+  const days = [
+    [row(1, "09:00"), row(2, "09:30"), row(3, "12:00")],
+    [row(1, "09:00", { status: "cancelled" }), row(2, "09:30"), row(3, "12:00", { workflowState: "no_show" })],
+    [row(1, "08:00", { petFamilyGroupId: 9 }), row(2, "08:00", { petFamilyGroupId: 9 }),
+     row(3, "08:00", { petFamilyGroupId: 9 }), row(4, "08:00", { petFamilyGroupId: 9 })],
+    [],
+  ];
+
+  it("the halves add up to the sidebar's total", () => {
+    for (const rows of days) {
+      const counts = sessionDogCounts(rows);
+      const summary = summariseCalendar(rows as never);
+      expect(counts.total, JSON.stringify(rows.map((r) => r.id))).toBe(summary.totalAppointments);
+      expect(counts.morning + counts.afternoon + counts.unknown).toBe(counts.total);
+    }
+  });
+
+  it("they drop the same dogs", () => {
+    for (const rows of days) {
+      expect(sessionDogCounts(rows).excluded).toBe(summariseCalendar(rows as never).cancelledCount);
+    }
   });
 });

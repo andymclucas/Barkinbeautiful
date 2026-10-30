@@ -17,6 +17,8 @@
  * CLAUDE.md §6), so the constant lives here in ONE place until then
  * rather than being spelled into the calendar.
  */
+import { isDeadAppointment } from "./calendarSummary";
+
 export const AFTERNOON_SESSION_START = { hour: 11, minute: 30 } as const;
 
 export const AFTERNOON_SESSION_LABEL = "Afternoon";
@@ -168,7 +170,11 @@ export function sessionDogCounts(
   rows: readonly SessionDividerRow[],
   opts: SessionOpts = {},
 ): { morning: number; afternoon: number; unknown: number; total: number; excluded: number } {
-  const live = rows.filter((r) => !isCancelledRow(r));
+  /* The same rule the sidebar totals use, imported rather than
+     restated — two copies of "which dogs are not coming" is exactly
+     the kind of duplication that drifts and leaves two numbers on one
+     screen disagreeing. */
+  const live = rows.filter((r) => !isDeadAppointment(r));
   const sessions = sessionOf(live, opts);
   return {
     morning: sessions.filter((s) => s === "morning").length,
@@ -179,17 +185,4 @@ export function sessionDogCounts(
   };
 }
 
-/**
- * A dog who is not coming.
- *
- * Both columns are checked because they are written independently and
- * have been seen to disagree: the MoeGo sync sets `status` and the
- * board sets `workflowState`.
- */
-function isCancelledRow(row: SessionDividerRow): boolean {
-  const dead = new Set(["cancelled", "no_show"]);
-  const r = row as { status?: string | null; workflowState?: string | null };
-  if (r.status && dead.has(r.status)) return true;
-  if (r.workflowState && dead.has(r.workflowState)) return true;
-  return false;
-}
+
