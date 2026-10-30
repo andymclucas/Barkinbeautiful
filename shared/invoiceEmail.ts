@@ -79,6 +79,32 @@ export type BuiltInvoiceEmail = {
   paidInFull: boolean;
 };
 
+/**
+ * How one pot of money is split across several bills.
+ *
+ * Payments are recorded against the BOOKING, not against an individual
+ * invoice, so a household billed with "Separate Bills" has two invoices
+ * and one sum of money. Handing the whole sum to the first bill printed
+ * "Paid -$170.00" on an $80 invoice and told the client the other $90
+ * was still owing, when they had in fact paid.
+ *
+ * A waterfall, in the order the bills were raised: fill the first, then
+ * the next. It never hands a bill more than it is worth, and the parts
+ * always add back up to what was taken.
+ */
+export function allocatePayments(
+  totals: readonly number[],
+  paid: number,
+): number[] {
+  let left = Math.max(0, Math.round((Number.isFinite(paid) ? paid : 0) * 100));
+  return totals.map((t) => {
+    const owed = Math.max(0, Math.round((Number.isFinite(t) ? t : 0) * 100));
+    const take = Math.min(owed, left);
+    left -= take;
+    return take / 100;
+  });
+}
+
 const GROOMIGO_PRIMARY = "#7c5cff";
 const GROOMIGO_ACCENT = "#efeaff";
 const INK = "#1f1430";

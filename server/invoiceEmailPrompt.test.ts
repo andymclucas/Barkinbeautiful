@@ -184,3 +184,48 @@ describe("a booking billed as separate bills", () => {
       .toBe("Email invoice to Marie Hodson?");
   });
 });
+
+/**
+ * The box has to quote the BOOKING's figures, not the first bill's.
+ * Saying "$80.00, paid in full" while a second $90 bill is about to go
+ * out unpaid would be worse than saying nothing at all.
+ */
+describe("figures on a booking with more than one bill", () => {
+  const twoBills: InvoiceEmailTarget = {
+    ready: true,
+    invoiceNumber: "GROOM-BELLE",
+    invoiceCount: 2,
+    invoiceNumbers: ["GROOM-BELLE", "GROOM-PIPPA"],
+    clientName: "Marie Hodson",
+    email: "marie@example.com",
+    // The FIRST bill only — this is what the old code quoted.
+    total: 80,
+    amountDue: 0,
+    paidInFull: true,
+    // The booking.
+    bookingTotal: 170,
+    bookingAmountDue: 90,
+  };
+
+  it("quotes what is owed across the booking, not the first bill", () => {
+    const p = describeInvoiceEmailPrompt(twoBills);
+    expect(p.body).toContain("$90.00 due");
+    expect(p.body).not.toContain("paid in full");
+  });
+
+  it("calls them invoices, not receipts, while anything is owed", () => {
+    expect(describeInvoiceEmailPrompt(twoBills).title).toContain("bills");
+    expect(describeInvoiceEmailPrompt(twoBills).confirmLabel).toBe("Email 2 bills");
+  });
+
+  it("is a receipt once the whole booking is settled", () => {
+    const p = describeInvoiceEmailPrompt({ ...twoBills, bookingAmountDue: 0 });
+    expect(p.body).toContain("$170.00, paid in full");
+  });
+
+  it("falls back to the single-bill figures when no booking total is given", () => {
+    const { bookingTotal, bookingAmountDue, ...single } = twoBills;
+    const p = describeInvoiceEmailPrompt({ ...single, invoiceCount: 1, invoiceNumbers: ["GROOM-BELLE"] } as InvoiceEmailTarget);
+    expect(p.body).toContain("$80.00, paid in full");
+  });
+});

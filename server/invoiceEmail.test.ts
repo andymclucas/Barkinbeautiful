@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildInvoiceEmail, formatMoney, type InvoiceEmailInput } from "@shared/invoiceEmail";
+import { buildInvoiceEmail, formatMoney, allocatePayments, type InvoiceEmailInput } from "@shared/invoiceEmail";
 
 const SALON = {
   name: "Barkin Beautiful",
@@ -202,5 +202,45 @@ describe("the greeting", () => {
   it("falls back politely when there is no name", () => {
     expect(buildInvoiceEmail({ ...base, clientName: null }).html).toContain("Hi there,");
     expect(buildInvoiceEmail({ ...base, clientName: "   " }).html).toContain("Hi there,");
+  });
+});
+
+/**
+ * Payments are recorded against the BOOKING, not an individual bill, so
+ * a household billed with "Separate Bills" has two invoices and one sum
+ * of money. Handing it all to the first printed "Paid -$170.00" on an
+ * $80 invoice and told the client the other $90 was still owing when
+ * they had in fact paid.
+ */
+describe("allocatePayments", () => {
+  it("fills the first bill, then the next", () => {
+    expect(allocatePayments([80, 90], 170)).toEqual([80, 90]);
+    expect(allocatePayments([80, 90], 100)).toEqual([80, 20]);
+    expect(allocatePayments([80, 90], 0)).toEqual([0, 0]);
+  });
+
+  it("never hands a bill more than it is worth", () => {
+    expect(allocatePayments([80, 90], 500)).toEqual([80, 90]);
+  });
+
+  it("adds back up to what was taken", () => {
+    for (const paid of [0, 15.55, 80, 169.99, 170]) {
+      const parts = allocatePayments([80, 90], paid);
+      const sum = parts.reduce((cents, part) => cents + Math.round(part * 100), 0) / 100;
+      expect(sum, `paid ${paid}`).toBe(Math.min(paid, 170));
+    }
+  });
+
+  it("works in cents, not floating point", () => {
+    expect(allocatePayments([0.1, 0.2], 0.30000000000000004)).toEqual([0.1, 0.2]);
+  });
+
+  it("is unchanged for the ordinary one-bill booking", () => {
+    expect(allocatePayments([186], 186)).toEqual([186]);
+    expect(allocatePayments([186], 50)).toEqual([50]);
+  });
+
+  it("treats a missing total as nothing owed rather than NaN", () => {
+    expect(allocatePayments([NaN, 90], 90)).toEqual([0, 90]);
   });
 });

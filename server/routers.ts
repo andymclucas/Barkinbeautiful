@@ -1786,12 +1786,31 @@ const calendarRouter = router({
       // an appointment is completed, up to whatever balance is available.
       // Never goes negative — if credit doesn't fully cover it, we deduct
       // what's there and leave the rest for normal invoicing.
+      //
+      // Two things this has to do that it did not until 30/10/2026:
+      //
+      // 1. RECORD A PAYMENT. Debiting the balance alone left the groom
+      //    reading `unpaid`, and the invoice raised a few lines below
+      //    reads appointment_payments to decide its status — so a groom
+      //    paid out of credit was billed again in full.
+      // 2. NOT FIRE TWICE. The guard is "entering complete from
+      //    something else", and ready -> complete -> ready -> complete is
+      //    an ordinary morning on the board. Each pass took the money
+      //    again. Skipping when the booking already has a payment makes
+      //    it idempotent, and also stops it doubling up with a
+      //    store-credit payment somebody took at the counter.
       if (input.newState === "complete" && appt.workflowState !== "complete" && appt.price && Number(appt.price) > 0) {
+        const [takenRow] = await db.select({ n: sql<number>`COUNT(*)` })
+          .from(appointmentPayments)
+          .where(eq(appointmentPayments.appointmentId, appt.id));
+        const alreadyPaidSomething = Number(takenRow?.n ?? 0) > 0;
+
         const [balanceRow] = await db.select({ total: sql<string>`COALESCE(SUM(${storeCreditTransactions.amount}), 0)` })
           .from(storeCreditTransactions)
           .where(and(eq(storeCreditTransactions.tenantId, appt.tenantId), eq(storeCreditTransactions.clientId, appt.clientId)));
         const availableBalance = Number(balanceRow?.total ?? 0);
-        if (availableBalance > 0) {
+
+        if (availableBalance > 0 && !alreadyPaidSomething) {
           const deduction = Math.min(availableBalance, Number(appt.price));
           await db.insert(storeCreditTransactions).values({
             tenantId: appt.tenantId,
@@ -1800,6 +1819,16 @@ const calendarRouter = router({
             type: "appointment_deduction",
             appointmentId: appt.id,
             note: `Auto-deducted on appointment completion`,
+          });
+          // The other half of the same movement. Without it the balance
+          // goes down and nothing says the groom was paid.
+          await db.insert(appointmentPayments).values({
+            tenantId: appt.tenantId,
+            appointmentId: appt.id,
+            clientId: appt.clientId,
+            amount: deduction.toFixed(2),
+            method: "store_credit",
+            note: "Store credit applied automatically on completion",
           });
         }
       }

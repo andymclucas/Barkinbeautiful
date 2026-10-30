@@ -33,9 +33,13 @@ import { getDb } from "../db";
 import {
   appointmentAddOns, appointmentPayments, appointments, clients, pets,
   invoices, invoiceAppointments, invoiceLineItems, tenants,
+  storeCreditTransactions,
 } from "../../drizzle/schema";
+import {
+  creditEntryForPayment, reversalEntryForPayment, describeCreditShortfall,
+} from "@shared/storeCreditSpend";
 import { sendEmail } from "../email";
-import { buildInvoiceEmail, type InvoiceEmailLine } from "@shared/invoiceEmail";
+import { buildInvoiceEmail, allocatePayments, type InvoiceEmailLine } from "@shared/invoiceEmail";
 import { INVOICE_EMAIL_ENABLED, INVOICE_EMAIL_HELD_MESSAGE } from "@shared/invoiceEmailGate";
 import { billableTotalsByAppointment, addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
@@ -378,6 +382,14 @@ async function findBookingInvoices(db: any, tenantId: number, appointmentIds: nu
 /** Everything the email needs, gathered once so the query and the send agree. */
 async function gatherInvoiceEmail(db: any, tenantId: number, appointmentId: number) {
   const { appointment, rows } = await loadBookingAppointments(db, appointmentId);
+  /* loadBookingAppointments takes no tenant, and the staff-access guard
+     returns early for admins — so without this an admin of one salon
+     could read another salon's client name and email back out of the
+     "no bill for this booking" response. Nothing could be sent that
+     way, but it should not be readable either. */
+  if (appointment.tenantId !== tenantId) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "That booking is not this salon's" });
+  }
   const ids = rows.map((r: any) => r.id);
 
   const bookingInvoices = await findBookingInvoices(db, tenantId, ids);
@@ -390,7 +402,7 @@ async function gatherInvoiceEmail(db: any, tenantId: number, appointmentId: numb
       email: clients.email,
     })
     .from(clients)
-    .where(eq(clients.id, appointment.clientId))
+    .where(and(eq(clients.id, appointment.clientId), eq(clients.tenantId, tenantId)))
     .limit(1);
 
   const [salon] = await db
@@ -608,8 +620,52 @@ export const paymentsRouter = router({
         recordedByUserId: ctx.user.id,
       });
 
+      /* Spending store credit has to come OFF the balance.
+         Until 30/10/2026 it did not, so the same credit could be spent
+         twice: Mike Graham's ledger read $840 with $40 already used.
+         The debit goes against the PAYER, who is not always the
+         appointment's own client on a household booking. */
+      const creditEntry = creditEntryForPayment({
+        method: input.method,
+        amount: check.amount,
+        appointmentId: appointment.id,
+      });
+      let creditBalance: number | null = null;
+      let creditWarning: string | null = null;
+      if (creditEntry) {
+        await db.insert(storeCreditTransactions).values({
+          tenantId: appointment.tenantId,
+          clientId: payerClientId,
+          amount: creditEntry.amount,
+          type: creditEntry.type,
+          appointmentId: appointment.id,
+          note: creditEntry.note,
+          createdByUserId: ctx.user.id,
+        });
+        const [row] = await db
+          .select({ total: sql<string>`COALESCE(SUM(${storeCreditTransactions.amount}), 0)` })
+          .from(storeCreditTransactions)
+          .where(and(
+            eq(storeCreditTransactions.tenantId, appointment.tenantId),
+            eq(storeCreditTransactions.clientId, payerClientId),
+          ));
+        creditBalance = Number(row?.total ?? 0);
+        /* Reported, never refused. Credit is still being carried over
+           from MoeGo by hand, so a client can hold credit this system
+           has not heard of — blocking would stop the counter. */
+        creditWarning = describeCreditShortfall(
+          creditBalance + check.amount, check.amount,
+        ).message;
+      }
+
       const status = await refreshPaymentStatus(db, appointment.id);
-      return { id: Number((result as any).insertId), amount: check.amount, paymentStatus: status };
+      return {
+        id: Number((result as any).insertId),
+        amount: check.amount,
+        paymentStatus: status,
+        creditBalance,
+        creditWarning,
+      };
     }),
 
 
@@ -647,6 +703,8 @@ export const paymentsRouter = router({
 
       const total = Number(invoice.total ?? 0);
       const dueCents = Math.max(0, Math.round(total * 100) - Math.round(paid * 100));
+      const bookingTotal = bookingInvoices.reduce(
+        (sum: number, b: any) => sum + Math.round(Number(b.total ?? 0) * 100), 0);
 
       return {
         ready: true as const,
@@ -667,6 +725,10 @@ export const paymentsRouter = router({
            or staff send one and believe they sent them all. */
         invoiceCount: bookingInvoices.length,
         invoiceNumbers: bookingInvoices.map((i: any) => i.invoiceNumber),
+        /* Across every bill, so the box does not quote the first one's
+           figures for a booking that has two. */
+        bookingTotal: bookingTotal / 100,
+        bookingAmountDue: Math.max(0, bookingTotal - Math.round(paid * 100)) / 100,
       };
     }),
 
@@ -729,6 +791,13 @@ export const paymentsRouter = router({
       /* Every bill covering this booking, not just the first.
          "Separate Bills" raises one per dog, and sending one while
          marking the job done is how the second dog goes unbilled. */
+      /* One pot of money, several bills. Giving it all to the first
+         printed "Paid" on a bill it over-covered and told the client
+         the second was still owing when they had paid. */
+      const allocated = allocatePayments(
+        bookingInvoices.map((b: any) => Number(b.total ?? 0)), paid,
+      );
+
       const results: { invoiceNumber: string; paidInFull: boolean; amountDue: number }[] = [];
       for (const [index, bill] of bookingInvoices.entries()) {
         /* The lines as billed, not recomputed. An invoice is a record of
@@ -749,10 +818,6 @@ export const paymentsRouter = router({
           amount: Number(l.lineTotal ?? 0),
         }));
 
-        /* Payments are recorded against the BOOKING, not against an
-           individual bill, so they can only be set against the total
-           once. Applying them to each of two separate bills would show
-           the same money twice and report both as paid. */
         const built = buildInvoiceEmail({
           salon: {
             name: salon?.name ?? "",
@@ -770,7 +835,7 @@ export const paymentsRouter = router({
           serviceOn: servicedOn,
           lines,
           total: Number(bill.total ?? 0),
-          amountPaid: index === 0 ? paid : 0,
+          amountPaid: allocated[index] ?? 0,
         });
 
         const sent = await sendEmail({
@@ -809,8 +874,14 @@ export const paymentsRouter = router({
         });
       }
 
+      /* Only FILLS a gap; never replaces an address the client already
+         has. The dialog only offers the tick box when there is nothing
+         on file, but the procedure is reachable directly, and silently
+         rewriting a client's email from a typo at the counter is not
+         something a send should be able to do. */
       let savedToClient = false;
-      if (input.saveToClient && client?.id && recipient !== (client.email ?? "").trim()) {
+      const hadEmail = (client?.email ?? "").trim().length > 0;
+      if (input.saveToClient && client?.id && !hadEmail) {
         await db.update(clients)
           .set({ email: recipient })
           .where(and(eq(clients.id, client.id), eq(clients.tenantId, tenantId)));
@@ -834,7 +905,14 @@ export const paymentsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [line] = await db
-        .select({ id: appointmentPayments.id, appointmentId: appointmentPayments.appointmentId })
+        .select({
+          id: appointmentPayments.id,
+          appointmentId: appointmentPayments.appointmentId,
+          tenantId: appointmentPayments.tenantId,
+          clientId: appointmentPayments.clientId,
+          amount: appointmentPayments.amount,
+          method: appointmentPayments.method,
+        })
         .from(appointmentPayments)
         .where(eq(appointmentPayments.id, input.paymentId))
         .limit(1);
@@ -842,7 +920,29 @@ export const paymentsRouter = router({
       await requireApprovedStaffAppointmentAccess(db, ctx.user, line.appointmentId);
 
       await db.delete(appointmentPayments).where(eq(appointmentPayments.id, line.id));
+
+      /* Taking the payment off has to put the credit back, or removing
+         a mistyped store-credit payment quietly destroys the client's
+         balance. An entry, not a delete: the ledger is an audit trail
+         and the original debit really did happen. */
+      const back = reversalEntryForPayment({
+        method: line.method,
+        amount: Number(line.amount ?? 0),
+        appointmentId: line.appointmentId,
+      });
+      if (back) {
+        await db.insert(storeCreditTransactions).values({
+          tenantId: line.tenantId,
+          clientId: line.clientId,
+          amount: back.amount,
+          type: back.type,
+          appointmentId: line.appointmentId,
+          note: back.note,
+          createdByUserId: ctx.user.id,
+        });
+      }
+
       const status = await refreshPaymentStatus(db, line.appointmentId);
-      return { success: true, paymentStatus: status };
+      return { success: true, paymentStatus: status, creditReturned: back ? Number(back.amount) : 0 };
     }),
 });
