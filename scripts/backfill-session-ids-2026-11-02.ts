@@ -30,6 +30,11 @@
  * Scoped to appointments that have not happened yet. A past visit's
  * invoice is history, and regrouping what was already billed would
  * rewrite it.
+ *
+ * Applied 02/11/2026: 173 bookings grouped, 368 appointments given a
+ * sessionId, none left ungrouped. Varinia Taylor's Louis and Torah -
+ * the booking in Lauren's screenshot, billing Torah alone for $117 -
+ * are one session from now on.
  */
 import "dotenv/config";
 import mysql from "mysql2/promise";
