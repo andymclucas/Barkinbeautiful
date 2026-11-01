@@ -21,6 +21,13 @@
  * and the target day is checked for that pet first — a dog on the
  * floor is untouchable and a dog booked twice is the worst outcome
  * here.
+ *
+ * Applied 01/11/2026: all five moved. The twelve days then held 407
+ * dogs against MoeGo's 410, no dog booked twice, and every remaining
+ * difference accounted for — five dogs whose owners are new to MoeGo
+ * and do not exist in Groomigo yet, less two MoeGo has since dropped
+ * from their bookings and which are left alone, because absence from
+ * the export is not a cancellation.
  */
 import "dotenv/config";
 import mysql from "mysql2/promise";
