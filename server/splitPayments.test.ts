@@ -155,6 +155,17 @@ describe("payment methods", () => {
     }
     expect(Object.keys(PAYMENT_METHOD_LABELS)).toHaveLength(PAYMENT_METHODS.length);
   });
+
+  /**
+   * Taking a payment on this panel charges nothing — it records money
+   * that already arrived. A bare "Stripe" read like a button that would
+   * charge the card on file, and picking it marked the booking paid and
+   * took nothing. The label has to keep saying so.
+   */
+  it("says the Stripe option is a record of money already taken, not a charge", () => {
+    expect(PAYMENT_METHOD_LABELS.stripe).not.toBe("Stripe");
+    expect(PAYMENT_METHOD_LABELS.stripe.toLowerCase()).toContain("already paid");
+  });
 });
 
 describe("toCents", () => {
