@@ -23,6 +23,7 @@ import {
   type DogSizeBand, type SizeBandSource,
 } from "@shared/dogSizeBand";
 import { StripeCardPanel } from "@/components/StripeCardPanel";
+import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPricing";
 import { PetAvatar } from "@/components/PetAvatar";
 import { trpc } from "@/lib/trpc";
 import { useParams } from "wouter";
@@ -642,6 +643,21 @@ export default function ClientDetail() {
   const [bookPetId, setBookPetId] = useState<string>("");
   const [bookFamilyPetIds, setBookFamilyPetIds] = useState<string[]>([]);
   const [bookService, setBookService] = useState("classic_groom");
+  /**
+   * Per-dog price and extras, keyed by pet id.
+   *
+   * Lauren, 02/11/2026: "I still can't do seperate add ons to each dog
+   * on the initial putting the appointment into Groomigo."
+   *
+   * The server has taken both since per-dog extras were built, and the
+   * calendar's dialog has sent them all along. This one never did: it
+   * posted one serviceType and one price for every dog on the booking,
+   * so a second dog's nail trim had to be added afterwards on the
+   * appointment, or not at all. Booking a transferred client from their
+   * own page is exactly when a regular's extras are known.
+   */
+  const [bookPriceByPetId, setBookPriceByPetId] = useState<Record<string, string>>({});
+  const [bookAddOnsByPetId, setBookAddOnsByPetId] = useState<Record<string, StagedAddOn[]>>({});
   const [bookDate, setBookDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [bookTime, setBookTime] = useState("09:00");
   /**
@@ -725,6 +741,8 @@ export default function ClientDetail() {
       scheduledStart: start.toISOString(),
       scheduledEnd: end.toISOString(),
       price: bookingMembershipCoverage.fullyCovered ? "0.00" : undefined,
+      priceByPetId: bookPriceByPetId,
+      addOnsByPetId: bookAddOnsByPetId,
     });
   };
 
@@ -1987,7 +2005,7 @@ export default function ClientDetail() {
       </div>
 
       {/* ── Book Appointment Dialog ── */}
-      <Dialog open={bookOpen} onOpenChange={open => { setBookOpen(open); if (!open) setBookFamilyPetIds([]); }}>
+      <Dialog open={bookOpen} onOpenChange={open => { setBookOpen(open); if (!open) { setBookFamilyPetIds([]); setBookPriceByPetId({}); setBookAddOnsByPetId({}); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2031,6 +2049,26 @@ export default function ClientDetail() {
                 </SelectContent>
               </Select>
             </div>
+            {/* A price box and an extras picker per dog, the same
+                component the calendar's dialog uses. */}
+            {bookingPetIds.length > 0 && (
+              <BookingPetPricing
+                clientId={client.id}
+                petIds={bookingPetIds}
+                serviceType={bookService}
+                membershipCovered={bookingMembershipCoverage.fullyCovered}
+                priceByPetId={bookPriceByPetId}
+                onPricesChange={setBookPriceByPetId}
+                addOnsByPetId={bookAddOnsByPetId}
+                onAddOnsChange={setBookAddOnsByPetId}
+                onServiceTypeChange={setBookService}
+                onRepeatLast={last => {
+                  // Only fill a groomer nobody has chosen yet, so
+                  // repeating last time cannot undo a deliberate pick.
+                  if (last.staffId && !bookStaffId) setBookStaffId(String(last.staffId));
+                }}
+              />
+            )}
             {/* Date + Time */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
