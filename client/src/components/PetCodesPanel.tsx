@@ -22,7 +22,7 @@
  * optional act for somebody who can edit salon-wide settings.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, X } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -52,8 +52,12 @@ export function PetCodesPanel({ petId, petName, codes, onSaved }: {
    */
   const fromBooking = useMemo(() => parsePetCodes(codes), [codes]);
   const [saved, setSaved] = useState<string[] | null>(null);
+  /** The code currently being renamed on this dog, and its new text. */
+  const [editing, setEditing] = useState<{ was: string; now: string } | null>(null);
+  /** The salon has ~90 codes; the full list is opt-in. */
+  const [showAll, setShowAll] = useState(false);
   // A different dog in the sub-tabs is a different list.
-  useEffect(() => { setSaved(null); setDraft(""); }, [petId]);
+  useEffect(() => { setSaved(null); setDraft(""); setEditing(null); setShowAll(false); }, [petId]);
   const current = saved ?? fromBooking;
 
   const { data: catalogue } = trpc.petCodes.list.useQuery({ includeInactive: false });
@@ -85,6 +89,23 @@ export function PetCodesPanel({ petId, petName, codes, onSaved }: {
     }
     save([...current, clean]);
     setDraft("");
+  };
+
+  /**
+   * Renaming is a replace at the same position, not a remove and an
+   * add. "Ner" becoming "Nervous" should stay where it was in the list
+   * rather than jumping to the end, because staff read these in the
+   * order they were put on.
+   */
+  const rename = (was: string, now: string) => {
+    const clean = now.trim();
+    setEditing(null);
+    if (!clean || clean === was) return;
+    if (current.some((c) => c.toLowerCase() === clean.toLowerCase() && c !== was)) {
+      toast.info(`${petName ?? "This dog"} already has ${clean}`);
+      return;
+    }
+    save(current.map((c) => (c === was ? clean : c)));
   };
 
   const meaningOf = (code: string) =>
@@ -125,6 +146,31 @@ export function PetCodesPanel({ petId, petName, codes, onSaved }: {
         )}
         {current.map((code) => {
           const meta = meaningOf(code);
+          if (editing?.was === code) {
+            return (
+              <span key={code} className="inline-flex items-center gap-1">
+                <Input
+                  autoFocus
+                  className="h-7 w-36 text-xs"
+                  value={editing.now}
+                  maxLength={80}
+                  onChange={(e) => setEditing({ was: code, now: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); rename(code, editing.now); }
+                    if (e.key === "Escape") setEditing(null);
+                  }}
+                />
+                <button
+                  type="button"
+                  aria-label={`Save ${code}`}
+                  className="text-emerald-600"
+                  onClick={() => rename(code, editing.now)}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            );
+          }
           return (
             <span
               key={code}
@@ -133,6 +179,15 @@ export function PetCodesPanel({ petId, petName, codes, onSaved }: {
               style={meta?.colourHex ? { borderColor: meta.colourHex, color: meta.colourHex } : undefined}
             >
               {code}
+              <button
+                type="button"
+                aria-label={`Edit ${code}`}
+                className="opacity-50 transition-opacity hover:opacity-100"
+                disabled={update.isPending}
+                onClick={() => setEditing({ was: code, now: code })}
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
               <button
                 type="button"
                 aria-label={`Remove ${code}`}
