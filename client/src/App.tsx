@@ -21,6 +21,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 
 // Pages — Admin
 const Dashboard = lazyPage(() => import("./pages/Dashboard"));
+const ChristmasCountdown = lazyPage(() => import("./pages/ChristmasCountdown"));
 const Calendar = lazyPage(() => import("./pages/Calendar"));
 const WorkflowBoard = lazyPage(() => import("./pages/WorkflowBoard"));
 const WorkflowDisplay = lazyPage(() => import("./pages/WorkflowDisplay"));
@@ -82,6 +83,7 @@ function Router() {
     <Switch>
       {/* Admin routes */}
       <Route path="/" component={Dashboard} />
+      <Route path="/christmas" component={ChristmasCountdown} />
       <Route path="/calendar" component={Calendar} />
       <Route path="/workflow" component={WorkflowBoard} />
       <Route path="/workflow/display" component={WorkflowDisplay} />

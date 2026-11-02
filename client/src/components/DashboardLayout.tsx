@@ -62,6 +62,7 @@ import {
   ImageOff,
   Palette,
   Settings,
+  TreePine,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -72,6 +73,8 @@ import { StaffAvatar } from "@/components/StaffAvatar";
 import { MyProfileDialog } from "@/components/MyProfileDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { viewableSections, STAFF_SECTIONS } from "@shared/staffPermissions";
+import { seasonYearFor } from "@shared/christmasCountdown";
+import { brisbaneDay } from "@shared/collectBy";
 import { toast } from "sonner";
 import { useSalonDocumentTitle } from "@/hooks/useSalonDocumentTitle";
 import { useRealtimeInvalidation } from "@/hooks/useRealtimeInvalidation";
@@ -95,6 +98,18 @@ const sectionPath = (key: string): string => STAFF_SECTIONS.find((s) => s.key ==
 // The sidebar a restricted staff account sees. Same rule as the route
 // guard: a link to a page they would be bounced off is worse than no link.
 const staffOperationMenuItems = menuItems.filter((item) => isStaffOperationRoute(item.path));
+
+/**
+ * Only in the run-up, and shown to everyone including restricted staff.
+ *
+ * Andy, 02/11/2026: "Add it to the sidebar too." It is a dog count with
+ * no money in it, and the groomers doing the grooming are who it is
+ * for — the matching procedure is operational for the same reason.
+ *
+ * Appended rather than placed in menuItems so it cannot drift into the
+ * permanent list once Christmas is over.
+ */
+const christmasMenuItem = { icon: TreePine, label: "Christmas countdown", path: "/christmas" };
 
 
 /** Perceived luminance 0–1 for a #rrggbb hex colour. */
@@ -296,12 +311,20 @@ function DashboardLayoutContent({
     "/portal-messages": counts?.portalMessages ?? 0,
   };
 
-  const visibleMenuItems =
+  const permittedMenuItems =
     user?.role === "staff"
       ? menuItems.filter(
           (item) => staffOperationMenuItems.includes(item) || grantedPaths?.has(item.path),
         )
       : menuItems;
+  /* The salon's calendar day, not the browser's clock read in UTC —
+     Brisbane's first ten hours of 1 November are still October there,
+     and the link would be missing for the morning it starts. The page
+     behind it asks the server for the real figures either way. */
+  const inChristmasSeason = seasonYearFor(brisbaneDay(new Date()) ?? "") !== null;
+  const visibleMenuItems = inChristmasSeason
+    ? [...permittedMenuItems, christmasMenuItem]
+    : permittedMenuItems;
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
