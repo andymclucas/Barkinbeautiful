@@ -89,6 +89,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { CalendarSidebar } from "@/components/CalendarSidebar";
 import { PetPhotoQuickAdd } from "@/components/PetPhotoQuickAdd";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
+import { PetCodesPanel } from "@/components/PetCodesPanel";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
@@ -4062,6 +4063,7 @@ export default function Calendar() {
             <Tabs defaultValue="details">
               <TabsList className="w-full">
                 <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
+                <TabsTrigger value="codes" className="flex-1">Pet Codes</TabsTrigger>
                 <TabsTrigger value="report" className="flex-1">Grooming Report</TabsTrigger>
                 <TabsTrigger value="style" className="flex-1">Style Notes</TabsTrigger>
               </TabsList>
@@ -4602,6 +4604,52 @@ export default function Calendar() {
                     {rescheduleMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
                 </DialogFooter>
+              </TabsContent>
+
+              {/* Lauren, 03/11/2026: a shortcut to a dog's codes from the
+                  booking, instead of client -> pet -> codes. Same per-dog
+                  sub-tab shape as Grooming Report, so a four-dog booking
+                  behaves the way staff already expect. */}
+              <TabsContent value="codes" className="pt-2">
+                {(() => {
+                  const allPets = [editAppt, ...editSiblings];
+                  if (allPets.length <= 1) {
+                    return (
+                      <div className="max-h-[70vh] overflow-y-auto pr-1">
+                        <PetCodesPanel
+                          petId={editAppt.petId}
+                          petName={editAppt.petName}
+                          codes={editAppt.petMoegoCodeLabels}
+                        />
+                      </div>
+                    );
+                  }
+                  return (
+                    <Tabs defaultValue={String(allPets[0].petId)}>
+                      <TabsList className="w-full mb-3">
+                        {allPets.map((pet) => (
+                          <TabsTrigger key={pet.petId} value={String(pet.petId)} className="flex-1 gap-1.5">
+                            <span className="h-5 w-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">
+                              {(pet.petName ?? "?")[0]}
+                            </span>
+                            {pet.petName}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                      {allPets.map((pet) => (
+                        <TabsContent key={pet.petId} value={String(pet.petId)} className="mt-0">
+                          <div className="max-h-[65vh] overflow-y-auto pr-1">
+                            <PetCodesPanel
+                              petId={pet.petId}
+                              petName={pet.petName}
+                              codes={pet.petMoegoCodeLabels}
+                            />
+                          </div>
+                        </TabsContent>
+                      ))}
+                    </Tabs>
+                  );
+                })()}
               </TabsContent>
 
               <TabsContent value="style" className="pt-2">
