@@ -62,7 +62,6 @@ import {
   ImageOff,
   Palette,
   Settings,
-  TreePine,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -109,7 +108,36 @@ const staffOperationMenuItems = menuItems.filter((item) => isStaffOperationRoute
  * Appended rather than placed in menuItems so it cannot drift into the
  * permanent list once Christmas is over.
  */
-const christmasMenuItem = { icon: TreePine, label: "Christmas countdown", path: "/christmas" };
+/**
+ * Andy, 02/11/2026: "have an Christmas emoji for the title on the sidebar."
+ *
+ * It goes in the icon slot rather than on the front of the label, so the
+ * row is not a tree emoji next to a lucide tree. The loop renders
+ * item.icon as a component and hands it a className, so an emoji has to
+ * arrive as one too — the alternative is special-casing the map, which
+ * would then have to be understood by everyone who ever adds a nav item.
+ *
+ * The className it is given carries text colours for the active and
+ * hover states. They do nothing to a colour emoji, which is fine: this
+ * row is meant to stand out from the greyscale list, and that is the
+ * whole reason for asking for an emoji.
+ */
+function ChristmasTreeIcon({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={`${className ?? ""} inline-flex items-center justify-center text-[15px] leading-none`}
+    >
+      🎄
+    </span>
+  );
+}
+
+const christmasMenuItem = {
+  icon: ChristmasTreeIcon,
+  label: "Christmas countdown",
+  path: "/christmas",
+};
 
 
 /** Perceived luminance 0–1 for a #rrggbb hex colour. */
