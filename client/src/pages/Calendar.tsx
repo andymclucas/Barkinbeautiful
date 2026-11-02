@@ -1,6 +1,7 @@
 import { sessionDividerTop, AFTERNOON_SESSION_LABEL } from "@shared/sessionDivider";
 import { applyStaffOrder, moveStaff } from "@shared/staffColumnOrder";
 import DashboardLayout from "@/components/DashboardLayout";
+import { BookingWarnings } from "@/components/BookingWarnings";
 import { MoegoBadge } from "@/components/MoegoBadge";
 import { repriceForService } from "@shared/repricing";
 import type { DogSizeBand } from "@shared/dogSizeBand";
@@ -1371,6 +1372,8 @@ export default function Calendar() {
     firstName: string | null;
     lastName: string | null;
     phone: string | null;
+    /** active | inactive | lapsed | blocked. Only "blocked" warns. */
+    clientStatus: string | null;
     pets: Array<{ petId: number | null; petName: string | null; petBreed: string | null }>;
   };
   // Group search results by client, collecting all pets per client
@@ -1384,6 +1387,7 @@ export default function Calendar() {
           firstName: r.firstName,
           lastName: r.lastName,
           phone: r.phone,
+          clientStatus: r.clientStatus,
           pets: [],
         });
       }
@@ -1396,6 +1400,16 @@ export default function Calendar() {
     }
     return Array.from(map.values());
   }, [clientSearchResults]);
+  /*
+   * The client half of the New Appointment warning panel. It comes off the
+   * picker, which now carries status, so it costs no extra round trip. The
+   * dogs half is further down, where selectedClientPets exists.
+   */
+  const newApptClientOption = useMemo(
+    () => clientSearchOptions.find((c) => String(c.clientId) === newAppt.clientId) ?? null,
+    [clientSearchOptions, newAppt.clientId],
+  );
+
   const { data: tenantInfo } = trpc.settings.getTenantInfo.useQuery({});
 
   const createMutation = trpc.calendar.createAppointment.useMutation({
@@ -1804,6 +1818,16 @@ export default function Calendar() {
     { clientId: parseInt(newAppt.clientId) },
     { enabled: !!newAppt.clientId && !isNaN(parseInt(newAppt.clientId)) }
   );
+  /*
+   * The dogs half of the New Appointment warning panel — whichever are
+   * ticked right now, so the warnings follow the selection. listByClient is
+   * a bare select, so alertLevel and warnings were already on the wire and
+   * simply never shown.
+   */
+  const newApptWarningPets = useMemo(() => {
+    const chosen = new Set(newAppt.petIds);
+    return (selectedClientPets.data ?? []).filter((p) => chosen.has(String(p.id)));
+  }, [selectedClientPets.data, newAppt.petIds]);
 
   // Drop a dog that has passed away from the selection as soon as the
   // list says so. Tyson was sitting selected and priced in a booking
@@ -3390,6 +3414,20 @@ export default function Calendar() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Above the pickers, same reasoning as the client page: the
+                thing that should stop a booking cannot sit below the thing
+                that completes it. */}
+            <BookingWarnings
+              client={
+                newApptClientOption
+                  ? {
+                      name: `${newApptClientOption.firstName ?? ""} ${newApptClientOption.lastName ?? ""}`.trim(),
+                      status: newApptClientOption.clientStatus,
+                    }
+                  : null
+              }
+              pets={newApptWarningPets}
+            />
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5 col-span-2">
                 <Label>Client *</Label>
