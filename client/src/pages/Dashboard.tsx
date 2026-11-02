@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NetSalesPerformance } from "@/components/NetSalesPerformance";
+import { ChristmasCountdownCard } from "@/components/ChristmasCountdownCard";
 import { CalendarDays, Users, CreditCard, TrendingUp, AlertTriangle, Dog, Clock, ArrowRight, MessageSquare, Phone } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
@@ -217,6 +218,9 @@ export default function Dashboard() {
             (monthStart → tomorrow), so the number and the shape can never
             disagree about the same month. The chart owns its own query and
             its own validated palette; this page just says where it goes. */}
+        {/* Renders itself away outside the run-up to Christmas. */}
+        <ChristmasCountdownCard />
+
         <NetSalesPerformance dateFrom={monthStart} dateTo={tomorrow} />
 
         {/* Alerts */}
