@@ -3,6 +3,7 @@ import { Banknote, CreditCard, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
+import { CardEntryDialog } from "@/components/CardEntryDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -625,6 +626,12 @@ function CardOnFileRow({
   onPaid: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [entering, setEntering] = useState(false);
+  const utils = trpc.useUtils();
+  // Whether the card can be typed in here, or has to go through
+  // Stripe's hosted tab. Absent a publishable key the hosted link still
+  // works, so this degrades rather than breaking.
+  const { data: entry } = trpc.payments.cardEntryConfig.useQuery();
   const { data: card } = trpc.payments.cardOnFile.useQuery(
     { appointmentId: anchorAppointmentId, owingCents: Math.max(0, owingCents) },
     { enabled: anchorAppointmentId > 0 },
@@ -689,7 +696,12 @@ function CardOnFileRow({
             variant={needsCard ? "outline" : "default"}
             className="h-8 gap-1.5"
             disabled={busy || (!needsCard && !canCharge)}
-            onClick={() => (needsCard ? setupLink.mutate({ appointmentId: anchorAppointmentId }) : setConfirming(true))}
+            onClick={() => {
+              if (!needsCard) return setConfirming(true);
+              // In place when we can, Stripe's tab when we cannot.
+              if (entry?.inPlace) setEntering(true);
+              else setupLink.mutate({ appointmentId: anchorAppointmentId });
+            }}
           >
             {setupLink.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {card.action}
@@ -697,6 +709,12 @@ function CardOnFileRow({
         )}
       </div>
       {card.hint && <p className="w-full text-[11px] leading-snug text-muted-foreground">{card.hint}</p>}
+      <CardEntryDialog
+        appointmentId={anchorAppointmentId}
+        open={entering}
+        onOpenChange={setEntering}
+        onSaved={() => utils.payments.cardOnFile.invalidate()}
+      />
     </div>
   );
 }

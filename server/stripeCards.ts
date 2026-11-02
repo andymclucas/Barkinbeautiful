@@ -144,6 +144,74 @@ export async function emailCardSetupLink(clientId: number) {
  *
  * Called from the webhook once the client has entered a card.
  */
+/**
+ * A SetupIntent for entering a card inside Groomigo, rather than on
+ * Stripe's hosted page.
+ *
+ * Andy, 03/11/2026: "add a card to the client's file securely without
+ * authenticating... would be a huge job to try and add 12,000 cards
+ * with text messages."
+ *
+ * The hosted page already sent nothing — it opens in a tab — but it is
+ * still a tab, and a client standing at the counter should not need
+ * one. This returns a client secret that Stripe's own card fields
+ * confirm directly from the browser, so the number goes from the iPad
+ * to Stripe and never touches this server. That is what keeps the
+ * business on SAQ A; a plain <input> for a card number would end it.
+ *
+ * `usage: "off_session"` because the whole point is charging it later
+ * without the client present.
+ */
+export async function createCardSetupIntent(clientId: number) {
+  const stripe = requireStripeClient();
+  const customerId = await ensureStripeCustomer(clientId);
+  const intent = await stripe.setupIntents.create({
+    customer: customerId,
+    usage: "off_session",
+    payment_method_types: ["card"],
+    metadata: { groomigo_client_id: String(clientId), payment_kind: "card_on_file" },
+  });
+  if (!intent.client_secret) throw new Error("Stripe did not return a client secret");
+  return { clientSecret: intent.client_secret, setupIntentId: intent.id, customerId };
+}
+
+/**
+ * Save the card a SetupIntent just collected.
+ *
+ * Called by the browser the moment Stripe confirms, rather than left to
+ * the `setup_intent.succeeded` webhook. Two reasons: the staff member
+ * is standing there and needs to see it worked, and a webhook that
+ * arrives late or not at all would leave a card that Stripe holds and
+ * Groomigo does not know about.
+ *
+ * The customer on the intent is checked against the client being saved
+ * against, so a tampered setupIntentId cannot attach somebody else's
+ * card to this record.
+ */
+export async function saveCardFromSetupIntent(clientId: number, setupIntentId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const stripe = requireStripeClient();
+  const intent = await stripe.setupIntents.retrieve(setupIntentId);
+  if (intent.status !== "succeeded") {
+    throw new Error(`That card was not confirmed (${intent.status})`);
+  }
+  const [client] = await db
+    .select({ stripeCustomerId: clients.stripeCustomerId })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1);
+  const intentCustomer = typeof intent.customer === "string" ? intent.customer : intent.customer?.id;
+  if (!intentCustomer || (client?.stripeCustomerId && client.stripeCustomerId !== intentCustomer)) {
+    throw new Error("That card belongs to a different client");
+  }
+  const paymentMethodId = typeof intent.payment_method === "string"
+    ? intent.payment_method
+    : intent.payment_method?.id;
+  if (!paymentMethodId) throw new Error("Stripe returned no payment method");
+  return attachPaymentMethodToClient(clientId, paymentMethodId);
+}
+
 export async function attachPaymentMethodToClient(clientId: number, paymentMethodId: string) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

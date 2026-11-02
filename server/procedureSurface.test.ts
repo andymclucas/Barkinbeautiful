@@ -189,12 +189,15 @@ const OPERATIONAL = [
   "membershipsRouter.getPackageOptions",
   "membershipsRouter.searchClients",
   "onlineBookingRouter.listAllMoegoIds",
+  "paymentsRouter.cardEntryConfig",
   "paymentsRouter.cardOnFile",
   "paymentsRouter.cardSetupLink",
   "paymentsRouter.chargeCardOnFile",
+  "paymentsRouter.createCardSetupIntent",
   "paymentsRouter.forBooking",
   "paymentsRouter.record",
   "paymentsRouter.remove",
+  "paymentsRouter.saveCardFromSetupIntent",
   "paymentsRouter.setBilledOverride",
   // Reading the pet-code vocabulary. Operational because the board, the
   // pet record and the hover card all show what a code means, and those
@@ -279,7 +282,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(359);
+    expect(surface).toHaveLength(362);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -290,7 +293,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(123);
+    expect(OPERATIONAL).toHaveLength(126);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
