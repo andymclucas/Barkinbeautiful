@@ -63,7 +63,7 @@ import {
   Palette,
   Settings,
 } from "lucide-react";
-import { CSSProperties, useEffect, useRef, useState } from "react";
+import { ComponentType, CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { trpc } from "@/lib/trpc";
@@ -78,7 +78,24 @@ import { toast } from "sonner";
 import { useSalonDocumentTitle } from "@/hooks/useSalonDocumentTitle";
 import { useRealtimeInvalidation } from "@/hooks/useRealtimeInvalidation";
 
-const menuItems = [
+/**
+ * A row in the sidebar.
+ *
+ * `icon` is typed as a plain component rather than LucideIcon because one of
+ * these rows renders an emoji — see ChristmasTreeIcon.
+ *
+ * `className` is how a single row gets its own treatment without the map
+ * growing a branch that everyone adding a nav item then has to read. Only
+ * the Christmas row uses it today.
+ */
+type NavItem = {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  path: string;
+  className?: string;
+};
+
+const menuItems: NavItem[] = [
   { icon: CalendarDays,   label: "Appointments",     path: "/calendar" },
   { icon: Workflow,       label: "Workflow",          path: "/workflow" },
   { icon: DollarSign,     label: "Pricing & Services", path: "/pricing" },
@@ -133,10 +150,14 @@ function ChristmasTreeIcon({ className }: { className?: string }) {
   );
 }
 
-const christmasMenuItem = {
+const christmasMenuItem: NavItem = {
   icon: ChristmasTreeIcon,
   label: "Christmas countdown",
   path: "/christmas",
+  // Andy, 02/11/2026: "make that button flash red and green like Christmas
+  // lights when you hover over it." The keyframes are in index.css, next to
+  // the nav hover rule and for the same reason — see "Christmas lights".
+  className: "nav-christmas-lights",
 };
 
 
@@ -535,7 +556,7 @@ function DashboardLayoutContent({
                       // Hover motion lives in index.css next to the global
                       // button rule — see "Sidebar nav". A Tailwind transition
                       // utility cannot win against that rule.
-                      className="h-10 font-medium text-sm group/navitem"
+                      className={`h-10 font-medium text-sm group/navitem ${item.className ?? ""}`}
                     >
                       <item.icon
                         className={`h-4 w-4 shrink-0 transition-colors ${
