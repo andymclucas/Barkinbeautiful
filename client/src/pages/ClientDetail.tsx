@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { BookingWarnings } from "@/components/BookingWarnings";
 import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
@@ -713,6 +714,9 @@ export default function ClientDetail() {
     : [];
   const activeMemberships = memberships.filter(m => m.status === "active");
   const bookingPetIds = Array.from(new Set([bookPetId, ...bookFamilyPetIds])).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0);
+  // The dogs this booking is actually for, for the warning panel. Follows
+  // the selection, so adding a family companion brings its warnings with it.
+  const bookingPets = pets.filter((pet) => bookingPetIds.includes(pet.id));
   const bookingMembershipCoverage = resolveAppointmentMembershipCoverage(
     bookingPetIds,
     bookService as "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other",
@@ -2014,6 +2018,14 @@ export default function ClientDetail() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Above the pickers on purpose. The thing that should stop a
+                booking cannot sit below the thing that completes it — on
+                02/11/2026 a blacklisted client's dog could be booked from
+                here with no flag shown anywhere in this dialog. */}
+            <BookingWarnings
+              client={{ name: `${client.firstName} ${client.lastName}`.trim(), status: client.status }}
+              pets={bookingPets}
+            />
             {/* Pet selector */}
             <div className="space-y-1.5">
               <Label>Pet</Label>

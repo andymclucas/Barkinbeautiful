@@ -6772,6 +6772,10 @@ const membershipsRouter = router({
           firstName: clients.firstName,
           lastName: clients.lastName,
           phone: clients.phone,
+          // So the calendar's booking dialog can warn on a blocked client.
+          // It had no way to know: the dialog showed a blacklisted client's
+          // dog at full price with no flag at all on 02/11/2026.
+          clientStatus: clients.status,
           petId: pets.id,
           petName: pets.name,
           petBreed: pets.breed,
