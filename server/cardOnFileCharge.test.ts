@@ -4,6 +4,7 @@ import {
   cardExpired,
   chargeIdempotencyKey,
   describeChargeFailure,
+  isDecline,
 } from "@shared/cardOnFileCharge";
 
 const NOW = new Date("2026-11-02T00:00:00Z");
@@ -86,6 +87,25 @@ describe("chargeIdempotencyKey", () => {
       .not.toBe(chargeIdempotencyKey({ ...base, amountCents: 200 }));
     expect(chargeIdempotencyKey({ appointmentIds: [10], amountCents: 100, alreadyPaidCents: 0 }))
       .not.toBe(chargeIdempotencyKey({ appointmentIds: [11], amountCents: 100, alreadyPaidCents: 0 }));
+  });
+});
+
+describe("idempotency_key_in_use is not a decline", () => {
+  /**
+   * Seen on a real two-request test on 03/11/2026, where it reached the
+   * operator as "The card was declined (idempotency_key_in_use)". It
+   * means the other request is still in flight — the guard working.
+   */
+  it("tells the operator to wait rather than to ask for another card", () => {
+    const msg = describeChargeFailure("idempotency_key_in_use", null);
+    expect(msg).toMatch(/already going through/i);
+    expect(msg).not.toMatch(/declin/i);
+  });
+
+  it("is not classed as a decline", () => {
+    expect(isDecline("idempotency_key_in_use")).toBe(false);
+    expect(isDecline("card_declined")).toBe(true);
+    expect(isDecline(null)).toBe(true);
   });
 });
 

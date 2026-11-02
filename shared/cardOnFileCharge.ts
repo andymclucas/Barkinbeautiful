@@ -39,6 +39,17 @@ export type CardChargeAvailability = {
 };
 
 /**
+ * Whether a failure is the client's card saying no, or our own plumbing.
+ *
+ * A decline is reported to the operator and the booking stays unpaid.
+ * A concurrency signal is neither — nobody should be asked for another
+ * card because two requests raced.
+ */
+export function isDecline(declineCode: string | null): boolean {
+  return (declineCode ?? "").toLowerCase() !== "idempotency_key_in_use";
+}
+
+/**
  * A card is expired from the END of its expiry month — a card marked
  * 11/2026 is good all through November. Getting this off by a month
  * sends a client to re-enter a card that still works.
@@ -107,6 +118,21 @@ export function chargeIdempotencyKey(input: {
 /** What staff see when Stripe says no. */
 export function describeChargeFailure(declineCode: string | null, message: string | null): string {
   const code = (declineCode ?? "").toLowerCase();
+  /*
+   * NOT a decline, and calling it one is worse than saying nothing.
+   *
+   * Stripe returns this when a request carrying the same idempotency
+   * key is still in flight — which is the double-click working exactly
+   * as designed. The other request is about to return the real answer.
+   * Seen for the first time on a live two-request test on 03/11/2026,
+   * where it was reported to the operator as "The card was declined
+   * (idempotency_key_in_use)". A receptionist reading that would ask
+   * the client for another card while the first charge was going
+   * through.
+   */
+  if (code === "idempotency_key_in_use") {
+    return "That charge is already going through — wait a moment and check the booking before trying again.";
+  }
   if (code === "authentication_required") {
     return "The bank wants the client to approve this one. Ask them to pay on the terminal, or send them a card link.";
   }
