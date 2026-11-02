@@ -128,6 +128,7 @@ import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
 import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
 import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
+import { searchRouter } from "./routers/search";
 import { parsePetCodes } from "../shared/petCodes";
 import { buildPassingReview, describePassingReview, type PassingReview } from "../shared/petPassingReview";
 import { canDeletePet } from "../shared/petDeletion";
@@ -12884,6 +12885,7 @@ export const appRouter = router({
   revenueTargets: revenueTargetsRouter,
   workflowReview: workflowReviewRouter,
   petCodes: petCodesRouter,
+  search: searchRouter,
   presence: presenceRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,

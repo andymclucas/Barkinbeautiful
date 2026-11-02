@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useTheme, type ThemeChoice } from "@/contexts/ThemeContext";
 import NotificationBell from "@/components/NotificationBell";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import SystemNotificationBell from "@/components/SystemNotificationBell";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { TrialBanner } from "@/components/TrialBanner";
@@ -418,6 +419,11 @@ function DashboardLayoutContent({
     <div className="flex items-center gap-1.5">
       {/* One tap for the common case. The three-way choice, including
           "follow my device", lives in the menu below. */}
+      {/* Andy, 03/11/2026: "an overall 'search' button at the top which
+          shows regardless of the navigation tab." First in this group,
+          so it sits furthest from the destructive end of the header and
+          lands in the same place on every page. */}
+      <GlobalSearch />
       <button
         type="button"
         onClick={toggleTheme}
