@@ -49,7 +49,7 @@ import {
 } from "@shared/membershipSeries";
 import { buildOnlineBookingSlotStarts } from "@shared/onlineBookingSlots";
 import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
-import { blockoutBusyInterval } from "@shared/staffBlockouts";
+import { busyForStaff } from "../staffBusy";
 import { startMembershipSubscription, createCardSetupLink } from "../stripeCards";
 
 /** How far ahead a sign-up books. Andy's ask: a client sees their year. */
@@ -106,40 +106,6 @@ function serviceTypeFor(membershipServiceType: string): "classic_groom" | "style
  * Twenty occurrences times a nine-day search window is a lot of round
  * trips to answer a question the calendar can answer once.
  */
-async function busyFor(db: any, tenantId: number, staffId: number, from: Date, to: Date): Promise<BusyInterval[]> {
-  const booked = await db.select({
-    start: appointments.scheduledStart,
-    end: appointments.scheduledEnd,
-  }).from(appointments).where(and(
-    eq(appointments.tenantId, tenantId),
-    eq(appointments.staffId, staffId),
-    ne(appointments.workflowState, "cancelled"),
-    ne(appointments.status, "cancelled"),
-    lt(appointments.scheduledStart, to),
-    gt(appointments.scheduledEnd, from),
-  ));
-
-  const leave = await db.select({
-    staffId: staffBlockoutsTable.staffId,
-    blockoutDate: staffBlockoutsTable.blockoutDate,
-    isFullDay: staffBlockoutsTable.isFullDay,
-    startTime: staffBlockoutsTable.startTime,
-    endTime: staffBlockoutsTable.endTime,
-  }).from(staffBlockoutsTable).where(and(
-    eq(staffBlockoutsTable.tenantId, tenantId),
-    eq(staffBlockoutsTable.staffId, staffId),
-    // A day either side, because a blockout row is a date label at
-    // midnight UTC and the Brisbane day it means straddles two of them.
-    gte(staffBlockoutsTable.blockoutDate, new Date(from.getTime() - 86_400_000)),
-    lt(staffBlockoutsTable.blockoutDate, new Date(to.getTime() + 86_400_000)),
-  ));
-
-  return [
-    ...booked.map((row: any) => ({ start: row.start, end: row.end })),
-    ...leave.map(blockoutBusyInterval),
-  ];
-}
-
 /** The request, its dogs, and the client — everything a decision needs. */
 async function loadRequest(db: any, tenantId: number, requestId: number) {
   const [request] = await db.select().from(membershipSignupRequests).where(and(
@@ -710,7 +676,7 @@ async function planFor(db: any, tenantId: number, request: any) {
   // clean and the salon assigns people later. That matches how the diary
   // already treats an unassigned booking.
   const busy = request.staffId
-    ? await busyFor(db, tenantId, request.staffId, first, horizonEnd)
+    ? await busyForStaff(db, tenantId, request.staffId, first, horizonEnd)
     : [];
 
   return planMembershipSeries({
