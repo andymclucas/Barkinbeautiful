@@ -102,6 +102,7 @@ import { pickupPrompt } from "@shared/pickupGroup";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
+import { christmasCountdown, christmasSeason, seasonYearFor } from "@shared/christmasCountdown";
 import { fillDailySeries } from "@shared/dailySeries";
 import { actualEndFor } from "@shared/appointmentActualTimes";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
@@ -7590,6 +7591,63 @@ const retailRouter = router({
 
 // ─── Analytics ────────────────────────────────────────────────────────────────
 const analyticsRouter = router({
+  /**
+   * How many dogs there are between the salon and Christmas.
+   *
+   * Andy, 02/11/2026, with a screenshot of MoeGo's "498 pets to groom
+   * till Thanksgiving": "add something like this for Christmas in
+   * Groomigo." Thanksgiving is MoeGo's American default; Christmas is
+   * the one this salon runs at.
+   *
+   * operationalProcedure, not protected: it is a morale number made of
+   * dog counts, no money in it, and the groomers doing the grooming
+   * are exactly who it is for. protectedProcedure would hide it from
+   * every restricted staff account.
+   *
+   * Returns null out of season so the UI has one thing to check rather
+   * than re-deriving the dates. The window itself is decided by
+   * shared/christmasCountdown.ts, which is tested.
+   */
+  christmasCountdown: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1) }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return null;
+
+      const now = new Date();
+      const year = seasonYearFor(now);
+      if (year === null) return null;
+
+      const { start, end } = christmasSeason(year);
+      /* Brisbane days, converted to the instants the column stores.
+         The salon's day starts at 00:00 local, which is 14:00 UTC the
+         day before — slicing UTC here would drop the first morning of
+         November and count one that is not in the season. */
+      const from = new Date(start.getTime() - 10 * 3600_000);
+      const until = new Date(end.getTime() + 14 * 3600_000);
+
+      const live = and(
+        eq(appointments.tenantId, tenantOf(ctx, input ?? {})),
+        notInArray(appointments.status, ["cancelled", "no_show"]),
+        notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+        gte(appointments.scheduledStart, from),
+        lte(appointments.scheduledStart, until),
+      );
+
+      const [[done], [left]] = await Promise.all([
+        db.select({ n: sql<number>`COUNT(*)` }).from(appointments)
+          .where(and(live, eq(appointments.workflowState, "complete"))),
+        db.select({ n: sql<number>`COUNT(*)` }).from(appointments)
+          .where(and(live, ne(appointments.workflowState, "complete"))),
+      ]);
+
+      return christmasCountdown({
+        today: now,
+        completed: Number(done?.n ?? 0),
+        remaining: Number(left?.n ?? 0),
+      });
+    }),
+
   averageGroomInterval: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
     .query(async ({ input, ctx }) => {
