@@ -604,6 +604,46 @@ button[data-slot="button"]:not(:disabled):hover {
   [data-state="expanded"] [data-sidebar="menu-button"]:hover { transform: none; }
 }
 
+/* ── Christmas lights ─────────────────────────────────────────────────────── */
+/*
+ * Andy, 02/11/2026: "Could you make that button flash red and green like
+ * Christmas lights when you hover over it?"
+ *
+ * Red against green is the one pair the commonest colour blindness cannot
+ * separate, so these two move LIGHTNESS as well as hue: 2.08:1 between the
+ * states. A deuteranope sees the row pulse dim/bright with the hues
+ * collapsed into one, which still reads as a blinking light rather than as
+ * a dead row.
+ *
+ * The first attempt at these colours was a prettier green and red at
+ * 1.55:1, and white on that red was 4.13:1 — under the 4.5:1 the label
+ * needs. Both of these clear it (10.04:1 and 4.83:1). If you retint them,
+ * check all three numbers again; the brightness gap is the accessible part
+ * and it is the one that quietly disappears when you pick nicer hues.
+ *
+ * Hard alternation, no crossfade: real lights switch. The period is 1.2s,
+ * so the row changes 1.7 times a second, comfortably under the three per
+ * second above which flashing becomes a seizure risk. Do not speed it up.
+ *
+ * Unlayered, like the nav rule above and for the same reason: the global
+ * `button` rule beats anything in @layer utilities, so this cannot be
+ * Tailwind classes on the element.
+ */
+@keyframes nav-christmas-lights {
+  0%,   49.99% { background-color: #064d22; color: #fff; }
+  50%, 100%    { background-color: #e01835; color: #fff; }
+}
+/* Animated declarations outrank normal ones, so this wins over the pink
+   active background without needing to out-specify it. */
+[data-sidebar="menu-button"].nav-christmas-lights:hover {
+  animation: nav-christmas-lights 1200ms infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Falls back to the ordinary nav hover. Somebody who has asked the system
+     for less motion has not asked for a slower strobe. */
+  [data-sidebar="menu-button"].nav-christmas-lights:hover { animation: none; }
+}
+
 /* ── Inputs ───────────────────────────────────────────────────────────────── */
 input, textarea, select, [data-slot="select-trigger"] {
   transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
