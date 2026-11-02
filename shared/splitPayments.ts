@@ -33,11 +33,29 @@ export const PAYMENT_METHODS = [
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+/**
+ * What staff see in the "Take payment" dropdown.
+ *
+ * Every one of these RECORDS a payment that has already happened
+ * somewhere else. Taking a payment here charges nothing: `payments.record`
+ * validates the amount and inserts a row, and the only method that does
+ * anything further is store_credit, which draws the balance down.
+ *
+ * "Stripe" therefore needed saying out loud. Money moves through Stripe
+ * in exactly three places — the Pay Now link on an emailed invoice,
+ * saving a card, and membership billing — and none of them is this
+ * panel. Nothing in the app ever writes this method on its own either:
+ * a client paying the invoice link marks the INVOICE paid, not the
+ * appointment. So the option exists for a person to write down money
+ * that already arrived, and a bare "Stripe" read like a button that
+ * would charge the card on file. Picking it did the opposite — it
+ * marked the booking paid and took nothing.
+ */
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: "Cash",
   eftpos: "EFTPOS",
   card: "Card (manual)",
-  stripe: "Stripe",
+  stripe: "Stripe (already paid online)",
   bank_transfer: "Bank transfer",
   store_credit: "Store credit",
   other: "Other",
