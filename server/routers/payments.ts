@@ -41,7 +41,9 @@ import {
 import {
   cardChargeAvailability, chargeIdempotencyKey, describeChargeFailure,
 } from "@shared/cardOnFileCharge";
-import { chargeSavedCard, createCardSetupLink } from "../stripeCards";
+import {
+  chargeSavedCard, createCardSetupLink, createCardSetupIntent, saveCardFromSetupIntent,
+} from "../stripeCards";
 import { describeCard, describeStripeKey } from "@shared/stripeBilling";
 import { notifyOwner } from "../ownerNotification";
 import { sendEmail } from "../email";
@@ -1005,6 +1007,71 @@ export const paymentsRouter = router({
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
       const link = await createCardSetupLink(row.clientId);
       return { url: link.url, clientId: row.clientId };
+    }),
+
+  /**
+   * Everything the browser needs to put Stripe's own card fields on the
+   * screen.
+   *
+   * The publishable key is served at RUNTIME rather than baked in with
+   * a VITE_ prefix, the same decision as the VAPID key: rotating it then
+   * needs no rebuild. It is a publishable key, so it is safe in the
+   * browser by design — but only an authenticated staff member gets it,
+   * because nobody outside the salon has any use for it.
+   *
+   * `inPlace: false` is a normal answer, not an error. Without a
+   * publishable key the panel falls back to the hosted link, which
+   * works today and needs no new configuration.
+   */
+  cardEntryConfig: operationalProcedure.query(() => {
+    const key = (process.env.STRIPE_PUBLISHABLE_KEY ?? "").trim();
+    const usable = key.startsWith("pk_") && key.length >= 30;
+    return { inPlace: usable, publishableKey: usable ? key : null };
+  }),
+
+  /**
+   * Start an in-place card entry. Returns a client secret that Stripe's
+   * fields confirm straight from the browser — the card number never
+   * reaches this server.
+   */
+  createCardSetupIntent: operationalProcedure
+    .input(z.object({ appointmentId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      const [row] = await db
+        .select({ clientId: appointments.clientId })
+        .from(appointments)
+        .where(eq(appointments.id, input.appointmentId))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
+      const intent = await createCardSetupIntent(row.clientId);
+      return { clientSecret: intent.clientSecret, setupIntentId: intent.setupIntentId, clientId: row.clientId };
+    }),
+
+  /**
+   * Attach the card Stripe just confirmed to the client's file.
+   *
+   * Called by the browser rather than left to a webhook, so the staff
+   * member sees it land. The helper re-checks that the intent's customer
+   * is this client's, so a tampered id cannot file somebody else's card
+   * here.
+   */
+  saveCardFromSetupIntent: operationalProcedure
+    .input(z.object({ appointmentId: z.number(), setupIntentId: z.string().trim().min(5).max(255) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      const [row] = await db
+        .select({ clientId: appointments.clientId })
+        .from(appointments)
+        .where(eq(appointments.id, input.appointmentId))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
+      const saved = await saveCardFromSetupIntent(row.clientId, input.setupIntentId);
+      return { ...saved, clientId: row.clientId };
     }),
 
   /**
