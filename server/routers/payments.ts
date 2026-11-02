@@ -1164,6 +1164,7 @@ export const paymentsRouter = router({
           stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId,
           stripeCardExpMonth: clients.stripeCardExpMonth,
           stripeCardExpYear: clients.stripeCardExpYear,
+          stripeCardBrand: clients.stripeCardBrand,
         })
         .from(clients)
         .where(eq(clients.id, clientId))
