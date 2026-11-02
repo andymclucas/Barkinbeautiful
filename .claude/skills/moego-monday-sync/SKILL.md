@@ -99,13 +99,22 @@ the board and are not coming.
 MoeGo has no API available here. The export is a browser job, so it needs
 either Andy present or his Chrome session already open.
 
-**You need TWO reports, not one.** Insights → Reports → **Appointments** lists
-six; these two matter:
+**You need TWO reports and the calendar, not one report.** Insights →
+Reports → **Appointments** lists six; these two matter, and the calendar's
+agenda view carries a third thing neither report has:
 
-| Report                     | URL                                 | Gives you                                        |
+| Source                     | Where                               | Gives you                                        |
 | -------------------------- | ----------------------------------- | ------------------------------------------------ |
 | **Appointment schedules**  | `/report/reports/appointments/1001` | every live booking, **with Date AND Time**       |
 | **Cancelled appointments** | `/report/reports/appointments/1003` | the cancellations, with cancel date, who and why |
+| **Calendar, Agenda view**  | `/calendar/grooming`                | **Block time** — who is away, and when           |
+
+**Neither report mentions a block.** Blocks are not appointments, so a sync
+built on the reports alone sees a full roster every week. On 02/11/2026 that
+was **42 blocks** between 3 November and 19 February that Groomigo had never
+heard of — including Charlotte and Zakaria in Sydney for four days — while
+online booking was on and `calendar.nextAvailable` was selling those slots.
+See Trap 12 and §4.
 
 **The schedules report silently excludes cancellations.** It returns only
 `Unconfirmed` and `Confirmed` rows and has no status filter. Run it alone and
@@ -161,6 +170,31 @@ document.querySelectorAll("[data-__hid]").forEach(e => {
   delete e.dataset.__hid;
 });
 ```
+
+### Driving the agenda view for the blocks
+
+Calendar → the view buttons top right → **Agenda**. Not Day, which shows one
+date at a time; not the week list, which drops the staff name. Agenda prints
+a day header and one row per entry:
+
+```
+12:00 am - 11:59 pm   Block time   Girls weekend   Megan
+```
+
+Walk it a week at a time with the `>` beside the date range, collecting as
+you go. The range label reads "Nov 13-Nov 19, 2026", so you can tell where
+you are without trusting the click. **Check the label moved** — on
+02/11/2026 six clicks in a row landed on the range text instead of the
+arrow and swept the same week six times, which looks exactly like a quiet
+week.
+
+Keep going until a few weeks come back empty. The useful horizon is however
+far ahead online booking will sell, which is further than the three weeks
+§1 pulls for appointments: the February Sydney trip was fifteen weeks out.
+
+Save one line per block, `DD/MM|start|end|note|staff`, and feed it to the
+script in §4. Everything else about reading the page — the `<pre>` dump,
+restoring `<main>` — is the same as above.
 
 The schedules report carries 21 columns. The ones that matter:
 
@@ -434,6 +468,33 @@ MoeGo had been changed since the import. MoeGo wins on scheduling facts — use
 its current value for the new row, leave the existing row alone, and say so in
 the report.
 
+**Trap 12 — a MoeGo block is not always an absence, and not always about
+the person whose column it is in.** Both halves of that cost a run on
+02/11/2026.
+
+**MoeGo's block feature does two different jobs.** Some blocks are somebody
+away. Others are notes pinned to a day: "Desheds day", "NO AIR CON OUT
+BACK", "last day", "first day back". Blocking those shuts a day the salon
+is busy on, which is worse than the gap it fixes.
+
+**The staff column is where the block was DRAWN, not who it is about.**
+Three of Steph's and Sabina's absences sit in Zakaria's column; acting on
+the column would have booked Zakaria off work three times for other
+people's dentist appointments. The text is not authoritative either —
+"Charlie away block box" is written in MEGAN'S column on four February
+days, holding one of Megan's slots shut because the salon is a groomer
+down. When the two disagree, neither wins.
+
+**A time in the note beats the window MoeGo stored.** "Steph starting at
+11:30 from dr" is entered as a FULL DAY block and is a late start; blocking
+the day takes a working afternoon off the roster. And a bare hour means the
+afternoon: "finish no later than 2" is 14:00, and reading it as 02:00
+blocks the entire working day.
+
+All of this lives in `shared/moegoBlocks.ts`, with tests over the real
+sweep in `server/moegoBlocks.test.ts`. **Do not re-derive it in a run
+script** — the same rule as Trap 11 and for the same reason.
+
 ## 3. Produce the divergence report
 
 Compare the export against Groomigo over the **full pulled range** for
@@ -545,6 +606,38 @@ Everything above still applies. In addition:
   appointment that day. Then re-run the divergence report afterwards and
   confirm no pet is booked twice anywhere in the window.
 
+### Applying the blocks
+
+One line per block, as the **agenda** view prints them — agenda and not the
+week list, because it is the only view that puts a staff name against each:
+
+```
+DD/MM|07:30am|05:30pm|away Sydney|Charlotte
+```
+
+```bash
+corepack pnpm exec tsx scripts/moego-sync-blocks.ts <file> --year=2026          # dry run
+corepack pnpm exec tsx scripts/moego-sync-blocks.ts <file> --year=2026 --apply
+```
+
+`--year` is the year the FIRST block falls in. MoeGo prints `DD/MM` with no
+year at all, so the script rolls it forward when the month goes backwards;
+without that, a sweep crossing New Year puts every January block eleven
+months in the past, where no blockout does any good.
+
+It writes only what it is sure of. Notes are skipped, an unreadable block is
+printed, and a block whose note and column name different people goes to the
+report rather than onto somebody's roster. It is idempotent on (staff, date,
+window), and it never touches a blockout somebody entered by hand — only its
+own rows, tagged `group_id = "moego-sync"`.
+
+**A blockout never moves an appointment.** Dogs already booked into a
+blocked window stay booked and show as the clash they are, which is the
+right outcome: the clash is real and somebody has to decide about it.
+
+The run on 02/11/2026 wrote 21 of 42 and sent 14 to the report. That ratio
+is the point, not a failure.
+
 ### When the write is refused
 
 The session's permission settings may treat the production database as a
@@ -567,6 +660,12 @@ things that cost him money if they wait:
 
 1. **dogs on the board who are not coming** — staff time held for nobody;
 2. **requests nobody has answered**, if any fall in the coming week — a
-   customer who booked online and has heard nothing books somewhere else.
+   customer who booked online and has heard nothing books somewhere else;
+3. **anybody away that Groomigo did not know about** — online booking will
+   sell those hours to a client who then arrives to nobody.
 
 Everything else can follow in any order.
+
+Name the blocks you would not act on, and say why. "Eight blocks name one
+person but sit in another's column" is a sentence Lauren can answer in a
+minute; a silent gap is one nobody knows to look for.
