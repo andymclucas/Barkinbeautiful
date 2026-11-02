@@ -42,9 +42,11 @@ import { sendEmail } from "../email";
 import { buildInvoiceEmail, allocatePayments, type InvoiceEmailLine } from "@shared/invoiceEmail";
 import { INVOICE_EMAIL_ENABLED, INVOICE_EMAIL_HELD_MESSAGE } from "@shared/invoiceEmailGate";
 import { createInvoiceCheckout } from "../stripePayments";
+import { outstandingForInvoice } from "../invoicePaymentPosting";
 import { getAppBaseUrl } from "../appUrl";
-import { billableTotalsByAppointment, addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
+import { addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
+import { loadBillableTotals, refreshPaymentStatus } from "../billableTotals";
 import {
   PAYMENT_METHODS,
   summarisePayments,
@@ -164,90 +166,8 @@ async function loadLines(db: any, appointmentIds: number[]) {
     .orderBy(asc(appointmentPayments.createdAt), asc(appointmentPayments.id));
 }
 
-/**
- * Rewrite `appointments.paymentStatus` from the rows that now exist.
- *
- * Derived, not entered: the alternative is a status that says paid while the
- * payments say otherwise, which is the bug this whole table exists to avoid.
- * An appointment with no price keeps a null status - there is nothing to
- * measure "paid" against, and most imported history is in that state.
- */
-async function refreshPaymentStatus(db: any, appointmentId: number) {
-  // Existence only — what it is WORTH comes from loadBillableTotals below,
-  // which has to read the add-ons too.
-  const [appointment] = await db
-    .select({ id: appointments.id })
-    .from(appointments)
-    .where(eq(appointments.id, appointmentId))
-    .limit(1);
-  if (!appointment) return null;
-  const lines = await db
-    .select({ amount: appointmentPayments.amount })
-    .from(appointmentPayments)
-    .where(eq(appointmentPayments.appointmentId, appointmentId));
-  const totals = await loadBillableTotals(db, [appointmentId]);
-  const status = derivePaymentStatus(totals.get(appointmentId) ?? null, lines);
-  if (status !== null) {
-    await db.update(appointments).set({ paymentStatus: status }).where(eq(appointments.id, appointmentId));
-  }
-  return status;
-}
 
 
-/**
- * What each appointment is actually worth: its price plus anything done on
- * the day.
- *
- * Every "what is owed" question in this file goes through here, because
- * answering any of them from `appointments.price` alone silently drops the
- * extras. On 07/10/2026 a $35 Extra Care on Millie's $145 groom left the
- * panel reading "owing $145", would have refused the $180 at the counter as
- * an overpayment, and would have stamped the booking paid at $145.
- *
- * Returns null for an appointment nobody has priced AND has added nothing
- * to — see billableTotal. That null is load-bearing: it keeps an unpriced
- * booking out of the totals instead of showing it as settled.
- */
-async function loadBillableTotals(db: any, appointmentIds: number[]) {
-  if (appointmentIds.length === 0) return new Map<number, string | null>();
-
-  const rows = await db
-    .select({
-      id: appointments.id,
-      price: appointments.price,
-      billedTotalOverride: appointments.billedTotalOverride,
-      /* A cancelled dog is still on the panel — so a payment already
-         taken against it stays visible — but owes nothing. */
-      status: appointments.status,
-      workflowState: appointments.workflowState,
-    })
-    .from(appointments)
-    .where(inArray(appointments.id, appointmentIds));
-
-  const addOns = await db
-    .select({
-      appointmentId: appointmentAddOns.appointmentId,
-      name: appointmentAddOns.name,
-      unitPrice: appointmentAddOns.unitPrice,
-      quantity: appointmentAddOns.quantity,
-      /* Without these the totals are computed from the full rate and a
-         discounted extra is still billed — Greg Blackaby, 30/10/2026.
-         addOnsTotal and appointmentTotal both read them; neither was
-         being given them. */
-      discountPercent: appointmentAddOns.discountPercent,
-      discountAmount: appointmentAddOns.discountAmount,
-    })
-    .from(appointmentAddOns)
-    .where(inArray(appointmentAddOns.appointmentId, appointmentIds));
-
-  const totals = billableTotalsByAppointment(rows, addOns);
-  /* null is the existing "not part of the total" signal — see the
-     comment on billableTotal. A cancelled dog takes it too. */
-  for (const row of rows as any[]) {
-    if (!countsTowardBooking(row)) totals.set(row.id, null);
-  }
-  return totals;
-}
 
 /**
  * The parts behind each dog's figure: the groom, its own extras, and any
@@ -556,7 +476,7 @@ export const paymentsRouter = router({
 
       // Paid-in-full may have just become partial, or the reverse, so the
       // badge on the booking has to be recomputed from the new figure.
-      await refreshPaymentStatus(db, appointment.id);
+      await refreshPaymentStatus(db, appointment.tenantId, appointment.id);
       return { success: true, cleared: clearing };
     }),
 
@@ -660,7 +580,7 @@ export const paymentsRouter = router({
         ).message;
       }
 
-      const status = await refreshPaymentStatus(db, appointment.id);
+      const status = await refreshPaymentStatus(db, appointment.tenantId, appointment.id);
       return {
         id: Number((result as any).insertId),
         amount: check.amount,
@@ -800,6 +720,18 @@ export const paymentsRouter = router({
         bookingInvoices.map((b: any) => Number(b.total ?? 0)), paid,
       );
 
+      /* What each bill's OWN dogs still owe, which is what the webhook
+         will pay off. The waterfall above decides what the email says
+         is settled; it cannot decide what a Pay button charges, because
+         it spreads one booking's payments across bills in invoice
+         order while the webhook posts per invoice. With separate bills
+         and a part-payment at the counter the two disagreed, and the
+         client paid a link whose money then had nowhere to go. */
+      const owedByInvoice = new Map<number, number | null>();
+      for (const bill of bookingInvoices) {
+        owedByInvoice.set(bill.id, await outstandingForInvoice(db, tenantId, bill.id));
+      }
+
       const results: { invoiceNumber: string; paidInFull: boolean; amountDue: number; hasPayButton: boolean }[] = [];
       for (const [index, bill] of bookingInvoices.entries()) {
         /* The lines as billed, not recomputed. An invoice is a record of
@@ -829,7 +761,17 @@ export const paymentsRouter = router({
            It fails SOFT. Stripe being unconfigured, rate-limited or
            simply down must not stop a client getting their invoice;
            they can still pay the way they always have. */
-        const owedCents = Math.max(0, Math.round(Number(bill.total ?? 0) * 100) - Math.round((allocated[index] ?? 0) * 100));
+        /* Sized by this bill's own dogs, so the amount charged and the
+           amount the webhook can post are the same number. Falls back
+           to the bill less its share of the pot when the invoice has
+           no appointment behind it — a retail or ad-hoc bill. */
+        const ownOutstanding = owedByInvoice.get(bill.id) ?? null;
+        const owedCents = ownOutstanding !== null
+          ? Math.max(0, Math.round(ownOutstanding * 100))
+          /* No appointment behind it — retail, arrears or ad-hoc. There
+             is nothing per-dog to size from, so the bill less its share
+             of what has been paid is the best available figure. */
+          : Math.max(0, Math.round(Number(bill.total ?? 0) * 100) - Math.round((allocated[index] ?? 0) * 100));
         let payUrl: string | null = null;
         if (owedCents > 0) {
           try {
@@ -984,7 +926,7 @@ export const paymentsRouter = router({
         });
       }
 
-      const status = await refreshPaymentStatus(db, line.appointmentId);
+      const status = await refreshPaymentStatus(db, line.tenantId, line.appointmentId);
       return { success: true, paymentStatus: status, creditReturned: back ? Number(back.amount) : 0 };
     }),
 });
