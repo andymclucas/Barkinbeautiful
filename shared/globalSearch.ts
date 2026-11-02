@@ -85,6 +85,39 @@ export function rankHits(hits: readonly SearchHit[], query: string): SearchHit[]
   });
 }
 
+/**
+ * Keep room for every kind of result.
+ *
+ * Ranking alone is not enough. "Bella" is twelve dogs in this salon, so
+ * an exact-match-first order filled all twelve slots with dogs and the
+ * client and appointment groups never appeared at all — which is half
+ * of what the search box was asked for.
+ *
+ * So each kind gets a reserved share, taken in rank order within the
+ * kind. A kind that cannot fill its share gives the remainder back,
+ * so searching something that is only a client still returns ten
+ * clients rather than four.
+ */
+export function capPerKind(
+  hits: readonly SearchHit[],
+  caps: Record<SearchKind, number>,
+  total: number,
+): SearchHit[] {
+  const taken: Record<SearchKind, number> = { pet: 0, client: 0, appointment: 0 };
+  const kept: SearchHit[] = [];
+  const overflow: SearchHit[] = [];
+  for (const hit of hits) {
+    if (taken[hit.kind] < caps[hit.kind]) {
+      taken[hit.kind] += 1;
+      kept.push(hit);
+    } else {
+      overflow.push(hit);
+    }
+  }
+  // Unused share goes back, in the original rank order.
+  return [...kept, ...overflow].slice(0, total);
+}
+
 /** The heading a group of results sits under. */
 export function groupLabel(kind: SearchKind, count: number): string {
   if (kind === "pet") return count === 1 ? "Dog" : "Dogs";

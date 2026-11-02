@@ -26,7 +26,7 @@ import { getDb } from "../db";
 import { appointments, clients, pets } from "../../drizzle/schema";
 import { requireApprovedStaffTenant } from "../staffAccess";
 import {
-  appointmentHref, looksLikePhone, normalisePhone, rankHits, type SearchHit,
+  appointmentHref, capPerKind, looksLikePhone, normalisePhone, rankHits, type SearchHit,
 } from "@shared/globalSearch";
 
 /** Brisbane is UTC+10 with no DST, so the local day is a fixed shift. */
@@ -166,6 +166,15 @@ export const searchRouter = router({
         }
       }
 
-      return rankHits(hits, q).slice(0, input.limit);
+      /*
+       * Rank, then reserve room per kind. Ranking alone filled all
+       * twelve slots with dogs on "bella" — twelve of them in this
+       * salon — and the client and appointment groups never showed.
+       */
+      return capPerKind(
+        rankHits(hits, q),
+        { pet: 6, client: 4, appointment: 4 },
+        input.limit,
+      );
     }),
 });

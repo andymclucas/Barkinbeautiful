@@ -99,7 +99,12 @@ export function GlobalSearch() {
         <kbd className="hidden rounded border bg-muted px-1 text-[10px] font-medium md:inline">⌘K</kbd>
       </button>
 
-      <CommandDialog open={open} onOpenChange={setOpen}>
+      {/* shouldFilter={false}: the server has already decided what
+          matches and in what order. Leaving cmdk's own filter on would
+          drop every result whose match is not in the visible text — a
+          client found by phone number or address — and the item values
+          are stable ids, which match nothing at all. */}
+      <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false}>
         <CommandInput
           placeholder="Dog, client, phone, email, address…"
           value={query}

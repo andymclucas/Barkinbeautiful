@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  appointmentHref, groupLabel, isOnTheFloor, looksLikePhone,
+  appointmentHref, capPerKind, groupLabel, isOnTheFloor, looksLikePhone,
   matchRank, normalisePhone, rankHits, type SearchHit,
 } from "@shared/globalSearch";
 
@@ -117,5 +117,40 @@ describe("groupLabel", () => {
     expect(groupLabel("pet", 3)).toBe("Dogs");
     expect(groupLabel("client", 1)).toBe("Client");
     expect(groupLabel("appointment", 2)).toBe("Appointments");
+  });
+});
+
+
+describe("capPerKind", () => {
+  const CAPS = { pet: 6, client: 4, appointment: 4 } as const;
+  const many = (kind: SearchHit["kind"], n: number) =>
+    Array.from({ length: n }, (_, i) => hit({ kind, id: i + 1, title: `${kind}${i}` }));
+
+  /** Twelve dogs called Bella filled every slot and hid the rest. */
+  it("stops one kind from taking every slot", () => {
+    const out = capPerKind([...many("pet", 12), ...many("client", 3), ...many("appointment", 3)], CAPS, 12);
+    expect(out.filter((h) => h.kind === "pet")).toHaveLength(6);
+    expect(out.filter((h) => h.kind === "client")).toHaveLength(3);
+    expect(out.filter((h) => h.kind === "appointment")).toHaveLength(3);
+  });
+
+  it("gives unused share back rather than returning a short list", () => {
+    const out = capPerKind(many("client", 20), CAPS, 12);
+    expect(out).toHaveLength(12);
+    expect(out.every((h) => h.kind === "client")).toBe(true);
+  });
+
+  it("keeps rank order inside each kind", () => {
+    const out = capPerKind(many("pet", 10), CAPS, 12);
+    expect(out.slice(0, 6).map((h) => h.title)).toEqual(["pet0", "pet1", "pet2", "pet3", "pet4", "pet5"]);
+  });
+
+  it("never exceeds the overall limit", () => {
+    const out = capPerKind([...many("pet", 20), ...many("client", 20)], CAPS, 12);
+    expect(out).toHaveLength(12);
+  });
+
+  it("copes with nothing to cap", () => {
+    expect(capPerKind([], CAPS, 12)).toEqual([]);
   });
 });
