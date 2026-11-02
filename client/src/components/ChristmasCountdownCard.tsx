@@ -11,7 +11,7 @@
  */
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { countdownHeadline, countdownSubtitle } from "@shared/christmasCountdown";
+import { COUNTDOWN_IMAGE, countdownHeadline, countdownSubtitle } from "@shared/christmasCountdown";
 import { trpc } from "@/lib/trpc";
 
 export function ChristmasCountdownCard() {
@@ -22,12 +22,18 @@ export function ChristmasCountdownCard() {
     <Card className="overflow-hidden border-rose-200/80 dark:border-rose-900/50 bg-gradient-to-br from-rose-50 via-white to-emerald-50 dark:from-rose-950/40 dark:via-background dark:to-emerald-950/30">
       <CardContent className="px-5 py-4">
         <div className="flex items-start gap-4">
-          <div
+          {/* Decorative: the number and the headline beside it already say
+              everything, so this is alt="" rather than a description of a
+              dog nobody needs read out to them. Square source, square box,
+              so object-cover crops nothing. */}
+          <img
+            src={COUNTDOWN_IMAGE}
+            alt=""
             aria-hidden
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-[26px] leading-none dark:bg-rose-900/40"
-          >
-            🎄
-          </div>
+            width={48}
+            height={48}
+            className="h-12 w-12 shrink-0 rounded-2xl object-cover ring-1 ring-rose-200/80 dark:ring-rose-900/50"
+          />
           <div className="min-w-0 flex-1">
             <p className="text-[11.5px] font-medium uppercase tracking-wide text-rose-700/90 dark:text-rose-300/90">
               Christmas countdown

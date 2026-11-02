@@ -23,6 +23,19 @@
  * keeps Christmas, which is what makes this safe to ship to a second
  * salon.
  */
+/**
+ * The picture on the countdown, served from client/public.
+ *
+ * Andy, 02/11/2026: "Use this image for the Christmas countdown."
+ *
+ * Named here rather than typed into the card and the page separately,
+ * because two copies of a path is how one of them ends up pointing at
+ * a file that was renamed. It is a root-relative URL, not an import,
+ * so swapping the picture is dropping a file in — no rebuild of a
+ * hashed asset name, and no bundler involved.
+ */
+export const COUNTDOWN_IMAGE = "/christmas-countdown-dog.webp";
+
 export function christmasSeason(year: number): { start: Date; end: Date } {
   return {
     start: new Date(Date.UTC(year, 10, 1)),
