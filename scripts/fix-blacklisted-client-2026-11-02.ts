@@ -24,6 +24,12 @@
  * DONT BOOK IN, and the dog is plain "Simba". This brings Groomigo into
  * line — blocked client, danger on the dog, and the real wording rather
  * than a pointer to a note Groomigo does not have.
+ *
+ * Harry (Tara Mico, pet 5754) was the other half of the same request and
+ * needed no script. His name read "Harry - 2 GROOMER DOG" — a real
+ * staffing instruction, not a ban. MoeGo now holds it as a pet note and
+ * the name is plain "Harry"; Groomigo already carried it correctly, as a
+ * caution with the text, so nothing here changes for him.
  */
 import "dotenv/config";
 import mysql from "mysql2/promise";
