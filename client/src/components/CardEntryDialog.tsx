@@ -108,6 +108,21 @@ function CardForm({ appointmentId, onSaved, onCancel }: {
           onReady={() => setReady(true)}
           options={{
             hidePostalCode: true,
+            /*
+             * Link OFF, and this is the whole reason the charge button
+             * had never worked.
+             *
+             * Stripe's card field offers Link autofill to anyone it
+             * recognises, and a client who accepts it leaves a LINK
+             * payment method on file rather than a card. Link wants the
+             * customer present, so the saved method then cannot be
+             * charged off-session — which is the entire point of saving
+             * it. Both payment methods in this database arrived that
+             * way, and the first live charge declined because of it.
+             *
+             * A card typed here must be a card.
+             */
+            disableLink: true,
             style: {
               base: {
                 fontSize: "16px", // 16px or iOS zooms the whole page on focus
@@ -120,7 +135,7 @@ function CardForm({ appointmentId, onSaved, onCancel }: {
       </div>
       <p className="text-[11px] leading-snug text-muted-foreground">
         Typed straight into Stripe — the number never reaches Groomigo. Saved to this
-        client so it can be charged next time without asking again.
+        client as a card, so it can be charged next time without asking again.
       </p>
       <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>

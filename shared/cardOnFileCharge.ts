@@ -21,6 +21,8 @@ export type CardOnFile = {
   stripeDefaultPaymentMethodId?: string | null;
   stripeCardExpMonth?: number | null;
   stripeCardExpYear?: number | null;
+  /** "visa", "mastercard" — or "link" for a wallet rather than a card. */
+  stripeCardBrand?: string | null;
 };
 
 export type CardChargeState =
@@ -46,7 +48,8 @@ export type CardChargeAvailability = {
  * card because two requests raced.
  */
 export function isDecline(declineCode: string | null): boolean {
-  return (declineCode ?? "").toLowerCase() !== "idempotency_key_in_use";
+  const code = (declineCode ?? "").toLowerCase();
+  return code !== "idempotency_key_in_use" && code !== "idempotency_error";
 }
 
 /**
@@ -90,6 +93,25 @@ export function cardChargeAvailability(input: {
   if (input.owingCents <= 0) {
     return { state: "nothing_owing", action: "Charge card on file", hint: "Nothing is owing on this booking." };
   }
+  /*
+   * A Link wallet is not a card, and the difference matters here.
+   *
+   * Stripe's card field offers Link autofill, and accepting it saves a
+   * Link payment method. Both methods in this database arrived that
+   * way, and the first live charge against one declined.
+   *
+   * It is NOT asserted here that Link can never be charged off-session
+   * — that is one decline, not a proof. The hint says what the method
+   * is and what to do if it fails, both of which are certain, and the
+   * button still works.
+   */
+  if ((input.card?.stripeCardBrand ?? "").trim().toLowerCase() === "link") {
+    return {
+      state: "chargeable",
+      action: "Charge card on file",
+      hint: "This is a Link wallet rather than a card. If it is declined, add a card instead.",
+    };
+  }
   return { state: "chargeable", action: "Charge card on file", hint: null };
 }
 
@@ -110,9 +132,34 @@ export function chargeIdempotencyKey(input: {
   appointmentIds: readonly number[];
   amountCents: number;
   alreadyPaidCents: number;
+  /**
+   * The card being charged. Leaving this out is what broke it the
+   * first time — see below.
+   */
+  paymentMethodId: string;
 }): string {
   const ids = [...input.appointmentIds].sort((a, b) => a - b).join(".");
-  return `gsos_appt_${ids}_amt_${input.amountCents}_paid_${input.alreadyPaidCents}`;
+  /*
+   * The payment method is part of what makes this "the same charge".
+   *
+   * Without it, a key pinned a booking and an amount but not the card.
+   * Stripe refuses a reused key whose parameters changed, so the moment
+   * a client replaced their card after a failed attempt, that booking
+   * became permanently uncharageable:
+   *
+   *   Keys for idempotent requests can only be used with the same
+   *   parameters they were first used with.
+   *
+   * Which is exactly the common case — the card declines, the client
+   * hands over another one. Hit on 03/11/2026 on the first real attempt
+   * after a card was replaced.
+   *
+   * Last 10 characters only: payment method ids share a long prefix, and
+   * the tail is what differs. The whole id would push the key past
+   * Stripe's 255-character limit on a booking with several dogs.
+   */
+  const card = input.paymentMethodId.slice(-10);
+  return `gsos_appt_${ids}_amt_${input.amountCents}_paid_${input.alreadyPaidCents}_pm_${card}`;
 }
 
 /** What staff see when Stripe says no. */
@@ -132,6 +179,15 @@ export function describeChargeFailure(declineCode: string | null, message: strin
    */
   if (code === "idempotency_key_in_use") {
     return "That charge is already going through — wait a moment and check the booking before trying again.";
+  }
+  /*
+   * Stripe saying our key was reused with different parameters. That is
+   * a fault in this software, not a problem with the client's card, and
+   * telling a receptionist "declined" would send them to ask for
+   * another one — which is what caused this in the first place.
+   */
+  if (code === "idempotency_error") {
+    return "Something is wrong at our end, not with the card. Nothing was charged — tell Andy, and take the payment another way for now.";
   }
   if (code === "authentication_required") {
     return "The bank wants the client to approve this one. Ask them to pay on the terminal, or send them a card link.";
