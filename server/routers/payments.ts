@@ -42,7 +42,7 @@ import {
   cardChargeAvailability, chargeIdempotencyKey, describeChargeFailure,
 } from "@shared/cardOnFileCharge";
 import { chargeSavedCard, createCardSetupLink } from "../stripeCards";
-import { describeCard } from "@shared/stripeBilling";
+import { describeCard, describeStripeKey } from "@shared/stripeBilling";
 import { notifyOwner } from "../ownerNotification";
 import { sendEmail } from "../email";
 import { buildInvoiceEmail, allocatePayments, type InvoiceEmailLine } from "@shared/invoiceEmail";
@@ -967,9 +967,12 @@ export const paymentsRouter = router({
         .limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
 
-      const stripeConfigured = Boolean(
-        process.env.STRIPE_SECRET_KEY && !/placeholder/i.test(process.env.STRIPE_SECRET_KEY),
-      );
+      // describeStripeKey, not a hand-rolled check: the local .env holds
+      // `sk_test_…xxxx`, which contains no word "placeholder" and sailed
+      // through an inline test, so the panel offered a Charge button that
+      // could never work. That helper already knows the shapes a dud key
+      // comes in.
+      const stripeConfigured = describeStripeKey(process.env.STRIPE_SECRET_KEY).configured;
       const availability = cardChargeAvailability({
         card: row, owingCents: input.owingCents, stripeConfigured, now: new Date(),
       });
@@ -1098,9 +1101,12 @@ export const paymentsRouter = router({
         .from(clients)
         .where(eq(clients.id, clientId))
         .limit(1);
-      const stripeConfigured = Boolean(
-        process.env.STRIPE_SECRET_KEY && !/placeholder/i.test(process.env.STRIPE_SECRET_KEY),
-      );
+      // describeStripeKey, not a hand-rolled check: the local .env holds
+      // `sk_test_…xxxx`, which contains no word "placeholder" and sailed
+      // through an inline test, so the panel offered a Charge button that
+      // could never work. That helper already knows the shapes a dud key
+      // comes in.
+      const stripeConfigured = describeStripeKey(process.env.STRIPE_SECRET_KEY).configured;
       const availability = cardChargeAvailability({
         card: client, owingCents: amountCents, stripeConfigured, now: new Date(),
       });
