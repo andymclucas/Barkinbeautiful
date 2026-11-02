@@ -33,17 +33,18 @@ describe("every appointment-creating path refuses a departed dog", () => {
   });
 
   it("pins how many appointment inserts exist in each file", () => {
-    expect(count(read("server/routers.ts"), /insert\(appointments\)/g)).toBe(8);
+    expect(count(read("server/routers.ts"), /insert\(appointments\)/g)).toBe(9);
     expect(count(read("server/routers/membershipSignup.ts"), /insert\(appointments\)/g)).toBe(1);
     expect(count(read("server/routers/waitlist.ts"), /insert\(appointments\)/g)).toBe(1);
   });
 
   it("asks the shared rule in every one of them", () => {
-    /* routers.ts has 8 inserts and 7 guards. The one without is the
+    /* routers.ts has 9 inserts and 8 guards. The one without is the
        undo restore, which puts back appointments that already existed
        rather than booking anything — refusing a departed dog there
-       would make a deletion unundoable. */
-    expect(count(read("server/routers.ts"), /departedBookingMessage\(/g)).toBe(7);
+       would make a deletion unundoable. The ninth insert is the rebook
+       button, added 03/11/2026; this test caught it ungarded. */
+    expect(count(read("server/routers.ts"), /departedBookingMessage\(/g)).toBe(8);
     expect(count(read("server/routers/membershipSignup.ts"), /departedBookingMessage\(/g)).toBe(1);
     expect(count(read("server/routers/waitlist.ts"), /departedBookingMessage\(/g)).toBe(1);
   });

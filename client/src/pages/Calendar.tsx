@@ -91,6 +91,7 @@ import { CalendarSidebar } from "@/components/CalendarSidebar";
 import { PetPhotoQuickAdd } from "@/components/PetPhotoQuickAdd";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
 import { PetCodesPanel } from "@/components/PetCodesPanel";
+import { RebookButton } from "@/components/RebookButton";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
@@ -4582,6 +4583,12 @@ export default function Calendar() {
                   >
                     <Trash2 className="h-4 w-4" /> Delete booking
                   </Button>
+                  {/* Lauren, 03/11/2026: book the next visit from the one
+                      in front of you, rather than looking the client up
+                      again. Beside the other booking-level actions, not
+                      in the payment row — it is about the diary, not the
+                      till. */}
+                  <RebookButton appointmentId={editAppt.id} />
                   {editSiblings.length > 0 && (() => {
                     const allPets = [editAppt, ...editSiblings];
                     const allHavePrices = allPets.every(p => {
