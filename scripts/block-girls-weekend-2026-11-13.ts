@@ -39,6 +39,14 @@
  * Blockouts never touch an appointment, so the morning's dogs are
  * unaffected. This only stops something NEW being booked into the
  * afternoon.
+ *
+ * Applied 02/11/2026. A sweep of MoeGo afterwards found 45 blocks
+ * between 3 November and 19 February that Groomigo has never heard of,
+ * including Charlotte and Zakaria away in Sydney for four days in
+ * February. They are listed in docs/moego_blocks_sweep_2026-11-02.md
+ * and deliberately NOT applied: MoeGo's block feature is used both for
+ * absence and for notes pinned to a day ("Desheds day", "NO MORE FULLY
+ * BOOKED"), so mirroring them wholesale would shut days that are busy.
  */
 import "dotenv/config";
 import mysql from "mysql2/promise";
