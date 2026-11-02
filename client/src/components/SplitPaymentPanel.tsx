@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Banknote, Loader2, Trash2 } from "lucide-react";
+import { Banknote, CreditCard, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
@@ -391,6 +391,38 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
           </Button>
         </div>
 
+        {/* The card on file. Separate from the row above because nothing
+            in that dropdown moves money — every method there RECORDS a
+            payment taken somewhere else, and this is the one control
+            that actually charges. Putting it in the same dropdown would
+            make "Stripe" mean two different things. */}
+        <CardOnFileRow
+          appointmentIds={payingAll ? balances.map((b) => b.appointmentId) : [selectedId]}
+          /* NOT selectedId: when every dog is being paid for at once that
+             is the ALL_DOGS sentinel (-1), which is not an appointment
+             and made the card lookup silently skip. The panel's own
+             appointmentId is always a real row on this booking. */
+          anchorAppointmentId={payingAll ? appointmentId : selectedId}
+          /* What is actually owed, not what has been typed into the box —
+             an empty box is not "nothing owing". */
+          owingCents={Math.round((owedHere ?? 0) * 100)}
+          allocations={
+            payingAll && spread?.ok
+              ? spread.allocations.map((a) => ({ appointmentId: a.appointmentId, amount: a.amount.toFixed(2) }))
+              : canSubmit
+                ? [{ appointmentId: selectedId, amount: effectiveAmount }]
+                : []
+          }
+          note={note}
+          onPaid={() => {
+            // Same as a recorded payment: the balance just moved, so the
+            // box shows what is still owed rather than sitting empty.
+            resetAmount();
+            setNote("");
+            utils.payments.forBooking.invalidate({ appointmentId });
+          }}
+        />
+
         {/* Discounts belong at the counter as much as at booking: the
             reason for one often only emerges while the client is standing
             there. price is already net, so every total above reflects it. */}
@@ -564,6 +596,107 @@ function BilledOverrideRow({
           Save price
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The card-on-file control: charge it, or send the client to Stripe to
+ * add one.
+ *
+ * It asks the server what state the card is in rather than deciding
+ * here, because "chargeable" depends on things the browser does not
+ * have — whether Stripe is configured on this deployment at all, and
+ * what is genuinely owed after another till has taken money.
+ *
+ * The charge is confirmed first. Every other control in this panel
+ * writes down something that already happened and is undoable by
+ * deleting a row; this one takes money off a client, and a mis-click
+ * means a refund and a phone call.
+ */
+function CardOnFileRow({
+  appointmentIds, anchorAppointmentId, owingCents, allocations, note, onPaid,
+}: {
+  appointmentIds: number[];
+  anchorAppointmentId: number;
+  owingCents: number;
+  allocations: Array<{ appointmentId: number; amount: string }>;
+  note: string;
+  onPaid: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const { data: card } = trpc.payments.cardOnFile.useQuery(
+    { appointmentId: anchorAppointmentId, owingCents: Math.max(0, owingCents) },
+    { enabled: anchorAppointmentId > 0 },
+  );
+
+  const charge = trpc.payments.chargeCardOnFile.useMutation({
+    onSuccess: (r) => {
+      setConfirming(false);
+      // A decline is a normal outcome, not an exception: the procedure
+      // returns success:false rather than throwing, so it is reported
+      // here rather than in onError.
+      if (r.success) { toast.success(r.message); onPaid(); }
+      else toast.error(r.message);
+    },
+    onError: (e) => { setConfirming(false); toast.error(e.message); },
+  });
+
+  const setupLink = trpc.payments.cardSetupLink.useMutation({
+    onSuccess: ({ url }) => {
+      // A new tab, not a redirect: the staff member is mid-booking and
+      // the client types the card on the salon iPad or their own phone.
+      window.open(url, "_blank", "noopener");
+      toast.success("Stripe's secure card page is open. It saves to this client for next time.");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (!card) return null;
+
+  const busy = charge.isPending || setupLink.isPending;
+  const needsCard = card.state === "needs_card" || card.state === "expired";
+  const canCharge = card.state === "chargeable" && allocations.length > 0;
+
+  if (card.state === "stripe_off") return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2">
+      <CreditCard className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <span className="text-xs text-muted-foreground">
+        {card.card ?? (needsCard ? "No card on file" : "Card on file")}
+      </span>
+      <div className="ml-auto flex items-center gap-2">
+        {confirming ? (
+          <>
+            <span className="text-xs font-semibold">Charge the card on file?</span>
+            <Button size="sm" variant="outline" className="h-8" onClick={() => setConfirming(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 gap-1.5"
+              disabled={busy}
+              onClick={() => charge.mutate({ allocations, note: note.trim() || undefined })}
+            >
+              {charge.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Yes, charge it
+            </Button>
+          </>
+        ) : (
+          <Button
+            size="sm"
+            variant={needsCard ? "outline" : "default"}
+            className="h-8 gap-1.5"
+            disabled={busy || (!needsCard && !canCharge)}
+            onClick={() => (needsCard ? setupLink.mutate({ appointmentId: anchorAppointmentId }) : setConfirming(true))}
+          >
+            {setupLink.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {card.action}
+          </Button>
+        )}
+      </div>
+      {card.hint && <p className="w-full text-[11px] leading-snug text-muted-foreground">{card.hint}</p>}
     </div>
   );
 }
