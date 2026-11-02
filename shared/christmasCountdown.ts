@@ -13,11 +13,9 @@
  * the rule can be read and tested without a database.
  */
 
-/** Christmas Day in a given year, as a local calendar date. */
-export const CHRISTMAS_DAY = { month: 12, day: 25 } as const;
-
 /**
- * The run-up, as local dates: 1 November up to and including Christmas Eve.
+ * The run-up, as UTC midnights standing for local calendar dates:
+ * 1 November up to and including Christmas Eve.
  *
  * It starts on 1 November because that is when the salon's Christmas
  * rush starts filling up, and ends on the 24th because nobody is
@@ -33,16 +31,26 @@ export function christmasSeason(year: number): { start: Date; end: Date } {
 }
 
 /**
- * The season a date belongs to, or null outside it.
+ * The season a day belongs to, or null outside it.
  *
- * A date in January belongs to NO season rather than to the one that
+ * Takes the SALON'S calendar day as "YYYY-MM-DD", never an instant.
+ * A Date read in UTC puts Brisbane's first ten hours of 1 November on
+ * 31 October, so the countdown would stay hidden for most of the
+ * morning it was meant to start — and a salon west of Greenwich would
+ * have the mirror image of the same bug. Who converts an instant into
+ * a local day is the caller's business, because which timezone that is
+ * belongs to the salon, not to this rule.
+ *
+ * A day in January belongs to NO season rather than to the one that
  * just finished: the countdown is over, and showing "0 to go" for ten
  * months is clutter nobody reads.
  */
-export function seasonYearFor(today: Date): number | null {
-  const month = today.getUTCMonth();
-  if (month === 10) return today.getUTCFullYear();
-  if (month === 11 && today.getUTCDate() <= 24) return today.getUTCFullYear();
+export function seasonYearFor(localDay: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(localDay ?? "").trim());
+  if (!m) return null;
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (month === 11) return year;
+  if (month === 12 && day <= 24) return year;
   return null;
 }
 
@@ -60,7 +68,8 @@ export type ChristmasCountdown = {
 };
 
 export function christmasCountdown(input: {
-  today: Date;
+  /** The salon's calendar day, "YYYY-MM-DD". */
+  today: string;
   completed: number;
   remaining: number;
 }): ChristmasCountdown | null {
@@ -77,7 +86,8 @@ export function christmasCountdown(input: {
      possible day, which is the opposite of the truth. */
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
 
-  const startOfDay = Date.UTC(input.today.getUTCFullYear(), input.today.getUTCMonth(), input.today.getUTCDate());
+  const [y, mo, d] = input.today.split("-").map(Number);
+  const startOfDay = Date.UTC(y, mo - 1, d);
   const daysLeft = Math.max(0, Math.round((end.getTime() - startOfDay) / 86_400_000));
 
   return { remaining, completed, percent, daysLeft, until: end };

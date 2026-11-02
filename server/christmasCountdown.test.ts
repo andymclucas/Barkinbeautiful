@@ -3,7 +3,8 @@ import {
   christmasCountdown, christmasSeason, seasonYearFor, countdownHeadline, countdownSubtitle,
 } from "@shared/christmasCountdown";
 
-const day = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d));
+const day = (y: number, m: number, d: number) =>
+  `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
 describe("seasonYearFor", () => {
   it("runs from 1 November to Christmas Eve", () => {
@@ -23,9 +24,27 @@ describe("seasonYearFor", () => {
     expect(seasonYearFor(day(2026, 10, 31))).toBeNull();
   });
 
+  /**
+   * The season hinges on the SALON'S calendar day, never on an instant.
+   * Brisbane's first ten hours of 1 November are 31 October in UTC, so
+   * reading the month off a Date would hide the countdown for most of
+   * the morning it was meant to start.
+   */
+  it("is in season for the whole of the salon's 1 November", () => {
+    expect(seasonYearFor("2026-11-01")).toBe(2026);
+    // The instant that day begins in Brisbane, which is still October in UTC.
+    expect(new Date("2026-11-01T00:00:00+10:00").getUTCMonth()).toBe(9);
+  });
+
+  it("ignores anything that is not a calendar day", () => {
+    expect(seasonYearFor("")).toBeNull();
+    expect(seasonYearFor("not a date")).toBeNull();
+    expect(seasonYearFor("2026-11-01T00:00:00Z")).toBeNull();
+  });
+
   it("picks up again the next November", () => {
     expect(seasonYearFor(day(2027, 11, 1))).toBe(2027);
-    expect(christmasSeason(2027).end).toEqual(day(2027, 12, 24));
+    expect(christmasSeason(2027).end).toEqual(new Date(Date.UTC(2027, 11, 24)));
   });
 });
 

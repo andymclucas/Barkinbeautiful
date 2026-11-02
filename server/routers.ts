@@ -7614,9 +7614,13 @@ const analyticsRouter = router({
       const db = await getDb();
       if (!db) return null;
 
-      const now = new Date();
-      const year = seasonYearFor(now);
-      if (year === null) return null;
+      /* The SALON'S day, not the server's. The column stores UTC and
+         this box runs on UTC, so reading the month off an instant puts
+         Brisbane's first ten hours of 1 November on 31 October and
+         hides the countdown for most of the morning it starts. */
+      const today = brisbaneDay(new Date());
+      const year = today ? seasonYearFor(today) : null;
+      if (year === null || !today) return null;
 
       const { start, end } = christmasSeason(year);
       /* Brisbane days, converted to the instants the column stores.
@@ -7642,7 +7646,7 @@ const analyticsRouter = router({
       ]);
 
       return christmasCountdown({
-        today: now,
+        today,
         completed: Number(done?.n ?? 0),
         remaining: Number(left?.n ?? 0),
       });
