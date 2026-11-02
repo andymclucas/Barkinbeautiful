@@ -1184,7 +1184,12 @@ export const paymentsRouter = router({
         });
       }
 
-      const key = chargeIdempotencyKey({ appointmentIds: ids, amountCents, alreadyPaidCents });
+      const key = chargeIdempotencyKey({
+        appointmentIds: ids,
+        amountCents,
+        alreadyPaidCents,
+        paymentMethodId: client!.stripeDefaultPaymentMethodId!,
+      });
       const result = await chargeSavedCard({
         customerId: client!.stripeCustomerId!,
         paymentMethodId: client!.stripeDefaultPaymentMethodId!,

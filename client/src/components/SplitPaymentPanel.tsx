@@ -708,7 +708,16 @@ function CardOnFileRow({
           </Button>
         )}
       </div>
-      {card.hint && <p className="w-full text-[11px] leading-snug text-muted-foreground">{card.hint}</p>}
+      {/* The server writes the hint without knowing how this browser will
+          collect the card, so it says "Opens Stripe's secure page" —
+          true of the hosted fallback and wrong once in-place entry is
+          on. Correct it here, where that is known. */}
+      {(() => {
+        const hint = needsCard && entry?.inPlace
+          ? "Type it in here on Stripe's own fields. Saved to this client for next time."
+          : card.hint;
+        return hint ? <p className="w-full text-[11px] leading-snug text-muted-foreground">{hint}</p> : null;
+      })()}
       <CardEntryDialog
         appointmentId={anchorAppointmentId}
         open={entering}

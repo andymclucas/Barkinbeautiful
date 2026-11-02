@@ -69,24 +69,64 @@ describe("cardExpired", () => {
 });
 
 describe("chargeIdempotencyKey", () => {
+  const PM = "pm_1UO6h2AwaBS2YIYSU1ko1ReS";
+
   it("is the same for the same charge, so a double-click cannot double-charge", () => {
-    const a = chargeIdempotencyKey({ appointmentIds: [10, 11], amountCents: 21300, alreadyPaidCents: 0 });
-    const b = chargeIdempotencyKey({ appointmentIds: [11, 10], amountCents: 21300, alreadyPaidCents: 0 });
+    const a = chargeIdempotencyKey({ appointmentIds: [10, 11], amountCents: 21300, alreadyPaidCents: 0, paymentMethodId: PM });
+    const b = chargeIdempotencyKey({ appointmentIds: [11, 10], amountCents: 21300, alreadyPaidCents: 0, paymentMethodId: PM });
     expect(a).toBe(b);
   });
 
   it("changes once the first charge has landed, so a real second payment is allowed", () => {
-    const first = chargeIdempotencyKey({ appointmentIds: [10], amountCents: 5000, alreadyPaidCents: 0 });
-    const second = chargeIdempotencyKey({ appointmentIds: [10], amountCents: 5000, alreadyPaidCents: 5000 });
+    const first = chargeIdempotencyKey({ appointmentIds: [10], amountCents: 5000, alreadyPaidCents: 0, paymentMethodId: PM });
+    const second = chargeIdempotencyKey({ appointmentIds: [10], amountCents: 5000, alreadyPaidCents: 5000, paymentMethodId: PM });
     expect(first).not.toBe(second);
   });
 
+  /**
+   * The bug this field was added for, on 03/11/2026.
+   *
+   * The card declines, the client hands over another one, and the
+   * retry carries the same key with a different payment_method —
+   * which Stripe refuses outright, leaving the booking permanently
+   * uncharageable. The commonest situation at a counter.
+   */
+  it("changes when the client swaps to a different card", () => {
+    const base = { appointmentIds: [10], amountCents: 100, alreadyPaidCents: 0 };
+    const onOldCard = chargeIdempotencyKey({ ...base, paymentMethodId: "pm_1UO6h2AwaBS2YIYSU1ko1ReS" });
+    const onNewCard = chargeIdempotencyKey({ ...base, paymentMethodId: "pm_1UXUBdAwaBS2YIYSp52kcpVa" });
+    expect(onOldCard).not.toBe(onNewCard);
+  });
+
+  it("stays inside Stripe's 255-character key limit for a big family booking", () => {
+    const key = chargeIdempotencyKey({
+      appointmentIds: Array.from({ length: 12 }, (_, i) => 2_700_000 + i),
+      amountCents: 123456,
+      alreadyPaidCents: 65432,
+      paymentMethodId: PM,
+    });
+    expect(key.length).toBeLessThanOrEqual(255);
+  });
+
   it("differs by amount and by booking", () => {
-    const base = { appointmentIds: [10], alreadyPaidCents: 0 };
+    const base = { appointmentIds: [10], alreadyPaidCents: 0, paymentMethodId: PM };
     expect(chargeIdempotencyKey({ ...base, amountCents: 100 }))
       .not.toBe(chargeIdempotencyKey({ ...base, amountCents: 200 }));
-    expect(chargeIdempotencyKey({ appointmentIds: [10], amountCents: 100, alreadyPaidCents: 0 }))
-      .not.toBe(chargeIdempotencyKey({ appointmentIds: [11], amountCents: 100, alreadyPaidCents: 0 }));
+    expect(chargeIdempotencyKey({ appointmentIds: [10], amountCents: 100, alreadyPaidCents: 0, paymentMethodId: PM }))
+      .not.toBe(chargeIdempotencyKey({ appointmentIds: [11], amountCents: 100, alreadyPaidCents: 0, paymentMethodId: PM }));
+  });
+});
+
+describe("idempotency_error is our fault, not the card's", () => {
+  it("does not tell staff the card was declined", () => {
+    const msg = describeChargeFailure("idempotency_error", "Keys for idempotent requests can only be used with the same parameters");
+    expect(msg).not.toMatch(/declin/i);
+    expect(msg).toMatch(/not with the card/i);
+    expect(msg).toMatch(/nothing was charged/i);
+  });
+
+  it("is not classed as a decline", () => {
+    expect(isDecline("idempotency_error")).toBe(false);
   });
 });
 
