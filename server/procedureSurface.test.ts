@@ -189,6 +189,9 @@ const OPERATIONAL = [
   "membershipsRouter.getPackageOptions",
   "membershipsRouter.searchClients",
   "onlineBookingRouter.listAllMoegoIds",
+  "paymentsRouter.cardOnFile",
+  "paymentsRouter.cardSetupLink",
+  "paymentsRouter.chargeCardOnFile",
   "paymentsRouter.forBooking",
   "paymentsRouter.record",
   "paymentsRouter.remove",
@@ -276,7 +279,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(356);
+    expect(surface).toHaveLength(359);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -287,7 +290,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(120);
+    expect(OPERATIONAL).toHaveLength(123);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

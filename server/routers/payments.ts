@@ -38,6 +38,12 @@ import {
 import {
   creditEntryForPayment, reversalEntryForPayment, describeCreditShortfall,
 } from "@shared/storeCreditSpend";
+import {
+  cardChargeAvailability, chargeIdempotencyKey, describeChargeFailure,
+} from "@shared/cardOnFileCharge";
+import { chargeSavedCard, createCardSetupLink } from "../stripeCards";
+import { describeCard, describeStripeKey } from "@shared/stripeBilling";
+import { notifyOwner } from "../ownerNotification";
 import { sendEmail } from "../email";
 import { buildInvoiceEmail, allocatePayments, type InvoiceEmailLine } from "@shared/invoiceEmail";
 import { INVOICE_EMAIL_ENABLED, INVOICE_EMAIL_HELD_MESSAGE } from "@shared/invoiceEmailGate";
@@ -928,5 +934,259 @@ export const paymentsRouter = router({
 
       const status = await refreshPaymentStatus(db, line.tenantId, line.appointmentId);
       return { success: true, paymentStatus: status, creditReturned: back ? Number(back.amount) : 0 };
+    }),
+  /**
+   * Whether this booking's client can be charged on the card already on
+   * file, for the payment panel's button.
+   *
+   * `operationalProcedure`, unlike `stripeCards.cardStatus` which is
+   * admin-only. Seeing whether a card exists is part of taking payment
+   * at the counter, and the counter is a receptionist's job. It returns
+   * a description and a yes/no, never the payment method id.
+   */
+  cardOnFile: operationalProcedure
+    .input(z.object({ appointmentId: z.number(), owingCents: z.number().int().min(0) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+
+      const [row] = await db
+        .select({
+          clientId: clients.id,
+          stripeCustomerId: clients.stripeCustomerId,
+          stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId,
+          stripeCardBrand: clients.stripeCardBrand,
+          stripeCardLast4: clients.stripeCardLast4,
+          stripeCardExpMonth: clients.stripeCardExpMonth,
+          stripeCardExpYear: clients.stripeCardExpYear,
+        })
+        .from(appointments)
+        .innerJoin(clients, eq(clients.id, appointments.clientId))
+        .where(eq(appointments.id, input.appointmentId))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
+
+      // describeStripeKey, not a hand-rolled check: the local .env holds
+      // `sk_test_…xxxx`, which contains no word "placeholder" and sailed
+      // through an inline test, so the panel offered a Charge button that
+      // could never work. That helper already knows the shapes a dud key
+      // comes in.
+      const stripeConfigured = describeStripeKey(process.env.STRIPE_SECRET_KEY).configured;
+      const availability = cardChargeAvailability({
+        card: row, owingCents: input.owingCents, stripeConfigured, now: new Date(),
+      });
+      return {
+        ...availability,
+        clientId: row.clientId,
+        card: describeCard(row),
+      };
+    }),
+
+  /**
+   * The secure page where a client types their card in.
+   *
+   * Returns Stripe's URL; the caller opens it. Nothing here touches a
+   * card number, and the saving is done by the webhook when the client
+   * finishes, so the card lands on the client profile whether or not
+   * this tab is still open.
+   */
+  cardSetupLink: operationalProcedure
+    .input(z.object({ appointmentId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      const [row] = await db
+        .select({ clientId: appointments.clientId })
+        .from(appointments)
+        .where(eq(appointments.id, input.appointmentId))
+        .limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
+      const link = await createCardSetupLink(row.clientId);
+      return { url: link.url, clientId: row.clientId };
+    }),
+
+  /**
+   * Charge the card on file and record the result.
+   *
+   * ONE Stripe charge for the whole booking, then one payment row per
+   * dog. Charging per dog would put two lines on the client's statement
+   * and pay two lots of Stripe's fixed fee for one visit.
+   *
+   * Order matters and cannot be made atomic: the charge happens before
+   * the rows are written, and Stripe cannot be rolled back. So both
+   * halves are made safe to repeat instead.
+   *
+   *   - The charge carries a DERIVED idempotency key, so pressing the
+   *     button twice returns the first PaymentIntent rather than making
+   *     a second one.
+   *   - The write checks for rows already carrying that intent id
+   *     before inserting, so a retry after a half-finished write
+   *     completes it rather than duplicating it.
+   *
+   * Money taken and not recorded is the one outcome worth shouting
+   * about, so that case notifies the owner rather than only throwing at
+   * whoever pressed the button.
+   */
+  chargeCardOnFile: operationalProcedure
+    .input(z.object({
+      allocations: z.array(z.object({
+        appointmentId: z.number(),
+        /** Dollars, as the panel already allocates them across dogs. */
+        amount: z.string().trim().min(1).max(20),
+      })).min(1).max(12),
+      note: z.string().trim().max(255).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const ids = input.allocations.map((a) => a.appointmentId);
+      for (const id of ids) await requireApprovedStaffAppointmentAccess(db, ctx.user, id);
+
+      const rows = await db
+        .select({
+          id: appointments.id,
+          tenantId: appointments.tenantId,
+          clientId: appointments.clientId,
+        })
+        .from(appointments)
+        .where(inArray(appointments.id, ids));
+      if (rows.length !== ids.length) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "One of those bookings no longer exists" });
+      }
+      // One card belongs to one client, so every dog being paid for has
+      // to be that client's. A household booking paid by the other
+      // parent goes through the ordinary panel, not this button.
+      const clientIds = [...new Set(rows.map((r) => r.clientId))];
+      if (clientIds.length !== 1) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "These dogs belong to different clients — take payment per dog instead",
+        });
+      }
+      const tenantId = rows[0].tenantId;
+      const clientId = clientIds[0];
+
+      // Validate every line against what is owed RIGHT NOW, exactly as
+      // payments.record does, before any money moves.
+      const totals = await loadBillableTotals(db, ids);
+      let amountCents = 0;
+      let alreadyPaidCents = 0;
+      const validated: Array<{ appointmentId: number; amount: number }> = [];
+      for (const line of input.allocations) {
+        const existing = await db
+          .select({ amount: appointmentPayments.amount })
+          .from(appointmentPayments)
+          .where(eq(appointmentPayments.appointmentId, line.appointmentId));
+        const summary = summarisePayments(totals.get(line.appointmentId) ?? null, existing);
+        const check = validatePaymentAmount(line.amount, summary);
+        if (!check.ok) throw new TRPCError({ code: "BAD_REQUEST", message: check.error ?? "That amount cannot be charged" });
+        amountCents += Math.round(check.amount * 100);
+        alreadyPaidCents += Math.round((summary.paid ?? 0) * 100);
+        validated.push({ appointmentId: line.appointmentId, amount: check.amount });
+      }
+      if (amountCents <= 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "There is nothing to charge" });
+      }
+
+      const [client] = await db
+        .select({
+          stripeCustomerId: clients.stripeCustomerId,
+          stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId,
+          stripeCardExpMonth: clients.stripeCardExpMonth,
+          stripeCardExpYear: clients.stripeCardExpYear,
+        })
+        .from(clients)
+        .where(eq(clients.id, clientId))
+        .limit(1);
+      // describeStripeKey, not a hand-rolled check: the local .env holds
+      // `sk_test_…xxxx`, which contains no word "placeholder" and sailed
+      // through an inline test, so the panel offered a Charge button that
+      // could never work. That helper already knows the shapes a dud key
+      // comes in.
+      const stripeConfigured = describeStripeKey(process.env.STRIPE_SECRET_KEY).configured;
+      const availability = cardChargeAvailability({
+        card: client, owingCents: amountCents, stripeConfigured, now: new Date(),
+      });
+      if (availability.state !== "chargeable") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: availability.hint ?? "That card cannot be charged",
+        });
+      }
+
+      const key = chargeIdempotencyKey({ appointmentIds: ids, amountCents, alreadyPaidCents });
+      const result = await chargeSavedCard({
+        customerId: client!.stripeCustomerId!,
+        paymentMethodId: client!.stripeDefaultPaymentMethodId!,
+        amountDollars: (amountCents / 100).toFixed(2),
+        description: `Groomigo booking ${ids.join(", ")}`,
+        metadata: {
+          tenant_id: String(tenantId),
+          client_id: String(clientId),
+          appointment_ids: ids.join(","),
+          payment_kind: "counter_card_on_file",
+        },
+        idempotencyKey: key,
+      });
+
+      if (!result.ok) {
+        return {
+          success: false as const,
+          message: describeChargeFailure(result.declineCode, result.message),
+          paymentIntentId: result.paymentIntentId,
+        };
+      }
+
+      const reference = result.paymentIntentId ?? key;
+      try {
+        for (const line of validated) {
+          // A retry after a half-written batch must finish it, not
+          // double it. The intent id is the thing that identifies this
+          // charge, so it is what the guard looks for.
+          const [seen] = await db
+            .select({ id: appointmentPayments.id })
+            .from(appointmentPayments)
+            .where(and(
+              eq(appointmentPayments.appointmentId, line.appointmentId),
+              eq(appointmentPayments.reference, reference),
+            ))
+            .limit(1);
+          if (seen) continue;
+          await db.insert(appointmentPayments).values({
+            tenantId,
+            appointmentId: line.appointmentId,
+            clientId,
+            amount: line.amount.toFixed(2),
+            method: "stripe",
+            reference,
+            note: input.note || null,
+            recordedByUserId: ctx.user.id,
+          });
+        }
+        for (const id of ids) await refreshPaymentStatus(db, tenantId, id);
+      } catch (err: any) {
+        // The client HAS been charged. Losing this quietly is the worst
+        // outcome this procedure has, so it is shouted about.
+        await notifyOwner({
+          title: "Card charged but not recorded",
+          content:
+            `A counter card payment of $${(amountCents / 100).toFixed(2)} for client ${clientId} ` +
+            `succeeded at Stripe (${reference}) but could not be written to Groomigo: ` +
+            `${err?.message ?? err}. Pressing the button again is safe — the charge will not repeat.`,
+        }).catch(() => {});
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "The card was charged but the payment could not be saved. The owner has been notified — press the button again; it will not charge twice.",
+        });
+      }
+
+      return {
+        success: true as const,
+        message: `Charged $${(amountCents / 100).toFixed(2)} to the card on file`,
+        paymentIntentId: result.paymentIntentId,
+      };
     }),
 });

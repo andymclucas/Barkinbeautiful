@@ -229,6 +229,14 @@ export async function chargeSavedCard(input: {
   amountDollars: string | number;
   description: string;
   metadata?: Record<string, string>;
+  /**
+   * Stripe returns the ORIGINAL intent for a repeated key instead of
+   * making a second one, which is what stops a double-clicked button
+   * charging a client twice. Optional because membership billing is
+   * driven by a scheduler that cannot double-fire the same cycle;
+   * anything a human presses should pass one.
+   */
+  idempotencyKey?: string;
 }): Promise<OffSessionChargeResult> {
   const stripe = requireStripeClient();
   const amount = toStripeCents(input.amountDollars);
@@ -236,16 +244,19 @@ export async function chargeSavedCard(input: {
     return { ok: false, paymentIntentId: null, declineCode: null, message: "Nothing to charge" };
   }
   try {
-    const intent = await stripe.paymentIntents.create({
-      amount,
-      currency: "aud",
-      customer: input.customerId,
-      payment_method: input.paymentMethodId,
-      off_session: true,
-      confirm: true,
-      description: input.description,
-      metadata: input.metadata ?? {},
-    });
+    const intent = await stripe.paymentIntents.create(
+      {
+        amount,
+        currency: "aud",
+        customer: input.customerId,
+        payment_method: input.paymentMethodId,
+        off_session: true,
+        confirm: true,
+        description: input.description,
+        metadata: input.metadata ?? {},
+      },
+      input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
+    );
     return {
       ok: intent.status === "succeeded",
       paymentIntentId: intent.id,
