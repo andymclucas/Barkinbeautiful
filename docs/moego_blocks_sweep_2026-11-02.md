@@ -78,6 +78,31 @@ Only Friday 13 November, because only that one had been asked for and
 only that one is unambiguous. Seven staff, 11:00–16:00, matching the
 window the salon itself recorded.
 
+## Applied, 02/11/2026
+
+`scripts/moego-sync-blocks.ts` now reads a sweep and writes the
+absences. Over this one: **21 written**, 5 skipped as notes, 1 unclear,
+8 where the note and the staff column name different people, 5 already
+there. Running it again wrote nothing.
+
+The eight it would not guess at are listed under "who is away is not
+clear" when the script runs. They are all the same shape — a block
+about one person sitting in another's column — and they need somebody
+who knows the roster:
+
+| Date | MoeGo note | Column |
+| ---- | ---------- | ------ |
+| 10/11 | Steph wisdom teeth out | Zakaria |
+| 10/12 | Steph starting at 11:30 from dr | Zakaria |
+| 05/01 | SABINA AWAY UNTIL THE 7TH | Zakaria |
+| 06/01 | SUBINA AWAY UNTIL THE 7TH | Brooklyn |
+| 16–19/02 | Charlie away block box (×4) | Megan |
+
+The February four are probably Megan: Charlotte is already blocked
+separately those days, so these look like a slot being held shut
+because the salon is a groomer down. Probably is not good enough to
+write into a roster.
+
 ## The standing problem
 
 This will happen again next month. Blocks are entered in MoeGo because

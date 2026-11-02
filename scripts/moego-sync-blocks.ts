@@ -38,6 +38,12 @@
  *   differ: "megan graham" is Megs Graham, "bather 1" is Stephanie.
  * - Blockouts never touch an appointment. Dogs already booked into a
  *   blocked window stay booked, and show as the clash they are.
+ *
+ * Run 02/11/2026 over docs/moego-blocks-2026-11-02.txt, the sweep from
+ * that morning: 21 written, 5 skipped as notes, 1 unclear, 8 where the
+ * note and the column name different people, 5 already there. A second
+ * run straight afterwards wrote nothing, which is the idempotency
+ * claim above actually checked rather than asserted.
  */
 import "dotenv/config";
 import { readFileSync } from "node:fs";
