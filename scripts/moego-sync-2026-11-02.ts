@@ -24,6 +24,12 @@
  *   - Sam (Peter Bell, 03/11) is on the board tomorrow and MoeGo has
  *     Upcoming (0) for him. Absence is not deletion (Trap 7), and
  *     03/11 is close enough that guessing is the expensive option.
+ *
+ * RAN 02/11/2026, after re-pulling MoeGo's cancellations to confirm
+ * nothing had moved since the report. All eleven pre-flight checks
+ * passed; seven changes committed. The window then reconciled: MoeGo
+ * 397 dogs against Groomigo 400 live, the difference being exactly the
+ * three rows above. No pet is booked twice anywhere in the window.
  */
 import "dotenv/config";
 import mysql from "mysql2/promise";
