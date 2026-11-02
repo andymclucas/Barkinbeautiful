@@ -3731,7 +3731,19 @@ const clientsRouter = router({
           COALESCE((SELECT SUM(${invoices.total}) FROM ${invoices}
             WHERE ${invoices.tenantId} = ${tenantOf(ctx, input)}
               AND ${invoices.clientId} = ${input.clientId}
-              AND ${invoices.status} = 'paid'), 0) AS invoicesPaid,
+              AND ${invoices.status} = 'paid'
+              /* Only bills with no booking behind them — retail, arrears,
+                 ad-hoc. A paid invoice FOR a groom is already counted in
+                 counterPaid below, through that appointment's payment
+                 rows, and adding both billed the client twice on the
+                 "Total paid" tile. True of every counter-paid groom with
+                 an auto-raised invoice, and now of every invoice paid by
+                 the Pay Now link as well. */
+              AND ${invoices.appointmentId} IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM ${invoiceAppointments}
+                WHERE ${invoiceAppointments.invoiceId} = ${invoices.id}
+              )), 0) AS invoicesPaid,
           COALESCE((SELECT SUM(${invoices.total}) FROM ${invoices}
             WHERE ${invoices.tenantId} = ${tenantOf(ctx, input)}
               AND ${invoices.clientId} = ${input.clientId}

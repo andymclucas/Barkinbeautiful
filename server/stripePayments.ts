@@ -6,6 +6,7 @@ import { requireStripeClient } from "./stripeClient";
 import { syncAccountStatus, tenantIdForStripeAccount } from "./stripeConnectAccounts";
 import { chargesOnConnectedAccount, platformFeeCents } from "../shared/stripeConnect";
 import { attachPaymentMethodToClient } from "./stripeCards";
+import { postInvoicePaymentToAppointments } from "./invoicePaymentPosting";
 import { notifyOwner } from "./ownerNotification";
 import { classifyFailure, fromStripeCents, planAfterFailure } from "@shared/stripeBilling";
 import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
@@ -239,7 +240,89 @@ export async function processStripeEvent(event: Stripe.Event) {
 
     if (invoiceId && session.payment_status === "paid") {
       const amount = (session.amount_total ?? 0) / 100;
-      await db.update(invoices).set({ status: "paid", paymentMethod: "stripe", paidAt: new Date() }).where(eq(invoices.id, invoiceId));
+      const [invoiceRow] = await db
+        .select({ invoiceNumber: invoices.invoiceNumber })
+        .from(invoices)
+        .where(and(eq(invoices.id, invoiceId), eq(invoices.tenantId, tenantId)))
+        .limit(1);
+      const invoiceNumber: string | null = invoiceRow?.invoiceNumber ?? null;
+      /* Scoped to the tenant like every other write here. The id comes
+         from Stripe metadata, which is ours, but a tenant filter is the
+         rule and a metadata mix-up should fail rather than cross. */
+      await db.update(invoices).set({ status: "paid", paymentMethod: "stripe", paidAt: new Date() })
+        .where(and(eq(invoices.id, invoiceId), eq(invoices.tenantId, tenantId)));
+
+      /* Marking the invoice paid is not enough on its own. The payment
+         panel's figures come from appointment_payments, so without this
+         the client who just paid still reads as owing the full amount
+         and gets chased for it.
+
+         SKIPPED for a membership invoice. Those are arrears and
+         subscription bills with no appointment behind them, so there is
+         nothing to post — and the membership bookkeeping below is the
+         only Checkout path live today. Running a pointless query ahead
+         of it could only cost it.
+
+         Wrapped, because the event row was written at the top of this
+         handler: a throw here would return a 400, Stripe would retry,
+         and the retry would see the event already recorded and get a
+         200. The posting would never be repaired AND the membership
+         writes below would have been skipped. A failure has to be
+         survivable and loud instead. Re-running the script by hand is
+         safe: allocation is against what is still outstanding, so it
+         posts only what is missing. */
+      if (clientId && !membershipId) {
+        try {
+          const posting = await postInvoicePaymentToAppointments(db, {
+            tenantId,
+            invoiceId,
+            clientId,
+            amount,
+            invoiceNumber: invoiceNumber ?? null,
+            reference: typeof session.payment_intent === "string" ? session.payment_intent : session.id,
+          });
+
+          /* Money the dogs could not absorb. Never posted — it means the
+             invoice covers something besides these grooms, or was
+             settled at the counter after the link went out, and forcing
+             it onto an appointment would overstate what that dog was
+             paid. But it is the client's money sitting in Stripe with
+             nothing in Groomigo to show for it, so somebody is told by
+             name rather than it going to a log nobody reads. */
+          if (posting.unallocated > 0) {
+            const label = invoiceNumber ?? `#${invoiceId}`;
+            await notifyOwner({
+              title: `Online payment needs a decision — ${label}`,
+              content:
+                `A client paid $${amount.toFixed(2)} online against invoice ${label}, and ` +
+                `$${posting.unallocated.toFixed(2)} of it could not be put against a booking` +
+                (posting.noAppointments
+                  ? ` because the invoice has no appointment linked.`
+                  : ` because the ${posting.posted.length} booking(s) it covers owed less than that.`) +
+                `\n\nUsually this means the invoice was already settled at the counter, or a ` +
+                `second copy of the link was paid. Stripe is holding the money either way — it ` +
+                `needs refunding or putting on the client's account.` +
+                `\n\nStripe payment: ${typeof session.payment_intent === "string" ? session.payment_intent : session.id}`,
+            }).catch(() => {});
+          }
+        } catch (error) {
+          /* The invoice IS paid; only the posting failed. Said loudly so
+             it can be put right, rather than taking the handler down and
+             losing the membership writes below with it. */
+          console.error(`[stripe] invoice ${invoiceId}: paid, but posting it to its appointments failed`, error);
+          await notifyOwner({
+            title: `Online payment recorded against the invoice but NOT the booking — ${invoiceNumber ?? `#${invoiceId}`}`,
+            content:
+              `A client paid $${amount.toFixed(2)} online and Stripe has the money, but Groomigo ` +
+              `could not put it against their booking, so the appointment still shows as owing. ` +
+              `Do not chase this client.\n\n` +
+              `Invoice ${invoiceNumber ?? invoiceId}. Stripe payment: ` +
+              `${typeof session.payment_intent === "string" ? session.payment_intent : session.id}\n\n` +
+              `${error instanceof Error ? error.message : String(error)}`,
+          }).catch(() => {});
+        }
+      }
+
       if (membershipId) {
         await db.insert(membershipPayments).values({ membershipId, amount: String(amount), status: "paid", stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null, paidAt: new Date() });
         await db.insert(membershipLedgerEntries).values({ tenantId, membershipId, invoiceId, entryType: "payment", amount: String(amount), source: "stripe", note: "Stripe Checkout payment" });

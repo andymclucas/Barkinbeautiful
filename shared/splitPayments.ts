@@ -44,12 +44,16 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
  * "Stripe" therefore needed saying out loud. Money moves through Stripe
  * in exactly three places — the Pay Now link on an emailed invoice,
  * saving a card, and membership billing — and none of them is this
- * panel. Nothing in the app ever writes this method on its own either:
- * a client paying the invoice link marks the INVOICE paid, not the
- * appointment. So the option exists for a person to write down money
- * that already arrived, and a bare "Stripe" read like a button that
- * would charge the card on file. Picking it did the opposite — it
- * marked the booking paid and took nothing.
+ * panel. A bare "Stripe" read like a button that would charge the card
+ * on file, and picking it did the opposite: it marked the booking paid
+ * and took nothing.
+ *
+ * The option still earns its place. A client who pays the Pay Now link
+ * now has it posted for them by the webhook, so the usual case needs
+ * nobody to type anything — but a payment taken through Stripe some
+ * other way still has to be written down, and the panel refuses an
+ * amount the booking no longer owes, so a second hand-keyed copy
+ * cannot double-count.
  */
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: "Cash",
