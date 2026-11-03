@@ -39,6 +39,9 @@ export const CHIME_VOLUME = 0.6;
  */
 export const CHIME_MAX_MS = 8_000;
 
+/** `HTMLMediaElement.MEDIA_ERR_SRC_NOT_SUPPORTED`, named so the check reads. */
+const MEDIA_ERR_SRC_NOT_SUPPORTED = 4;
+
 /** The element currently playing, so a second press cannot stack two. */
 let current: HTMLAudioElement | null = null;
 let stopTimer: ReturnType<typeof setTimeout> | null = null;
@@ -67,13 +70,47 @@ export function playFestiveChime(make?: (src: string) => HTMLAudioElement): void
     current = audio;
 
     /*
+     * Say so when the file is not there.
+     *
+     * The app serves a catch-all: any path that does not exist comes back
+     * as HTTP 200 with index.html rather than a 404. Verified against
+     * production 03/11/2026 - /nonsense.mp3 returns 8.9KB of text/html.
+     * So a chime that failed to deploy does not 404; the browser receives
+     * HTML, fails to decode it as audio, and every failure path below is
+     * a silent return by design. The symptom would be "no music, no error
+     * anywhere", which is a miserable thing to diagnose.
+     *
+     * MEDIA_ERR_SRC_NOT_SUPPORTED (4) is exactly that case. The message
+     * names the URL and the catch-all, because the instinct on seeing a
+     * media error is to check the request - and the request will look
+     * perfectly fine.
+     */
+    audio.addEventListener("error", () => {
+      const code = audio.error?.code;
+      const why = code === MEDIA_ERR_SRC_NOT_SUPPORTED
+        ? "it is probably missing from the deploy — the app answers an unknown path with index.html and a 200, so the browser got HTML and could not decode it as audio"
+        : `media error code ${code ?? "unknown"}`;
+      console.warn(`[festiveChime] ${CHIME_URL} did not load: ${why}`);
+    }, { once: true });
+
+    /*
      * play() returns a promise that REJECTS when the browser blocks
-     * autoplay. Unhandled, that is an console error on every blocked
+     * autoplay. Unhandled, that is a console error on every blocked
      * press. It should not be blocked here - this is called straight out
      * of a click - but a kiosk policy or a muted device can still refuse.
+     *
+     * A block is NOT worth warning about: it is the browser working as
+     * designed and nothing is broken. Anything else is, because it means
+     * the press did something unexpected.
      */
     const started = audio.play() as unknown as Promise<void> | undefined;
-    if (started && typeof started.catch === "function") started.catch(() => {});
+    if (started && typeof started.catch === "function") {
+      started.catch((err: unknown) => {
+        const name = (err as { name?: string })?.name;
+        if (name === "NotAllowedError" || name === "AbortError") return;
+        console.warn(`[festiveChime] ${CHIME_URL} would not play: ${name ?? err}`);
+      });
+    }
 
     stopTimer = setTimeout(stopFestiveChime, CHIME_MAX_MS);
   } catch {
