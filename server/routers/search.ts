@@ -38,6 +38,12 @@ export const searchRouter = router({
       tenantId: z.number().default(1),
       query: z.string().trim().min(2).max(80),
       limit: z.number().int().min(1).max(30).default(12),
+      /**
+       * Which kinds to look in. Narrowed on the SERVER rather than
+       * filtered in the browser, so turning dogs off hands those slots
+       * to clients and appointments instead of leaving gaps.
+       */
+      kinds: z.array(z.enum(["pet", "client", "appointment"])).min(1).optional(),
     }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
@@ -52,12 +58,13 @@ export const searchRouter = router({
       const like = `%${q}%`;
       const digits = normalisePhone(q);
       const phoneSearch = looksLikePhone(q) && digits.length >= 3;
+      const wanted = new Set(input.kinds ?? ["pet", "client", "appointment"]);
       const hits: SearchHit[] = [];
 
       // ── Clients ────────────────────────────────────────────────────
       // A phone typed with spaces must match a phone stored without
       // them, and the other way round, so the COLUMN is stripped too.
-      const clientRows = await db
+      const clientRows = wanted.has("client") ? await db
         .select({
           id: clients.id,
           firstName: clients.firstName,
@@ -79,7 +86,7 @@ export const searchRouter = router({
                 sql`${clients.address} LIKE ${like}`,
               ),
         ))
-        .limit(25);
+        .limit(25) : [];
 
       for (const c of clientRows) {
         const name = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || "(no name)";
@@ -96,7 +103,7 @@ export const searchRouter = router({
       }
 
       // ── Dogs ───────────────────────────────────────────────────────
-      if (!phoneSearch) {
+      if (!phoneSearch && wanted.has("pet")) {
         const petRows = await db
           .select({
             id: pets.id,
@@ -127,7 +134,7 @@ export const searchRouter = router({
       }
 
       // ── Appointments, including anything on the floor right now ────
-      if (!phoneSearch) {
+      if (!phoneSearch && wanted.has("appointment")) {
         const apptRows = await db
           .select({
             id: appointments.id,
@@ -171,10 +178,15 @@ export const searchRouter = router({
        * twelve slots with dogs on "bella" — twelve of them in this
        * salon — and the client and appointment groups never showed.
        */
-      return capPerKind(
-        rankHits(hits, q),
-        { pet: 6, client: 4, appointment: 4 },
-        input.limit,
-      );
+      /*
+       * Only cap the kinds actually being searched. Capping a kind that
+       * was switched off would reserve slots nothing can fill.
+       */
+      const caps = {
+        pet: wanted.has("pet") ? 6 : 0,
+        client: wanted.has("client") ? 4 : 0,
+        appointment: wanted.has("appointment") ? 4 : 0,
+      };
+      return capPerKind(rankHits(hits, q), caps, input.limit);
     }),
 });

@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { CalendarDays, Dog, Loader2, Search, User } from "lucide-react";
+import { CalendarDays, Check, Dog, Loader2, Search, User } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
@@ -40,11 +40,20 @@ function useDebounced<T>(value: T, ms: number): T {
 export function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  /**
+   * Andy, 03/11/2026: "Perhaps also a checkbox option for any
+   * particular search style."
+   *
+   * All three on is the default and the common case. Switching one off
+   * narrows the QUERY, not just the list, so the freed slots go to the
+   * kinds still on rather than leaving gaps.
+   */
+  const [kinds, setKinds] = useState<SearchKind[]>(["pet", "client", "appointment"]);
   const [, navigate] = useLocation();
   const debounced = useDebounced(query, 220);
 
   const { data, isFetching } = trpc.search.everything.useQuery(
-    { query: debounced },
+    { query: debounced, kinds },
     // min(2) on the server, so asking with fewer is a guaranteed error.
     { enabled: open && debounced.trim().length >= 2, staleTime: 15_000 },
   );
@@ -110,12 +119,60 @@ export function GlobalSearch() {
           value={query}
           onValueChange={setQuery}
         />
-        <CommandList>
+
+        {/* What it can look in, and what it is looking in now. Shown
+            above the results so the answer to "why is that not here?"
+            is on screen rather than in somebody's head. */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
+          <span className="mr-0.5 text-[11px] font-medium text-muted-foreground">Look in</span>
+          {(["pet", "client", "appointment"] as SearchKind[]).map((kind) => {
+            const on = kinds.includes(kind);
+            const Icon = ICON[kind];
+            return (
+              <button
+                key={kind}
+                type="button"
+                role="checkbox"
+                aria-checked={on}
+                onClick={() =>
+                  setKinds((prev) => {
+                    const next = prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind];
+                    // Never all three off — that is a search box that
+                    // cannot find anything, and the empty result looks
+                    // like a broken query rather than a chosen filter.
+                    return next.length === 0 ? prev : next;
+                  })
+                }
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                  on
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                {on ? <Check className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
+                {groupLabel(kind, 2)}
+              </button>
+            );
+          })}
+        </div>
+        <CommandList className="min-h-[18rem]">
           {/* cmdk filters its own items by default, which would filter
               OUT a result matched on a phone number or an address that
               is not in the visible text. The server has already decided
               what matches, so this list must not second-guess it — see
               shouldFilter={false} on the dialog below. */}
+          {/* The resting state. An empty box that says nothing makes
+              people guess what it accepts; this says it outright. */}
+          {debounced.trim().length === 0 && (
+            <div className="px-4 py-8 text-center">
+              <Search className="mx-auto mb-2 h-5 w-5 text-muted-foreground/60" />
+              <p className="text-sm font-medium">Search the whole salon</p>
+              <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
+                A dog&rsquo;s name or breed, a client&rsquo;s name, phone, email or address.
+                Appointments show where they are — in the salon, or on the day they are booked.
+              </p>
+            </div>
+          )}
           {short && <CommandEmpty>Keep typing…</CommandEmpty>}
           {!short && isFetching && (
             <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">

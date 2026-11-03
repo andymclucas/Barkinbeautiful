@@ -28,12 +28,23 @@
  */
 export type TimeFormat = "range" | "start" | "none";
 
+/**
+ * How to draw the service, on the same principle as the time.
+ *
+ * "CLASSIC GROOM" needs more room than a narrow card has, but
+ * "CLASSIC" does not — and a groomer scanning the board needs to know
+ * it is a classic rather than a styled far more than they need the
+ * word "groom", which is true of nearly every row.
+ */
+export type ServiceFormat = "full" | "short" | "none";
+
 export type CardDensity = {
   /** The dog's name. Always drawn; the card is pointless without it. */
   showName: true;
   timeFormat: TimeFormat;
   /** True when any time at all is drawn. */
   showTime: boolean;
+  serviceFormat: ServiceFormat;
   showService: boolean;
   /** "3 dogs · family booking". */
   showFamilyLine: boolean;
@@ -74,6 +85,14 @@ export const START_TIME_ONLY_WIDTH = 70;
  */
 export const SERVICE_BADGE_WIDTH = 132;
 
+/**
+ * Below this even a shortened badge crowds out the name it sits under.
+ *
+ * "CLASSIC" at 9px bold is about 55px plus the badge's own 12px of
+ * padding, inside a card whose content box is its width less 21.
+ */
+export const SHORT_SERVICE_WIDTH = 92;
+
 /** A second line of text needs somewhere to go. */
 export const SECOND_LINE_HEIGHT = 44;
 
@@ -112,6 +131,20 @@ export function appointmentCardDensity(input: {
     showTime,
     showService:
       input.heightPx >= SERVICE_BADGE_HEIGHT && input.widthPx >= SERVICE_BADGE_WIDTH,
+    /*
+     * Shortened rather than dropped, for the same reason the time is.
+     * The board showed a name and a time but no service on every
+     * overlapping booking, which is the one thing that tells a groomer
+     * what they are about to do.
+     */
+    serviceFormat:
+      input.heightPx < SERVICE_BADGE_HEIGHT
+        ? "none"
+        : input.widthPx >= SERVICE_BADGE_WIDTH
+          ? "full"
+          : input.widthPx >= SHORT_SERVICE_WIDTH
+            ? "short"
+            : "none",
     // Both of these are nice-to-know rather than need-to-know, so they
     // only appear once the card has already afforded the time.
     showFamilyLine: showTime,
