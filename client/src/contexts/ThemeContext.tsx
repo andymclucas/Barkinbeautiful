@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { playFestiveChime } from "@/lib/festiveChime";
+import { playFestiveChime, stopFestiveChime } from "@/lib/festiveChime";
 
 /**
  * Light / dark / follow-the-system, for the whole platform.
@@ -159,6 +159,10 @@ export function ThemeProvider({
      * the theme.
      */
     if (on && !festive) playFestiveChime();
+    // Switching the tree off silences it: the music belongs to the theme
+    // being on, and the recording runs long enough that somebody turning
+    // it straight back off would otherwise be left listening to it.
+    if (!on) stopFestiveChime();
     setFestiveState(on);
     try {
       localStorage.setItem(FESTIVE_KEY, on ? "on" : "off");
