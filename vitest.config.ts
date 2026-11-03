@@ -24,6 +24,30 @@ export default defineConfig({
     // component will actually look.
     environment: "node",
     environmentMatchGlobs: [["client/**", "jsdom"]],
+    /**
+     * Headroom for component tests under worker contention.
+     *
+     * vitest's default is 5s, which is generous for a pure function and
+     * tight for a component test that types through `user.type` - every
+     * character dispatches a full event sequence and re-renders inside
+     * `act()`. Measured 03/11/2026: NewClientQuickAdd.test.tsx runs its 14
+     * tests in 3.1s on an idle machine and 16-19s when the other three
+     * dozen jsdom files are competing for workers, with nothing changed
+     * between the two.
+     *
+     * That spread means individual tests cross 5s on load alone, and the
+     * suite fails at random - which is far worse than a slow one, because
+     * CLAUDE.md §7 promises the next person that any failure is real. It
+     * had already been patched per-file once; a second unexplained failure
+     * after two more jsdom files were added is the point to stop playing
+     * whack-a-mole and move the budget.
+     *
+     * This is NOT cover for a hang. 20s is still two orders of magnitude
+     * past anything here that works: the slowest single test on an idle
+     * machine is under half a second. A test that reaches 20s is stuck,
+     * and will still say so.
+     */
+    testTimeout: 20_000,
     setupFiles: ["./client/src/test/setup.ts"],
     include: [
       "server/**/*.test.ts",
