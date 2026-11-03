@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { GroomingNoteTab } from "@/components/GroomingNoteTab";
 import { PetAvatar } from "@/components/PetAvatar";
 import { shiftDateKey } from "@/lib/workflowDates";
 import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workflowStageTimer";
@@ -117,16 +118,32 @@ export default function WorkflowBoard() {
   const [bathGroupPriority, setBathGroupPriority] = useState<string>("__keep__");
   const [bathQueueDragId, setBathQueueDragId] = useState<number | null>(null);
   const [petPopup, setPetPopup] = useState<null | {
-    id: number; petName: string; petBreed: string | null; petAlertLevel: string | null;
+    /** The APPOINTMENT id. `petId` below is the dog. */
+    id: number; petId: number | null; petName: string; petBreed: string | null; petAlertLevel: string | null;
     petWarnings: string | null; staffName: string | null; notes: string | null;
     workflowState: string; checkedInAt: number | null; stageStartedAt: number | null;
     bathingStartedAt: number | null; bathingCompletedAt: number | null;
     dryingStartedAt: number | null; dryingCompletedAt: number | null;
     groomingStartedAt: number | null; groomingCompletedAt: number | null;
     readyAt: number | null; completedAt: number | null; scheduledStart: Date | string | number;
+    /** Latest grooming note already recorded against this appointment. */
+    groomStyleNote?: string | null;
   }>(null);
   const [editingNotes, setEditingNotes] = useState<string>("");
   const [savingNotes, setSavingNotes] = useState(false);
+  /*
+   * Lauren via Andy, 04/11/2026: "on the workflow can we add the
+   * grooming notes tab to the dogs card to easily update the days
+   * grooming notes and save from there?"
+   *
+   * Two notes live on this card and they are NOT the same thing.
+   * Appointment notes are about today's visit — "SORE BACK - #7" — and
+   * live on the appointment. Grooming notes are the dog's styling
+   * record, kept per pet in groom_style_notes, and are what the next
+   * groomer reads before picking up the clippers. Tabs rather than one
+   * box, so neither is typed into the other.
+   */
+  const [notesTab, setNotesTab] = useState<"appointment" | "grooming">("appointment");
   const [now, setNow] = useState(Date.now());
   const dragApptId = useRef<number | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
@@ -1261,10 +1278,40 @@ export default function WorkflowBoard() {
               </div>
             </div>
 
-            {/* Appointment notes */}
-            {/* Editable appointment notes */}
+            {/* Appointment notes, and the dog's grooming record beside them */}
             <div className="space-y-1.5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Appointment Notes</p>
+              <div className="flex gap-1 rounded-lg bg-muted p-0.5">
+                {([
+                  ["appointment", "Appointment notes"],
+                  ["grooming", "Grooming notes"],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setNotesTab(key)}
+                    className={`flex-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
+                      notesTab === key
+                        ? "bg-card text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {notesTab === "grooming" ? (
+              <GroomingNoteTab
+                key={petPopup.id}
+                petId={petPopup.petId}
+                appointmentId={petPopup.id}
+                petName={petPopup.petName}
+                existing={petPopup.groomStyleNote ?? null}
+                onSaved={(note: string) => setPetPopup(prev => prev ? { ...prev, groomStyleNote: note } : null)}
+              />
+            ) : (
+            <div className="space-y-1.5">
               <Textarea
                 value={editingNotes}
                 onChange={e => setEditingNotes(e.target.value)}
@@ -1294,6 +1341,7 @@ export default function WorkflowBoard() {
                 </Button>
               </div>
             </div>
+            )}
           </div>
         </div>
       )}
