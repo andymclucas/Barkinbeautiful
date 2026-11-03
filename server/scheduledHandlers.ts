@@ -46,7 +46,8 @@ import { membershipPayments, membershipLedgerEntries } from "../drizzle/schema";
 import { desc } from "drizzle-orm";
 import { sendSms, buildAppointmentReminderSms } from "./sms";
 import { appointments, staff } from "../drizzle/schema";
-import { gte, isNotNull, lt } from "drizzle-orm";
+import { gte, isNotNull, isNull, lt } from "drizzle-orm";
+import { decideAppointmentReminder, REMINDER_SKIP_LABEL } from "@shared/reminderDecision";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 
 
@@ -708,6 +709,10 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
           scheduledStart: appointments.scheduledStart,
           clientFirstName: clients.firstName,
           clientPhone: clients.phone,
+          /* Checked in SQL below AND per row, because an automated text
+             to somebody who opted out is the one that is never
+             excusable. See shared/reminderDecision.ts. */
+          smsOptedOutAt: clients.smsOptedOutAt,
           petName: pets.name,
           staffName: staff.name,
         })
@@ -720,6 +725,11 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
             gte(appointments.scheduledStart, start),
             lt(appointments.scheduledStart, end),
             isNotNull(clients.phone),
+            /* Chris Roulstone, 03/11/2026, asked not to get reminder
+               texts on his recurring booking. Without this the job never
+               looked, and switching reminders on would have texted him
+               three times per booking. */
+            isNull(clients.smsOptedOutAt),
             eq(appointments.status, "confirmed"),
             sql`appointments.${sql.raw(stage.sqlColumn)} IS NULL`
           )
@@ -727,7 +737,24 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
 
       let stageSent = 0;
       for (const row of rows) {
-        if (!row.clientPhone || !row.scheduledStart) { skipped++; continue; }
+        // Bound once so the narrowing survives the guard below.
+        const phone = row.clientPhone;
+        if (!row.scheduledStart || !phone) { skipped++; continue; }
+        /* Second line of defence. The SQL above already excludes these,
+           but that filter sits among four others and can be edited by
+           somebody adding an unrelated one; this rule has its own tests
+           and cannot be removed by accident. */
+        const decision = decideAppointmentReminder({
+          clientPhone: row.clientPhone,
+          smsOptedOutAt: row.smsOptedOutAt,
+        });
+        if (!decision.send) {
+          if (decision.reason === "opted_out") {
+            console.warn(`[reminders] skipped appointment ${row.apptId}: ${REMINDER_SKIP_LABEL.opted_out}`);
+          }
+          skipped++;
+          continue;
+        }
 
         const apptDate = row.scheduledStart.toLocaleDateString("en-AU", {
           weekday: "long", day: "numeric", month: "long", timeZone: "Australia/Brisbane",
@@ -745,7 +772,7 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
           stage: stage.key,
         });
 
-        const result = await sendSms(row.clientPhone, body, { tenantId: row.tenantId, trigger: "automated", type: "reminder" });
+        const result = await sendSms(phone, body, { tenantId: row.tenantId, trigger: "automated", type: "reminder" });
 
         if (result.success) {
           await db
@@ -756,7 +783,7 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
             tenantId: 1,
             clientId: row.clientId,
             appointmentId: row.apptId,
-            toNumber: row.clientPhone,
+            toNumber: phone,
             body,
             twilioSid: result.sid,
             status: "sent",
