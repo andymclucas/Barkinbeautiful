@@ -41,24 +41,47 @@ function fakeAudio() {
 }
 
 describe("the melody", () => {
-  it("is the opening of Jingle Bells and stops there", () => {
-    // The full line runs about four seconds, which is a long time to stand
-    // at a counter listening to a theme switch.
-    expect(JINGLE_BELLS).toHaveLength(6);
-    expect(JINGLE_BELLS.every((n) => n.note === "E5")).toBe(true);
+  it("does not stop before the tune moves", () => {
+    /*
+     * The one that matters, and the one the first version got wrong.
+     *
+     * Andy: "you can't tell it's Jingle Bells as it's only the same note."
+     * The snippet was "jingle bells, jingle bells" - six repeats of E -
+     * and the test here asserted exactly that, so it passed while being
+     * unrecognisable. A melody that never changes pitch is not a melody.
+     */
+    const pitches = new Set(JINGLE_BELLS.map((n) => n.note));
+    expect(pitches.size).toBeGreaterThan(1);
+  });
+
+  it("carries the phrase that identifies the tune", () => {
+    // "jingle all the way" - E up to G, down to C, back up through D to
+    // E. This contour is the part everybody recognises; the repeated E's
+    // before it could be any song at all.
+    const pitches = JINGLE_BELLS.map((n) => n.note);
+    expect(pitches.slice(-5)).toEqual(["E5", "G5", "C5", "D5", "E5"]);
   });
 
   it("is over before it can irritate anyone", () => {
-    expect(chimeDurationMs()).toBeLessThan(2000);
+    // Doubled on request, and that is the ceiling - the full carol is not
+    // something to stand at a counter listening to.
+    expect(chimeDurationMs()).toBeGreaterThan(2000);
+    expect(chimeDurationMs()).toBeLessThan(3500);
   });
 
-  it("has the jin-gle BELLS rhythm, not six equal notes", () => {
-    // Three notes of equal length is a doorbell. The long third beat is
-    // what makes it the tune.
-    expect(JINGLE_BELLS.map((n) => n.beats)).toEqual([1, 1, 2, 1, 1, 2]);
+  it("has the jin-gle BELLS rhythm, not eleven equal notes", () => {
+    // Even notes would read as a doorbell. The long third beat in each
+    // "jingle bells", and the dotted C against the quick D, are what make
+    // it sing.
+    expect(JINGLE_BELLS.map((n) => n.beats)).toEqual([1, 1, 2, 1, 1, 2, 1, 1, 1.5, 0.5, 4]);
   });
 
-  it("knows the pitches it uses and nothing else", () => {
+  it("knows every pitch it asks for", () => {
+    // A note missing from the table is silently skipped at playback, so a
+    // typo here would quietly punch a hole in the tune.
+    for (const { note } of JINGLE_BELLS) {
+      expect(noteHz(note)).not.toBeNull();
+    }
     expect(noteHz("E5")).toBeCloseTo(659.25, 2);
     expect(noteHz("nonsense")).toBeNull();
   });
@@ -68,7 +91,7 @@ describe("playFestiveChime", () => {
   it("schedules every note, back to back", () => {
     const { Ctx, notes } = fakeAudio();
     playFestiveChime(Ctx);
-    expect(notes).toHaveLength(6);
+    expect(notes).toHaveLength(JINGLE_BELLS.length);
     for (let i = 1; i < notes.length; i += 1) {
       // No gaps and no overlaps: a snippet that stutters sounds broken.
       expect(notes[i].start).toBeCloseTo(notes[i - 1].stop, 6);
@@ -84,12 +107,16 @@ describe("playFestiveChime", () => {
     expect(notes[2].stop - notes[2].start).toBeCloseTo((BEAT_MS * 2) / 1000, 6);
   });
 
-  it("stays quiet, because it plays in a room with clients in it", () => {
+  it("is audible but does not carry across the salon", () => {
+    // Raised from 0.07 on request - that was a guess at "quiet enough for
+    // a room with clients in it" and landed nearer inaudible. The ceiling
+    // is here so the next adjustment is a decision rather than a slip.
     const { Ctx, gains } = fakeAudio();
     playFestiveChime(Ctx);
     expect(gains.length).toBeGreaterThan(0);
-    for (const g of gains) expect(g).toBeLessThanOrEqual(0.1);
-    expect(CHIME_GAIN).toBeLessThanOrEqual(0.1);
+    for (const g of gains) expect(g).toBeLessThanOrEqual(0.2);
+    expect(CHIME_GAIN).toBeGreaterThan(0.1);
+    expect(CHIME_GAIN).toBeLessThanOrEqual(0.2);
   });
 
   it("uses a triangle, not a sine or a square", () => {

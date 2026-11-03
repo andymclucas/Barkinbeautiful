@@ -33,26 +33,61 @@ export type ChimeNote = {
 };
 
 /**
- * "Jingle bells, jingle bells" - the opening phrase and nothing else.
+ * "Jingle bells, jingle bells, jingle all the way."
  *
- * The full line runs to about four seconds, which is a long time to stand
- * at a counter listening to a theme switch. Two bars is instantly
- * recognisable and over before it can irritate anyone.
+ * Andy, 03/11/2026: "you can't tell it's Jingle Bells as it's only the
+ * same note."
+ *
+ * He is right, and the first version was a plain mistake. It stopped
+ * after "jingle bells, jingle bells" to keep the snippet short - but that
+ * whole phrase is SIX REPEATS OF ONE NOTE. Everything that identifies the
+ * tune is in the third phrase, where it finally moves: E up to G, drop to
+ * C, back up through D to E. Without that it is not a melody at all, it
+ * is one beep six times, and no amount of correct rhythm rescues it.
+ *
+ * The comment that used to sit here called two bars of a single pitch
+ * "instantly recognisable", which should have been the giveaway.
+ *
+ * Worth keeping as a general lesson: a snippet trimmed for length has to
+ * keep the part carrying the IDENTITY, and that is rarely the opening.
  */
 export const JINGLE_BELLS: ChimeNote[] = [
+  // Jin - gle  bells
   { note: "E5", beats: 1 },
   { note: "E5", beats: 1 },
   { note: "E5", beats: 2 },
+  // Jin - gle  bells
   { note: "E5", beats: 1 },
   { note: "E5", beats: 1 },
   { note: "E5", beats: 2 },
+  // Jin - gle  all --- the  way
+  //
+  // The long C against the quick D is what makes this sing rather than
+  // march. Four even notes here reads as a doorbell; this is the bit
+  // everybody actually hums.
+  { note: "E5", beats: 1 },
+  { note: "G5", beats: 1 },
+  { note: "C5", beats: 1.5 },
+  { note: "D5", beats: 0.5 },
+  { note: "E5", beats: 4 },
 ];
 
-/** A brisk beat, so the whole thing is well under two seconds. */
-export const BEAT_MS = 170;
+/**
+ * A little slower than the first attempt, which ran at 170ms a beat -
+ * about 350bpm, fast enough to blur the phrase even once it had real
+ * notes in it. Sixteen beats lands just under three seconds, roughly
+ * double the original, which is what was asked for.
+ */
+export const BEAT_MS = 180;
 
-/** Quiet. It plays in a room with dogs and clients in it. */
-export const CHIME_GAIN = 0.07;
+/**
+ * Andy, 03/11/2026: "Make it a bit louder".
+ *
+ * Doubled from 0.07, which was my guess at "quiet enough for a room with
+ * clients in it" and turned out to be nearer inaudible. 0.15 is about
+ * -16dB: clearly present, still well short of carrying across the salon.
+ */
+export const CHIME_GAIN = 0.15;
 
 /** How long the snippet runs, for anything that needs to know. */
 export function chimeDurationMs(melody: ChimeNote[] = JINGLE_BELLS): number {
