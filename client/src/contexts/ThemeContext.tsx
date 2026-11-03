@@ -23,6 +23,7 @@ export type ThemeChoice = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
 const STORAGE_KEY = "gsos-theme";
+const FESTIVE_KEY = "gsos-festive";
 
 interface ThemeContextType {
   /** What the user chose, which may be "system". */
@@ -41,6 +42,18 @@ interface ThemeContextType {
    * such surfaces cannot switch each other off.
    */
   setDarkSurface: (active: boolean) => void;
+  /**
+   * Andy, 03/11/2026: "Add a little Christmas tree icon that then
+   * switches it to a Christmas theme."
+   *
+   * Deliberately NOT a third value of ThemeChoice. It is a recolour,
+   * not a light/dark decision, so it composes: Christmas in dark mode
+   * is Christmas in dark mode, and turning the tree off leaves whatever
+   * the user had before rather than guessing.
+   */
+  festive: boolean;
+  setFestive: (on: boolean) => void;
+  toggleFestive: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -70,6 +83,13 @@ export function ThemeProvider({
   defaultTheme?: ThemeChoice;
 }) {
   const [theme, setThemeState] = useState<ThemeChoice>(() => readStored() ?? defaultTheme);
+  const [festive, setFestiveState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(FESTIVE_KEY) === "on";
+    } catch {
+      return false;
+    }
+  });
   const [systemPref, setSystemPref] = useState<ResolvedTheme>(systemTheme);
   const [darkSurfaces, setDarkSurfaces] = useState(0);
 
@@ -101,6 +121,12 @@ export function ThemeProvider({
     root.style.colorScheme = showDark ? "dark" : "light";
   }, [showDark]);
 
+  // Its own class, so it layers over light or dark rather than replacing
+  // either. The CSS lives beside the brand tokens it overrides.
+  useEffect(() => {
+    document.documentElement.classList.toggle("festive", festive);
+  }, [festive]);
+
   const setTheme = useCallback((next: ThemeChoice) => {
     setThemeState(next);
     try {
@@ -114,13 +140,24 @@ export function ThemeProvider({
     setTheme(resolvedTheme === "dark" ? "light" : "dark");
   }, [resolvedTheme, setTheme]);
 
+  const setFestive = useCallback((on: boolean) => {
+    setFestiveState(on);
+    try {
+      localStorage.setItem(FESTIVE_KEY, on ? "on" : "off");
+    } catch {
+      // Same as the theme: not worth failing a click over.
+    }
+  }, []);
+
+  const toggleFestive = useCallback(() => setFestive(!festive), [festive, setFestive]);
+
   const setDarkSurface = useCallback((active: boolean) => {
     setDarkSurfaces((n) => Math.max(0, n + (active ? 1 : -1)));
   }, []);
 
   const value = useMemo(
-    () => ({ theme, resolvedTheme, setTheme, toggleTheme, setDarkSurface }),
-    [theme, resolvedTheme, setTheme, toggleTheme, setDarkSurface],
+    () => ({ theme, resolvedTheme, setTheme, toggleTheme, setDarkSurface, festive, setFestive, toggleFestive }),
+    [theme, resolvedTheme, setTheme, toggleTheme, setDarkSurface, festive, setFestive, toggleFestive],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

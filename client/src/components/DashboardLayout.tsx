@@ -303,7 +303,7 @@ function DashboardLayoutContent({
   setSidebarWidth: (w: number) => void;
 }) {
   const { user, logout } = useAuth();
-  const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme, toggleTheme, festive, toggleFestive } = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
@@ -424,6 +424,23 @@ function DashboardLayoutContent({
           so it sits furthest from the destructive end of the header and
           lands in the same place on every page. */}
       <GlobalSearch />
+      {/* Andy, 03/11/2026: "Add a little Christmas tree icon that then
+          switches it to a Christmas theme." Beside the moon, because it
+          is the same KIND of control — how the app looks, not what it
+          does — and it recolours rather than replacing light or dark,
+          so the two compose. */}
+      <button
+        type="button"
+        onClick={toggleFestive}
+        aria-pressed={festive}
+        aria-label={festive ? "Turn off the Christmas theme" : "Turn on the Christmas theme"}
+        title={festive ? "Turn off the Christmas theme" : "Turn on the Christmas theme"}
+        className={`flex h-9 w-9 items-center justify-center rounded-xl text-[17px] leading-none transition-colors hover:bg-accent/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          festive ? "bg-accent/70" : "opacity-70 hover:opacity-100"
+        }`}
+      >
+        <span aria-hidden>🎄</span>
+      </button>
       <button
         type="button"
         onClick={toggleTheme}

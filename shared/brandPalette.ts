@@ -231,6 +231,35 @@ export const DEFAULT_BRAND = {
   sidebar: "#2b1830",
 } as const;
 
+/**
+ * The Christmas palette, as a brand.
+ *
+ * Andy, 03/11/2026: "Add a little Christmas tree icon that then
+ * switches it to a Christmas theme."
+ *
+ * Expressed as a BrandInput rather than as CSS so it goes through the
+ * same token builder as a salon's own colours. The tenant brand is
+ * painted INLINE on <html>, and inline wins over any stylesheet — a
+ * `:root.festive` rule simply never applied, which is how the first
+ * attempt at this silently did nothing.
+ *
+ * Green is the primary because it is what lands on large surfaces.
+ * Red at this saturation reads as an error state across a whole app,
+ * so it is the accent, where it behaves like a bauble rather than a
+ * warning.
+ */
+export const FESTIVE_BRAND: Required<BrandInputShape> = {
+  primary: "#1f7a46",
+  accent: "#e8b4bd",
+  sidebar: "#14331f",
+};
+
+type BrandInputShape = {
+  primary?: string | null;
+  accent?: string | null;
+  sidebar?: string | null;
+};
+
 export type BrandInput = {
   primary?: string | null;
   accent?: string | null;
