@@ -10,22 +10,26 @@ import { Button } from "@/components/ui/button";
 import { NetSalesPerformance } from "@/components/NetSalesPerformance";
 import { ChristmasCountdownCard } from "@/components/ChristmasCountdownCard";
 import { CalendarDays, Users, CreditCard, TrendingUp, AlertTriangle, Dog, Clock, ArrowRight, MessageSquare, Phone } from "lucide-react";
+import { describeExtra, workflowSnapshot, type StageGroup } from "@shared/workflowSnapshot";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { getActiveTimeZone } from "@/lib/timezone";
 
-const STAGES = ["scheduled", "checked_in", "bathing", "grooming", "ready", "complete"] as const;
-const STAGE_LABELS: Record<string, string> = {
-  scheduled: "Scheduled", checked_in: "Checked In", bathing: "Bathing",
-  grooming: "Grooming", ready: "Ready", complete: "Complete",
-};
+/* All twelve, because the card now draws whichever stages have dogs in
+   them. The waiting_* ones are deliberately paler than the doing_* ones
+   beside them: a dog waiting is not the same as a dog being worked on,
+   and the board uses the same distinction. */
 const STAGE_COLOURS: Record<string, { bg: string; fg: string }> = {
-  scheduled:  { bg: "bg-muted",    fg: "text-muted-foreground" },
-  checked_in: { bg: "bg-violet-100 dark:bg-violet-950/50",   fg: "text-violet-700 dark:text-violet-300" },
-  bathing:    { bg: "bg-blue-100 dark:bg-blue-950/50",     fg: "text-blue-700 dark:text-blue-300" },
-  grooming:   { bg: "bg-violet-100 dark:bg-violet-950/50",   fg: "text-violet-700 dark:text-violet-300" },
-  ready:      { bg: "bg-emerald-100 dark:bg-emerald-950/50",  fg: "text-emerald-700 dark:text-emerald-300" },
-  complete:   { bg: "bg-emerald-600",  fg: "text-white" },
+  scheduled:         { bg: "bg-muted",                        fg: "text-muted-foreground" },
+  checked_in:        { bg: "bg-pink-100 dark:bg-pink-950/50", fg: "text-pink-700 dark:text-pink-300" },
+  waiting_for_bath:  { bg: "bg-blue-50 dark:bg-blue-950/30",  fg: "text-blue-600 dark:text-blue-400" },
+  bathing:           { bg: "bg-blue-100 dark:bg-blue-950/50", fg: "text-blue-700 dark:text-blue-300" },
+  waiting_for_dry:   { bg: "bg-sky-50 dark:bg-sky-950/30",    fg: "text-sky-600 dark:text-sky-400" },
+  drying:            { bg: "bg-sky-100 dark:bg-sky-950/50",   fg: "text-sky-700 dark:text-sky-300" },
+  waiting_for_groom: { bg: "bg-violet-50 dark:bg-violet-950/30", fg: "text-violet-600 dark:text-violet-400" },
+  grooming:          { bg: "bg-violet-100 dark:bg-violet-950/50", fg: "text-violet-700 dark:text-violet-300" },
+  ready:             { bg: "bg-emerald-100 dark:bg-emerald-950/50", fg: "text-emerald-700 dark:text-emerald-300" },
+  complete:          { bg: "bg-emerald-600",                  fg: "text-white" },
 };
 
 function staffInitials(name: string | null) {
@@ -318,21 +322,95 @@ export default function Dashboard() {
             <CardHeader className="pb-2 pt-5 px-[22px] space-y-0">
               <CardTitle className="text-[15px] font-semibold font-display">Workflow right now</CardTitle>
             </CardHeader>
-            <CardContent className="px-[22px] pb-5 flex flex-col gap-[9px] flex-1">
-              {STAGES.map(stage => {
-                const count = boardData?.filter(a => a.workflowState === stage).length ?? 0;
-                const { bg, fg } = STAGE_COLOURS[stage];
+            <CardContent className="px-[22px] pb-5 flex flex-col gap-3 flex-1">
+              {(() => {
+                /*
+                 * Andy, 04/11/2026: "Make the mini-workflow snapshot on
+                 * the dashboard more detailed and better looking. It's
+                 * very basic."
+                 *
+                 * It was also wrong: it listed six of the twelve states,
+                 * so every dog waiting for a bath, drying, or waiting
+                 * for a groomer was invisible — 5 of 37 on the morning
+                 * this was written. The totals now come from
+                 * shared/workflowSnapshot.ts, which works from the whole
+                 * machine and shows only the stages with dogs in them.
+                 */
+                const snap = workflowSnapshot(boardData ?? [], { names: 3 });
+                if (snap.expected === 0) {
+                  return (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      Nothing booked today.
+                    </p>
+                  );
+                }
                 return (
-                  <div key={stage} className="flex items-center justify-between gap-3">
-                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-[12px] font-medium ${bg} ${fg}`}>
-                      {STAGE_LABELS[stage]}
-                    </span>
-                    <span className="text-[14px] font-bold font-display tabular-nums">{count}</span>
-                  </div>
+                  <>
+                    {/* Where the day is up to, in one line. */}
+                    <div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-[13px] font-medium text-muted-foreground">
+                          {snap.ready + snap.collected} of {snap.expected} done
+                        </span>
+                        <span className="text-[12px] text-muted-foreground tabular-nums">
+                          {Math.round(snap.progress * 100)}%
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-emerald-500 transition-[width] duration-500"
+                          style={{ width: `${Math.round(snap.progress * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* The three numbers somebody actually acts on. */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: "To come", value: snap.notArrived, tone: "text-muted-foreground" },
+                        { label: "In salon", value: snap.inSalon, tone: "text-violet-700 dark:text-violet-300" },
+                        { label: "Ready", value: snap.ready, tone: "text-emerald-700 dark:text-emerald-300" },
+                      ].map((box) => (
+                        <div key={box.label} className="rounded-xl border bg-muted/30 px-2 py-2 text-center">
+                          <p className={`font-display text-[20px] font-bold leading-none tabular-nums ${box.tone}`}>{box.value}</p>
+                          <p className="mt-1 text-[11px] text-muted-foreground">{box.label}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Only the stages with dogs in them, and who. */}
+                    <div className="flex flex-col gap-1.5">
+                      {snap.stages.map((group: StageGroup) => {
+                        const { bg, fg } = STAGE_COLOURS[group.stage] ?? STAGE_COLOURS.scheduled;
+                        const extra = describeExtra(group.count, group.petNames.length);
+                        return (
+                          <div key={group.stage} className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${bg} ${fg}`}>
+                                {group.label}
+                              </span>
+                              {group.petNames.length > 0 && (
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                  {group.petNames.join(", ")}{extra ? ` ${extra}` : ""}
+                                </span>
+                              )}
+                            </div>
+                            <span className="shrink-0 font-display text-[14px] font-bold tabular-nums">{group.count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {snap.notComing > 0 && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {snap.notComing} not coming today
+                      </p>
+                    )}
+                  </>
                 );
-              })}
+              })()}
               <div className="flex-1" />
-              <Link href="/workflow" className="block mt-2">
+              <Link href="/workflow" className="block mt-1">
                 <Button className="w-full h-10 rounded-[14px] shadow-[0_10px_22px_-12px_var(--brand-primary-strong)] hover:shadow-[0_14px_26px_-12px_var(--brand-primary-strong)]">
                   Open workflow board
                 </Button>
