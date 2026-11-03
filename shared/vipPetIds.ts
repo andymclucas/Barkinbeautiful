@@ -11,10 +11,17 @@
  * the rest, and nothing was reading it: a plan covers its primary dog
  * AND every dog assigned to it.
  *
- * Kept as a union rather than replacing the primary with the table,
- * because `membership_pets` is empty for every plan today — 0 rows
- * across 151 active memberships. Dropping the primary would have taken
- * the badge off every dog in the salon at once.
+ * Kept as a union rather than replacing the primary with the table.
+ * When this was written `membership_pets` was empty for every plan — 0
+ * rows across 151 active memberships — so dropping the primary would
+ * have taken the badge off every dog in the salon at once.
+ *
+ * It is no longer empty: 56 rows across 26 plans by 04/11/2026, as the
+ * x2/x3 dogs have been assigned. The union is still right, but do not
+ * read the old "0 rows" as current — code that indexes plans by
+ * `memberships.pet_id` alone now silently misses real dogs, which is
+ * what `scripts/backfill-appointment-memberships.ts` was doing to 81
+ * bookings until it was fixed the same day.
  */
 export function vipPetIds(input: {
   /** memberships.pet_id for each active plan. */
