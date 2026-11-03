@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   brandRamp, brandTokens, readableOn, darkenUntilReadable,
   deriveAccent, deriveSidebar, normaliseHex, sidebarTokens, DEFAULT_BRAND,
+  FESTIVE_BRAND, FESTIVE_BULB_GOLD, FESTIVE_BULB_GREEN, FESTIVE_BULB_RED,
+  FESTIVE_GREEN, FESTIVE_RED,
 } from "../shared/brandPalette";
 import { contrastRatio, hexToOklch, oklchToHex } from "../shared/oklch";
 
@@ -312,5 +314,61 @@ describe("light and dark modes", () => {
   it("defaults to light when no mode is given", () => {
     expect(brandTokens({ primary: "#d61572" })).toEqual(
       brandTokens({ primary: "#d61572" }, "light"));
+  });
+});
+
+describe("the Christmas theme", () => {
+  /**
+   * The bulbs are decoration, so the bar is WCAG 1.4.11's 3:1 for non-text
+   * rather than the 4.5:1 text needs.
+   */
+  const BULB_FLOOR = 3;
+
+  it("keeps every bulb visible against the festive sidebar", () => {
+    // The first version used FESTIVE_GREEN for the green bulb. That colour
+    // is a SURFACE that has to carry white text, so it is dark by
+    // construction, and against the dark green sidebar it measured 1.46:1 —
+    // a third of the garland was simply not there.
+    for (const bulb of [FESTIVE_BULB_RED, FESTIVE_BULB_GREEN, FESTIVE_BULB_GOLD]) {
+      expect(contrastRatio(bulb, FESTIVE_BRAND.sidebar)).toBeGreaterThanOrEqual(BULB_FLOOR);
+    }
+  });
+
+  it("records why the bulb green is not the surface green", () => {
+    // Pins the trap itself: if someone "tidies" the two greens back into
+    // one, this fails and says which way round they go.
+    expect(contrastRatio(FESTIVE_GREEN, FESTIVE_BRAND.sidebar)).toBeLessThan(BULB_FLOOR);
+    expect(contrastRatio(FESTIVE_BULB_GREEN, FESTIVE_BRAND.sidebar)).toBeGreaterThan(BULB_FLOOR);
+  });
+
+  it("keeps white readable on the two colours that carry text", () => {
+    // These are the hover-lights pair, and their note in index.css quotes
+    // these numbers. 4.5:1 because a label sits on them.
+    expect(contrastRatio(FESTIVE_GREEN, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(FESTIVE_RED, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("keeps the lightness gap that survives red-green colour blindness", () => {
+    // The hover animation alternates these two. A deuteranope sees the hues
+    // collapse, so the pair only still reads as a blinking light because
+    // they differ in BRIGHTNESS. That gap is the accessible part and it is
+    // what quietly disappears when someone picks prettier hues.
+    expect(contrastRatio(FESTIVE_GREEN, FESTIVE_RED)).toBeGreaterThanOrEqual(2);
+  });
+
+  it("paints a red that can actually be seen in the wash that reads it", () => {
+    // `accent` reaches exactly one rule, the corner gradient. The pale pink
+    // that was here had chroma 0.061 and vanished into it; this asserts the
+    // accent is a real colour rather than a tint.
+    const accent = hexToOklch(FESTIVE_BRAND.accent)!;
+    expect(accent.c).toBeGreaterThan(0.15);
+  });
+
+  it("still produces a readable button out of the festive green", () => {
+    for (const mode of ["light", "dark"] as const) {
+      const tokens = brandTokens(FESTIVE_BRAND, mode);
+      expect(tokens["--primary"]).toBeTruthy();
+      expect(tokens["--primary-foreground"]).toBeTruthy();
+    }
   });
 });

@@ -644,6 +644,60 @@ button[data-slot="button"]:not(:disabled):hover {
   [data-sidebar="menu-button"].nav-christmas-lights:hover { animation: none; }
 }
 
+/* ── Christmas candy stripe ───────────────────────────────────────────────── */
+/*
+ * A barber-pole stripe under the top bar, so the festive theme reaches the
+ * working area and not just the sidebar.
+ *
+ * 4px: tall enough to read as a stripe at a glance, short enough that it
+ * costs no usable room on a 13" laptop, which is what the salon desk runs.
+ * It sits under a sticky header, so it must not be transparent - the board
+ * scrolls underneath it.
+ *
+ * 135deg and a 20px period give a stripe that is clearly diagonal at 4px
+ * tall; anything finer turns into a shimmering moire on a scaled display.
+ * Red and white rather than red and green, because red/green at this size
+ * is the one pair the commonest colour blindness flattens into a single
+ * band - see the hover-lights note above.
+ */
+.festive-stripe {
+  background-image: repeating-linear-gradient(
+    135deg,
+    #e01835 0 10px,
+    #ffffff 10px 20px
+  );
+}
+
+/* ── Christmas garland ────────────────────────────────────────────────────── */
+/*
+ * Andy, 03/11/2026: "Make the Christmas theme more prominent."
+ *
+ * A gentle glow, NOT the hard alternation of the hover lights above. Those
+ * are a deliberate blink on a button somebody is pointing at; this hangs in
+ * the sidebar for an eight-hour shift, and anything that switches would be
+ * read as an alert out of the corner of the eye all day.
+ *
+ * Opacity only, so it composites on the GPU and never reflows - the salon
+ * runs this on a wall-mounted board that is never reloaded.
+ *
+ * 2.7s per cycle with the bulbs in three staggered groups, so the garland
+ * changes about 0.37 times a second. The hover lights' note explains the
+ * ceiling: three per second is where flashing becomes a seizure risk, and
+ * this is an order of magnitude under it.
+ */
+@keyframes festive-bulb-glow {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+.festive-bulb {
+  animation: festive-bulb-glow 2700ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Still lit, just not breathing. Somebody who asked for less motion has
+     not asked for the decoration to be taken down. */
+  .festive-bulb { animation: none; }
+}
+
 /* ── Inputs ───────────────────────────────────────────────────────────────── */
 input, textarea, select, [data-slot="select-trigger"] {
   transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
