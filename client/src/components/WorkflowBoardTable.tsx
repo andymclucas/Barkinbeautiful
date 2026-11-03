@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WORKFLOW_STAGE_COLOURS } from "@shared/workflowStageColours";
+import { pickupTextStatus } from "@shared/pickupTextStatus";
 import { afternoonSessionRowIndex, AFTERNOON_SESSION_LABEL } from "@shared/sessionDivider";
 import { workflowStateLabel, workflowStateShortLabel } from "@shared/workflowStateLabels";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -16,7 +17,7 @@ import { joinedContactBadge } from "@shared/appointmentContact";
 import { PetAlertButton } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
-import { Check, CheckCircle2, Clock, FileText, Link2, Star, Unlink } from "lucide-react";
+import { Check, CheckCircle2, Clock, FileText, Link2, MessageSquare, Star, Unlink } from "lucide-react";
 import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
@@ -677,6 +678,52 @@ export function WorkflowBoardTable({
                             // which made colouring a code pointless in the
                             // one place a groomer actually reads it.
                             return <PetCodeChips codes={codes} size="xs" className="mt-0.5" />;
+                          })()}
+                          {(() => {
+                            /*
+                             * Whether the owner has been told, on the row
+                             * rather than behind a dialog.
+                             *
+                             * Lauren, 03/11/2026: "tracking down if the
+                             * customers has been texted or not. Can't tell
+                             * from the workflow". The rule for when this
+                             * shows at all is in shared/pickupTextStatus.ts
+                             * with its own tests — the short version is that
+                             * a dog still in the bath says nothing, because
+                             * an indicator that cries wolf all morning is
+                             * ignored by the afternoon.
+                             */
+                            const status = pickupTextStatus(appt as {
+                              workflowState: string;
+                              pickupTextSentAt: Date | string | null;
+                            });
+                            if (!status.show) return null;
+                            if (status.sent) {
+                              return (
+                                <p
+                                  className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300"
+                                  title={`Pickup text sent at ${fmtTime(status.at)}`}
+                                >
+                                  <MessageSquare className="h-3 w-3 shrink-0" />
+                                  Texted {fmtTime(status.at)}
+                                </p>
+                              );
+                            }
+                            return (
+                              <p
+                                className={`mt-0.5 flex items-center gap-1 text-[11px] font-medium ${
+                                  status.urgent
+                                    ? "text-amber-700 dark:text-amber-300"
+                                    : "text-muted-foreground"
+                                }`}
+                                title={status.urgent
+                                  ? "Ready, and the owner has not been texted yet"
+                                  : "Collected without a pickup text — usually because the owner was here"}
+                              >
+                                <MessageSquare className="h-3 w-3 shrink-0" />
+                                Not texted
+                              </p>
+                            );
                           })()}
                           {(() => {
                             // When the dog has to be gone by, and whether it
