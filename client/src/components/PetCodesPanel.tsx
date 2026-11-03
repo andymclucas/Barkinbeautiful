@@ -28,6 +28,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parsePetCodes } from "@shared/petCodes";
+import { RESTING_CODE_LIMIT, isNewCode, searchPetCodes } from "@shared/petCodeSearch";
 
 export function PetCodesPanel({ petId, petName, codes, onSaved }: {
   petId: number;
@@ -112,24 +113,28 @@ export function PetCodesPanel({ petId, petName, codes, onSaved }: {
     catalogue?.find((c: { code: string }) => c.code.toLowerCase() === code.toLowerCase());
 
   /*
-   * The catalogue minus what this dog already has, so the shortcuts are
-   * only ever things that would actually change something — then
-   * narrowed by whatever is being typed.
+   * The ranking lives in `shared/petCodeSearch.ts`, not here — it is the
+   * part with the awkward cases (an exact `#3` above `#3 PFFT`, a
+   * description match that is really a coincidence) and it is worth
+   * testing without a dialog around it.
    *
-   * The salon has around ninety codes. Showing all of them made the
-   * fast path (type "#5", press the chip) slower than scrolling, which
-   * defeats the point of the tab. Typing now filters, and the
-   * description is searched too, so "nervous" finds a code called
-   * PITA.
+   * Two states, not one. Typing narrows and ranks; typing nothing still
+   * has to offer something, and "the first twelve alphabetically" is
+   * three blade numbers and no handling rule. At rest the list is the
+   * codes most dogs actually carry, capped so the Add box above it stays
+   * on screen, with the rest one click away.
    */
-  const needle = draft.trim().toLowerCase();
-  const suggestions = (catalogue ?? [])
-    .filter((c: { code: string }) => !current.some((x) => x.toLowerCase() === c.code.toLowerCase()))
-    .filter((c: { code: string; description: string | null }) =>
-      !needle ||
-      c.code.toLowerCase().includes(needle) ||
-      (c.description ?? "").toLowerCase().includes(needle),
-    );
+  const needle = draft.trim();
+  const hits = useMemo(
+    () => searchPetCodes(catalogue ?? [], needle, { exclude: current }),
+    [catalogue, needle, current],
+  );
+  const searching = needle.length > 0;
+  // A search is already narrow; capping it is how a picker hides the one
+  // thing somebody was looking for.
+  const capped = searching || showAll ? hits : hits.slice(0, RESTING_CODE_LIMIT);
+  const hiddenCount = hits.length - capped.length;
+  const wouldCreate = isNewCode(catalogue ?? [], needle);
 
   return (
     <div className="space-y-4">
@@ -203,53 +208,113 @@ export function PetCodesPanel({ petId, petName, codes, onSaved }: {
         {update.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       </div>
 
+      {/*
+        * One box, not two.
+        *
+        * Searching the vocabulary and adding a code are the same keystrokes:
+        * you type what you want and either press the chip that comes back or
+        * press Add. A separate search field would mean typing "#5f" twice to
+        * find out the salon spells it "✂5f".
+        */}
       <div className="space-y-1.5">
-        <label className="text-xs font-medium" htmlFor={`code-${petId}`}>Add a code</label>
+        <label className="text-xs font-medium" htmlFor={`code-${petId}`}>Search or add a code</label>
         <div className="flex gap-2">
-          <Input
-            id={`code-${petId}`}
-            className="h-8 text-xs"
-            placeholder="e.g. #5f, Nervous, No cologne"
-            value={draft}
-            maxLength={80}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(draft); } }}
-          />
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id={`code-${petId}`}
+              className="h-8 pl-7 pr-7 text-xs"
+              placeholder="e.g. #5f, nervous, no cologne"
+              value={draft}
+              maxLength={80}
+              autoComplete="off"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); add(draft); }
+                if (e.key === "Escape" && draft) { e.preventDefault(); setDraft(""); }
+              }}
+            />
+            {draft && (
+              <button
+                type="button"
+                aria-label="Clear the search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setDraft("")}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <Button size="sm" className="h-8 gap-1" disabled={!draft.trim() || update.isPending} onClick={() => add(draft)}>
             <Plus className="h-3.5 w-3.5" /> Add
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Anything typed here is saved to the dog, whether or not the salon has used it before.
+          {!searching
+            ? "Searches the code and what it means, so \u201cnervous\u201d finds a code called Ner."
+            : wouldCreate
+              ? `Nothing in the salon\u2019s list is spelled \u201c${needle}\u201d \u2014 Add saves it to this dog as a new one.`
+              : `Add attaches \u201c${needle}\u201d, which the salon already uses.`}
         </p>
       </div>
 
-      {needle && suggestions.length === 0 && (
+      {searching && hits.length === 0 && (
         <p className="text-[11px] text-muted-foreground">
-          No existing code matches &ldquo;{draft.trim()}&rdquo; — Add saves it as a new one.
+          No code in the salon&rsquo;s list matches &ldquo;{needle}&rdquo;.
         </p>
       )}
 
-      {suggestions.length > 0 && (
+      {capped.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-xs font-medium">
-            {needle ? `Matching codes (${suggestions.length})` : "Codes the salon already uses"}
+            {searching
+              ? `Matching codes (${hits.length})`
+              : `Most used${hiddenCount > 0 ? ` (${capped.length} of ${hits.length})` : ""}`}
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {suggestions.map((c: { id: number; code: string; description: string | null; colourHex: string | null }) => (
+            {capped.map(({ entry, matchedOn }) => (
               <button
-                key={c.id}
+                key={entry.id}
                 type="button"
-                title={c.description ?? undefined}
+                title={entry.description ?? undefined}
                 disabled={update.isPending}
-                onClick={() => add(c.code)}
-                className="rounded-full border border-dashed px-2 py-0.5 text-xs transition-colors hover:border-solid hover:bg-accent disabled:opacity-50"
-                style={c.colourHex ? { color: c.colourHex } : undefined}
+                onClick={() => add(entry.code)}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-xs transition-colors hover:border-solid hover:bg-accent disabled:opacity-50"
+                style={entry.colourHex ? { color: entry.colourHex } : undefined}
               >
-                + {c.code}
+                <span className="shrink-0">+ {entry.code}</span>
+                {/*
+                  * When the DESCRIPTION is what matched, show it. Searching
+                  * "nervous" returns a code spelled `Ner`, and a bare chip
+                  * reading "+ Ner" looks like a bug until you can see why it
+                  * is there.
+                  */}
+                {matchedOn === "description" && entry.description && (
+                  <span className="truncate font-normal text-muted-foreground">
+                    &middot; {entry.description}
+                  </span>
+                )}
               </button>
             ))}
           </div>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+              onClick={() => setShowAll(true)}
+            >
+              Show all {hits.length} codes
+            </button>
+          )}
+          {showAll && !searching && hits.length > RESTING_CODE_LIMIT && (
+            <button
+              type="button"
+              className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+              onClick={() => setShowAll(false)}
+            >
+              Show fewer
+            </button>
+          )}
         </div>
       )}
     </div>
