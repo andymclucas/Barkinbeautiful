@@ -4,6 +4,7 @@ import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCa
 import { trpc } from "@/lib/trpc";
 import { splitDaycare } from "@shared/daycareBoard";
 import { useBuildVersionReload, buildReloadMode } from "@/hooks/useBuildVersionReload";
+import { useTvMode } from "@/lib/tvMode";
 import { DaycareBoardSection } from "@/components/DaycareBoardSection";
 import { useTimezone } from "@/lib/timezone";
 import { dayInZone, timeOfDayInZone } from "@shared/calendarDay";
@@ -47,7 +48,12 @@ export default function WorkflowBoard() {
    * so it goes just as stale as the wall display did — but staff type
    * into it, so it says so rather than reloading under them.
    */
-  const [tvMode, setTvMode] = useState(false);
+  /*
+   * Per device, not per page load. The board reloads itself in TV mode when
+   * a new build ships, and a plain useState meant that reload dropped the
+   * wall screen back to the staff board — see client/src/lib/tvMode.ts.
+   */
+  const { tvMode, setTvMode } = useTvMode();
   const [newBuildAvailable, setNewBuildAvailable] = useState(false);
   /**
    * TV mode reloads itself; the staff board asks first.
