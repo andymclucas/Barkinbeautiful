@@ -51,8 +51,21 @@ function stripeFor(key: string) {
   return stripeCache.get(key)!;
 }
 
-function CardForm({ appointmentId, onSaved, onCancel }: {
-  appointmentId: number;
+/**
+ * Who the card is being saved against.
+ *
+ * Two ways in, one form. From a booking the appointment names the
+ * client, and the procedures are operational because taking payment is
+ * a counter job. From the client record there is no appointment, and
+ * that page is already admin-only, so the by-client pair sits on
+ * stripeCards with the rest of the card surface.
+ */
+export type CardEntryTarget =
+  | { appointmentId: number; clientId?: undefined }
+  | { clientId: number; appointmentId?: undefined };
+
+function CardForm({ target, onSaved, onCancel }: {
+  target: CardEntryTarget;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -62,8 +75,11 @@ function CardForm({ appointmentId, onSaved, onCancel }: {
   const [ready, setReady] = useState(false);
   const utils = trpc.useUtils();
 
-  const createIntent = trpc.payments.createCardSetupIntent.useMutation();
-  const saveCard = trpc.payments.saveCardFromSetupIntent.useMutation();
+  const byAppointment = target.appointmentId !== undefined;
+  const createViaAppointment = trpc.payments.createCardSetupIntent.useMutation();
+  const saveViaAppointment = trpc.payments.saveCardFromSetupIntent.useMutation();
+  const createViaClient = trpc.stripeCards.createSetupIntent.useMutation();
+  const saveViaClient = trpc.stripeCards.saveSetupIntent.useMutation();
 
   const submit = async () => {
     if (!stripe || !elements || busy) return;
@@ -75,7 +91,9 @@ function CardForm({ appointmentId, onSaved, onCancel }: {
       // submitted. Creating it on open would leave an abandoned
       // SetupIntent at Stripe every time somebody opened the dialog and
       // changed their mind.
-      const { clientSecret } = await createIntent.mutateAsync({ appointmentId });
+      const { clientSecret } = byAppointment
+        ? await createViaAppointment.mutateAsync({ appointmentId: target.appointmentId! })
+        : await createViaClient.mutateAsync({ clientId: target.clientId! });
       const result = await stripe.confirmCardSetup(clientSecret, {
         payment_method: { card },
       });
@@ -88,11 +106,16 @@ function CardForm({ appointmentId, onSaved, onCancel }: {
         toast.error("Stripe confirmed the card but returned no reference");
         return;
       }
-      const saved = await saveCard.mutateAsync({ appointmentId, setupIntentId });
+      const saved = byAppointment
+        ? await saveViaAppointment.mutateAsync({ appointmentId: target.appointmentId!, setupIntentId })
+        : await saveViaClient.mutateAsync({ clientId: target.clientId!, setupIntentId });
       toast.success(
         saved.last4 ? `Card saved — ${saved.brand ?? "card"} ···· ${saved.last4}` : "Card saved to this client",
       );
+      // Both surfaces read the card: the booking panel and the client
+      // record. Refresh whichever is open.
       utils.payments.cardOnFile.invalidate();
+      utils.stripeCards.cardStatus.invalidate();
       onSaved();
     } catch (e: any) {
       toast.error(e?.message ?? "That card could not be saved");
@@ -148,14 +171,15 @@ function CardForm({ appointmentId, onSaved, onCancel }: {
   );
 }
 
-export function CardEntryDialog({ appointmentId, clientName, open, onOpenChange, onSaved }: {
-  appointmentId: number;
+export function CardEntryDialog({ clientName, open, onOpenChange, onSaved, ...target }: CardEntryTarget & {
   clientName?: string | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
 }) {
   const { data: config } = trpc.payments.cardEntryConfig.useQuery(undefined, { enabled: open });
+  // id for the CardElement's label, so two dialogs cannot collide.
+  void target;
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
 
   useEffect(() => {
@@ -176,7 +200,7 @@ export function CardEntryDialog({ appointmentId, clientName, open, onOpenChange,
         {stripePromise ? (
           <Elements stripe={stripePromise} options={options}>
             <CardForm
-              appointmentId={appointmentId}
+              target={target as CardEntryTarget}
               onSaved={() => { onOpenChange(false); onSaved(); }}
               onCancel={() => onOpenChange(false)}
             />

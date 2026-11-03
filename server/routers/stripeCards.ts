@@ -19,6 +19,8 @@ import { getDb } from "../db";
 import { appointments, clients, memberships, membershipPayments, pets } from "../../drizzle/schema";
 import {
   createCardSetupLink,
+  createCardSetupIntent,
+  saveCardFromSetupIntent,
   emailCardSetupLink,
   detachClientCard,
   startMembershipSubscription,
@@ -86,6 +88,31 @@ export const stripeCardsRouter = router({
   createSetupLink: adminProcedure
     .input(z.object({ clientId: z.number() }))
     .mutation(async ({ input }) => createCardSetupLink(input.clientId)),
+
+  /**
+   * The third way to get a card on file: type it in, here, now.
+   *
+   * Andy, 03/11/2026: "the current two options are fine, but just the
+   * option to manually add a card without having to get a text to auth
+   * etc." The link and the email both need the client to go and do
+   * something; this is for the one standing at the counter.
+   *
+   * The same two helpers the booking dialog uses, by clientId rather
+   * than by appointment. Still nothing here touches a card number —
+   * the browser confirms against Stripe's own fields and sends back an
+   * intent id, which is checked against this client before it is
+   * saved.
+   */
+  createSetupIntent: adminProcedure
+    .input(z.object({ clientId: z.number() }))
+    .mutation(async ({ input }) => {
+      const intent = await createCardSetupIntent(input.clientId);
+      return { clientSecret: intent.clientSecret, setupIntentId: intent.setupIntentId };
+    }),
+
+  saveSetupIntent: adminProcedure
+    .input(z.object({ clientId: z.number(), setupIntentId: z.string().trim().min(5).max(255) }))
+    .mutation(async ({ input }) => saveCardFromSetupIntent(input.clientId, input.setupIntentId)),
 
   /** Create the link AND email it to the client's address on file. */
   emailSetupLink: adminProcedure
