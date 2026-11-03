@@ -78,6 +78,30 @@ export function applyBrandTheme(
       ? { ...theme, ...FESTIVE_BRAND }
       : theme;
     const tokens = brandTokens(painted, currentMode(root));
+
+    /*
+     * Clear every token EITHER mode can set before writing this one's.
+     *
+     * The two modes do not emit the same keys. Dark sets `--card` and
+     * `--popover`; light does not, because a light card is plain white
+     * and index.css already says so — there is nothing for the brand to
+     * tint. So painting dark and then painting light left those two
+     * behind, as inline styles on <html>, holding dark values. Inline
+     * beats the `:root` rule that would otherwise have supplied the
+     * light one.
+     *
+     * The result is a light page with dark cards and a dark dropdown and
+     * nothing else wrong, which is precisely what Andy photographed on
+     * 03/11/2026 after coming back to the app from a screen that claims
+     * dark — the workflow board does, through setDarkSurface, and
+     * releasing it switches the mode without anything unmounting.
+     *
+     * Removing first means a key only one mode defines falls back to the
+     * stylesheet when the other mode is active, which is what it was
+     * always supposed to do. `tokenNames` already computed this union
+     * for the cleanup below; the paint needed it just as much.
+     */
+    for (const name of tokenNames(painted)) root.style.removeProperty(name);
     for (const [name, value] of Object.entries(tokens)) {
       root.style.setProperty(name, value);
     }
