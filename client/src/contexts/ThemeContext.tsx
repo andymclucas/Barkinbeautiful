@@ -1,5 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { playFestiveChime, stopFestiveChime } from "@/lib/festiveChime";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { CHIME_MAX_MS, playFestiveChime, stopFestiveChime } from "@/lib/festiveChime";
 
 /**
  * Light / dark / follow-the-system, for the whole platform.
@@ -55,6 +55,18 @@ interface ThemeContextType {
   festive: boolean;
   setFestive: (on: boolean) => void;
   toggleFestive: () => void;
+  /**
+   * Snow is falling right now.
+   *
+   * Andy, 03/11/2026: "a Christmas snow effect when switching to
+   * Christmas theme mode... for the duration of the audio that plays."
+   *
+   * Separate from `festive`: the theme stays on, the snow is a flourish
+   * at the moment of switching. Owned here rather than by the component
+   * for the same reason the chime is - both belong to the instant the
+   * tree is pressed, and both have to stop if it is pressed off again.
+   */
+  snowing: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -84,6 +96,8 @@ export function ThemeProvider({
   defaultTheme?: ThemeChoice;
 }) {
   const [theme, setThemeState] = useState<ThemeChoice>(() => readStored() ?? defaultTheme);
+  const [snowing, setSnowing] = useState(false);
+  const snowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [festive, setFestiveState] = useState<boolean>(() => {
     try {
       return localStorage.getItem(FESTIVE_KEY) === "on";
@@ -158,11 +172,23 @@ export function ThemeProvider({
      * and cannot throw: a browser that refuses to make a sound still gets
      * the theme.
      */
-    if (on && !festive) playFestiveChime();
+    if (on && !festive) {
+      playFestiveChime();
+      // Snow for exactly as long as the music, from the same constant, so
+      // the two cannot drift apart if the recording is ever replaced.
+      setSnowing(true);
+      if (snowTimer.current) clearTimeout(snowTimer.current);
+      snowTimer.current = setTimeout(() => setSnowing(false), CHIME_MAX_MS);
+    }
     // Switching the tree off silences it: the music belongs to the theme
     // being on, and the recording runs long enough that somebody turning
-    // it straight back off would otherwise be left listening to it.
-    if (!on) stopFestiveChime();
+    // it straight back off would otherwise be left listening to it. The
+    // snow goes with it, for the same reason.
+    if (!on) {
+      stopFestiveChime();
+      if (snowTimer.current) { clearTimeout(snowTimer.current); snowTimer.current = null; }
+      setSnowing(false);
+    }
     setFestiveState(on);
     try {
       localStorage.setItem(FESTIVE_KEY, on ? "on" : "off");
@@ -173,13 +199,17 @@ export function ThemeProvider({
 
   const toggleFestive = useCallback(() => setFestive(!festive), [festive, setFestive]);
 
+  useEffect(() => () => {
+    if (snowTimer.current) clearTimeout(snowTimer.current);
+  }, []);
+
   const setDarkSurface = useCallback((active: boolean) => {
     setDarkSurfaces((n) => Math.max(0, n + (active ? 1 : -1)));
   }, []);
 
   const value = useMemo(
-    () => ({ theme, resolvedTheme, setTheme, toggleTheme, setDarkSurface, festive, setFestive, toggleFestive }),
-    [theme, resolvedTheme, setTheme, toggleTheme, setDarkSurface, festive, setFestive, toggleFestive],
+    () => ({ theme, resolvedTheme, setTheme, toggleTheme, setDarkSurface, festive, setFestive, toggleFestive, snowing }),
+    [theme, resolvedTheme, setTheme, toggleTheme, setDarkSurface, festive, setFestive, toggleFestive, snowing],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

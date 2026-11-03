@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 /*
@@ -12,7 +12,8 @@ import userEvent from "@testing-library/user-event";
 const { playFestiveChime, stopFestiveChime } = vi.hoisted(() => ({
   playFestiveChime: vi.fn(), stopFestiveChime: vi.fn(),
 }));
-vi.mock("@/lib/festiveChime", () => ({ playFestiveChime, stopFestiveChime }));
+const CHIME_MAX_MS = 8_000;
+vi.mock("@/lib/festiveChime", () => ({ playFestiveChime, stopFestiveChime, CHIME_MAX_MS: 8_000 }));
 
 import { ThemeProvider, useTheme } from "./ThemeContext";
 
@@ -20,11 +21,12 @@ const setupUser = () => userEvent.setup({ delay: null });
 
 /** A stand-in for the header's tree button, plus a direct setter. */
 function Tree() {
-  const { festive, toggleFestive, setFestive } = useTheme();
+  const { festive, toggleFestive, setFestive, snowing } = useTheme();
   return (
     <>
       <button onClick={toggleFestive}>{festive ? "Turn off" : "Turn on"}</button>
       <button onClick={() => setFestive(true)}>Set on</button>
+      <span data-testid="snowing">{snowing ? "snowing" : "clear"}</span>
     </>
   );
 }
@@ -127,5 +129,61 @@ describe("the festive theme itself", () => {
     expect(document.documentElement.classList.contains("festive")).toBe(true);
     await user.click(screen.getByRole("button", { name: "Turn off" }));
     expect(document.documentElement.classList.contains("festive")).toBe(false);
+  });
+});
+
+describe("the snow", () => {
+  const snow = () => screen.getByTestId("snowing").textContent;
+
+  it("is not falling to begin with", () => {
+    show();
+    expect(snow()).toBe("clear");
+  });
+
+  it("starts when the tree goes on", async () => {
+    const user = setupUser();
+    show();
+    await user.click(screen.getByRole("button", { name: "Turn on" }));
+    expect(snow()).toBe("snowing");
+  });
+
+  it("stops when the music would have finished, and not before", async () => {
+    /*
+     * Andy: "for the duration of the audio that plays." Both come from
+     * the same constant so they cannot drift apart if the recording is
+     * ever swapped for a longer one.
+     */
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
+    show();
+    await user.click(screen.getByRole("button", { name: "Turn on" }));
+    expect(snow()).toBe("snowing");
+
+    await act(async () => { vi.advanceTimersByTime(CHIME_MAX_MS - 200); });
+    expect(snow()).toBe("snowing");
+
+    await act(async () => { vi.advanceTimersByTime(400); });
+    expect(snow()).toBe("clear");
+    vi.useRealTimers();
+  });
+
+  it("stops early when the tree is switched back off", async () => {
+    // The snow belongs to the theme being switched on. Leaving it falling
+    // over a theme that is no longer on would be the same mistake as
+    // leaving the music playing.
+    const user = setupUser();
+    show();
+    await user.click(screen.getByRole("button", { name: "Turn on" }));
+    await user.click(screen.getByRole("button", { name: "Turn off" }));
+    expect(snow()).toBe("clear");
+  });
+
+  it("does not fall on load when the theme is already on", () => {
+    // The wall TV reloads itself at every deploy and sits in festive
+    // mode. Snow on mount would mean the board snowing at an empty room
+    // every time something ships.
+    localStorage.setItem("gsos-festive", "on");
+    show();
+    expect(snow()).toBe("clear");
   });
 });

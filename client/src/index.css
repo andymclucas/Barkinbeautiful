@@ -644,6 +644,44 @@ button[data-slot="button"]:not(:disabled):hover {
   [data-sidebar="menu-button"].nav-christmas-lights:hover { animation: none; }
 }
 
+/* ── Christmas snow ───────────────────────────────────────────────────────── */
+/*
+ * Andy, 03/11/2026: "Just snow flakes falling down the screen for the
+ * duration of the audio that plays."
+ *
+ * `transform` and `opacity` only. Those are the two properties a browser
+ * can animate on the compositor without laying the page out again, which
+ * is what lets forty flakes run at once on the machine driving the salon
+ * TV. Animating `top` instead would re-layout every frame.
+ *
+ * Starts above the viewport and ends below it so flakes enter and leave
+ * off-screen rather than appearing and vanishing mid-air. The overlay is
+ * `fixed` with `overflow-hidden`, so travelling past 100vh adds no scroll.
+ */
+@keyframes festive-snowfall {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+  }
+  100% {
+    transform: translate3d(var(--drift, 0px), 110vh, 0) rotate(360deg);
+  }
+}
+.festive-snowflake {
+  animation-name: festive-snowfall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  /* Soft edges, so a 5px white dot reads as a flake and not a pixel. */
+  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.55);
+}
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * Taken down entirely, not slowed. Falling snow across the whole screen
+   * is exactly the kind of large-area movement somebody turns that
+   * setting on to avoid, and there is no information in it to preserve.
+   */
+  .festive-snow { display: none; }
+}
+
 /* ── Christmas card stock ─────────────────────────────────────────────────── */
 /*
  * Andy, 03/11/2026: "Perhaps a Christmas background for all cards when in
