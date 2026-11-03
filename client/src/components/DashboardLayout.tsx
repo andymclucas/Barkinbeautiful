@@ -70,6 +70,7 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { trpc } from "@/lib/trpc";
 import { applyBrandTheme } from "@/lib/brandTheme";
 import { FestiveGarland } from "@/components/FestiveGarland";
+import { FestiveSnow } from "@/components/FestiveSnow";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { MyProfileDialog } from "@/components/MyProfileDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
@@ -304,7 +305,7 @@ function DashboardLayoutContent({
   setSidebarWidth: (w: number) => void;
 }) {
   const { user, logout } = useAuth();
-  const { theme, resolvedTheme, setTheme, toggleTheme, festive, toggleFestive } = useTheme();
+  const { theme, resolvedTheme, setTheme, toggleTheme, festive, toggleFestive, snowing } = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
@@ -658,6 +659,9 @@ function DashboardLayoutContent({
           style={{ zIndex: 50 }}
         />
       </div>
+
+      {/* Over everything, including dialogs, and clickable through. */}
+      {snowing && <FestiveSnow />}
 
       <SidebarInset>
         {isMobile && (
