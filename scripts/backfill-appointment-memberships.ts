@@ -12,11 +12,19 @@
  *
  * ## State on 04/11/2026
  *
- * Still 527 live bookings for member dogs with no link, of which 232
+ * Still 527 live bookings for member dogs with no link, of which 193
  * are for a service a plan actually covers and are what this will set:
- * 184 upcoming, 48 past (41 of those already priced $0, 7 carrying a
- * price). The other 295 are baths, tidies, desheds and nail trims,
- * which no plan covers, and are correctly left alone.
+ * 146 upcoming, 47 past (7 of those carrying a price). 81 of the 193
+ * reach their plan only through membership_pets and would have been
+ * missed before the fix below. The other 334 are baths, tidies,
+ * desheds and nail trims, which no plan covers, and are left alone.
+ *
+ * Those figures are the DRY RUN's, not an estimate. An earlier version
+ * of this comment said 232, from a UNION ALL that counted an
+ * appointment once per covering row — and 26 of the 56 membership_pets
+ * rows simply repeat their own plan's primary dog, so those bookings
+ * were counted twice. Count DISTINCT appointments, or just run the dry
+ * run, which is what the number above now is.
  *
  * Andy asked for this after the VIP disc showed the gap from the other
  * side: the workflow board marks a dog on a plan, the calendar marks a
