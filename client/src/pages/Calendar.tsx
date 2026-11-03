@@ -504,7 +504,21 @@ function ApptBlock({
           </>
         ) : (
           <>
-            <div className={`font-bold text-[12px] truncate tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+            {/*
+              * Wraps to two lines instead of truncating.
+              *
+              * Andy, 04/11/2026, with a photo of the day board: "A lot
+              * of the appt details are still missing from the appt
+              * card." The worst of it was the NAME — "Rom…", "Norm…",
+              * "Oakle…" — on every card narrow enough to share a column.
+              * The name is the only reason to look at the card, and
+              * these cards are thin but TALL, so the room it needs was
+              * there all along in the other direction.
+              *
+              * Clamped at two so a long double-barrelled surname cannot
+              * push the service and the codes off a short booking.
+              */}
+            <div className={`font-bold text-[12px] line-clamp-2 leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
               {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
               {appt.petName}{appt.clientLastName ? ` ${appt.clientLastName}` : ""}
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
@@ -517,6 +531,12 @@ function ApptBlock({
                     : fmtTime(new Date(appt.scheduledStart))}
                 </div>
                 {density.serviceFormat !== "none" && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
+                {/* Third in Andy's order: name, service, then these. */}
+                {density.showCodes && appt.petMoegoCodeLabels && (
+                  <div className="mt-1">
+                    <PetCodeChips codes={appt.petMoegoCodeLabels} size="xs" />
+                  </div>
+                )}
                 {density.showNextVisit && appt.nextAppointmentDate && (
                   <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: svc.border, opacity: 0.9 }}>
                     Next: {new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
