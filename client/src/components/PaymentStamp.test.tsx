@@ -32,12 +32,6 @@ describe("PaymentStamp", () => {
     expect(screen.getByText("PART PAID")).toBeInTheDocument();
   });
 
-  it("stamps a membership groom MEMBER", () => {
-    render(<PaymentStamp pay={appointmentPaymentDisplay(null, { onMembership: true })} />);
-    expect(screen.getByText("MEMBER")).toBeInTheDocument();
-    expect(screen.getByTestId("appt-payment-member")).toBeInTheDocument();
-  });
-
   /*
    * The stamp is drawn in the accent colour and nothing else carries
    * it, so a null accent would be invisible text on a white chip. The
@@ -45,23 +39,9 @@ describe("PaymentStamp", () => {
    * drawing half of that promise.
    */
   it("paints the stamp in the rule's accent colour", () => {
-    render(<PaymentStamp pay={appointmentPaymentDisplay(null, { onMembership: true })} />);
-    const stamp = screen.getByTestId("appt-payment-member");
+    render(<PaymentStamp pay={appointmentPaymentDisplay("partial")} />);
+    const stamp = screen.getByTestId("appt-payment-partial");
     expect(stamp.style.color).not.toBe("");
     expect(stamp.style.borderColor).toBe(stamp.style.color);
-  });
-
-  /*
-   * Lauren, 03/11/2026, is the reason MEMBER exists at all, and the
-   * reason it must not look like PAID: green means the money arrived
-   * and on a membership none is going to.
-   */
-  it("gives MEMBER a different colour from PAID", () => {
-    const { rerender } = render(
-      <PaymentStamp pay={appointmentPaymentDisplay(null, { onMembership: true })} />,
-    );
-    const member = screen.getByTestId("appt-payment-member").style.color;
-    rerender(<PaymentStamp pay={appointmentPaymentDisplay("paid")} />);
-    expect(screen.getByTestId("appt-payment-paid").style.color).not.toBe(member);
   });
 });

@@ -25,7 +25,9 @@ export function PaymentStamp({ pay }: { pay: PaymentDisplay }) {
   return (
     <div
       data-testid={`appt-payment-${pay.key}`}
-      className="mb-1 inline-flex rounded-sm border bg-white/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em]"
+      /* No margin of its own: it shares a row with the VIP disc, and
+         the row owns the spacing. */
+      className="inline-flex rounded-sm border bg-white/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em]"
       style={{ color: pay.accent ?? undefined, borderColor: pay.accent ?? undefined }}
     >
       {pay.label}

@@ -99,6 +99,8 @@ import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
 import { appointmentPaymentDisplay } from "@shared/appointmentPaymentDisplay";
 import { PaymentStamp } from "@/components/PaymentStamp";
+import { VipMark } from "@/components/VipMark";
+import { showsMembershipMark } from "@shared/membershipMark";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
 import { liveSiblings } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
@@ -440,14 +442,8 @@ function ApptBlock({
      can't see unless I go through each appointment on the day to see if
      it's invoiced." Only a settled dog recolours — an unpaid one keeps
      its service colour, which is what makes a day readable to book. */
-  /* `membershipId`, not `clientHasMembership`. The client holding a
-     plan does not mean THIS groom is on it — 128 of 713 upcoming
-     bookings are in exactly that state, and they WILL be charged. A
-     MEMBER stamp on one of those would be a lie that costs money. */
-  const pay = appointmentPaymentDisplay((appt as any).paymentStatus, {
-    isCancelled,
-    onMembership: appt.membershipId !== null && appt.membershipId !== undefined,
-  });
+  const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
+  const isVip = showsMembershipMark({ membershipId: appt.membershipId, isCancelled });
 
   const block = (
     <div
@@ -481,7 +477,12 @@ function ApptBlock({
     >
       <div className="px-2 py-1 h-full overflow-hidden leading-tight">
         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
-        <PaymentStamp pay={pay} />
+        {(pay.label || isVip) && (
+          <div className="mb-1 flex flex-wrap items-center gap-1">
+            <PaymentStamp pay={pay} />
+            {isVip && <VipMark />}
+          </div>
+        )}
         {siblings && siblings.length > 0 ? (
           <>
             <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
@@ -2558,13 +2559,11 @@ export default function Calendar() {
                     const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
                     const isCancelled = isCancelledAppointment(appt);
                     /* Andy, 04/11/2026: "Add the stamps to week view too."
-                       Same rule, same treatment as the day grid — a dog
+                       Same rules, same treatment as the day grid — a dog
                        that reads as settled on Tuesday must not read as
                        owing when the same board is viewed by week. */
-                    const pay = appointmentPaymentDisplay((appt as any).paymentStatus, {
-                      isCancelled,
-                      onMembership: appt.membershipId !== null && appt.membershipId !== undefined,
-                    });
+                    const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
+                    const isVip = showsMembershipMark({ membershipId: appt.membershipId, isCancelled });
                     const sharedAppointmentLabel = formatSharedAppointmentName({
                       petNames: [appt, ...getSiblings(appt as Appt)].map((pet) => pet.petName),
                       surname: appt.clientLastName,
@@ -2577,7 +2576,12 @@ export default function Calendar() {
                         onClick={(e) => { e.stopPropagation(); openEdit(appt as Appt); }}
                       >
                         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
-                        <PaymentStamp pay={pay} />
+                        {(pay.label || isVip) && (
+                          <div className="mb-1 flex flex-wrap items-center gap-1">
+                            <PaymentStamp pay={pay} />
+                            {isVip && <VipMark />}
+                          </div>
+                        )}
                         <div className={`font-bold truncate ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
                           {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
                           {sharedAppointmentLabel}
