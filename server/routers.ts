@@ -2852,6 +2852,50 @@ const workflowRouter = router({
         }
       }
 
+      /**
+       * When the owner was told their dog is ready.
+       *
+       * Lauren, 03/11/2026: "tracking down if the customers has been texted
+       * or not. Can't tell from the workflow".
+       *
+       * The fact was already recorded — `smsLogs` is written on every pickup
+       * send — but the only place it surfaced was inside the pickup dialog,
+       * one dog at a time. From the board she had to open each ready dog to
+       * find out, which is the search she is describing.
+       *
+       * A failed send is deliberately NOT a send: the row exists, but nobody
+       * was told, and showing it as texted is the one way this could be
+       * worse than showing nothing. Same filter the pickup dialog already
+       * uses for `alreadyTexted`.
+       *
+       * Reduced in JS rather than with MAX()/GROUP BY, matching
+       * `petCodes.list` — TiDB runs ONLY_FULL_GROUP_BY and the grouping trap
+       * in CLAUDE.md §6 is not worth risking for a set this small. Measured
+       * 03/11/2026: `sms_logs` holds 574 rows in total and has no index on
+       * `appointment_id`, so the scan is free today. Worth an index if it
+       * ever reaches the tens of thousands.
+       */
+      const pickupTextByAppointment = new Map<number, Date>();
+      if (appointmentIds.length > 0) {
+        const pickupLogs = await db
+          .select({ appointmentId: smsLogs.appointmentId, sentAt: smsLogs.sentAt })
+          .from(smsLogs)
+          .where(and(
+            eq(smsLogs.tenantId, tenantOf(ctx, input)),
+            inArray(smsLogs.appointmentId, appointmentIds),
+            eq(smsLogs.type, "ready_pickup"),
+            eq(smsLogs.direction, "outbound"),
+            ne(smsLogs.status, "failed"),
+          ));
+        for (const log of pickupLogs) {
+          if (log.appointmentId === null || !log.sentAt) continue;
+          const seen = pickupTextByAppointment.get(log.appointmentId);
+          // The LAST one, because a second text is a re-send and that is the
+          // time staff would be asked about.
+          if (!seen || log.sentAt > seen) pickupTextByAppointment.set(log.appointmentId, log.sentAt);
+        }
+      }
+
       const petIdsOnBoard = Array.from(new Set(boardRows.map(row => row.petId).filter((id): id is number => id !== null)));
       // A plan covers its primary dog AND every dog assigned to it. Reading
       // memberships.pet_id alone left the second dog on an "x2" plan without
@@ -2879,6 +2923,7 @@ const workflowRouter = router({
         groomStyleWarnings: latestGroomNoteByAppointment.get(row.id)?.warnings ?? null,
         isVipMember: row.petId ? vipPetIdSet.has(row.petId) : false,
         addOns: addOnsByAppointment.get(row.id) ?? [],
+        pickupTextSentAt: pickupTextByAppointment.get(row.id) ?? null,
       }));
     }),
 

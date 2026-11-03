@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/DateField";
 import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
@@ -287,12 +288,12 @@ export default function Reporting() {
               <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => shiftDay(-1)}>
                 ‹ <span className="sr-only">Previous day</span>
               </Button>
-              <input
-                type="date"
+              <DateField
                 value={timingDay}
-                onChange={(e) => e.target.value && setTimingDay(e.target.value)}
+                onChange={(next) => next && setTimingDay(next)}
                 aria-label="Day to report on"
-                className="h-8 rounded-md border bg-background px-2 text-sm"
+                wrapperClassName="w-[9.5rem]"
+                className="h-8 text-sm"
               />
               <Button
                 variant="outline" size="sm" className="h-8 px-2"

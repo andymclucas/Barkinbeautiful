@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -593,7 +594,7 @@ export default function WorkflowBoard() {
                 onClick={() => setBoardDate(current => shiftDateKey(current, -1))}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Input type="date" value={boardDate} onChange={e => setBoardDate(e.target.value)} className="w-36 h-9 text-sm rounded-none border-x-0" />
+              <DateField value={boardDate} onChange={setBoardDate} aria-label="Board date" wrapperClassName="w-36" className="h-9 text-sm rounded-none border-x-0" />
               <Button variant="outline" size="icon" className="h-9 w-9 rounded-l-none border-l-0" title="Next day"
                 onClick={() => setBoardDate(current => shiftDateKey(current, 1))}>
                 <ChevronRight className="h-4 w-4" />
