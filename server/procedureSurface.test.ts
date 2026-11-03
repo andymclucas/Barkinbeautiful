@@ -285,7 +285,19 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(367);
+    //
+    // 369 since 04/11/2026. Two added that day, both protectedProcedure
+    // so neither widens the lists enumerated below:
+    //
+    //  - clientsRouter.clientRetention, the retention report, matching
+    //    overdueForGroom beside it — the client book with contact
+    //    details and a value ranking is owner surface.
+    //  - clientsRouter.remove, deleting a duplicate client. Note that
+    //    protectedProcedure is NOT its real gate: it also checks
+    //    canAdministerStaff, because users.role = "admin" includes four
+    //    groomers and this removes a record. This file cannot see that
+    //    check, so clientDeletion.test.ts carries the rule.
+    expect(surface).toHaveLength(369);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

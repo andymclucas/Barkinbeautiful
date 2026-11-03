@@ -35,6 +35,7 @@ import {
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
   invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
+  clientPackages, agreementSignatures, clientNotes,
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -104,6 +105,8 @@ import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
 import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
+import { retentionRows } from "@shared/clientRetention";
+import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
@@ -1225,12 +1228,22 @@ const calendarRouter = router({
           }
         }
 
+        /*
+         * Never the booking being looked at.
+         *
+         * "Prior" is `scheduled_start < now`, and for a dog in the salon
+         * RIGHT NOW its own 7:30am slot qualifies — so the card read
+         * "Last visit: Wed, 4 Nov 2026" about the appointment it was
+         * printed on, hiding the real previous groom. Excluding the rows
+         * on screen gives the dog's actual last visit back.
+         */
         const priorAppointments = await db
           .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart, status: appointments.status })
           .from(appointments)
           .where(and(
             inArray(appointments.petId, petIds),
             lt(appointments.scheduledStart, now),
+            appointmentIds.length > 0 ? notInArray(appointments.id, appointmentIds) : undefined,
             eq(appointments.tenantId, tenantOf(ctx, input))
           ))
           .orderBy(desc(appointments.scheduledStart));
@@ -3794,6 +3807,203 @@ const clientsRouter = router({
       return {
         total: overdue.length,
         pets: top.map((p: OverduePet) => ({ ...p, ...(byPet.get(p.petId) ?? {}) })),
+      };
+    }),
+
+  /**
+   * The client retention report.
+   *
+   * Andy, 04/11/2026: "Build the client retention report - add in the
+   * client & dog details, avg weeks between appts and their average
+   * spend." The Reporting page has carried it as a "Coming soon"
+   * placeholder since that page was written.
+   *
+   * One row per DOG with its owner attached, because cadence belongs to
+   * the dog — see shared/clientRetention.ts for why, and for why the
+   * gap is a median while the spend is a mean.
+   *
+   * `protectedProcedure`, matching overdueForGroom directly above: this
+   * is the client book with contact details and a value ranking on it,
+   * which is owner surface. Restricted staff stay on their own
+   * appointments.
+   */
+  /**
+   * Delete a client outright. For duplicates, and only for duplicates.
+   *
+   * Andy, 04/11/2026: "Add feature to be able to delete clients - just
+   * in case there are duplicates etc."
+   *
+   * Refuses the moment there is history or money attached, and says
+   * what by name — see shared/clientDeletion.ts for why cascading would
+   * be the wrong answer. 25 tables carry a client_id and most are NOT
+   * NULL, so a cascade would not fail, it would succeed and take the
+   * financial record with it.
+   *
+   * Gated on canAdministerStaff, NOT on adminProcedure. Nine people hold
+   * users.role = "admin" and four of them are groomers who were made
+   * admins to reach the salon floor — the same reason that helper was
+   * written for staff records. Deleting a client is at least as
+   * destructive as editing one.
+   */
+  remove: protectedProcedure
+    .input(z.object({ clientId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      if (!canAdministerStaff(ctx.user)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only the salon owner can delete a client record.",
+        });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [client] = await db
+        .select({ id: clients.id, tenantId: clients.tenantId, firstName: clients.firstName, lastName: clients.lastName })
+        .from(clients).where(eq(clients.id, input.clientId)).limit(1);
+      if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
+
+      const one = async (table: any, column: any) => {
+        const [row] = await db.select({ n: sql<number>`COUNT(*)` }).from(table).where(eq(column, client.id));
+        return Number(row?.n ?? 0);
+      };
+
+      // Dogs are only a blocker once they have been booked in; an
+      // unused duplicate pet goes with its unused duplicate owner.
+      const ownedPets = await db
+        .select({ id: pets.id }).from(pets).where(eq(pets.clientId, client.id));
+      const petIds = ownedPets.map((p) => p.id);
+      const [petHistory] = petIds.length > 0
+        ? await db.select({ n: sql<number>`COUNT(DISTINCT ${appointments.petId})` })
+            .from(appointments).where(inArray(appointments.petId, petIds))
+        : [{ n: 0 }];
+
+      const counts = {
+        appointments: await one(appointments, appointments.clientId),
+        invoices: await one(invoices, invoices.clientId),
+        payments: await one(appointmentPayments, appointmentPayments.clientId),
+        memberships: await one(memberships, memberships.clientId),
+        storeCreditEntries: await one(storeCreditTransactions, storeCreditTransactions.clientId),
+        packages: await one(clientPackages, clientPackages.clientId),
+        agreements: await one(agreementSignatures, agreementSignatures.clientId),
+        reviews: await one(clientReviews, clientReviews.clientId),
+        smsMessages: await one(smsLogs, smsLogs.clientId),
+        petsWithHistory: Number(petHistory?.n ?? 0),
+      };
+
+      const check = checkClientDeletion(counts);
+      const name = `${client.firstName ?? ""} ${client.lastName ?? ""}`.trim();
+      if (!check.canDelete) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: describeDeletionRefusal(name, check.blockers),
+        });
+      }
+
+      /*
+       * Only what is meaningless without the client. Everything that
+       * could have stood on its own has already blocked the delete
+       * above, so there is nothing of record left to lose here.
+       */
+      await db.delete(clientContacts).where(eq(clientContacts.clientId, client.id));
+      await db.delete(clientNotes).where(eq(clientNotes.clientId, client.id));
+      if (petIds.length > 0) await db.delete(pets).where(inArray(pets.id, petIds));
+      await db.delete(clients).where(eq(clients.id, client.id));
+
+      return { success: true, name, petsRemoved: petIds.length };
+    }),
+
+  clientRetention: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      limit: z.number().int().min(1).max(500).default(100),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input ?? {});
+
+      /*
+       * Completed grooms only — the same evidence overdueForGroom uses,
+       * so the two reports cannot tell different stories about the same
+       * dog. 7,190 past appointments are still 'scheduled' because
+       * nobody closed them out; those dogs will show less history here
+       * than they really have, which is a data problem to fix on the
+       * board rather than something to paper over in a report.
+       */
+      const visits = await db
+        .select({
+          petId: appointments.petId,
+          scheduledStart: appointments.scheduledStart,
+          price: appointments.price,
+        })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.workflowState, "complete"),
+          isNotNull(appointments.petId),
+        ));
+
+      const rows = retentionRows(
+        visits.map((v) => ({ petId: v.petId as number, scheduledStart: v.scheduledStart, price: v.price })),
+      );
+
+      // Most valuable first. The question a retention report answers is
+      // which clients it would hurt to lose, so rank by what they are
+      // worth rather than alphabetically.
+      const ranked = [...rows.values()].sort((a, b) => b.totalSpend - a.totalSpend);
+      const top = ranked.slice(0, input?.limit ?? 100);
+      if (top.length === 0) return { rows: [], total: 0 };
+
+      const petIds = top.map((r) => r.petId);
+      const detail = await db
+        .select({
+          petId: pets.id, petName: pets.name, breed: pets.breed, status: pets.status,
+          clientId: clients.id, firstName: clients.firstName, lastName: clients.lastName,
+          phone: clients.phone, email: clients.email,
+        })
+        .from(pets)
+        .leftJoin(clients, eq(clients.id, pets.clientId))
+        .where(and(eq(pets.tenantId, tenantId), inArray(pets.id, petIds)));
+      const byPet = new Map(detail.map((d) => [d.petId, d]));
+
+      /* A $0 average reads as "cheap client" unless the row says the
+         groom is covered by a weekly fee. */
+      const members = await db
+        .select({ petId: appointments.petId })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          isNotNull(appointments.membershipId),
+          inArray(appointments.petId, petIds),
+        ));
+      const memberPetIds = new Set(members.map((m) => m.petId));
+
+      // Anything in the diary ahead of now, so a row can say whether the
+      // dog is actually coming back. Cancelled does not count — that is
+      // precisely how a client slips away.
+      const booked = await db
+        .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          gte(appointments.scheduledStart, new Date()),
+          notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+          inArray(appointments.petId, petIds),
+        ))
+        .orderBy(asc(appointments.scheduledStart));
+      const nextByPet = new Map<number, Date>();
+      for (const b of booked) {
+        if (b.petId !== null && !nextByPet.has(b.petId)) nextByPet.set(b.petId, b.scheduledStart);
+      }
+
+      return {
+        total: ranked.length,
+        rows: top.map((r) => ({
+          ...r,
+          ...(byPet.get(r.petId) ?? {}),
+          onMembership: memberPetIds.has(r.petId),
+          nextVisit: nextByPet.get(r.petId) ?? null,
+        })),
       };
     }),
 
