@@ -344,6 +344,12 @@ export default function ClientDetail() {
   // session with it, so it goes through a named confirm rather than a
   // window.confirm — the same shape the calendar's Delete booking uses.
   const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string } | null>(null);
+  /*
+   * Andy, 04/11/2026: "Add feature to be able to delete clients - just
+   * in case there are duplicates etc." Owner-only and refuses the
+   * moment there is history attached — see shared/clientDeletion.ts.
+   */
+  const [confirmDeleteClient, setConfirmDeleteClient] = useState(false);
   /**
    * Removing a groom photo, with the same named confirm a booking gets.
    *
@@ -407,6 +413,7 @@ export default function ClientDetail() {
   // Six of eight accounts hold role "admin", four of them groomers, so
   // isAdmin cannot gate money. Matches requireStaffAdministrator server-side.
   const isOwner = canAdministerStaff(currentUser ?? null);
+  const [, navigate] = useLocation();
   const { data: portalAccess } = trpc.clientPortal.getAccessStatus.useQuery(
     { clientId },
     { enabled: isAdmin && Boolean(clientId) },
@@ -434,6 +441,21 @@ export default function ClientDetail() {
     // A silent failure here looks exactly like success, because the dialog
     // would close either way.
     onError: (error) => toast.error(error.message || "Could not delete that booking"),
+  });
+
+  const deleteClient = trpc.clients.remove.useMutation({
+    onSuccess: (r) => {
+      toast.success(
+        r.petsRemoved > 0
+          ? `${r.name || "Client"} deleted, along with ${r.petsRemoved} unused dog${r.petsRemoved === 1 ? "" : "s"}.`
+          : `${r.name || "Client"} deleted.`,
+      );
+      setConfirmDeleteClient(false);
+      navigate("/clients");
+    },
+    // The server's refusal names what is attached, so show it as-is
+    // rather than replacing it with something vaguer.
+    onError: (e) => toast.error(e.message),
   });
 
   // Raised after a passing when money is still attached to the household.
@@ -992,6 +1014,21 @@ export default function ClientDetail() {
               >
                 <Pencil className="h-3 w-3 mr-1" /> Edit details
               </Button>
+              {/* Owner-only. `users.role = "admin"` includes four
+                  groomers, so it is not the right gate for something
+                  that removes a record — same reasoning as the staff
+                  administrator check it reuses. */}
+              {isOwner && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40"
+                  onClick={() => setConfirmDeleteClient(true)}
+                  title="Delete this client record. Refused if anything is attached."
+                >
+                  <Trash2 className="h-3 w-3 mr-1" /> Delete client
+                </Button>
+              )}
             </div>
           </div>
 
@@ -2421,6 +2458,42 @@ export default function ClientDetail() {
         </DialogContent>
       </Dialog>
 
+      {/*
+        * Deleting a client. Owner-only, and the server refuses the
+        * moment anything is attached — this dialog promises nothing it
+        * cannot keep, so it says the delete may be refused rather than
+        * pretending to know in advance.
+        */}
+      <Dialog open={confirmDeleteClient} onOpenChange={open => { if (!open) setConfirmDeleteClient(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this client?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              This permanently removes <strong className="text-foreground">{client?.firstName} {client?.lastName}</strong>,
+              their contacts and notes, and any dogs that have never been booked in.
+            </p>
+            <p>
+              It will be <strong className="text-foreground">refused</strong> if there is anything on
+              record — a booking, an invoice, a payment, a membership, a signed agreement or a text
+              message. For a duplicate that has history, merge it into the record you are keeping
+              instead.
+            </p>
+            <p>This cannot be undone.</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmDeleteClient(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteClient.isPending}
+              onClick={() => clientId && deleteClient.mutate({ clientId })}
+            >
+              {deleteClient.isPending ? "Deleting…" : "Delete client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!confirmDeleteAppt} onOpenChange={open => { if (!open) setConfirmDeleteAppt(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

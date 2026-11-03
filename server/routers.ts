@@ -35,6 +35,7 @@ import {
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
   invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
+  clientPackages, agreementSignatures, clientNotes,
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -105,6 +106,7 @@ import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
 import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
+import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
@@ -3825,6 +3827,91 @@ const clientsRouter = router({
    * which is owner surface. Restricted staff stay on their own
    * appointments.
    */
+  /**
+   * Delete a client outright. For duplicates, and only for duplicates.
+   *
+   * Andy, 04/11/2026: "Add feature to be able to delete clients - just
+   * in case there are duplicates etc."
+   *
+   * Refuses the moment there is history or money attached, and says
+   * what by name — see shared/clientDeletion.ts for why cascading would
+   * be the wrong answer. 25 tables carry a client_id and most are NOT
+   * NULL, so a cascade would not fail, it would succeed and take the
+   * financial record with it.
+   *
+   * Gated on canAdministerStaff, NOT on adminProcedure. Nine people hold
+   * users.role = "admin" and four of them are groomers who were made
+   * admins to reach the salon floor — the same reason that helper was
+   * written for staff records. Deleting a client is at least as
+   * destructive as editing one.
+   */
+  remove: protectedProcedure
+    .input(z.object({ clientId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      if (!canAdministerStaff(ctx.user)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only the salon owner can delete a client record.",
+        });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const [client] = await db
+        .select({ id: clients.id, tenantId: clients.tenantId, firstName: clients.firstName, lastName: clients.lastName })
+        .from(clients).where(eq(clients.id, input.clientId)).limit(1);
+      if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
+
+      const one = async (table: any, column: any) => {
+        const [row] = await db.select({ n: sql<number>`COUNT(*)` }).from(table).where(eq(column, client.id));
+        return Number(row?.n ?? 0);
+      };
+
+      // Dogs are only a blocker once they have been booked in; an
+      // unused duplicate pet goes with its unused duplicate owner.
+      const ownedPets = await db
+        .select({ id: pets.id }).from(pets).where(eq(pets.clientId, client.id));
+      const petIds = ownedPets.map((p) => p.id);
+      const [petHistory] = petIds.length > 0
+        ? await db.select({ n: sql<number>`COUNT(DISTINCT ${appointments.petId})` })
+            .from(appointments).where(inArray(appointments.petId, petIds))
+        : [{ n: 0 }];
+
+      const counts = {
+        appointments: await one(appointments, appointments.clientId),
+        invoices: await one(invoices, invoices.clientId),
+        payments: await one(appointmentPayments, appointmentPayments.clientId),
+        memberships: await one(memberships, memberships.clientId),
+        storeCreditEntries: await one(storeCreditTransactions, storeCreditTransactions.clientId),
+        packages: await one(clientPackages, clientPackages.clientId),
+        agreements: await one(agreementSignatures, agreementSignatures.clientId),
+        reviews: await one(clientReviews, clientReviews.clientId),
+        smsMessages: await one(smsLogs, smsLogs.clientId),
+        petsWithHistory: Number(petHistory?.n ?? 0),
+      };
+
+      const check = checkClientDeletion(counts);
+      const name = `${client.firstName ?? ""} ${client.lastName ?? ""}`.trim();
+      if (!check.canDelete) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: describeDeletionRefusal(name, check.blockers),
+        });
+      }
+
+      /*
+       * Only what is meaningless without the client. Everything that
+       * could have stood on its own has already blocked the delete
+       * above, so there is nothing of record left to lose here.
+       */
+      await db.delete(clientContacts).where(eq(clientContacts.clientId, client.id));
+      await db.delete(clientNotes).where(eq(clientNotes.clientId, client.id));
+      if (petIds.length > 0) await db.delete(pets).where(inArray(pets.id, petIds));
+      await db.delete(clients).where(eq(clients.id, client.id));
+
+      return { success: true, name, petsRemoved: petIds.length };
+    }),
+
   clientRetention: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
