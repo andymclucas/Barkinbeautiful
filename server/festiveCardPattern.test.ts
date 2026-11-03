@@ -36,10 +36,35 @@ describe("the festive card pattern", () => {
     expect(section).toContain(".festive .bg-card");
   });
 
-  it("covers dark mode with its own rule", () => {
+  it("gives dark mode its own flake colour", () => {
     // A dark green flake on a dark green card is invisible, so dark mode
-    // cannot share the light rule.
-    expect(section).toContain('.dark.festive [data-slot="card"]');
+    // cannot share light's tile. Asserted on the variable rather than on a
+    // selector, because which selectors read it is free to change.
+    expect(section).toMatch(/\.dark\.festive\s*\{[^}]*--festive-flakes:/);
+    expect(section).toMatch(/\.festive\s*\{[^}]*--festive-flakes:/);
+  });
+
+  it("reaches the panels inside a card, not just the card", () => {
+    // Andy, 03/11/2026: "add the snowflakes to the inner panels too". A
+    // panel on bg-muted/50 is half transparent, so it was showing the
+    // dialog's flakes at about 2.5% - which is to say not at all.
+    expect(section).toContain('[class*="bg-muted"].rounded-lg');
+  });
+
+  it("leaves chips and badges alone", () => {
+    // A 96px tile inside a 20px chip is a clipped smudge. The small radii
+    // on a muted fill are buttons, badges and icon tiles.
+    for (const small of ["rounded-md", "rounded-full", "rounded-sm"]) {
+      expect(section).not.toContain(`[class*="bg-muted"].${small}`);
+    }
+  });
+
+  it("writes the tile once, so the two copies cannot drift apart", () => {
+    // It was repeated per selector before the inner panels were added, and
+    // a data URI edited in three places ends up different in three places.
+    const tiles = section.match(/url\("data:image\/svg\+xml/g) ?? [];
+    expect(tiles).toHaveLength(2); // one light, one dark
+    expect((section.match(/var\(--festive-flakes\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
   it("keeps every flake faint enough to read through", () => {
