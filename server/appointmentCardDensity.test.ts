@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  appointmentCardDensity, NAME_ONLY_WIDTH, SERVICE_BADGE_WIDTH,
-  SHORT_SERVICE_WIDTH, START_TIME_ONLY_WIDTH,
+  appointmentCardDensity, CODES_HEIGHT, NAME_ONLY_WIDTH, SERVICE_BADGE_HEIGHT,
+  SERVICE_BADGE_WIDTH, SHORT_SERVICE_WIDTH, START_TIME_ONLY_WIDTH,
 } from "@shared/appointmentCardDensity";
 
 /** A 94px staff column — the mobile floor — split between two dogs. */
@@ -119,5 +119,52 @@ describe("the service degrades like the time does", () => {
   /** Height still governs: a one-line block has no room for a badge. */
   it("draws no badge in a short block however wide", () => {
     expect(appointmentCardDensity({ widthPx: 320, heightPx: 30 }).serviceFormat).toBe("none");
+  });
+});
+
+/**
+ * Andy, 04/11/2026: "A lot of the appt details are still missing from
+ * the appt card. This needs to be fixed so it gives an overview of the
+ * appointment for groomers to see at a glance" — name and service
+ * first, then the warning codes.
+ */
+describe("appointmentCardDensity, the dog's codes", () => {
+  const roomy = { widthPx: 200, heightPx: 120 };
+
+  it("shows them on a card with room", () => {
+    expect(appointmentCardDensity(roomy).showCodes).toBe(true);
+  });
+
+  /*
+   * The order Andy gave. A card showing "DOG AGGRESSIVE" but not what
+   * the dog is booked in FOR has the priority backwards, so codes must
+   * never outlive the service badge.
+   */
+  it("never appears on a card too short for the service badge", () => {
+    for (const heightPx of [30, 44, 57, SERVICE_BADGE_HEIGHT]) {
+      const d = appointmentCardDensity({ widthPx: 200, heightPx });
+      if (!d.showService) expect(d.showCodes, `h=${heightPx}`).toBe(false);
+    }
+  });
+
+  it("never appears on a card too narrow for even a short service", () => {
+    for (const widthPx of [40, 60, 80, SHORT_SERVICE_WIDTH - 1]) {
+      expect(appointmentCardDensity({ widthPx, heightPx: 120 }).showCodes, `w=${widthPx}`).toBe(false);
+    }
+  });
+
+  /*
+   * But codes DO outrank the next-visit line and the family line, which
+   * is the whole point of putting them third rather than last.
+   */
+  it("outranks the nice-to-knows", () => {
+    const narrow = appointmentCardDensity({ widthPx: SHORT_SERVICE_WIDTH, heightPx: 120 });
+    expect(narrow.showCodes).toBe(true);
+    expect(narrow.showNextVisit).toBe(false);
+  });
+
+  it("needs a line of its own under the badge", () => {
+    expect(appointmentCardDensity({ widthPx: 200, heightPx: CODES_HEIGHT - 1 }).showCodes).toBe(false);
+    expect(appointmentCardDensity({ widthPx: 200, heightPx: CODES_HEIGHT }).showCodes).toBe(true);
   });
 });

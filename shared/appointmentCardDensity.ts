@@ -50,6 +50,20 @@ export type CardDensity = {
   showFamilyLine: boolean;
   /** "Next: 15 Dec". */
   showNextVisit: boolean;
+  /**
+   * The dog's MoeGo tags — "✂5f, #7f, DOG AGGRESSIVE".
+   *
+   * Andy, 04/11/2026: "A lot of the appt details are still missing from
+   * the appt card... so it gives an overview of the appointment for
+   * groomers to see at a glance", and asked for name and service first,
+   * then the warning codes.
+   *
+   * Shown as the salon writes them, NOT filtered to the scary ones.
+   * shared/petCodes.ts explains why: the vocabulary is the salon's own,
+   * and guessing which of 93 codes is a safety flag would either cry
+   * wolf on a blade number or quietly fail to flag a biter.
+   */
+  showCodes: boolean;
 };
 
 /**
@@ -99,6 +113,15 @@ export const SECOND_LINE_HEIGHT = 44;
 /** The badge needs a line of its own under the time. */
 export const SERVICE_BADGE_HEIGHT = 58;
 
+/**
+ * Codes need a line of their own BELOW the service badge.
+ *
+ * Third in the order Andy gave, so they appear only once the two things
+ * above them have — a card showing codes and no service would have the
+ * priority backwards.
+ */
+export const CODES_HEIGHT = SERVICE_BADGE_HEIGHT + 18;
+
 export function appointmentCardDensity(input: {
   /** The card's own width in CSS pixels, after any overlap split. */
   widthPx: number;
@@ -145,6 +168,18 @@ export function appointmentCardDensity(input: {
           : input.widthPx >= SHORT_SERVICE_WIDTH
             ? "short"
             : "none",
+    // Both of these are nice-to-know rather than need-to-know, so they
+    // only appear once the card has already afforded the time.
+    /*
+     * Codes rank ABOVE the time, the family line and the next visit, and
+     * below the name and the service. A groomer reads "DOG AGGRESSIVE"
+     * before they care when the dog is booked out.
+     *
+     * Width is the short-service threshold rather than one of its own:
+     * below that a chip and the name are fighting for the same line, and
+     * the name wins — it is the only reason to look at the card.
+     */
+    showCodes: input.heightPx >= CODES_HEIGHT && input.widthPx >= SHORT_SERVICE_WIDTH,
     // Both of these are nice-to-know rather than need-to-know, so they
     // only appear once the card has already afforded the time.
     showFamilyLine: showTime,
