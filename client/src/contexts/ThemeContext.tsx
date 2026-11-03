@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { playFestiveChime } from "@/lib/festiveChime";
 
 /**
  * Light / dark / follow-the-system, for the whole platform.
@@ -141,13 +142,30 @@ export function ThemeProvider({
   }, [resolvedTheme, setTheme]);
 
   const setFestive = useCallback((on: boolean) => {
+    /*
+     * Eight notes of Jingle Bells, on the way IN only.
+     *
+     * Andy, 03/11/2026: "Can you play a quick Christmas song snippet when
+     * switching to Xmas mode?"
+     *
+     * Turning it off plays nothing. Somebody switching the theme off is
+     * quite possibly doing it because they have had enough, and a jingle
+     * on the way out is the joke wearing thin in the one moment it was
+     * never going to land.
+     *
+     * Synthesised rather than a recording - see client/src/lib/festiveChime
+     * for why that is a licensing decision. It is deliberately NOT awaited
+     * and cannot throw: a browser that refuses to make a sound still gets
+     * the theme.
+     */
+    if (on && !festive) playFestiveChime();
     setFestiveState(on);
     try {
       localStorage.setItem(FESTIVE_KEY, on ? "on" : "off");
     } catch {
       // Same as the theme: not worth failing a click over.
     }
-  }, []);
+  }, [festive]);
 
   const toggleFestive = useCallback(() => setFestive(!festive), [festive, setFestive]);
 
