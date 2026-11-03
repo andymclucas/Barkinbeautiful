@@ -103,7 +103,7 @@ import { forgetNumberTenant } from "./tenantByNumber";
 import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
-import { pickupPrompt } from "@shared/pickupGroup";
+import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
@@ -10725,11 +10725,20 @@ const smsRouter = router({
         recipient = contact ?? null;
       }
       if (!recipient?.phone) throw new Error("The selected contact does not have a phone number");
-      // One text for the family, naming every dog being collected.
+      /*
+       * One text for the family, and the rule DECIDES whether to send —
+       * it does not merely supply names. See pickupSendDecision: the
+       * names and ids exist only on the allowed branch, so there is
+       * nothing here to fall back to when the answer is no.
+       *
+       * The dialog is per-dog and always will be; staff press the button
+       * on the row in front of them. So the refusal belongs HERE, on the
+       * server, not in whichever screen happens to offer it.
+       */
       const siblings = await loadPickupSiblings(db, appointment);
-      const group = pickupPrompt(siblings);
-      const petNames = group.petNames.length > 0 ? group.petNames : [appointment.petName ?? "your dog"];
-      const covered = group.appointmentIds.length > 0 ? group.appointmentIds : [appointment.id];
+      const decision = pickupSendDecision(siblings);
+      if (!decision.ok) throw new Error(decision.reason);
+      const { petNames, appointmentIds: covered } = decision;
 
       const body = buildReadyForPickupSms({ clientFirstName: recipient.name.split(" ")[0] || "there", petNames });
       const result = await sendSms(recipient.phone, body, { tenantId: appointment.tenantId, trigger: "staff" });

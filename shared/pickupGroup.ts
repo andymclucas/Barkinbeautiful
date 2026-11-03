@@ -113,3 +113,40 @@ export function describePets(names: ReadonlyArray<string>): { subject: string; v
   const clean = names.map((n) => n.trim()).filter((n) => n !== "");
   return { subject: joinPetNames(clean), verb: petVerb(clean.length || 1) };
 }
+
+/**
+ * Whether this family's pickup text may be sent, and what it covers.
+ *
+ * Andy, 04/11/2026: "Only send the one message to the client when all
+ * dogs in the family are ready on the workflow board. Do not ever send
+ * 2 or 3." Mellissa Luckman received three identical texts naming
+ * Junior, Neymar and Alex, one per dog, inside a minute.
+ *
+ * `pickupPrompt` above already knew not to send. The sender called it,
+ * read `petNames` and `appointmentIds` off it, and ignored `prompt` —
+ * then fell back to the single dog when those came back empty, which is
+ * precisely the "everybody has already been texted" case. Three rows on
+ * the board, three buttons, three texts.
+ *
+ * So this returns the names and the ids ONLY on the allowed branch.
+ * There is nothing to read on a refusal and nothing to fall back to,
+ * which is what makes ignoring the answer impossible rather than merely
+ * discouraged.
+ */
+export type PickupSendDecision =
+  | { ok: true; petNames: string[]; appointmentIds: number[] }
+  | { ok: false; reason: string };
+
+export function pickupSendDecision(siblings: ReadonlyArray<PickupSibling>): PickupSendDecision {
+  const group = pickupPrompt(siblings);
+  if (group.prompt) {
+    return { ok: true, petNames: group.petNames, appointmentIds: group.appointmentIds };
+  }
+  if (group.waitingFor.length > 0) {
+    return {
+      ok: false,
+      reason: `Not all of this family is ready yet — still with the groomer: ${joinPetNames(group.waitingFor)}.`,
+    };
+  }
+  return { ok: false, reason: "A pickup text has already gone to this client for today's dogs." };
+}
