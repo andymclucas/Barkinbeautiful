@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickupPrompt, joinPetNames, petVerb, describePets } from "@shared/pickupGroup";
+import { pickupPrompt, pickupSendDecision, joinPetNames, petVerb, describePets, type PickupSibling } from "@shared/pickupGroup";
 import { buildReadyForPickupSms } from "./sms";
 
 const dog = (id: number, petName: string, workflowState: string, alreadyTexted = false) =>
@@ -125,5 +125,84 @@ describe("describePets", () => {
   it("pairs the subject with the matching verb", () => {
     expect(describePets(["Coco"])).toEqual({ subject: "Coco", verb: "is" });
     expect(describePets(["Coco", "Bella"])).toEqual({ subject: "Coco and Bella", verb: "are" });
+  });
+});
+
+/**
+ * Andy, 04/11/2026: "Only send the one message to the client when all
+ * dogs in the family are ready on the workflow board. Do not ever send
+ * 2 or 3."
+ */
+describe("pickupSendDecision", () => {
+  const dog = (over: Partial<PickupSibling> & { appointmentId: number }): PickupSibling => ({
+    petName: "Dog", workflowState: "ready", ...over,
+  });
+
+  it("allows one text when every dog is ready", () => {
+    const d = pickupSendDecision([
+      dog({ appointmentId: 1, petName: "Junior" }),
+      dog({ appointmentId: 2, petName: "Neymar" }),
+      dog({ appointmentId: 3, petName: "Alex" }),
+    ]);
+    expect(d.ok).toBe(true);
+    if (!d.ok) return;
+    expect(d.petNames).toEqual(["Junior", "Neymar", "Alex"]);
+    expect(d.appointmentIds).toEqual([1, 2, 3]);
+  });
+
+  /*
+   * Mellissa Luckman's three texts, exactly. The first send covers all
+   * three dogs and logs against all three, so the second and third
+   * presses — one per row on the board — must refuse.
+   */
+  it("refuses the second and third press once the family has been texted", () => {
+    const texted = [
+      dog({ appointmentId: 1, petName: "Junior", alreadyTexted: true }),
+      dog({ appointmentId: 2, petName: "Neymar", alreadyTexted: true }),
+      dog({ appointmentId: 3, petName: "Alex", alreadyTexted: true }),
+    ];
+    const d = pickupSendDecision(texted);
+    expect(d.ok).toBe(false);
+    if (d.ok) return;
+    expect(d.reason).toMatch(/already gone/i);
+  });
+
+  /* The refusal carries no names and no ids, so there is nothing for a
+     caller to fall back to — which is what sent texts 2 and 3. */
+  it("hands back nothing to send on a refusal", () => {
+    const d = pickupSendDecision([dog({ appointmentId: 1, alreadyTexted: true })]);
+    expect(d).not.toHaveProperty("petNames");
+    expect(d).not.toHaveProperty("appointmentIds");
+  });
+
+  it("refuses while any dog is still with the groomer, and says which", () => {
+    const d = pickupSendDecision([
+      dog({ appointmentId: 1, petName: "Junior" }),
+      dog({ appointmentId: 2, petName: "Neymar", workflowState: "grooming" }),
+    ]);
+    expect(d.ok).toBe(false);
+    if (d.ok) return;
+    expect(d.reason).toContain("Neymar");
+    expect(d.reason).not.toContain("Junior");
+  });
+
+  /* A cancelled sibling must not hold the family's text for ever. */
+  it("does not wait for a dog that is not coming", () => {
+    const d = pickupSendDecision([
+      dog({ appointmentId: 1, petName: "Junior" }),
+      dog({ appointmentId: 2, petName: "Neymar", workflowState: "cancelled" }),
+    ]);
+    expect(d.ok).toBe(true);
+    if (!d.ok) return;
+    expect(d.petNames).toEqual(["Junior"]);
+  });
+
+  /*
+   * A failed send is not a send. loadPickupSiblings excludes failed rows
+   * from alreadyTexted, so the retry has to be allowed through here.
+   */
+  it("allows a retry after a failed send", () => {
+    const d = pickupSendDecision([dog({ appointmentId: 1, petName: "Junior", alreadyTexted: false })]);
+    expect(d.ok).toBe(true);
   });
 });
