@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  appointmentHref, capPerKind, groupLabel, isOnTheFloor, looksLikePhone,
+  appointmentHref, capPerKind, groupLabel, hitMeta, isOnTheFloor, looksLikePhone,
   matchRank, normalisePhone, rankHits, type SearchHit,
 } from "@shared/globalSearch";
 
@@ -152,5 +152,42 @@ describe("capPerKind", () => {
 
   it("copes with nothing to cap", () => {
     expect(capPerKind([], CAPS, 12)).toEqual([]);
+  });
+});
+
+describe("hitMeta", () => {
+  it("does not print the same phone number twice", () => {
+    // What the server actually sends for a phone search: `subtitle` is
+    // the client's phone and `matchedOn` is the same phone, because the
+    // phone is both the context AND the reason the row is here.
+    expect(hitMeta(hit({ subtitle: "0412 345 678", matchedOn: "0412 345 678" })))
+      .toBe("0412 345 678");
+  });
+
+  it("drops a reason the subtitle already contains", () => {
+    // A dog matched on its breed: subtitle is "owner · breed".
+    expect(hitMeta(hit({ subtitle: "Greg Blackaby · Cavoodle", matchedOn: "Cavoodle" })))
+      .toBe("Greg Blackaby · Cavoodle");
+  });
+
+  it("joins a reason the subtitle does NOT cover", () => {
+    // Found by address, shown with their phone.
+    expect(hitMeta(hit({ subtitle: "0412 345 678", matchedOn: "12 Bellavista Rd" })))
+      .toBe("0412 345 678 · 12 Bellavista Rd");
+  });
+
+  it("takes either half on its own", () => {
+    expect(hitMeta(hit({ subtitle: "Fri 22 Jan, 9:00 AM", matchedOn: null }))).toBe("Fri 22 Jan, 9:00 AM");
+    expect(hitMeta(hit({ subtitle: null, matchedOn: "Cavoodle" }))).toBe("Cavoodle");
+  });
+
+  it("is null when there is nothing to say, so the row stays one line", () => {
+    expect(hitMeta(hit({ subtitle: null, matchedOn: null }))).toBeNull();
+    expect(hitMeta(hit({ subtitle: "  ", matchedOn: "" }))).toBeNull();
+  });
+
+  it("ignores case when deciding the reason is a duplicate", () => {
+    expect(hitMeta(hit({ subtitle: "Greg Blackaby · Cavoodle", matchedOn: "cavoodle" })))
+      .toBe("Greg Blackaby · Cavoodle");
   });
 });

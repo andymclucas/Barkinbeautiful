@@ -20,7 +20,7 @@
  * reading and testing rather than burying in an ORDER BY.
  */
 import { z } from "zod";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointments, clients, pets } from "../../drizzle/schema";
@@ -88,6 +88,35 @@ export const searchRouter = router({
         ))
         .limit(25) : [];
 
+      /*
+       * Every matched client's dogs, in one query rather than one each.
+       *
+       * Andy, 03/11/2026: "show the dog or all dogs in the family that
+       * can be clickable when searching with the main search function."
+       *
+       * Active only - `pets.status` is active|departed, and departed is
+       * how this salon retires a duplicate, so offering one is a link to
+       * a record nobody wants reopened.
+       */
+      const dogsByClient = new Map<number, { id: number; name: string }[]>();
+      if (clientRows.length > 0) {
+        const owned = await db
+          .select({ id: pets.id, name: pets.name, clientId: pets.clientId })
+          .from(pets)
+          .where(and(
+            eq(pets.tenantId, tenantId),
+            eq(pets.status, "active"),
+            inArray(pets.clientId, clientRows.map((c: { id: number }) => c.id)),
+          ))
+          .orderBy(pets.name);
+        for (const d of owned) {
+          if (d.clientId === null) continue;
+          const list = dogsByClient.get(d.clientId) ?? [];
+          list.push({ id: d.id, name: d.name ?? "(no name)" });
+          dogsByClient.set(d.clientId, list);
+        }
+      }
+
       for (const c of clientRows) {
         const name = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || "(no name)";
         // What matched, so a result found by phone or address says why
@@ -99,6 +128,7 @@ export const searchRouter = router({
           kind: "client", id: c.id, title: name,
           subtitle: c.phone ?? c.email ?? null,
           matchedOn, href: `/clients/${c.id}`,
+          dogs: dogsByClient.get(c.id) ?? [],
         });
       }
 

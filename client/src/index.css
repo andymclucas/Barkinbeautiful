@@ -843,6 +843,29 @@ input:focus-visible, textarea:focus-visible, [data-slot="select-trigger"]:focus-
   border-color: color-mix(in oklch, var(--brand-primary) 50%, var(--color-border));
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand-primary) 14%, transparent);
 }
+/*
+ * ...except the command palette's own input.
+ *
+ * Andy, 03/11/2026: "padding still looks a bit off - just clean it up a
+ * bit and make the layout modern and clean."
+ *
+ * The ring above is right for a form field, where it says which of
+ * several inputs has the keyboard. The palette autofocuses its one
+ * input the moment it opens, so the ring is ALWAYS on - and drawn
+ * inside a tight row it reads as a box crammed into the corner, which
+ * is what the padding looked wrong about. The palette is modal and
+ * this is the only focusable thing in it, so the ring resolves no
+ * ambiguity.
+ *
+ * Unlayered, like the nav and hover-light rules above and for the same
+ * reason: the rule it has to beat is itself unlayered, and anything in
+ * @layer utilities loses to that whatever its specificity. A Tailwind
+ * `focus-visible:shadow-none` on the element did nothing.
+ */
+[data-slot="command-input"]:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
+}
 
 /* ── Tables ───────────────────────────────────────────────────────────────── */
 table tbody tr {
