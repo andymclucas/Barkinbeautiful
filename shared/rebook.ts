@@ -23,7 +23,7 @@ export function addWeeks(from: Date, weeks: number): Date {
   return new Date(from.getTime() + weeks * WEEK_MS);
 }
 
-export type IntervalSource = "membership" | "history" | "default";
+export type IntervalSource = "membership" | "history" | "default" | "manual";
 
 export type RebookInterval = {
   weeks: number;
@@ -99,4 +99,45 @@ export function gapsBetween(visits: readonly Date[]): number[] {
   const gaps: number[] = [];
   for (let i = 1; i < sorted.length; i++) gaps.push(gapInWeeks(sorted[i - 1], sorted[i]));
   return gaps.reverse();
+}
+
+/**
+ * The quick-jump intervals offered beside the date.
+ *
+ * Lauren, 03/11/2026: "Give the quick jump option like there is on the
+ * main calendar. 2-14 weeks etc when rebooking an appointment. But look
+ * at their history and give a recommendation based on this but can do a
+ * manual override at any time."
+ *
+ * One to fourteen, which is deliberately the SAME set as the calendar
+ * sidebar's own Quick jump (`QUICK_JUMP_WEEKS` in CalendarSidebar) rather
+ * than a tidier-looking subset. She asked for the thing she already uses,
+ * and every number in between is real here: the salon has dogs on three,
+ * five and seven weeks, and `rebookInterval` reads those straight off
+ * their history. One week is a redo, which is rare but does happen.
+ *
+ * The calendar's REPEAT picker offers evens only - that one is setting up
+ * a standing series, which is a different question.
+ */
+export const REBOOK_WEEK_CHOICES = Array.from({ length: 14 }, (_, i) => i + 1);
+
+/**
+ * The buttons to draw, with the recommendation always among them.
+ *
+ * A dog whose rhythm works out at nine weeks would otherwise have a
+ * recommendation that no button matched — so the chip row would show
+ * nothing selected while the date box said nine weeks out, which reads
+ * as a bug. Whatever was recommended is a choice you can get back to.
+ */
+export function rebookWeekOptions(recommendedWeeks: number): number[] {
+  const options = new Set<number>(REBOOK_WEEK_CHOICES);
+  if (Number.isFinite(recommendedWeeks) && recommendedWeeks > 0) {
+    options.add(Math.round(recommendedWeeks));
+  }
+  return [...options].sort((a, b) => a - b);
+}
+
+/** How a chosen interval is explained, once somebody has overridden the suggestion. */
+export function manualInterval(weeks: number): RebookInterval {
+  return { weeks, source: "manual", reason: `set by hand to ${weeks} week${weeks === 1 ? "" : "s"}` };
 }

@@ -78,6 +78,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
+import { DateTimeField } from "@/components/DateTimeField";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -3763,14 +3765,11 @@ export default function Calendar() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Date *</Label>
-                <Input
-                  type="date"
-                  value={splitLocalDateTime(newAppt.scheduledStart).date}
-                  onChange={e => setNewAppt(p => ({
+                <DateField value={splitLocalDateTime(newAppt.scheduledStart).date}
+                  onChange={next => setNewAppt(p => ({
                     ...p,
-                    scheduledStart: joinLocalDateTime(e.target.value, splitLocalDateTime(p.scheduledStart).time || "09:00"),
-                  }))}
-                />
+                    scheduledStart: joinLocalDateTime(next, splitLocalDateTime(p.scheduledStart).time || "09:00"),
+                  }))} />
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
@@ -3850,7 +3849,7 @@ export default function Calendar() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Ends</Label>
-                <Input type="datetime-local" value={newAppt.scheduledEnd} onChange={e => setNewAppt(p => ({ ...p, scheduledEnd: e.target.value }))} />
+                <DateTimeField aria-label="Ends" value={newAppt.scheduledEnd} onChange={next => setNewAppt(p => ({ ...p, scheduledEnd: next }))} />
                 <p className="text-[11px] text-muted-foreground">Suggested from the dogs' size — change it for a known-quick or a difficult groom.</p>
               </div>
             </div>
@@ -3966,7 +3965,7 @@ export default function Calendar() {
                     </div>
                     <div className="space-y-1.5">
                       <Label>Until *</Label>
-                      <Input type="date" value={repeatForm.untilDate} onChange={e => setRepeatForm(f => ({ ...f, untilDate: e.target.value }))} />
+                      <DateField value={repeatForm.untilDate} onChange={next => setRepeatForm(f => ({ ...f, untilDate: next }))} />
                     </div>
                     <p className="col-span-2 text-xs text-muted-foreground">
                       Creates a booking every {repeatForm.frequencyWeeks} week{repeatForm.frequencyWeeks === "1" ? "" : "s"} at the same time
@@ -4460,11 +4459,11 @@ export default function Calendar() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Start</Label>
-                    <Input type="datetime-local" value={editForm.scheduledStart} disabled={preservesCancelledSchedule} onChange={e => setEditForm(p => ({ ...p, scheduledStart: e.target.value }))} />
+                    <DateTimeField aria-label="Starts" value={editForm.scheduledStart} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledStart: next }))} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>End</Label>
-                    <Input type="datetime-local" value={editForm.scheduledEnd} disabled={preservesCancelledSchedule} onChange={e => setEditForm(p => ({ ...p, scheduledEnd: e.target.value }))} />
+                    <DateTimeField aria-label="Ends" value={editForm.scheduledEnd} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledEnd: next }))} />
                   </div>
                 </div>
                 {(blockingClashes(editClashes).length > 0 || editMoveCapacityWarning) && (

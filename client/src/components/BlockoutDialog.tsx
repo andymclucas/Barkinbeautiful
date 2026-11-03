@@ -4,6 +4,7 @@ import { Ban, CalendarOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import StaffAvatar from "@/components/StaffAvatar";
@@ -187,11 +188,11 @@ export function BlockoutDialog({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>First day <span className="text-red-500">*</span></Label>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <DateField value={startDate} onChange={next => setStartDate(next)} />
             </div>
             <div className="space-y-1.5">
               <Label>Last day <span className="text-red-500">*</span></Label>
-              <Input type="date" min={startDate || undefined} value={endDate} onChange={e => setEndDate(e.target.value)} />
+              <DateField min={startDate || undefined} value={endDate} onChange={next => setEndDate(next)} />
             </div>
           </div>
 

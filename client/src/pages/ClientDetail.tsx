@@ -43,6 +43,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { brisbaneLocalInputValue, parseBrisbaneLocalDateTime } from "@shared/localDateTime";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
+import { DateTimeField } from "@/components/DateTimeField";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
@@ -2085,7 +2087,7 @@ export default function ClientDetail() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Date</Label>
-                <Input type="date" value={bookDate} onChange={e => setBookDate(e.target.value)} />
+                <DateField value={bookDate} onChange={next => setBookDate(next)} />
               </div>
               <div className="space-y-1.5">
                 <Label>{isDaycareService(bookService) ? "Drop-off" : "Time"}</Label>
@@ -2324,13 +2326,13 @@ export default function ClientDetail() {
           <div className="space-y-3 pt-1">
             <div className="space-y-1.5">
               <Label htmlFor="appt-start">Starts</Label>
-              <Input
+              <DateTimeField
                 id="appt-start"
-                type="datetime-local"
+                aria-label="Starts"
                 value={editAppt?.scheduledStart ?? ""}
-                onChange={e => setEditAppt(prev => {
+                onChange={next => setEditAppt(prev => {
                   if (!prev) return prev;
-                  const scheduledStart = e.target.value;
+                  const scheduledStart = next;
                   // The end follows the start by the length the booking
                   // already had, so moving a dog an hour later does not
                   // silently stretch or collapse it. Still editable below.
@@ -2347,11 +2349,11 @@ export default function ClientDetail() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="appt-end">Ends</Label>
-              <Input
+              <DateTimeField
                 id="appt-end"
-                type="datetime-local"
+                aria-label="Ends"
                 value={editAppt?.scheduledEnd ?? ""}
-                onChange={e => setEditAppt(prev => prev ? { ...prev, scheduledEnd: e.target.value } : prev)}
+                onChange={next => setEditAppt(prev => prev ? { ...prev, scheduledEnd: next } : prev)}
               />
             </div>
           </div>

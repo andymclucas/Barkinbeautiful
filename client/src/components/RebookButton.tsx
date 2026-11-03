@@ -21,10 +21,12 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateTimeField } from "@/components/DateTimeField";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { rebookWeekOptions } from "@shared/rebook";
 
 /** An ISO instant as the value a datetime-local input wants, in salon time. */
 function toLocalInput(iso: string): string {
@@ -49,10 +51,17 @@ export function RebookButton({ appointmentId, onRebooked }: {
 }) {
   const [open, setOpen] = useState(false);
   const [when, setWhen] = useState("");
+  /**
+   * An interval staff picked themselves, or null to follow the dog's
+   * history. Null rather than the recommended number, so the chip row can
+   * say which one IS the recommendation without that becoming an override
+   * the moment the dialog opens.
+   */
+  const [weeksOverride, setWeeksOverride] = useState<number | null>(null);
   const utils = trpc.useUtils();
 
   const { data: suggestion, isFetching } = trpc.calendar.rebookSuggestion.useQuery(
-    { appointmentId },
+    { appointmentId, ...(weeksOverride ? { weeksOverride } : {}) },
     { enabled: open },
   );
 
@@ -70,11 +79,23 @@ export function RebookButton({ appointmentId, onRebooked }: {
     setWhen((prev) => prev || toLocalInput(suggestion.suggestedStart ?? suggestion.targetStart));
   }, [suggestion]);
 
+  /*
+   * Picking an interval clears the date, which lets the effect above
+   * refill it from the new suggestion. The alternative - adding weeks to
+   * whatever is in the box - would skip the server's clash check and
+   * cheerfully land the dog on top of another booking.
+   */
+  const chooseWeeks = (weeks: number) => {
+    setWeeksOverride(weeks);
+    setWhen("");
+  };
+
   const rebook = trpc.calendar.rebook.useMutation({
     onSuccess: (r) => {
       toast.success(r.dogs > 1 ? `Rebooked ${r.dogs} dogs` : "Rebooked");
       setOpen(false);
       setWhen("");
+      setWeeksOverride(null);
       utils.calendar.invalidate();
       onRebooked?.();
     },
@@ -87,7 +108,7 @@ export function RebookButton({ appointmentId, onRebooked }: {
         <CalendarPlus className="h-3.5 w-3.5" /> Rebook
       </Button>
 
-      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setWhen(""); }}>
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setWhen(""); setWeeksOverride(null); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Book the next visit</DialogTitle>
@@ -104,24 +125,82 @@ export function RebookButton({ appointmentId, onRebooked }: {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium" htmlFor="rebook-when">Date and time</label>
-                <Input
+                <DateTimeField
                   id="rebook-when"
-                  type="datetime-local"
+                  aria-label="Rebook"
                   className="h-9"
                   value={when}
-                  onChange={(e) => setWhen(e.target.value)}
+                  onChange={setWhen}
                 />
               </div>
 
               {suggestion && (
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  {/* Where the number came from, so a wrong one is
-                      obviously wrong rather than mysteriously wrong. */}
-                  {suggestion.intervalWeeks} weeks — {suggestion.reason}.
-                  {suggestion.shifted && " Moved off a clash in the groomer's day."}
-                  {!suggestion.suggestedStart &&
-                    " Nothing free near that date, so this is the target — check the diary."}
-                </p>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Quick jump
+                  </p>
+                  {/*
+                    * The quick jump, with the dog's own rhythm marked.
+                    *
+                    * Lauren, 03/11/2026: "look at their history and give a
+                    * recommendation based on this but can do a manual
+                    * override at any time." So the recommendation is a
+                    * starting point that is always visible, never a lock —
+                    * every chip is one click, and the date box underneath
+                    * still takes anything at all.
+                    */}
+                  {/* The sidebar's own Quick jump, in a grid of sevens so
+                      fourteen weeks is two tidy rows in a narrow dialog. */}
+                  <div className="grid grid-cols-7 gap-1">
+                    {rebookWeekOptions(suggestion.recommendedWeeks).map((weeks) => {
+                      const chosen = suggestion.intervalWeeks === weeks;
+                      const isRecommended = suggestion.recommendedWeeks === weeks;
+                      return (
+                        <button
+                          key={weeks}
+                          type="button"
+                          disabled={isFetching}
+                          onClick={() => chooseWeeks(weeks)}
+                          aria-pressed={chosen}
+                          aria-label={`${weeks} week${weeks === 1 ? "" : "s"}${isRecommended ? " (recommended)" : ""}`}
+                          title={isRecommended
+                            ? `${weeks} weeks — ${suggestion.recommendedReason}`
+                            : `${weeks} week${weeks === 1 ? "" : "s"} from this visit`}
+                          className={`relative rounded-md border py-1.5 text-[11px] font-semibold tabular-nums transition-colors disabled:opacity-50 ${
+                            chosen
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-transparent bg-muted text-foreground hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                          }`}
+                        >
+                          {weeks}
+                          {/* A dot, not a star in the label: the number has
+                              to stay the thing you read at a glance. */}
+                          {isRecommended && (
+                            <span
+                              aria-hidden
+                              className={`absolute right-1 top-1 h-1.5 w-1.5 rounded-full ${
+                                chosen ? "bg-primary-foreground" : "bg-primary"
+                              }`}
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    {/* Where the number came from, so a wrong one is
+                        obviously wrong rather than mysteriously wrong. */}
+                    {suggestion.intervalWeeks} weeks — {suggestion.reason}.
+                    {/* The advice stays readable even while overridden,
+                        which is the difference between an override and
+                        simply losing it. */}
+                    {suggestion.intervalSource === "manual" &&
+                      ` The dot is ${suggestion.recommendedWeeks} weeks — ${suggestion.recommendedReason}.`}
+                    {suggestion.shifted && " Moved off a clash in the groomer's day."}
+                    {!suggestion.suggestedStart &&
+                      " Nothing free near that date, so this is the target — check the diary."}
+                  </p>
+                </div>
               )}
 
               {suggestion && suggestion.dogs.length > 1 && (

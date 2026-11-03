@@ -48,7 +48,7 @@ import { buildOnlineBookingNotes } from "../shared/onlineBookingPreview";
 import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
 import { planMembershipSeries } from "../shared/membershipSeries";
 import { busyForStaff } from "./staffBusy";
-import { addWeeks, gapsBetween, rebookInterval } from "../shared/rebook";
+import { addWeeks, gapsBetween, manualInterval, rebookInterval } from "../shared/rebook";
 import { intervalWeeksForTier } from "../shared/membershipPackages";
 import { SERVICE_TYPES } from "../shared/serviceTypes";
 import { getLargeDogCapacityResult, isLargeDogFullGroom } from "../shared/onlineBookingLargeDogCapacity";
@@ -563,7 +563,17 @@ const calendarRouter = router({
    * would be a second thing to be wrong.
    */
   rebookSuggestion: operationalProcedure
-    .input(z.object({ tenantId: z.number().default(1), appointmentId: z.number() }))
+    .input(z.object({
+      tenantId: z.number().default(1),
+      appointmentId: z.number(),
+      /**
+       * Staff picking an interval themselves, overriding what the dog's
+       * history suggests. Capped at half a year: beyond that it is not a
+       * rebook, and an unbounded number would send the placement search
+       * walking the diary for a date nobody meant to ask for.
+       */
+      weeksOverride: z.number().int().min(1).max(26).optional(),
+    }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -634,10 +644,20 @@ const calendarRouter = router({
         .orderBy(desc(appointments.scheduledStart))
         .limit(6);
 
-      const interval = rebookInterval({
+      /*
+       * What the dog's own history says, computed even when staff have
+       * overridden it. The recommendation stays on screen beside their
+       * choice, so "usually about every 3 weeks" is still readable while
+       * they are trying 6 - which is the difference between an override
+       * and simply losing the advice.
+       */
+      const recommended = rebookInterval({
         membershipTierWeeks: membership ? intervalWeeksForTier(membership.tier) : null,
         recentGapWeeks: gapsBetween(history.map((h: any) => new Date(h.start))),
       });
+      const interval = input.weeksOverride
+        ? manualInterval(input.weeksOverride)
+        : recommended;
 
       const durationMinutes = Math.max(
         15,
@@ -670,6 +690,9 @@ const calendarRouter = router({
         intervalWeeks: interval.weeks,
         intervalSource: interval.source,
         reason: interval.reason,
+        /** What history suggests, whether or not it is what is being used. */
+        recommendedWeeks: recommended.weeks,
+        recommendedReason: recommended.reason,
         /** What was aimed at, before any shift off a clash. */
         targetStart: target.toISOString(),
         /** Where it actually fits, or null when nothing does. */

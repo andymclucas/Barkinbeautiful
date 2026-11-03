@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CalendarClock, Check, Clock3, Dog, Plus, Send, Trash2, X } from "lucide-react";
@@ -66,8 +67,8 @@ function OfferSlot({ onOffered }: { onOffered: () => void }) {
       <div className="mt-3 grid gap-3 sm:grid-cols-4">
         <div>
           <Label className="text-xs">Date</Label>
-          <Input className="mt-1 h-8" type="date" value={slot.date}
-            onChange={(e) => { setSlot((s) => ({ ...s, date: e.target.value })); setPicked([]); }} />
+          <DateField className="mt-1 h-8" value={slot.date}
+            onChange={next => { setSlot((s) => ({ ...s, date: next })); setPicked([]); }} />
         </div>
         <div>
           <Label className="text-xs">Time</Label>
@@ -232,13 +233,13 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             <div>
               <Label className="text-xs">From</Label>
-              <Input className="mt-1 h-8" type="date" value={form.earliestDate}
-                onChange={(e) => setForm((f) => ({ ...f, earliestDate: e.target.value }))} />
+              <DateField className="mt-1 h-8" value={form.earliestDate}
+                onChange={next => setForm((f) => ({ ...f, earliestDate: next }))} />
             </div>
             <div>
               <Label className="text-xs">Until</Label>
-              <Input className="mt-1 h-8" type="date" value={form.latestDate}
-                onChange={(e) => setForm((f) => ({ ...f, latestDate: e.target.value }))} />
+              <DateField className="mt-1 h-8" value={form.latestDate}
+                onChange={next => setForm((f) => ({ ...f, latestDate: next }))} />
             </div>
             <div>
               <Label className="text-xs">Time of day</Label>
