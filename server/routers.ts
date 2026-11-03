@@ -49,6 +49,7 @@ import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
 import { planMembershipSeries } from "../shared/membershipSeries";
 import { busyForStaff } from "./staffBusy";
 import { addWeeks, gapsBetween, manualInterval, rebookInterval } from "../shared/rebook";
+import { smsOptOutUpdate } from "../shared/smsOptOut";
 import { intervalWeeksForTier } from "../shared/membershipPackages";
 import { SERVICE_TYPES } from "../shared/serviceTypes";
 import { getLargeDogCapacityResult, isLargeDogFullGroom } from "../shared/onlineBookingLargeDogCapacity";
@@ -3980,6 +3981,25 @@ const clientsRouter = router({
       address: z.string().optional().nullable(),
       notes: z.string().optional().nullable(),
       referralSource: z.string().optional().nullable(),
+      /**
+       * Stop sending this client automated texts.
+       *
+       * Chris Roulstone, via Lauren, 03/11/2026: "he asked if he is on a
+       * reoccurring booking can he NOT get reminder texts. How do I turn
+       * off any texts to him."
+       *
+       * The field already existed and was already honoured - mass texts
+       * exclude it, and `decideBookingConfirmation` refuses on it - but
+       * the ONLY thing that could set it was the client replying STOP.
+       * All 10,113 clients had it unset, so a client who asked a human
+       * instead of texting a keyword could not be opted out at all.
+       *
+       * A boolean in, a timestamp stored. Keeping WHEN is what makes it
+       * answerable later whether somebody opted out before or after a
+       * particular send, and it is the same shape the STOP handler
+       * writes, so the two cannot disagree.
+       */
+      smsOptedOut: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -3993,6 +4013,19 @@ const clientsRouter = router({
       if (input.address !== undefined) updates.address = input.address;
       if (input.notes !== undefined) updates.notes = input.notes;
       if (input.referralSource !== undefined) updates.referralSource = input.referralSource;
+      if (input.smsOptedOut !== undefined) {
+        // The rule - and the trap about not restamping somebody who was
+        // already opted out - lives in shared/smsOptOut.ts with its tests.
+        const [existing] = await db
+          .select({ at: clients.smsOptedOutAt })
+          .from(clients)
+          .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, tenantId)))
+          .limit(1);
+        Object.assign(updates, smsOptOutUpdate({
+          requested: input.smsOptedOut,
+          current: existing?.at ?? null,
+        }));
+      }
       /* Scoped to the caller's own salon. This filtered on id alone, so
          an admin of one salon could edit another salon's client by id —
          harmless with one salon, not something to leave in place now

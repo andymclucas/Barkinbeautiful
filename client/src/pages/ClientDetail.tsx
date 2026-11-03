@@ -392,7 +392,7 @@ export default function ClientDetail() {
   const [portalAccountRevokeConfirm, setPortalAccountRevokeConfirm] = useState(false);
   const [contactForm, setContactForm] = useState({ name: "", phone: "", email: "", relationship: "" });
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
-  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "" });
+  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false });
   const updateClientDetails = trpc.clients.updateDetails.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -985,6 +985,7 @@ export default function ClientDetail() {
                     address: client.address ?? "",
                     notes: client.notes ?? "",
                     referralSource: client.referralSource ?? "",
+                    smsOptedOut: Boolean(client.smsOptedOutAt),
                   });
                   setEditDetailsOpen(true);
                 }}
@@ -1011,6 +1012,7 @@ export default function ClientDetail() {
                     address: client.address ?? "",
                     notes: client.notes ?? "",
                     referralSource: client.referralSource ?? "",
+                    smsOptedOut: Boolean(client.smsOptedOutAt),
                   });
                   setEditDetailsOpen(true);
                 }}
@@ -1049,6 +1051,46 @@ export default function ClientDetail() {
               <div>
                 <Label>Referral source</Label>
                 <Input value={editDetailsForm.referralSource} onChange={e => setEditDetailsForm(f => ({ ...f, referralSource: e.target.value }))} placeholder="e.g. Instagram, word of mouth" />
+              </div>
+              {/*
+                * Chris Roulstone, via Lauren, 03/11/2026: "he asked if he
+                * is on a reoccurring booking can he NOT get reminder
+                * texts. How do I turn off any texts to him."
+                *
+                * The field was already honoured everywhere that matters -
+                * mass texts exclude it, booking confirmations refuse on
+                * it - but until now only the client replying STOP could
+                * set it, so somebody who asked a person instead could not
+                * be opted out at all.
+                *
+                * The caption says what this does NOT cover on purpose. It
+                * stops automated sends; it cannot stop a groomer typing a
+                * message, and promising otherwise would be worse than
+                * saying nothing.
+                */}
+              <div className="rounded-lg border p-3">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                    checked={editDetailsForm.smsOptedOut}
+                    onChange={e => setEditDetailsForm(f => ({ ...f, smsOptedOut: e.target.checked }))}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">No automated texts</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Keeps them out of mass texts and booking confirmations. Staff can still
+                      text them by hand, and a reply to a missed call still goes out.
+                    </span>
+                    {client.smsOptedOutAt && (
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        Opted out {new Date(client.smsOptedOutAt).toLocaleDateString("en-AU", {
+                          timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric",
+                        })}
+                      </span>
+                    )}
+                  </span>
+                </label>
               </div>
               <div>
                 <Label>Notes</Label>
