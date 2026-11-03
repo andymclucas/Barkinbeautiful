@@ -585,6 +585,9 @@ export function WorkflowBoardTable({
                             onClick={readOnly ? undefined : () => {
                               const popup = {
                                 id: appt.id,
+                                // The dog, for the grooming-notes tab —
+                                // those are kept per pet, not per booking.
+                                petId: appt.petId ?? null,
                                 petName: appt.petName ?? "",
                                 petBreed: appt.petBreed ?? null,
                                 petAlertLevel: appt.petAlertLevel ?? null,
