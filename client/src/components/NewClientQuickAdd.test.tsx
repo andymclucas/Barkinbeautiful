@@ -21,6 +21,28 @@ import userEvent from "@testing-library/user-event";
  */
 const setupUser = () => userEvent.setup({ delay: null });
 
+/**
+ * ...and real headroom, because `delay: null` was not the whole story.
+ *
+ * These tests type through `user.type`, which dispatches a full event
+ * sequence per character and re-renders inside `act()` each time. The heaviest
+ * one here is 17 keystrokes and two clicks. That is a few hundred milliseconds
+ * on an idle machine and several seconds in a worker competing with the other
+ * two dozen jsdom files, and vitest's default budget is 5s.
+ *
+ * Measured on 03/11/2026: this file ran in 3.1s on four consecutive full-suite
+ * runs and 15-22s on four others, with nothing changed between them. At the
+ * high end a single test crosses 5s and fails on contention alone - so adding
+ * ANY further jsdom file makes it fail roughly one run in three, which is how
+ * `PetCodesPanel.test.tsx` surfaced it.
+ *
+ * The budget is what is wrong here, not the tests: they pass every time in
+ * isolation and there is no hang to find. A random failure is worse than a
+ * slow suite, because CLAUDE.md §7 promises the next person that any failure
+ * is real.
+ */
+vi.setConfig({ testTimeout: 30_000 });
+
 const createClient = vi.fn();
 const createPet = vi.fn();
 
