@@ -439,7 +439,14 @@ function ApptBlock({
      can't see unless I go through each appointment on the day to see if
      it's invoiced." Only a settled dog recolours — an unpaid one keeps
      its service colour, which is what makes a day readable to book. */
-  const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
+  /* `membershipId`, not `clientHasMembership`. The client holding a
+     plan does not mean THIS groom is on it — 128 of 713 upcoming
+     bookings are in exactly that state, and they WILL be charged. A
+     MEMBER stamp on one of those would be a lie that costs money. */
+  const pay = appointmentPaymentDisplay((appt as any).paymentStatus, {
+    isCancelled,
+    onMembership: appt.membershipId !== null && appt.membershipId !== undefined,
+  });
 
   const block = (
     <div
