@@ -479,7 +479,9 @@ function ApptBlock({
             {density.showFamilyLine && <div className="mt-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
             {!compact && (
               <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
-                {fmtTime(new Date(appt.scheduledStart))} – {fmtTime(new Date(appt.scheduledEnd))}
+                {density.timeFormat === "range"
+                  ? `${fmtTime(new Date(appt.scheduledStart))} – ${fmtTime(new Date(appt.scheduledEnd))}`
+                  : fmtTime(new Date(appt.scheduledStart))}
               </div>
             )}
             {showService && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
@@ -494,7 +496,9 @@ function ApptBlock({
             {!compact && (
               <>
                 <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
-                  {fmtTime(new Date(appt.scheduledStart))} – {fmtTime(new Date(appt.scheduledEnd))}
+                  {density.timeFormat === "range"
+                    ? `${fmtTime(new Date(appt.scheduledStart))} – ${fmtTime(new Date(appt.scheduledEnd))}`
+                    : fmtTime(new Date(appt.scheduledStart))}
                 </div>
                 {showService && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
                 {density.showNextVisit && appt.nextAppointmentDate && (

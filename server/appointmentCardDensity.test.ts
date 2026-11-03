@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  appointmentCardDensity, NAME_ONLY_WIDTH, SERVICE_BADGE_WIDTH,
+  appointmentCardDensity, NAME_ONLY_WIDTH, SERVICE_BADGE_WIDTH, START_TIME_ONLY_WIDTH,
 } from "@shared/appointmentCardDensity";
 
 /** A 94px staff column — the mobile floor — split between two dogs. */
@@ -32,24 +32,33 @@ describe("appointmentCardDensity", () => {
   });
 
   /**
-   * 94px gives an ~73px content box and the time range needs 93, so it
-   * would truncate mid-range. Measured on the real board.
+   * 94px cannot hold "8:30 am - 10:00 am" (93px of content box needed,
+   * 73 available) but holds "8:30am" easily. Dropping the time here was
+   * a regression on DESKTOP too: two dogs overlapping in a 200px column
+   * get 100px each, and those cards lost their times entirely.
    */
-  it("still refuses the time in a solo phone column", () => {
+  it("shortens the time rather than dropping it in a narrow column", () => {
     const d = appointmentCardDensity(PHONE_SOLO);
-    expect(d.showTime).toBe(false);
+    expect(d.timeFormat).toBe("start");
+    expect(d.showTime).toBe(true);
     expect(d.showService).toBe(false);
   });
 
-  it("affords the time but not the service badge at a middling width", () => {
+  it("drops the time only when even a start time will not fit", () => {
+    expect(appointmentCardDensity(PHONE_SHARED).timeFormat).toBe("none");
+    expect(appointmentCardDensity({ widthPx: START_TIME_ONLY_WIDTH, heightPx: 90 }).timeFormat).toBe("start");
+    expect(appointmentCardDensity({ widthPx: START_TIME_ONLY_WIDTH - 1, heightPx: 90 }).timeFormat).toBe("none");
+  });
+
+  it("affords the full range but not the service badge at a middling width", () => {
     const d = appointmentCardDensity(MIDDLING);
-    expect(d.showTime).toBe(true);
+    expect(d.timeFormat).toBe("range");
     expect(d.showService).toBe(false);
   });
 
   it("draws everything when there is real room", () => {
     const d = appointmentCardDensity(DESKTOP);
-    expect(d.showTime).toBe(true);
+    expect(d.timeFormat).toBe("range");
     expect(d.showService).toBe(true);
     expect(d.showFamilyLine).toBe(true);
     expect(d.showNextVisit).toBe(true);
@@ -69,8 +78,8 @@ describe("appointmentCardDensity", () => {
   });
 
   it("is exact at the boundaries rather than one pixel out", () => {
-    expect(appointmentCardDensity({ widthPx: NAME_ONLY_WIDTH, heightPx: 90 }).showTime).toBe(true);
-    expect(appointmentCardDensity({ widthPx: NAME_ONLY_WIDTH - 1, heightPx: 90 }).showTime).toBe(false);
+    expect(appointmentCardDensity({ widthPx: NAME_ONLY_WIDTH, heightPx: 90 }).timeFormat).toBe("range");
+    expect(appointmentCardDensity({ widthPx: NAME_ONLY_WIDTH - 1, heightPx: 90 }).timeFormat).toBe("start");
     expect(appointmentCardDensity({ widthPx: SERVICE_BADGE_WIDTH, heightPx: 90 }).showService).toBe(true);
     expect(appointmentCardDensity({ widthPx: SERVICE_BADGE_WIDTH - 1, heightPx: 90 }).showService).toBe(false);
   });

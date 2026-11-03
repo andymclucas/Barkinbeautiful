@@ -19,9 +19,20 @@
  * dogs: a 94px staff column with two dogs side by side gives each 47.
  */
 
+/**
+ * How to draw the time, which is NOT a yes/no question.
+ *
+ * "8:30 am – 10:00 am" needs 93px of content box. "8:30am" needs about
+ * 45. Dropping the time entirely because the RANGE will not fit throws
+ * away the most useful thing on the card to save a format decision.
+ */
+export type TimeFormat = "range" | "start" | "none";
+
 export type CardDensity = {
   /** The dog's name. Always drawn; the card is pointless without it. */
   showName: true;
+  timeFormat: TimeFormat;
+  /** True when any time at all is drawn. */
   showTime: boolean;
   showService: boolean;
   /** "3 dogs · family booking". */
@@ -48,6 +59,14 @@ export type CardDensity = {
 export const NAME_ONLY_WIDTH = 120;
 
 /**
+ * Below this not even a bare start time fits, so the card is a coloured
+ * block with a name in it.
+ *
+ * "8:30am" at 10px is about 45px, plus the 21px of padding.
+ */
+export const START_TIME_ONLY_WIDTH = 70;
+
+/**
  * The service badge does not truncate, it WRAPS — which is where "CL
  * GR" in the photo came from. It is now nowrap at the call site, so
  * this is the width at which the whole word fits rather than the width
@@ -67,11 +86,29 @@ export function appointmentCardDensity(input: {
   heightPx: number;
 }): CardDensity {
   const roomyEnoughForASecondLine = input.heightPx >= SECOND_LINE_HEIGHT;
-  const wideEnoughForWords = input.widthPx >= NAME_ONLY_WIDTH;
 
-  const showTime = roomyEnoughForASecondLine && wideEnoughForWords;
+  /*
+   * The regression this replaces: a narrow card used to drop the time
+   * altogether, so an overlapping booking on a DESKTOP column — two
+   * dogs sharing 200px gives each 100 — showed a name and nothing
+   * else. The information was there before and vanished.
+   *
+   * The original intent, written in calendarGridSizing, was always
+   * "name and the start time, with the service carried by the colour".
+   * That is what a narrow card gets.
+   */
+  const timeFormat: TimeFormat = !roomyEnoughForASecondLine
+    ? "none"
+    : input.widthPx >= NAME_ONLY_WIDTH
+      ? "range"
+      : input.widthPx >= START_TIME_ONLY_WIDTH
+        ? "start"
+        : "none";
+  const showTime = timeFormat !== "none";
+
   return {
     showName: true,
+    timeFormat,
     showTime,
     showService:
       input.heightPx >= SERVICE_BADGE_HEIGHT && input.widthPx >= SERVICE_BADGE_WIDTH,
