@@ -95,3 +95,42 @@ describe("the festive card pattern", () => {
     }
   });
 });
+
+describe("the festive snow colour", () => {
+  const css = readFileSync(new URL("../client/src/index.css", import.meta.url), "utf8");
+  const snow = css.slice(
+    css.indexOf("── Christmas snow"),
+    css.indexOf("── Christmas card stock"),
+  );
+
+  it("gives light and dark their own flake colour", () => {
+    // White snow on a white page is not snow, it is nothing. Light mode
+    // gets a blue-grey, which is how snow is drawn against a pale sky for
+    // exactly this reason.
+    expect(snow).toMatch(/\.festive\s*\{[^}]*--festive-flake:/);
+    expect(snow).toMatch(/\.dark\.festive\s*\{[^}]*--festive-flake:/);
+  });
+
+  it("does not leave the light-mode flake white", () => {
+    const light = /\.festive\s*\{[^}]*--festive-flake:\s*(#[0-9a-fA-F]{3,6})/.exec(snow);
+    expect(light).not.toBeNull();
+    expect(light![1].toLowerCase()).not.toMatch(/^#f{3,6}$/);
+  });
+
+  it("animates transform and opacity only, so it composites on the GPU", () => {
+    // Animating `top` would re-lay-out the page forty times a frame on
+    // the machine driving the salon TV.
+    expect(snow).toContain("translate3d");
+    expect(snow).not.toMatch(/@keyframes festive-snowfall\s*\{[^}]*\btop:/);
+  });
+
+  it("is taken down entirely under prefers-reduced-motion", () => {
+    // Full-screen falling movement is exactly what that setting exists to
+    // avoid, and there is no information in it to preserve.
+    const at = snow.indexOf("prefers-reduced-motion");
+    expect(at).toBeGreaterThan(-1);
+    const block = snow.slice(at);
+    expect(block).toContain(".festive-snow");
+    expect(block).toMatch(/display:\s*none/);
+  });
+});
