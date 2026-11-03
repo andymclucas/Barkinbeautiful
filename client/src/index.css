@@ -666,12 +666,34 @@ button[data-slot="button"]:not(:disabled):hover {
     transform: translate3d(var(--drift, 0px), 110vh, 0) rotate(360deg);
   }
 }
+/*
+ * The flake colour is per MODE, because white snow on a white page is
+ * not snow, it is nothing.
+ *
+ * The first version was `bg-white` for both. On the dark sidebar it read
+ * perfectly; across the rest of a light-mode screen - which is most of
+ * it - the flakes were invisible. Checked on production before changing
+ * it: forty flakes genuinely falling, and visible against the sidebar
+ * and nowhere else.
+ *
+ * Light mode gets a soft blue-grey, which is how snow is drawn against a
+ * pale sky for exactly this reason. Dark mode keeps white.
+ */
+.festive {
+  --festive-flake: #8fb8dd;
+  --festive-flake-glow: rgba(110, 155, 200, 0.4);
+}
+.dark.festive {
+  --festive-flake: #ffffff;
+  --festive-flake-glow: rgba(255, 255, 255, 0.55);
+}
 .festive-snowflake {
   animation-name: festive-snowfall;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
-  /* Soft edges, so a 5px white dot reads as a flake and not a pixel. */
-  box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.55);
+  background-color: var(--festive-flake);
+  /* Soft edges, so a 5px dot reads as a flake and not a stray pixel. */
+  box-shadow: 0 0 4px 1px var(--festive-flake-glow);
 }
 @media (prefers-reduced-motion: reduce) {
   /*

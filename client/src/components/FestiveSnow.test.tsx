@@ -79,3 +79,29 @@ describe("FestiveSnow", () => {
     }
   });
 });
+
+describe("FestiveSnow — being visible", () => {
+  it("does not hardcode white, which is invisible on a light page", () => {
+    /*
+     * The first version used `bg-white` for both modes. On the dark
+     * sidebar it read perfectly; across the rest of a light-mode screen -
+     * which is most of it - there was nothing to see. Checked on
+     * production before changing it: forty flakes genuinely falling, and
+     * visible against the sidebar and nowhere else.
+     *
+     * The colour now comes from a per-mode custom property in index.css,
+     * so this asserts the component does NOT pin one.
+     */
+    render(<FestiveSnow count={4} />);
+    for (const f of flakes()) {
+      expect(f.className).not.toContain("bg-white");
+      expect(f.style.backgroundColor).toBe("");
+    }
+  });
+
+  it("still carries the class the stylesheet colours", () => {
+    render(<FestiveSnow count={4} />);
+    expect(flakes()).toHaveLength(4);
+    for (const f of flakes()) expect(f.className).toContain("festive-snowflake");
+  });
+});

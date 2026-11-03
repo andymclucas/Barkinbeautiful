@@ -68,7 +68,10 @@ export function FestiveSnow({ count = FLAKE_COUNT }: { count?: number }) {
       {flakes.map((f, i) => (
         <span
           key={i}
-          className="festive-snowflake absolute top-0 rounded-full bg-white"
+          /* Colour comes from the stylesheet, per light/dark - see
+                     index.css. A `bg-white` here was invisible against a
+                     light-mode page, which is most of the screen. */
+          className="festive-snowflake absolute top-0 rounded-full"
           style={{
             left: `${f.left}%`,
             width: `${f.size}px`,
