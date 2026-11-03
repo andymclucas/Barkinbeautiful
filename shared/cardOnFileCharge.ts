@@ -21,6 +21,8 @@ export type CardOnFile = {
   stripeDefaultPaymentMethodId?: string | null;
   stripeCardExpMonth?: number | null;
   stripeCardExpYear?: number | null;
+  /** "visa", "mastercard" — or "link" for a wallet rather than a card. */
+  stripeCardBrand?: string | null;
 };
 
 export type CardChargeState =
@@ -90,6 +92,25 @@ export function cardChargeAvailability(input: {
   }
   if (input.owingCents <= 0) {
     return { state: "nothing_owing", action: "Charge card on file", hint: "Nothing is owing on this booking." };
+  }
+  /*
+   * A Link wallet is not a card, and the difference matters here.
+   *
+   * Stripe's card field offers Link autofill, and accepting it saves a
+   * Link payment method. Both methods in this database arrived that
+   * way, and the first live charge against one declined.
+   *
+   * It is NOT asserted here that Link can never be charged off-session
+   * — that is one decline, not a proof. The hint says what the method
+   * is and what to do if it fails, both of which are certain, and the
+   * button still works.
+   */
+  if ((input.card?.stripeCardBrand ?? "").trim().toLowerCase() === "link") {
+    return {
+      state: "chargeable",
+      action: "Charge card on file",
+      hint: "This is a Link wallet rather than a card. If it is declined, add a card instead.",
+    };
   }
   return { state: "chargeable", action: "Charge card on file", hint: null };
 }

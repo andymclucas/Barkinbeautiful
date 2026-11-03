@@ -35,12 +35,23 @@ function CommandDialog({
   children,
   className,
   showCloseButton = true,
+  /**
+   * Passed through to cmdk's <Command>.
+   *
+   * Added 03/11/2026 for the global search, where the SERVER decides
+   * what matches and in what order. cmdk otherwise filters items by
+   * their `value`, so a result matched on a phone number or an address
+   * — text that is not in the visible row — gets filtered straight back
+   * out, and a stable id as the value filters out everything.
+   */
+  shouldFilter,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string;
   description?: string;
   className?: string;
   showCloseButton?: boolean;
+  shouldFilter?: boolean;
 }) {
   return (
     <Dialog {...props}>
@@ -48,11 +59,20 @@ function CommandDialog({
         <DialogTitle>{title}</DialogTitle>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
+      {/*
+        * overflow-hidden belongs on the Command, NOT on the DialogContent.
+        *
+        * The dialog's close button is deliberately given a negative margin
+        * so it sits over the corner, and clipping the dialog sliced it in
+        * half — a semicircular X hanging off the edge of the search
+        * palette. The rounded corners that overflow-hidden was there for
+        * belong to the command list, so it goes there instead.
+        */}
       <DialogContent
-        className={cn("overflow-hidden p-0", className)}
+        className={cn("p-0", className)}
         showCloseButton={showCloseButton}
       >
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command shouldFilter={shouldFilter} className="overflow-hidden rounded-xl [&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children}
         </Command>
       </DialogContent>

@@ -18,6 +18,29 @@ describe("cardChargeAvailability", () => {
     expect(a.hint).toBeNull();
   });
 
+  /**
+   * Both payment methods in the real database are Link wallets, and the
+   * first live charge against one declined. The button stays, because
+   * one decline is not proof; the hint says what it is and what to do.
+   */
+  it("says so when the saved method is a Link wallet rather than a card", () => {
+    const a = cardChargeAvailability({
+      card: { ...SAVED, stripeCardBrand: "link" },
+      owingCents: 100, stripeConfigured: true, now: NOW,
+    });
+    expect(a.state).toBe("chargeable");
+    expect(a.hint).toMatch(/Link wallet/i);
+    expect(a.hint).toMatch(/add a card instead/i);
+  });
+
+  it("says nothing extra about an ordinary card", () => {
+    const a = cardChargeAvailability({
+      card: { ...SAVED, stripeCardBrand: "visa" },
+      owingCents: 100, stripeConfigured: true, now: NOW,
+    });
+    expect(a.hint).toBeNull();
+  });
+
   it("offers to add a card when there is none", () => {
     const a = cardChargeAvailability({ card: null, owingCents: 21300, stripeConfigured: true, now: NOW });
     expect(a.state).toBe("needs_card");

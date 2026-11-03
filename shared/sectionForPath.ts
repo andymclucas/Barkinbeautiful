@@ -98,6 +98,22 @@ export const UNGATED_NAMESPACES: readonly string[] = [
   "sidebarCounts",
   "system",
   /**
+   * `search.*` — the header search box, added 03/11/2026.
+   *
+   * Ungated rather than tied to a section, for the same reason as
+   * `presence` below: the people who most need to find a dog quickly
+   * are the bathers and groomers whose rights are narrowest, and
+   * gating it on `clients` would leave them with a search box that
+   * found nothing.
+   *
+   * It exposes nothing new. Every row it returns already comes back
+   * from clients.list, pets.listByClient or calendar.searchAppointments,
+   * all three of which are operationalProcedure today — this is the
+   * same data through one box instead of three screens. It is read
+   * only, and it is tenant-scoped like everything else.
+   */
+  "search",
+  /**
    * `presence.*` — saying "I have this open" is not an edit, and the
    * people who most need to see that somebody else is already in a dog's
    * appointment are the bathers and groomers whose rights are narrowest.

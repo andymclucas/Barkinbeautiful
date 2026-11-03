@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { CreditCard, Link2, Loader2, ShieldCheck, TriangleAlert, Trash2, Copy, Check, Mail } from "lucide-react";
+import { CreditCard, Keyboard, Link2, Loader2, ShieldCheck, TriangleAlert, Trash2, Copy, Check, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { CardEntryDialog } from "@/components/CardEntryDialog";
 
 /**
  * The card a client has on file, and how to get one.
@@ -19,6 +20,10 @@ import { Button } from "@/components/ui/button";
 export function StripeCardPanel({ clientId }: { clientId: number }) {
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [entering, setEntering] = useState(false);
+  // Whether this deployment can collect a card in place at all; without
+  // a publishable key the two link options are still the whole story.
+  const { data: entry } = trpc.payments.cardEntryConfig.useQuery();
   const utils = trpc.useUtils();
 
   const { data: config } = trpc.stripeCards.configuration.useQuery();
@@ -88,6 +93,17 @@ export function StripeCardPanel({ clientId }: { clientId: number }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Andy, 03/11/2026: "the current two options are fine, but
+              just the option to manually add a card without having to
+              get a text to auth etc." First, because a client standing
+              at the counter is the commonest case; the link and the
+              email are for one who is not. */}
+          {entry?.inPlace && (
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEntering(true)}>
+              <Keyboard className="h-3.5 w-3.5" />
+              {card?.description ? "Replace card" : "Add card details"}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -155,6 +171,12 @@ export function StripeCardPanel({ clientId }: { clientId: number }) {
           </div>
         </div>
       )}
+      <CardEntryDialog
+        clientId={clientId}
+        open={entering}
+        onOpenChange={setEntering}
+        onSaved={() => utils.stripeCards.cardStatus.invalidate({ clientId })}
+      />
     </div>
   );
 }

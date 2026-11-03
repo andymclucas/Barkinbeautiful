@@ -43,6 +43,7 @@ import {
 } from "@shared/calendarStaffSelection";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getDayCalendarGridSizing } from "@/lib/calendarGridSizing";
+import { appointmentCardDensity } from "@shared/appointmentCardDensity";
 import { buildAestDragSchedule } from "@/lib/calendarDragSchedule";
 import { GROOM_CONDITION_LABELS, GROOM_RATING_LABELS } from "@shared/groomingCard";
 import { arrivalLabel, hasArrivedOnSite } from "@shared/appointmentArrival";
@@ -90,6 +91,7 @@ import { CalendarSidebar } from "@/components/CalendarSidebar";
 import { PetPhotoQuickAdd } from "@/components/PetPhotoQuickAdd";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
 import { PetCodesPanel } from "@/components/PetCodesPanel";
+import { RebookButton } from "@/components/RebookButton";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
@@ -129,6 +131,22 @@ import { EmailInvoiceButton } from "@/components/EmailInvoiceButton";
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7am–7pm (13 rows)
 const HOUR_HEIGHT = 72; // px per hour
 const TIME_COL_W = 52; // px for the time gutter
+
+/** Before the board is measured, assume the readable desktop width. */
+const READABLE_COLUMN_FALLBACK = 320;
+
+/** For a card too narrow for the full name. "Classic" vs "Styled" is
+    the distinction a groomer actually needs at a glance. */
+const SERVICE_LABELS_SHORT: Record<string, string> = {
+  classic_groom: "Classic",
+  styled_groom:  "Styled",
+  bath_only:     "Bath",
+  fft:           "FFT",
+  nail_trim:     "Nails",
+  daycare:       "Daycare",
+  deshed:        "Deshed",
+  other:         "Other",
+};
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom",
@@ -357,11 +375,18 @@ function ApptBlock({
   onDragStart,
   onDragEnd,
   siblings,
+  columnWidth,
 }: {
   appt: Appt;
   col: number;
   totalCols: number;
   containerHeight: number;
+  /**
+   * The staff column's width in CSS pixels. Needed because density has
+   * to know how much ROOM the card gets, and height alone said a long
+   * booking in a 47px column was roomy.
+   */
+  columnWidth?: number;
   onClick: () => void;
   onDragStart?: (e: React.DragEvent, appt: Appt) => void;
   onDragEnd?: () => void;
@@ -377,8 +402,17 @@ function ApptBlock({
   const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
   const widthPct  = 100 / totalCols;
   const leftPct   = col * widthPct;
-  const compact   = height < 44;
-  const showService = height >= 58;
+  /*
+   * Width as well as height. The card's own width is the column split
+   * between however many dogs overlap here — a 94px column with two
+   * dogs gives each 47, which is where "CL GR" and "8." came from.
+   */
+  const density = appointmentCardDensity({
+    widthPx: (columnWidth ?? READABLE_COLUMN_FALLBACK) * (widthPct / 100),
+    heightPx: height,
+  });
+  const compact = !density.showTime;
+  const showService = density.showService;
   const isCancelled = isCancelledAppointment(appt);
   const canDrag = canDragAppointment(appt, Boolean(onDragStart));
 
@@ -455,13 +489,15 @@ function ApptBlock({
               </div>
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
             </div>
-            {!compact && <div className="mt-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
+            {density.showFamilyLine && <div className="mt-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
             {!compact && (
               <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
-                {fmtTime(new Date(appt.scheduledStart))} – {fmtTime(new Date(appt.scheduledEnd))}
+                {density.timeFormat === "range"
+                  ? `${fmtTime(new Date(appt.scheduledStart))} – ${fmtTime(new Date(appt.scheduledEnd))}`
+                  : fmtTime(new Date(appt.scheduledStart))}
               </div>
             )}
-            {showService && <div className="mt-1 inline-flex max-w-full rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
+            {density.serviceFormat !== "none" && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
           </>
         ) : (
           <>
@@ -473,10 +509,12 @@ function ApptBlock({
             {!compact && (
               <>
                 <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
-                  {fmtTime(new Date(appt.scheduledStart))} – {fmtTime(new Date(appt.scheduledEnd))}
+                  {density.timeFormat === "range"
+                    ? `${fmtTime(new Date(appt.scheduledStart))} – ${fmtTime(new Date(appt.scheduledEnd))}`
+                    : fmtTime(new Date(appt.scheduledStart))}
                 </div>
-                {showService && <div className="mt-1 inline-flex max-w-full rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
-                {appt.nextAppointmentDate && (
+                {density.serviceFormat !== "none" && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
+                {density.showNextVisit && appt.nextAppointmentDate && (
                   <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: svc.border, opacity: 0.9 }}>
                     Next: {new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
                   </div>
@@ -2597,11 +2635,12 @@ export default function Calendar() {
           {/* Columns fit the measured board width, down to a readable floor;
               only below that floor does the board scroll sideways. */}
           {(() => {
-            const { totalWidth, gridTemplateColumns: colTemplate } = getDayCalendarGridSizing(
-              cols.length,
-              TIME_COL_W,
-              { availableWidth: boardWidth },
-            );
+            const { totalWidth, gridTemplateColumns: colTemplate, staffColumnWidth } =
+              getDayCalendarGridSizing(
+                cols.length,
+                TIME_COL_W,
+                { availableWidth: boardWidth },
+              );
             // A flex COLUMN that may shrink vertically. This used to be a plain
             // block with shrink-0, which broke the day view's vertical scroll two
             // ways: a block gives no flex context, so flex-1 on the grid body
@@ -2844,6 +2883,7 @@ export default function Calendar() {
                         col={col}
                         totalCols={totalCols}
                         containerHeight={GRID_HEIGHT}
+                        columnWidth={staffColumnWidth}
                         onClick={() => openEdit(appt as Appt)}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
@@ -2907,7 +2947,11 @@ export default function Calendar() {
       <div className="flex min-h-0 flex-col gap-4 lg:h-[calc(100dvh-6.5rem)]">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/90 bg-card/70 px-3 py-3 shadow-lg shadow-[color-mix(in_oklch,var(--brand-primary)_8%,transparent)] backdrop-blur">
-          <div className="flex items-center gap-2">
+          {/* flex-wrap and min-w-0: on a phone this row is about 500px of
+              controls in 340px of space, and without wrapping the date
+              label and the appointment-count pill drew on top of each
+              other. Reported from a photo of the board, 03/11/2026. */}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Button variant="outline" size="icon" className="brand-lift bg-card/80" onClick={() => viewMode === "week" ? navigateWeek(-1) : navigateDay(-1)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -2920,7 +2964,7 @@ export default function Calendar() {
                 {/* Only below lg. At lg and up the sidebar carries a permanent
                     month, and a second one floating on top of it overlaps the
                     rail and reads as two calendars disagreeing. */}
-                <button className="brand-lift ml-1 flex items-center gap-2 rounded-lg px-2 py-1.5 text-base font-bold transition-colors hover:bg-primary/10 hover:text-primary lg:hidden">
+                <button className="brand-lift ml-1 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-base font-bold transition-colors hover:bg-primary/10 hover:text-primary lg:hidden">
                   <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
                   {weekLabel}
                 </button>
@@ -2946,7 +2990,7 @@ export default function Calendar() {
               <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
               {weekLabel}
             </span>
-            <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+            <span className="shrink-0 whitespace-nowrap rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
               {sidebarSummary.totalAppointments} appointment{sidebarSummary.totalAppointments === 1 ? "" : "s"}
               {/* Named rather than silently subtracted. A cancelled dog
                   is still drawn on the board, so a count that quietly
@@ -4556,6 +4600,12 @@ export default function Calendar() {
                   >
                     <Trash2 className="h-4 w-4" /> Delete booking
                   </Button>
+                  {/* Lauren, 03/11/2026: book the next visit from the one
+                      in front of you, rather than looking the client up
+                      again. Beside the other booking-level actions, not
+                      in the payment row — it is about the diary, not the
+                      till. */}
+                  <RebookButton appointmentId={editAppt.id} />
                   {editSiblings.length > 0 && (() => {
                     const allPets = [editAppt, ...editSiblings];
                     const allHavePrices = allPets.every(p => {

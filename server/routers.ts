@@ -46,6 +46,10 @@ import { notifyOnlineBooking } from "./onlineBookingNotify";
 import { getPetWeightBand, isEligibleOnlineBookingService } from "../shared/onlineBookingWeightEligibility";
 import { buildOnlineBookingNotes } from "../shared/onlineBookingPreview";
 import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
+import { planMembershipSeries } from "../shared/membershipSeries";
+import { busyForStaff } from "./staffBusy";
+import { addWeeks, gapsBetween, rebookInterval } from "../shared/rebook";
+import { intervalWeeksForTier } from "../shared/membershipPackages";
 import { SERVICE_TYPES } from "../shared/serviceTypes";
 import { getLargeDogCapacityResult, isLargeDogFullGroom } from "../shared/onlineBookingLargeDogCapacity";
 import { sendSms, buildAppointmentReminderSms, buildPetTrackerSms, buildReadyForPickupSms, buildMembershipPaymentFailedSms, buildCustomSms } from "./sms";
@@ -128,6 +132,7 @@ import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
 import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
 import { presenceRouter } from "./routers/presence";
 import { petCodesRouter } from "./routers/petCodes";
+import { searchRouter } from "./routers/search";
 import { parsePetCodes } from "../shared/petCodes";
 import { buildPassingReview, describePassingReview, type PassingReview } from "../shared/petPassingReview";
 import { canDeletePet } from "../shared/petDeletion";
@@ -539,6 +544,276 @@ const calendarRouter = router({
           ? (input.reason ?? "").trim() || null
           : (validated && validated.ok ? validated.reason : null),
       };
+    }),
+
+  /**
+   * What the next visit should look like, without booking it.
+   *
+   * Lauren, 03/11/2026: "a rebook button.. to schedule from today's
+   * booking and make one jumping ahead in time. Instead of manually
+   * going in and asking the clients again their name."
+   *
+   * Everything comes off the booking already on screen: the dogs, the
+   * groomer, the service, the length. The only open question is which
+   * day, and the cadence answers it — membership first, then the dog's
+   * own rhythm, then the house six weeks.
+   *
+   * Placement reuses planMembershipSeries, which already knows how to
+   * shift off a clash and is already tested. A second placement rule
+   * would be a second thing to be wrong.
+   */
+  rebookSuggestion: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), appointmentId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      const tenantId = tenantOf(ctx, input);
+
+      const [source] = await db
+        .select({
+          id: appointments.id,
+          clientId: appointments.clientId,
+          petId: appointments.petId,
+          staffId: appointments.staffId,
+          serviceType: appointments.serviceType,
+          sessionId: appointments.sessionId,
+          scheduledStart: appointments.scheduledStart,
+          scheduledEnd: appointments.scheduledEnd,
+        })
+        .from(appointments)
+        .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, tenantId)))
+        .limit(1);
+      if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
+
+      // Every dog on the booking, not just the one clicked.
+      const siblings = source.sessionId
+        ? await db
+            .select({
+              id: appointments.id, petId: appointments.petId, staffId: appointments.staffId,
+              serviceType: appointments.serviceType, price: appointments.price,
+              scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd,
+              petName: pets.name,
+            })
+            .from(appointments)
+            .leftJoin(pets, eq(pets.id, appointments.petId))
+            .where(and(
+              eq(appointments.tenantId, tenantId),
+              eq(appointments.sessionId, source.sessionId),
+            ))
+        : await db
+            .select({
+              id: appointments.id, petId: appointments.petId, staffId: appointments.staffId,
+              serviceType: appointments.serviceType, price: appointments.price,
+              scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd,
+              petName: pets.name,
+            })
+            .from(appointments)
+            .leftJoin(pets, eq(pets.id, appointments.petId))
+            .where(eq(appointments.id, source.id));
+
+      // Cadence: the membership they pay for, else what this dog does.
+      const [membership] = await db
+        .select({ tier: memberships.tier })
+        .from(memberships)
+        .where(and(
+          eq(memberships.tenantId, tenantId),
+          eq(memberships.clientId, source.clientId),
+          eq(memberships.status, "active"),
+        ))
+        .limit(1);
+
+      const history = await db
+        .select({ start: appointments.scheduledStart })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.petId, source.petId),
+          notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+        ))
+        .orderBy(desc(appointments.scheduledStart))
+        .limit(6);
+
+      const interval = rebookInterval({
+        membershipTierWeeks: membership ? intervalWeeksForTier(membership.tier) : null,
+        recentGapWeeks: gapsBetween(history.map((h: any) => new Date(h.start))),
+      });
+
+      const durationMinutes = Math.max(
+        15,
+        Math.round(
+          (new Date(source.scheduledEnd).getTime() - new Date(source.scheduledStart).getTime()) / 60000,
+        ),
+      );
+      const target = addWeeks(new Date(source.scheduledStart), interval.weeks);
+
+      // Only shift around the groomer actually named. An unassigned
+      // booking has nothing to clash with, which is how the diary
+      // already treats one.
+      const busy = source.staffId
+        ? await busyForStaff(db, tenantId, source.staffId,
+            new Date(target.getTime() - 14 * 86_400_000),
+            new Date(target.getTime() + 14 * 86_400_000))
+        : [];
+
+      const plan = planMembershipSeries({
+        firstStart: target,
+        durationMinutes,
+        intervalWeeks: interval.weeks,
+        occurrenceCount: 1,
+        busy,
+        slotsForDate: buildOnlineBookingSlotStarts,
+      });
+
+      const placed = plan.occurrences[0]?.start ?? null;
+      return {
+        intervalWeeks: interval.weeks,
+        intervalSource: interval.source,
+        reason: interval.reason,
+        /** What was aimed at, before any shift off a clash. */
+        targetStart: target.toISOString(),
+        /** Where it actually fits, or null when nothing does. */
+        suggestedStart: placed ? new Date(placed).toISOString() : null,
+        shifted: Boolean(placed && new Date(placed).getTime() !== target.getTime()),
+        durationMinutes,
+        staffId: source.staffId,
+        dogs: siblings.map((s: any) => ({
+          appointmentId: s.id, petId: s.petId, petName: s.petName,
+          serviceType: s.serviceType, price: s.price, staffId: s.staffId,
+          durationMinutes: Math.max(15, Math.round(
+            (new Date(s.scheduledEnd).getTime() - new Date(s.scheduledStart).getTime()) / 60000)),
+        })),
+      };
+    }),
+
+  /**
+   * Book the next visit for every dog on this booking.
+   *
+   * Copies what the salon already decided — service, groomer, length
+   * and price, per dog, from that dog's own row rather than the one
+   * that was clicked. Two dogs on one booking routinely have different
+   * services and different groomers, and cloning the clicked dog onto
+   * its sibling is the exact mistake the MoeGo importer had to be
+   * taught not to make.
+   *
+   * Price is copied rather than re-derived. "Same again" is what the
+   * button means, and a membership dog's row already carries 0.00, so
+   * that carries across correctly too.
+   */
+  rebook: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      appointmentId: z.number(),
+      /** ISO instant. The browser sends what the staff member confirmed. */
+      start: z.string().min(10),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      const tenantId = tenantOf(ctx, input);
+
+      const [source] = await db
+        .select({
+          id: appointments.id, clientId: appointments.clientId,
+          sessionId: appointments.sessionId, scheduledStart: appointments.scheduledStart,
+        })
+        .from(appointments)
+        .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, tenantId)))
+        .limit(1);
+      if (!source) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
+
+      const siblings = await db
+        .select({
+          id: appointments.id, petId: appointments.petId, staffId: appointments.staffId,
+          serviceType: appointments.serviceType, price: appointments.price,
+          scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd,
+        })
+        .from(appointments)
+        .where(source.sessionId
+          ? and(eq(appointments.tenantId, tenantId), eq(appointments.sessionId, source.sessionId))
+          : and(eq(appointments.tenantId, tenantId), eq(appointments.id, source.id)));
+
+      const start = new Date(input.start);
+      if (Number.isNaN(start.getTime())) throw new TRPCError({ code: "BAD_REQUEST", message: "That date is not valid" });
+      if (start.getTime() <= Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "A rebook has to be in the future" });
+      }
+
+      /*
+       * Nothing else for these dogs that day, whatever state it is in.
+       * Duplicating a dog is the worst thing this can do — staff work
+       * from that board — and matching on the booking id alone is what
+       * let it happen twice on 29/09.
+       */
+      const dayStart = new Date(Date.UTC(
+        start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()) - 10 * 3600_000);
+      const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+      const clashes = await db
+        .select({ petId: appointments.petId })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          inArray(appointments.petId, siblings.map((s: any) => s.petId)),
+          gte(appointments.scheduledStart, dayStart),
+          lt(appointments.scheduledStart, dayEnd),
+        ));
+      if (clashes.length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "One of these dogs is already booked that day — pick another date",
+        });
+      }
+
+      /*
+       * A dog recorded as passed away stays on the record and stays
+       * visible, but must not be bookable — and a rebook is a booking
+       * like any other. Caught by departedBookingCoverage.test.ts,
+       * which pins every insert site in this file against the shared
+       * rule, before this path ever ran.
+       */
+      const bookablePets = await db
+        .select({ id: pets.id, name: pets.name, status: pets.status })
+        .from(pets)
+        .where(and(
+          eq(pets.tenantId, tenantId),
+          inArray(pets.id, siblings.map((s: any) => s.petId)),
+        ));
+      const departedMessage = departedBookingMessage(bookablePets);
+      if (departedMessage) throw new TRPCError({ code: "BAD_REQUEST", message: departedMessage });
+
+      const sessionId = siblings.length > 1 ? nanoid(16) : null;
+      const created: number[] = [];
+      for (const dog of siblings) {
+        const minutes = Math.max(15, Math.round(
+          (new Date(dog.scheduledEnd).getTime() - new Date(dog.scheduledStart).getTime()) / 60000));
+        const [res]: any = await db.insert(appointments).values({
+          tenantId,
+          clientId: source.clientId,
+          petId: dog.petId,
+          staffId: dog.staffId,
+          serviceType: dog.serviceType,
+          scheduledStart: start,
+          scheduledEnd: new Date(start.getTime() + minutes * 60000),
+          workflowState: "scheduled",
+          status: "pending",
+          price: dog.price,
+          sessionId,
+          // Booked here, so no MoeGo id. reminder_* stay NULL: this is a
+          // real upcoming booking and should behave like any other.
+          notes: null,
+        });
+        created.push(res.insertId);
+        await db.insert(workflowLogs).values({
+          appointmentId: res.insertId,
+          fromState: null,
+          toState: "scheduled",
+          changedAt: new Date(),
+          notes: `Rebooked from appointment ${source.id}.`,
+        });
+      }
+
+      return { success: true, created, sessionId, dogs: siblings.length };
     }),
 
   searchAppointments: operationalProcedure
@@ -12884,6 +13159,7 @@ export const appRouter = router({
   revenueTargets: revenueTargetsRouter,
   workflowReview: workflowReviewRouter,
   petCodes: petCodesRouter,
+  search: searchRouter,
   presence: presenceRouter,
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,

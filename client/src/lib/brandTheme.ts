@@ -15,7 +15,7 @@
  * token added for one of them cannot go missing from the other two.
  */
 
-import { brandTokens, type BrandInput, type ThemeMode } from "@shared/brandPalette";
+import { brandTokens, FESTIVE_BRAND, type BrandInput, type ThemeMode } from "@shared/brandPalette";
 
 /** Every property this writes, so removing a theme removes all of it. */
 function tokenNames(theme: BrandInput): string[] {
@@ -64,7 +64,20 @@ export function applyBrandTheme(
   const root = target ?? document.documentElement;
 
   const paint = () => {
-    const tokens = brandTokens(theme, currentMode(root));
+    /*
+     * Christmas replaces the salon's colours rather than sitting on top
+     * of them, and it has to happen HERE because this function owns the
+     * inline custom properties on <html>. Inline beats any stylesheet,
+     * so a `:root.festive` rule never applied at all.
+     *
+     * The MutationObserver below already watches the class attribute for
+     * dark mode, so toggling the tree repaints for free.
+     */
+    const festive = root.classList.contains("festive");
+    const painted: BrandInput & { font?: string | null } = festive
+      ? { ...theme, ...FESTIVE_BRAND }
+      : theme;
+    const tokens = brandTokens(painted, currentMode(root));
     for (const [name, value] of Object.entries(tokens)) {
       root.style.setProperty(name, value);
     }
@@ -91,7 +104,7 @@ export function applyBrandTheme(
 
   return () => {
     observer.disconnect();
-    for (const name of tokenNames(theme)) root.style.removeProperty(name);
+    for (const name of tokenNames({ ...theme, ...FESTIVE_BRAND })) root.style.removeProperty(name);
     root.style.removeProperty("--font-sans");
   };
 }

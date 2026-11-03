@@ -144,6 +144,8 @@ const OPERATIONAL = [
   "calendarRouter.groomerDay",
   "calendarRouter.monthCapacity",
   "calendarRouter.nextAvailable",
+  "calendarRouter.rebook",
+  "calendarRouter.rebookSuggestion",
   "calendarRouter.reschedule",
   "calendarRouter.searchAppointments",
   "calendarRouter.setAppointmentDiscount",
@@ -239,6 +241,7 @@ const OPERATIONAL = [
   "pushSubscriptionsRouter.sendTest",
   "pushSubscriptionsRouter.subscribe",
   "pushSubscriptionsRouter.unsubscribe",
+  "searchRouter.everything",
   "settingsRouter.getTenantInfo",
   "sidebarCountsRouter.get",
   "smsRouter.assignNotification",
@@ -282,7 +285,7 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(362);
+    expect(surface).toHaveLength(367);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -293,7 +296,7 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(126);
+    expect(OPERATIONAL).toHaveLength(129);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
