@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -463,8 +464,8 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
           <Button type="button" size="sm" variant="outline" className="shrink-0 gap-1 border-blue-200 dark:border-blue-900/50 bg-card text-blue-800 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40" onClick={exportTimingCsv} disabled={!(data as any)?.timingAnalytics} title="Download the selected timing analytics as a CSV file"><Download className="h-3.5 w-3.5" /> Export CSV</Button>
         </div>
         <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-blue-100 dark:border-blue-950/50 bg-card/70 p-2.5">
-          <div><Label htmlFor={`timing-start-${staffId}`} className="text-[11px] text-muted-foreground">From</Label><Input id={`timing-start-${staffId}`} type="date" className="mt-1 h-8 w-[142px] bg-card text-xs" value={timingRange.start} max={timingRange.end} onChange={event => setTimingRange(range => ({ ...range, start: event.target.value }))} /></div>
-          <div><Label htmlFor={`timing-end-${staffId}`} className="text-[11px] text-muted-foreground">To</Label><Input id={`timing-end-${staffId}`} type="date" className="mt-1 h-8 w-[142px] bg-card text-xs" value={timingRange.end} min={timingRange.start} max={dateInputValue(new Date())} onChange={event => setTimingRange(range => ({ ...range, end: event.target.value }))} /></div>
+          <div><Label htmlFor={`timing-start-${staffId}`} className="text-[11px] text-muted-foreground">From</Label><DateField id={`timing-start-${staffId}`}  className="mt-1 h-8 w-[142px] bg-card text-xs" value={timingRange.start} max={timingRange.end} onChange={next => setTimingRange(range => ({ ...range, start: next }))} /></div>
+          <div><Label htmlFor={`timing-end-${staffId}`} className="text-[11px] text-muted-foreground">To</Label><DateField id={`timing-end-${staffId}`}  className="mt-1 h-8 w-[142px] bg-card text-xs" value={timingRange.end} min={timingRange.start} max={dateInputValue(new Date())} onChange={next => setTimingRange(range => ({ ...range, end: next }))} /></div>
           <div className="flex flex-wrap gap-1 pb-0.5"><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-950/50" onClick={() => setTimingRange(makeTimingRange(7))}>Last 7 days</Button><Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-950/50" onClick={() => setTimingRange(makeTimingRange(28))}>Last 4 weeks</Button></div>
           <p className="ml-auto pb-1 text-[11px] text-muted-foreground">{(data as any).timingAnalytics?.range?.days ?? 0} days selected</p>
         </div>
@@ -503,7 +504,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             <div><Label>Phone</Label><Input className="mt-1" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="+61 4xx xxx xxx" /></div>
             <div><Label>Email</Label><Input className="mt-1" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
             <div className="col-span-2"><Label>Address</Label><Input className="mt-1" value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="Street, Suburb, State, Postcode" /></div>
-            <div><Label>Date of Birth</Label><Input className="mt-1" type="date" value={form.dateOfBirth} onChange={e => setForm(p => ({ ...p, dateOfBirth: e.target.value }))} /></div>
+            <div><Label>Date of Birth</Label><DateField className="mt-1" value={form.dateOfBirth} onChange={next => setForm(p => ({ ...p, dateOfBirth: next }))} /></div>
             <div><Label>Salon role</Label>
               <Select value={form.role} onValueChange={v => setForm(p => ({ ...p, role: v }))}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
@@ -793,13 +794,13 @@ function BlockoutControls() {
           <div className="mt-2 flex flex-wrap items-end gap-2">
             <div>
               <Label htmlFor="close-from" className="text-xs">From</Label>
-              <Input id="close-from" type="date" className="mt-1 h-9" value={closeFrom}
-                onChange={(e) => setCloseFrom(e.target.value)} />
+              <DateField id="close-from" className="mt-1 h-9" value={closeFrom}
+                onChange={next => setCloseFrom(next)} />
             </div>
             <div>
               <Label htmlFor="close-to" className="text-xs">To</Label>
-              <Input id="close-to" type="date" className="mt-1 h-9" value={closeTo}
-                onChange={(e) => setCloseTo(e.target.value)} />
+              <DateField id="close-to" className="mt-1 h-9" value={closeTo}
+                onChange={next => setCloseTo(next)} />
             </div>
             <div className="min-w-[160px]">
               <Label htmlFor="close-why" className="text-xs">Reason</Label>

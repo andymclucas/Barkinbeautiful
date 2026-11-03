@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -385,7 +386,7 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
               </div>
               <div className="space-y-1">
                 <Label>Next billing date</Label>
-                <Input type="date" value={form.nextBillingDate} onChange={e => setForm(f => ({ ...f, nextBillingDate: e.target.value }))} />
+                <DateField value={form.nextBillingDate} onChange={next => setForm(f => ({ ...f, nextBillingDate: next }))} />
               </div>
             </div>
           ) : (
@@ -831,13 +832,10 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
             )}
             {pauseMode === "date" && (
               <div className="pl-6 grid gap-1">
-                <Input
-                  type="date"
-                  className="h-8"
+                <DateField className="h-8"
                   aria-label="Date billing restarts"
                   value={pauseResumeOn}
-                  onChange={(e) => setPauseResumeOn(e.target.value)}
-                />
+                  onChange={next => setPauseResumeOn(next)} />
                 <p className="text-xs text-muted-foreground">Billing restarts on this date.</p>
               </div>
             )}
@@ -888,12 +886,10 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
         {confirming === "start" && (
           <div className="grid gap-1.5">
             <Label htmlFor={`first-charge-${m.id}`} className="text-xs">First charge (leave blank to charge now)</Label>
-            <Input
-              id={`first-charge-${m.id}`}
-              type="date"
+            <DateField id={`first-charge-${m.id}`}
+              
               value={firstChargeOn}
-              onChange={(e) => setFirstChargeOn(e.target.value)}
-            />
+              onChange={next => setFirstChargeOn(next)} />
             <p className="text-xs text-muted-foreground">
               Starts at 9am Brisbane that day, so a decline lands while the salon is open.
             </p>

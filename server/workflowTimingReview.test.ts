@@ -105,7 +105,12 @@ describe("workflow timing review and staff analytics", () => {
     expect(staffSource).toContain("Back to staff");
     expect(staffSource).toContain("Timing performance");
     expect(staffSource).toContain("timingRange");
-    expect(staffSource).toContain('type="date"');
+    // Was `toContain('type="date"')`. That asserted the native control,
+    // which renders in the BROWSER's locale - so it passed for exactly as
+    // long as the salon's US-configured machine showed 11/03 for the 3rd of
+    // November. The range filter is what this test is about; which control
+    // draws it is pinned repo-wide in dateFieldSurface.test.ts.
+    expect(staffSource).toContain("<DateField");
     expect(staffSource).toContain("Last 4 weeks");
     expect(staffSource).toContain("Export CSV");
     expect(staffSource).toContain("text/csv;charset=utf-8;");

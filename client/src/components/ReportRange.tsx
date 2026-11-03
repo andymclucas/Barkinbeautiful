@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
@@ -250,23 +251,19 @@ export function ReportRangePicker({ range }: { range: ReportRange }) {
             the long way round. */}
         <div className="grid gap-1">
           <Label htmlFor="range-from" className="text-xs text-muted-foreground">From</Label>
-          <Input
-            id="range-from"
-            type="date"
+          <DateField id="range-from"
+            
             className="h-9"
             value={range.fromKey}
-            onChange={(e) => range.editDate("from", e.target.value)}
-          />
+            onChange={next => range.editDate("from", next)} />
         </div>
         <div className="grid gap-1">
           <Label htmlFor="range-to" className="text-xs text-muted-foreground">To</Label>
-          <Input
-            id="range-to"
-            type="date"
+          <DateField id="range-to"
+            
             className="h-9"
             value={range.toKey}
-            onChange={(e) => range.editDate("to", e.target.value)}
-          />
+            onChange={next => range.editDate("to", next)} />
         </div>
       </div>
     </div>

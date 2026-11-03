@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateTimeField } from "@/components/DateTimeField";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -104,12 +105,12 @@ export function RebookButton({ appointmentId, onRebooked }: {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium" htmlFor="rebook-when">Date and time</label>
-                <Input
+                <DateTimeField
                   id="rebook-when"
-                  type="datetime-local"
+                  aria-label="Rebook"
                   className="h-9"
                   value={when}
-                  onChange={(e) => setWhen(e.target.value)}
+                  onChange={setWhen}
                 />
               </div>
 

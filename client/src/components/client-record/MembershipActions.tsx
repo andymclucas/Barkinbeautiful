@@ -7,6 +7,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -300,11 +301,8 @@ export function SetWeeklyBillingButton({ membership, clientId, clientEmail, hasC
           <div className="space-y-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">First charge date</label>
-              <Input
-                type="date"
-                value={firstCharge}
-                onChange={(e) => setFirstCharge(e.target.value)}
-              />
+              <DateField value={firstCharge}
+                onChange={next => setFirstCharge(next)} />
               <p className="text-[11px] text-muted-foreground">
                 Brisbane time. Today by default.
               </p>

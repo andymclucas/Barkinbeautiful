@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTimezone } from "@/lib/timezone";
@@ -151,7 +152,7 @@ export function PetPaperworkPanel({ clientId }: { clientId: number }) {
                 </div>
                 <div className="grid gap-1.5">
                   <Label className="text-xs text-muted-foreground">Expires</Label>
-                  <Input type="date" className="h-9 w-[9.5rem]" value={expiresOn} onChange={(e) => setExpiresOn(e.target.value)} />
+                  <DateField className="h-9 w-[9.5rem]" value={expiresOn} onChange={next => setExpiresOn(next)} />
                 </div>
                 <Button size="sm" disabled={save.isPending}
                   onClick={() => save.mutate({ petId: pet.petId, kind, expiresOn: expiresOn || undefined })}>

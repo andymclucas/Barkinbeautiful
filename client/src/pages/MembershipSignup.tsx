@@ -3,6 +3,7 @@ import { CalendarDays, CheckCircle2, CreditCard, PawPrint, Plus, ShieldCheck, Tr
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -300,8 +301,8 @@ export default function MembershipSignup() {
                 </div>
                 <div>
                   <Label>First appointment</Label>
-                  <Input className="mt-1.5" type="date" value={selectedDate}
-                    onChange={(e) => { setSelectedDate(e.target.value); setScheduledStart(""); }} />
+                  <DateField className="mt-1.5" value={selectedDate}
+                    onChange={next => { setSelectedDate(next); setScheduledStart(""); }} />
                 </div>
               </div>
 

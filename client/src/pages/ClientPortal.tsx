@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DateField } from "@/components/DateField";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 
@@ -928,12 +929,10 @@ export default function ClientPortal() {
 
           <div className="space-y-1.5">
             <Label>Date</Label>
-            <input
-              type="date"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            <DateField
               value={selectedDate}
               min={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(""); }}
+              onChange={(next) => { setSelectedDate(next); setSelectedSlot(""); }}
             />
           </div>
 

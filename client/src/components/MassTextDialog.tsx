@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -91,11 +92,11 @@ export function MassTextDialog() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="grid gap-1.5">
                   <Label htmlFor="mt-from">From</Label>
-                  <Input id="mt-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+                  <DateField id="mt-from" value={from} onChange={next => setFrom(next)} />
                 </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor="mt-to">To</Label>
-                  <Input id="mt-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+                  <DateField id="mt-to" value={to} onChange={next => setTo(next)} />
                 </div>
               </div>
             )}

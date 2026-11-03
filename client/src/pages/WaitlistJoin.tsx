@@ -3,6 +3,7 @@ import { CheckCircle2, Clock3, Loader2, ShieldCheck } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -123,13 +124,13 @@ export default function WaitlistJoin() {
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
             <div>
               <Label>From</Label>
-              <Input className="mt-1.5" type="date" value={form.earliestDate}
-                onChange={(e) => set({ earliestDate: e.target.value })} />
+              <DateField className="mt-1.5" value={form.earliestDate}
+                onChange={next => set({ earliestDate: next })} />
             </div>
             <div>
               <Label>Until</Label>
-              <Input className="mt-1.5" type="date" value={form.latestDate}
-                onChange={(e) => set({ latestDate: e.target.value })} />
+              <DateField className="mt-1.5" value={form.latestDate}
+                onChange={next => set({ latestDate: next })} />
             </div>
             <div>
               <Label>Time of day</Label>
