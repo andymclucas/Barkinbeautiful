@@ -13,6 +13,7 @@ import { useIsWideScreen } from "@/hooks/useMobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/DateField";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -824,19 +825,19 @@ export default function Messages() {
                   </button>
                 )}
               </div>
-              <Input
-                type="date"
+              <DateField
                 value={callFrom}
-                onChange={(e) => setCallFrom(e.target.value)}
-                className="h-8 w-[9.5rem] text-sm"
+                onChange={setCallFrom}
+                wrapperClassName="w-[9.5rem]"
+                className="h-8 text-sm"
                 aria-label="Voicemails from date"
               />
               <span className="text-xs text-muted-foreground">to</span>
-              <Input
-                type="date"
+              <DateField
                 value={callTo}
-                onChange={(e) => setCallTo(e.target.value)}
-                className="h-8 w-[9.5rem] text-sm"
+                onChange={setCallTo}
+                wrapperClassName="w-[9.5rem]"
+                className="h-8 text-sm"
                 aria-label="Voicemails to date"
               />
               {callFiltersOn && (
