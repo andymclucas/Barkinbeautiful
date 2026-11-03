@@ -30,7 +30,10 @@ describe("Appointments day viewport layout", () => {
     // exact string moved when the sidebar was added beside the grid, so this
     // asserts the property: in day mode the view container is a shrinkable
     // flex column that grows.
-    expect(src).toContain('viewMode === "day" ? "flex min-h-0 flex-1 flex-col"');
+    // `!== "week"` rather than `=== "day"`: the Agenda view added on
+    // 04/11/2026 is a day view in everything but layout, and must fill
+    // the viewport the same way.
+    expect(src).toContain('viewMode !== "week" ? "flex min-h-0 flex-1 flex-col"');
   });
 
   it("keeps the day card flexible and confines overflow to the staff calendar grid", () => {
@@ -74,7 +77,7 @@ describe("Appointments day viewport layout", () => {
     const src = source();
     expect(src).toContain("<CalendarSidebar");
     expect(src).toContain("summary={sidebarSummary}");
-    expect(src).toContain('viewMode === "day" ? "flex min-h-0 flex-1 gap-4" : "flex min-h-0 gap-4"');
+    expect(src).toContain('viewMode !== "week" ? "flex min-h-0 flex-1 gap-4" : "flex min-h-0 gap-4"');
   });
 
   it("gives the grid body a bounded height so it scrolls itself", () => {

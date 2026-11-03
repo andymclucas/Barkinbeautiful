@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { parsePetCodes } from "@shared/petCodes";
+import { isBiteWarning } from "@shared/petCodeRisk";
 import { colourFor, indexPetCodes, meaningFor, type PetCodeEntry } from "@shared/petCodeCatalogue";
 import { readableTextOn } from "@shared/readableTextOn";
 
@@ -49,20 +50,35 @@ export function PetCodeChips({
     >
       {codes.map((code) => {
         const meaning = meaningFor(code, index);
-        const colour = colourFor(code, index);
+        /*
+         * A bite warning overrides whatever colour the catalogue gives
+         * it, and overrides having no colour at all.
+         *
+         * Andy, 04/11/2026: "Any 'bites' warning need to be bold and
+         * red so it is very noticeable by the groomers & bathers." It
+         * is the one code where being missed means somebody is hurt, so
+         * it does not get to inherit a pastel somebody picked months
+         * ago, and it does not sit in the same grey as a blade number.
+         */
+        const bites = isBiteWarning(code);
+        const colour = bites ? null : colourFor(code, index);
         return (
           <span
             key={code}
             // The meaning on hover, because the codes are shorthand a
             // new groomer has not learned yet.
             title={meaning ? `${code} — ${meaning}` : code}
-            className={`inline-flex items-center rounded font-semibold leading-tight ${padding} ${
-              colour ? "" : "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+            className={`inline-flex items-center rounded leading-tight ${padding} ${
+              bites
+                ? "bg-red-600 font-black uppercase tracking-wide text-white ring-1 ring-red-800"
+                : colour
+                  ? "font-semibold"
+                  : "bg-slate-200 font-semibold text-slate-800 dark:bg-slate-700 dark:text-slate-100"
             }`}
             // Black or white, whichever actually contrasts. White was
             // once forced on every colour, and white on amber is 2:1.
             style={colour ? { background: colour, color: readableTextOn(colour) } : undefined}
-            data-testid="pet-code-chip"
+            data-testid={bites ? "pet-code-chip-bite" : "pet-code-chip"}
           >
             {code}
           </span>

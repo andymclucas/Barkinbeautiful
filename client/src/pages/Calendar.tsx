@@ -92,6 +92,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { CalendarSidebar } from "@/components/CalendarSidebar";
 import { PetPhotoQuickAdd } from "@/components/PetPhotoQuickAdd";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
+import { describeWeeks, visitRhythm } from "@shared/visitRhythm";
 import { PetCodesPanel } from "@/components/PetCodesPanel";
 import { RebookButton } from "@/components/RebookButton";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
@@ -131,6 +132,8 @@ import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
 import { getActiveTimeZone } from "@/lib/timezone";
 
 import { PetCodeChips } from "@/components/PetCodeChips";
+import { parsePetCodes } from "@shared/petCodes";
+import { biteWarningsIn } from "@shared/petCodeRisk";
 import { EmailInvoiceButton } from "@/components/EmailInvoiceButton";
 // ── Constants ────────────────────────────────────────────────────────────────
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7am–7pm (13 rows)
@@ -531,12 +534,23 @@ function ApptBlock({
                     : fmtTime(new Date(appt.scheduledStart))}
                 </div>
                 {density.serviceFormat !== "none" && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
-                {/* Third in Andy's order: name, service, then these. */}
-                {density.showCodes && appt.petMoegoCodeLabels && (
-                  <div className="mt-1">
-                    <PetCodeChips codes={appt.petMoegoCodeLabels} size="xs" />
-                  </div>
-                )}
+                {/*
+                  * Third in Andy's order: name, service, then these.
+                  *
+                  * EXCEPT a bite warning, which ignores the density rule
+                  * entirely. Andy, 04/11/2026: "Any 'bites' warning need
+                  * to be bold and red so it is very noticeable by the
+                  * groomers & bathers." Alfie's card was too small for
+                  * codes, so the one thing a bather needs before
+                  * reaching into the tub was the first thing dropped.
+                  * A small card shows the bite chip and nothing else.
+                  */}
+                {(() => {
+                  const codes = parsePetCodes(appt.petMoegoCodeLabels);
+                  const shown = density.showCodes ? codes : biteWarningsIn(codes);
+                  if (shown.length === 0) return null;
+                  return <div className="mt-1"><PetCodeChips codes={shown} size="xs" /></div>;
+                })()}
                 {density.showNextVisit && appt.nextAppointmentDate && (
                   <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: svc.border, opacity: 0.9 }}>
                     Next: {new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
@@ -1033,7 +1047,7 @@ export default function Calendar() {
   const [showNewAppt, setShowNewAppt] = useState(false);
   const [editAppt, setEditAppt]     = useState<Appt | null>(null);
   const [copySnap, setCopySnap]     = useState<ReportSnapshot | null>(null);
-  const [viewMode, setViewMode]     = useState<"week" | "day">("day");
+  const [viewMode, setViewMode]     = useState<"week" | "day" | "agenda">("day");
   const [dayDate, setDayDate]       = useState(() => getTodayAEST());
   // The diary opens on the grooming side; the bathing team is opt-in from the
   // staff menu. Held as an INTENT rather than a list of ids so that a groomer
@@ -2520,6 +2534,85 @@ export default function Calendar() {
   const GRID_HEIGHT = HOURS.length * HOUR_HEIGHT; // total px height of the time grid
 
   // ── Week view (agenda/list — one card per appt, full column width) ──────────
+  /**
+   * The day as a list, for the counter.
+   *
+   * Andy, 04/11/2026, on why Brooklyn still invoices in MoeGo: "it's
+   * too hard to see the dogs' names quickly with the customers there it
+   * invoices, so she goes to agenda in moego cause she panics."
+   *
+   * The grid is laid out by time ACROSS groomers, so finding one dog
+   * means scanning seven columns while its owner waits. This is the
+   * same appointments in one time-ordered column with the dog's name
+   * first, and a row opens the same booking dialog the grid does —
+   * which is where the price, the payment panel and now the visit
+   * rhythm live.
+   */
+  const renderAgendaView = () => {
+    const rows = [...dayViewAppts].sort(
+      (a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime(),
+    );
+    return (
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border bg-card">
+        {rows.length === 0 ? (
+          <p className="p-6 text-center text-sm text-muted-foreground">Nothing booked this day.</p>
+        ) : (
+          <ul className="divide-y">
+            {rows.map((appt) => {
+              const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
+              const isCancelled = isCancelledAppointment(appt);
+              const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
+              const isVip = showsMembershipMark({ membershipId: appt.membershipId, isCancelled });
+              const owner = `${appt.clientFirstName ?? ""} ${appt.clientLastName ?? ""}`.trim();
+              return (
+                <li key={appt.id}>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(appt as Appt)}
+                    className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent ${isCancelled ? "opacity-50" : ""}`}
+                  >
+                    {/* The service colour, as a spine, so the list can
+                        still be read by service the way the grid is. */}
+                    <span className="mt-0.5 h-9 w-1 shrink-0 rounded-full" style={{ background: isCancelled ? "#cbd5e1" : svc.border }} />
+                    <span className="w-[72px] shrink-0 pt-0.5 text-xs font-semibold tabular-nums text-muted-foreground">
+                      {fmtTime(new Date(appt.scheduledStart))}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
+                        {/* Name first and never truncated — the whole
+                            reason this view exists. */}
+                        <span className={`text-sm font-bold ${isCancelled ? "line-through decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+                          {appt.petName}
+                        </span>
+                        {isVip && <VipMark />}
+                        <PaymentStamp pay={pay} />
+                        {isCancelled && <span className="rounded-sm border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</span>}
+                      </span>
+                      <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                        {owner && <span className="font-medium text-foreground">{owner}</span>}
+                        {appt.petBreed && <span>{appt.petBreed}</span>}
+                        <span className="font-semibold" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
+                          {SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}
+                        </span>
+                      </span>
+                      {appt.petMoegoCodeLabels && (
+                        <span className="mt-1 block"><PetCodeChips codes={appt.petMoegoCodeLabels} size="xs" /></span>
+                      )}
+                    </span>
+                    <span className="hidden shrink-0 pt-0.5 text-xs text-muted-foreground sm:block">
+                      {appt.staffName ?? "Unassigned"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    );
+  };
+
   const renderWeekView = () => (
     <div className="bg-card rounded-xl border overflow-auto">
       <div className="min-w-[700px]">
@@ -2943,7 +3036,8 @@ export default function Calendar() {
   // In day view, filteredAppts spans ±1 day for the query buffer.
   // Narrow to just the viewed day for the count badge and unassigned strip.
   const dayViewAppts = useMemo(() => {
-    if (viewMode !== "day") return filteredAppts;
+    // Agenda is the same day as the grid, just laid out as a list.
+    if (viewMode === "week") return filteredAppts;
     const key = dayDateKey(dayDate);
     return filteredAppts.filter(a => aestDateKey(new Date(a.scheduledStart)) === key);
   }, [viewMode, filteredAppts, dayDate]);
@@ -2958,13 +3052,13 @@ export default function Calendar() {
   // vs expected, and excluding cancellations from both - are easy to fudge
   // into a number that looks right and is not.
   const sidebarSummary = useMemo(
-    () => summariseCalendar(viewMode === "day" ? dayViewAppts : filteredAppts),
+    () => summariseCalendar(viewMode === "week" ? filteredAppts : dayViewAppts),
     [viewMode, dayViewAppts, filteredAppts],
   );
   /* The dots on the rail. Keyed to the month the rail is SHOWING, which
      is the selected date's month — the rail is a controlled month, so a
      jump to March fetches March. */
-  const railMonth = `${(viewMode === "day" ? dayDate : weekStart).getFullYear()}-${String((viewMode === "day" ? dayDate : weekStart).getMonth() + 1).padStart(2, "0")}`;
+  const railMonth = `${(viewMode !== "week" ? dayDate : weekStart).getFullYear()}-${String((viewMode !== "week" ? dayDate : weekStart).getMonth() + 1).padStart(2, "0")}`;
   const { data: monthCapacity } = trpc.calendar.monthCapacity.useQuery({ month: railMonth });
   const capacityByDate = useMemo(() => {
     if (!monthCapacity) return undefined;
@@ -3007,10 +3101,10 @@ export default function Calendar() {
               <PopoverContent className="w-auto p-0" align="start" collisionPadding={8}>
                 <CalendarPicker
                   mode="single"
-                  selected={viewMode === "day" ? dayDate : weekStart}
+                  selected={viewMode !== "week" ? dayDate : weekStart}
                   onSelect={(d) => {
                     if (!d) return;
-                    if (viewMode === "day") {
+                    if (viewMode !== "week") {
                       const nd = new Date(d); nd.setHours(0,0,0,0); setDayDate(nd);
                     } else {
                       setWeekStart(getWeekStart(d));
@@ -3262,12 +3356,27 @@ export default function Calendar() {
                 className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${viewMode === "day" ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-primary/10 hover:text-primary"}`}
                 onClick={() => setViewMode("day")}
               >Day</button>
+              {/*
+                * Andy, 04/11/2026, on why Brooklyn still invoices in
+                * MoeGo: "it's too hard to see the dogs' names quickly
+                * with the customers there it invoices, so she goes to
+                * agenda in moego cause she panics."
+                *
+                * The day grid is laid out by TIME and by groomer, which
+                * is right for running the floor and wrong for finding
+                * one dog while its owner waits. This is the same day as
+                * a list, in time order, with the name first.
+                */}
+              <button
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${viewMode === "agenda" ? "bg-primary text-primary-foreground shadow-sm" : "hover:bg-primary/10 hover:text-primary"}`}
+                onClick={() => setViewMode("agenda")}
+              >Agenda</button>
             </div>
             <Button
               variant="outline"
               onClick={() => {
                 setBlockoutEditing(null);
-                setBlockoutDefaultDate(dayDateKey(viewMode === "day" ? dayDate : weekStart));
+                setBlockoutDefaultDate(dayDateKey(viewMode !== "week" ? dayDate : weekStart));
                 setShowBlockoutDialog(true);
               }}
               size="sm" className="brand-lift gap-1.5 bg-card/80 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-700 dark:hover:text-red-300">
@@ -3302,16 +3411,16 @@ export default function Calendar() {
 
             It reads the same rule that positions the red line below,
             so the figure and the line cannot disagree. */}
-        {viewMode === "day" && <SessionDogCounts rows={dayViewAppts} />}
+        {viewMode !== "week" && <SessionDogCounts rows={dayViewAppts} />}
 
         {/* Calendar, with the persistent left rail beside it.
             The month only existed inside a popover, so picking a date meant
             open-choose-close, and there was no way to see next week's shape
             while looking at today. The rail is lg-and-up; on a phone the
             toolbar's date picker stays the way in. */}
-        <div className={viewMode === "day" ? "flex min-h-0 flex-1 gap-4" : "flex min-h-0 gap-4"}>
+        <div className={viewMode !== "week" ? "flex min-h-0 flex-1 gap-4" : "flex min-h-0 gap-4"}>
           <CalendarSidebar
-            selected={viewMode === "day" ? dayDate : weekStart}
+            selected={viewMode !== "week" ? dayDate : weekStart}
             onSelectDate={(d) => {
               // Move BOTH. Setting only the one the current view reads left
               // the other stale, so a quick jump moved the grid and then
@@ -3321,17 +3430,17 @@ export default function Calendar() {
               setWeekStart(getWeekStart(d));
             }}
             summary={sidebarSummary}
-            summaryLabel={viewMode === "day" ? fmtDateShort(dayDate) : `Week of ${weekLabel}`}
+            summaryLabel={viewMode !== "week" ? fmtDateShort(dayDate) : `Week of ${weekLabel}`}
             capacityByDate={capacityByDate}
           />
-          <div className={viewMode === "day" ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1"}>
-            {viewMode === "week" ? renderWeekView() : renderDayView()}
+          <div className={viewMode !== "week" ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1"}>
+            {viewMode === "week" ? renderWeekView() : viewMode === "agenda" ? renderAgendaView() : renderDayView()}
           </div>
         </div>
 
         {/* Unassigned row */}
         {(() => {
-          const unassigned = (viewMode === "day" ? dayViewAppts : filteredAppts).filter(a => !a.staffId);
+          const unassigned = (viewMode === "week" ? filteredAppts : dayViewAppts).filter(a => !a.staffId);
           if (!unassigned.length) return null;
           return (
           <div className="bg-card rounded-xl border p-4">
@@ -4628,6 +4737,78 @@ export default function Calendar() {
                   <Label>Notes</Label>
                   <Textarea rows={2} value={editForm.notes} onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))} />
                 </div>
+
+                {/*
+                  * When they were last in, when they are back, and the
+                  * gap either side.
+                  *
+                  * Andy, 04/11/2026: "I want to include that it shows
+                  * the next booking date on there and also their last
+                  * date (how many weeks between would be a bonus so we
+                  * can see their average time between)."
+                  *
+                  * Above the payment panel on purpose: it is what the
+                  * counter asks the client about while the card is out
+                  * — "same again in six weeks?" — so it belongs before
+                  * the money, not under it.
+                  */}
+                {(() => {
+                  const rhythm = visitRhythm({
+                    last: editAppt.lastAppointmentDate ?? null,
+                    current: editAppt.scheduledStart,
+                    next: editAppt.nextAppointmentDate ?? null,
+                  });
+                  const when = (d: Date | string) => new Date(d).toLocaleDateString("en-AU", {
+                    timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric",
+                  });
+                  /*
+                   * Only call it a LAST visit if it is actually before
+                   * this one. `lastAppointmentDate` is the pet's newest
+                   * appointment already in the past, and for a dog in
+                   * the salon right now that is THIS booking — Oakley's
+                   * card read "Last visit: Wed, 4 Nov 2026" while she
+                   * was on the table. The rule above already returns
+                   * null for it; the display has to agree.
+                   */
+                  const showLast = rhythm.sinceLastWeeks !== null;
+                  if (!showLast && !editAppt.nextAppointmentDate) return null;
+                  return (
+                    <div className="rounded-xl border bg-muted/20 p-3">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold">
+                        <CalendarDays className="h-4 w-4 text-muted-foreground" /> Visits
+                        {rhythm.settled && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                            every {describeWeeks(rhythm.untilNextWeeks)}
+                          </span>
+                        )}
+                      </p>
+                      <div className="mt-1.5 grid gap-1 text-xs sm:grid-cols-2">
+                        <div>
+                          <span className="text-muted-foreground">Last visit: </span>
+                          {showLast && editAppt.lastAppointmentDate ? (
+                            <>
+                              {when(editAppt.lastAppointmentDate)}
+                              {describeWeeks(rhythm.sinceLastWeeks) && (
+                                <span className="text-muted-foreground"> · {describeWeeks(rhythm.sinceLastWeeks)} ago</span>
+                              )}
+                            </>
+                          ) : <span className="text-muted-foreground">first visit on record</span>}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Next booking: </span>
+                          {editAppt.nextAppointmentDate ? (
+                            <>
+                              {when(editAppt.nextAppointmentDate)}
+                              {describeWeeks(rhythm.untilNextWeeks) && (
+                                <span className="text-muted-foreground"> · in {describeWeeks(rhythm.untilNextWeeks)}</span>
+                              )}
+                            </>
+                          ) : <span className="text-amber-700 dark:text-amber-400">nothing booked</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Money taken, as many transactions as it takes: part cash
                     part card, a deposit and a balance, or one dog each. */}

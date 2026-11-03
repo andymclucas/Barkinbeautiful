@@ -1225,12 +1225,22 @@ const calendarRouter = router({
           }
         }
 
+        /*
+         * Never the booking being looked at.
+         *
+         * "Prior" is `scheduled_start < now`, and for a dog in the salon
+         * RIGHT NOW its own 7:30am slot qualifies — so the card read
+         * "Last visit: Wed, 4 Nov 2026" about the appointment it was
+         * printed on, hiding the real previous groom. Excluding the rows
+         * on screen gives the dog's actual last visit back.
+         */
         const priorAppointments = await db
           .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart, status: appointments.status })
           .from(appointments)
           .where(and(
             inArray(appointments.petId, petIds),
             lt(appointments.scheduledStart, now),
+            appointmentIds.length > 0 ? notInArray(appointments.id, appointmentIds) : undefined,
             eq(appointments.tenantId, tenantOf(ctx, input))
           ))
           .orderBy(desc(appointments.scheduledStart));
