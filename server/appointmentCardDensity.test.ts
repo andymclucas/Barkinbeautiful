@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  appointmentCardDensity, NAME_ONLY_WIDTH, SERVICE_BADGE_WIDTH, START_TIME_ONLY_WIDTH,
+  appointmentCardDensity, NAME_ONLY_WIDTH, SERVICE_BADGE_WIDTH,
+  SHORT_SERVICE_WIDTH, START_TIME_ONLY_WIDTH,
 } from "@shared/appointmentCardDensity";
 
 /** A 94px staff column — the mobile floor — split between two dogs. */
@@ -89,5 +90,34 @@ describe("appointmentCardDensity", () => {
       const d = appointmentCardDensity({ widthPx: w, heightPx: 90 });
       if (d.showNextVisit) expect(d.showTime).toBe(true);
     }
+  });
+});
+
+
+describe("the service degrades like the time does", () => {
+  /**
+   * Andy, 03/11/2026: "Some details are still not showing in the
+   * preview on appt." Every overlapping booking had a name and a time
+   * and no service — the one thing that says what the groom actually
+   * is.
+   */
+  it("shortens the service on a narrow card rather than dropping it", () => {
+    const d = appointmentCardDensity({ widthPx: 104, heightPx: 90 });
+    expect(d.serviceFormat).toBe("short");
+  });
+
+  it("uses the full name when there is room", () => {
+    expect(appointmentCardDensity({ widthPx: 320, heightPx: 90 }).serviceFormat).toBe("full");
+    expect(appointmentCardDensity({ widthPx: SERVICE_BADGE_WIDTH, heightPx: 90 }).serviceFormat).toBe("full");
+  });
+
+  it("drops it only when even the short name crowds the dog's name out", () => {
+    expect(appointmentCardDensity({ widthPx: SHORT_SERVICE_WIDTH, heightPx: 90 }).serviceFormat).toBe("short");
+    expect(appointmentCardDensity({ widthPx: SHORT_SERVICE_WIDTH - 1, heightPx: 90 }).serviceFormat).toBe("none");
+  });
+
+  /** Height still governs: a one-line block has no room for a badge. */
+  it("draws no badge in a short block however wide", () => {
+    expect(appointmentCardDensity({ widthPx: 320, heightPx: 30 }).serviceFormat).toBe("none");
   });
 });

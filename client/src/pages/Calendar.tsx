@@ -135,6 +135,19 @@ const TIME_COL_W = 52; // px for the time gutter
 /** Before the board is measured, assume the readable desktop width. */
 const READABLE_COLUMN_FALLBACK = 320;
 
+/** For a card too narrow for the full name. "Classic" vs "Styled" is
+    the distinction a groomer actually needs at a glance. */
+const SERVICE_LABELS_SHORT: Record<string, string> = {
+  classic_groom: "Classic",
+  styled_groom:  "Styled",
+  bath_only:     "Bath",
+  fft:           "FFT",
+  nail_trim:     "Nails",
+  daycare:       "Daycare",
+  deshed:        "Deshed",
+  other:         "Other",
+};
+
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom",
   styled_groom:  "Styled Groom",
@@ -484,7 +497,7 @@ function ApptBlock({
                   : fmtTime(new Date(appt.scheduledStart))}
               </div>
             )}
-            {showService && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
+            {density.serviceFormat !== "none" && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
           </>
         ) : (
           <>
@@ -500,7 +513,7 @@ function ApptBlock({
                     ? `${fmtTime(new Date(appt.scheduledStart))} – ${fmtTime(new Date(appt.scheduledEnd))}`
                     : fmtTime(new Date(appt.scheduledStart))}
                 </div>
-                {showService && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</div>}
+                {density.serviceFormat !== "none" && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
                 {density.showNextVisit && appt.nextAppointmentDate && (
                   <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: svc.border, opacity: 0.9 }}>
                     Next: {new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
