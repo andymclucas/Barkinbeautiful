@@ -85,7 +85,15 @@ function CommandDialog({
          */
         showCloseButton={false}
       >
-        <Command shouldFilter={shouldFilter} className="relative overflow-hidden rounded-xl [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        {/*
+          * The group padding and the item padding add up to the px-5 of
+          * the input row above and the "Look in" row below it, so every
+          * icon, heading and name in the palette sits on ONE left edge.
+          * They did not before: headings and rows started 8px in from
+          * the search icon, which is the misalignment that reads as
+          * "the padding looks a bit off" without being nameable.
+          */}
+        <Command shouldFilter={shouldFilter} className="relative overflow-hidden rounded-xl [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-3 [&_[cmdk-item]]:py-2.5">
           {children}
           {showCloseButton && (
             /*
@@ -114,18 +122,22 @@ function CommandInput({
   return (
     /*
       * Andy, 03/11/2026: "add some padding around the search box at the
-      * top also."
+      * top also", then "padding still looks a bit off - just clean it up
+      * a bit and make the layout modern and clean."
       *
-      * The input sat flush against the dialog's own edge, so the caret
-      * started a couple of pixels from the corner. `pr-12` is not
-      * symmetry for its own sake - it is the room the close button needs,
-      * so a long query runs under the X rather than into it.
+      * Roomier than a form field, because it is not one. This is the
+      * whole point of the dialog, so it gets the height and the type size
+      * of a heading rather than of an input squeezed into a row.
+      *
+      * `pr-14` is not symmetry for its own sake - it is the room the
+      * close button needs, so a long query runs under the X rather than
+      * into it.
       */
     <div
       data-slot="command-input-wrapper"
-      className="flex items-center gap-2.5 border-b px-4 py-2.5 pr-12"
+      className="flex items-center gap-3 border-b px-5 py-4 pr-14"
     >
-      <SearchIcon className="size-4 shrink-0 opacity-50" />
+      <SearchIcon className="size-[18px] shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
         data-slot="command-input"
         /*
@@ -150,8 +162,24 @@ function CommandInput({
         data-1p-ignore
         data-lpignore="true"
         data-form-type="other"
+        /*
+         * No focus ring, deliberately.
+         *
+         * index.css gives every input a 3px brand-coloured ring on
+         * focus, which is right for a form. Here the input is
+         * autofocused the moment the dialog opens, so the ring is
+         * ALWAYS on - and drawn inside a tight row it reads as a box
+         * crammed into the corner rather than as a search field. That is
+         * what Andy was looking at when he said the padding was off.
+         *
+         * Nothing is lost: the palette is modal and this is the only
+         * thing focusable in it, so there is no ambiguity for the ring
+         * to resolve.
+         */
         className={cn(
-          "placeholder:text-muted-foreground flex h-10 w-full rounded-md bg-transparent text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+          "placeholder:text-muted-foreground/70 flex h-7 w-full bg-transparent text-base outline-hidden",
+          "focus-visible:border-transparent focus-visible:shadow-none",
+          "disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         {...props}
@@ -168,7 +196,7 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        "max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto",
+        "max-h-[min(380px,60vh)] scroll-py-1 overflow-x-hidden overflow-y-auto",
         className
       )}
       {...props}

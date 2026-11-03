@@ -27,6 +27,22 @@ export type SearchHit = {
   href: string;
   /** Only for appointments: where it is in the 12-state machine. */
   workflowState?: string | null;
+  /**
+   * Only for clients: their dogs, so a result can be taken straight to
+   * the right animal.
+   *
+   * Andy, 03/11/2026: "show the dog or all dogs in the family that can
+   * be clickable when searching with the main search function."
+   *
+   * Searching an owner's name and getting only the owner means a second
+   * search, or a scroll down their record, to reach the dog you were
+   * actually after — and the dog is what the salon talks in.
+   *
+   * Departed dogs are left out. `pets.status` is active|departed and
+   * departed is how this salon retires a duplicate, so listing them
+   * would offer dead links to records nobody wants reopened.
+   */
+  dogs?: { id: number; name: string }[];
 };
 
 /** Phone numbers are typed with spaces, dashes and brackets; none of it matters. */
@@ -145,4 +161,24 @@ export function appointmentHref(state: string | null | undefined, localDay: stri
 
 export function isOnTheFloor(state: string | null | undefined): boolean {
   return ON_THE_FLOOR.has((state ?? "").trim());
+}
+
+/**
+ * The one line of context under a result's title.
+ *
+ * `subtitle` and `matchedOn` are filled independently by the server and
+ * routinely say the same thing. A client found by phone gets the phone
+ * as both — `subtitle: c.phone` and `matchedOn: c.phone` — and a dog
+ * found by breed gets the breed in both. Rendered in two places, the
+ * row printed it twice.
+ *
+ * One meta line instead, with anything the subtitle already contains
+ * dropped, so a phone search reads "0412 345 678" rather than
+ * "0412 345 678        0412 345 678".
+ */
+export function hitMeta(hit: Pick<SearchHit, "subtitle" | "matchedOn">): string | null {
+  const subtitle = hit.subtitle?.trim() ?? "";
+  const matched = hit.matchedOn?.trim() ?? "";
+  const extra = matched && !subtitle.toLowerCase().includes(matched.toLowerCase()) ? matched : "";
+  return [subtitle, extra].filter(Boolean).join(" · ") || null;
 }

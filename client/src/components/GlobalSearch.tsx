@@ -19,7 +19,7 @@ import { trpc } from "@/lib/trpc";
 import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from "@/components/ui/command";
-import { groupLabel, isOnTheFloor, type SearchHit, type SearchKind } from "@shared/globalSearch";
+import { groupLabel, hitMeta, isOnTheFloor, type SearchHit, type SearchKind } from "@shared/globalSearch";
 
 const ICON: Record<SearchKind, typeof Dog> = {
   pet: Dog,
@@ -85,11 +85,12 @@ export function GlobalSearch() {
     return out;
   }, [data]);
 
-  const go = (hit: SearchHit) => {
+  const goTo = (href: string) => {
     setOpen(false);
     setQuery("");
-    navigate(hit.href);
+    navigate(href);
   };
+  const go = (hit: SearchHit) => goTo(hit.href);
 
   const short = debounced.trim().length > 0 && debounced.trim().length < 2;
 
@@ -123,7 +124,7 @@ export function GlobalSearch() {
         {/* What it can look in, and what it is looking in now. Shown
             above the results so the answer to "why is that not here?"
             is on screen rather than in somebody's head. */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5 border-b px-5 py-2.5">
           <span className="mr-0.5 text-[11px] font-medium text-muted-foreground">Look in</span>
           {(["pet", "client", "appointment"] as SearchKind[]).map((kind) => {
             const on = kinds.includes(kind);
@@ -164,7 +165,7 @@ export function GlobalSearch() {
           {/* The resting state. An empty box that says nothing makes
               people guess what it accepts; this says it outright. */}
           {debounced.trim().length === 0 && (
-            <div className="px-4 py-8 text-center">
+            <div className="px-6 py-10 text-center">
               <Search className="mx-auto mb-2 h-5 w-5 text-muted-foreground/60" />
               <p className="text-sm font-medium">Search the whole salon</p>
               <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
@@ -197,20 +198,69 @@ export function GlobalSearch() {
                     className="gap-2.5"
                   >
                     <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">
-                      <span className="font-medium">{hit.title}</span>
-                      {hit.subtitle && (
-                        <span className="ml-2 text-xs text-muted-foreground">{hit.subtitle}</span>
+                    {/*
+                      * Two lines, not one.
+                      *
+                      * The name and its context used to share a single
+                      * truncating line with the dog chips beside them. At
+                      * phone width the chips won and the NAME was what got
+                      * cut — "Greg Blackberr…" — which is the one thing on
+                      * the row that has to survive. Stacked, the name gets
+                      * the full width and the context gives way instead.
+                      */}
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate font-medium leading-tight">{hit.title}</span>
+                      {/* Why this row is here, when the reason is not the
+                          name: "0412 345 678", "Cavoodle". */}
+                      {hitMeta(hit) && (
+                        <span className="truncate text-xs leading-tight text-muted-foreground">
+                          {hitMeta(hit)}
+                        </span>
                       )}
                     </span>
-                    {/* Why this row is here, when the reason is not the
-                        name: "0412 345 678", "Cavoodle". */}
-                    {hit.matchedOn && (
-                      <span className="shrink-0 text-[11px] text-muted-foreground">{hit.matchedOn}</span>
-                    )}
                     {isOnTheFloor(hit.workflowState) && (
                       <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                         In salon
+                      </span>
+                    )}
+                    {/*
+                      * The client's dogs, each going straight to that dog.
+                      *
+                      * Andy, 03/11/2026: "show the dog or all dogs in the
+                      * family that can be clickable when searching with the
+                      * main search function." Searching an owner and getting
+                      * only the owner means a second hop to reach the animal,
+                      * and the dog is what the salon talks in.
+                      *
+                      * A real button inside the row, not another cmdk item:
+                      * these are a SECOND destination for one result, so they
+                      * must not take a turn in the up/down selection. That is
+                      * also why the click is stopped from bubbling — without
+                      * it, cmdk would select the row and navigate to the owner
+                      * instead of the dog that was clicked.
+                      */}
+                    {hit.dogs && hit.dogs.length > 0 && (
+                      <span className="flex shrink-0 flex-wrap items-center gap-1">
+                        {hit.dogs.map((dog) => (
+                          <button
+                            key={dog.id}
+                            type="button"
+                            title={`Open ${dog.name}`}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              goTo(`/clients/${hit.id}?pet=${dog.id}`);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+                          >
+                            {/* `size-3.5`, not `h-3.5 w-3.5`: CommandItem
+                                sizes every icon inside a row to 16px
+                                unless the class already says `size-`,
+                                which is the escape it leaves open. */}
+                            <Dog className="size-3.5" />
+                            {dog.name}
+                          </button>
+                        ))}
                       </span>
                     )}
                   </CommandItem>
