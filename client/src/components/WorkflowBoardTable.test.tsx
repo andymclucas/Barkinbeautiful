@@ -98,6 +98,34 @@ describe("WorkflowBoardTable", () => {
     expect(screen.getByText("Marlo")).toBeInTheDocument();
   });
 
+  /*
+   * The VIP disc. It was an amber star pill here and a gold disc on the
+   * calendar until Andy asked on 04/11/2026 for one mark everywhere,
+   * and it had no test at all in either shape.
+   *
+   * WHO gets one is `isVipMember`, a fact about the DOG — it is on an
+   * active plan, as primary or as a covered pet. That is what Lauren
+   * asked for on 28/10/2026 when the second dog on an "x2" plan had no
+   * badge, and it is deliberately NOT the calendar's narrower question
+   * of whether this booking is linked to the plan.
+   */
+  it("marks a dog on an active membership", () => {
+    renderBoard({}, [row({ isVipMember: true })]);
+    expect(screen.getByTestId("appt-vip-mark")).toBeInTheDocument();
+    expect(screen.getByLabelText("On a weekly membership")).toBeInTheDocument();
+  });
+
+  it("leaves a dog with no membership unmarked", () => {
+    renderBoard({}, [row({ isVipMember: false })]);
+    expect(screen.queryByTestId("appt-vip-mark")).toBeNull();
+  });
+
+  /* An absent flag is not a membership. Most board rows never carry it. */
+  it("treats a missing flag as not a member", () => {
+    renderBoard();
+    expect(screen.queryByTestId("appt-vip-mark")).toBeNull();
+  });
+
   it("gives Cage and Tag their own labelled inputs", () => {
     // The old test asserted the source contained the template literal
     // `aria-label={\`Enter ${label} number\`}`. That proves the string was

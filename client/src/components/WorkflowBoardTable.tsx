@@ -17,7 +17,8 @@ import { joinedContactBadge } from "@shared/appointmentContact";
 import { PetAlertButton } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
-import { Check, CheckCircle2, Clock, FileText, Link2, MessageSquare, Star, Unlink } from "lucide-react";
+import { Check, CheckCircle2, Clock, FileText, Link2, MessageSquare, Unlink } from "lucide-react";
+import { VipMark } from "@/components/VipMark";
 import { Fragment, useState } from "react";
 import { toast } from "sonner";
 
@@ -620,14 +621,28 @@ export function WorkflowBoardTable({
                           >
                             {appt.petName}
                             {!readOnly && <FileText className="h-3 w-3 text-muted-foreground opacity-50" />}
-                            {(appt as any).isVipMember && (
-                              <span
-                                className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-950 shadow-sm"
-                                title="Active VIP member"
-                              >
-                                <Star className="h-2.5 w-2.5 fill-amber-950" /> VIP
-                              </span>
-                            )}
+                            {/*
+                              * Andy, 04/11/2026: "Add the VIP disc to the
+                              * workflow board too."
+                              *
+                              * The same disc the calendar draws, so a dog
+                              * wears one mark everywhere rather than an
+                              * amber star pill here and a gold disc there.
+                              *
+                              * WHO gets one is unchanged, deliberately.
+                              * `isVipMember` is a fact about the DOG — it
+                              * is on an active plan, as primary or covered
+                              * pet — which is what Lauren asked for on
+                              * 28/10/2026 when the second dog on an "x2"
+                              * plan had no badge. The calendar asks a
+                              * narrower question, whether THIS booking is
+                              * linked to the plan. The two disagree on 188
+                              * upcoming bookings and that gap is a real
+                              * one, but it is not a thing to close by
+                              * quietly redefining a badge somebody asked
+                              * for.
+                              */}
+                            {(appt as any).isVipMember && <VipMark />}
                           </button>
                           </HoverCardTrigger>
                           <HoverCardContent side="right" align="start" className="w-auto p-2">
