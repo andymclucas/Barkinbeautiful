@@ -3884,6 +3884,59 @@ export default function Calendar() {
                 Set to $0.00 because the selected dogs are covered by active weekly memberships.
               </p>
             )}
+            {/*
+              * Above the pricing panel, not below it.
+              *
+              * Lauren, 03/11/2026: "I don't know how to make it repeat."
+              * It was there and it worked - she simply never got to it. The
+              * per-dog pricing panel grows with every dog on the booking, and
+              * measured on a two-dog family this control sat 972px down an
+              * 1155px dialog: you had to scroll past prices and extras to
+              * find out a booking could repeat at all.
+              *
+              * It belongs with the scheduling anyway. Whether this is one
+              * visit or twelve is a question about WHEN, and it is decided
+              * before anybody thinks about what to charge.
+              */}
+            {newAppt.petIds.length >= 1 && (
+              <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={repeatForm.enabled}
+                    onChange={e => setRepeatForm(f => ({ ...f, enabled: e.target.checked }))}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  <span className="text-sm font-medium">Repeat this booking</span>
+                </label>
+                {repeatForm.enabled && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Every</Label>
+                      <Select value={repeatForm.frequencyWeeks} onValueChange={v => setRepeatForm(f => ({ ...f, frequencyWeeks: v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 10, 12].map(w => (
+                            <SelectItem key={w} value={String(w)}>{w === 1 ? "1 week" : `${w} weeks`}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Until *</Label>
+                      <DateField value={repeatForm.untilDate} onChange={next => setRepeatForm(f => ({ ...f, untilDate: next }))} />
+                    </div>
+                    <p className="col-span-2 text-xs text-muted-foreground">
+                      Creates a booking every {repeatForm.frequencyWeeks} week{repeatForm.frequencyWeeks === "1" ? "" : "s"} at the same time
+                      {newAppt.petIds.length > 1 ? ` for all ${newAppt.petIds.length} selected dogs together` : ""}, starting from the date above, up to and including the "Until" date.
+                      {newAppt.petIds.length > 1
+                        ? " If the groomer is already booked on a particular date, that whole occurrence (all dogs) is skipped and the rest of the series still gets created."
+                        : " If the groomer is already booked on a particular date, that one occurrence is skipped and the rest still get created."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             {newAppt.clientId && selectedAppointmentPetIds.length > 0 && (
               <BookingPetPricing
                 clientId={Number(newAppt.clientId)}
@@ -3939,45 +3992,6 @@ export default function Calendar() {
                 </p>
               )}
             </div>
-            {newAppt.petIds.length >= 1 && (
-              <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={repeatForm.enabled}
-                    onChange={e => setRepeatForm(f => ({ ...f, enabled: e.target.checked }))}
-                    className="h-4 w-4 accent-primary"
-                  />
-                  <span className="text-sm font-medium">Repeat this booking</span>
-                </label>
-                {repeatForm.enabled && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label>Every</Label>
-                      <Select value={repeatForm.frequencyWeeks} onValueChange={v => setRepeatForm(f => ({ ...f, frequencyWeeks: v }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 10, 12].map(w => (
-                            <SelectItem key={w} value={String(w)}>{w === 1 ? "1 week" : `${w} weeks`}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Until *</Label>
-                      <DateField value={repeatForm.untilDate} onChange={next => setRepeatForm(f => ({ ...f, untilDate: next }))} />
-                    </div>
-                    <p className="col-span-2 text-xs text-muted-foreground">
-                      Creates a booking every {repeatForm.frequencyWeeks} week{repeatForm.frequencyWeeks === "1" ? "" : "s"} at the same time
-                      {newAppt.petIds.length > 1 ? ` for all ${newAppt.petIds.length} selected dogs together` : ""}, starting from the date above, up to and including the "Until" date.
-                      {newAppt.petIds.length > 1
-                        ? " If the groomer is already booked on a particular date, that whole occurrence (all dogs) is skipped and the rest of the series still gets created."
-                        : " If the groomer is already booked on a particular date, that one occurrence is skipped and the rest still get created."}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
             <div className="space-y-1.5">
               <Label>Notes</Label>
               <Textarea rows={2} placeholder="Any special instructions..." value={newAppt.notes} onChange={e => setNewAppt(p => ({ ...p, notes: e.target.value }))} />
