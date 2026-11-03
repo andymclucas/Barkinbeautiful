@@ -85,7 +85,7 @@ function CommandDialog({
          */
         showCloseButton={false}
       >
-        <Command shouldFilter={shouldFilter} className="relative overflow-hidden rounded-xl [&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command shouldFilter={shouldFilter} className="relative overflow-hidden rounded-xl [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children}
           {showCloseButton && (
             /*
@@ -112,15 +112,46 @@ function CommandInput({
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
+    /*
+      * Andy, 03/11/2026: "add some padding around the search box at the
+      * top also."
+      *
+      * The input sat flush against the dialog's own edge, so the caret
+      * started a couple of pixels from the corner. `pr-12` is not
+      * symmetry for its own sake - it is the room the close button needs,
+      * so a long query runs under the X rather than into it.
+      */
     <div
       data-slot="command-input-wrapper"
-      className="flex h-9 items-center gap-2 border-b px-3"
+      className="flex items-center gap-2.5 border-b px-4 py-2.5 pr-12"
     >
       <SearchIcon className="size-4 shrink-0 opacity-50" />
       <CommandPrimitive.Input
         data-slot="command-input"
+        /*
+         * Andy sent a screenshot of the palette offering his saved
+         * passwords - four email addresses, over the results.
+         *
+         * A bare text input with no hints looks like a username field to
+         * a password manager. `autoComplete="off"` alone is widely
+         * ignored by Chrome and Safari, so this also gives the field a
+         * name that is plainly not a login, and carries the explicit
+         * opt-outs 1Password and LastPass read.
+         *
+         * No `type="search"`: cmdk omits `type` from its Input props and
+         * sets it itself, so passing one does not compile. The
+         * attributes below are the ones managers actually key off.
+         */
+        name="salon-search"
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        data-1p-ignore
+        data-lpignore="true"
+        data-form-type="other"
         className={cn(
-          "placeholder:text-muted-foreground flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+          "placeholder:text-muted-foreground flex h-10 w-full rounded-md bg-transparent text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         {...props}
