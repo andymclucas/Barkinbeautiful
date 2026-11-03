@@ -104,6 +104,7 @@ import { SIZE_BAND_IDS } from "@shared/dogSizeBand";
 import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
 import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
+import { retentionRows } from "@shared/clientRetention";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
@@ -3804,6 +3805,118 @@ const clientsRouter = router({
       return {
         total: overdue.length,
         pets: top.map((p: OverduePet) => ({ ...p, ...(byPet.get(p.petId) ?? {}) })),
+      };
+    }),
+
+  /**
+   * The client retention report.
+   *
+   * Andy, 04/11/2026: "Build the client retention report - add in the
+   * client & dog details, avg weeks between appts and their average
+   * spend." The Reporting page has carried it as a "Coming soon"
+   * placeholder since that page was written.
+   *
+   * One row per DOG with its owner attached, because cadence belongs to
+   * the dog — see shared/clientRetention.ts for why, and for why the
+   * gap is a median while the spend is a mean.
+   *
+   * `protectedProcedure`, matching overdueForGroom directly above: this
+   * is the client book with contact details and a value ranking on it,
+   * which is owner surface. Restricted staff stay on their own
+   * appointments.
+   */
+  clientRetention: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      limit: z.number().int().min(1).max(500).default(100),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input ?? {});
+
+      /*
+       * Completed grooms only — the same evidence overdueForGroom uses,
+       * so the two reports cannot tell different stories about the same
+       * dog. 7,190 past appointments are still 'scheduled' because
+       * nobody closed them out; those dogs will show less history here
+       * than they really have, which is a data problem to fix on the
+       * board rather than something to paper over in a report.
+       */
+      const visits = await db
+        .select({
+          petId: appointments.petId,
+          scheduledStart: appointments.scheduledStart,
+          price: appointments.price,
+        })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.workflowState, "complete"),
+          isNotNull(appointments.petId),
+        ));
+
+      const rows = retentionRows(
+        visits.map((v) => ({ petId: v.petId as number, scheduledStart: v.scheduledStart, price: v.price })),
+      );
+
+      // Most valuable first. The question a retention report answers is
+      // which clients it would hurt to lose, so rank by what they are
+      // worth rather than alphabetically.
+      const ranked = [...rows.values()].sort((a, b) => b.totalSpend - a.totalSpend);
+      const top = ranked.slice(0, input?.limit ?? 100);
+      if (top.length === 0) return { rows: [], total: 0 };
+
+      const petIds = top.map((r) => r.petId);
+      const detail = await db
+        .select({
+          petId: pets.id, petName: pets.name, breed: pets.breed, status: pets.status,
+          clientId: clients.id, firstName: clients.firstName, lastName: clients.lastName,
+          phone: clients.phone, email: clients.email,
+        })
+        .from(pets)
+        .leftJoin(clients, eq(clients.id, pets.clientId))
+        .where(and(eq(pets.tenantId, tenantId), inArray(pets.id, petIds)));
+      const byPet = new Map(detail.map((d) => [d.petId, d]));
+
+      /* A $0 average reads as "cheap client" unless the row says the
+         groom is covered by a weekly fee. */
+      const members = await db
+        .select({ petId: appointments.petId })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          isNotNull(appointments.membershipId),
+          inArray(appointments.petId, petIds),
+        ));
+      const memberPetIds = new Set(members.map((m) => m.petId));
+
+      // Anything in the diary ahead of now, so a row can say whether the
+      // dog is actually coming back. Cancelled does not count — that is
+      // precisely how a client slips away.
+      const booked = await db
+        .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          gte(appointments.scheduledStart, new Date()),
+          notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+          inArray(appointments.petId, petIds),
+        ))
+        .orderBy(asc(appointments.scheduledStart));
+      const nextByPet = new Map<number, Date>();
+      for (const b of booked) {
+        if (b.petId !== null && !nextByPet.has(b.petId)) nextByPet.set(b.petId, b.scheduledStart);
+      }
+
+      return {
+        total: ranked.length,
+        rows: top.map((r) => ({
+          ...r,
+          ...(byPet.get(r.petId) ?? {}),
+          onMembership: memberPetIds.has(r.petId),
+          nextVisit: nextByPet.get(r.petId) ?? null,
+        })),
       };
     }),
 

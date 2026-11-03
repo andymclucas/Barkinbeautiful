@@ -285,7 +285,12 @@ describe("tRPC procedure surface", () => {
   it("parses every procedure and attributes it to a router", () => {
     // An unattributed procedure would silently drop out of the sets below,
     // which is the one way this test could pass while missing something.
-    expect(surface).toHaveLength(367);
+    //
+    // 368 since 04/11/2026: clientsRouter.clientRetention, the retention
+    // report. protectedProcedure, matching overdueForGroom beside it —
+    // the client book with contact details and a value ranking is owner
+    // surface — so it widens neither of the two lists enumerated below.
+    expect(surface).toHaveLength(368);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

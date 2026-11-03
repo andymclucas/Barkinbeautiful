@@ -11,6 +11,10 @@ import { WorkflowTimingChart } from "@/components/WorkflowTimingChart";
 import { DayTimingReport } from "@/components/DayTimingReport";
 import { brisbaneDateKey, localCalendarDay, localCalendarDayKey } from "@shared/localDateTime";
 
+/** Same shape as the figures in the cards above the table. */
+const money = (amount: number) =>
+  `$${amount.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
   fft: "FFT (Face, Feet & Hygiene Tidy)", nail_trim: "Nail Trim", daycare: "Daycare", deshed: "De-shed", other: "Other",
@@ -25,6 +29,15 @@ export default function Reporting() {
   const range = useReportRange("d30");
   const from = range.dateFrom.toISOString();
   const to = range.dateTo.toISOString();
+
+  /*
+   * Andy, 04/11/2026: "Build the client retention report - add in the
+   * client & dog details, avg weeks between appts and their average
+   * spend." Not date-ranged like the cards above it: a dog's rhythm is
+   * its whole history, and asking "how often does Bella come" over the
+   * last 30 days answers nothing.
+   */
+  const { data: retention, isLoading: loadingRetention } = trpc.clients.clientRetention.useQuery({ limit: 100 });
 
   const { data: summary, isLoading: loadingSummary } = trpc.analytics.summary.useQuery({
     dateFrom: from, dateTo: to,
@@ -319,6 +332,94 @@ export default function Reporting() {
           </CardContent>
         </Card>
 
+        {/* Client retention */}
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" /> Client Retention
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Every dog with grooming history, most valuable first. The gap is that dog&rsquo;s own
+              median, so one missed season does not rewrite its rhythm; the spend is the mean of
+              the grooms that carry a price.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {loadingRetention ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
+            ) : !retention || retention.rows.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">No grooming history yet.</div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs text-muted-foreground">
+                        <th className="py-2 pr-3 font-medium">Dog</th>
+                        <th className="py-2 pr-3 font-medium">Client</th>
+                        <th className="py-2 pr-3 text-right font-medium">Visits</th>
+                        <th className="py-2 pr-3 text-right font-medium">Usual gap</th>
+                        <th className="py-2 pr-3 text-right font-medium">Avg spend</th>
+                        <th className="py-2 pr-3 text-right font-medium">Total</th>
+                        <th className="py-2 pr-3 font-medium">Last visit</th>
+                        <th className="py-2 font-medium">Next</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/40">
+                      {retention.rows.map((r) => (
+                        <tr key={r.petId} className="hover:bg-muted/40">
+                          <td className="py-2 pr-3">
+                            <span className="font-semibold">{r.petName ?? "—"}</span>
+                            {r.breed && <span className="block text-xs text-muted-foreground">{r.breed}</span>}
+                          </td>
+                          <td className="py-2 pr-3">
+                            <span>{`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "—"}</span>
+                            {r.phone && <span className="block text-xs text-muted-foreground">{r.phone}</span>}
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">{r.visits}</td>
+                          <td className="py-2 pr-3 text-right tabular-nums">
+                            {/* Null means too little history to call it a
+                                rhythm — two visits is not a pattern. */}
+                            {r.usualGapWeeks === null
+                              ? <span className="text-muted-foreground">—</span>
+                              : `${r.usualGapWeeks} wks`}
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums">
+                            {r.averageSpend === null ? <span className="text-muted-foreground">—</span> : money(r.averageSpend)}
+                            {r.onMembership && (
+                              <span
+                                className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                title="On a membership — the groom carries no price because the weekly fee covers it"
+                              >plan</span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-right tabular-nums font-medium">{money(r.totalSpend)}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap text-xs">
+                            {r.lastVisit ? new Date(r.lastVisit).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                          </td>
+                          <td className="py-2 whitespace-nowrap text-xs">
+                            {r.nextVisit
+                              ? new Date(r.nextVisit).toLocaleDateString("en-AU", { day: "numeric", month: "short" })
+                              : <span className="font-semibold text-amber-700 dark:text-amber-400">nothing booked</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="pt-3 text-xs text-muted-foreground">
+                  Showing {retention.rows.length} of {retention.total} dogs with history. Built from
+                  completed grooms only — a visit nobody closed out on the board does not count, and
+                  roughly half the salon&rsquo;s past appointments are still sitting at{" "}
+                  <em>scheduled</em>. Prices are as MoeGo recorded them: a handful of imported
+                  bookings covered more than one dog and put the whole figure on each, so a
+                  multi-dog family can read high.
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Placeholder reports */}
         <Card className="border-border/60">
           <CardHeader className="pb-3">
@@ -329,7 +430,7 @@ export default function Reporting() {
               {[
                 { name: "Appointment History", desc: "Full list of all appointments with filters", ready: true },
                 { name: "Revenue by Service Type", desc: "Breakdown of income by groom type", ready: true },
-                { name: "Client Retention", desc: "Avg. weeks between visits per client", ready: false },
+                { name: "Client Retention", desc: "Avg. weeks between visits per client", ready: true },
                 { name: "Membership Billing", desc: "Subscription revenue and failed payments", ready: true },
                 { name: "Staff Hours & Pay", desc: "Timesheet summary for payroll", ready: false },
                 { name: "Retail Sales", desc: "Product sales and stock movement", ready: false },
