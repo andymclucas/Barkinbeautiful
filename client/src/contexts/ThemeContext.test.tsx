@@ -9,8 +9,10 @@ import userEvent from "@testing-library/user-event";
  * elsewhere get away with a bare const only because they reference their
  * spies from INSIDE a function, which is not called until render.
  */
-const { playFestiveChime } = vi.hoisted(() => ({ playFestiveChime: vi.fn() }));
-vi.mock("@/lib/festiveChime", () => ({ playFestiveChime }));
+const { playFestiveChime, stopFestiveChime } = vi.hoisted(() => ({
+  playFestiveChime: vi.fn(), stopFestiveChime: vi.fn(),
+}));
+vi.mock("@/lib/festiveChime", () => ({ playFestiveChime, stopFestiveChime }));
 
 import { ThemeProvider, useTheme } from "./ThemeContext";
 
@@ -30,6 +32,7 @@ const show = () => render(<ThemeProvider><Tree /></ThemeProvider>);
 
 beforeEach(() => {
   playFestiveChime.mockReset();
+  stopFestiveChime.mockReset();
   localStorage.clear();
 });
 
@@ -39,6 +42,17 @@ describe("the festive chime", () => {
     show();
     await user.click(screen.getByRole("button", { name: "Turn on" }));
     expect(playFestiveChime).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the music when the tree is switched off mid-play", async () => {
+    // The recording runs about seven and a half seconds, so somebody who
+    // turns it on and straight off again would otherwise be left with
+    // Jingle Bells playing over a theme that is no longer on.
+    const user = setupUser();
+    show();
+    await user.click(screen.getByRole("button", { name: "Turn on" }));
+    await user.click(screen.getByRole("button", { name: "Turn off" }));
+    expect(stopFestiveChime).toHaveBeenCalled();
   });
 
   it("stays silent when the tree is switched off", async () => {

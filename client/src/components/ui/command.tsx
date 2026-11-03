@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { Command as CommandPrimitive } from "cmdk";
-import { SearchIcon } from "lucide-react";
+import { SearchIcon, XIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -62,18 +63,44 @@ function CommandDialog({
       {/*
         * overflow-hidden belongs on the Command, NOT on the DialogContent.
         *
-        * The dialog's close button is deliberately given a negative margin
-        * so it sits over the corner, and clipping the dialog sliced it in
-        * half — a semicircular X hanging off the edge of the search
-        * palette. The rounded corners that overflow-hidden was there for
-        * belong to the command list, so it goes there instead.
+        * The rounded corners it is there for belong to the command list.
         */}
       <DialogContent
         className={cn("p-0", className)}
-        showCloseButton={showCloseButton}
+        /*
+         * Andy, 03/11/2026: "the corner alignment is off - give some more
+         * padding to the edge so it's cleaner."
+         *
+         * The shared dialog close is positioned with a NEGATIVE right
+         * margin, which is tuned for the p-6 every other dialog has: it
+         * pulls the button back from the content box to sit a sensible
+         * distance inside the corner. This dialog is p-0 so the content
+         * box IS the edge, and the same margin pushed the button outside
+         * the rounded corner entirely.
+         *
+         * No single margin can serve both paddings, so the palette places
+         * its own instead. It is the only CommandDialog and the only p-0
+         * dialog in the app, so this stays local rather than re-tuning
+         * the close button for thirty dialogs that are already right.
+         */
+        showCloseButton={false}
       >
-        <Command shouldFilter={shouldFilter} className="overflow-hidden rounded-xl [&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command shouldFilter={shouldFilter} className="relative overflow-hidden rounded-xl [&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children}
+          {showCloseButton && (
+            /*
+             * Inset from the corner on both axes rather than hung over it,
+             * and vertically centred in the 48px input row. Positive
+             * offsets, so the Command's own overflow-hidden cannot clip
+             * it - which is what sliced the previous one in half.
+             */
+            <DialogClose
+              className="ring-offset-background focus:ring-ring absolute top-2.5 right-3 z-10 rounded-full bg-background/85 p-1.5 opacity-60 shadow-sm backdrop-blur-sm transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden [&_svg]:size-4 [&_svg]:shrink-0"
+            >
+              <XIcon />
+              <span className="sr-only">Close</span>
+            </DialogClose>
+          )}
         </Command>
       </DialogContent>
     </Dialog>
