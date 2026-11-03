@@ -98,6 +98,7 @@ import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
 import { appointmentPaymentDisplay } from "@shared/appointmentPaymentDisplay";
+import { PaymentStamp } from "@/components/PaymentStamp";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
 import { liveSiblings } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
@@ -480,15 +481,7 @@ function ApptBlock({
     >
       <div className="px-2 py-1 h-full overflow-hidden leading-tight">
         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
-        {pay.label && (
-          <div
-            data-testid={`appt-payment-${pay.key}`}
-            className="mb-1 inline-flex rounded-sm border bg-white/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em]"
-            style={{ color: pay.accent ?? undefined, borderColor: pay.accent ?? undefined }}
-          >
-            {pay.label}
-          </div>
-        )}
+        <PaymentStamp pay={pay} />
         {siblings && siblings.length > 0 ? (
           <>
             <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
@@ -2564,6 +2557,14 @@ export default function Calendar() {
                   dayAppts.map(appt => {
                     const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
                     const isCancelled = isCancelledAppointment(appt);
+                    /* Andy, 04/11/2026: "Add the stamps to week view too."
+                       Same rule, same treatment as the day grid — a dog
+                       that reads as settled on Tuesday must not read as
+                       owing when the same board is viewed by week. */
+                    const pay = appointmentPaymentDisplay((appt as any).paymentStatus, {
+                      isCancelled,
+                      onMembership: appt.membershipId !== null && appt.membershipId !== undefined,
+                    });
                     const sharedAppointmentLabel = formatSharedAppointmentName({
                       petNames: [appt, ...getSiblings(appt as Appt)].map((pet) => pet.petName),
                       surname: appt.clientLastName,
@@ -2572,10 +2573,11 @@ export default function Calendar() {
                       <div
                         key={appt.id}
                         className={`brand-lift rounded-md border border-white/80 px-2 py-1.5 cursor-pointer text-[11px] leading-tight ${isCancelled ? "bg-red-50 dark:bg-red-950/40" : ""}`}
-                        style={{ opacity: isCancelled ? 0.45 : 1, background: isCancelled ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)" : `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`, borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`, boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${svc.border}` }}
+                        style={{ opacity: isCancelled ? 0.45 : 1, background: isCancelled ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)" : pay.background ?? `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`, borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`, boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${pay.accent ?? svc.border}` }}
                         onClick={(e) => { e.stopPropagation(); openEdit(appt as Appt); }}
                       >
                         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
+                        <PaymentStamp pay={pay} />
                         <div className={`font-bold truncate ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
                           {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
                           {sharedAppointmentLabel}
