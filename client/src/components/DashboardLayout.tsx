@@ -69,6 +69,7 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { trpc } from "@/lib/trpc";
 import { applyBrandTheme } from "@/lib/brandTheme";
+import { FestiveGarland } from "@/components/FestiveGarland";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { MyProfileDialog } from "@/components/MyProfileDialog";
 import { canAdministerStaff } from "@shared/staffAdministrators";
@@ -563,8 +564,17 @@ function DashboardLayoutContent({
             </div>
           </SidebarHeader>
 
+          {/*
+            * Hung from the header's bottom edge, over the top of the nav.
+            * `pointer-events-none` and out of flow, so the first nav item is
+            * still clickable right to its top edge and nothing below moves.
+            */}
+          {festive && (
+            <FestiveGarland compact={isCollapsed} className="pointer-events-none absolute inset-x-0 top-[4.5rem] z-10 h-7" />
+          )}
+
           {/* ── Nav items ── */}
-          <SidebarContent className="gap-0 pt-2">
+          <SidebarContent className={festive ? "gap-0 pt-7" : "gap-0 pt-2"}>
             <SidebarMenu className="px-2 py-1 gap-0.5">
               {visibleMenuItems.map((item) => {
                 const isActive =
@@ -669,6 +679,10 @@ function DashboardLayoutContent({
             {accountControls}
           </div>
         )}
+        {/* Below the header in the DOM so it reads as the header's own edge,
+            and sticky at the header's height so the board scrolls beneath it
+            rather than over the top of it. */}
+        {festive && <div aria-hidden className="festive-stripe sticky top-14 z-40 h-1.5 shrink-0" />}
         <TrialBanner />
         <main className="flex-1 p-4 md:p-6 gm-fade">{children}</main>
       </SidebarInset>

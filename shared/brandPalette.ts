@@ -232,10 +232,54 @@ export const DEFAULT_BRAND = {
 } as const;
 
 /**
+ * The salon's Christmas red and green.
+ *
+ * These two are the established pair — they are the colours the nav
+ * button already flashes on hover (`nav-christmas-lights` in index.css)
+ * and they were picked there against measured contrast, so reusing them
+ * keeps one Christmas in the app rather than two that nearly match:
+ *
+ *     green #064d22 — white on it 10.04:1
+ *     red   #e01835 — white on it  4.83:1
+ *     between the two: 2.08:1 of lightness, which is what carries the
+ *     pair for the commonest colour blindness, where the hues collapse
+ *
+ * Retint either and all three numbers need checking again.
+ */
+export const FESTIVE_GREEN = "#064d22";
+export const FESTIVE_RED = "#e01835";
+
+/**
+ * The three bulb colours, which are NOT the two above.
+ *
+ * `FESTIVE_GREEN` is a surface that has to carry white text, so it is
+ * dark by construction — and a dark green bulb on the dark green sidebar
+ * measured **1.46:1**, which is to say invisible. Half the garland was
+ * missing. A lit bulb is a light source, not a text background, so it
+ * gets its own value.
+ *
+ * Measured against the festive sidebar (#0a2f18):
+ *
+ *     green #2fbf5e — 6.10:1
+ *     gold  #e8a33d — 6.80:1
+ *     red   #e01835 — 3.04:1
+ *
+ * These are decoration, so the bar is WCAG 1.4.11's 3:1 for non-text,
+ * not the 4.5:1 text needs. Red is the one close to the line: it is kept
+ * at the salon's established Christmas red rather than brightened, since
+ * a red that clears 6:1 stops looking like a red bulb. If the sidebar
+ * colour moves, re-measure this one first.
+ */
+export const FESTIVE_BULB_GREEN = "#2fbf5e";
+export const FESTIVE_BULB_RED = FESTIVE_RED;
+export const FESTIVE_BULB_GOLD = "#e8a33d";
+
+/**
  * The Christmas palette, as a brand.
  *
  * Andy, 03/11/2026: "Add a little Christmas tree icon that then
- * switches it to a Christmas theme."
+ * switches it to a Christmas theme." Then, the same day: "Make the
+ * Christmas theme more prominent."
  *
  * Expressed as a BrandInput rather than as CSS so it goes through the
  * same token builder as a salon's own colours. The tenant brand is
@@ -244,14 +288,24 @@ export const DEFAULT_BRAND = {
  * attempt at this silently did nothing.
  *
  * Green is the primary because it is what lands on large surfaces.
- * Red at this saturation reads as an error state across a whole app,
- * so it is the accent, where it behaves like a bauble rather than a
- * warning.
+ * Red stays OFF the large surfaces — a saturated red page chrome reads
+ * as an error state — but the first version put it somewhere it could
+ * not be seen at all, which is why the theme came out as "green".
+ *
+ * `accent` only reaches `--brand-accent`, and that is read in exactly
+ * one rule: the corner gradient wash behind the dashboard. The pale
+ * dusty pink that was here (#e8b4bd, chroma 0.061) was invisible in it.
+ * The real red is chroma 0.224 — 3.7x — so the wash now actually reads
+ * as red. Everything else festive is drawn deliberately, by
+ * `FestiveGarland` and the `.festive` rules in index.css, rather than
+ * hoped for from a token nothing reads.
  */
 export const FESTIVE_BRAND: Required<BrandInputShape> = {
-  primary: "#1f7a46",
-  accent: "#e8b4bd",
-  sidebar: "#14331f",
+  // A touch lighter than FESTIVE_GREEN: this one lands on buttons at
+  // full size, where #064d22 reads closer to black than to green.
+  primary: "#0f6b35",
+  accent: FESTIVE_RED,
+  sidebar: "#0a2f18",
 };
 
 type BrandInputShape = {
