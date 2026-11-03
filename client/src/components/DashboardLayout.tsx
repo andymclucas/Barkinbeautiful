@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuLabel,
+  DropdownMenuCheckboxItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -305,7 +306,7 @@ function DashboardLayoutContent({
   setSidebarWidth: (w: number) => void;
 }) {
   const { user, logout } = useAuth();
-  const { theme, resolvedTheme, setTheme, toggleTheme, festive, toggleFestive, snowing } = useTheme();
+  const { theme, resolvedTheme, setTheme, toggleTheme, festive, setFestive, toggleFestive, snowing } = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
@@ -421,11 +422,6 @@ function DashboardLayoutContent({
     <div className="flex items-center gap-1.5">
       {/* One tap for the common case. The three-way choice, including
           "follow my device", lives in the menu below. */}
-      {/* Andy, 03/11/2026: "an overall 'search' button at the top which
-          shows regardless of the navigation tab." First in this group,
-          so it sits furthest from the destructive end of the header and
-          lands in the same place on every page. */}
-      <GlobalSearch />
       {/* Andy, 03/11/2026: "Add a little Christmas tree icon that then
           switches it to a Christmas theme." Beside the moon, because it
           is the same KIND of control — how the app looks, not what it
@@ -437,7 +433,13 @@ function DashboardLayoutContent({
         aria-pressed={festive}
         aria-label={festive ? "Turn off the Christmas theme" : "Turn on the Christmas theme"}
         title={festive ? "Turn off the Christmas theme" : "Turn on the Christmas theme"}
-        className={`flex h-9 w-9 items-center justify-center rounded-xl text-[17px] leading-none transition-colors hover:bg-accent/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+        /*
+         * Hidden on a phone, where the header has 375px to fit a menu
+         * trigger, a centred search and the account controls - and the
+         * controls alone wanted 204 of it. The tree moves into the
+         * Appearance menu rather than disappearing.
+         */
+        className={`hidden h-9 w-9 items-center justify-center rounded-xl text-[17px] leading-none transition-colors hover:bg-accent/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex ${
           festive ? "bg-accent/70" : "opacity-70 hover:opacity-100"
         }`}
       >
@@ -448,7 +450,11 @@ function DashboardLayoutContent({
         onClick={toggleTheme}
         aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         title={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        className="flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        /* Hidden on a phone for the same reason as the tree. Nothing is
+           lost: Light / Dark / Match my device are already in the menu,
+           so this button was always the shortcut rather than the only
+           way. */
+        className="hidden h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
       >
         {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
       </button>
@@ -503,6 +509,22 @@ function DashboardLayoutContent({
                 <MonitorSmartphone className="mr-2 h-4 w-4" /> Match my device
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
+            {/*
+              * The tree, in the menu as well as the header.
+              *
+              * The header button is hidden on a phone to make room for the
+              * centred search, so without this there would be no way to
+              * reach the Christmas theme on a phone at all. It is a
+              * checkbox rather than a fourth radio item because festive
+              * layers OVER light or dark rather than replacing either.
+              */}
+            <DropdownMenuCheckboxItem
+              checked={festive}
+              onCheckedChange={setFestive}
+              className="cursor-pointer"
+            >
+              <span aria-hidden className="mr-2">🎄</span> Christmas theme
+            </DropdownMenuCheckboxItem>
             <DropdownMenuSeparator />
             {/* Salon-wide, so only the owner sees it. The server enforces
                 this too - hiding a menu item is not access control. */}
@@ -665,22 +687,41 @@ function DashboardLayoutContent({
 
       <SidebarInset>
         {isMobile && (
-          <div className="flex border-b h-14 items-center justify-between bg-background/90 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40 shadow-sm">
-            <div className="flex items-center gap-2">
+          /*
+            * The same three columns on a phone. The page title is dropped
+            * from the middle rather than the search being tucked beside
+            * it: on a 375px screen there is room for one thing in the
+            * centre, and the sidebar already names the page you are on.
+            */
+          <div className="grid border-b h-14 grid-cols-[1fr_auto_1fr] items-center gap-1 bg-background/90 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40 shadow-sm">
+            <div className="flex justify-start">
               <SidebarTrigger
                 className="h-9 w-9 rounded-lg bg-background hover:bg-accent transition-colors"
                 aria-label="Toggle menu"
               />
-              <span className="tracking-tight text-foreground text-sm font-medium">
-                {activeMenuItem?.label ?? "Groomigo"}
-              </span>
             </div>
-            {accountControls}
+            <div className="flex min-w-0 justify-center">
+              <GlobalSearch />
+            </div>
+            <div className="flex justify-end">{accountControls}</div>
           </div>
         )}
         {!isMobile && (
-          <div className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-end gap-2 border-b border-border/80 bg-card/75 px-4 backdrop-blur">
-            {accountControls}
+          /*
+            * Andy, 03/11/2026: "Make the main search feature in the centre
+            * of the page both on browser and phone versions."
+            *
+            * A three-column grid, not `justify-between` with a spacer: the
+            * search has to sit at the MIDDLE OF THE PAGE, and with
+            * flex-between it would centre itself in whatever gap the
+            * account controls left over - drifting left as the signed-in
+            * name gets longer. The outer columns are 1fr each, so the
+            * middle one is the true centre whatever is in them.
+            */
+          <div className="sticky top-0 z-40 grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-border/80 bg-card/75 px-4 backdrop-blur">
+            <div />
+            <GlobalSearch />
+            <div className="flex justify-end">{accountControls}</div>
           </div>
         )}
         {/* Below the header in the DOM so it reads as the header's own edge,
