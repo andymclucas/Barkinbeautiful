@@ -60,4 +60,56 @@ describe("decideAppointmentReminder", () => {
       expect(REMINDER_SKIP_LABEL[reason]).toBeTruthy();
     }
   });
+
+  /*
+   * The filter this replaces required status = "confirmed", which
+   * excluded 1,081 of 1,125 live upcoming bookings: every MoeGo import
+   * lands as "pending" and every Groomigo-made booking is born
+   * "confirmed", so the field records where a booking came from, not
+   * whether anyone agreed to it.
+   */
+  it("sends to a pending booking, because pending is just an imported one", () => {
+    expect(decideAppointmentReminder({ clientPhone: "0412345678", status: "pending", workflowState: "scheduled" }))
+      .toEqual({ send: true });
+  });
+
+  it("sends to a confirmed booking too", () => {
+    expect(decideAppointmentReminder({ clientPhone: "0412345678", status: "confirmed", workflowState: "scheduled" }))
+      .toEqual({ send: true });
+  });
+
+  /* What actually disqualifies a booking is not coming. */
+  it("never reminds about a booking that is not happening", () => {
+    for (const status of ["cancelled", "no_show"]) {
+      expect(decideAppointmentReminder({ clientPhone: "0412345678", status }), status)
+        .toEqual({ send: false, reason: "not_coming" });
+    }
+    for (const workflowState of ["cancelled", "no_show"]) {
+      expect(decideAppointmentReminder({ clientPhone: "0412345678", workflowState }), workflowState)
+        .toEqual({ send: false, reason: "not_coming" });
+    }
+  });
+
+  /*
+   * The morning-of stage runs at 8am and dogs arrive from 7:30, so
+   * without this it texts owners standing at the counter.
+   */
+  it("does not remind a dog that is already in the salon", () => {
+    for (const workflowState of ["checked_in", "bathing", "drying", "grooming", "ready", "complete"]) {
+      expect(decideAppointmentReminder({ clientPhone: "0412345678", workflowState }), workflowState)
+        .toEqual({ send: false, reason: "already_here" });
+    }
+  });
+
+  it("treats a blank workflow state as not yet arrived", () => {
+    expect(decideAppointmentReminder({ clientPhone: "0412345678", workflowState: "" })).toEqual({ send: true });
+    expect(decideAppointmentReminder({ clientPhone: "0412345678", workflowState: null })).toEqual({ send: true });
+  });
+
+  it("still puts opting out ahead of everything else", () => {
+    expect(decideAppointmentReminder({
+      clientPhone: "0412345678", smsOptedOutAt: new Date(),
+      status: "cancelled", workflowState: "complete",
+    })).toEqual({ send: false, reason: "opted_out" });
+  });
 });

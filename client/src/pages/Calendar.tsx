@@ -572,9 +572,37 @@ function ApptBlock({
   return (
     <Tooltip delayDuration={600}>
       <TooltipTrigger asChild>{block}</TooltipTrigger>
-      <TooltipContent side="right" className="max-w-[220px] text-xs space-y-1 p-3">
+      <TooltipContent side="right" className="max-w-[260px] text-xs space-y-1 p-3">
         <div className="font-semibold text-sm">{sharedAppointmentLabel}</div>
         {appt.petBreed && <div className="text-muted-foreground">{appt.petBreed}</div>}
+        {/*
+          * Andy, 04/11/2026: "Any important codes and notes need to show
+          * on hover."
+          *
+          * ABOVE the client details, not below them. Alfie Goode's card
+          * carried a red BITES chip and his hover listed name, phone,
+          * service, status, price and last visit — everything except the
+          * one line that matters before you put hands on the dog. A
+          * groomer hovering is asking "what am I about to deal with",
+          * and the answer should not be under the phone number.
+          */}
+        {(() => {
+          const codes = parsePetCodes(appt.petMoegoCodeLabels);
+          if (codes.length === 0) return null;
+          return (
+            <div className="border-t pt-1.5 mt-1">
+              <PetCodeChips codes={codes} size="xs" />
+            </div>
+          );
+        })()}
+        {appt.notes?.trim() && (
+          <div className="border-t pt-1.5 mt-1">
+            <span className="text-muted-foreground">Notes: </span>
+            {/* Wrapped, not truncated. A note saying "muzzle, owner will
+                stay" is useless cut off at the width of the tooltip. */}
+            <span className="whitespace-pre-wrap">{appt.notes.trim()}</span>
+          </div>
+        )}
           <div className="border-t pt-1 mt-1 space-y-0.5">
           <div><span className="text-muted-foreground">Client: </span>{appt.clientFirstName} {appt.clientLastName}</div>
           {appt.clientPhone && <div><span className="text-muted-foreground">Phone: </span>{appt.clientPhone}</div>}
