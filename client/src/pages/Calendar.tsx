@@ -127,6 +127,7 @@ import type { BusyInterval } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
 import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
 import { bookingAttendance, describeRemoval } from "@shared/sharedBookingAttendance";
+import { agendaRows, describeGroup } from "@shared/agendaGrouping";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
@@ -2592,23 +2593,47 @@ export default function Calendar() {
    * rhythm live.
    */
   const renderAgendaView = () => {
-    const rows = [...dayViewAppts].sort(
-      (a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime(),
-    );
+    /*
+     * Lauren, 04/11/2026: "just need that link dog's to show in agenda
+     * / also red line if possible - Albert & Eddy are together."
+     *
+     * Rows stay one-per-dog, which is the point of this view, and the
+     * dogs of one booking are bracketed by a red line down the left.
+     * The sort moved into shared/agendaGrouping.ts with it: on time
+     * alone, two families booked at 12:30 could interleave and the
+     * bracket would be drawn around the wrong rows.
+     */
+    const rows = agendaRows(dayViewAppts);
     return (
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border bg-card">
         {rows.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">Nothing booked this day.</p>
         ) : (
-          <ul className="divide-y">
-            {rows.map((appt) => {
+          <ul>
+            {rows.map(({ appointment: appt, groupSize, position }, rowIndex) => {
+              const grouped = groupSize > 1;
+              // The divider is drawn per row rather than by divide-y on
+              // the list, so it can be left OFF inside a booking — a
+              // line through the middle of the bracket would undo it.
+              const startsBooking = position === "only" || position === "first";
+              /*
+               * Every colour here is side-scoped on purpose. A plain
+               * `border-red-500` sets ALL four sides, so the divider
+               * below came out red on a bracketed row — the group read
+               * as a red BOX rather than a line down its left — while a
+               * `border-transparent` row lost its divider altogether,
+               * and the rule between two ordinary bookings disappeared.
+               */
+              const groupLine = grouped
+                ? `border-l-[3px] border-l-red-500 ${position === "first" ? "rounded-tl-md" : ""} ${position === "last" ? "rounded-bl-md" : ""}`
+                : "border-l-[3px] border-l-transparent";
               const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
               const isCancelled = isCancelledAppointment(appt);
               const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
               const isVip = showsMembershipMark({ membershipId: appt.membershipId, isCancelled });
               const owner = `${appt.clientFirstName ?? ""} ${appt.clientLastName ?? ""}`.trim();
               return (
-                <li key={appt.id}>
+                <li key={appt.id} className={`${groupLine} ${startsBooking && rowIndex > 0 ? "border-t border-t-border" : ""}`}>
                   <button
                     type="button"
                     onClick={() => openEdit(appt as Appt)}
@@ -2634,6 +2659,14 @@ export default function Calendar() {
                       </span>
                       <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                         {owner && <span className="font-medium text-foreground">{owner}</span>}
+                        {/* On the first row only — the red line carries
+                            it down the rest, and a chip on every row of
+                            a three-dog booking is noise. */}
+                        {position === "first" && (
+                          <span className="rounded-sm bg-red-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
+                            {describeGroup(groupSize)}
+                          </span>
+                        )}
                         {appt.petBreed && <span>{appt.petBreed}</span>}
                         <span className="font-semibold" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                           {SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}
