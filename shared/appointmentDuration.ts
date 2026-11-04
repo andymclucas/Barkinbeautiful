@@ -16,22 +16,62 @@ const DURATION_MINUTES_BY_WEIGHT_CLASS: Record<string, number> = {
 
 const AUTO_DURATION_SERVICE_TYPES = new Set(["classic_groom", "styled_groom", "fft"]);
 
-export function getAutoDurationMinutes(serviceType: string, weightKg: string | number | null | undefined): number | null {
+/**
+ * The dog's recorded size band, used when no weight is on file.
+ *
+ * The table above is already keyed by band id, and `pets.size_band`
+ * already holds one — there was simply no way in except through a
+ * weight. 4,478 active dogs have a band and no weight, and for every
+ * one of them the suggestion returned null and the end time stayed
+ * empty.
+ *
+ * Andy, 04/11/2026, having watched a two-dog booking refuse to create:
+ * "Fix the Ends field bug." The booking had a 42 kg dog and one with a
+ * band but no weight, and one unknown weight is enough to abandon the
+ * whole total — see getAutoDurationMinutesForPets.
+ */
+export function getAutoDurationMinutes(
+  serviceType: string,
+  weightKg: string | number | null | undefined,
+  sizeBand?: string | null,
+): number | null {
   if (!AUTO_DURATION_SERVICE_TYPES.has(serviceType)) return null;
   const band = getMembershipWeightBand(weightKg);
-  if (!band) return null;
-  return DURATION_MINUTES_BY_WEIGHT_CLASS[band.id] ?? null;
+  // A recorded weight still wins: it is the better evidence, and a band
+  // set by hand years ago should not override a figure from the scales.
+  if (band) return DURATION_MINUTES_BY_WEIGHT_CLASS[band.id] ?? null;
+  const fallback = (sizeBand ?? "").trim();
+  if (!fallback) return null;
+  return DURATION_MINUTES_BY_WEIGHT_CLASS[fallback] ?? null;
 }
 
 // For a multi-pet (family) booking, each dog is groomed in turn within the
 // one appointment block, so the suggested duration is each dog's time added
 // together. If any selected dog's weight is unknown, no total is suggested
 // (falls back to whatever staff enters manually) rather than guessing.
-export function getAutoDurationMinutesForPets(serviceType: string, weightsKg: (string | number | null | undefined)[]): number | null {
-  if (!AUTO_DURATION_SERVICE_TYPES.has(serviceType) || weightsKg.length === 0) return null;
+/** A dog, as much of it as the duration needs to know. */
+export type DurationPet = {
+  weightKg?: string | number | null;
+  sizeBand?: string | null;
+};
+
+export function getAutoDurationMinutesForPets(
+  serviceType: string,
+  pets: readonly (DurationPet | string | number | null | undefined)[],
+): number | null {
+  if (!AUTO_DURATION_SERVICE_TYPES.has(serviceType) || pets.length === 0) return null;
   let total = 0;
-  for (const weight of weightsKg) {
-    const minutes = getAutoDurationMinutes(serviceType, weight);
+  for (const pet of pets) {
+    // A bare weight is still accepted, so older callers keep working.
+    const minutes = pet !== null && typeof pet === "object"
+      ? getAutoDurationMinutes(serviceType, pet.weightKg, pet.sizeBand)
+      : getAutoDurationMinutes(serviceType, pet);
+    /*
+     * Still all-or-nothing. One dog whose size is genuinely unknown
+     * makes the TOTAL a guess, and a wrong end time on a family booking
+     * blocks a groomer's afternoon. Falling back to the band is about
+     * dogs whose size IS known and merely unweighed.
+     */
     if (minutes === null) return null;
     total += minutes;
   }

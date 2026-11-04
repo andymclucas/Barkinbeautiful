@@ -2059,8 +2059,18 @@ export default function Calendar() {
   // a known-easy job on a large dog, or to overlap a booking on purpose.
   useEffect(() => {
     if (!newAppt.scheduledStart || selectedAppointmentPetIds.length === 0) return;
-    const weights = selectedAppointmentPetIds.map(id => selectedClientPets.data?.find(p => p.id === id)?.weightKg ?? null);
-    const suggestedMinutes = getAutoDurationMinutesForPets(newAppt.serviceType, weights);
+    /*
+     * Band as well as weight. 4,478 active dogs have a size band and no
+     * weight on file, and one unknown dog abandons the whole total — so
+     * a family with a weighed dog and an unweighed one left the end
+     * time empty, and the booking then refused to save with only a
+     * toast to say why. Andy hit exactly that on 04/11/2026.
+     */
+    const dogs = selectedAppointmentPetIds.map(id => {
+      const pet = selectedClientPets.data?.find(p => p.id === id);
+      return { weightKg: pet?.weightKg ?? null, sizeBand: (pet as { sizeBand?: string | null } | undefined)?.sizeBand ?? null };
+    });
+    const suggestedMinutes = getAutoDurationMinutesForPets(newAppt.serviceType, dogs);
     if (suggestedMinutes === null) return;
     const start = new Date(newAppt.scheduledStart);
     if (Number.isNaN(start.getTime())) return;
