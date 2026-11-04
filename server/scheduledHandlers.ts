@@ -46,8 +46,9 @@ import { membershipPayments, membershipLedgerEntries } from "../drizzle/schema";
 import { desc } from "drizzle-orm";
 import { sendSms, buildAppointmentReminderSms } from "./sms";
 import { appointments, staff } from "../drizzle/schema";
-import { gte, isNotNull, isNull, lt, notInArray } from "drizzle-orm";
+import { gte, inArray, isNotNull, isNull, lt, notInArray } from "drizzle-orm";
 import { decideAppointmentReminder, REMINDER_SKIP_LABEL } from "@shared/reminderDecision";
+import { groupRemindersByBooking } from "@shared/reminderGrouping";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 
 
@@ -754,7 +755,21 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
         );
 
       let stageSent = 0;
-      for (const row of rows) {
+      /*
+       * Grouped before sending: Groomigo stores one appointment row per
+       * dog, so looping over rows texted a three-dog family three
+       * times, each naming one dog. Andy's rule for the pickup message
+       * is the same rule — "Do not ever send 2 or 3" — and the pickup
+       * text and the booking confirmation both already obeyed it.
+       *
+       * Measured before reminders were switched on: 34 texts to 26
+       * clients on the first run, 294 duplicates over the next thirty
+       * days across the three stages.
+       */
+      for (const group of groupRemindersByBooking(
+        rows.map((r) => ({ ...r, appointmentId: r.apptId })),
+      )) {
+        const row = group.lead;
         // Bound once so the narrowing survives the guard below.
         const phone = row.clientPhone;
         if (!row.scheduledStart || !phone) { skipped++; continue; }
@@ -785,7 +800,7 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
 
         const body = buildAppointmentReminderSms({
           clientFirstName: row.clientFirstName ?? "there",
-          petName: row.petName ?? "your dog",
+          petNames: group.petNames.length > 0 ? group.petNames : ["your dog"],
           date: apptDate,
           time: apptTime,
           groomer: row.staffName ?? "our team",
@@ -795,10 +810,19 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
         const result = await sendSms(phone, body, { tenantId: row.tenantId, trigger: "automated", type: "reminder" });
 
         if (result.success) {
+          /*
+           * EVERY row of the booking is claimed, not just the one the
+           * message was built from. Claiming only the lead would leave
+           * the siblings unclaimed, and the next run of this stage
+           * would text the client again about the same booking — the
+           * duplicate this grouping exists to remove, arriving a day
+           * later instead of a second later.
+           */
+          const claimedIds = group.appointments.map((a) => a.apptId);
           await db
             .update(appointments)
             .set({ [stage.column]: new Date() } as any)
-            .where(eq(appointments.id, row.apptId));
+            .where(inArray(appointments.id, claimedIds));
           await db.insert(smsLogs).values({
             tenantId: 1,
             clientId: row.clientId,

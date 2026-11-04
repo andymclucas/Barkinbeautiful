@@ -147,9 +147,19 @@ export async function sendSms(
 
 // ── Template builders ──────────────────────────────────────────────────────────
 
+/**
+ * One booking, one text, however many dogs are on it.
+ *
+ * `petNames`, not `petName`: this looped over appointment ROWS and
+ * Groomigo stores one per dog, so a client with three dogs booked at
+ * 12:30 got three texts each naming one of them. Andy's rule for the
+ * pickup message covers this exactly — "Do not ever send 2 or 3" — and
+ * the pickup text and the booking confirmation both already obeyed it.
+ * This was the last of the three that did not.
+ */
 export function buildAppointmentReminderSms(opts: {
   clientFirstName: string;
-  petName: string;
+  petNames: readonly string[];
   date: string;
   time: string;
   groomer: string;
@@ -157,16 +167,22 @@ export function buildAppointmentReminderSms(opts: {
   stage?: "4d" | "2d" | "morning";
 }) {
   const salon = opts.salonName ?? "Barkin' Beautiful";
+  // Same helper the pickup text and the confirmation use, so a client
+  // who gets both reads their dogs named the same way in each.
+  const { subject, verb } = describePets(opts.petNames);
+  // Always "'s". A trailing apostrophe is for a plural noun ending in s,
+  // not a list of names: "Albert and Eddy's", never "Albert and Eddy'".
+  const possessive = `${subject}'s`;
   if (opts.stage === "4d") {
-    return `Hi ${opts.clientFirstName}! Just a heads up \u2014 ${opts.petName} has a grooming appointment coming up at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. See you soon! 🐾`;
+    return `Hi ${opts.clientFirstName}! Just a heads up \u2014 ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment coming up at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. See you soon! 🐾`;
   }
   if (opts.stage === "2d") {
-    return `Hi ${opts.clientFirstName}! Reminder: ${opts.petName}'s grooming appointment at ${salon} is in 2 days, on ${opts.date} at ${opts.time} with ${opts.groomer}. 🐾`;
+    return `Hi ${opts.clientFirstName}! Reminder: ${possessive} grooming appointment at ${salon} is in 2 days, on ${opts.date} at ${opts.time} with ${opts.groomer}. 🐾`;
   }
   if (opts.stage === "morning") {
-    return `Good morning ${opts.clientFirstName}! Just a reminder that ${opts.petName} has a grooming appointment today at ${opts.time} with ${opts.groomer} at ${salon}. See you soon! 🐾`;
+    return `Good morning ${opts.clientFirstName}! Just a reminder that ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment today at ${opts.time} with ${opts.groomer} at ${salon}. See you soon! 🐾`;
   }
-  return `Hi ${opts.clientFirstName}! Just a reminder that ${opts.petName} has a grooming appointment at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. See you then! 🐾`;
+  return `Hi ${opts.clientFirstName}! Just a reminder that ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. See you then! 🐾`;
 }
 
 export function buildAppointmentConfirmationSms(opts: {

@@ -149,8 +149,18 @@ describe("one booking, one text", () => {
       date: "Friday 30 October", time: "9:00 am", groomer: "Megs",
     });
     expect(sms).toContain("Agnes and Shirley");
-    expect(sms).toContain("are booked for");
     expect(sms.match(/booked/g)).toHaveLength(1);
+    /*
+     * Read as a whole sentence, not grepped for a fragment. This used
+     * to assert toContain("are booked for"), which passed while the
+     * text said "Agnes and Shirley' grooming appointment ... are
+     * booked" — a stray apostrophe and a plural verb on a singular
+     * appointment, in a message about to go to real clients.
+     */
+    expect(sms).toBe(
+      "Hi Annie! Agnes and Shirley's grooming appointment at Barkin' Beautiful "
+      + "is booked for Friday 30 October at 9:00 am with Megs. See you then! \u{1F43E}",
+    );
   });
 
   it("uses the singular for one dog", () => {

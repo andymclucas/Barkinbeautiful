@@ -58,8 +58,22 @@ export function buildBookingConfirmationSms(input: BookingConfirmationInput): st
   // One booking, one text, however many dogs are on it. Lauren's rule
   // for the pickup message, 13/10/2026, and the same reasoning: two
   // dogs collected together is one trip and one message.
-  const { subject, verb } = describePets(input.petNames);
-  return `Hi ${who}! ${subject}${verb === "are" ? "'" : "'s"} grooming appointment at ${salon} ${verb} booked for ${input.date} at ${input.time}${withGroomer}. See you then! 🐾`;
+  const { subject } = describePets(input.petNames);
+  /*
+   * Always "'s", and always "is".
+   *
+   * The possessive used to follow describePets' verb — an apostrophe
+   * alone for a plural — which gives "Albert and Eddy' grooming
+   * appointment". That rule is for a plural noun ending in s ("the
+   * dogs'"), not for a list of names; "Albert and Eddy's" is correct
+   * however many dogs there are.
+   *
+   * And "is", because what is booked is the APPOINTMENT, which is one
+   * whatever the dog count. "appointment ... are booked" was the same
+   * mistake from the other end. The test that covered this asserted
+   * `toContain("are booked for")` and so pinned it.
+   */
+  return `Hi ${who}! ${subject}'s grooming appointment at ${salon} is booked for ${input.date} at ${input.time}${withGroomer}. See you then! 🐾`;
 }
 
 export type ConfirmationSkipReason =
