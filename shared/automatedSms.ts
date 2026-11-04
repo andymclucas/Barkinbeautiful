@@ -60,6 +60,32 @@ export const ALLOWED_AUTOMATED_SMS: ReadonlySet<AutomatedSmsType> = new Set<Auto
   // UNIQUE on the caller's number, so a given number is texted once
   // ever. See shared/missedCallAutoText.ts.
   "missed_call",
+
+  // Andy, 04/11/2026: "Turn the confirmation and reminder texts on."
+  //
+  // This reverses his instruction of 28/10/2026 — "No automated text
+  // messages to go to clients other than when dogs are fully groomed
+  // and ready to be picked up" — and he was told so, twice, before
+  // asking again. Left written down because the 28/10 rule is quoted
+  // all over this codebase and the next person needs to know it was
+  // lifted deliberately rather than forgotten.
+  //
+  // Confirmation fires on booking creation. It refuses a MoeGo import
+  // by the row's own moego_appointment_id, which is what stops a sync
+  // of 276 bookings texting 276 clients in one run — see
+  // shared/bookingConfirmationSms.ts, which has the full reasoning.
+  "confirmation",
+
+  // The 3-stage reminder: 4 days out, 2 days out, morning of. Asked
+  // for in the same message.
+  //
+  // It has NEVER run in production. All three claim columns —
+  // reminder_4d_sent_at, reminder_2d_sent_at, reminder_morning_sent_at
+  // — are NULL on every one of the salon's 15,000 appointments, so the
+  // first real run is the first time this path sends anything to
+  // anybody. It is tested, the guards are tested, and that is still
+  // not the same as having run.
+  "reminder",
 ]);
 
 export function automatedSmsAllowed(type: AutomatedSmsType): boolean {

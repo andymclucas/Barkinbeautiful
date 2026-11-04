@@ -9,13 +9,18 @@ describe("automatedSmsAllowed", () => {
   /**
    * Andy, 28/10/2026: "No automated text messages to go to clients
    * other than when dogs are fully groomed and ready to be picked up."
+   * Then 04/11/2026: "Turn the confirmation and reminder texts on."
+   *
+   * The second instruction reverses the first. Both are recorded here
+   * because the 28/10 rule is quoted throughout this codebase, and a
+   * reader finding it needs to know it was lifted on purpose.
    */
-  it("allows the pickup text and the missed-call reply, and nothing else", () => {
-    expect(automatedSmsAllowed("ready_pickup")).toBe(true);
-    // Andy, 28/10/2026: "Keep the missed call auto reply on."
-    expect(automatedSmsAllowed("missed_call")).toBe(true);
+  it("allows the four chosen messages, and nothing else", () => {
+    for (const type of ["ready_pickup", "missed_call", "confirmation", "reminder"] as AutomatedSmsType[]) {
+      expect(automatedSmsAllowed(type), type).toBe(true);
+    }
     const everythingElse: AutomatedSmsType[] = [
-      "confirmation", "reminder", "tracker", "waitlist_offer", "waitlist_missed",
+      "tracker", "waitlist_offer", "waitlist_missed",
       "online_booking_request", "photo_link", "payment_failed",
     ];
     for (const type of everythingElse) {
@@ -24,12 +29,15 @@ describe("automatedSmsAllowed", () => {
   });
 
   /**
-   * The list IS the decision, so it is pinned exactly. Growing it means
-   * somebody chose that in front of the comment explaining the rule,
-   * which is the point of keeping it in one place.
+   * The list IS the decision, so it stays pinned EXACTLY rather than
+   * loosened to "contains" now that it has grown. A fifth entry must
+   * still fail here, because that is the only thing standing between a
+   * new automated send and a real client's phone.
    */
-  it("holds exactly these two messages", () => {
-    expect([...ALLOWED_AUTOMATED_SMS]).toEqual(["ready_pickup", "missed_call"]);
+  it("holds exactly these four messages", () => {
+    expect([...ALLOWED_AUTOMATED_SMS]).toEqual([
+      "ready_pickup", "missed_call", "confirmation", "reminder",
+    ]);
   });
 
   it("says why, in words a person reading the log can use", () => {
@@ -74,16 +82,25 @@ describe("sendSms enforces the automated-message rule", () => {
     else process.env.SMS_AUTOMATION_ENABLED = automation;
   });
 
-  it("refuses an automated confirmation — the one a client complained about", async () => {
-    const result = await sendSms("0400000000", "body", { trigger: "automated", type: "confirmation" });
-    expect(result.success).toBe(false);
-    expect(result.blocked).toBe(true);
-    expect(logged.join("\n")).toContain("confirmation");
+  /*
+   * Andy, 04/11/2026: "Turn the confirmation and reminder texts on."
+   * These two used to be asserted as BLOCKED here. They pass the policy
+   * gate now, and the assertion is inverted rather than deleted so the
+   * change of policy is visible in the test, not just in the list.
+   */
+  it("lets the confirmation and the reminder through the policy gate", async () => {
+    for (const type of ["confirmation", "reminder"] as AutomatedSmsType[]) {
+      const result = await sendSms("0400000000", "body", { trigger: "automated", type });
+      expect(result.blocked, type).toBeUndefined();
+      // Twilio is unconfigured in the suite, so an allowed message gets
+      // this far and stops — which is the proof it cleared the policy.
+      expect(result.error, type).toBe("Twilio not configured");
+    }
   });
 
-  it("refuses every other automated message", async () => {
+  it("still refuses every automated message nobody has asked for", async () => {
     const blocked: AutomatedSmsType[] = [
-      "reminder", "tracker", "waitlist_offer", "waitlist_missed",
+      "tracker", "waitlist_offer", "waitlist_missed",
       "online_booking_request", "photo_link", "payment_failed",
     ];
     for (const type of blocked) {
@@ -133,7 +150,10 @@ describe("sendSms enforces the automated-message rule", () => {
    * client's conversation.
    */
   it("marks a blocked send distinctly from a failed one", async () => {
-    const policy = await sendSms("0400000000", "b", { trigger: "automated", type: "reminder" });
+    // "tracker", not "reminder": the reminder is allowed as of
+    // 04/11/2026 and this test is about what a BLOCKED result looks
+    // like, so it needs a type nobody has asked for.
+    const policy = await sendSms("0400000000", "b", { trigger: "automated", type: "tracker" });
     const twilio = await sendSms("0400000000", "b", { trigger: "staff" });
     expect(policy.blocked).toBe(true);
     expect(twilio.blocked).toBeUndefined();
