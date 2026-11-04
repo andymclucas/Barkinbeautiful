@@ -4,6 +4,8 @@ import { getDb } from "./db";
 import { appointments, staff, pets, petPhotos, uploadedImages, groomingReports, clientPhotoRequests, clientPhotos } from "../drizzle/schema";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { hashClientPhotoToken, photoRequestState } from "@shared/clientPhotoRequest";
+import { choosePetPhoto } from "@shared/petProfilePhoto";
+import { getPetThumb, setPetThumb, forgetPetThumb } from "./petThumbCache";
 import { requireApprovedStaffTenant } from "./staffAccess";
 import sharp from "sharp";
 
@@ -319,6 +321,9 @@ export function registerUploadRoutes(app: Router) {
         });
         const insertId = (created as any).insertId;
         await db.update(petPhotos).set({ url: `/api/pet-photos/${insertId}/image` }).where(eq(petPhotos.id, insertId));
+        // This photo is now the dog's face (newest gallery photo wins),
+        // so the cached thumbnail is wrong from this moment.
+        forgetPetThumb(pet.id);
         res.json({ success: true, id: insertId, url: `/api/pet-photos/${insertId}/image` });
       } catch (err: any) {
         console.error("[upload/pet-groom-photo]", err);
@@ -463,7 +468,16 @@ export function registerUploadRoutes(app: Router) {
   // has been set, so a picture taken at grooming shows up on the board without
   // anyone having to set it as the profile.
   const PET_THUMB_PX = 96;
-  const petThumbCache = new Map<string, Buffer>();
+  /*
+   * A minute, not a day.
+   *
+   * At max-age=86400 a browser that had drawn the board once kept
+   * serving the old face for twenty-four hours, so deleting the wrong
+   * dog's photo looked like it had failed and staff stopped trying.
+   * The server-side cache above makes a re-fetch cheap, so the only
+   * cost of a short life here is a conditional request.
+   */
+  const PET_PHOTO_CACHE = "private, max-age=60";
 
   app.get("/api/pets/:id/photo", async (req, res) => {
     try {
@@ -475,9 +489,9 @@ export function registerUploadRoutes(app: Router) {
       const wantsFull = req.query.size === "full";
 
       if (!wantsFull) {
-        const cached = petThumbCache.get(String(petId));
+        const cached = getPetThumb(petId);
         if (cached) {
-          res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
+          res.set({ "Content-Type": "image/jpeg", "Cache-Control": PET_PHOTO_CACHE });
           res.send(cached);
           return;
         }
@@ -488,23 +502,29 @@ export function registerUploadRoutes(app: Router) {
       const [pet] = await db.select({ photoData: pets.photoData, photoContentType: pets.photoContentType })
         .from(pets).where(eq(pets.id, petId)).limit(1);
 
-      let data = pet?.photoData ?? null;
-      let contentType = pet?.photoContentType ?? null;
-      if (!data) {
-        // No profile photo - use the newest grooming photo of this dog.
-        const [gallery] = await db.select({ photoData: petPhotos.photoData, photoContentType: petPhotos.photoContentType })
-          .from(petPhotos)
-          .where(eq(petPhotos.petId, petId))
-          .orderBy(desc(petPhotos.takenAt))
-          .limit(1);
-        data = gallery?.photoData ?? null;
-        contentType = gallery?.photoContentType ?? null;
-      }
+      /*
+       * The newest gallery photo wins and pets.photo_data is the
+       * fallback — see shared/petProfilePhoto.ts for why round this
+       * way. The short version: the column cannot be written or
+       * cleared by anything in the app, so while it won, a dog whose
+       * imported photo was wrong could never be corrected.
+       */
+      const [gallery] = await db.select({ photoData: petPhotos.photoData, photoContentType: petPhotos.photoContentType })
+        .from(petPhotos)
+        .where(eq(petPhotos.petId, petId))
+        .orderBy(desc(petPhotos.takenAt))
+        .limit(1);
+      const chosen = choosePetPhoto({
+        newestGalleryPhoto: gallery ? { data: gallery.photoData, contentType: gallery.photoContentType } : null,
+        profilePhoto: pet ? { data: pet.photoData, contentType: pet.photoContentType } : null,
+      });
+      const data = chosen.data;
+      const contentType = chosen.contentType;
       if (!data) { res.status(404).json({ error: "No photo" }); return; }
 
       const original = Buffer.from(data, "base64");
       if (wantsFull) {
-        res.set({ "Content-Type": contentType || "image/jpeg", "Cache-Control": "private, max-age=86400" });
+        res.set({ "Content-Type": contentType || "image/jpeg", "Cache-Control": PET_PHOTO_CACHE });
         res.send(original);
         return;
       }
@@ -517,13 +537,11 @@ export function registerUploadRoutes(app: Router) {
           .resize({ width: PET_THUMB_PX, height: PET_THUMB_PX, fit: "cover", position: "attention" })
           .jpeg({ quality: 72, mozjpeg: true })
           .toBuffer();
-        // Bounded so a large client list cannot grow this without limit.
-        if (petThumbCache.size > 500) petThumbCache.clear();
-        petThumbCache.set(String(petId), thumb);
+        setPetThumb(petId, thumb);
       } catch (err) {
         console.error("[pets/:id/photo] resize failed, serving original", err);
       }
-      res.set({ "Content-Type": "image/jpeg", "Cache-Control": "private, max-age=86400" });
+      res.set({ "Content-Type": "image/jpeg", "Cache-Control": PET_PHOTO_CACHE });
       res.send(thumb);
     } catch (err: any) {
       console.error("[pets/:id/photo]", err);
