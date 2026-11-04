@@ -321,3 +321,66 @@ describe("what the review caught", () => {
     })).toEqual({ send: false, reason: "quiet_hours" });
   });
 });
+
+/**
+ * Pinned because it is a DECISION, not an accident.
+ *
+ * Staying silent on a same-day move is right for the common case —
+ * staff shuffle the board all day — and wrong for one case: a client
+ * already told a time for that day is left holding the old one. That
+ * happened to a real client within two minutes of this going live on
+ * 04/11/2026, and they would have arrived three hours early.
+ *
+ * Andy was shown it and chose to keep the rule, with staff telling the
+ * client themselves. These assert the behaviour he chose, so changing
+ * it has to be deliberate and has to go back to him.
+ */
+describe("a same-day move stays silent — Andy's call, 04/11/2026", () => {
+  const morning = new Date("2026-11-05T23:30:00Z"); // 9:30am Fri, Brisbane
+  const afternoon = new Date("2026-11-06T02:30:00Z"); // 12:30pm the same Fri
+
+  it("says nothing when a booking already announced for a day is retimed", () => {
+    const decision = decideRescheduleSms({
+      ...moveBase,
+      previousStart: morning,
+      scheduledStart: afternoon,
+      // Already told about this very day, by the move that put it here.
+      rescheduleSmsSentFor: "2026-11-06",
+      clientToldOfDayAt: NOW_TUE,
+    });
+    /*
+     * Silence is the point; which gate produces it is not. Two refuse
+     * this independently — the dedupe sees the client was told about
+     * this day, and the same-day rule sees the day did not change — and
+     * the dedupe happens to run first. Pinning the reason here would
+     * fail the day either is reordered without the behaviour changing.
+     * The next case isolates the same-day rule on its own.
+     */
+    expect(decision.send).toBe(false);
+  });
+
+  it("is the same-day rule doing it, not the dedupe window", () => {
+    // Nothing claimed, nobody told recently — still silent, because the
+    // day did not change. The rule is about the DAY and only the day.
+    expect(decideRescheduleSms({
+      ...moveBase,
+      previousStart: morning,
+      scheduledStart: afternoon,
+      rescheduleSmsSentFor: null,
+      clientToldOfDayAt: null,
+    })).toEqual({ send: false, reason: "same_day" });
+  });
+
+  it("still speaks the moment the day itself changes", () => {
+    expect(decideRescheduleSms({
+      ...moveBase,
+      previousStart: morning,
+      scheduledStart: new Date("2026-11-09T23:30:00Z"),
+      // Stale: the client was told about the 6th, and this moves to the
+      // 9th. clientToldOfDayAt is null because the sender looks it up
+      // SCOPED TO THE NEW DAY — nobody has been told about the 9th.
+      rescheduleSmsSentFor: "2026-11-06",
+      clientToldOfDayAt: null,
+    })).toEqual({ send: true });
+  });
+});
