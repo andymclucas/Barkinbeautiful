@@ -132,6 +132,7 @@ import { priceForPet } from "../shared/multiPetPricing";
 import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount";
 import { sendBookingConfirmation } from "./bookingConfirmation";
 import { sendCancellationNotice, sendRescheduleNotice, clearCancellationClaim } from "./appointmentChangeNotify";
+import { wholeBookingCancellation } from "@shared/sharedBookingAttendance";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
 import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
 import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
@@ -2000,6 +2001,93 @@ const calendarRouter = router({
         coveredPetIds: clientMemberships.filter((membership) => !membership.bookingSuspended).map((membership) => membership.petId),
         suspendedPetIds: clientMemberships.filter((membership) => membership.bookingSuspended).map((membership) => membership.petId),
       };
+    }),
+
+  /**
+   * Cancel every dog on a booking, in one action and one text.
+   *
+   * Andy, 04/11/2026: "Build the cancel whole booking action."
+   *
+   * Cancelling a family dog by dog sends one text PER DOG, because
+   * each press is a separate request arriving minutes apart and there
+   * is no scheduler to batch them. That breaks the rule he states most
+   * plainly — "Do not ever send 2 or 3" — and until now the dialog
+   * offered no other way.
+   *
+   * The fix is the ORDER. Every row is cancelled first, and the notice
+   * runs once afterwards; sendCancellationNotice covers every dog of
+   * the booking that is cancelled and untold, so by then that is all of
+   * them and it sends one text naming all of them.
+   *
+   * The booking is (client, scheduled start), not session_id, for the
+   * reason shared/reminderGrouping.ts gives at length: session_id is
+   * NULL on MoeGo imports, which is nearly every upcoming booking.
+   */
+  cancelWholeBooking: operationalProcedure
+    .input(z.object({ appointmentId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+
+      const [anchorRow] = await db
+        .select({
+          id: appointments.id, tenantId: appointments.tenantId,
+          clientId: appointments.clientId, scheduledStart: appointments.scheduledStart,
+        })
+        .from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+      if (!anchorRow) throw new Error("Appointment not found");
+      const portalStaff = await requireApprovedStaffAppointmentAccess(db, ctx.user, anchorRow.id);
+
+      const rows = await db
+        .select({
+          id: appointments.id,
+          status: appointments.status,
+          workflowState: appointments.workflowState,
+          petName: pets.name,
+        })
+        .from(appointments)
+        .leftJoin(pets, eq(pets.id, appointments.petId))
+        .where(and(
+          eq(appointments.tenantId, anchorRow.tenantId),
+          eq(appointments.clientId, anchorRow.clientId),
+          eq(appointments.scheduledStart, anchorRow.scheduledStart),
+        ));
+
+      const plan = wholeBookingCancellation(rows.map((r: any) => ({
+        id: r.id, petName: r.petName, status: r.status, workflowState: r.workflowState,
+      })));
+      if (plan.cancel.length === 0) {
+        return { cancelled: 0, blocked: plan.blocked.map((b) => b.name), notice: null };
+      }
+
+      /*
+       * Access is checked for EVERY row, not just the one clicked. A
+       * restricted groomer may reach one dog of a family and not its
+       * siblings, and this cancels siblings.
+       */
+      const ids: number[] = [];
+      for (const row of plan.cancel) {
+        await requireApprovedStaffAppointmentAccess(db, ctx.user, row.id);
+        ids.push(row.id);
+      }
+
+      const before = new Map(rows.map((r: any) => [r.id, r.workflowState]));
+      await db.update(appointments)
+        .set({ workflowState: "cancelled", status: "cancelled" })
+        .where(inArray(appointments.id, ids));
+      // The audit trail, one row per dog. workflowLogs is what drives
+      // the Pet Tracker and the timing analytics; a bulk state change
+      // that skips it is a hole in both.
+      await db.insert(workflowLogs).values(ids.map((id) => ({
+        appointmentId: id,
+        fromState: before.get(id) ?? "scheduled",
+        toState: "cancelled" as const,
+        changedByStaffId: portalStaff?.id,
+      })));
+
+      // AFTER the writes, and exactly once. This is the whole point.
+      const notice = await sendCancellationNotice(db, ids[0]);
+      return { cancelled: ids.length, blocked: plan.blocked.map((b) => b.name), notice };
     }),
 
   addPetsToSharedAppointment: operationalProcedure

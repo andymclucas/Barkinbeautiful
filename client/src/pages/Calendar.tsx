@@ -126,7 +126,10 @@ import { annotateSlots, blockingClashes, busyFromRows, clashesFor, concurrentDog
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
 import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
-import { bookingAttendance, describeRemoval, describeAttendance } from "@shared/sharedBookingAttendance";
+import {
+  bookingAttendance, describeRemoval, describeAttendance,
+  wholeBookingCancellation, describeWholeBookingCancellation,
+} from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
 import { overlapPlacement } from "@shared/appointmentCardOverlap";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
@@ -1189,6 +1192,8 @@ export default function Calendar() {
    * sentence says what happens to the other dogs before anything moves.
    */
   const [confirmNotComing, setConfirmNotComing] = useState<{ id: number; name: string; message: string } | null>(null);
+  /** The whole booking, about to be cancelled in one action. */
+  const [confirmWholeCancel, setConfirmWholeCancel] = useState<{ id: number; message: string } | null>(null);
   /** The blockout being edited, or null when creating a new one. */
   const [blockoutEditing, setBlockoutEditing] = useState<BlockoutEditing | null>(null);
   const [blockoutDefaultDate, setBlockoutDefaultDate] = useState("");
@@ -1627,6 +1632,26 @@ export default function Calendar() {
     },
     onError: (e) => toast.error(e.message),
   });
+  /*
+   * One press, one text. The procedure cancels every dog BEFORE the
+   * notice runs, which is what makes it a single message naming all of
+   * them rather than one per dog.
+   */
+  const cancelWholeBookingMutation = trpc.calendar.cancelWholeBooking.useMutation({
+    onSuccess: (r) => {
+      const left = r.blocked.length > 0
+        ? ` ${r.blocked.join(", ")} left alone — already at the salon or groomed.`
+        : "";
+      toast.success(`${r.cancelled} dog${r.cancelled === 1 ? "" : "s"} cancelled.${left}`);
+      setConfirmWholeCancel(null);
+      closeEditDialog();
+      refetch();
+      utils.workflow.getBoard.invalidate();
+      utils.workflow.getTodayBoard.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const workflowMutation = trpc.calendar.updateWorkflowState.useMutation({
     // The board is a different query, and it was never told. It polls every
     // five seconds so it caught up on its own, but "I set it to bathing and
@@ -4689,6 +4714,39 @@ export default function Calendar() {
                         </p>
                       </div>
                       <div className="space-y-1.5">
+                      {/*
+                        * Andy, 04/11/2026: "Build the cancel whole
+                        * booking action."
+                        *
+                        * One press, one text. Cancelling the dogs one
+                        * at a time sends a text EACH — each press is a
+                        * separate request minutes apart and nothing
+                        * batches them — which is the rule he states
+                        * most plainly: "Do not ever send 2 or 3."
+                        *
+                        * Only shown when there is more than one dog
+                        * left to cancel; with one it is the same action
+                        * as the row button beside it.
+                        */}
+                      {(() => {
+                        const plan = wholeBookingCancellation(ordered.map(d => ({
+                          id: d.id, petName: d.petName, status: d.status, workflowState: d.workflowState,
+                        })));
+                        if (plan.cancel.length < 2) return null;
+                        return (
+                          <Button
+                            type="button" size="sm" variant="outline"
+                            className="h-7 w-full text-xs"
+                            disabled={cancelWholeBookingMutation.isPending}
+                            onClick={() => setConfirmWholeCancel({
+                              id: editAppt.id,
+                              message: describeWholeBookingCancellation(plan),
+                            })}
+                          >
+                            Cancel the whole booking ({plan.cancel.length} dogs)
+                          </Button>
+                        );
+                      })()}
                         {rows.map(row => (
                           <div key={row.id} className="flex items-center gap-2">
                             <span className={`flex-1 truncate text-xs font-medium ${row.coming ? "" : "text-muted-foreground line-through"}`}>
@@ -5462,6 +5520,32 @@ export default function Calendar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* ── The whole booking off, in one action and one text ── */}
+      <Dialog open={!!confirmWholeCancel} onOpenChange={open => { if (!open) setConfirmWholeCancel(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Cancel the whole booking?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{confirmWholeCancel?.message}</p>
+          <p className="text-xs text-muted-foreground">
+            Each is recorded as a cancellation, so it stays on the dogs&rsquo; history and can be
+            undone one at a time from here.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmWholeCancel(null)}>Keep booked</Button>
+            <Button
+              disabled={cancelWholeBookingMutation.isPending}
+              onClick={() => {
+                if (!confirmWholeCancel) return;
+                cancelWholeBookingMutation.mutate({ appointmentId: confirmWholeCancel.id });
+              }}
+            >
+              {cancelWholeBookingMutation.isPending ? "Cancelling..." : "Cancel the booking"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── One dog off a family booking ── */}
       <Dialog open={!!confirmNotComing} onOpenChange={open => { if (!open) setConfirmNotComing(null); }}>
         <DialogContent className="max-w-sm">
