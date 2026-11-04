@@ -249,6 +249,28 @@ export function decideRescheduleSms(input: CommonInput & {
    * Andy's rule, and the whole point of this one. Staff shuffle the
    * board all day: a dog moved fifteen minutes, a groomer swapped, the
    * morning tidied up. Only a change of DAY reaches the client.
+   *
+   * ## This has a known cost, and it was chosen with the cost known
+   *
+   * It stays silent even when the client has ALREADY been told a time
+   * for that day. A booking announced for the morning and then tidied
+   * to the afternoon leaves them holding the morning.
+   *
+   * That is not hypothetical. It happened to a real client within two
+   * minutes of this going live on 04/11/2026: a booking was moved to a
+   * new day and texted, then moved three hours later the same day in
+   * silence, and the client was left expecting the first time.
+   *
+   * Andy was shown that case and the alternative — text again when the
+   * time moves on a day already announced — and chose to KEEP THIS
+   * RULE, with staff telling the client themselves. His call, made
+   * with the failure in front of him.
+   *
+   * **So do not "fix" this.** A later session finding the same shape
+   * should put it back to Andy rather than close it as a bug.
+   * shared/pickupGroup.ts carries the other half of the reasoning: the
+   * thing he will not tolerate is a client getting two and three
+   * messages about one booking.
    */
   if (brisbaneDateKey(new Date(ms(input.previousStart))) === newKey) {
     return { send: false, reason: "same_day" };
