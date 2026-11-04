@@ -284,7 +284,11 @@ export default function Messages() {
 
   const threadMessages = useMemo(() => {
     if (!openThread || !conversation) return [];
-    const texts = conversation.sms.map((m: any) => ({ ...m, at: new Date(m.sentAt).getTime() }));
+    /* No `any` on this one. It is what let sms.getConversation stop
+       selecting twilioSid without a single complaint, and collapseBySend
+       below silently became a no-op. Inferred from the procedure, so
+       dropping the field again is a compile error. */
+    const texts = conversation.sms.map((m) => ({ ...m, at: new Date(m.sentAt).getTime() }));
     /* A call is correspondence. Voicemails used to sit in their own
        panel at the top of the page, so a message and the call it
        answered were never beside each other. */
@@ -302,7 +306,7 @@ export default function Messages() {
     // collapseBySend: one Twilio send is one message. The pickup text is
     // logged against every dog it covers, so a two-dog family read as a
     // double text and the salon rang a client to apologise for it.
-    const collapsed = collapseBySend(texts.slice().sort((a: any, b: any) => a.at - b.at));
+    const collapsed = collapseBySend(texts.slice().sort((a, b) => a.at - b.at));
     /* Ties break towards the call: a voicemail and the auto-reply it
        triggered land in the same second. */
     return [...collapsed, ...calls].sort((a: any, b: any) =>

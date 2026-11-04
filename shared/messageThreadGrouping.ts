@@ -160,7 +160,20 @@ export function recentThread<M extends ThreadMessageInput>(
  * a failed send, or an inbound message — and those are distinct messages
  * that must never be folded together.
  */
-export function collapseBySend<M extends ThreadMessageInput & { twilioSid?: string | null }>(
+/*
+ * `twilioSid` is REQUIRED, not optional.
+ *
+ * It was optional, and sms.getConversation did not select it. Every
+ * message therefore arrived with the field undefined, fell through the
+ * "no sid, pass it through" branch below, and the dedupe did nothing
+ * at all for the one view it existed to fix — Mellissa Luckman's three
+ * bubbles for a single send on 03/11/2026.
+ *
+ * A dedupe starved of its key is indistinguishable from no dedupe, and
+ * an optional field is how it got starved quietly. Required means a
+ * typed caller that forgets it no longer compiles.
+ */
+export function collapseBySend<M extends ThreadMessageInput & { twilioSid: string | null }>(
   messages: readonly M[],
 ): M[] {
   const seen = new Set<string>();
