@@ -14,6 +14,7 @@ import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
+import { forgetPetThumb } from "./petThumbCache";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
 import { needsPetAssignment, missingPetCount } from "@shared/membershipCoveredPets";
@@ -4695,6 +4696,14 @@ const clientsRouter = router({
           eq(petPhotos.tenantId, tenantId),
         ),
       );
+      /*
+       * The deleted photo may have been the dog's face, and the cached
+       * thumbnail does not know that. Without this the delete succeeds
+       * and the board carries on drawing the photo that was removed —
+       * which is exactly how this looked to the groomer who reported
+       * being unable to take the wrong dog's picture off a file.
+       */
+      forgetPetThumb(input.petId);
       return { deleted: true };
     }),
 

@@ -607,6 +607,11 @@ export default function ClientDetail() {
     onError: (error) => toast.error(error.message),
   });
 
+  /* Bumped whenever a dog's pictures change, so the avatar on this page
+     re-fetches immediately for the person who changed it rather than
+     waiting out the route's cache. */
+  const [photoRefresh, setPhotoRefresh] = useState(0);
+
   const handleGroomPhotoUpload = async (petId: number, file: File) => {
     if (!file.type.startsWith("image/")) { toast.error("Please choose an image file"); return; }
     if (file.size > 20 * 1024 * 1024) { toast.error("Photo must be 20 MB or smaller"); return; }
@@ -621,6 +626,7 @@ export default function ClientDetail() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Photo upload failed");
       await utils.clients.getProfile.invalidate({ clientId });
+      setPhotoRefresh(n => n + 1);
       toast.success("Groom photo added to this pet\u2019s history");
     } catch (error: any) {
       toast.error(error.message ?? "Photo upload failed");
@@ -632,6 +638,7 @@ export default function ClientDetail() {
   const deletePetPhoto = trpc.clients.deletePetPhoto.useMutation({
     onSuccess: async result => {
       await utils.clients.getProfile.invalidate({ clientId });
+      setPhotoRefresh(n => n + 1);
       setConfirmDeletePhoto(null);
       toast.success(result.deleted ? "Photo removed" : "That photo had already been removed");
     },
@@ -1420,7 +1427,7 @@ export default function ClientDetail() {
                               same endpoint, so the dog is recognisable in
                               both places rather than a photo existing here
                               and a letter appearing there. */}
-                          <PetAvatar petId={pet.id} petName={pet.name} className="h-8 w-8" />
+                          <PetAvatar petId={pet.id} petName={pet.name} className="h-8 w-8" version={photoRefresh} />
                           <span className="truncate">{pet.name}</span>
                           <button
                             type="button"
