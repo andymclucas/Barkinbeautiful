@@ -1,0 +1,170 @@
+import { useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DateField } from "@/components/DateField";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { trpc } from "@/lib/trpc";
+
+/**
+ * What the salon asks a client who wants a cancellation.
+ *
+ * Extracted so there is ONE of it. Andy, 04/11/2026: "Add a quick
+ * action of 'add to waitlist' option" — on the client page, where the
+ * client is already known, next to the panel on the calendar that has
+ * asked the same four questions since the waitlist was built. Two
+ * copies of a form whose fields feed one procedure is exactly the
+ * duplication CLAUDE.md §10 says drifts, and the one that drifts here
+ * would quietly stop matching the offers.
+ *
+ * The CLIENT is not asked for here. The calendar's panel searches for
+ * one and the client page already has one, and that difference is the
+ * only reason the two screens are not the same component.
+ */
+
+/** Today and sixty days out, as YYYY-MM-DD in Brisbane. */
+export function defaultWaitlistWindow() {
+  const key = (offsetDays: number) =>
+    new Date(Date.now() + offsetDays * 86_400_000)
+      .toLocaleDateString("en-CA", { timeZone: "Australia/Brisbane" });
+  return { earliestDate: key(0), latestDate: key(60) };
+}
+
+export type WaitlistFields = {
+  earliestDate: string;
+  latestDate: string;
+  timeOfDay: string;
+  staffId: string;
+  note: string;
+};
+
+export const emptyWaitlistFields = (): WaitlistFields => ({
+  ...defaultWaitlistWindow(),
+  timeOfDay: "any",
+  staffId: "",
+  note: "",
+});
+
+export function WaitlistEntryFields({
+  value, onChange,
+}: {
+  value: WaitlistFields;
+  onChange: (next: WaitlistFields) => void;
+}) {
+  const groomers = trpc.staff.listOperational.useQuery({});
+  const set = (patch: Partial<WaitlistFields>) => onChange({ ...value, ...patch });
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <div>
+          <Label className="text-xs">From</Label>
+          <DateField className="mt-1 h-8" value={value.earliestDate}
+            onChange={next => set({ earliestDate: next })} />
+        </div>
+        <div>
+          <Label className="text-xs">Until</Label>
+          <DateField className="mt-1 h-8" value={value.latestDate}
+            onChange={next => set({ latestDate: next })} />
+        </div>
+        <div>
+          <Label className="text-xs">Time of day</Label>
+          <Select value={value.timeOfDay} onValueChange={(v) => set({ timeOfDay: v })}>
+            <SelectTrigger className="mt-1 h-8"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">Any</SelectItem>
+              <SelectItem value="morning">Mornings</SelectItem>
+              <SelectItem value="afternoon">Afternoons</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs">Groomer</Label>
+          <Select value={value.staffId} onValueChange={(v) => set({ staffId: v })}>
+            <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="No preference" /></SelectTrigger>
+            <SelectContent>
+              {groomers.data?.map((g: any) => (
+                <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <Input className="mt-3 h-8" value={value.note} maxLength={500}
+        placeholder="Anything else they said — e.g. not Tuesdays, needs a late pickup"
+        onChange={(e) => set({ note: e.target.value })} />
+    </>
+  );
+}
+
+/** The shape waitlist.join wants, from what the form collected. */
+export function waitlistJoinInput(clientId: number, petId: number, f: WaitlistFields) {
+  return {
+    clientId,
+    petId,
+    earliestDate: f.earliestDate,
+    latestDate: f.latestDate,
+    timeOfDay: f.timeOfDay as "any" | "morning" | "afternoon",
+    preferredStaffId: f.staffId ? Number(f.staffId) : undefined,
+    note: f.note.trim() || undefined,
+  };
+}
+
+/**
+ * The whole thing for a client who is already known: pick the dog, set
+ * the window, add them.
+ */
+export function AddKnownClientToWaitlist({
+  clientId, pets, onAdded,
+}: {
+  clientId: number;
+  /** Active dogs only — a departed dog cannot wait for a cancellation. */
+  pets: { id: number; name: string }[];
+  onAdded?: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [petId, setPetId] = useState(pets.length === 1 ? String(pets[0].id) : "");
+  const [form, setForm] = useState<WaitlistFields>(emptyWaitlistFields());
+
+  const join = trpc.waitlist.join.useMutation({
+    onSuccess: (r: any) => {
+      toast.success(`${r.petName ?? "They"} added to the waitlist`);
+      utils.waitlist.listEntries.invalidate();
+      setForm(emptyWaitlistFields());
+      onAdded?.();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (pets.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        This client has no active dogs, so there is nothing to wait for a cancellation with.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Skipped when there is only one dog — asking which of one is
+          a click for nothing. */}
+      {pets.length > 1 && (
+        <div>
+          <Label className="text-xs">Dog</Label>
+          <Select value={petId} onValueChange={setPetId}>
+            <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Which dog?" /></SelectTrigger>
+            <SelectContent>
+              {pets.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <WaitlistEntryFields value={form} onChange={setForm} />
+      <Button size="sm" disabled={!petId || join.isPending}
+        onClick={() => join.mutate(waitlistJoinInput(clientId, Number(petId), form))}>
+        {join.isPending ? "Adding…" : "Add to waitlist"}
+      </Button>
+    </div>
+  );
+}

@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import {
+  WaitlistEntryFields, emptyWaitlistFields, waitlistJoinInput, type WaitlistFields,
+} from "@/components/WaitlistEntryFields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -149,14 +152,6 @@ function OfferSlot({ onOffered }: { onOffered: () => void }) {
 }
 
 
-/** Today and sixty days out, as YYYY-MM-DD in Brisbane. */
-function defaultWindow() {
-  const key = (offsetDays: number) =>
-    new Date(Date.now() + offsetDays * 86_400_000)
-      .toLocaleDateString("en-CA", { timeZone: "Australia/Brisbane" });
-  return { earliestDate: key(0), latestDate: key(60) };
-}
-
 /**
  * Putting a client on the list.
  *
@@ -169,7 +164,7 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [chosen, setChosen] = useState<any>(null);
-  const [form, setForm] = useState({ ...defaultWindow(), timeOfDay: "any", staffId: "", note: "" });
+  const [form, setForm] = useState<WaitlistFields>(emptyWaitlistFields());
 
   const results = trpc.memberships.searchClients.useQuery({ search }, { enabled: search.trim().length >= 2 });
   const groomers = trpc.staff.listOperational.useQuery({});
@@ -178,7 +173,7 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
     onSuccess: (r) => {
       toast.success(`${r.petName} added to the waitlist`);
       setOpen(false); setChosen(null); setSearch("");
-      setForm({ ...defaultWindow(), timeOfDay: "any", staffId: "", note: "" });
+      setForm(emptyWaitlistFields());
       onAdded();
     },
     onError: (e) => toast.error(e.message),
@@ -230,51 +225,11 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
             <Button variant="link" size="sm" className="h-auto p-0 pl-2 text-xs"
               onClick={() => setChosen(null)}>change</Button>
           </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-4">
-            <div>
-              <Label className="text-xs">From</Label>
-              <DateField className="mt-1 h-8" value={form.earliestDate}
-                onChange={next => setForm((f) => ({ ...f, earliestDate: next }))} />
-            </div>
-            <div>
-              <Label className="text-xs">Until</Label>
-              <DateField className="mt-1 h-8" value={form.latestDate}
-                onChange={next => setForm((f) => ({ ...f, latestDate: next }))} />
-            </div>
-            <div>
-              <Label className="text-xs">Time of day</Label>
-              <Select value={form.timeOfDay} onValueChange={(v) => setForm((f) => ({ ...f, timeOfDay: v }))}>
-                <SelectTrigger className="mt-1 h-8"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="any">Any</SelectItem>
-                  <SelectItem value="morning">Mornings</SelectItem>
-                  <SelectItem value="afternoon">Afternoons</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Groomer</Label>
-              <Select value={form.staffId} onValueChange={(v) => setForm((f) => ({ ...f, staffId: v }))}>
-                <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="No preference" /></SelectTrigger>
-                <SelectContent>
-                  {groomers.data?.map((g: any) => (
-                    <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="mt-3">
+            <WaitlistEntryFields value={form} onChange={setForm} />
           </div>
-          <Input className="mt-3 h-8" value={form.note} maxLength={500}
-            placeholder="Anything else they said — e.g. not Tuesdays, needs a late pickup"
-            onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
           <Button size="sm" className="mt-3" disabled={join.isPending}
-            onClick={() => join.mutate({
-              clientId: chosen.clientId, petId: chosen.petId,
-              earliestDate: form.earliestDate, latestDate: form.latestDate,
-              timeOfDay: form.timeOfDay as any,
-              preferredStaffId: form.staffId ? Number(form.staffId) : undefined,
-              note: form.note.trim() || undefined,
-            })}>
+            onClick={() => join.mutate(waitlistJoinInput(chosen.clientId, chosen.petId, form))}>
             {join.isPending ? "Adding\u2026" : "Add to waitlist"}
           </Button>
         </>
