@@ -53,7 +53,7 @@ import {
   Dog, Phone, Mail, MapPin, CalendarDays, CreditCard, ArrowLeft,
   AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil, X
 } from "lucide-react";
-import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe } from "lucide-react";
+import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe, MessageSquare, ShieldCheck as ShieldCheckIcon } from "lucide-react";
 import { Link } from "wouter";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
@@ -991,6 +991,56 @@ export default function ClientDetail() {
                 )}
               </div>
 
+              {/*
+                * Andy, 04/11/2026: a Send SMS button on the card, and
+                * "Move the 'Edit Details' button under the client name
+                * and details section."
+                *
+                * Both sit with the details they act on rather than in
+                * the corner opposite them. Edit details was over in the
+                * "Client since" column, as far from the phone number it
+                * edits as the card allows.
+                */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {/*
+                  * Hidden from restricted staff rather than disabled.
+                  * /clients IS open to them and /messages is NOT
+                  * (shared/staffRoutes.ts), so for a groomer this
+                  * button would be a door that bounces them — worse
+                  * than no button. Same gate as Client portal and
+                  * Quick actions above.
+                  */}
+                {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!client.phone}
+                  title={client.phone
+                    ? "Open this client's conversation in Messages"
+                    : "No phone number on file for this client"}
+                  onClick={() => navigate(`/messages?clientId=${clientId}`)}
+                >
+                  <MessageSquare className="h-3.5 w-3.5 mr-1.5" /> Send SMS
+                </Button>
+                )}
+                <Button
+                  variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setEditDetailsForm({
+                      email: client.email ?? "",
+                      phone: client.phone ?? "",
+                      address: client.address ?? "",
+                      notes: client.notes ?? "",
+                      referralSource: client.referralSource ?? "",
+                      smsOptedOut: Boolean(client.smsOptedOutAt),
+                    });
+                    setEditDetailsOpen(true);
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit details
+                </Button>
+              </div>
+
               {(() => {
                 // MoeGo's client tags. Most are informational, but a few mean
                 // "do not take this booking" — BANNED, DONT BOOK IN, Refuse
@@ -1045,42 +1095,6 @@ export default function ClientDetail() {
               <p className="font-medium text-foreground">
                 {new Date(client.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), month: "short", year: "numeric" })}
               </p>
-              {/* A row, so the two sit side by side whether the block
-                  is full width on a phone or a narrow column on a
-                  desktop. justify-end only once it is that column. */}
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 sm:justify-end">
-              <Button
-                variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setEditDetailsForm({
-                    email: client.email ?? "",
-                    phone: client.phone ?? "",
-                    address: client.address ?? "",
-                    notes: client.notes ?? "",
-                    referralSource: client.referralSource ?? "",
-                    smsOptedOut: Boolean(client.smsOptedOutAt),
-                  });
-                  setEditDetailsOpen(true);
-                }}
-              >
-                <Pencil className="h-3 w-3 mr-1" /> Edit details
-              </Button>
-              {/* Owner-only. `users.role = "admin"` includes four
-                  groomers, so it is not the right gate for something
-                  that removes a record — same reasoning as the staff
-                  administrator check it reuses. */}
-              {isOwner && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40"
-                  onClick={() => setConfirmDeleteClient(true)}
-                  title="Delete this client record. Refused if anything is attached."
-                >
-                  <Trash2 className="h-3 w-3 mr-1" /> Delete client
-                </Button>
-              )}
-              </div>
             </div>
           </div>
 
@@ -1109,6 +1123,31 @@ export default function ClientDetail() {
                 + Add a note about this client (pickup arrangements, family bookings, preferences...)
               </button>
             </>
+          )}
+
+          {/*
+            * Andy, 04/11/2026: "Delete client button is moving to the
+            * very bottom of the client card as this won't be a heavily
+            * used feature."
+            *
+            * It sat beside Edit details in the top corner, which gave a
+            * destructive action the same prominence as the one staff
+            * press daily. Owner-only still: users.role = "admin"
+            * includes four groomers, so it is not the right gate for
+            * something that removes a record.
+            */}
+          {isOwner && (
+            <div className="mt-5 flex justify-end border-t pt-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                onClick={() => setConfirmDeleteClient(true)}
+                title="Delete this client record. Refused if anything is attached."
+              >
+                <Trash2 className="h-3 w-3 mr-1" /> Delete client
+              </Button>
+            </div>
           )}
         </div>
 

@@ -231,9 +231,33 @@ export default function Messages() {
     markThreadReadMutation.mutate(thread.clientId ? { clientId: thread.clientId } : { toNumber: thread.toNumber });
   };
 
-  // Support arriving here from the notification bell with ?clientId=X or ?toNumber=Y
+  /*
+   * Arriving here from the notification bell, or from Send SMS on a
+   * client's page, with ?clientId=X or ?toNumber=Y.
+   *
+   * Andy, 04/11/2026: "take the user to the messages tab and open the
+   * conversation with the client (if previous exists). If no previous
+   * exists, then new conversation is started with that client."
+   *
+   * Two things had to change for the second half. It used to give up
+   * when `threads` was empty — a salon with no history could never open
+   * anything — and when no thread matched it left the client on the
+   * list with the id still in the URL, looking like the button had done
+   * nothing. A client id with no thread is now remembered, and the
+   * conversation is opened blank once their details load.
+   *
+   * ONLY the id travels in the URL. The number is looked up here
+   * instead, because a phone number is personal data and has no
+   * business in a link that lands in history and server logs.
+   */
+  const [pendingClientId, setPendingClientId] = useState<number | null>(null);
+  const pendingClient = trpc.clients.getProfile.useQuery(
+    { clientId: pendingClientId ?? 0 },
+    { enabled: pendingClientId !== null },
+  );
+
   useEffect(() => {
-    if (!threads || threads.length === 0) return;
+    if (!threads) return;
     const params = new URLSearchParams(window.location.search);
     const clientIdParam = params.get("clientId");
     const toNumberParam = params.get("toNumber");
@@ -244,10 +268,30 @@ export default function Messages() {
     );
     if (match) {
       openThreadDialog({ clientId: match.clientId, toNumber: match.toNumber, clientName: match.clientName });
-      window.history.replaceState({}, "", "/messages");
+    } else if (clientIdParam) {
+      setPendingClientId(Number(clientIdParam));
     }
+    window.history.replaceState({}, "", "/messages");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threads]);
+
+  // The blank conversation, once the client's number is known.
+  useEffect(() => {
+    const c: any = pendingClient.data?.client;
+    if (pendingClientId === null || !c) return;
+    if (!c.phone) {
+      toast.error(`${[c.firstName, c.lastName].filter(Boolean).join(" ") || "That client"} has no phone number on file.`);
+      setPendingClientId(null);
+      return;
+    }
+    openThreadDialog({
+      clientId: pendingClientId,
+      toNumber: c.phone,
+      clientName: [c.firstName, c.lastName].filter(Boolean).join(" ") || null,
+    });
+    setPendingClientId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingClient.data, pendingClientId]);
 
   // Live refresh: while this page is open, new inbound messages and missed
   // calls should appear without needing a manual refresh click.
