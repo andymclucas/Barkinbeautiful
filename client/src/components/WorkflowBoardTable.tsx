@@ -797,8 +797,23 @@ export function WorkflowBoardTable({
                         const familyTooltip = linkedPetNames.length > 0 ? `Family linked: ${linkedPetNames.join(", ")}` : "Family linked";
                         return (
                           <div className="relative flex min-h-7 flex-col items-center justify-center gap-0.5">
-                            {linkedAbove && <span aria-hidden="true" data-family-bracket="above" className="pointer-events-none absolute -left-8 bottom-1/2 z-0 h-[calc(50%+1.55rem)] w-12 rounded-bl-md border-b-4 border-l-4 border-slate-800 bg-transparent shadow-[0_0_0_2px_rgba(255,255,255,0.96)]" />}
-                            {linkedBelow && <span aria-hidden="true" data-family-bracket="below" className="pointer-events-none absolute -left-8 top-1/2 z-0 h-[calc(50%+1.55rem)] w-12 rounded-tl-md border-l-4 border-t-4 border-slate-800 bg-transparent shadow-[0_0_0_2px_rgba(255,255,255,0.96)]" />}
+                            {/*
+                              * The bracket reaches LEFT, out of this cell
+                              * and across the dog/owner column. At -left-8
+                              * that is 32px, which is fine on a desktop
+                              * where the name column is wide and the text
+                              * stops short — and not fine on a phone,
+                              * where the column is narrow and the arm
+                              * drew straight through "Jen (Pet Sitter)".
+                              * Andy sent a photo of it on 04/11/2026.
+                              *
+                              * Half the reach below `sm`. It still reads
+                              * as one bracket joining the rows, because
+                              * what carries that is the vertical arm, not
+                              * how far the horizontal one travels.
+                              */}
+                            {linkedAbove && <span aria-hidden="true" data-family-bracket="above" className="pointer-events-none absolute -left-4 sm:-left-8 bottom-1/2 z-0 h-[calc(50%+1.55rem)] w-8 sm:w-12 rounded-bl-md border-b-4 border-l-4 border-slate-800 bg-transparent shadow-[0_0_0_2px_rgba(255,255,255,0.96)]" />}
+                            {linkedBelow && <span aria-hidden="true" data-family-bracket="below" className="pointer-events-none absolute -left-4 sm:-left-8 top-1/2 z-0 h-[calc(50%+1.55rem)] w-8 sm:w-12 rounded-tl-md border-l-4 border-t-4 border-slate-800 bg-transparent shadow-[0_0_0_2px_rgba(255,255,255,0.96)]" />}
                             {familyGroupId ? (
                               <div className="relative z-10 flex items-center gap-0.5">
                                 <button

@@ -219,7 +219,25 @@ export function ReportRangePicker({ range }: { range: ReportRange }) {
         // matters, because `pickDay` decides what a click means.
         selected={{ from: localCalendarDay(range.fromKey), to: localCalendarDay(range.toKey) }}
         onSelect={(_ignored, clicked) => range.pickDay(localCalendarDayKey(clicked))}
-        className="p-0 [--cell-size:--spacing(7)]"
+        /*
+         * The cell size IS the width: seven columns of --cell-size and
+         * nothing else. Fixed at spacing(7) that is 28px a cell, so the
+         * month came to about 196px and stopped — on a phone it sat in
+         * the left half of the card with the rest blank, which Andy
+         * sent a photo of on 04/11/2026.
+         *
+         * Derived from the space the grid actually has rather than a
+         * round vw figure: 100vw less the 2rem of page gutter and the
+         * 0.75rem of card padding on each side, divided by the seven
+         * columns. A plain 12vw looked right on a 390px phone and
+         * overflowed a 320px one by 5px — the arithmetic says so even
+         * though both look fine in a mock-up.
+         *
+         * The 3rem ceiling stops the cells ballooning on a tablet
+         * before the sm: rule takes over and restores the compact
+         * desktop grid beside the controls.
+         */
+        className="mx-auto p-0 [--cell-size:clamp(2rem,calc((100vw-4.5rem)/7),3rem)] sm:[--cell-size:--spacing(7)]"
       />
 
       <div className="report-range-controls grid w-full gap-2 sm:w-[12rem] sm:shrink-0">

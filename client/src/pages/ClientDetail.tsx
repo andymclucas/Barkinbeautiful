@@ -828,7 +828,10 @@ export default function ClientDetail() {
             is already in it before they start, not after. */}
         <PresenceIndicator viewers={clientViewers} />
         {/* Back button */}
-        <div className="flex items-center justify-between gap-2">
+        {/* flex-wrap: without it the right-hand group runs off the
+            screen on a phone and "Quick actions" is half cut off, which
+            is what Andy sent a photo of on 04/11/2026. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <Link href="/clients">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <ArrowLeft className="h-4 w-4" /> Back to Clients
@@ -920,7 +923,17 @@ export default function ClientDetail() {
             {/* Name + contact */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl font-bold font-display">{client.firstName} {client.lastName}</h1>
+                {/*
+                  * break-words, and the column is min-w-0.
+                  *
+                  * A flex child with min-w-0 may shrink below its
+                  * longest unbreakable word, and nothing here wrapped
+                  * one — so "Blackaby" overflowed the column and
+                  * printed straight over the "Edit details" button
+                  * beside it. A name is exactly the string that cannot
+                  * be relied on to contain a space in a useful place.
+                  */}
+                <h1 className="text-2xl font-bold font-display break-words">{client.firstName} {client.lastName}</h1>
                 <Badge className={
                   client.status === "active" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
                   client.status === "blocked" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/50" :
@@ -993,13 +1006,24 @@ export default function ClientDetail() {
             </div>
 
             {/* Client since */}
-            <div className="text-right text-sm text-muted-foreground flex-shrink-0">
+            {/*
+              * Full width below the name on a phone, its own column
+              * from `sm` up. flex-shrink-0 on a narrow screen made this
+              * hold its width and squeeze the name column until the
+              * name overflowed; text-right then left "Delete client"
+              * floating against the edge.
+              */}
+            <div className="w-full text-left sm:w-auto sm:text-right text-sm text-muted-foreground sm:flex-shrink-0">
               <p className="text-xs">Client since</p>
               <p className="font-medium text-foreground">
                 {new Date(client.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), month: "short", year: "numeric" })}
               </p>
+              {/* A row, so the two sit side by side whether the block
+                  is full width on a phone or a narrow column on a
+                  desktop. justify-end only once it is that column. */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 sm:justify-end">
               <Button
-                variant="ghost" size="sm" className="mt-1.5 h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                 onClick={() => {
                   setEditDetailsForm({
                     email: client.email ?? "",
@@ -1029,6 +1053,7 @@ export default function ClientDetail() {
                   <Trash2 className="h-3 w-3 mr-1" /> Delete client
                 </Button>
               )}
+              </div>
             </div>
           </div>
 
