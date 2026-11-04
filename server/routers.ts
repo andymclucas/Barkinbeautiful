@@ -1536,6 +1536,22 @@ const calendarRouter = router({
       petId: z.number(),
       staffId: z.number().optional(),
       serviceType: z.enum(SERVICE_TYPES).default("classic_groom"),
+      /**
+       * Already booked somewhere else, so do not confirm it again.
+       *
+       * createMultiPetAppointment has taken this since 28/10/2026 and
+       * this one did not, which left the gap that matters: the CALENDAR
+       * books a single dog through here, and the calendar is where
+       * Lauren back-fills a MoeGo booking. A back-filled row carries no
+       * moego_appointment_id for the import guard to catch, so only the
+       * person typing it knows.
+       *
+       * Lauren, 28/10/2026: "Kevin was in moego but not synced over to
+       * Groomigo so put it in manually. It sent her a text." With 164
+       * December bookings to re-enter by hand, that is 164 texts about
+       * appointments the clients made weeks ago.
+       */
+      alreadyArranged: z.boolean().optional(),
       scheduledStart: z.string(),
       scheduledEnd: z.string(),
       notes: z.string().optional(),
@@ -1587,7 +1603,7 @@ const calendarRouter = router({
         .where(and(eq(appointments.tenantId, tenantOf(ctx, input)), eq(appointments.trackerToken, token)))
         .limit(1);
       const confirmation = booked
-        ? await sendBookingConfirmation(db, [booked.id])
+        ? await sendBookingConfirmation(db, [booked.id], { alreadyArranged: input.alreadyArranged === true })
         : { sent: false as const, reason: "appointment not found" };
 
       return {

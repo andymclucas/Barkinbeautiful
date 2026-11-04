@@ -1164,6 +1164,9 @@ export default function Calendar() {
   const [newAppt, setNewAppt] = useState({
     clientId: "", petIds: [] as string[], staffId: "", staffByPetId: {} as Record<string, string>, serviceType: "classic_groom",
     scheduledStart: "", scheduledEnd: "", notes: "", price: "",
+    /* Ticked when copying a booking in from MoeGo, so the client is not
+       texted a confirmation for an appointment they made weeks ago. */
+    alreadyArranged: false,
     // A figure per dog. The single `price` above stays for the recurring
     // path, which books one service for the whole family.
     priceByPetId: {} as Record<string, string>,
@@ -1520,7 +1523,7 @@ export default function Calendar() {
     onSuccess: () => {
       toast.success("Appointment created");
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
       refetch();
     },
@@ -2290,7 +2293,7 @@ export default function Calendar() {
     onSuccess: (r) => {
       toast.success(`${r.created} appointment${r.created !== 1 ? "s" : ""} created`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
       refetch();
     },
@@ -2302,7 +2305,7 @@ export default function Calendar() {
       const skippedMsg = r.skipped.length > 0 ? ` (${r.skipped.length} skipped due to a groomer clash)` : "";
       toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created${skippedMsg}`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });
       setClientSearch("");
       refetch();
@@ -2363,6 +2366,8 @@ export default function Calendar() {
         untilDate: repeatForm.untilDate,
         notes: newAppt.notes || undefined,
         price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
+        // Not passed: createRecurringAppointments never sends a
+        // confirmation, so there is nothing for the flag to suppress.
       });
       return;
     }
@@ -2375,6 +2380,7 @@ export default function Calendar() {
       scheduledStart: newAppt.scheduledStart,
       scheduledEnd:   newAppt.scheduledEnd,
       notes: newAppt.notes || undefined,
+      alreadyArranged: newAppt.alreadyArranged,
       price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
       priceByPetId: membershipCoverage.data?.fullyCovered ? undefined : newAppt.priceByPetId,
       collectByTime: newAppt.collectByTime || null,
@@ -3623,7 +3629,7 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setAddingClient(false); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
+      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setAddingClient(false); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -4165,6 +4171,33 @@ export default function Calendar() {
             <div className="space-y-1.5">
               <Label>Notes</Label>
               <Textarea rows={2} placeholder="Any special instructions..." value={newAppt.notes} onChange={e => setNewAppt(p => ({ ...p, notes: e.target.value }))} />
+              {/*
+                * Lauren, 28/10/2026: "Kevin was in moego but not synced
+                * over to Groomigo so put it in manually. It sent her a
+                * text."
+                *
+                * The client record's booking form has had this since
+                * then; the CALENDAR did not — and the calendar is where
+                * a MoeGo booking actually gets back-filled. A typed-in
+                * row carries no moego_appointment_id, so the import
+                * guard cannot see it and only the person typing knows.
+                * With 164 December bookings to re-enter by hand, that
+                * was 164 texts waiting to happen.
+                */}
+              <label className="mt-2 flex items-start gap-2 rounded-lg border bg-muted/40 p-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-primary"
+                  checked={newAppt.alreadyArranged}
+                  onChange={e => setNewAppt(p => ({ ...p, alreadyArranged: e.target.checked }))}
+                />
+                <span>
+                  <span className="font-medium">Already booked elsewhere &mdash; don&rsquo;t text the client</span>
+                  <span className="block text-muted-foreground">
+                    Tick when copying a booking in from MoeGo. They have already been told.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
           <DialogFooter>
