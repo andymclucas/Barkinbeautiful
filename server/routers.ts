@@ -131,6 +131,7 @@ import { trackerSmsAllowed } from "../shared/trackerSmsGate";
 import { priceForPet } from "../shared/multiPetPricing";
 import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount";
 import { sendBookingConfirmation } from "./bookingConfirmation";
+import { sendCancellationNotice, sendRescheduleNotice, clearCancellationClaim } from "./appointmentChangeNotify";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
 import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
 import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
@@ -2111,6 +2112,37 @@ const calendarRouter = router({
         changedByStaffId: portalStaff?.id ?? input.staffId,
       });
 
+      /*
+       * Andy, 04/11/2026: "Send auto cancellation and reschedule texts
+       * also."
+       *
+       * Fired only on the EDGE into cancelled, never on a re-save of a
+       * booking that was already cancelled — the board writes this state
+       * more than once and the client should hear about it once.
+       *
+       * `no_show` is deliberately silent. The dog did not turn up; the
+       * client knows, and "your appointment has been cancelled" hours
+       * after they missed it reads as a rebuke.
+       *
+       * Awaited but never allowed to throw. The dog is off the board by
+       * now whatever Twilio does, and that is the part that matters.
+       */
+      let clientNotice: { sent: boolean; reason?: string } | null = null;
+      if (input.newState === "cancelled" && appt.workflowState !== "cancelled") {
+        // Returned to the caller so the screen can say whether the
+        // client was told. It used to be discarded, which left staff
+        // unable to tell a sent text from a silently refused one.
+        clientNotice = await sendCancellationNotice(db, input.appointmentId);
+      }
+      /*
+       * Put back on. A dog cancelled, reinstated and cancelled again is
+       * two real cancellations, so the claim is released or the second
+       * one would read as already sent and stay silent.
+       */
+      if (input.newState !== "cancelled" && appt.workflowState === "cancelled") {
+        await clearCancellationClaim(db, input.appointmentId);
+      }
+
       // Automatically draw down the client's store credit balance the moment
       // an appointment is completed, up to whatever balance is available.
       // Never goes negative — if credit doesn't fully cover it, we deduct
@@ -2291,7 +2323,8 @@ const calendarRouter = router({
           }
         }
       }
-      return { success: true };
+      // clientNotice is null unless this call cancelled the booking.
+      return { success: true, clientNotice };
     }),
 
   reschedule: operationalProcedure
@@ -2305,6 +2338,16 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      /*
+       * Read BEFORE the update, because the whole decision is "did this
+       * move to a different day" and afterwards there is nothing left to
+       * compare against.
+       */
+      const [before] = await db
+        .select({ scheduledStart: appointments.scheduledStart })
+        .from(appointments)
+        .where(eq(appointments.id, input.appointmentId))
+        .limit(1);
       // Omitted staffId leaves the groomer alone; null unassigns. See
       // buildRescheduleUpdate — the old `input.staffId ?? null` took the
       // dog off its groomer whenever a caller moved only the time.
@@ -2313,7 +2356,20 @@ const calendarRouter = router({
         scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
         staffId: input.staffId,
       })).where(eq(appointments.id, input.appointmentId));
-      return { success: true };
+      /*
+       * Andy, 04/11/2026: "Send auto cancellation and reschedule texts
+       * also." Only a change of DAY reaches the client — staff drag
+       * bookings around this board all day long, and the rule and its
+       * reasoning live in shared/appointmentChangeSms.ts.
+       *
+       * Awaited but never allowed to throw: the dog HAS moved by now,
+       * and a Twilio outage must not surface to staff as a failed
+       * reschedule. Same shape as sendBookingConfirmation.
+       */
+      const notice = before
+        ? await sendRescheduleNotice(db, input.appointmentId, before.scheduledStart)
+        : { sent: false as const, reason: "appointment not found" };
+      return { success: true, notice };
     }),
 
   updateDetails: operationalProcedure
@@ -3036,6 +3092,28 @@ const workflowRouter = router({
       if (fields.notes !== undefined) updateData.notes = fields.notes;
       if (Object.keys(updateData).length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a workflow detail to update." });
       await db.update(appointments).set(updateData).where(eq(appointments.id, appointmentId));
+
+      /*
+       * The board can cancel too, and this path sent nothing.
+       *
+       * "A cancellation always texts the client" was true only of the
+       * Calendar's controls — the stage dropdown on the workflow board
+       * offers Cancelled and comes through here, which a review that
+       * traced the callers found. Two ways to cancel, one of which
+       * tells the client, is worse than either rule applied honestly.
+       *
+       * Same edge test as calendar.updateWorkflowState, and the claim
+       * is released the same way on the way back out, or a dog
+       * cancelled from the board and reinstated there would never be
+       * able to tell the client about a second cancellation.
+       */
+      if (fields.workflowState === "cancelled" && currentAppointment.workflowState !== "cancelled") {
+        await sendCancellationNotice(db, appointmentId);
+      }
+      if (fields.workflowState !== undefined && fields.workflowState !== "cancelled"
+          && currentAppointment.workflowState === "cancelled") {
+        await clearCancellationClaim(db, appointmentId);
+      }
 
       // Marking one dog from a joined/family booking as OUT (picked up) means
       // the whole party has gone \u2014 staff shouldn't have to click each dog

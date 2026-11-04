@@ -126,7 +126,7 @@ import { annotateSlots, blockingClashes, busyFromRows, clashesFor, concurrentDog
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
 import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
-import { bookingAttendance, describeRemoval } from "@shared/sharedBookingAttendance";
+import { bookingAttendance, describeRemoval, describeAttendance } from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
@@ -4635,13 +4635,13 @@ export default function Calendar() {
                   const rows = bookingAttendance(ordered.map(d => ({
                     id: d.id, petName: d.petName, status: d.status, workflowState: d.workflowState,
                   })));
-                  const comingCount = rows.filter(r => r.coming).length;
+
                   return (
                     <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
                       <div>
                         <Label className="text-xs font-bold">Dogs on this booking</Label>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          {comingCount} of {rows.length} coming. Marking one as not coming leaves the others at the same time.
+                          {describeAttendance(rows)}
                         </p>
                       </div>
                       <div className="space-y-1.5">

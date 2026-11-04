@@ -27,6 +27,8 @@ export type AutomatedSmsType =
   | "ready_pickup"
   | "confirmation"
   | "reminder"
+  | "cancellation"
+  | "reschedule"
   | "tracker"
   | "waitlist_offer"
   | "waitlist_missed"
@@ -86,6 +88,31 @@ export const ALLOWED_AUTOMATED_SMS: ReadonlySet<AutomatedSmsType> = new Set<Auto
   // anybody. It is tested, the guards are tested, and that is still
   // not the same as having run.
   "reminder",
+
+  // Andy, 04/11/2026: "Send auto cancellation and reschedule texts
+  // also." Asked for in the same session as the two above, after the
+  // confirmation had been seen working on his own dog.
+  //
+  // Both are a bigger risk than the confirmation, and in a way the
+  // allow-list cannot catch. The confirmation refuses any row carrying
+  // a moego_appointment_id, which is what stops a sync of 276 bookings
+  // texting 276 clients. These two CANNOT wear that guard — 450 of the
+  // 456 upcoming bookings are MoeGo imports, so refusing them would
+  // switch the feature off for almost every client Lauren cancels or
+  // moves.
+  //
+  // What protects them instead is where they fire from: the staff
+  // actions in updateWorkflowState and the reschedule mutation. The
+  // MoeGo sync writes direct SQL and runs no application code.
+  // **Route the sync through the app and this becomes a megaphone.**
+  // shared/appointmentChangeSms.ts says the same at more length.
+  "cancellation",
+
+  // Only a change of DAY sends this one. Staff drag bookings around the
+  // board constantly — fifteen minutes here, a groomer swapped there —
+  // and texting on every save would be worse than not having it. Andy
+  // chose the day rule on 04/11/2026 when asked.
+  "reschedule",
 ]);
 
 export function automatedSmsAllowed(type: AutomatedSmsType): boolean {

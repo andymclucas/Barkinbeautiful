@@ -124,3 +124,37 @@ export function describeRemoval(name: string, remainingNames: readonly string[])
     : `${remainingNames.slice(0, -1).join(", ")} and ${remainingNames[remainingNames.length - 1]}`;
   return `${name} will be marked as not coming. ${rest} ${remainingNames.length === 1 ? "stays" : "stay"} booked at the same time.`;
 }
+
+/**
+ * The line under "Dogs on this booking".
+ *
+ * It used to read "{coming} of {total} coming" unconditionally, which
+ * on a booking whose dogs had all been groomed that morning said "2 of
+ * 2 coming" about two dogs that had been and gone. Seen on the live
+ * site on 04/11/2026, on Eddy and Albert Hartney.
+ *
+ * So it says what is actually true, and the hint about marking a dog
+ * off only appears when there is a dog that can still be marked off.
+ */
+export function describeAttendance(rows: readonly AttendanceRow[]): string {
+  const total = rows.length;
+  if (total === 0) return "";
+  const notComing = rows.filter((r) => r.action === "restore").length;
+  const canRemove = rows.filter((r) => r.action === "remove").length;
+  const done = rows.filter((r) => r.action === "blocked").length;
+  const dogs = (n: number) => `${n} ${n === 1 ? "dog" : "dogs"}`;
+
+  const hint = canRemove > 0
+    ? " Marking one as not coming leaves the others at the same time."
+    : "";
+
+  if (notComing === total) return "None of these dogs are coming.";
+  if (done === total) return total === 1 ? "This dog has been groomed." : `All ${dogs(total)} have been groomed.`;
+  if (notComing === 0) {
+    const head = done > 0
+      ? `${dogs(canRemove)} still to come, ${done} already groomed.`
+      : `All ${dogs(total)} coming.`;
+    return head + hint;
+  }
+  return `${dogs(notComing)} not coming, ${total - notComing} still booked.` + hint;
+}

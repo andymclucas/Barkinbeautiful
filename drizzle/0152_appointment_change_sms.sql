@@ -1,0 +1,65 @@
+-- Telling the client when a booking is cancelled or moved.
+--
+-- Andy, 04/11/2026: "Send auto cancellation and reschedule texts also."
+--
+-- Two claim columns, because the two events need different idempotency
+-- and a single "last told them" stamp would get one of them wrong.
+--
+-- `cancellation_sms_sent_at` is the confirmation's shape: a stamp that
+-- is claimed in the same conditional UPDATE that sends, so two staff
+-- cancelling at once produce one text. It is CLEARED when a booking is
+-- put back to a live state, because a dog cancelled, reinstated and
+-- cancelled again is two real cancellations and the client needs to
+-- hear about both.
+--
+-- `reschedule_sms_sent_for` is a DATE, not a timestamp, and holds the
+-- appointment DAY the client was last told about. A stamp cannot
+-- express this: staff drag bookings around the board all day, and the
+-- rule Andy picked is that only a change of DAY is worth a text. Storing
+-- the day makes the guard exact and naturally idempotent — a repeated
+-- save of the same move matches and stays silent, while a genuine
+-- second move to a different day does not. A move back to the original
+-- day also texts, which is right: the client was told the wrong thing
+-- and needs correcting.
+--
+-- Nullable with no default, so every existing booking reads as "never
+-- told", which is what they are, and rows written by the currently
+-- deployed code stay valid.
+--
+-- MIGRATE BEFORE THE CODE REACHES main. Drizzle names every column in
+-- schema.ts in every bare select() and insert(), so the moment these are
+-- declared the app asks for them whether or not any code mentions them.
+-- Ship the code first and every booking insert and the 17 procedures
+-- behind requireApprovedStaffAppointmentAccess fail on `appointments`.
+-- That is commit b848737's shape on the busiest table in the database.
+--
+-- Both are ADD COLUMN, so they belong in ONE ALTER: MySQL/TiDB DDL is
+-- not transactional, and two statements can leave the first applied, the
+-- migration unrecorded, and a re-run failing on "Duplicate column name".
+-- (The split rule is about adding an INDEX, which TiDB will not do in
+-- the same ALTER as the column — neither of these needs one. Both are
+-- read only for a row already fetched by primary key.)
+
+-- ── reschedule_sms_sent_at added before this ever ran ────────────────
+--
+-- The day alone was not enough, and a review that executed the real
+-- code found it. The calendar moves a family ONE ROW AT A TIME, and the
+-- notice runs after the update, so it groups on the row's NEW start —
+-- the siblings are still sitting at the OLD one, are not in the group,
+-- and are never claimed. Each later save then finds its own column NULL
+-- and texts again. Three dogs, three texts, which is the rule Andy set
+-- out loud: "Do not ever send 2 or 3."
+--
+-- So the guard became "has this client already been told about this DAY
+-- in the last few minutes", and that needs a WHEN as well as a WHICH
+-- DAY. A day alone would have silenced a genuine second move to the
+-- same weekday weeks later.
+--
+-- Safe to edit rather than add 0154: this migration has not run
+-- anywhere. Verified against the live database before changing it —
+-- neither column exists. The rule is never to edit one that HAS run.
+
+ALTER TABLE `appointments`
+  ADD COLUMN `cancellation_sms_sent_at` DATETIME NULL,
+  ADD COLUMN `reschedule_sms_sent_for` DATE NULL,
+  ADD COLUMN `reschedule_sms_sent_at` DATETIME NULL;

@@ -1065,6 +1065,20 @@
       "when": 1793336352234,
       "tag": "0151_appointment_prepaid",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "5",
+      "when": 1793767114931,
+      "tag": "0152_appointment_change_sms",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "5",
+      "when": 1793767801865,
+      "tag": "0153_sms_log_change_types",
+      "breakpoints": true
     }
   ]
 }
