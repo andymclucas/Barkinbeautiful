@@ -567,7 +567,20 @@ function ApptBlock({
         {siblings && siblings.length > 0 ? (
           <>
             <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${density.stampInline ? "pr-11" : ""} ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
-              <div className="leading-tight" title={sharedAppointmentLabel}>
+              {/*
+                * line-clamp-2 is load-bearing, not cosmetic.
+                *
+                * appointmentCardDensity budgets at most two lines for
+                * the name, because the solo branch below is clamped.
+                * This branch was not, so "Stanley & Bear & Dottie
+                * Warner" took THREE lines on a 70px card and pushed 13
+                * pixels of itself out through overflow-hidden — the
+                * only card still clipping after the budget was fixed.
+                *
+                * The full label stays available on the title attribute
+                * and in the hover tooltip.
+                */}
+              <div className="leading-tight line-clamp-2" title={sharedAppointmentLabel}>
                 {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
                 {sharedAppointmentLabel}
               </div>
