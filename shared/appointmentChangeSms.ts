@@ -58,8 +58,23 @@ const DEFAULT_SALON = "Barkin' Beautiful";
 /** Nothing automated lands between these hours on the salon's clock. */
 const QUIET_FROM_HOUR = 8;
 const QUIET_UNTIL_HOUR = 20;
-/** Inside this, a cancellation overrides quiet hours. */
+/** Inside this, a reschedule overrides quiet hours. */
 const URGENT_WITHIN_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How long one "the booking moved" text speaks for the whole family.
+ *
+ * The calendar moves a family ONE ROW AT A TIME and the notice runs
+ * after each update, so a three-dog booking produced three texts — the
+ * siblings were still at the old start, outside the group, and never
+ * claimed. Found by a review that executed the real code; the comment
+ * in the sender claimed the opposite.
+ *
+ * Fifteen minutes comfortably covers a dialog save or a run of drags,
+ * and is short enough that a genuine second move an hour later still
+ * reaches the client.
+ */
+export const MOVE_QUIET_WINDOW_MS = 15 * 60 * 1000;
 
 export type ChangeSkipReason =
   | "automation_off"
@@ -173,14 +188,20 @@ export function decideCancellationSms(input: CommonInput & {
   const now = typeof input.now === "number" ? input.now : (input.now ?? new Date()).getTime();
   if (!Number.isFinite(start) || start <= now) return { send: false, reason: "in_the_past" };
 
-  // Urgency beats politeness: a dog due tomorrow morning, cancelled at
-  // 10pm, is exactly the text that must not wait.
-  const urgent = start - now <= URGENT_WITHIN_MS;
-  if (!urgent && input.localHour !== undefined
-      && (input.localHour < QUIET_FROM_HOUR || input.localHour >= QUIET_UNTIL_HOUR)) {
-    return { send: false, reason: "quiet_hours" };
-  }
-
+  /*
+   * No quiet hours on a cancellation, and this used to have them.
+   *
+   * The comment said it would "wait overnight" and a test was titled
+   * that way, but nothing waits: there is no retry queue and no
+   * scheduler, so refusing here simply DROPS the message and the client
+   * drives in. A review that ran the real code found a Sunday-9pm
+   * cancellation of a Tuesday booking sending nothing, ever.
+   *
+   * Staff do not work at 2am, so the realistic window is an owner
+   * catching up on the diary at 9 or 10pm. A text then saying tomorrow
+   * is off is worth having. Silence is not recoverable here the way it
+   * is for a confirmation, which somebody can resend by hand.
+   */
   return { send: true };
 }
 
@@ -189,6 +210,11 @@ export function decideRescheduleSms(input: CommonInput & {
   previousStart: Date | string | number;
   /** The day the client was last told about, as YYYY-MM-DD, or null. */
   rescheduleSmsSentFor: string | Date | null | undefined;
+  /**
+   * When this CLIENT was last told about this same day, on any of their
+   * bookings. Null when never. See MOVE_QUIET_WINDOW_MS.
+   */
+  clientToldOfDayAt?: Date | string | number | null;
   status: string;
   workflowState: string;
 }): ChangeDecision {
@@ -199,7 +225,17 @@ export function decideRescheduleSms(input: CommonInput & {
         : brisbaneDateKey(input.rescheduleSmsSentFor))
     : null;
 
-  const refusal = commonRefusal(input, toldKey !== null && toldKey === newKey);
+  /*
+   * Already told about this DAY, recently. Checked across the client's
+   * whole diary rather than this booking's rows, because the siblings
+   * that still need moving are not in this booking's group yet — that
+   * is the entire bug this closes.
+   */
+  const toldRecently = input.clientToldOfDayAt !== undefined
+    && input.clientToldOfDayAt !== null
+    && (typeof input.now === "number" ? input.now : (input.now ?? new Date()).getTime())
+       - ms(input.clientToldOfDayAt) <= MOVE_QUIET_WINDOW_MS;
+  const refusal = commonRefusal(input, (toldKey !== null && toldKey === newKey) || toldRecently);
   if (refusal) return refusal;
 
   // A cancelled booking that moves is bookkeeping, and the cancellation
@@ -222,7 +258,15 @@ export function decideRescheduleSms(input: CommonInput & {
   const now = typeof input.now === "number" ? input.now : (input.now ?? new Date()).getTime();
   if (!Number.isFinite(start) || start <= now) return { send: false, reason: "in_the_past" };
 
-  const urgent = start - now <= URGENT_WITHIN_MS;
+  /*
+   * Urgency is measured from whichever time comes FIRST, not from the
+   * new one. The client is currently expected at the OLD time, so
+   * moving tomorrow's 10am booking out to next month at 9pm tonight is
+   * the most urgent text there is — and judging it by the new date made
+   * it the least. They turn up tomorrow to a closed slot.
+   */
+  const soonest = Math.min(start, ms(input.previousStart) || start);
+  const urgent = soonest - now <= URGENT_WITHIN_MS;
   if (!urgent && input.localHour !== undefined
       && (input.localHour < QUIET_FROM_HOUR || input.localHour >= QUIET_UNTIL_HOUR)) {
     return { send: false, reason: "quiet_hours" };

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   decideCancellationSms, decideRescheduleSms,
   buildCancellationSms, buildRescheduleSms,
-  burstExceeded, BURST_LIMIT,
+  burstExceeded, BURST_LIMIT, MOVE_QUIET_WINDOW_MS,
 } from "@shared/appointmentChangeSms";
 
 /** Brisbane is UTC+10 with no DST, so this is 10am Friday 6 Nov local. */
@@ -73,11 +73,20 @@ describe("decideCancellationSms", () => {
       .toEqual({ send: true });
   });
 
-  it("but waits overnight when there is still a working day to tell them", () => {
-    expect(decideCancellationSms({ ...cancelBase, localHour: 22 }))
-      .toEqual({ send: false, reason: "quiet_hours" });
-    expect(decideCancellationSms({ ...cancelBase, localHour: 5 }))
-      .toEqual({ send: false, reason: "quiet_hours" });
+  /*
+   * This test used to assert the OPPOSITE, and was titled "but waits
+   * overnight when there is still a working day to tell them". Nothing
+   * waited. There is no retry queue and no scheduler, so refusing just
+   * dropped the message — a review that ran the real code found a
+   * Sunday-9pm cancellation of a Tuesday booking sending nothing, ever,
+   * and the client drives in. The title was the giveaway: a test named
+   * for behaviour the system has no machinery to perform.
+   */
+  it("sends at any hour rather than dropping the message for ever", () => {
+    for (const localHour of [22, 5, 0, 23]) {
+      expect(decideCancellationSms({ ...cancelBase, localHour }), String(localHour))
+        .toEqual({ send: true });
+    }
   });
 
   it("has no minimum lead time, unlike the confirmation", () => {
@@ -250,5 +259,65 @@ describe("the burst guard", () => {
   it("refuses before the claim, so a blocked burst leaves nothing marked sent", () => {
     const d = decideCancellationSms({ ...cancelBase, recentSendCount: 99, smsOptedOutAt: null });
     expect(d).toEqual({ send: false, reason: "burst_guard" });
+  });
+});
+
+
+/**
+ * Every one of these is a defect a domain review found by executing the
+ * real code rather than reading it. They are written from the failing
+ * scenario, not from the fix.
+ */
+describe("what the review caught", () => {
+  /*
+   * The worst one. The calendar moves a family ONE ROW AT A TIME and
+   * the notice runs after each update, so it groups on the row's NEW
+   * start while the siblings still sit at the OLD one. They are not in
+   * the group, are never claimed, and each later save texts again.
+   * Three dogs, three texts — the rule Andy set out loud.
+   */
+  it("says nothing when this client was told about this day moments ago", () => {
+    expect(decideRescheduleSms({
+      ...moveBase,
+      rescheduleSmsSentFor: null,          // this row was never claimed
+      clientToldOfDayAt: NOW_TUE - 60_000, // a sibling's text, a minute ago
+    })).toEqual({ send: false, reason: "already_sent" });
+  });
+
+  it("speaks again for a genuine move to the same day much later", () => {
+    expect(decideRescheduleSms({
+      ...moveBase,
+      rescheduleSmsSentFor: null,
+      clientToldOfDayAt: NOW_TUE - MOVE_QUIET_WINDOW_MS - 60_000,
+    })).toEqual({ send: true });
+  });
+
+  it("treats the window edge as still-told", () => {
+    expect(decideRescheduleSms({
+      ...moveBase, rescheduleSmsSentFor: null, clientToldOfDayAt: NOW_TUE - MOVE_QUIET_WINDOW_MS,
+    }).send).toBe(false);
+  });
+
+  /*
+   * The client is expected at the OLD time. Judging urgency by the NEW
+   * one made the most urgent move the least: tomorrow's booking pushed
+   * to next month, at 9pm tonight, sent nothing.
+   */
+  it("measures urgency from the time the client is already expecting", () => {
+    const tomorrow10am = new Date("2026-11-04T00:00:00Z");
+    const nextMonth = new Date("2026-12-10T00:00:00Z");
+    expect(decideRescheduleSms({
+      ...moveBase, previousStart: tomorrow10am, scheduledStart: nextMonth,
+      localHour: 21, now: new Date("2026-11-03T11:00:00Z").getTime(),
+    })).toEqual({ send: true });
+  });
+
+  it("still holds an unremarkable far-future move until morning", () => {
+    expect(decideRescheduleSms({
+      ...moveBase,
+      previousStart: new Date("2026-12-01T00:00:00Z"),
+      scheduledStart: new Date("2026-12-10T00:00:00Z"),
+      localHour: 23,
+    })).toEqual({ send: false, reason: "quiet_hours" });
   });
 });

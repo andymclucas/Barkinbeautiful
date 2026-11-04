@@ -2127,8 +2127,12 @@ const calendarRouter = router({
        * Awaited but never allowed to throw. The dog is off the board by
        * now whatever Twilio does, and that is the part that matters.
        */
+      let clientNotice: { sent: boolean; reason?: string } | null = null;
       if (input.newState === "cancelled" && appt.workflowState !== "cancelled") {
-        await sendCancellationNotice(db, input.appointmentId);
+        // Returned to the caller so the screen can say whether the
+        // client was told. It used to be discarded, which left staff
+        // unable to tell a sent text from a silently refused one.
+        clientNotice = await sendCancellationNotice(db, input.appointmentId);
       }
       /*
        * Put back on. A dog cancelled, reinstated and cancelled again is
@@ -2319,7 +2323,8 @@ const calendarRouter = router({
           }
         }
       }
-      return { success: true };
+      // clientNotice is null unless this call cancelled the booking.
+      return { success: true, clientNotice };
     }),
 
   reschedule: operationalProcedure
@@ -3087,6 +3092,28 @@ const workflowRouter = router({
       if (fields.notes !== undefined) updateData.notes = fields.notes;
       if (Object.keys(updateData).length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a workflow detail to update." });
       await db.update(appointments).set(updateData).where(eq(appointments.id, appointmentId));
+
+      /*
+       * The board can cancel too, and this path sent nothing.
+       *
+       * "A cancellation always texts the client" was true only of the
+       * Calendar's controls — the stage dropdown on the workflow board
+       * offers Cancelled and comes through here, which a review that
+       * traced the callers found. Two ways to cancel, one of which
+       * tells the client, is worse than either rule applied honestly.
+       *
+       * Same edge test as calendar.updateWorkflowState, and the claim
+       * is released the same way on the way back out, or a dog
+       * cancelled from the board and reinstated there would never be
+       * able to tell the client about a second cancellation.
+       */
+      if (fields.workflowState === "cancelled" && currentAppointment.workflowState !== "cancelled") {
+        await sendCancellationNotice(db, appointmentId);
+      }
+      if (fields.workflowState !== undefined && fields.workflowState !== "cancelled"
+          && currentAppointment.workflowState === "cancelled") {
+        await clearCancellationClaim(db, appointmentId);
+      }
 
       // Marking one dog from a joined/family booking as OUT (picked up) means
       // the whole party has gone \u2014 staff shouldn't have to click each dog

@@ -597,6 +597,16 @@ export const appointments = mysqlTable("appointments", {
   // day out whenever the server is not on Brisbane time. Same mode as
   // vaccinations.administeredOn, for the same reason.
   rescheduleSmsSentFor: date("reschedule_sms_sent_for", { mode: "string" }),
+  /**
+   * WHEN that was sent, which the day alone cannot tell you.
+   *
+   * The dedupe is "has this client already been told about this day in
+   * the last few minutes", because the calendar moves a family one row
+   * at a time and each save would otherwise text again. Without the
+   * timestamp the same guard would silence a genuine second move to the
+   * same weekday a month later.
+   */
+  rescheduleSmsSentAt: timestamp("reschedule_sms_sent_at"),
 }, (t) => [
   index("idx_appt_tenant_date").on(t.tenantId, t.scheduledStart),
   index("idx_appt_staff").on(t.staffId),

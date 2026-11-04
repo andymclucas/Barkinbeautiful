@@ -17,7 +17,7 @@
  * shared/reminderGrouping.ts, and the same key.
  */
 import { automatedSmsPermitted } from "@shared/automatedSms";
-import { and, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { appointments, clients, pets, staff, tenants, smsLogs } from "../drizzle/schema";
 import { sendSms } from "./sms";
 import { safeTimeZone } from "../shared/auditTimestamp";
@@ -25,7 +25,7 @@ import { brisbaneDateKey } from "../shared/localDateTime";
 import {
   buildCancellationSms, buildRescheduleSms,
   decideCancellationSms, decideRescheduleSms,
-  CHANGE_SKIP_LABEL, BURST_WINDOW_MINUTES,
+  CHANGE_SKIP_LABEL, BURST_WINDOW_MINUTES, MOVE_QUIET_WINDOW_MS,
 } from "../shared/appointmentChangeSms";
 
 export type ChangeOutcome =
@@ -95,6 +95,14 @@ const SELECTION = {
   clientPhone: clients.phone,
   smsOptedOutAt: clients.smsOptedOutAt,
   petName: pets.name,
+  /*
+   * Read so a dog that has passed away, or a duplicate record retired
+   * as "departed", cannot produce "Rex's grooming appointment has been
+   * cancelled. Call us any time to rebook." markDeparted does not touch
+   * appointments, so staff cancel the future bookings by hand — which
+   * is exactly the path that texts.
+   */
+  petStatus: pets.status,
   groomer: staff.name,
   salonName: tenants.name,
   timezone: tenants.timezone,
@@ -144,7 +152,14 @@ export async function sendCancellationNotice(db: any, appointmentId: number): Pr
 
     const cancelled = rows.filter((r: any) =>
       r.status === "cancelled" || r.workflowState === "cancelled");
-    const toTell = cancelled.filter((r: any) => !r.cancellationSmsSentAt);
+    const toTell = cancelled.filter((r: any) =>
+      !r.cancellationSmsSentAt && r.petStatus !== "departed");
+    const departed = cancelled.filter((r: any) => r.petStatus === "departed");
+    if (departed.length > 0) {
+      console.warn(`[cancellationSms] ${departed.length} departed dog(s) on appointment `
+        + `${appointmentId} left untexted. Tidying a dead dog's diary must not tell the owner `
+        + "to ring and rebook.");
+    }
     if (toTell.length === 0) return { sent: false, reason: CHANGE_SKIP_LABEL.already_sent };
 
     const decision = decideCancellationSms({
@@ -163,6 +178,14 @@ export async function sendCancellationNotice(db: any, appointmentId: number): Pr
       if (decision.reason === "burst_guard") {
         console.error(`[cancellationSms] BURST GUARD tripped on appointment ${appointmentId}. `
           + "Something is cancelling in bulk through application code. Nothing was sent.");
+      } else {
+        /*
+         * Every refusal, not just the alarming one. The header promises
+         * "why didn't Mrs Gerard get a text" has an answer in the logs,
+         * and until now eight of the nine reasons left no trace at all.
+         */
+        console.info(`[cancellationSms] appointment ${appointmentId} not texted: `
+          + CHANGE_SKIP_LABEL[decision.reason]);
       }
       return { sent: false, reason: CHANGE_SKIP_LABEL[decision.reason] };
     }
@@ -211,11 +234,46 @@ export async function sendCancellationNotice(db: any, appointmentId: number): Pr
 }
 
 /**
+ * When this client was last told about this day, on ANY of their
+ * bookings.
+ *
+ * Deliberately not scoped to this booking. The calendar moves a family
+ * one row at a time and the notice runs after each update, so the
+ * siblings still waiting to move are at the old start and are not in
+ * this booking's group — they cannot be claimed, and each later save
+ * would text again. The client's own diary is the only place the
+ * earlier text is visible.
+ */
+async function clientToldOfDayAt(
+  db: any, tenantId: number, clientId: number, dayKey: string,
+): Promise<Date | null> {
+  try {
+    const [row] = await db
+      .select({ at: appointments.rescheduleSmsSentAt })
+      .from(appointments)
+      .where(and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.clientId, clientId),
+        eq(appointments.rescheduleSmsSentFor, dayKey),
+        isNotNull(appointments.rescheduleSmsSentAt),
+      ))
+      .orderBy(desc(appointments.rescheduleSmsSentAt))
+      .limit(1);
+    return row?.at ? new Date(row.at) : null;
+  } catch (err) {
+    // Fail towards SILENCE: unable to tell whether they were already
+    // told, assume they were. A missed move is a phone call; a repeat
+    // is the thing Andy named.
+    console.error("[rescheduleSms] could not check recent sends:", err);
+    return new Date();
+  }
+}
+
+/**
  * Tell the client their booking has moved to another DAY.
  *
- * Claims every LIVE row of the booking, not just the one that moved.
- * The calendar reschedules a family one row at a time, so without that
- * a three-dog booking would send three identical texts.
+ * One text per booking per day, enforced across the client's whole
+ * diary rather than this booking's rows — see clientToldOfDayAt.
  */
 export async function sendRescheduleNotice(
   db: any, appointmentId: number, previousStart: Date | string,
@@ -236,6 +294,9 @@ export async function sendRescheduleNotice(
       policyAllows: automatedSmsPermitted("reschedule", process.env),
       previousStart,
       rescheduleSmsSentFor: first.rescheduleSmsSentFor,
+      clientToldOfDayAt: await clientToldOfDayAt(
+        db, first.tenantId, first.clientId, brisbaneDateKey(new Date(first.scheduledStart)),
+      ),
       clientPhone: first.clientPhone,
       smsOptedOutAt: first.smsOptedOutAt,
       scheduledStart: first.scheduledStart,
@@ -248,6 +309,9 @@ export async function sendRescheduleNotice(
       if (decision.reason === "burst_guard") {
         console.error(`[rescheduleSms] BURST GUARD tripped on appointment ${appointmentId}. `
           + "Something is moving bookings in bulk through application code. Nothing was sent.");
+      } else {
+        console.info(`[rescheduleSms] appointment ${appointmentId} not texted: `
+          + CHANGE_SKIP_LABEL[decision.reason]);
       }
       return { sent: false, reason: CHANGE_SKIP_LABEL[decision.reason] };
     }
@@ -270,7 +334,7 @@ export async function sendRescheduleNotice(
      */
     const claim = await db
       .update(appointments)
-      .set({ rescheduleSmsSentFor: dayKey })
+      .set({ rescheduleSmsSentFor: dayKey, rescheduleSmsSentAt: new Date() })
       .where(and(
         inArray(appointments.id, ids),
         or(isNull(appointments.rescheduleSmsSentFor), ne(appointments.rescheduleSmsSentFor, dayKey)),

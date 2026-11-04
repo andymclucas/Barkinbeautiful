@@ -40,6 +40,26 @@
 -- the same ALTER as the column — neither of these needs one. Both are
 -- read only for a row already fetched by primary key.)
 
+-- ── reschedule_sms_sent_at added before this ever ran ────────────────
+--
+-- The day alone was not enough, and a review that executed the real
+-- code found it. The calendar moves a family ONE ROW AT A TIME, and the
+-- notice runs after the update, so it groups on the row's NEW start —
+-- the siblings are still sitting at the OLD one, are not in the group,
+-- and are never claimed. Each later save then finds its own column NULL
+-- and texts again. Three dogs, three texts, which is the rule Andy set
+-- out loud: "Do not ever send 2 or 3."
+--
+-- So the guard became "has this client already been told about this DAY
+-- in the last few minutes", and that needs a WHEN as well as a WHICH
+-- DAY. A day alone would have silenced a genuine second move to the
+-- same weekday weeks later.
+--
+-- Safe to edit rather than add 0154: this migration has not run
+-- anywhere. Verified against the live database before changing it —
+-- neither column exists. The rule is never to edit one that HAS run.
+
 ALTER TABLE `appointments`
   ADD COLUMN `cancellation_sms_sent_at` DATETIME NULL,
-  ADD COLUMN `reschedule_sms_sent_for` DATE NULL;
+  ADD COLUMN `reschedule_sms_sent_for` DATE NULL,
+  ADD COLUMN `reschedule_sms_sent_at` DATETIME NULL;
