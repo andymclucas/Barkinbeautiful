@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 
 const catalogue = [
   { id: 10, name: "Full Groom (Classic) - New Client - Small", legacyServiceType: "classic_groom", weightBand: "0-10kg", priceMode: "fixed", priceAud: "145.00", sortOrder: 10 },
@@ -134,5 +134,57 @@ describe("BookingPetPricing", () => {
   it("says a dog still needs a price rather than showing a settled total", () => {
     renderPricing({ priceByPetId: {} });
     expect(screen.getByText(/a dog still needs a price/)).toBeInTheDocument();
+  });
+  /*
+   * Lauren, 04/11/2026: "don't know why it chose $180.. that would be a
+   * new/casual client price. but doesn't show a choice of pricing
+   * tiers." The rates were on screen, inside a dropdown labelled "From
+   * the price list", and she did not find them.
+   */
+  describe("the rate row", () => {
+    const rateButton = (label: string) =>
+      screen.getByRole("button", { name: new RegExp(`^${label}`) });
+
+    it("shows every tier the price list carries, with its figure", () => {
+      renderPricing();
+      expect(rateButton("New client")).toHaveTextContent("$145.00");
+      expect(rateButton("Regular client")).toHaveTextContent("$125.00");
+    });
+
+    it("says why the box holds the figure it does", () => {
+      renderPricing();
+      expect(screen.getByText("New client rate — no membership on file.")).toBeInTheDocument();
+    });
+
+    it("names the membership when the dog has one", () => {
+      contextPets = [{ ...pet(100, "Teddy", "vip"), membershipTier: "gold" }];
+      renderPricing({ priceByPetId: { "100": "110.00" } });
+      expect(screen.getByText("VIP client rate — Gold membership.")).toBeInTheDocument();
+    });
+
+    it("repricing to another tier reports the new figure", () => {
+      const { props } = renderPricing();
+      fireEvent.click(rateButton("Regular client"));
+      expect(props.onPricesChange).toHaveBeenCalledWith(
+        expect.objectContaining({ "100": "125.00" }),
+      );
+    });
+
+    /*
+     * Three styled Regular cells are deliberately unset in the real
+     * catalogue. A button that vanishes reads as a bug; a dead one reads
+     * as "we don't price that".
+     */
+    it("leaves a tier the price list cannot quote visible and dead", () => {
+      renderPricing({ serviceType: "styled_groom", priceByPetId: { "100": "180.00" } });
+      expect(rateButton("New client")).toHaveTextContent("$180.00");
+      expect(rateButton("VIP client")).toBeDisabled();
+      expect(rateButton("VIP client")).toHaveTextContent("—");
+    });
+
+    it("offers no rate at all when the membership already covers the groom", () => {
+      renderPricing({ membershipCovered: true });
+      expect(screen.queryByRole("button", { name: /^New client/ })).not.toBeInTheDocument();
+    });
   });
 });
