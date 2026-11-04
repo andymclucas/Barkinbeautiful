@@ -128,6 +128,7 @@ import { takePendingBooking } from "@/lib/pendingBooking";
 import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
 import { bookingAttendance, describeRemoval, describeAttendance } from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
+import { overlapPlacement } from "@shared/appointmentCardOverlap";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
@@ -410,15 +411,29 @@ function ApptBlock({
   );
   const height = Math.max((durationMins / 60) * HOUR_HEIGHT - 2, 22);
   const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
-  const widthPct  = 100 / totalCols;
-  const leftPct   = col * widthPct;
   /*
-   * Width as well as height. The card's own width is the column split
-   * between however many dogs overlap here — a 94px column with two
-   * dogs gives each 47, which is where "CL GR" and "8." came from.
+   * Andy, 04/11/2026, with a photo of the day board on a phone: "Can we
+   * overlap the appts that you can't read and have the ones above sit
+   * over the top... Don't squash them so they are unreadable."
+   *
+   * Splitting the column stays while a split card is still readable —
+   * the desktop's 320px column gives two dogs 160 each — and cascades
+   * once it is not. A 94px phone column gave three dogs 31px apiece,
+   * which is the single letter in the photo; cascaded they get 70,
+   * which is where a start time starts fitting again.
+   */
+  const placement = overlapPlacement({
+    col,
+    totalCols,
+    columnWidthPx: columnWidth ?? READABLE_COLUMN_FALLBACK,
+  });
+  /*
+   * Width as well as height. The card's own width is whatever the
+   * placement above actually gave it — a 94px column with two dogs
+   * split gave each 47, which is where "CL GR" and "8." came from.
    */
   const density = appointmentCardDensity({
-    widthPx: (columnWidth ?? READABLE_COLUMN_FALLBACK) * (widthPct / 100),
+    widthPx: placement.widthPx,
     heightPx: height,
   });
   const compact = !density.showTime;
@@ -453,12 +468,18 @@ function ApptBlock({
   const block = (
     <div
       draggable={canDrag}
-      className={`absolute rounded-md text-[11px] group overflow-hidden select-none border border-white/80 transition-[transform,box-shadow,filter] duration-200 ease-out ${isCancelled ? "cursor-default opacity-95" : "cursor-grab active:cursor-grabbing hover:-translate-y-px hover:z-20 hover:shadow-lg hover:saturate-110"}`}
+      /* hover:!z-[60] and hover:!opacity-100 carry an !important because
+         the stacking order and the overlap opacity are INLINE styles,
+         which an ordinary class cannot beat — without it, hovering a
+         card buried under two others raised it to z-20 and left it
+         exactly where it was, under siblings sitting at 21 and 22. */
+      className={`absolute rounded-md text-[11px] group overflow-hidden select-none border border-white/80 transition-[transform,box-shadow,filter] duration-200 ease-out ${isCancelled ? "cursor-default opacity-95" : "cursor-grab active:cursor-grabbing hover:-translate-y-px hover:!z-[60] hover:!opacity-100 focus-visible:!z-[60] focus-visible:!opacity-100 hover:shadow-lg hover:saturate-110"}`}
       style={{
         top,
         height,
-        left:  `calc(${leftPct}% + 1px)`,
-        width: `calc(${widthPct}% - 2px)`,
+        left:  placement.leftPx + 1,
+        width: Math.max(0, placement.widthPx - 2),
+
         // Cancelled blocks recede rather than shout. They used to be the
         // loudest thing on the board - red wash, red 4px spine, red shadow,
         // white-on-red badge - so a cancelled dog drew more attention than
@@ -471,9 +492,32 @@ function ApptBlock({
            moves to the spine, so the day can still be read by service
            after the money has come in. */
         borderLeft: `4px ${isCancelled ? "dashed #cbd5e1" : `solid ${svc.border}`}`,
-        boxShadow: isCancelled ? "none" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${pay.accent ?? svc.border}`,
-        opacity: isCancelled ? 0.45 : 1,
-        zIndex: 2,
+        /*
+         * A cascaded card needs an edge, or a stack of them reads as
+         * one wide card with a jumble of text in it. The shadow is
+         * thrown LEFT, over the card beneath, so the seam between them
+         * is visible exactly where they overlap.
+         */
+        boxShadow: isCancelled
+          ? "none"
+          : placement.covers > 0
+            ? `inset 0 1px 0 rgba(255,255,255,0.9), -3px 0 8px -2px rgba(15,23,42,0.28)`
+            : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${pay.accent ?? svc.border}`,
+        /*
+         * Andy asked for opacity on the ones sitting over the top. Kept
+         * mild on purpose: the card beneath shows through the overlap,
+         * and the text on THIS card still has to be read against it.
+         * Past about 0.9 the two sets of words start competing and both
+         * become harder to read than either would be alone, which is
+         * the opposite of what was asked for.
+         */
+        opacity: isCancelled ? 0.45 : placement.covers > 0 ? 0.94 : 1,
+        /*
+         * Cascaded cards declare their own order. Left to DOM order a
+         * hovered card would still lose to a later sibling, because
+         * hover raises to z-20 and the sibling is already there.
+         */
+        zIndex: placement.cascaded ? placement.zIndex : 2,
       }}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onDragStart={canDrag && onDragStart ? (e) => onDragStart(e, appt) : undefined}
