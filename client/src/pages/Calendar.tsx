@@ -435,12 +435,6 @@ function ApptBlock({
    * placement above actually gave it — a 94px column with two dogs
    * split gave each 47, which is where "CL GR" and "8." came from.
    */
-  const density = appointmentCardDensity({
-    widthPx: placement.widthPx,
-    heightPx: height,
-  });
-  const compact = !density.showTime;
-  const showService = density.showService;
   const isCancelled = isCancelledAppointment(appt);
   const canDrag = canDragAppointment(appt, Boolean(onDragStart));
 
@@ -467,6 +461,30 @@ function ApptBlock({
      its service colour, which is what makes a day readable to book. */
   const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
   const isVip = showsMembershipMark({ membershipId: appt.membershipId, isCancelled });
+
+  /*
+   * Density is computed HERE, not above the name and the stamps,
+   * because it has to be told what else the card is already committed
+   * to drawing.
+   *
+   * Andy, 04/11/2026: "Still missing details on appts view." The stamp
+   * row, the VIP mark, the family line and a name that wraps to two
+   * lines are all drawn unconditionally, and none of them were in the
+   * height budget — so density granted a service badge and codes to a
+   * card with no room left, and overflow-hidden ate them. Measured on
+   * the live board that evening: 22 of the 34 cards were clipping.
+   */
+  const density = appointmentCardDensity({
+    widthPx: placement.widthPx,
+    heightPx: height,
+    hasStampRow: Boolean(pay.label) || isVip,
+    isCancelled,
+    isFamilyBooking: siblings !== undefined && siblings.length > 0,
+    nameLength: (siblings && siblings.length > 0
+      ? sharedAppointmentLabel
+      : `${appt.petName}${appt.clientLastName ? ` ${appt.clientLastName}` : ""}`).length,
+  });
+  const compact = !density.showTime;
 
   const block = (
     <div
@@ -530,14 +548,25 @@ function ApptBlock({
       <div className="px-2 py-1 h-full overflow-hidden leading-tight">
         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
         {(pay.label || isVip) && (
-          <div className="mb-1 flex flex-wrap items-center gap-1">
+          /*
+           * Beside the name on a card wide enough, above it otherwise.
+           *
+           * The pill is 39px and was taking a 24px row to itself on a
+           * card 70px tall — and 16 of the 34 cards on the board are
+           * exactly that, an hour-long booking. The row it was taking
+           * is the row the service badge needed. Positioned against the
+           * card itself, which is already `absolute`.
+           */
+          <div className={density.stampInline
+            ? "absolute top-1 right-1 z-[1] flex items-center gap-1"
+            : "mb-1 flex flex-wrap items-center gap-1"}>
             <PaymentStamp pay={pay} />
             {isVip && <VipMark />}
           </div>
         )}
         {siblings && siblings.length > 0 ? (
           <>
-            <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+            <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${density.stampInline ? "pr-11" : ""} ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
               <div className="leading-tight" title={sharedAppointmentLabel}>
                 {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
                 {sharedAppointmentLabel}
@@ -570,7 +599,7 @@ function ApptBlock({
               * Clamped at two so a long double-barrelled surname cannot
               * push the service and the codes off a short booking.
               */}
-            <div className={`font-bold text-[12px] line-clamp-2 leading-tight tracking-[-0.01em] ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+            <div className={`font-bold text-[12px] line-clamp-2 leading-tight tracking-[-0.01em] ${density.stampInline ? "pr-11" : ""} ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
               {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
               {appt.petName}{appt.clientLastName ? ` ${appt.clientLastName}` : ""}
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
@@ -610,7 +639,7 @@ function ApptBlock({
           </>
         )}
       </div>
-      <div className="absolute top-1 right-1 rounded-full bg-card/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className={`absolute top-1 rounded-full bg-card/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${density.stampInline ? "right-12" : "right-1"}`}>
         <Pencil className="h-2.5 w-2.5" style={{ color: svc.border }} />
       </div>
     </div>
