@@ -1247,7 +1247,9 @@ export const smsLogs = mysqlTable("sms_logs", {
   body: text("body").notNull(),
   twilioSid: varchar("twilio_sid", { length: 64 }),
   status: mysqlEnum("status", ["sent", "delivered", "failed", "pending", "received"]).default("pending").notNull(),
-  type: mysqlEnum("type", ["reminder", "confirmation", "ready_pickup", "payment_failed", "tracker", "custom", "campaign", "inbound"]).default("custom").notNull(),
+  // Appended, never reordered: MySQL stores an enum by ORDINAL, so
+  // moving a value silently relabels every existing row.
+  type: mysqlEnum("type", ["reminder", "confirmation", "ready_pickup", "payment_failed", "tracker", "custom", "campaign", "inbound", "cancellation", "reschedule"]).default("custom").notNull(),
   direction: mysqlEnum("direction", ["outbound", "inbound"]).default("outbound").notNull(),
   replyIntent: mysqlEnum("reply_intent", ["confirm", "cancel", "unknown"]),
   processedAt: timestamp("processed_at"),

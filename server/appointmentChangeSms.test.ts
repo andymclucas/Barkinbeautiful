@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   decideCancellationSms, decideRescheduleSms,
   buildCancellationSms, buildRescheduleSms,
+  burstExceeded, BURST_LIMIT,
 } from "@shared/appointmentChangeSms";
 
 /** Brisbane is UTC+10 with no DST, so this is 10am Friday 6 Nov local. */
@@ -211,5 +212,43 @@ describe("the messages themselves", () => {
         date: "Wednesday 23 December", time: "12:30 pm", groomer: "Charlotte Purcell",
       }).length).toBeLessThanOrEqual(306);
     }
+  });
+});
+
+/**
+ * The last guard, and the only one that stands between a bulk script
+ * and hundreds of real phones. `scripts/` already contains a script
+ * that calls appRouter.createCaller in a loop.
+ */
+describe("the burst guard", () => {
+  it("lets ordinary staff work through", () => {
+    expect(decideCancellationSms({ ...cancelBase, recentSendCount: 3 })).toEqual({ send: true });
+    expect(decideRescheduleSms({ ...moveBase, recentSendCount: 3 })).toEqual({ send: true });
+  });
+
+  it("stops a bulk run dead, on both messages", () => {
+    expect(decideCancellationSms({ ...cancelBase, recentSendCount: BURST_LIMIT }))
+      .toEqual({ send: false, reason: "burst_guard" });
+    expect(decideRescheduleSms({ ...moveBase, recentSendCount: BURST_LIMIT }))
+      .toEqual({ send: false, reason: "burst_guard" });
+  });
+
+  it("is skipped when the caller cannot count", () => {
+    expect(burstExceeded(undefined)).toBe(false);
+  });
+
+  it("trips AT the limit, not one past it", () => {
+    expect(burstExceeded(BURST_LIMIT - 1)).toBe(false);
+    expect(burstExceeded(BURST_LIMIT)).toBe(true);
+  });
+
+  /*
+   * Ordered before opted_out and the rest on purpose: a bulk run must
+   * be refused on the cheapest possible check, and above all before
+   * anything is claimed.
+   */
+  it("refuses before the claim, so a blocked burst leaves nothing marked sent", () => {
+    const d = decideCancellationSms({ ...cancelBase, recentSendCount: 99, smsOptedOutAt: null });
+    expect(d).toEqual({ send: false, reason: "burst_guard" });
   });
 });

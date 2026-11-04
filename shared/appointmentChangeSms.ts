@@ -70,7 +70,8 @@ export type ChangeSkipReason =
   | "in_the_past"
   | "quiet_hours"
   | "not_cancelled"
-  | "same_day";
+  | "same_day"
+  | "burst_guard";
 
 export type ChangeDecision =
   | { send: true }
@@ -86,7 +87,33 @@ export const CHANGE_SKIP_LABEL: Record<ChangeSkipReason, string> = {
   quiet_hours: "outside the hours an automated text may land",
   not_cancelled: "the booking is not cancelled",
   same_day: "the booking did not move to a different day",
+  burst_guard: "too many of these went out at once — stopped as a safety measure",
 };
+
+/**
+ * The circuit breaker, and why these two need one.
+ *
+ * The booking confirmation is protected from a bulk run by the row's
+ * own moego_appointment_id. These cannot be — see the header — so the
+ * stated protection is that they only fire from staff paths. That is a
+ * fact about today's code, not a guarantee: `scripts/` already contains
+ * a script that calls `appRouter.createCaller` in a loop
+ * (close-salon-xmas-2026.ts, which happens only to write blockouts).
+ * One bulk script that cancels through `updateWorkflowState` and the
+ * salon texts hundreds of clients with no undo.
+ *
+ * So the number itself is the last guard. A person cancelling dogs by
+ * hand does not reach twelve in a quarter of an hour; a loop reaches it
+ * in seconds. Crossing the line stops the send and says so loudly,
+ * which is recoverable — staff can text by hand, and `sms_logs` shows
+ * what did go. The alternative is not recoverable.
+ */
+export const BURST_LIMIT = 12;
+export const BURST_WINDOW_MINUTES = 15;
+
+export function burstExceeded(recentSendCount: number | undefined, limit = BURST_LIMIT): boolean {
+  return typeof recentSendCount === "number" && recentSendCount >= limit;
+}
 
 function ms(value: Date | string | number): number {
   return value instanceof Date ? value.getTime() : new Date(value).getTime();
@@ -100,6 +127,11 @@ type CommonInput = {
   scheduledStart: Date | string | number;
   /** Hour of day, 0-23, on the SALON's clock. Omit to skip the check. */
   localHour?: number;
+  /**
+   * How many of this message type already went out in the last
+   * BURST_WINDOW_MINUTES. Omit to skip the breaker.
+   */
+  recentSendCount?: number;
   now?: Date | number;
 };
 
@@ -113,6 +145,8 @@ function commonRefusal(input: CommonInput, alreadySent: boolean): ChangeDecision
    */
   if (!input.policyAllows) return { send: false, reason: "policy_off" };
   if (alreadySent) return { send: false, reason: "already_sent" };
+  // Checked before the claim, like everything else that can refuse.
+  if (burstExceeded(input.recentSendCount)) return { send: false, reason: "burst_guard" };
   if (input.smsOptedOutAt) return { send: false, reason: "opted_out" };
   if (!input.clientPhone?.trim()) return { send: false, reason: "no_phone" };
   return null;

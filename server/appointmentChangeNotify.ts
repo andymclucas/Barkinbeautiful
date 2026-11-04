@@ -25,7 +25,7 @@ import { brisbaneDateKey } from "../shared/localDateTime";
 import {
   buildCancellationSms, buildRescheduleSms,
   decideCancellationSms, decideRescheduleSms,
-  CHANGE_SKIP_LABEL,
+  CHANGE_SKIP_LABEL, BURST_WINDOW_MINUTES,
 } from "../shared/appointmentChangeSms";
 
 export type ChangeOutcome =
@@ -49,6 +49,38 @@ function formatWhen(at: Date, timeZone: string) {
 
 const affected = (result: unknown): number =>
   Number((result as any)?.[0]?.affectedRows ?? (result as any)?.affectedRows ?? 0);
+
+/**
+ * How many of this type already went out in the burst window.
+ *
+ * Counted from sms_logs, which is the record of what was actually
+ * SENT — not from the claim columns, which a blocked or failed send
+ * also sets. A full scan of a few hundred rows, and it runs once per
+ * cancellation, so it needs no index.
+ *
+ * A failure here returns 0 rather than throwing: the breaker is a
+ * safety net, and a net that takes the feature down when the database
+ * hiccups is worse than the thing it guards against.
+ */
+async function recentSendCount(
+  db: any, tenantId: number, type: "cancellation" | "reschedule",
+): Promise<number> {
+  try {
+    const [row] = await db
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(smsLogs)
+      .where(and(
+        eq(smsLogs.tenantId, tenantId),
+        eq(smsLogs.type, type),
+        eq(smsLogs.direction, "outbound"),
+        sql`${smsLogs.sentAt} >= DATE_SUB(NOW(), INTERVAL ${sql.raw(String(BURST_WINDOW_MINUTES))} MINUTE)`,
+      ));
+    return Number(row?.n ?? 0);
+  } catch (err) {
+    console.error("[changeSms] could not count recent sends:", err);
+    return 0;
+  }
+}
 
 const SELECTION = {
   id: appointments.id,
@@ -125,8 +157,15 @@ export async function sendCancellationNotice(db: any, appointmentId: number): Pr
       status: first.status,
       workflowState: first.workflowState,
       localHour,
+      recentSendCount: await recentSendCount(db, first.tenantId, "cancellation"),
     });
-    if (!decision.send) return { sent: false, reason: CHANGE_SKIP_LABEL[decision.reason] };
+    if (!decision.send) {
+      if (decision.reason === "burst_guard") {
+        console.error(`[cancellationSms] BURST GUARD tripped on appointment ${appointmentId}. `
+          + "Something is cancelling in bulk through application code. Nothing was sent.");
+      }
+      return { sent: false, reason: CHANGE_SKIP_LABEL[decision.reason] };
+    }
 
     // Built before the claim: a bad tenant timezone used to throw after
     // the column said "sent", leaving nothing in sms_logs.
@@ -203,8 +242,15 @@ export async function sendRescheduleNotice(
       status: first.status,
       workflowState: first.workflowState,
       localHour,
+      recentSendCount: await recentSendCount(db, first.tenantId, "reschedule"),
     });
-    if (!decision.send) return { sent: false, reason: CHANGE_SKIP_LABEL[decision.reason] };
+    if (!decision.send) {
+      if (decision.reason === "burst_guard") {
+        console.error(`[rescheduleSms] BURST GUARD tripped on appointment ${appointmentId}. `
+          + "Something is moving bookings in bulk through application code. Nothing was sent.");
+      }
+      return { sent: false, reason: CHANGE_SKIP_LABEL[decision.reason] };
+    }
 
     const body = buildRescheduleSms({
       clientFirstName: first.clientFirstName ?? "",
