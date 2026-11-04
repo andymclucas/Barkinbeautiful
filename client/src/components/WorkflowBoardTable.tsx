@@ -155,27 +155,23 @@ export const PREV_STAGE: Record<StageKey, StageKey | null> = {
   no_show: null,
 };
 
-export const SERVICE_COLOUR: Record<string, string> = {
-  classic_groom: "#22c55e",
-  styled_groom: "#22c55e",
-  bath_only: "#3b82f6",
-  deshed: "#f97316",
-  tidy: "#ec4899",
-  nail_trim: "#a78bfa",
-  daycare: "#f59e0b",
-  other: "#94a3b8",
-};
-
-export const SERVICE_LABEL: Record<string, string> = {
-  classic_groom: "Classic Groom",
-  styled_groom: "Styled Groom",
-  bath_only: "Bath & Blow Dry",
-  deshed: "De-shed",
-  tidy: "Tidy",
-  nail_trim: "Nail Trim",
-  daycare: "Daycare",
-  other: "Other",
-};
+/*
+ * These were a local copy keyed on `tidy` — a service type that has not
+ * existed since the column was renamed to `fft`. Every FFT booking on
+ * this board therefore fell through to grey and printed the raw string
+ * `fft`, while the pink it should have worn sat under a key nothing
+ * could match. On 04/11/2026 a groomer missed that a booking was a tidy
+ * and gave a full clip, which cannot be billed afterwards.
+ *
+ * Re-exported rather than removed because other modules import them
+ * from here. The maps themselves now live in shared/serviceTypes.ts,
+ * typed Record<ServiceType, ...>, so a missing or misspelt key fails
+ * the build instead of one screen.
+ */
+export { SERVICE_COLOUR, SERVICE_LABEL } from "@shared/serviceTypes";
+import {
+  serviceColour, serviceLabel, serviceBoardLabel, isNotAFullGroom,
+} from "@shared/serviceTypes";
 
 export function stageColour(key: string) {
   return ALL_STAGE_OPTIONS.find(s => s.key === key)?.colour ?? "#94a3b8";
@@ -570,7 +566,7 @@ export function WorkflowBoardTable({
                           <PetAvatar petId={appt.petId} petName={appt.petName} className="h-7 w-7" />
                           <div
                             className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full ring-1 ring-white"
-                            style={{ background: SERVICE_COLOUR[appt.serviceType] ?? "#94a3b8" }}
+                            style={{ background: serviceColour(appt.serviceType) }}
                           />
                         </div>
                         <div className="min-w-0">
@@ -849,11 +845,28 @@ export function WorkflowBoardTable({
 
                     {/* Service */}
                     <td className="px-2 py-1.5">
+                      {/*
+                        * Lauren, 04/11/2026: "can we make FFT larger and
+                        * a pink solid box like the other services, so it
+                        * stands out."
+                        *
+                        * Larger for every service, because the cell was
+                        * 11px against pet-code chips of the same size
+                        * and the groomer who clipped a tidy was reading
+                        * the codes. Louder still for the jobs that are
+                        * NOT a full groom: those are the ones where
+                        * being misread costs the salon the difference,
+                        * and there is no way to bill it after the dog
+                        * has gone home.
+                        */}
                       <span
-                        className="inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold text-white leading-tight"
-                        style={{ background: SERVICE_COLOUR[appt.serviceType] ?? "#64748b" }}
+                        className={`inline-block rounded px-2 py-1 text-xs font-bold uppercase tracking-wide text-white leading-tight ${
+                          isNotAFullGroom(appt.serviceType) ? "ring-2 ring-offset-1 ring-pink-300 shadow-sm" : ""
+                        }`}
+                        style={{ background: serviceColour(appt.serviceType) }}
+                        title={serviceLabel(appt.serviceType)}
                       >
-                        {SERVICE_LABEL[appt.serviceType] ?? appt.serviceType}
+                        {serviceBoardLabel(appt.serviceType)}
                       </span>
                       {/* The extras, under the service, where Lauren asked
                           for them: "show any add-ons on the workflow so
