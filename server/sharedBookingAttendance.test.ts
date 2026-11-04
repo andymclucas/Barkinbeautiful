@@ -4,6 +4,8 @@ import {
   bookingAttendance,
   describeRemoval,
   describeAttendance,
+  wholeBookingCancellation,
+  describeWholeBookingCancellation,
 } from "@shared/sharedBookingAttendance";
 
 const dog = (over: Partial<Parameters<typeof attendanceDecision>[0]> = {}) => ({
@@ -144,5 +146,96 @@ describe("describeAttendance", () => {
 
   it("says nothing for no dogs", () => {
     expect(describeAttendance([])).toBe("");
+  });
+});
+
+/**
+ * Andy, 04/11/2026: "Build the cancel whole booking action."
+ *
+ * The reason it exists: cancelling a family dog by dog sends one text
+ * per dog, because each press is a separate decision minutes apart and
+ * nothing batches them. One action cancels them together, so the
+ * notice finds them all at once and sends one text.
+ */
+describe("wholeBookingCancellation", () => {
+  const dog = (id: number, name: string, state: "come" | "done" | "salon" | "off") => ({
+    id, petName: name,
+    status: state === "off" ? "cancelled" : "confirmed",
+    workflowState: state === "off" ? "cancelled"
+      : state === "done" ? "complete"
+      : state === "salon" ? "bathing" : "scheduled",
+  });
+
+  it("cancels every dog still to come", () => {
+    const plan = wholeBookingCancellation([
+      dog(1, "Stella", "come"), dog(2, "Belle", "come"), dog(3, "Teddy", "come"),
+    ]);
+    expect(plan.cancel.map((r) => r.name)).toEqual(["Stella", "Belle", "Teddy"]);
+    expect(plan.blocked).toEqual([]);
+    expect(plan.alreadyOff).toEqual([]);
+  });
+
+  /*
+   * Trap 4 of the MoeGo sync from the other side: a dog past scheduled
+   * is on the floor and must not be taken off the board.
+   */
+  it("leaves a dog at the salon or already groomed alone", () => {
+    const plan = wholeBookingCancellation([
+      dog(1, "Stella", "come"), dog(2, "Belle", "salon"), dog(3, "Teddy", "done"),
+    ]);
+    expect(plan.cancel.map((r) => r.name)).toEqual(["Stella"]);
+    expect(plan.blocked.map((r) => r.name)).toEqual(["Belle", "Teddy"]);
+  });
+
+  it("does not re-cancel a dog already off", () => {
+    const plan = wholeBookingCancellation([dog(1, "Stella", "come"), dog(2, "Belle", "off")]);
+    expect(plan.cancel.map((r) => r.name)).toEqual(["Stella"]);
+    expect(plan.alreadyOff.map((r) => r.name)).toEqual(["Belle"]);
+  });
+
+  it("agrees exactly with the per-dog rule", () => {
+    const dogs = [dog(1, "A", "come"), dog(2, "B", "salon"), dog(3, "C", "off"), dog(4, "D", "done")];
+    const plan = wholeBookingCancellation(dogs);
+    // By id, not by object identity: the plan builds its own rows, so
+    // `includes` on a second bookingAttendance call never matches.
+    const has = (rows: { id: number }[], id: number) => rows.some((r) => r.id === id);
+    for (const row of bookingAttendance(dogs)) {
+      const bucket = has(plan.cancel, row.id) ? "remove"
+        : has(plan.blocked, row.id) ? "blocked"
+        : has(plan.alreadyOff, row.id) ? "restore" : "missing";
+      expect(bucket, row.name).toBe(row.action);
+    }
+  });
+});
+
+describe("describeWholeBookingCancellation", () => {
+  const rows = (...specs: Array<["come" | "done" | "off", string]>) =>
+    wholeBookingCancellation(specs.map(([state, name], i) => ({
+      id: i + 1, petName: name,
+      status: state === "off" ? "cancelled" : "confirmed",
+      workflowState: state === "off" ? "cancelled" : state === "done" ? "complete" : "scheduled",
+    })));
+
+  it("names every dog and promises ONE text", () => {
+    const line = describeWholeBookingCancellation(rows(["come", "Stella"], ["come", "Belle"], ["come", "Teddy"]));
+    expect(line).toContain("All 3 dogs — Stella, Belle and Teddy");
+    expect(line).toContain("one text naming all of them");
+  });
+
+  it("reads correctly for a single dog", () => {
+    const line = describeWholeBookingCancellation(rows(["come", "Teddy"]));
+    expect(line).toContain("Teddy will be marked as not coming");
+    expect(line).toContain("one text naming them");
+  });
+
+  it("says which dogs are left alone and why", () => {
+    const line = describeWholeBookingCancellation(rows(["come", "Stella"], ["done", "Belle"]));
+    expect(line).toContain("Belle is left alone");
+    expect(line).toContain("already at the salon or groomed");
+  });
+
+  it("says there is nothing to do rather than offering to do nothing", () => {
+    expect(describeWholeBookingCancellation(rows(["done", "Belle"]))).toContain("Nothing to cancel");
+    expect(describeWholeBookingCancellation(rows(["off", "Belle"]))).toContain("already cancelled");
   });
 });

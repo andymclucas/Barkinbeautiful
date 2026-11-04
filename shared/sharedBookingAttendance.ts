@@ -158,3 +158,75 @@ export function describeAttendance(rows: readonly AttendanceRow[]): string {
   }
   return `${dogs(notComing)} not coming, ${total - notComing} still booked.` + hint;
 }
+
+/**
+ * Taking the WHOLE booking off in one action.
+ *
+ * Andy, 04/11/2026: "Build the cancel whole booking action."
+ *
+ * Cancelling a family dog by dog sends one text per dog, because each
+ * press is a separate decision arriving minutes apart and there is no
+ * scheduler to batch them. That breaks the rule Andy states most
+ * plainly — "Do not ever send 2 or 3" — and the per-dog control is the
+ * only way the dialog offered to do it.
+ *
+ * One action cancelling every dog at once fixes it at the source: the
+ * rows are already cancelled by the time the notice runs, so
+ * sendCancellationNotice finds them all untold and sends ONE text
+ * naming all of them.
+ *
+ * It reuses attendanceDecision rather than deciding again, so a dog at
+ * the salon or already groomed is refused here for exactly the reason
+ * it is refused one at a time, and the two can never disagree.
+ */
+export type WholeBookingCancellation = {
+  /** Still to come, and will be cancelled. */
+  cancel: AttendanceRow[];
+  /** At the salon or already groomed. Left alone, and named. */
+  blocked: AttendanceRow[];
+  /** Already off. Nothing to do and nothing to say about them. */
+  alreadyOff: AttendanceRow[];
+};
+
+export function wholeBookingCancellation(
+  dogs: readonly AttendanceDog[],
+): WholeBookingCancellation {
+  const rows = bookingAttendance(dogs);
+  return {
+    cancel: rows.filter((r) => r.action === "remove"),
+    blocked: rows.filter((r) => r.action === "blocked"),
+    alreadyOff: rows.filter((r) => r.action === "restore"),
+  };
+}
+
+/** The sentence on the confirm, which has to name what will NOT happen. */
+export function describeWholeBookingCancellation(plan: WholeBookingCancellation): string {
+  const names = (rows: readonly AttendanceRow[]) => {
+    const list = rows.map((r) => r.name);
+    if (list.length <= 1) return list[0] ?? "";
+    return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+  };
+
+  if (plan.cancel.length === 0) {
+    return plan.blocked.length > 0
+      ? `Nothing to cancel — ${names(plan.blocked)} ${plan.blocked.length === 1 ? "is" : "are"} already at the salon or groomed.`
+      : "This booking is already cancelled.";
+  }
+
+  const head = plan.cancel.length === 1
+    ? `${names(plan.cancel)} will be marked as not coming.`
+    : `All ${plan.cancel.length} dogs — ${names(plan.cancel)} — will be marked as not coming.`;
+
+  /*
+   * Said out loud because it is the whole point of the action: one
+   * text, not one per dog. Staff have been told the opposite by
+   * experience.
+   */
+  const text = ` The client gets one text naming ${plan.cancel.length === 1 ? "them" : "all of them"}.`;
+
+  const left = plan.blocked.length > 0
+    ? ` ${names(plan.blocked)} ${plan.blocked.length === 1 ? "is" : "are"} left alone — already at the salon or groomed.`
+    : "";
+
+  return head + text + left;
+}

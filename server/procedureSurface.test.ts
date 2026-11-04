@@ -131,6 +131,15 @@ const OPERATIONAL = [
   "bookingPricingRouter.context",
   "calendarRouter.addPetsToSharedAppointment",
   "calendarRouter.appointmentsForClient",
+  /*
+   * Cancels every dog of a booking at once so the client gets ONE
+   * text instead of one per dog. operationalProcedure like
+   * updateWorkflowState beside it: cancelling a dog is salon-floor
+   * work. Every row is access-checked individually, so a groomer who
+   * can reach one dog of a family but not its siblings is refused the
+   * whole action rather than cancelling half of it.
+   */
+  "calendarRouter.cancelWholeBooking",
   "calendarRouter.createAppointment",
   // One invoice for a whole booking, rather than one per dog.
   "calendarRouter.createCombinedSessionBill",
@@ -297,7 +306,7 @@ describe("tRPC procedure surface", () => {
     //    canAdministerStaff, because users.role = "admin" includes four
     //    groomers and this removes a record. This file cannot see that
     //    check, so clientDeletion.test.ts carries the rule.
-    expect(surface).toHaveLength(369);
+    expect(surface).toHaveLength(370);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -308,7 +317,15 @@ describe("tRPC procedure surface", () => {
 
   it("exposes exactly these procedures to restricted staff", () => {
     expect(idsOfKind(surface, "operational")).toEqual(OPERATIONAL);
-    expect(OPERATIONAL).toHaveLength(129);
+    /*
+     * 130 since 04/11/2026: calendarRouter.cancelWholeBooking. Salon
+     * floor work, like the updateWorkflowState beside it — a groomer
+     * cancelling a family is the person this is for. Every row it
+     * touches is access-checked on its own, so a groomer who can reach
+     * one dog of a booking but not its siblings is refused the whole
+     * action rather than cancelling half a family.
+     */
+    expect(OPERATIONAL).toHaveLength(130);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
