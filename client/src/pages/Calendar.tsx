@@ -583,10 +583,32 @@ function ApptBlock({
               <div className="leading-tight line-clamp-2" title={sharedAppointmentLabel}>
                 {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
                 {sharedAppointmentLabel}
+                {/*
+                  * Inside the clamped div, not beside it.
+                  *
+                  * As a sibling of a block-level clamped box this tick
+                  * took a line of its own — 15px that the height
+                  * budget does not know about, which pushed a
+                  * three-dog card 13px out through overflow-hidden.
+                  * It only started showing on 05/11/2026, the morning
+                  * the reminder texts first went out, so nothing had
+                  * ever drawn it before. The solo branch below always
+                  * had it inline.
+                  */}
+                {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
               </div>
-              {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
             </div>
-            {density.showFamilyLine && <div className="mt-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
+            {/*
+              * truncate, because this wraps.
+              *
+              * FAMILY_LINE_HEIGHT is one line, measured on a wide
+              * card. On a 105px column "2 dogs · family booking" takes
+              * two, costing 23px against a budget of 13 — which is
+              * what put two of the three still-clipping cards over.
+              * Losing the tail of the phrase costs nothing: the dog
+              * count is the part that matters and it comes first.
+              */}
+            {density.showFamilyLine && <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
             {!compact && (
               <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                 {density.timeFormat === "range"
