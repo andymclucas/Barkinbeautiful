@@ -11097,6 +11097,21 @@ const smsRouter = router({
           id: smsLogs.id, body: smsLogs.body, direction: smsLogs.direction,
           status: smsLogs.status, type: smsLogs.type, sentAt: smsLogs.sentAt,
           toNumber: smsLogs.toNumber,
+          /*
+           * Without this the thread draws one bubble per ROW, and the
+           * pickup text writes a row per dog it covers. Mellissa
+           * Luckman's three bubbles on 03/11/2026 were one send —
+           * SM2005f0fa3f44bf72df1988919b1d4dc1, all three at the same
+           * second — and Andy was told the client had been texted
+           * three times.
+           *
+           * collapseBySend has existed since the two-dog version of
+           * this, and was correct. It was simply never given the field
+           * it groups by, so every message fell through its "no sid,
+           * pass it through" branch. A dedupe starved of its key is
+           * indistinguishable from no dedupe at all.
+           */
+          twilioSid: smsLogs.twilioSid,
         }).from(smsLogs)
           .where(and(eq(smsLogs.tenantId, tenant), smsWhere))
           .orderBy(desc(smsLogs.sentAt)).limit(input.limit),
