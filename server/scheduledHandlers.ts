@@ -46,7 +46,7 @@ import { membershipPayments, membershipLedgerEntries } from "../drizzle/schema";
 import { desc } from "drizzle-orm";
 import { sendSms, buildAppointmentReminderSms } from "./sms";
 import { appointments, staff } from "../drizzle/schema";
-import { gte, isNotNull, isNull, lt } from "drizzle-orm";
+import { gte, isNotNull, isNull, lt, notInArray } from "drizzle-orm";
 import { decideAppointmentReminder, REMINDER_SKIP_LABEL } from "@shared/reminderDecision";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 
@@ -713,6 +713,10 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
              to somebody who opted out is the one that is never
              excusable. See shared/reminderDecision.ts. */
           smsOptedOutAt: clients.smsOptedOutAt,
+          /* Re-checked per row as well as in SQL — see the second line
+             of defence note on decideAppointmentReminder. */
+          status: appointments.status,
+          workflowState: appointments.workflowState,
           petName: pets.name,
           staffName: staff.name,
         })
@@ -730,7 +734,21 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
                looked, and switching reminders on would have texted him
                three times per booking. */
             isNull(clients.smsOptedOutAt),
-            eq(appointments.status, "confirmed"),
+            /*
+             * NOT status = "confirmed". That excluded 1,081 of 1,125
+             * live upcoming bookings, because every MoeGo import lands
+             * as "pending" and every Groomigo-made booking is born
+             * "confirmed" — the field records where a booking came
+             * from, not whether anyone agreed to it. Dogs standing in
+             * the salon marked ready for collection were "pending".
+             *
+             * A reminder is also FOR the people who have not confirmed,
+             * so requiring confirmation inverted the purpose.
+             */
+            notInArray(appointments.status, ["cancelled", "no_show"]),
+            /* A dog that has already arrived needs no reminder: the
+               morning stage runs at 8am and dogs arrive from 7:30. */
+            eq(appointments.workflowState, "scheduled"),
             sql`appointments.${sql.raw(stage.sqlColumn)} IS NULL`
           )
         );
@@ -747,6 +765,8 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
         const decision = decideAppointmentReminder({
           clientPhone: row.clientPhone,
           smsOptedOutAt: row.smsOptedOutAt,
+          status: row.status,
+          workflowState: row.workflowState,
         });
         if (!decision.send) {
           if (decision.reason === "opted_out") {
