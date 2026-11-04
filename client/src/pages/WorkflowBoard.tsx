@@ -41,6 +41,7 @@ import {
   STAGES, TERMINAL_STAGES, ALL_STAGE_OPTIONS, NEXT_STAGE, PREV_STAGE,
   SERVICE_COLOUR, SERVICE_LABEL, type StageKey,
 } from "@/components/WorkflowBoardTable";
+import { SERVICE_TYPES } from "@shared/serviceTypes";
 
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -907,10 +908,17 @@ export default function WorkflowBoard() {
         {/* Legend */}
         <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap pb-2">
           <span className="font-medium">Service colours:</span>
-          {Object.entries(SERVICE_COLOUR).map(([key, colour]) => (
+          {/*
+            * Driven off SERVICE_TYPES, so the legend cannot advertise a
+            * colour no row can wear. It used to iterate a local map that
+            * still had `tidy` in it — a type renamed to `fft` long ago —
+            * so this legend promised a pink "Tidy" while every FFT row
+            * rendered grey. A groomer clipped a tidy on 04/11/2026.
+            */}
+          {SERVICE_TYPES.map((key) => (
             <span key={key} className="flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ background: colour }} />
-              {SERVICE_LABEL[key] ?? key}
+              <span className="h-2.5 w-2.5 rounded-sm inline-block" style={{ background: SERVICE_COLOUR[key] }} />
+              {SERVICE_LABEL[key]}
             </span>
           ))}
           <span className="flex items-center gap-1 ml-4"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-amber-200 dark:bg-amber-900/50" /> 30-60 min in stage</span>

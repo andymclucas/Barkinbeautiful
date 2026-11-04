@@ -292,3 +292,66 @@ describe("the afternoon session divider", () => {
     expect(divider?.querySelector("td")?.getAttribute("colspan")).toBe("13");
   });
 });
+
+/**
+ * Lauren, 04/11/2026: "one of the girls didn't see the service was just
+ * a tidy and saw the code and did a clip... So this customer just got
+ * free upgrade service... ffs"
+ *
+ * This file is the reason that bug is worth a rendering test rather
+ * than a source grep: what went wrong was not a missing class, it was a
+ * map keyed on a service type that no longer existed, so the cell
+ * rendered the raw string `fft` in the grey default. Only rendering it
+ * shows that.
+ */
+describe("the service cell", () => {
+  const serviceCell = (serviceType: string) => {
+    renderBoard({}, [row({ serviceType })]);
+    return screen.getByTitle(/Face, Feet|Classic Groom|Bath|De-shed|Nail|Daycare|Other/);
+  };
+
+  it("never shows a groomer the raw column value", () => {
+    renderBoard({}, [row({ serviceType: "fft" })]);
+    expect(screen.queryByText("fft")).not.toBeInTheDocument();
+  });
+
+  it("says TIDY ONLY on an FFT, which is the fact that was missed", () => {
+    renderBoard({}, [row({ serviceType: "fft" })]);
+    expect(screen.getByText(/TIDY ONLY/)).toBeInTheDocument();
+  });
+
+  it("gives FFT the solid pink box Lauren asked for", () => {
+    const cell = serviceCell("fft");
+    // #ec4899, as the browser reports it.
+    expect(cell).toHaveStyle({ background: "rgb(236, 72, 153)" });
+  });
+
+  it("keeps the full service name reachable on hover", () => {
+    const cell = serviceCell("fft");
+    expect(cell).toHaveAttribute("title", "FFT (Face, Feet & Hygiene Tidy)");
+  });
+
+  it("rings the jobs that are not a full groom, and only those", () => {
+    expect(serviceCell("fft").className).toContain("ring-2");
+  });
+
+  it("leaves a classic groom unringed and green", () => {
+    const cell = serviceCell("classic_groom");
+    expect(cell.className).not.toContain("ring-2");
+    expect(cell).toHaveStyle({ background: "rgb(34, 197, 94)" });
+  });
+
+  it("is bigger than the pet-code chips it was being lost among", () => {
+    // 11px lost among same-sized code chips is how a tidy got clipped.
+    // Both rows on ONE board, because two renders leave two boards
+    // mounted and getByTitle then matches across both.
+    renderBoard({}, [
+      row({ id: 1, serviceType: "fft" }),
+      row({ id: 2, petId: 11, petName: "Luna", serviceType: "classic_groom" }),
+    ]);
+    for (const cell of screen.getAllByTitle(/Face, Feet|Classic Groom/)) {
+      expect(cell.className).toContain("text-xs");
+      expect(cell.className).not.toContain("text-[11px]");
+    }
+  });
+});
