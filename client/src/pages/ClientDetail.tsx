@@ -2,6 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
 import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
+import { AddKnownClientToWaitlist } from "@/components/WaitlistEntryFields";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { PetNoteArchive } from "@/components/PetNoteArchive";
 import { MoegoBadge } from "@/components/MoegoBadge";
@@ -350,6 +351,7 @@ export default function ClientDetail() {
    * moment there is history attached — see shared/clientDeletion.ts.
    */
   const [confirmDeleteClient, setConfirmDeleteClient] = useState(false);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
   /**
    * Removing a groom photo, with the same named confirm a booking gets.
    *
@@ -849,6 +851,14 @@ export default function ClientDetail() {
                   <DropdownMenuItem onSelect={() => { setActiveClientTab("payments"); setAddCreditSignal(s => s + 1); }}>
                     Add Store Credit
                   </DropdownMenuItem>
+                  {/* Andy, 04/11/2026: "Add a quick action of 'add to
+                      waitlist' option." The calendar has had a waitlist
+                      panel all along, but it starts by searching for a
+                      client — and from here the client is the page you
+                      are already looking at. */}
+                  <DropdownMenuItem disabled={activePets.length === 0} onSelect={() => setWaitlistOpen(true)}>
+                    Add to waitlist
+                  </DropdownMenuItem>
                   {manageableDepartedMemberships.length > 0 && <DropdownMenuSeparator />}
                   {manageableDepartedMemberships.map(({ pet, membership }) => (
                     <DropdownMenuItem key={membership.id} onSelect={() => openDepartedMembershipAction(pet, membership)}>
@@ -864,6 +874,23 @@ export default function ClientDetail() {
             </Button>
           </div>
         </div>
+
+        <Dialog open={waitlistOpen} onOpenChange={setWaitlistOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Add {client.firstName} {client.lastName} to the waitlist</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              They are offered a slot when one frees up inside this window. Nothing is sent
+              now, and nothing is booked until they claim it.
+            </p>
+            <AddKnownClientToWaitlist
+              clientId={clientId}
+              pets={activePets.map((pet) => ({ id: pet.id, name: pet.name }))}
+              onAdded={() => setWaitlistOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={portalLinkOpen} onOpenChange={setPortalLinkOpen}>
           <DialogContent className="sm:max-w-2xl">
