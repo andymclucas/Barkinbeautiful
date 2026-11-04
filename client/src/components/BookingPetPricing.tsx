@@ -19,6 +19,7 @@ import {
   type PriceOption,
   type PriceTier,
 } from "@shared/groomPricing";
+import { tierChoices, explainTier } from "@shared/priceTierChoice";
 
 /**
  * A price per dog, taken from the salon's own price list.
@@ -456,6 +457,56 @@ export function BookingPetPricing(props: Props) {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {/*
+              * Lauren, 04/11/2026: "don't know why it chose $180.. that
+              * would be a new/casual client price. but doesn't show a
+              * choice of pricing tiers."
+              *
+              * The rates were already here, inside the dropdown below —
+              * but that is labelled "From the price list", which reads
+              * as a catalogue lookup rather than as this client's rate,
+              * and she did not find it. She is the person who uses this
+              * form most, which settles whether it was discoverable.
+              *
+              * The DEFAULT is unchanged and stays Andy's, 13/10/2026:
+              * "Only actual members get Bronze, everyone else pays
+              * Casual." This only shows the rate it picked, why, and the
+              * others — it does not quietly reprice anybody.
+              */}
+            {!membershipCovered && options.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Rate</Label>
+                <div className="flex flex-wrap gap-1">
+                  {tierChoices(options, props.priceByPetId[key]).map((choice) => (
+                    <button
+                      key={choice.tier}
+                      type="button"
+                      // A tier the price list has no row for stays
+                      // visible and dead. Hiding it reads as a bug;
+                      // this reads as "we don't price that".
+                      disabled={choice.priceAud === null}
+                      onClick={() => choice.priceAud && setPrice(row.petId, choice.priceAud)}
+                      className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                        choice.selected
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : choice.priceAud === null
+                            ? "cursor-not-allowed border-dashed text-muted-foreground/60"
+                            : "border-input bg-background hover:bg-accent"
+                      }`}
+                    >
+                      {choice.label}
+                      <span className={`ml-1.5 tabular-nums ${choice.selected ? "" : "text-muted-foreground"}`}>
+                        {choice.priceAud === null ? "—" : formatPriceAud(choice.priceAud)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {explainTier({ tier: row.tier, membershipTier: row.pet?.membershipTier })}
+                </p>
               </div>
             )}
 

@@ -126,6 +126,8 @@ import { annotateSlots, blockingClashes, busyFromRows, clashesFor, concurrentDog
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
 import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
+import { bookingAttendance, describeRemoval } from "@shared/sharedBookingAttendance";
+import { agendaRows, describeGroup } from "@shared/agendaGrouping";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
@@ -1135,6 +1137,14 @@ export default function Calendar() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showBlockoutDialog, setShowBlockoutDialog] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<{ type: "blockout" | "styleNote" | "appointment"; id: number; label: string } | null>(null);
+  /**
+   * One dog of a family booking, about to be marked as not coming.
+   *
+   * Confirmed rather than done on the click, because the thing staff
+   * reasonably fear here is that it touches the whole booking — so the
+   * sentence says what happens to the other dogs before anything moves.
+   */
+  const [confirmNotComing, setConfirmNotComing] = useState<{ id: number; name: string; message: string } | null>(null);
   /** The blockout being edited, or null when creating a new one. */
   const [blockoutEditing, setBlockoutEditing] = useState<BlockoutEditing | null>(null);
   const [blockoutDefaultDate, setBlockoutDefaultDate] = useState("");
@@ -1164,6 +1174,9 @@ export default function Calendar() {
   const [newAppt, setNewAppt] = useState({
     clientId: "", petIds: [] as string[], staffId: "", staffByPetId: {} as Record<string, string>, serviceType: "classic_groom",
     scheduledStart: "", scheduledEnd: "", notes: "", price: "",
+    /* Ticked when copying a booking in from MoeGo, so the client is not
+       texted a confirmation for an appointment they made weeks ago. */
+    alreadyArranged: false,
     // A figure per dog. The single `price` above stays for the recurring
     // path, which books one service for the whole family.
     priceByPetId: {} as Record<string, string>,
@@ -1520,7 +1533,7 @@ export default function Calendar() {
     onSuccess: () => {
       toast.success("Appointment created");
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
       refetch();
     },
@@ -2290,7 +2303,7 @@ export default function Calendar() {
     onSuccess: (r) => {
       toast.success(`${r.created} appointment${r.created !== 1 ? "s" : ""} created`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
       refetch();
     },
@@ -2302,7 +2315,7 @@ export default function Calendar() {
       const skippedMsg = r.skipped.length > 0 ? ` (${r.skipped.length} skipped due to a groomer clash)` : "";
       toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created${skippedMsg}`);
       setShowNewAppt(false);
-      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
+      setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });
       setClientSearch("");
       refetch();
@@ -2363,6 +2376,8 @@ export default function Calendar() {
         untilDate: repeatForm.untilDate,
         notes: newAppt.notes || undefined,
         price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
+        // Not passed: createRecurringAppointments never sends a
+        // confirmation, so there is nothing for the flag to suppress.
       });
       return;
     }
@@ -2375,6 +2390,7 @@ export default function Calendar() {
       scheduledStart: newAppt.scheduledStart,
       scheduledEnd:   newAppt.scheduledEnd,
       notes: newAppt.notes || undefined,
+      alreadyArranged: newAppt.alreadyArranged,
       price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
       priceByPetId: membershipCoverage.data?.fullyCovered ? undefined : newAppt.priceByPetId,
       collectByTime: newAppt.collectByTime || null,
@@ -2577,23 +2593,47 @@ export default function Calendar() {
    * rhythm live.
    */
   const renderAgendaView = () => {
-    const rows = [...dayViewAppts].sort(
-      (a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime(),
-    );
+    /*
+     * Lauren, 04/11/2026: "just need that link dog's to show in agenda
+     * / also red line if possible - Albert & Eddy are together."
+     *
+     * Rows stay one-per-dog, which is the point of this view, and the
+     * dogs of one booking are bracketed by a red line down the left.
+     * The sort moved into shared/agendaGrouping.ts with it: on time
+     * alone, two families booked at 12:30 could interleave and the
+     * bracket would be drawn around the wrong rows.
+     */
+    const rows = agendaRows(dayViewAppts);
     return (
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border bg-card">
         {rows.length === 0 ? (
           <p className="p-6 text-center text-sm text-muted-foreground">Nothing booked this day.</p>
         ) : (
-          <ul className="divide-y">
-            {rows.map((appt) => {
+          <ul>
+            {rows.map(({ appointment: appt, groupSize, position }, rowIndex) => {
+              const grouped = groupSize > 1;
+              // The divider is drawn per row rather than by divide-y on
+              // the list, so it can be left OFF inside a booking — a
+              // line through the middle of the bracket would undo it.
+              const startsBooking = position === "only" || position === "first";
+              /*
+               * Every colour here is side-scoped on purpose. A plain
+               * `border-red-500` sets ALL four sides, so the divider
+               * below came out red on a bracketed row — the group read
+               * as a red BOX rather than a line down its left — while a
+               * `border-transparent` row lost its divider altogether,
+               * and the rule between two ordinary bookings disappeared.
+               */
+              const groupLine = grouped
+                ? `border-l-[3px] border-l-red-500 ${position === "first" ? "rounded-tl-md" : ""} ${position === "last" ? "rounded-bl-md" : ""}`
+                : "border-l-[3px] border-l-transparent";
               const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
               const isCancelled = isCancelledAppointment(appt);
               const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
               const isVip = showsMembershipMark({ membershipId: appt.membershipId, isCancelled });
               const owner = `${appt.clientFirstName ?? ""} ${appt.clientLastName ?? ""}`.trim();
               return (
-                <li key={appt.id}>
+                <li key={appt.id} className={`${groupLine} ${startsBooking && rowIndex > 0 ? "border-t border-t-border" : ""}`}>
                   <button
                     type="button"
                     onClick={() => openEdit(appt as Appt)}
@@ -2619,6 +2659,14 @@ export default function Calendar() {
                       </span>
                       <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                         {owner && <span className="font-medium text-foreground">{owner}</span>}
+                        {/* On the first row only — the red line carries
+                            it down the rest, and a chip on every row of
+                            a three-dog booking is noise. */}
+                        {position === "first" && (
+                          <span className="rounded-sm bg-red-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
+                            {describeGroup(groupSize)}
+                          </span>
+                        )}
                         {appt.petBreed && <span>{appt.petBreed}</span>}
                         <span className="font-semibold" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                           {SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}
@@ -3623,7 +3671,7 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setAddingClient(false); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
+      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setAddingClient(false); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -4165,6 +4213,33 @@ export default function Calendar() {
             <div className="space-y-1.5">
               <Label>Notes</Label>
               <Textarea rows={2} placeholder="Any special instructions..." value={newAppt.notes} onChange={e => setNewAppt(p => ({ ...p, notes: e.target.value }))} />
+              {/*
+                * Lauren, 28/10/2026: "Kevin was in moego but not synced
+                * over to Groomigo so put it in manually. It sent her a
+                * text."
+                *
+                * The client record's booking form has had this since
+                * then; the CALENDAR did not — and the calendar is where
+                * a MoeGo booking actually gets back-filled. A typed-in
+                * row carries no moego_appointment_id, so the import
+                * guard cannot see it and only the person typing knows.
+                * With 164 December bookings to re-enter by hand, that
+                * was 164 texts waiting to happen.
+                */}
+              <label className="mt-2 flex items-start gap-2 rounded-lg border bg-muted/40 p-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-primary"
+                  checked={newAppt.alreadyArranged}
+                  onChange={e => setNewAppt(p => ({ ...p, alreadyArranged: e.target.checked }))}
+                />
+                <span>
+                  <span className="font-medium">Already booked elsewhere &mdash; don&rsquo;t text the client</span>
+                  <span className="block text-muted-foreground">
+                    Tick when copying a booking in from MoeGo. They have already been told.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
           <DialogFooter>
@@ -4534,6 +4609,81 @@ export default function Calendar() {
                       <Button type="button" size="sm" className="w-full" disabled={additionalFamilyPetIds.length === 0 || addPetsToSharedAppointmentMutation.isPending} onClick={() => addPetsToSharedAppointmentMutation.mutate({ appointmentId: editAppt.id, petIds: additionalFamilyPetIds })}>
                         {addPetsToSharedAppointmentMutation.isPending ? "Adding family dogs..." : "Add selected dogs to this booking"}
                       </Button>
+                    </div>
+                  );
+                })()}
+                {/*
+                  * The other half of "Add family dogs" — taking one off.
+                  *
+                  * Lauren, 04/11/2026, on a three-dog booking: "how do I
+                  * delete 1 dog from this booking. Teddy isn't coming this
+                  * time." She could not. The calendar draws ONE card per
+                  * session, so only the lowest-id dog has anything to
+                  * click, and the Status dropdown below applies to that
+                  * dog alone. The one button that looked right does the
+                  * opposite: Delete takes every dog in the session, and
+                  * its own confirm says so.
+                  *
+                  * Built from the WHOLE session rather than editSiblings,
+                  * which is liveSiblings and so has already dropped the
+                  * cancelled dogs — the ones needing "Put back on".
+                  */}
+                {(() => {
+                  const sessionDogs = editAppt.sessionId ? (sessionMap.get(editAppt.sessionId) ?? []) : [];
+                  if (sessionDogs.length < 2) return null;
+                  const ordered = [...sessionDogs].sort((a, b) => a.id - b.id);
+                  const rows = bookingAttendance(ordered.map(d => ({
+                    id: d.id, petName: d.petName, status: d.status, workflowState: d.workflowState,
+                  })));
+                  const comingCount = rows.filter(r => r.coming).length;
+                  return (
+                    <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+                      <div>
+                        <Label className="text-xs font-bold">Dogs on this booking</Label>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {comingCount} of {rows.length} coming. Marking one as not coming leaves the others at the same time.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        {rows.map(row => (
+                          <div key={row.id} className="flex items-center gap-2">
+                            <span className={`flex-1 truncate text-xs font-medium ${row.coming ? "" : "text-muted-foreground line-through"}`}>
+                              {row.name}
+                            </span>
+                            {row.action === "blocked" ? (
+                              <span className="shrink-0 text-xs text-muted-foreground" title={row.reason}>{row.label}</span>
+                            ) : (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={row.action === "remove" ? "outline" : "secondary"}
+                                className="h-7 shrink-0 text-xs"
+                                disabled={workflowMutation.isPending}
+                                onClick={() => {
+                                  if (row.action === "remove") {
+                                    setConfirmNotComing({
+                                      id: row.id,
+                                      name: row.name,
+                                      message: describeRemoval(
+                                        row.name,
+                                        rows.filter(r => r.coming && r.id !== row.id).map(r => r.name),
+                                      ),
+                                    });
+                                  } else {
+                                    // Closes for the same reason the removal does.
+                                    workflowMutation.mutate(
+                                      { appointmentId: row.id, newState: "scheduled" },
+                                      { onSuccess: () => closeEditDialog() },
+                                    );
+                                  }
+                                }}
+                              >
+                                {row.label}
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   );
                 })()}
@@ -5264,6 +5414,50 @@ export default function Calendar() {
               }}
             >
               {(deleteBlockoutMutation.isPending || deleteStyleNote.isPending || deleteAppointmentMutation.isPending) ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* ── One dog off a family booking ── */}
+      <Dialog open={!!confirmNotComing} onOpenChange={open => { if (!open) setConfirmNotComing(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{confirmNotComing?.name} isn&rsquo;t coming?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{confirmNotComing?.message}</p>
+          {/* Said out loud because it is the reason this cancels rather
+              than deletes, and the reason it is safe to press. */}
+          <p className="text-xs text-muted-foreground">
+            It is recorded as a cancellation, so it stays on {confirmNotComing?.name}&rsquo;s history and can be undone from here.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmNotComing(null)}>Keep booked</Button>
+            <Button
+              disabled={workflowMutation.isPending}
+              onClick={() => {
+                if (!confirmNotComing) return;
+                workflowMutation.mutate(
+                  { appointmentId: confirmNotComing.id, newState: "cancelled" },
+                  {
+                    onSuccess: () => {
+                      setConfirmNotComing(null);
+                      /*
+                       * The dialog closes rather than staying open on a
+                       * stale editAppt. It is loaded into state when the
+                       * card is clicked, so after cancelling the PRIMARY
+                       * dog it still reads `scheduled` — and
+                       * preservesOriginalSchedule would then let a Save
+                       * reschedule a cancelled dog, which is the one
+                       * thing shared/cancelledAppointment.ts exists to
+                       * stop. The card behind now reads one dog fewer.
+                       */
+                      closeEditDialog();
+                    },
+                  },
+                );
+              }}
+            >
+              {workflowMutation.isPending ? "Saving..." : "Not coming"}
             </Button>
           </DialogFooter>
         </DialogContent>
