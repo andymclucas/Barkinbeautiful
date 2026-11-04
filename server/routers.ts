@@ -131,6 +131,7 @@ import { trackerSmsAllowed } from "../shared/trackerSmsGate";
 import { priceForPet } from "../shared/multiPetPricing";
 import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount";
 import { sendBookingConfirmation } from "./bookingConfirmation";
+import { sendCancellationNotice, sendRescheduleNotice, clearCancellationClaim } from "./appointmentChangeNotify";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
 import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
 import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
@@ -2111,6 +2112,33 @@ const calendarRouter = router({
         changedByStaffId: portalStaff?.id ?? input.staffId,
       });
 
+      /*
+       * Andy, 04/11/2026: "Send auto cancellation and reschedule texts
+       * also."
+       *
+       * Fired only on the EDGE into cancelled, never on a re-save of a
+       * booking that was already cancelled — the board writes this state
+       * more than once and the client should hear about it once.
+       *
+       * `no_show` is deliberately silent. The dog did not turn up; the
+       * client knows, and "your appointment has been cancelled" hours
+       * after they missed it reads as a rebuke.
+       *
+       * Awaited but never allowed to throw. The dog is off the board by
+       * now whatever Twilio does, and that is the part that matters.
+       */
+      if (input.newState === "cancelled" && appt.workflowState !== "cancelled") {
+        await sendCancellationNotice(db, input.appointmentId);
+      }
+      /*
+       * Put back on. A dog cancelled, reinstated and cancelled again is
+       * two real cancellations, so the claim is released or the second
+       * one would read as already sent and stay silent.
+       */
+      if (input.newState !== "cancelled" && appt.workflowState === "cancelled") {
+        await clearCancellationClaim(db, input.appointmentId);
+      }
+
       // Automatically draw down the client's store credit balance the moment
       // an appointment is completed, up to whatever balance is available.
       // Never goes negative — if credit doesn't fully cover it, we deduct
@@ -2305,6 +2333,16 @@ const calendarRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      /*
+       * Read BEFORE the update, because the whole decision is "did this
+       * move to a different day" and afterwards there is nothing left to
+       * compare against.
+       */
+      const [before] = await db
+        .select({ scheduledStart: appointments.scheduledStart })
+        .from(appointments)
+        .where(eq(appointments.id, input.appointmentId))
+        .limit(1);
       // Omitted staffId leaves the groomer alone; null unassigns. See
       // buildRescheduleUpdate — the old `input.staffId ?? null` took the
       // dog off its groomer whenever a caller moved only the time.
@@ -2313,7 +2351,20 @@ const calendarRouter = router({
         scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
         staffId: input.staffId,
       })).where(eq(appointments.id, input.appointmentId));
-      return { success: true };
+      /*
+       * Andy, 04/11/2026: "Send auto cancellation and reschedule texts
+       * also." Only a change of DAY reaches the client — staff drag
+       * bookings around this board all day long, and the rule and its
+       * reasoning live in shared/appointmentChangeSms.ts.
+       *
+       * Awaited but never allowed to throw: the dog HAS moved by now,
+       * and a Twilio outage must not surface to staff as a failed
+       * reschedule. Same shape as sendBookingConfirmation.
+       */
+      const notice = before
+        ? await sendRescheduleNotice(db, input.appointmentId, before.scheduledStart)
+        : { sent: false as const, reason: "appointment not found" };
+      return { success: true, notice };
     }),
 
   updateDetails: operationalProcedure

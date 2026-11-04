@@ -30,13 +30,19 @@ describe("automatedSmsAllowed", () => {
 
   /**
    * The list IS the decision, so it stays pinned EXACTLY rather than
-   * loosened to "contains" now that it has grown. A fifth entry must
+   * loosened to "contains" now that it has grown. A seventh entry must
    * still fail here, because that is the only thing standing between a
    * new automated send and a real client's phone.
+   *
+   * Grown on 04/11/2026 from four to six: confirmation and reminder
+   * went on in the morning, cancellation and reschedule in the same
+   * session that afternoon. Every one of those was Andy asking for it
+   * by name, and this assertion failing is what makes somebody say so.
    */
-  it("holds exactly these four messages", () => {
+  it("holds exactly these six messages", () => {
     expect([...ALLOWED_AUTOMATED_SMS]).toEqual([
       "ready_pickup", "missed_call", "confirmation", "reminder",
+      "cancellation", "reschedule",
     ]);
   });
 

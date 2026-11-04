@@ -3,6 +3,7 @@ import {
   attendanceDecision,
   bookingAttendance,
   describeRemoval,
+  describeAttendance,
 } from "@shared/sharedBookingAttendance";
 
 const dog = (over: Partial<Parameters<typeof attendanceDecision>[0]> = {}) => ({
@@ -99,5 +100,49 @@ describe("describeRemoval", () => {
 
   it("warns when it empties the booking", () => {
     expect(describeRemoval("Teddy", [])).toContain("leaves no dogs on this booking");
+  });
+});
+
+describe("describeAttendance", () => {
+  const rows = (...specs: Array<"come" | "done" | "off">) =>
+    bookingAttendance(specs.map((spec, i) => ({
+      id: i + 1, petName: `Dog${i + 1}`,
+      status: spec === "off" ? "cancelled" : "confirmed",
+      workflowState: spec === "off" ? "cancelled" : spec === "done" ? "complete" : "scheduled",
+    })));
+
+  it("offers the hint when a dog can still be marked off", () => {
+    expect(describeAttendance(rows("come", "come")))
+      .toBe("All 2 dogs coming. Marking one as not coming leaves the others at the same time.");
+  });
+
+  /*
+   * The live bug. Eddy and Albert Hartney, both groomed that morning,
+   * and the card said "2 of 2 coming".
+   */
+  it("does not say a groomed booking is coming", () => {
+    expect(describeAttendance(rows("done", "done"))).toBe("All 2 dogs have been groomed.");
+  });
+
+  it("drops the hint when nothing can be marked off", () => {
+    expect(describeAttendance(rows("done", "done"))).not.toContain("Marking one");
+  });
+
+  it("splits a part-groomed booking honestly", () => {
+    expect(describeAttendance(rows("come", "done")))
+      .toContain("1 dog still to come, 1 already groomed.");
+  });
+
+  it("counts the dogs that are off", () => {
+    expect(describeAttendance(rows("come", "off", "come")))
+      .toBe("1 dog not coming, 2 still booked. Marking one as not coming leaves the others at the same time.");
+  });
+
+  it("says so when the whole booking is off", () => {
+    expect(describeAttendance(rows("off", "off"))).toBe("None of these dogs are coming.");
+  });
+
+  it("says nothing for no dogs", () => {
+    expect(describeAttendance([])).toBe("");
   });
 });

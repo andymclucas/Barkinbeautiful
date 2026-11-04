@@ -573,6 +573,30 @@ export const appointments = mysqlTable("appointments", {
   reminder4dSentAt: timestamp("reminder_4d_sent_at"),
   reminder2dSentAt: timestamp("reminder_2d_sent_at"),
   reminderMorningSentAt: timestamp("reminder_morning_sent_at"),
+  /**
+   * When the client was texted to say this booking is cancelled.
+   *
+   * Claimed in the same conditional UPDATE that sends, like
+   * confirmationSmsSentAt. CLEARED when the booking goes back to a live
+   * state: a dog cancelled, reinstated and cancelled again is two real
+   * cancellations and the client needs to hear about both.
+   */
+  cancellationSmsSentAt: timestamp("cancellation_sms_sent_at"),
+  /**
+   * The appointment DAY the client was last told about, after a move.
+   *
+   * A date rather than a stamp because the rule is about the day, not
+   * the moment. Andy, 04/11/2026: only a change of DAY is worth a text —
+   * staff shuffle the board by minutes all day long. Holding the day
+   * makes the guard exact and idempotent: re-saving the same move
+   * matches and stays silent, a genuine second move does not.
+   */
+  // `mode: "string"` so it stays the calendar day it is. Left as a Date,
+  // mysql2 converts it using the MACHINE clock — the exact shape of the
+  // timezone bug commit e6a4662 fixed, and it would land this column a
+  // day out whenever the server is not on Brisbane time. Same mode as
+  // vaccinations.administeredOn, for the same reason.
+  rescheduleSmsSentFor: date("reschedule_sms_sent_for", { mode: "string" }),
 }, (t) => [
   index("idx_appt_tenant_date").on(t.tenantId, t.scheduledStart),
   index("idx_appt_staff").on(t.staffId),
