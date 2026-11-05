@@ -217,3 +217,117 @@ export function lapsedClients(
 
   return out;
 }
+
+/**
+ * Sorting the report.
+ *
+ * ## Why this is a rule and not a click handler
+ *
+ * The server ranks every lapsed client and then returns the first N. So
+ * the sort has to happen BEFORE that slice, or sorting by "away" would
+ * reorder the top two hundred BY REVENUE and silently drop the forty-one
+ * clients who did not make that cut — a table that looks complete,
+ * answers the wrong question, and gives no sign of it. That means the
+ * comparator belongs beside the report it orders, not in the component
+ * that draws it.
+ *
+ * ## The membership pin survives every sort
+ *
+ * A client on an active membership who has stopped coming is the most
+ * urgent row in the book and the one the money calls worthless: their
+ * grooms are $0 because the weekly fee covers them. The report promises
+ * in its own subtitle that they come first "whatever the spend says", so
+ * they stay pinned under every column, not just the default one. The
+ * "still paying" badge beside the name is what explains the exception.
+ */
+export const LAPSED_SORT_KEYS = [
+  "name", "visits", "usualGap", "lastSeen", "away", "missed", "notTaken",
+] as const;
+
+export type LapsedSortKey = (typeof LAPSED_SORT_KEYS)[number];
+export type LapsedSortDir = "asc" | "desc";
+
+/**
+ * The direction a column opens on, chosen per column rather than one
+ * blanket rule, because the useful end differs: nobody wants the fewest
+ * missed visits first, and nobody wants the most recent visit first on a
+ * report about people who have stopped coming.
+ */
+export const LAPSED_SORT_DEFAULT_DIR: Readonly<Record<LapsedSortKey, LapsedSortDir>> = {
+  name: "asc",
+  visits: "desc",
+  usualGap: "desc",
+  // Longest ago first. Same ordering as `away` descending, which is the
+  // same fact measured from the other end.
+  lastSeen: "asc",
+  away: "desc",
+  missed: "desc",
+  notTaken: "desc",
+};
+
+/** The fields the comparator needs. Extra fields on the row are ignored. */
+export type LapsedSortable = {
+  clientId: number;
+  visits: number;
+  usualGapDays: number;
+  lastVisit: Date | string | number;
+  daysSince: number;
+  missedVisits: number;
+  estimatedLostRevenue: number;
+  onMembership?: boolean;
+  firstName?: string | null;
+  lastName?: string | null;
+  /** Only used to break a tie on the default column — see sortLapsedRows. */
+  totalSpend?: number;
+};
+
+function nameOf(row: LapsedSortable): string {
+  return `${row.lastName ?? ""} ${row.firstName ?? ""}`.trim().toLowerCase();
+}
+
+function valueFor(row: LapsedSortable, key: LapsedSortKey): number | string {
+  switch (key) {
+    case "name": return nameOf(row);
+    case "visits": return row.visits;
+    case "usualGap": return row.usualGapDays;
+    case "lastSeen": return toDate(row.lastVisit)?.getTime() ?? 0;
+    case "away": return row.daysSince;
+    case "missed": return row.missedVisits;
+    case "notTaken": return row.estimatedLostRevenue;
+  }
+}
+
+/**
+ * Order the report, members first, then by the chosen column.
+ *
+ * Returns a new array; the input is not touched. The clientId tiebreak is
+ * there so two clients with identical figures — which the Camerons in the
+ * salon's own book are, to the dollar — never swap places between
+ * renders.
+ */
+export function sortLapsedRows<T extends LapsedSortable>(
+  rows: readonly T[],
+  key: LapsedSortKey,
+  dir: LapsedSortDir,
+): T[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    if (Boolean(a.onMembership) !== Boolean(b.onMembership)) return a.onMembership ? -1 : 1;
+    const av = valueFor(a, key);
+    const bv = valueFor(b, key);
+    if (typeof av === "string" || typeof bv === "string") {
+      const cmp = String(av).localeCompare(String(bv));
+      if (cmp !== 0) return cmp * sign;
+    } else if (av !== bv) {
+      return (av - bv) * sign;
+    }
+    // Lifetime spend breaks a tie on the default column, which is what the
+    // report did before it was sortable: two clients owed the same money
+    // are not equally worth ringing. Kept to that column, because ranking
+    // by spend inside a name sort would be surprising.
+    if (key === "notTaken" && (a.totalSpend ?? 0) !== (b.totalSpend ?? 0)) {
+      return ((a.totalSpend ?? 0) - (b.totalSpend ?? 0)) * sign;
+    }
+    return a.clientId - b.clientId;
+  });
+}

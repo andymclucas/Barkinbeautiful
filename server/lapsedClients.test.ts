@@ -1,10 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   lapsedClients,
+  sortLapsedRows,
+  LAPSED_SORT_KEYS,
+  LAPSED_SORT_DEFAULT_DIR,
   DEFAULT_MIN_VISITS,
   DEFAULT_OVERDUE_FACTOR,
   MIN_PLAUSIBLE_GAP_DAYS,
   type LapsedVisit,
+  type LapsedSortable,
 } from "@shared/lapsedClients";
 
 const TZ = "Australia/Brisbane";
@@ -170,5 +174,114 @@ describe("lapsedClients", () => {
 
   it("pins the threshold at twice their own gap", () => {
     expect(DEFAULT_OVERDUE_FACTOR).toBe(2);
+  });
+});
+
+/** A row with every field the comparator reads, overridable per test. */
+function row(over: Partial<LapsedSortable> & { clientId: number }): LapsedSortable {
+  return {
+    visits: 4,
+    usualGapDays: 28,
+    lastVisit: new Date("2026-01-01T00:00:00Z"),
+    daysSince: 100,
+    missedVisits: 2,
+    estimatedLostRevenue: 500,
+    totalSpend: 1000,
+    onMembership: false,
+    firstName: "A",
+    lastName: "Aaa",
+    ...over,
+  };
+}
+
+const ids = (rows: readonly LapsedSortable[]) => rows.map((r) => r.clientId);
+
+describe("sorting the lapsed report", () => {
+  it("defaults to the ranking the report had before it was sortable", () => {
+    const rows = [
+      row({ clientId: 1, estimatedLostRevenue: 100 }),
+      row({ clientId: 2, estimatedLostRevenue: 3240 }),
+      row({ clientId: 3, estimatedLostRevenue: 2670 }),
+    ];
+    expect(ids(sortLapsedRows(rows, "notTaken", "desc"))).toEqual([2, 3, 1]);
+  });
+
+  it("keeps a paying member first under EVERY column, both ways", () => {
+    // The subtitle promises they come first "whatever the spend says".
+    // That has to survive the sort, or the promise only holds on the
+    // default column — which is the one place nobody needed telling.
+    const member = row({ clientId: 99, onMembership: true, estimatedLostRevenue: 0, visits: 1, daysSince: 1, missedVisits: 0, lastVisit: new Date("2026-08-04T00:00:00Z"), usualGapDays: 56, lastName: "Zzz", totalSpend: 0 });
+    const big = row({ clientId: 1, estimatedLostRevenue: 9999, visits: 40, daysSince: 999, missedVisits: 40, lastVisit: new Date("2025-01-01T00:00:00Z"), usualGapDays: 7, lastName: "Aaa", totalSpend: 9999 });
+    for (const key of LAPSED_SORT_KEYS) {
+      for (const dir of ["asc", "desc"] as const) {
+        expect(ids(sortLapsedRows([big, member], key, dir))[0], `${key}/${dir}`).toBe(99);
+      }
+    }
+  });
+
+  it("sorts by each column in the direction asked for", () => {
+    const a = row({ clientId: 1, visits: 3, usualGapDays: 14, daysSince: 200, missedVisits: 1, estimatedLostRevenue: 100, lastVisit: new Date("2025-06-01T00:00:00Z"), lastName: "Bbb" });
+    const b = row({ clientId: 2, visits: 20, usualGapDays: 7, daysSince: 50, missedVisits: 9, estimatedLostRevenue: 900, lastVisit: new Date("2026-05-01T00:00:00Z"), lastName: "Aaa" });
+    const cases: [typeof LAPSED_SORT_KEYS[number], number[]][] = [
+      ["name", [2, 1]],        // Aaa before Bbb
+      ["visits", [1, 2]],      // 3 before 20
+      ["usualGap", [2, 1]],    // 7 before 14
+      ["lastSeen", [1, 2]],    // 2025 before 2026
+      ["away", [2, 1]],        // 50 before 200
+      ["missed", [1, 2]],      // 1 before 9
+      ["notTaken", [1, 2]],    // 100 before 900
+    ];
+    for (const [key, expected] of cases) {
+      expect(ids(sortLapsedRows([a, b], key, "asc")), key).toEqual(expected);
+      expect(ids(sortLapsedRows([a, b], key, "desc")), key).toEqual([...expected].reverse());
+    }
+  });
+
+  it("opens each column at its useful end", () => {
+    // Nobody wants the fewest missed visits first, and nobody wants the
+    // most recent visit first on a report about people who stopped coming.
+    expect(LAPSED_SORT_DEFAULT_DIR.name).toBe("asc");
+    expect(LAPSED_SORT_DEFAULT_DIR.lastSeen).toBe("asc");
+    expect(LAPSED_SORT_DEFAULT_DIR.away).toBe("desc");
+    expect(LAPSED_SORT_DEFAULT_DIR.missed).toBe("desc");
+    expect(LAPSED_SORT_DEFAULT_DIR.notTaken).toBe("desc");
+    // Every key has one, so a new column cannot open undefined.
+    for (const key of LAPSED_SORT_KEYS) {
+      expect(LAPSED_SORT_DEFAULT_DIR[key], key).toMatch(/^(asc|desc)$/);
+    }
+  });
+
+  it("never swaps two identical clients between renders", () => {
+    // The salon's own book has two of these to the dollar: same household,
+    // same figures, adjacent rows. Without a final tiebreak they can
+    // change places on a re-sort for no reason the reader can see.
+    const twins = [
+      row({ clientId: 71, estimatedLostRevenue: 2100, totalSpend: 2100, lastName: "Cameron", firstName: "Tahlia" }),
+      row({ clientId: 70, estimatedLostRevenue: 2100, totalSpend: 2100, lastName: "Cameron", firstName: "Dean" }),
+    ];
+    expect(ids(sortLapsedRows(twins, "notTaken", "desc"))).toEqual([70, 71]);
+    expect(ids(sortLapsedRows([...twins].reverse(), "notTaken", "desc"))).toEqual([70, 71]);
+  });
+
+  it("breaks a tie on the default column by lifetime spend, and only there", () => {
+    const poorer = row({ clientId: 1, estimatedLostRevenue: 500, totalSpend: 100, lastName: "Aaa" });
+    const richer = row({ clientId: 2, estimatedLostRevenue: 500, totalSpend: 9000, lastName: "Bbb" });
+    // Two clients owed the same money are not equally worth ringing.
+    expect(ids(sortLapsedRows([poorer, richer], "notTaken", "desc"))).toEqual([2, 1]);
+    // But ranking by spend inside a name sort would be surprising.
+    expect(ids(sortLapsedRows([richer, poorer], "name", "asc"))).toEqual([1, 2]);
+  });
+
+  it("leaves the array it was given alone", () => {
+    const rows = [row({ clientId: 1, estimatedLostRevenue: 1 }), row({ clientId: 2, estimatedLostRevenue: 2 })];
+    const before = ids(rows);
+    sortLapsedRows(rows, "notTaken", "desc");
+    expect(ids(rows)).toEqual(before);
+  });
+
+  it("handles a missing name without throwing", () => {
+    const rows = [row({ clientId: 1, firstName: null, lastName: null }), row({ clientId: 2, lastName: "Bbb" })];
+    expect(() => sortLapsedRows(rows, "name", "asc")).not.toThrow();
+    expect(ids(sortLapsedRows(rows, "name", "asc"))).toEqual([1, 2]);
   });
 });
