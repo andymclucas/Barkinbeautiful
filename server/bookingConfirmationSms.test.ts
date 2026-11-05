@@ -33,7 +33,15 @@ describe("buildBookingConfirmationSms", () => {
     });
     expect(sms).toContain("is booked for Friday 30 October at 9:00 am");
     expect(sms).toContain("with Megs");
-    expect(sms).not.toMatch(/confirm/i);
+    /*
+     * Narrowed 06/11/2026. This was a blanket ban on the word "confirm",
+     * which caught the Y/N prompt added that day — "Reply Y to confirm"
+     * is the CLIENT confirming they are coming, not the salon saying the
+     * slot is still to be confirmed. The rule being protected is the
+     * second one, so it now names the phrasings that would actually
+     * contradict "is booked".
+     */
+    expect(sms).not.toMatch(/we'?ll confirm|we will confirm|to be confirmed|once confirmed/i);
   });
 
   it("reads properly with nobody assigned yet", () => {
@@ -159,7 +167,7 @@ describe("one booking, one text", () => {
      */
     expect(sms).toBe(
       "Hi Annie! Agnes and Shirley's grooming appointment at Barkin' Beautiful "
-      + "is booked for Friday 30 October at 9:00 am with Megs. See you then! \u{1F43E}",
+      + "is booked for Friday 30 October at 9:00 am with Megs. Reply Y to confirm or N to cancel.",
     );
   });
 

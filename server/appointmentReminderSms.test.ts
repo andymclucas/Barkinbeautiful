@@ -16,8 +16,8 @@ const build = (petNames: string[], stage?: "4d" | "2d" | "morning") =>
 describe("buildAppointmentReminderSms", () => {
   it("reads correctly for one dog, two days out", () => {
     expect(build(["Teddy"], "2d")).toBe(
-      "Hi Jo! Reminder: Teddy's grooming appointment at Barkin' Beautiful is in 2 days, "
-      + "on Friday 6 November at 12:30 pm with Megan. \u{1F43E}",
+      "Hi Jo! Teddy's grooming appointment at Barkin' Beautiful is in 2 days, "
+      + "Friday 6 November at 12:30 pm with Megan. Reply Y to confirm or N to cancel.",
     );
   });
 
@@ -27,8 +27,8 @@ describe("buildAppointmentReminderSms", () => {
    */
   it("reads correctly for two dogs, two days out", () => {
     expect(build(["Albert", "Eddy"], "2d")).toBe(
-      "Hi Jo! Reminder: Albert and Eddy's grooming appointment at Barkin' Beautiful is in 2 days, "
-      + "on Friday 6 November at 12:30 pm with Megan. \u{1F43E}",
+      "Hi Jo! Albert and Eddy's grooming appointment at Barkin' Beautiful is in 2 days, "
+      + "Friday 6 November at 12:30 pm with Megan. Reply Y to confirm or N to cancel.",
     );
   });
 

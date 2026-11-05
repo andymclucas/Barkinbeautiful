@@ -12681,9 +12681,30 @@ const smsRouter = router({
       if (reply.processedAt) throw new Error("This reply has already been reviewed");
       if (reply.replyIntent !== input.action) throw new Error("Staff action must match the recognised reply intent");
 
+      const [before] = await db.select({ workflowState: appointments.workflowState })
+        .from(appointments).where(eq(appointments.id, reply.appointmentId)).limit(1);
       await db.update(appointments)
         .set(input.action === "cancel" ? { status: "cancelled", workflowState: "cancelled" } : { status: "confirmed" })
         .where(eq(appointments.id, reply.appointmentId));
+      /*
+       * The audit row this path never wrote.
+       *
+       * workflow_logs is what the Pet Tracker and the timing analytics
+       * read, and a dog cancelled from here simply vanished from the
+       * board with nothing recording the transition. The automatic N
+       * path added 06/11/2026 writes one, and two routes to the same
+       * state that record it differently is the drift CLAUDE.md warns
+       * about — so this one writes it too.
+       */
+      if (input.action === "cancel" && before) {
+        await db.insert(workflowLogs).values({
+          appointmentId: reply.appointmentId,
+          fromState: before.workflowState,
+          toState: "cancelled" as const,
+          changedByStaffId: null,
+          notes: "Client replied N; actioned by staff from Messages",
+        });
+      }
       await db.update(smsLogs).set({
         processedAt: new Date(),
         reviewAction: input.action,

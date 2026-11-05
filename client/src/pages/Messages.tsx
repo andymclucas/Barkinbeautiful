@@ -1289,7 +1289,19 @@ export default function Messages() {
                           <div className="mt-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">Review required: {log.replyIntent}</div>
                         )}
                         {log.direction === "inbound" && log.appointmentId && <div className="mt-1 text-[10px] text-muted-foreground">{appointmentContext(log)}</div>}
-                        {log.direction === "inbound" && log.processedAt && <div className="mt-1 text-[10px] text-emerald-700 dark:text-emerald-300">Reviewed: {log.reviewAction}{log.reviewerName ? ` by ${log.reviewerName}` : ""}</div>}
+                        {/* No reviewer means nobody tapped it: the client's
+                            own "N" cancelled the booking. Saying "Reviewed"
+                            there would imply a person checked it, which is
+                            the one thing this line must not imply — it is
+                            how staff tell an automatic cancellation from one
+                            somebody actioned. */}
+                        {log.direction === "inbound" && log.processedAt && (
+                          <div className="mt-1 text-[10px] text-emerald-700 dark:text-emerald-300">
+                            {log.reviewerName
+                              ? `Reviewed: ${log.reviewAction} by ${log.reviewerName}`
+                              : "Cancelled automatically — client replied N"}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 text-xs max-w-xs">
                         <div className="truncate text-muted-foreground" title={log.body}>{log.body}</div>
