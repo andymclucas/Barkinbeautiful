@@ -4167,6 +4167,10 @@ const clientsRouter = router({
        */
       await db.delete(clientContacts).where(eq(clientContacts.clientId, client.id));
       await db.delete(clientNotes).where(eq(clientNotes.clientId, client.id));
+      // The dogs' weighings go with the dogs. There are no real foreign
+      // keys here (see pet_weights in schema.ts), so nothing would stop
+      // these becoming orphans pointing at a deleted pet.
+      if (petIds.length > 0) await db.delete(petWeights).where(inArray(petWeights.petId, petIds));
       if (petIds.length > 0) await db.delete(pets).where(inArray(pets.id, petIds));
       await db.delete(clients).where(eq(clients.id, client.id));
 
@@ -5477,8 +5481,6 @@ const petsRouter = router({
       tenantId: z.number().default(1),
       petId: z.number(),
       weightKg: z.number().finite().min(0).max(80).nullable(),
-      /** Set when the dog was weighed at a booking, for the history row. */
-      appointmentId: z.number().int().positive().optional(),
       note: z.string().max(255).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -5496,29 +5498,40 @@ const petsRouter = router({
       // What this writes — both weight columns, and the band when there is
       // one — is decided in shared/petWeight.ts and tested there.
       const update = petWeightUpdate(input.weightKg);
-      await db.update(pets).set(update).where(eq(pets.id, pet.id));
 
       /*
-       * The same write also appends to the history, rather than a second
+       * The same write appends to the history, rather than a second
        * procedure doing it. One write path means "the dog's current
        * weight" and "the dog's weight history" cannot disagree — two
        * entry points would drift the first time one of them was called
        * from somewhere new.
        *
+       * IN ONE TRANSACTION, or that claim is just a comment: two
+       * auto-committed statements can leave the pet's weight changed
+       * with nothing in the history, which is the exact disagreement
+       * the single write path exists to prevent.
+       *
+       * The history stores `update.weightKg` — the very string written
+       * to the pet — rather than re-rounding the input. toFixed(1) on
+       * one and toFixed(2) on the other would have let history hold
+       * 12.34 for a dog recorded as 12.3.
+       *
        * Only for a real figure. Clearing a weight is not a weighing:
        * recording that a dog weighs nothing would put a zero on the
        * graph and make every trend after it a recovery.
        */
-      if (input.weightKg !== null && input.weightKg > 0) {
-        await db.insert(petWeights).values({
-          tenantId: pet.tenantId,
-          petId: pet.id,
-          weightKg: input.weightKg.toFixed(2),
-          appointmentId: input.appointmentId ?? null,
-          recordedByUserId: Number(ctx.user.id) || null,
-          note: input.note ?? null,
-        });
-      }
+      await db.transaction(async (tx) => {
+        await tx.update(pets).set(update).where(eq(pets.id, pet.id));
+        if (update.weightKg !== null) {
+          await tx.insert(petWeights).values({
+            tenantId: pet.tenantId,
+            petId: pet.id,
+            weightKg: update.weightKg,
+            recordedByUserId: Number(ctx.user.id) || null,
+            note: input.note ?? null,
+          });
+        }
+      });
       return { success: true, weightKg: update.weightKg, sizeBand: update.sizeBand ?? null };
     }),
 
@@ -5782,6 +5795,9 @@ const petsRouter = router({
 
       // Nothing references it, so there is nothing to cascade. The event
       // trail is kept: it records that a row existed and was removed.
+      // Same reason as clients.delete above: no FK, so the weighings would
+      // outlive the dog.
+      await db.delete(petWeights).where(and(eq(petWeights.petId, pet.id), eq(petWeights.tenantId, tenantId)));
       await db.delete(pets).where(and(eq(pets.id, pet.id), eq(pets.tenantId, tenantId)));
       return { checked: false as const, success: true, petName: pet.name, clientId: pet.clientId };
     }),

@@ -1409,12 +1409,22 @@ export type StoreCreditTransaction = typeof storeCreditTransactions.$inferSelect
 // all belong to the dog, and shared/petWeightHistory.ts reads it per pet.
 export const petWeights = mysqlTable("pet_weights", {
   id: int("id").autoincrement().primaryKey(),
-  tenantId: int("tenant_id").notNull().references(() => tenants.id),
-  petId: int("pet_id").notNull().references(() => pets.id),
+  // No .references() on purpose, matching the .sql and nine tables before
+  // it. Drizzle uses them only to emit DDL, and the hand-written migration
+  // declares no constraints — leaving them here would have drizzle-kit try
+  // to add real foreign keys against live data when the snapshot chain is
+  // eventually repaired. Real FKs would also make pets.remove and
+  // clients.delete throw for any dog that has ever been weighed, which is
+  // exactly the duplicate-dog case pets.remove exists for.
+  tenantId: int("tenant_id").notNull(),
+  petId: int("pet_id").notNull(),
   weightKg: decimal("weight_kg", { precision: 5, scale: 2 }).notNull(),
   recordedAt: timestamp("recorded_at").defaultNow().notNull(),
-  appointmentId: int("appointment_id").references(() => appointments.id),
-  recordedByUserId: int("recorded_by_user_id").references(() => users.id),
+  // Unpopulated for now: no caller sends one, and an unvalidated id that
+  // nothing checks against the tenant is worse than a null. The column
+  // stays so the first caller needs no migration.
+  appointmentId: int("appointment_id"),
+  recordedByUserId: int("recorded_by_user_id"),
   note: varchar("note", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
