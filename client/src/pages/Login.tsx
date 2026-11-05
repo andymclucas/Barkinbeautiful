@@ -376,6 +376,27 @@ export default function Login() {
             >
               Forgot password?
             </button>
+            {/*
+              This page is the STAFF door. Its reset reads the `users`
+              table; a client portal account lives on the client record and
+              has no row there, so "forgot password" returns success and
+              sends nothing — deliberately, so nobody can probe for valid
+              addresses. Correct, and a silent dead end for a client who
+              got here by typing the address they were given.
+
+              One of them tried twice, checked her spam folder, and was
+              told by the salon to try again. A signpost costs nothing and
+              ends the whole category. The comment on issueAccountSetupLink
+              records the same thing happening to another client before
+              her.
+            */}
+            <p className="mt-3 text-xs" style={{ color: "var(--auth-text-faint)" }}>
+              Are you a salon client rather than staff?{" "}
+              <a href="/portal/login" className="underline hover:no-underline" style={{ color: "var(--auth-text-brand-soft)" }}>
+                Your portal is a separate login
+              </a>
+              .
+            </p>
           </div>
 
           <p className="text-center text-xs mt-4" style={{ color: "var(--auth-text-muted)" }}>
@@ -421,6 +442,21 @@ export default function Login() {
                 <h3 className="text-lg font-semibold text-foreground mb-2">Check your inbox</h3>
                 <p className="text-sm" style={{ color: "var(--auth-text-muted)" }}>
                   If an account exists for <strong className="text-foreground">{forgotEmail}</strong>, a password reset link has been sent.
+                </p>
+                {/*
+                  The message above cannot say whether the address was
+                  recognised, so a client who is at the wrong door is told
+                  the same thing as a staff member who is at the right one
+                  — and then waits for an email that was never sent. This
+                  is the exact point one of them got stuck, so it is the
+                  point worth saying it at.
+                */}
+                <p className="mt-3 text-xs" style={{ color: "var(--auth-text-faint)" }}>
+                  Nothing arriving? This is the staff sign-in. Salon clients have a{" "}
+                  <a href="/portal/login" className="underline hover:no-underline" style={{ color: "var(--auth-text-brand-soft)" }}>
+                    separate portal login
+                  </a>
+                  .
                 </p>
                 <button
                   onClick={() => setForgotOpen(false)}

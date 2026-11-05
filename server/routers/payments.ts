@@ -51,7 +51,7 @@ import { buildInvoiceEmail, allocatePayments, type InvoiceEmailLine } from "@sha
 import { INVOICE_EMAIL_ENABLED, INVOICE_EMAIL_HELD_MESSAGE } from "@shared/invoiceEmailGate";
 import { createInvoiceCheckout } from "../stripePayments";
 import { outstandingForInvoice } from "../invoicePaymentPosting";
-import { getAppBaseUrl } from "../appUrl";
+import { getAppBaseUrl, getPortalBaseUrl } from "../appUrl";
 import { addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import { loadBillableTotals, refreshPaymentStatus } from "../billableTotals";
@@ -783,7 +783,8 @@ export const paymentsRouter = router({
         let payUrl: string | null = null;
         if (owedCents > 0) {
           try {
-            const base = getAppBaseUrl();
+            // The client opens this pay link, so it is a client page.
+            const base = getPortalBaseUrl();
             const checkout = await createInvoiceCheckout({
               invoiceId: bill.id,
               invoiceNumber: bill.invoiceNumber,
