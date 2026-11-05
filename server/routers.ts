@@ -8353,11 +8353,19 @@ function assertPricingServiceAmount(input: { priceMode: "fixed" | "range" | "fro
 
 const retailRouter = router({
   list: protectedProcedure
-    .input(z.object({ tenantId: z.number().default(1), search: z.string().optional() }))
+    .input(z.object({
+      tenantId: z.number().default(1),
+      search: z.string().optional(),
+      includeArchived: z.boolean().default(false),
+    }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      const conditions = [eq(retailProducts.tenantId, tenantOf(ctx, input)), eq(retailProducts.isActive, true)];
+      /* Archived products are hidden unless asked for, so the shelf
+         reads as the shelf — but the management screen needs to see
+         them to put one back. */
+      const conditions = [eq(retailProducts.tenantId, tenantOf(ctx, input))];
+      if (!input.includeArchived) conditions.push(eq(retailProducts.isActive, true));
       if (input.search) conditions.push(like(retailProducts.name, `%${input.search}%`));
       return db.select().from(retailProducts).where(and(...conditions)).orderBy(asc(retailProducts.name));
     }),
@@ -8378,6 +8386,101 @@ const retailRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await db.insert(retailProducts).values(input);
+      return { success: true };
+    }),
+
+  /**
+   * Everything about a product, changed in one go.
+   *
+   * Andy, 05/11/2026: "Full customisation for the products needs to be
+   * built in." Before this the shelf could only be added to — 71
+   * products came across from MoeGo and not one of them could have its
+   * price corrected, let alone its description or photo.
+   *
+   * Stock is deliberately NOT here: it has its own procedure, because
+   * correcting a count and editing a product are different jobs done by
+   * different people at different times, and bundling them means every
+   * price change silently rewrites a stock figure somebody counted.
+   */
+  update: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      id: z.number(),
+      name: z.string().trim().min(1).max(255),
+      sku: z.string().trim().max(100).nullable().optional(),
+      description: z.string().trim().max(2000).nullable().optional(),
+      category: z.string().trim().max(100).nullable().optional(),
+      priceAud: z.string(),
+      costAud: z.string().nullable().optional(),
+      reorderThreshold: z.number().int().min(0).max(9999),
+      imageUrl: z.string().trim().max(2000).nullable().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      await db.update(retailProducts)
+        .set({
+          name: input.name,
+          sku: input.sku || null,
+          description: input.description || null,
+          category: input.category || null,
+          priceAud: input.priceAud,
+          costAud: input.costAud || null,
+          reorderThreshold: input.reorderThreshold,
+          imageUrl: input.imageUrl || null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(retailProducts.id, input.id), eq(retailProducts.tenantId, tenantId)));
+      return { success: true };
+    }),
+
+  /**
+   * Correct a stock figure against a real count.
+   *
+   * Andy, 05/11/2026: "Stock numbers may be not quite right but let's
+   * merge it as is for now with the function to manually adjust numbers
+   * once they're in." 31 of the 71 products came across negative —
+   * Ice Cream at -47 — because MoeGo's till has been selling things it
+   * was never told it received.
+   *
+   * Takes the number the person counted, not a delta. Somebody holding
+   * a box and counting nine has a figure, not a difference, and asking
+   * them to work out "+13" from a screen showing -4 is how a correction
+   * becomes a second error.
+   */
+  setStock: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      id: z.number(),
+      stockQty: z.number().int().min(-99999).max(99999),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      await db.update(retailProducts)
+        .set({ stockQty: input.stockQty, updatedAt: new Date() })
+        .where(and(eq(retailProducts.id, input.id), eq(retailProducts.tenantId, tenantId)));
+      return { success: true };
+    }),
+
+  /**
+   * Take a product off the shelf, or put it back.
+   *
+   * Archived rather than deleted: a product that has been sold is in
+   * the sales history, and deleting the row would leave those lines
+   * pointing at nothing.
+   */
+  setActive: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), id: z.number(), isActive: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      await db.update(retailProducts)
+        .set({ isActive: input.isActive, updatedAt: new Date() })
+        .where(and(eq(retailProducts.id, input.id), eq(retailProducts.tenantId, tenantId)));
       return { success: true };
     }),
 });

@@ -140,6 +140,75 @@ export function registerUploadRoutes(app: Router) {
     }
   });
 
+  /*
+   * Retail product photos.
+   *
+   * Andy, 05/11/2026: "Full customisation for the products needs to be
+   * built in - with images able to be added/deleted/edited."
+   *
+   * MoeGo had a photo on 1 of its 72 products and a default cat-food
+   * icon on the other 71, so there was nothing to migrate — the point
+   * is being able to put a picture on a thing the salon sells.
+   *
+   * Same shape as the style-note and grooming-report routes above:
+   * base64 in uploaded_images, compressed first, served back by key.
+   * No S3 credentials needed, and deleting a photo is clearing the
+   * product's image_url rather than chasing a file.
+   */
+  app.post(
+    "/api/upload/retail-product-photo",
+    async (req, res) => {
+      try {
+        let user;
+        try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+        if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+        const contentType = req.headers["content-type"] ?? "image/jpeg";
+        if (!String(contentType).startsWith("image/")) { res.status(400).json({ error: "Only image uploads are allowed" }); return; }
+        const buffer: Buffer = req.body;
+        if (!buffer || buffer.length === 0) { res.status(400).json({ error: "Empty file" }); return; }
+        if (buffer.length > 10 * 1024 * 1024) { res.status(413).json({ error: "Photo must be 10 MB or smaller" }); return; }
+
+        const db = await getDb();
+        if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+        const compressed = await compressForStorage(buffer, String(contentType));
+        const ext = (compressed.contentType.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
+        const key = `retail/products/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+        await db.insert(uploadedImages).values({
+          storageKey: key,
+          photoData: compressed.buffer.toString("base64"),
+          photoContentType: compressed.contentType,
+        });
+        res.json({ url: `/api/retail-product-photo?key=${encodeURIComponent(key)}`, key });
+      } catch (err: any) {
+        console.error("[upload/retail-product-photo]", err);
+        res.status(500).json({ error: err.message ?? "Upload failed" });
+      }
+    }
+  );
+
+  app.get("/api/retail-product-photo", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const key = String(req.query.key ?? "");
+      /* The prefix check is the authorisation: a key is a path into one
+         shared blob table, so without it this route would serve any
+         image in the system to anyone signed in. */
+      if (!key.startsWith("retail/")) { res.status(400).json({ error: "Invalid photo" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const [image] = await db.select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!image?.photoData) { res.status(404).json({ error: "No photo" }); return; }
+      res.set({ "Content-Type": image.photoContentType ?? "image/jpeg", "Cache-Control": "private, max-age=86400" });
+      res.send(Buffer.from(image.photoData, "base64"));
+    } catch (err: any) {
+      console.error("[retail-product-photo]", err);
+      res.status(500).json({ error: err.message ?? "Failed to load photo" });
+    }
+  });
+
   // POST /api/upload/grooming-report-photo
   // Stores directly in the database (uploaded_images) rather than external
   // Forge storage, which isn't configured in this environment. Keeps the
