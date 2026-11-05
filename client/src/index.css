@@ -539,6 +539,59 @@
   color: color-mix(in srgb, var(--color-sidebar-foreground) 72%, transparent) !important;
 }
 
+/* ── Grouped nav: the sub-rows get the SAME treatment as the top-level ────── */
+/*
+ * Andy, 05/11/2026, with a photo of the sidebar on his phone: "Fix the
+ * text colouring on all themes."
+ *
+ * The rules above make a nav row readable against ANY sidebar colour by
+ * deriving its text from the runtime --sidebar-foreground. They match
+ * [data-sidebar="menu-button"] only, so when the sidebar grew sub-rows
+ * those fell back to shadcn's defaults — a flat --sidebar-foreground for
+ * the label and, worse, [&>svg]:text-sidebar-accent-foreground forcing
+ * every icon to the accent. On the salon's branded maroon that is pink
+ * text on dark red: Memberships, Pricing & Services, Messages, Portal
+ * Messages, Email Campaigns, Analytics and Reporting were all but
+ * invisible while the rows above them were white.
+ *
+ * Same variables, same derivation, so this holds for light, dark and
+ * any brand colour a salon picks rather than being tuned for one.
+ */
+[data-sidebar="sidebar"] [data-sidebar="menu-sub-button"] {
+  font-weight: 500;
+  transition:
+    background var(--dur-fast) ease,
+    color var(--dur-fast) ease;
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-sub-button"]:not([data-active="true"]) {
+  color: var(--color-sidebar-foreground);
+}
+/* The !important is beating shadcn's own [&>svg] rule, which is a
+   descendant selector and so outranks a utility class on the svg. */
+[data-sidebar="sidebar"] [data-sidebar="menu-sub-button"]:not([data-active="true"]) svg {
+  color: color-mix(in srgb, var(--color-sidebar-foreground) 72%, transparent) !important;
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-sub-button"]:hover {
+  background: var(--color-sidebar-accent);
+  color: var(--color-sidebar-accent-foreground);
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-sub-button"]:hover svg {
+  color: var(--color-sidebar-accent-foreground) !important;
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-sub-button"][data-active="true"] {
+  background: var(--brand-primary);
+  color: var(--color-sidebar-primary-foreground);
+  font-weight: 600;
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-sub-button"][data-active="true"] svg {
+  color: var(--color-sidebar-primary-foreground) !important;
+}
+/* The group header is a menu-button, so it is already covered — but its
+   chevron is not a nav icon and was inheriting the muted 72% mix. */
+[data-sidebar="sidebar"] [data-sidebar="menu-sub"] {
+  border-color: color-mix(in srgb, var(--color-sidebar-foreground) 22%, transparent);
+}
+
 /* ── Cards ────────────────────────────────────────────────────────────────── */
 [data-slot="card"] {
   border-color: var(--color-border);
