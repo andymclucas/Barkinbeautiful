@@ -1390,6 +1390,41 @@ export const storeCreditTransactions = mysqlTable("store_credit_transactions", {
 
 export type StoreCreditTransaction = typeof storeCreditTransactions.$inferSelect;
 
+// ─── Pet weight history ───────────────────────────────────────────────────────
+// `pets.weight_kg` holds ONE figure, overwritten on every edit, so the salon
+// can say what a dog weighs and never what it weighed. That is a commercial
+// problem as well as a welfare one: weight feeds getAutoDurationMinutes, so a
+// dog that has grown is quietly being under-booked.
+//
+// One row per weighing, never updated. The pet's own weight_kg stays as the
+// CURRENT value — everything that prices or times a groom reads it, and
+// nothing should have to aggregate history to answer "how big is this dog".
+// Recording a weight writes both: the row here, and the pet's current figure.
+//
+// `appointment_id` is nullable because a dog can be weighed at the counter
+// without a booking, and `recorded_by_user_id` because the MoeGo backfill has
+// no author.
+//
+// Deliberately NOT a tenant-wide "weights" table: cadence, pricing and welfare
+// all belong to the dog, and shared/petWeightHistory.ts reads it per pet.
+export const petWeights = mysqlTable("pet_weights", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull().references(() => tenants.id),
+  petId: int("pet_id").notNull().references(() => pets.id),
+  weightKg: decimal("weight_kg", { precision: 5, scale: 2 }).notNull(),
+  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  appointmentId: int("appointment_id").references(() => appointments.id),
+  recordedByUserId: int("recorded_by_user_id").references(() => users.id),
+  note: varchar("note", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  // Leads with tenant, then the dog, then time — which is exactly how the
+  // history is read, newest first for one pet.
+  index("idx_pet_weights_tenant_pet_at").on(t.tenantId, t.petId, t.recordedAt),
+]);
+
+export type PetWeight = typeof petWeights.$inferSelect;
+
 // ─── Appointment payments (split payments) ────────────────────────────────────
 // One row per transaction, so a booking can be settled in more than one go:
 // part cash part card, a deposit then the balance, or the two owners of a

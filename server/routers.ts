@@ -36,7 +36,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
+  invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, petWeights, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
   clientPackages, agreementSignatures, clientNotes,
 } from "../drizzle/schema";
@@ -5477,6 +5477,9 @@ const petsRouter = router({
       tenantId: z.number().default(1),
       petId: z.number(),
       weightKg: z.number().finite().min(0).max(80).nullable(),
+      /** Set when the dog was weighed at a booking, for the history row. */
+      appointmentId: z.number().int().positive().optional(),
+      note: z.string().max(255).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -5494,7 +5497,73 @@ const petsRouter = router({
       // one — is decided in shared/petWeight.ts and tested there.
       const update = petWeightUpdate(input.weightKg);
       await db.update(pets).set(update).where(eq(pets.id, pet.id));
+
+      /*
+       * The same write also appends to the history, rather than a second
+       * procedure doing it. One write path means "the dog's current
+       * weight" and "the dog's weight history" cannot disagree — two
+       * entry points would drift the first time one of them was called
+       * from somewhere new.
+       *
+       * Only for a real figure. Clearing a weight is not a weighing:
+       * recording that a dog weighs nothing would put a zero on the
+       * graph and make every trend after it a recovery.
+       */
+      if (input.weightKg !== null && input.weightKg > 0) {
+        await db.insert(petWeights).values({
+          tenantId: pet.tenantId,
+          petId: pet.id,
+          weightKg: input.weightKg.toFixed(2),
+          appointmentId: input.appointmentId ?? null,
+          recordedByUserId: Number(ctx.user.id) || null,
+          note: input.note ?? null,
+        });
+      }
       return { success: true, weightKg: update.weightKg, sizeBand: update.sizeBand ?? null };
+    }),
+
+  /**
+   * Every weighing on record for one dog, oldest first.
+   *
+   * operationalProcedure, like updateWeight beside it: a dog is weighed on
+   * the salon floor at its groom, so a restricted groomer must be able to
+   * both take the reading and see what it was last time. It carries no
+   * contact details and no money.
+   *
+   * The trend and the "worth mentioning to the owner" threshold are
+   * shared/petWeightHistory.ts, not here, so the graph and any future
+   * caller read the same rule.
+   */
+  weightHistory: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      petId: z.number(),
+      limit: z.number().int().min(1).max(200).default(50),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantId) {
+        throw new Error("This pet is not available to your salon staff profile");
+      }
+      const rows = await db
+        .select({
+          id: petWeights.id,
+          weightKg: petWeights.weightKg,
+          recordedAt: petWeights.recordedAt,
+          note: petWeights.note,
+          appointmentId: petWeights.appointmentId,
+        })
+        .from(petWeights)
+        .where(and(eq(petWeights.tenantId, tenantId), eq(petWeights.petId, input.petId)))
+        .orderBy(desc(petWeights.recordedAt))
+        .limit(input.limit);
+      // Newest first out of the database so the limit keeps the RECENT
+      // readings; oldest first on the way out, which is how a graph and
+      // weightTrend both want them.
+      return { entries: rows.reverse() };
     }),
 
   /**

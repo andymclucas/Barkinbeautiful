@@ -28,6 +28,7 @@ import { StripeCardPanel } from "@/components/StripeCardPanel";
 import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPricing";
 import { PetAvatar } from "@/components/PetAvatar";
 import { trpc } from "@/lib/trpc";
+import { PetWeightHistoryPanel } from "@/components/PetWeightHistoryPanel";
 import { useParams } from "wouter";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -417,6 +418,7 @@ export default function ClientDetail() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const [weightHistoryPetId, setWeightHistoryPetId] = useState<number | null>(null);
   const [editingWeightPetId, setEditingWeightPetId] = useState<number | null>(null);
   const [weightDraft, setWeightDraft] = useState("");
   const isAdmin = currentUser?.role === "admin";
@@ -1630,8 +1632,27 @@ export default function ClientDetail() {
                             >
                               Edit weight
                             </Button>
+                            {/* Opened on demand, not with the card: a client
+                                can have six dogs and six history queries on
+                                every page load is the shape of problem that
+                                took the salon down on 05/11/2026. */}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              aria-expanded={weightHistoryPetId === pet.id}
+                              onClick={() => setWeightHistoryPetId((current) => current === pet.id ? null : pet.id)}
+                            >
+                              {weightHistoryPetId === pet.id ? "Hide history" : "History"}
+                            </Button>
                           </div>
                         )}
+                        <PetWeightHistoryPanel
+                          petId={pet.id}
+                          petName={pet.name}
+                          open={weightHistoryPetId === pet.id}
+                        />
                         {pet.gender && <p><span className="text-muted-foreground">Gender:</span> {pet.gender}{pet.desexed ? " (desexed)" : ""}</p>}
                       </div>
                       {/* Size band. Shown next to the weight because they
