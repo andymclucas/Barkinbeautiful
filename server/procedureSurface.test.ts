@@ -308,6 +308,13 @@ describe("tRPC procedure surface", () => {
     //    groomers and this removes a record. This file cannot see that
     //    check, so clientDeletion.test.ts carries the rule.
     //
+    // 377 since 05/11/2026: clientsRouter gained findDuplicates,
+    // mergePreview and mergeInto. protectedProcedure is NOT their real
+    // gate — all three also check canAdministerStaff, exactly as
+    // clientsRouter.remove does, because merging is more destructive
+    // than deleting: it moves one customer's dogs, invoices and history
+    // onto another card. This file cannot see that check.
+    //
     // 374 since 05/11/2026: retailRouter gained update, setStock and
     // setActive. The shelf could only be added to before — 71 products
     // came across from MoeGo and not one could have its price fixed or
@@ -315,7 +322,7 @@ describe("tRPC procedure surface", () => {
     // list and create they sit beside: Pricing & Services is owner
     // surface and is not in STAFF_OPERATION_ROUTES, so a restricted
     // groomer never sees the screen they are on.
-    expect(surface).toHaveLength(374);
+    expect(surface).toHaveLength(377);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
