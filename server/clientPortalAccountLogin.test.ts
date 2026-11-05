@@ -11,6 +11,7 @@ import {
   readClientPortalSession,
   verifyClientPortalSessionToken,
 } from "./clientPortalSession";
+import { portalLinkIssueEffect } from "@shared/portalSetupLink";
 
 const routerSource = readFileSync(resolve(process.cwd(), "server/routers.ts"), "utf8");
 const sessionSource = readFileSync(resolve(process.cwd(), "server/clientPortalSession.ts"), "utf8");
@@ -84,16 +85,50 @@ describe("client portal account login isolation", () => {
     expect(portalRouter).not.toContain("sendSms(");
   });
 
-  it("requires the explicit portal login email, prevents duplicate assignment and removes credentials on reset paths", () => {
+  it("requires the explicit portal login email and prevents duplicate assignment", () => {
     expect(portalRouter).toContain("eq(clients.portalLoginEmail, loginEmail)");
     expect(portalRouter).not.toContain("or(eq(clients.portalLoginEmail, loginEmail), eq(clients.email, loginEmail))");
     expect(portalRouter).toContain("This email is already assigned to another client portal account");
     expect(schemaSource).toContain("uniqueIndex(\"uq_clients_tenant_portal_login_email\").on(t.tenantId, t.portalLoginEmail)");
+    // The destructive paths still exist for the accounts that should get
+    // them — revoke, and a setup that was never completed.
     expect(portalRouter).toContain("portalPasswordHash: null");
     expect(portalRouter).toContain("portalSessionVersion: sql`${clients.portalSessionVersion} + 1`");
-    expect(portalRouter).toContain("portalAccountStatus: \"setup_pending\"");
     expect(portalRouter).toContain("portalAccountStatus: \"revoked\"");
     expect(portalRouter).toContain("portalAccountStatus: \"not_enabled\"");
+  });
+
+  it("leaves what a setup link does to the shared rule, and the rule spares a live account", () => {
+    /*
+     * This replaces a grep for `portalAccountStatus: "setup_pending"` that
+     * used to sit in the test above, under a title promising the router
+     * "removes credentials on reset paths". It did — unconditionally — and
+     * that is the bug that locked a client out on 05/11/2026: she had a
+     * working account, the link was reissued, and the password her manager
+     * held had nothing left to match.
+     *
+     * So the assertion was pinning the fault in place. A structural check
+     * is only worth keeping where it proves DELEGATION (CLAUDE.md §7), so
+     * that is all this one does; what the rule actually decides is tested
+     * as behaviour in portalSetupLink.test.ts and once more here, because
+     * a delegation test that never checks the destination passes happily
+     * when the destination is wrong.
+     */
+    expect(portalRouter).toContain("portalLinkIssueEffect(");
+    expect(portalRouter).toContain("portalLinkExpiryEffect(");
+    expect(portalRouter).toContain("REDEEMABLE_PORTAL_STATUSES");
+
+    const live = portalLinkIssueEffect({
+      currentStatus: "active", currentLoginEmail: "a@b.com", newLoginEmail: "a@b.com",
+    });
+    expect(live.keepPassword).toBe(true);
+    expect(live.status).toBe("active");
+
+    const neverFinished = portalLinkIssueEffect({
+      currentStatus: "setup_pending", currentLoginEmail: "a@b.com", newLoginEmail: "a@b.com",
+    });
+    expect(neverFinished.keepPassword).toBe(false);
+    expect(neverFinished.status).toBe("setup_pending");
   });
 
   it("scopes account sessions and legacy links to the client, tenant and client-safe portal data", () => {
