@@ -8,6 +8,7 @@ import { useTvMode } from "@/lib/tvMode";
 import { DaycareBoardSection } from "@/components/DaycareBoardSection";
 import { useTimezone } from "@/lib/timezone";
 import { dayInZone, timeOfDayInZone } from "@shared/calendarDay";
+import { useFollowSalonDay } from "@/lib/followSalonDay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -178,6 +179,15 @@ export default function WorkflowBoard() {
    */
   const [notesTab, setNotesTab] = useState<"appointment" | "grooming">("appointment");
   const [now, setNow] = useState(Date.now());
+
+  /*
+   * Follow the salon into the new day. See client/src/lib/followSalonDay.ts
+   * — shared with WorkflowDisplay precisely because this bug was fixed
+   * there and not here, and "Open TV Screen" drives THIS page, so the
+   * salon's wall screen went on showing yesterday every morning.
+   */
+  const salonToday = dayInZone(now, salonTimezone) ?? "";
+  useFollowSalonDay(salonToday, setBoardDate);
   const dragApptId = useRef<number | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [walkInClient, setWalkInClient] = useState("");
