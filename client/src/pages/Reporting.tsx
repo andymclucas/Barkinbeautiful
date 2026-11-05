@@ -53,12 +53,36 @@ export default function Reporting() {
    * its whole history, and asking "how often does Bella come" over the
    * last 30 days answers nothing.
    */
-  const { data: retention, isLoading: loadingRetention } = trpc.clients.clientRetention.useQuery({ limit: 500 });
+  /*
+   * Which tab is open, because every query below is gated on it.
+   *
+   * The page was uncontrolled — `defaultValue="staff"` — so a load of
+   * /reporting fired EVERY tab's query whatever you were looking at.
+   * Two of them, clientRetention and lapsedClients, each pull the
+   * salon's whole completed-appointment history into memory: two full
+   * scans per page load, on a 512MB instance that idles near 300MB.
+   *
+   * It ran out of memory three times on 05/11/2026 — 2:36, 2:52 and
+   * 4:05 PM — and Render killed the process each time. The salon got
+   * 502s while the board was in use. Render's own event log names it:
+   * "Ran out of memory (used over 512MB) while running your code."
+   *
+   * A report nobody is looking at should cost nothing.
+   */
+  const [reportTab, setReportTab] = useState("staff");
+
+  const { data: retention, isLoading: loadingRetention } = trpc.clients.clientRetention.useQuery(
+    { limit: 500 },
+    { enabled: reportTab === "clients" },
+  );
   /* How many of their own gaps away counts as gone rather than late.
      Left open because the right answer differs by salon and by season. */
   const [lapsedFactor, setLapsedFactor] = useState(2);
   const { data: lapsed, isLoading: loadingLapsed } =
-    trpc.clients.lapsedClients.useQuery({ limit: 200, overdueFactor: lapsedFactor });
+    trpc.clients.lapsedClients.useQuery(
+      { limit: 200, overdueFactor: lapsedFactor },
+      { enabled: reportTab === "clients" },
+    );
   /* From the server, over every lapsed client — NOT a sum of the rows
      on screen, which stop at the query limit and would print a figure
      for two hundred beside a count for all of them. Membership rows
@@ -99,25 +123,29 @@ export default function Reporting() {
     dateFrom: from, dateTo: to,
   });
 
-  const { data: staffData, isLoading: loadingStaff } = trpc.analytics.staffProductivity.useQuery({
-    dateFrom: from, dateTo: to,
-  });
+  const { data: staffData, isLoading: loadingStaff } = trpc.analytics.staffProductivity.useQuery(
+    { dateFrom: from, dateTo: to },
+    { enabled: reportTab === "staff" },
+  );
 
-  const { data: financials, isLoading: loadingFinancials } = trpc.analytics.financialBreakdown.useQuery({
-    dateFrom: from, dateTo: to,
-  });
+  const { data: financials, isLoading: loadingFinancials } = trpc.analytics.financialBreakdown.useQuery(
+    { dateFrom: from, dateTo: to },
+    { enabled: reportTab === "financial" },
+  );
 
-  const { data: timing, isLoading: loadingTiming } = trpc.analytics.workflowTiming.useQuery({
-    dateFrom: from, dateTo: to,
-  });
+  const { data: timing, isLoading: loadingTiming } = trpc.analytics.workflowTiming.useQuery(
+    { dateFrom: from, dateTo: to },
+    { enabled: reportTab === "timing" },
+  );
 
   /* The per-day report runs on its own date, not the 30-day range above.
      "Where did today go wrong" is a question about one day; averaging a
      month is what hid it in the first place. */
   const [timingDay, setTimingDay] = useState(() => brisbaneDateKey(new Date()));
-  const { data: dayTiming, isLoading: loadingDayTiming } = trpc.analytics.dayTiming.useQuery({
-    date: timingDay,
-  });
+  const { data: dayTiming, isLoading: loadingDayTiming } = trpc.analytics.dayTiming.useQuery(
+    { date: timingDay },
+    { enabled: reportTab === "timing" },
+  );
   const shiftDay = (days: number) => {
     const d = localCalendarDay(timingDay);
     d.setDate(d.getDate() + days);
@@ -227,7 +255,7 @@ export default function Reporting() {
           * question every one of these sections is a different cut of —
           * putting them inside a tab would mean picking a tab to find out.
           */}
-        <Tabs defaultValue="staff">
+        <Tabs value={reportTab} onValueChange={setReportTab}>
           {/*
             * Andy, 05/11/2026: "make it more prominent and hover
             * features when hovering over each title."
