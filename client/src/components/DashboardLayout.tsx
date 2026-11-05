@@ -35,11 +35,15 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
+import { sidebarEntriesFor, groupContaining, type SidebarGroupKey } from "@shared/sidebarNavigation";
 import {
   CalendarDays,
   Workflow,
@@ -52,6 +56,9 @@ import {
   MessageCircle,
   Mail,
   FileBarChart2,
+  Banknote,
+  MessagesSquare,
+  LineChart,
   LogOut,
   PanelLeft,
   ChevronDown,
@@ -100,18 +107,31 @@ type NavItem = {
 };
 
 const menuItems: NavItem[] = [
-  { icon: CalendarDays,   label: "Appointments",     path: "/calendar" },
-  { icon: Workflow,       label: "Workflow",          path: "/workflow" },
-  { icon: DollarSign,     label: "Pricing & Services", path: "/pricing" },
+  { icon: CalendarDays,   label: "Appointments",      path: "/calendar" },
+  { icon: Workflow,       label: "Workflow Board",    path: "/workflow" },
+  { icon: Users,          label: "Clients & Pets",    path: "/clients" },
   { icon: CreditCard,     label: "Memberships",       path: "/memberships" },
-  { icon: Users,          label: "Clients",           path: "/clients" },
-  { icon: BarChart3,      label: "Analytics",         path: "/analytics" },
-  { icon: UserCog,        label: "Staff",             path: "/staff" },
+  { icon: DollarSign,     label: "Pricing & Services", path: "/pricing" },
   { icon: MessageSquare,  label: "Messages",          path: "/messages" },
-  { icon: MessageCircle,  label: "Portal messages",   path: "/portal-messages" },
+  { icon: MessageCircle,  label: "Portal Messages",   path: "/portal-messages" },
   { icon: Mail,           label: "Email Campaigns",   path: "/email-campaigns" },
+  { icon: BarChart3,      label: "Analytics",         path: "/analytics" },
   { icon: FileBarChart2,  label: "Reporting",         path: "/reporting" },
+  { icon: UserCog,        label: "Staff",             path: "/staff" },
 ];
+
+/**
+ * The icon a group wears when it is closed.
+ *
+ * A group is not a page, so it has no nav item of its own to take an
+ * icon from — and a row with no icon sits a few pixels left of every
+ * other row, which reads as a rendering fault rather than a heading.
+ */
+const GROUP_ICON: Record<SidebarGroupKey, ComponentType<{ className?: string }>> = {
+  financials: Banknote,
+  communication: MessagesSquare,
+  insights: LineChart,
+};
 
 const sectionPath = (key: string): string => STAFF_SECTIONS.find((s) => s.key === key)?.path ?? "";
 
@@ -156,7 +176,7 @@ function ChristmasTreeIcon({ className }: { className?: string }) {
 
 const christmasMenuItem: NavItem = {
   icon: ChristmasTreeIcon,
-  label: "Christmas countdown",
+  label: "Christmas Countdown",
   path: "/christmas",
   // Andy, 02/11/2026: "make that button flash red and green like Christmas
   // lights when you hover over it." The keyframes are in index.css, next to
@@ -374,6 +394,34 @@ function DashboardLayoutContent({
      Brisbane's first ten hours of 1 November are still October there,
      and the link would be missing for the morning it starts. The page
      behind it asks the server for the real figures either way. */
+  /*
+   * Hover opens a group on a computer, a tap opens it on a phone.
+   *
+   * Andy, 05/11/2026: "On computer, hover over will expand the menus, if
+   * clicked on device (phone etc) they expand drop down."
+   *
+   * `(hover: hover)` is the honest test for that — not screen width. A
+   * small laptop window has a mouse and should still open on hover, and
+   * a large tablet has no mouse and must not open a menu the moment a
+   * finger grazes it. Touch devices report `(hover: none)`, so they get
+   * the click behaviour whatever their size.
+   */
+  const [hoverOpens, setHoverOpens] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const sync = () => setHoverOpens(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<SidebarGroupKey>>(new Set());
+  const toggleGroup = (key: SidebarGroupKey) =>
+    setOpenGroups((open) => {
+      const next = new Set(open);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+
   const inChristmasSeason = seasonYearFor(brisbaneDay(new Date()) ?? "") !== null;
   const visibleMenuItems = inChristmasSeason
     ? [...permittedMenuItems, christmasMenuItem]
@@ -599,45 +647,132 @@ function DashboardLayoutContent({
           {/* ── Nav items ── */}
           <SidebarContent className={festive ? "gap-0 pt-7" : "gap-0 pt-2"}>
             <SidebarMenu className="px-2 py-1 gap-0.5">
-              {visibleMenuItems.map((item) => {
-                const isActive =
-                  location === item.path ||
-                  (item.path !== "/" && location.startsWith(item.path));
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      // Hover motion lives in index.css next to the global
-                      // button rule — see "Sidebar nav". A Tailwind transition
-                      // utility cannot win against that rule.
-                      className={`h-10 font-medium text-sm group/navitem ${item.className ?? ""}`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 shrink-0 transition-colors ${
-                          isActive ? "text-white" : "text-muted-foreground group-hover/navitem:text-primary"
-                        }`}
-                      />
-                      <span className={isActive ? "font-semibold" : ""}>{item.label}</span>
-                      {/* What is waiting for someone. Capped at 99 so a
-                          backlog cannot stretch the sidebar, and hidden
-                          entirely at zero — a badge showing "0" is noise that
-                          trains people to ignore the badge that matters. */}
-                      {(navBadges[item.path] ?? 0) > 0 && (
-                        <span
-                          className={`ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums ${
-                            isActive ? "bg-white text-primary" : "bg-destructive text-destructive-foreground"
-                          }`}
-                          aria-label={`${navBadges[item.path]} waiting`}
-                        >
-                          {navBadges[item.path]! > 99 ? "99+" : navBadges[item.path]}
-                        </span>
-                      )}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+              {(() => {
+                const byPath = new Map(visibleMenuItems.map((item) => [item.path, item]));
+                const entries = sidebarEntriesFor(new Set(byPath.keys()));
+                /* The group holding the page you are on stays open, so the
+                   sidebar never hides where you currently are. */
+                const activeGroup = groupContaining(activeMenuItem?.path ?? "");
+
+                const badgeFor = (count: number, isActive: boolean, label: string) => (
+                  <span
+                    className={`ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold tabular-nums ${
+                      isActive ? "bg-white text-primary" : "bg-destructive text-destructive-foreground"
+                    }`}
+                    aria-label={label}
+                  >
+                    {count > 99 ? "99+" : count}
+                  </span>
                 );
-              })}
+
+                const row = (item: NavItem) => {
+                  const isActive =
+                    location === item.path ||
+                    (item.path !== "/" && location.startsWith(item.path));
+                  const count = navBadges[item.path] ?? 0;
+                  return (
+                    <SidebarMenuItem key={item.path}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => setLocation(item.path)}
+                        tooltip={item.label}
+                        // Hover motion lives in index.css next to the global
+                        // button rule — see "Sidebar nav". A Tailwind transition
+                        // utility cannot win against that rule.
+                        className={`h-10 font-medium text-sm group/navitem ${item.className ?? ""}`}
+                      >
+                        <item.icon
+                          className={`h-4 w-4 shrink-0 transition-colors ${
+                            isActive ? "text-white" : "text-muted-foreground group-hover/navitem:text-primary"
+                          }`}
+                        />
+                        <span className={isActive ? "font-semibold" : ""}>{item.label}</span>
+                        {/* What is waiting for someone. Capped at 99 so a
+                            backlog cannot stretch the sidebar, and hidden
+                            entirely at zero — a badge showing "0" is noise that
+                            trains people to ignore the badge that matters. */}
+                        {count > 0 && badgeFor(count, isActive, `${count} waiting`)}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                };
+
+                return entries.map((entry) => {
+                  if (entry.kind === "item") {
+                    const item = byPath.get(entry.path);
+                    return item ? row(item) : null;
+                  }
+                  const children = entry.paths
+                    .map((path) => byPath.get(path))
+                    .filter((item): item is NavItem => Boolean(item));
+                  if (children.length === 0) return null;
+
+                  const open = openGroups.has(entry.key) || activeGroup === entry.key;
+                  const GroupIcon = GROUP_ICON[entry.key];
+                  /* Rolled up from the children while the group is shut.
+                     Messages is inside Communication now, and a closed
+                     group that swallows "three people are waiting" is a
+                     worse sidebar than the flat one it replaced. */
+                  const waiting = children.reduce((n, c) => n + (navBadges[c.path] ?? 0), 0);
+                  const holdsActive = activeGroup === entry.key;
+
+                  return (
+                    <SidebarMenuItem
+                      key={entry.key}
+                      onMouseEnter={hoverOpens ? () => setOpenGroups((o) => new Set(o).add(entry.key)) : undefined}
+                      onMouseLeave={hoverOpens ? () => setOpenGroups((o) => {
+                        const next = new Set(o);
+                        next.delete(entry.key);
+                        return next;
+                      }) : undefined}
+                    >
+                      <SidebarMenuButton
+                        onClick={() => toggleGroup(entry.key)}
+                        tooltip={entry.label}
+                        aria-expanded={open}
+                        className="h-10 font-medium text-sm group/navitem"
+                      >
+                        <GroupIcon
+                          className={`h-4 w-4 shrink-0 transition-colors ${
+                            holdsActive ? "text-primary" : "text-muted-foreground group-hover/navitem:text-primary"
+                          }`}
+                        />
+                        <span className={holdsActive ? "font-semibold" : ""}>{entry.label}</span>
+                        {!open && waiting > 0 && badgeFor(waiting, false, `${waiting} waiting in ${entry.label}`)}
+                        <ChevronDown
+                          className={`${!open && waiting > 0 ? "ml-1" : "ml-auto"} h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+                        />
+                      </SidebarMenuButton>
+                      {open && (
+                        <SidebarMenuSub>
+                          {children.map((child) => {
+                            const isActive =
+                              location === child.path || location.startsWith(child.path + "/");
+                            const count = navBadges[child.path] ?? 0;
+                            return (
+                              <SidebarMenuSubItem key={child.path}>
+                                <SidebarMenuSubButton
+                                  isActive={isActive}
+                                  onClick={() => setLocation(child.path)}
+                                  className="h-9 cursor-pointer text-sm group/navsub"
+                                >
+                                  <child.icon
+                                    className={`h-4 w-4 shrink-0 transition-colors ${
+                                      isActive ? "text-white" : "text-muted-foreground group-hover/navsub:text-primary"
+                                    }`}
+                                  />
+                                  <span className={isActive ? "font-semibold" : ""}>{child.label}</span>
+                                  {count > 0 && badgeFor(count, isActive, `${count} waiting`)}
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            );
+                          })}
+                        </SidebarMenuSub>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                });
+              })()}
             </SidebarMenu>
           </SidebarContent>
 
