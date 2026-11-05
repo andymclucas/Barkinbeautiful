@@ -263,13 +263,25 @@ function dayDateKey(localMidnight: Date): string {
   return `${localMidnight.getFullYear()}-${String(localMidnight.getMonth() + 1).padStart(2,'0')}-${String(localMidnight.getDate()).padStart(2,'0')}`;
 }
 
+/**
+ * One formatter, not two.
+ *
+ * This hand-rolled the Brisbane offset and applied it internally, while
+ * shared/auditTimestamp's formatAestTime — which says of itself "use
+ * for appointment/workflow times everywhere" — sat one import away.
+ * Two formatters for one job is what let the stack picker show a
+ * 9:30 am dog as 7:30 pm on 05/11/2026: a caller pre-shifted the date
+ * for the other one and the ten hours went on twice.
+ *
+ * The name stays so the eleven call sites read as they did; the body
+ * now delegates. That also drops the hardcoded +10, so a salon in
+ * another zone gets its own time rather than Brisbane's.
+ *
+ * Proven identical to the old implementation before the swap: every
+ * minute of a full day and a year of samples, zero differences.
+ */
 function fmtTime(date: Date) {
-  const aest = toAESTDate(date);
-  const h = aest.getUTCHours();
-  const m = aest.getUTCMinutes();
-  const ampm = h >= 12 ? 'pm' : 'am';
-  const h12 = h % 12 || 12;
-  return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
+  return formatAestTime(date, undefined, getActiveTimeZone());
 }
 
 function fmtDateShort(date: Date) {
@@ -5835,20 +5847,8 @@ export default function Calendar() {
           const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
           return [{
             id,
-            /*
-             * shared/auditTimestamp's formatAestTime, which says of
-             * itself "use for appointment/workflow times everywhere" —
-             * not this file's own fmtTime.
-             *
-             * fmtTime hand-rolls the Brisbane offset and applies it
-             * internally, so it takes a RAW date. This passed it an
-             * already-shifted one, added the ten hours twice, and put a
-             * 9:30 am dog in front of staff as 7:30 pm. Two formatters
-             * for one job is what made that possible; the shared one
-             * takes an instant, uses a real time zone rather than a
-             * hardcoded +10, and cannot be double-applied.
-             */
-            time: formatAestTime(appt.scheduledStart, undefined, getActiveTimeZone()),
+            /* A raw instant, like every other fmtTime call site. */
+            time: fmtTime(new Date(appt.scheduledStart)),
             label: formatSharedAppointmentName({
               petNames: [appt, ...getSiblings(appt)].map((pet) => pet.petName),
               surname: appt.clientLastName,
