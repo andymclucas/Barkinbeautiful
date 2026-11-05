@@ -202,7 +202,7 @@ export default function Analytics() {
           * reading the two as one column is how that gets double-counted.
           */}
         <Tabs defaultValue="revenue">
-          <TabsList className="grid w-full grid-cols-3 sm:w-[420px]">
+          <TabsList className="tabs-scroll sm:w-[420px]">
             <TabsTrigger value="revenue">Revenue</TabsTrigger>
             <TabsTrigger value="memberships">Memberships</TabsTrigger>
             <TabsTrigger value="groomers">Groomers</TabsTrigger>
