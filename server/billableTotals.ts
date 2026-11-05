@@ -11,6 +11,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { appointments, appointmentAddOns, appointmentPayments } from "../drizzle/schema";
 import { billableTotalsByAppointment, countsTowardBooking } from "@shared/appointmentAddOns";
 import { derivePaymentStatus } from "@shared/splitPayments";
+import { loadApprovedQuoteExtrasForAppointments } from "./groomQuoteExtras";
 
 /** appointment id -> its billable total, or null when it is not part of one. */
 export async function loadBillableTotals(db: any, appointmentIds: number[]) {
@@ -45,7 +46,14 @@ export async function loadBillableTotals(db: any, appointmentIds: number[]) {
     .from(appointmentAddOns)
     .where(inArray(appointmentAddOns.appointmentId, appointmentIds));
 
-  const totals = billableTotalsByAppointment(rows, addOns);
+  /* Work the owner agreed to mid-groom. The counter has to ask for it:
+     this is the figure the panel shows, the one payments.record checks
+     against and the one that sizes a Pay Now link. See
+     loadApprovedQuoteExtrasForAppointments for what went wrong without
+     it. */
+  const quoteExtras = await loadApprovedQuoteExtrasForAppointments(db, appointmentIds);
+
+  const totals = billableTotalsByAppointment(rows, addOns, quoteExtras);
   /* null is the existing "not part of the total" signal — see the
      comment on billableTotal. A cancelled dog takes it too. */
   for (const row of rows as any[]) {

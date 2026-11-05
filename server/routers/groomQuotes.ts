@@ -32,6 +32,15 @@
  * `completeSetup` in routers.ts is the precedent for reading affectedRows
  * off `result[0]` — reading it off the array itself gives undefined, which
  * made a guard fire on every single call for weeks.
+ *
+ * ## The dog has to still be here, checked EVERY time
+ *
+ * Not only when the quote is raised. A draft raised during the groom could
+ * otherwise be texted after the dog went home, and a verbal yes could be
+ * recorded after the invoice was already raised — at which point it bills
+ * nothing, because decideAppointmentInvoice returns `already_invoiced`
+ * before it ever looks at extras. Both were real holes; see
+ * requireQuotableAppointment.
  */
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -42,6 +51,7 @@ import {
   appointments, clients, groomQuoteLines, groomQuotes, pets, smsLogs, tenants,
 } from "../../drizzle/schema";
 import { requireApprovedStaffAppointmentAccess, requireApprovedStaffTenant } from "../staffAccess";
+import { countInvoicesCovering } from "../invoiceCoverage";
 import { sendSms } from "../sms";
 import { getPortalBaseUrl } from "../appUrl";
 import { createQuoteToken, hashQuoteToken, QUOTE_TOKEN_PATTERN } from "../quoteToken";
@@ -51,19 +61,61 @@ import {
   type QuoteStatus,
 } from "@shared/groomQuote";
 
+/**
+ * Dollars, to the cent, with the rounding done ONCE.
+ *
+ * quoteTotal sums with Math.round(n * 100) while the lines were stored with
+ * toFixed(2), and the two disagree on a third decimal: 1.115 totals $1.12
+ * and stores $1.11. The invoice bills the lines, so the owner approved one
+ * figure and was charged another. Rounding here means every later reader
+ * sees the same number.
+ */
 const LINE = z.object({
-  description: z.string().trim().min(1).max(255),
-  /** Dollars. Coerced from the form's string, never cents. */
-  amount: z.coerce.number().finite(),
+  description: z.string().trim().min(1).max(180),
+  amount: z.coerce.number().finite().transform((n) => Math.round(n * 100) / 100),
 });
 
-/** Rows a tenant-scoped read may return, so a stray id cannot cross salons. */
 async function assertTenant(db: any, ctx: any, tenantId: number) {
   const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
   if (portalStaff && portalStaff.tenantId !== tenantId) {
     throw new TRPCError({ code: "FORBIDDEN", message: "This salon is not available to your staff profile" });
   }
   return portalStaff;
+}
+
+/**
+ * The dog is at the salon and has not gone home.
+ *
+ * Checked on every write, not just on `raise`. Quoting, texting or
+ * recording an answer after the dog has left is a surprise charge, which
+ * is the thing this feature exists to prevent — and worse, an answer
+ * recorded after the invoice exists bills NOTHING, because
+ * decideAppointmentInvoice short-circuits on `already_invoiced`. So the
+ * groomer would see "Approved" against work that is never charged.
+ */
+async function requireQuotableAppointment(db: any, tenantId: number, appointmentId: number) {
+  const [appt] = await db.select({
+    id: appointments.id,
+    petId: appointments.petId,
+    clientId: appointments.clientId,
+    workflowState: appointments.workflowState,
+    status: appointments.status,
+  }).from(appointments)
+    .where(and(eq(appointments.id, appointmentId), eq(appointments.tenantId, tenantId)))
+    .limit(1);
+  if (!appt) throw new TRPCError({ code: "NOT_FOUND", message: "That booking no longer exists" });
+
+  if (!canQuoteInWorkflowState(appt.workflowState)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: appt.workflowState === "complete"
+        ? "This dog has already gone home — extra work has to be agreed while they are here"
+        : appt.workflowState === "cancelled" || appt.workflowState === "no_show"
+          ? "This booking was cancelled"
+          : "Extra work can only be quoted once the dog has been checked in",
+    });
+  }
+  return appt;
 }
 
 /**
@@ -76,15 +128,19 @@ async function assertTenant(db: any, ctx: any, tenantId: number) {
  * `status = 'sent'`, so an owner approving in the same second wins and the
  * expiry is simply not applied.
  *
+ * Judged against the STORED expires_at, which is the reason that column
+ * exists: recomputing from the current QUOTE_EXPIRY_HOURS would move the
+ * deadline on every quote already in flight whenever the constant changed.
+ *
  * Billing never depends on this running: loadApprovedQuoteExtras asks for
  * `approved` and an expired quote was never approved.
  */
 async function settleExpiry(
   db: any,
-  row: { id: number; tenantId: number; status: QuoteStatus; sentAt: Date | null },
+  row: { id: number; tenantId: number; status: QuoteStatus; sentAt: Date | null; expiresAt?: Date | null },
   now = new Date(),
 ): Promise<QuoteStatus> {
-  if (!isQuoteExpired(row.status, row.sentAt, now)) return row.status;
+  if (!isQuoteExpired(row.status, row.sentAt, now, row.expiresAt ?? null)) return row.status;
   await db.update(groomQuotes)
     .set({ status: "expired", updatedAt: now })
     .where(and(
@@ -126,13 +182,18 @@ export const groomQuotesRouter = router({
           eq(groomQuotes.appointmentId, input.appointmentId),
         ))
         .orderBy(desc(groomQuotes.createdAt));
-      if (rows.length === 0) return { quotes: [] };
+      if (rows.length === 0) return { quotes: [], invoiced: false };
 
       const lines = await db.select().from(groomQuoteLines)
         .where(and(
           eq(groomQuoteLines.tenantId, tenantId),
           inArray(groomQuoteLines.quoteId, rows.map((r: any) => r.id)),
         ));
+
+      /* Whether an invoice already covers this booking, so the panel can
+         say an approved quote is on the bill and stop offering to undo
+         it. Nothing in the app edits an invoice line afterwards. */
+      const invoiced = (await countInvoicesCovering(db, input.appointmentId)) > 0;
 
       const quotes = [];
       for (const row of rows) {
@@ -147,12 +208,14 @@ export const groomQuotesRouter = router({
           decidedAt: row.decidedAt,
           approvalSource: row.approvalSource,
           approvalNote: row.approvalNote,
+          /** The owner was texted but Twilio would not take it. */
+          deliveryFailed: Boolean(row.sentAt && row.tokenHash === null && status === "draft"),
           lines: lines
             .filter((l: any) => l.quoteId === row.id)
             .map((l: any) => ({ id: l.id, description: l.description, amount: String(l.amount) })),
         });
       }
-      return { quotes };
+      return { quotes, invoiced };
     }),
 
   /** Build a quote. Draft only — nothing reaches the owner until `send`. */
@@ -168,28 +231,7 @@ export const groomQuotesRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const tenantId = tenantOf(ctx, input);
       const portalStaff = await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
-
-      const [appt] = await db.select({
-        id: appointments.id,
-        tenantId: appointments.tenantId,
-        petId: appointments.petId,
-        clientId: appointments.clientId,
-        workflowState: appointments.workflowState,
-      }).from(appointments)
-        .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, tenantId)))
-        .limit(1);
-      if (!appt) throw new TRPCError({ code: "NOT_FOUND", message: "That booking no longer exists" });
-
-      // The dog has to be here and not yet gone home. Quoting after pickup
-      // is a surprise charge, which is the thing this feature prevents.
-      if (!canQuoteInWorkflowState(appt.workflowState)) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: appt.workflowState === "complete"
-            ? "This dog has already gone home — extra work has to be agreed while they are here"
-            : "Extra work can only be quoted once the dog has been checked in",
-        });
-      }
+      const appt = await requireQuotableAppointment(db, tenantId, input.appointmentId);
 
       const validation = validateQuoteLines(input.lines);
       if (!validation.ok) throw new TRPCError({ code: "BAD_REQUEST", message: validation.reason });
@@ -214,6 +256,7 @@ export const groomQuotesRouter = router({
           tenantId,
           quoteId,
           description: l.description,
+          // The SAME rounded figure the total was summed from.
           amount: l.amount.toFixed(2),
         })));
       });
@@ -237,6 +280,9 @@ export const groomQuotesRouter = router({
 
       const quote = await loadQuoteForStaff(db, tenantId, input.quoteId);
       await requireApprovedStaffAppointmentAccess(db, ctx.user, quote.appointmentId);
+      // Re-checked here, not just at raise: a draft sitting from 10am must
+      // not be textable at 4pm when the dog is long gone.
+      await requireQuotableAppointment(db, tenantId, quote.appointmentId);
       if (!canTransitionQuote(quote.status as QuoteStatus, "sent")) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Only a draft quote can be sent" });
       }
@@ -260,8 +306,8 @@ export const groomQuotesRouter = router({
        * either. It is tempting to argue a charge approval is different and
        * urgent, but that argument is available for every message and is how
        * an opt-out stops meaning anything. The fallback costs the salon
-       * nothing: ring them, then Record their answer, which produces a
-       * record that stands up just as well because it says who took it.
+       * nothing: ring them, then Record their answer — which works on a
+       * draft precisely so this is not a dead end.
        */
       if (client.smsOptedOutAt) {
         throw new TRPCError({
@@ -271,7 +317,7 @@ export const groomQuotesRouter = router({
       }
 
       const [petRow] = await db.select({ name: pets.name }).from(pets)
-        .where(eq(pets.id, quote.petId)).limit(1);
+        .where(and(eq(pets.id, quote.petId), eq(pets.tenantId, tenantId))).limit(1);
       const [salon] = await db.select({ name: tenants.name }).from(tenants)
         .where(eq(tenants.id, tenantId)).limit(1);
 
@@ -282,8 +328,7 @@ export const groomQuotesRouter = router({
       // Claim the transition BEFORE texting. A send that writes after the
       // SMS can text the owner and then fail to record it, which leaves a
       // live link against a draft quote the owner can answer and nobody
-      // can see. Claiming first means the worst case is a quote marked
-      // sent whose text failed, which the groomer can see and retry.
+      // can see.
       const claimed = await db.update(groomQuotes)
         .set({ status: "sent", tokenHash, sentAt, expiresAt, updatedAt: sentAt })
         .where(and(
@@ -293,26 +338,75 @@ export const groomQuotesRouter = router({
         ));
       assertOneRow(claimed, "That quote has already been sent or withdrawn");
 
+      const url = quoteUrl(getPortalBaseUrl(), token);
       const body = quoteRequestSms({
         salonName: salon?.name ?? "Your groomer",
         petName: petRow?.name ?? "your dog",
         total: String(quote.total),
-        url: quoteUrl(getPortalBaseUrl(), token),
+        url,
       });
       // trigger: "staff" — a person pressed Send. The allow-list in
       // shared/automatedSms.ts governs automated sends and does not apply
       // here, and this must never become automated without Andy saying so.
       const result = await sendSms(client.phone, body, { tenantId, trigger: "staff" });
+
       await db.insert(smsLogs).values({
-        tenantId, clientId: client.id, toNumber: client.phone, body,
+        tenantId, clientId: client.id, toNumber: client.phone,
+        /*
+         * The LINK is redacted out of the thread.
+         *
+         * smsLogs is the Messages conversation, readable by every
+         * non-staff login. Storing the live approval URL there meant
+         * anyone who could open the thread could tap it and approve, and
+         * answerByToken would record approvalSource "client" with no
+         * decidedByUserId — so a receptionist approving on the owner's
+         * behalf would read as the owner having done it themselves,
+         * which is precisely the distinction a dispute turns on.
+         * quoteToken.ts says the token is never stored in the clear;
+         * this is what makes that true.
+         */
+        body: body.replace(url, "[approval link]"),
         twilioSid: result.sid, status: result.success ? "sent" : "failed",
         type: "custom", direction: "outbound", errorMessage: result.error,
+        appointmentId: quote.appointmentId,
       });
 
-      return { sent: result.success, error: result.error ?? null, expiresAt };
+      if (!result.success) {
+        /*
+         * Put it back to draft rather than leaving it "Waiting on the
+         * owner" with a four-hour clock running for somebody who was
+         * never asked. A landline typed into the mobile field, the
+         * monthly cap, a bad sender number — all land here, and the
+         * groomer needs to fix the number and press Send again.
+         *
+         * sentAt is KEPT, with the token cleared, so the panel can tell
+         * "never sent" from "the text bounced" and say so.
+         */
+        await db.update(groomQuotes)
+          .set({ status: "draft", tokenHash: null, expiresAt: null, updatedAt: new Date() })
+          .where(and(
+            eq(groomQuotes.id, quote.id),
+            eq(groomQuotes.tenantId, tenantId),
+            eq(groomQuotes.status, "sent"),
+          ));
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `The text would not send: ${result.error ?? "unknown error"}. Check the mobile number, or ring them and use Record their answer.`,
+        });
+      }
+
+      return { sent: true, expiresAt };
     }),
 
-  /** Take it back, usually because the figure was wrong. */
+  /**
+   * Take it back.
+   *
+   * Also the only way to undo an approval. An approved quote used to be
+   * permanent, which sounds like integrity and is a trap: an owner
+   * mis-tapping Yes, or staff recording it against the wrong dog, could
+   * only be undone by editing the database. It is refused once an invoice
+   * exists, because nothing in the app edits an invoice line afterwards.
+   */
   withdraw: operationalProcedure
     .input(z.object({ tenantId: z.number().default(1), quoteId: z.number() }))
     .mutation(async ({ input, ctx }) => {
@@ -323,20 +417,27 @@ export const groomQuotesRouter = router({
 
       const quote = await loadQuoteForStaff(db, tenantId, input.quoteId);
       await requireApprovedStaffAppointmentAccess(db, ctx.user, quote.appointmentId);
-      if (!canTransitionQuote(quote.status as QuoteStatus, "withdrawn")) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "This quote has already been answered" });
+      const status = await settleExpiry(db, quote);
+      if (!canTransitionQuote(status as QuoteStatus, "withdrawn")) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This quote can no longer be withdrawn" });
+      }
+      if (status === "approved" && (await countInvoicesCovering(db, quote.appointmentId)) > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This is already on an invoice — adjust the bill instead",
+        });
       }
 
       const updated = await db.update(groomQuotes)
-        .set({ status: "withdrawn", tokenHash: null, updatedAt: new Date() })
+        .set({ status: "withdrawn", updatedAt: new Date() })
         .where(and(
           eq(groomQuotes.id, quote.id),
           eq(groomQuotes.tenantId, tenantId),
-          // Both, not just the current one: withdrawing has to lose the
-          // race against an owner who is answering right now.
-          inArray(groomQuotes.status, ["draft", "sent"]),
+          // Named explicitly so withdrawing loses the race against an
+          // owner answering right now.
+          inArray(groomQuotes.status, ["draft", "sent", "approved"]),
         ));
-      assertOneRow(updated, "The owner answered that quote just now — reload to see what they said");
+      assertOneRow(updated, "That quote changed a moment ago — reload to see what it says");
       return { success: true };
     }),
 
@@ -347,6 +448,11 @@ export const groomQuotesRouter = router({
    * which happened, so it is recorded as `staff` with a note saying how
    * they were reached. The note is required, not encouraged: "staff ticked
    * the box" is worth nothing six weeks later.
+   *
+   * Works on a DRAFT as well as a sent quote. The clients who most need
+   * this are the ones `send` refuses — no mobile on file, or they replied
+   * STOP — and without it the app told the groomer to ring them and then
+   * had nowhere to put the answer.
    */
   recordAnswer: operationalProcedure
     .input(z.object({
@@ -363,15 +469,16 @@ export const groomQuotesRouter = router({
 
       const quote = await loadQuoteForStaff(db, tenantId, input.quoteId);
       await requireApprovedStaffAppointmentAccess(db, ctx.user, quote.appointmentId);
+      // An answer recorded after the invoice exists bills nothing at all,
+      // so the dog has to still be here.
+      await requireQuotableAppointment(db, tenantId, quote.appointmentId);
 
-      // A quote nobody sent has no agreed figure behind it, so it cannot be
-      // answered — the groomer has to send it or withdraw it first.
       const status = await settleExpiry(db, quote);
       if (!canTransitionQuote(status as QuoteStatus, input.decision)) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: status === "draft"
-            ? "Send this quote before recording an answer to it"
+          message: status === "expired"
+            ? "This quote timed out, so nothing was charged. Raise a new one for the same work."
             : "This quote has already been answered",
         });
       }
@@ -384,14 +491,12 @@ export const groomQuotesRouter = router({
           approvalSource: "staff",
           approvalNote: input.note,
           decidedByUserId: ctx.user.id,
-          // The link stops working once there is an answer.
-          tokenHash: null,
           updatedAt: now,
         })
         .where(and(
           eq(groomQuotes.id, quote.id),
           eq(groomQuotes.tenantId, tenantId),
-          eq(groomQuotes.status, "sent"),
+          inArray(groomQuotes.status, ["draft", "sent"]),
         ));
       assertOneRow(updated, "That quote was answered a moment ago — reload to see what it says");
       return { success: true, status: input.decision };
@@ -419,9 +524,6 @@ export const groomQuotesRouter = router({
         .leftJoin(tenants, eq(tenants.id, groomQuotes.tenantId))
         .where(eq(groomQuotes.tokenHash, hashQuoteToken(input.token)))
         .limit(1);
-      // Deliberately the same message whether the token never existed, was
-      // answered, or was withdrawn: the page is public and should not help
-      // anyone work out which.
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "This link is no longer active." });
 
       const status = await settleExpiry(db, row as any);
@@ -459,8 +561,10 @@ export const groomQuotesRouter = router({
       const [row] = await db.select({
         id: groomQuotes.id,
         tenantId: groomQuotes.tenantId,
+        appointmentId: groomQuotes.appointmentId,
         status: groomQuotes.status,
         sentAt: groomQuotes.sentAt,
+        expiresAt: groomQuotes.expiresAt,
       }).from(groomQuotes).where(eq(groomQuotes.tokenHash, tokenHash)).limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "This link is no longer active." });
 
@@ -474,6 +578,23 @@ export const groomQuotesRouter = router({
       if (!canTransitionQuote(status as QuoteStatus, input.decision)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "This link is no longer active." });
       }
+      /*
+       * The dog has to still be at the salon. An owner tapping Yes from
+       * the car park after pickup produces an approval that bills nothing
+       * — decideAppointmentInvoice has already returned already_invoiced —
+       * while their page promises "it will be added to your bill".
+       * Telling them plainly is the only honest answer.
+       */
+      const [appt] = await db.select({ workflowState: appointments.workflowState })
+        .from(appointments)
+        .where(and(eq(appointments.id, row.appointmentId), eq(appointments.tenantId, row.tenantId)))
+        .limit(1);
+      if (!canQuoteInWorkflowState(appt?.workflowState)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This groom has already finished, so nothing extra has been charged. Please call the salon if you would still like it done.",
+        });
+      }
 
       const now = new Date();
       const updated = await db.update(groomQuotes)
@@ -482,15 +603,16 @@ export const groomQuotesRouter = router({
           decidedAt: now,
           approvalSource: "client",
           decidedByUserId: null,
-          // One answer per link. Clearing the hash is what makes a second
-          // tap — or a forwarded message — land on "no longer active"
-          // rather than flipping an answer somebody already gave.
-          tokenHash: null,
           updatedAt: now,
         })
         .where(and(
           eq(groomQuotes.id, row.id),
           eq(groomQuotes.tokenHash, tokenHash),
+          // One answer per link. The STATUS is what makes it single-use —
+          // the hash is deliberately kept, so reopening the link shows the
+          // owner what they agreed to rather than "no longer active",
+          // which is the page they would otherwise be shown while holding
+          // the invoice that charges them for it.
           eq(groomQuotes.status, "sent"),
         ));
       assertOneRow(updated, "This link is no longer active.");

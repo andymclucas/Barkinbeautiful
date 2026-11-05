@@ -4,7 +4,7 @@ import {
   canQuoteInWorkflowState, canTransitionQuote, canEditQuote, isQuoteBillable,
   isQuoteAwaitingAnswer, quoteTotal, validateQuoteLines, quoteExpiresAt,
   isQuoteExpired, requiresApprovalNote, describeQuoteStatus,
-  quoteRequestSms, quoteUrl,
+  quoteRequestSms, quoteUrl, quoteLineDescription, QUOTE_LINE_SUFFIX,
   type QuoteStatus,
 } from "../shared/groomQuote";
 import { calculateSmsCost } from "../shared/smsSegments";
@@ -47,18 +47,31 @@ describe("when extra work may be quoted", () => {
 });
 
 describe("the quote state machine", () => {
-  it("lets a draft be sent or withdrawn, and nothing else", () => {
+  it("lets a draft be sent, answered by a person, or withdrawn", () => {
     expect(canTransitionQuote("draft", "sent")).toBe(true);
     expect(canTransitionQuote("draft", "withdrawn")).toBe(true);
-    expect(canTransitionQuote("draft", "approved")).toBe(false);
-    expect(canTransitionQuote("draft", "declined")).toBe(false);
+    // Changed 06/11/2026. This used to be false, on the reasoning that an
+    // approved quote must be one the owner was SHOWN. The reasoning was
+    // right and the rule was wrong: `send` refuses a client with no mobile
+    // or who replied STOP, and `send` was the only way out of draft — so
+    // for exactly those clients the app told the groomer to ring them and
+    // record the answer, and then had nowhere to record it.
+    //
+    // The owner is still shown the figure; a person reads it to them. That
+    // is what approvalSource "staff" and the required note say, and it is
+    // a different claim from them tapping the link, which is the point.
+    expect(canTransitionQuote("draft", "approved")).toBe(true);
+    expect(canTransitionQuote("draft", "declined")).toBe(true);
+    // Still not expiry: nothing was sent, so there is no clock to run out.
     expect(canTransitionQuote("draft", "expired")).toBe(false);
   });
 
-  it("cannot approve a quote that was never sent", () => {
-    // The owner has to have SEEN the figure. Approving a draft would create
-    // an approved quote nobody was ever shown.
-    expect(canTransitionQuote("draft", "approved")).toBe(false);
+  it("still refuses to approve a draft through the TOKEN path", () => {
+    // The relaxation above is for a staff-recorded answer only. The owner's
+    // own link is minted by `send`, so a draft has no token to answer with
+    // — answerByToken looks the quote up BY token hash and a draft has
+    // none. Silence is still not consent.
+    expect(canTransitionQuote("draft", "sent")).toBe(true);
   });
 
   it("lets a sent quote be answered, time out, or be withdrawn", () => {
@@ -67,11 +80,29 @@ describe("the quote state machine", () => {
     }
   });
 
-  it("makes every answered state terminal", () => {
-    for (const from of ["approved", "declined", "expired", "withdrawn"] as QuoteStatus[]) {
+  it("makes declined, expired and withdrawn terminal", () => {
+    for (const from of ["declined", "expired", "withdrawn"] as QuoteStatus[]) {
       for (const to of QUOTE_STATUSES) {
-        expect(canTransitionQuote(from, to), ` -> `).toBe(false);
+        expect(canTransitionQuote(from, to), `${from} -> ${to}`).toBe(false);
       }
+    }
+  });
+
+  it("lets an approved quote be withdrawn, and nothing else", () => {
+    /*
+     * Added 06/11/2026. An approval used to be permanent, which sounds
+     * like integrity and was a trap: an owner mis-tapping Yes, or staff
+     * recording "they said yes" against the wrong dog, could only be
+     * undone by editing the database, because nothing in the app edits an
+     * invoice line afterwards.
+     *
+     * The caller checks nothing has billed it yet — this file cannot see
+     * an invoice. Withdrawing keeps decided_at and approval_source, so the
+     * original answer stays on the record rather than being erased.
+     */
+    expect(canTransitionQuote("approved", "withdrawn")).toBe(true);
+    for (const to of ["draft", "sent", "approved", "declined", "expired"] as QuoteStatus[]) {
+      expect(canTransitionQuote("approved", to), `approved -> ${to}`).toBe(false);
     }
   });
 
@@ -266,5 +297,59 @@ describe("the text the owner gets", () => {
     expect(quoteUrl("https://client.barkinbeautiful.com.au/", "abc")).toBe(
       "https://client.barkinbeautiful.com.au/quote/abc",
     );
+  });
+});
+
+describe("expiry is judged against the stored deadline", () => {
+  const sentAt = new Date("2026-11-06T00:00:00Z");
+
+  it("uses expires_at when it is there, not the current constant", () => {
+    /*
+     * The whole reason expires_at is a column. Recomputing from
+     * QUOTE_EXPIRY_HOURS means changing that constant moves the deadline
+     * on every quote already in flight — so an owner could be shown one
+     * time on their page and refused at another. The schema and the
+     * migration both say the stored value wins; this is what makes that
+     * true.
+     */
+    const stored = new Date(sentAt.getTime() + 8 * 3_600_000);
+    // Past the four-hour default, nowhere near the stored eight.
+    const justAfterDefault = new Date(sentAt.getTime() + 5 * 3_600_000);
+    expect(isQuoteExpired("sent", sentAt, justAfterDefault, stored)).toBe(false);
+    expect(isQuoteExpired("sent", sentAt, new Date(stored.getTime() + 1), stored)).toBe(true);
+  });
+
+  it("falls back to the constant for a quote with no stored deadline", () => {
+    const past = new Date(sentAt.getTime() + (QUOTE_EXPIRY_HOURS + 1) * 3_600_000);
+    expect(isQuoteExpired("sent", sentAt, past, null)).toBe(true);
+    expect(isQuoteExpired("sent", sentAt, sentAt, null)).toBe(false);
+  });
+
+  it("only ever expires a quote that was actually sent", () => {
+    const past = new Date(sentAt.getTime() + 99 * 3_600_000);
+    for (const status of ["draft", "approved", "declined", "expired", "withdrawn"] as QuoteStatus[]) {
+      expect(isQuoteExpired(status, sentAt, past, null), status).toBe(false);
+    }
+  });
+});
+
+describe("the invoice line always fits the column", () => {
+  it("trims a long description rather than failing the insert", () => {
+    /*
+     * invoice_lines.description is VARCHAR(255). The failure this
+     * prevents is nasty: it happens after the dog is complete and after
+     * the invoice header has been written with a total, so the bill ends
+     * up with a figure and no lines at all.
+     */
+    const line = quoteLineDescription("Bartholomew", "De-matting ".repeat(40));
+    expect(line.length).toBeLessThanOrEqual(255);
+    expect(line.endsWith(`(${QUOTE_LINE_SUFFIX})`)).toBe(true);
+    expect(line.startsWith("Bartholomew — ")).toBe(true);
+    // Visibly trimmed, not silently truncated mid-word with no sign.
+    expect(line).toContain("…");
+  });
+
+  it("leaves a normal line exactly as the groomer typed it", () => {
+    expect(quoteLineDescription("Link", "De-matting")).toBe("Link — De-matting (agreed on the day)");
   });
 });

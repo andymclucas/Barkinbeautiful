@@ -36,8 +36,23 @@ export default function GroomQuote() {
   const quote = trpc.groomQuotes.getByToken.useQuery({ token }, { enabled: valid, retry: false });
   const [answered, setAnswered] = useState<"approved" | "declined" | null>(null);
 
+  /*
+   * No refetch on success, and `answered` is checked before `error` below.
+   *
+   * Both matter. The answer is already known from the mutation's own
+   * result, so re-asking the server buys nothing — and it used to cost
+   * everything: answering cleared the token, the refetch 404'd, the error
+   * branch sat above the answered branch, and the owner watched "Thanks,
+   * we'll go ahead" turn into "This link is no longer active. Nothing has
+   * been charged" — while an invoice for exactly that work was being
+   * raised. The salon's own page contradicting its own bill is the dispute
+   * this feature exists to prevent, arriving by a different door.
+   *
+   * The token is kept now, so reopening the link later shows what they
+   * agreed to rather than a dead end.
+   */
   const answer = trpc.groomQuotes.answerByToken.useMutation({
-    onSuccess: (result) => { setAnswered(result.status); quote.refetch(); },
+    onSuccess: (result) => setAnswered(result.status),
   });
 
   const shell = (children: React.ReactNode) => (
@@ -45,6 +60,32 @@ export default function GroomQuote() {
       <div className="w-full max-w-md rounded-3xl bg-card p-6 text-center shadow-2xl sm:p-8">{children}</div>
     </main>
   );
+
+  // Their own answer, just given. Deliberately ABOVE the error branch, and
+  // reading from whatever the query already returned rather than depending
+  // on it — the confirmation of a decision somebody just made must never be
+  // at the mercy of a later network call.
+  if (answered) {
+    const approved = answered === "approved";
+    const salonName = quote.data?.salonName || "The salon";
+    const pet = quote.data?.petName || "your dog";
+    const total = quote.data?.total;
+    return shell(
+      <>
+        <div className={`mx-auto w-fit rounded-2xl p-4 ${approved ? "bg-emerald-400/20" : "bg-slate-400/20"}`}>
+          {approved
+            ? <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-300" />
+            : <XCircle className="h-8 w-8 text-slate-600 dark:text-slate-300" />}
+        </div>
+        <h1 className="mt-4 text-xl font-bold">{approved ? "Thanks — we'll go ahead" : "No problem"}</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {approved
+            ? `${salonName} will do the extra work on ${pet}${total ? ` and it will be added to your bill as $${total}` : ""}.`
+            : `${salonName} will carry on with ${pet}'s booked groom and you won't be charged anything extra.`}
+        </p>
+      </>,
+    );
+  }
 
   if (!valid || quote.error) {
     return shell(
@@ -64,26 +105,6 @@ export default function GroomQuote() {
 
   const { status, petName, salonName, reason, total, lines, expiresAt } = quote.data;
   const pet = petName || "your dog";
-
-  // Their own answer, just given.
-  if (answered) {
-    const approved = answered === "approved";
-    return shell(
-      <>
-        <div className={`mx-auto w-fit rounded-2xl p-4 ${approved ? "bg-emerald-400/20" : "bg-slate-400/20"}`}>
-          {approved
-            ? <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-300" />
-            : <XCircle className="h-8 w-8 text-slate-600 dark:text-slate-300" />}
-        </div>
-        <h1 className="mt-4 text-xl font-bold">{approved ? "Thanks — we'll go ahead" : "No problem"}</h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {approved
-            ? `${salonName} will do the extra work on ${pet} and it will be added to your bill as $${total}.`
-            : `${salonName} will carry on with ${pet}'s booked groom and you won't be charged anything extra.`}
-        </p>
-      </>,
-    );
-  }
 
   // Answered earlier, or timed out, or pulled. One line each, no buttons.
   if (status !== "sent") {

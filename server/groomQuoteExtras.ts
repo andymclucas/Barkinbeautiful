@@ -21,7 +21,7 @@
  * later is to widen this query, and that is the one change that would start
  * billing for work nobody agreed to.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { groomQuoteLines, groomQuotes } from "../drizzle/schema";
 
 export type ApprovedQuoteExtra = {
@@ -97,4 +97,50 @@ export function approvedQuoteExtrasTotal(extras: readonly ApprovedQuoteExtra[]):
     if (Number.isFinite(n)) cents += Math.round(n * 100);
   }
   return (cents / 100).toFixed(2);
+}
+
+export type ApprovedQuoteExtraForAppointment = ApprovedQuoteExtra & { appointmentId: number };
+
+/**
+ * The agreed extras across several appointments at once, for the payment
+ * panel and everything that settles up at the counter.
+ *
+ * Scoped by appointment id rather than tenant, matching the add-on query
+ * beside it in loadBillableTotals: the caller has already resolved which
+ * appointments it may see, and appointment ids are unique across salons.
+ *
+ * This exists because wiring quotes into the three INVOICE builders alone
+ * left the counter asking for the old figure. The invoice said $205, the
+ * panel said $145 owing, recording $205 was refused as "more than the
+ * outstanding", and the booking went out stamped paid in full with the
+ * agreed $60 stranded on a draft invoice nobody chases.
+ */
+export async function loadApprovedQuoteExtrasForAppointments(
+  db: any,
+  appointmentIds: number[],
+): Promise<ApprovedQuoteExtraForAppointment[]> {
+  if (appointmentIds.length === 0) return [];
+  const rows = await db
+    .select({
+      appointmentId: groomQuotes.appointmentId,
+      description: groomQuoteLines.description,
+      amount: groomQuoteLines.amount,
+    })
+    .from(groomQuotes)
+    .innerJoin(
+      groomQuoteLines,
+      and(
+        eq(groomQuoteLines.quoteId, groomQuotes.id),
+        eq(groomQuoteLines.tenantId, groomQuotes.tenantId),
+      ),
+    )
+    .where(and(
+      inArray(groomQuotes.appointmentId, appointmentIds),
+      eq(groomQuotes.status, "approved"),
+    ));
+  return rows.map((r: ApprovedQuoteExtraForAppointment) => ({
+    appointmentId: r.appointmentId,
+    description: r.description,
+    amount: String(r.amount),
+  }));
 }

@@ -282,10 +282,18 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
                     Price set by hand
                     {entry.billedOverrideReason ? ` — ${entry.billedOverrideReason}` : ""}
                   </>
-                ) : entry.addOnsTotal > 0 ? (
-                  <>{money(entry.servicePrice ?? 0)} groom + {money(entry.addOnsTotal)} extras</>
                 ) : (
-                  <>{money(entry.servicePrice ?? 0)} groom</>
+                  <>
+                    {money(entry.servicePrice ?? 0)} groom
+                    {entry.addOnsTotal > 0 && <> + {money(entry.addOnsTotal)} extras</>}
+                    {/* Named, not folded into "extras". A client querying
+                        the bill asks about THIS line, and the answer is
+                        that they agreed to it on the day — which is the
+                        whole reason the quote was recorded. */}
+                    {entry.approvedExtrasTotal > 0 && (
+                      <> + {money(entry.approvedExtrasTotal)} agreed on the day</>
+                    )}
+                  </>
                 )}
               </p>
             )}

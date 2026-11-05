@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  canQuoteInWorkflowState, describeQuoteStatus, isQuoteAwaitingAnswer,
+  canQuoteInWorkflowState, describeQuoteStatus,
   MAX_QUOTE_DOLLARS, quoteTotal, validateQuoteLines,
 } from "@shared/groomQuote";
 
@@ -50,7 +50,26 @@ export function GroomQuotePanel({
   const utils = trpc.useUtils();
   const quotable = canQuoteInWorkflowState(workflowState);
 
-  const list = trpc.groomQuotes.listForAppointment.useQuery({ tenantId, appointmentId });
+  /*
+   * Polled while anything is waiting on the owner.
+   *
+   * answerByToken is a publicProcedure, and publicProcedure carries no
+   * broadcastChange — so the owner tapping Yes emits nothing and this
+   * panel sat on "Waiting on the owner" until somebody closed and
+   * reopened the popup. The groomer would stand there with a dog on the
+   * table, having been told to wait, with the answer already given.
+   *
+   * Fifteen seconds, and only while there is an open quote: the window
+   * that matters is minutes long, and a board carrying thirty dogs must
+   * not poll for all of them for ever.
+   */
+  const list = trpc.groomQuotes.listForAppointment.useQuery(
+    { tenantId, appointmentId },
+    {
+      refetchInterval: (query) =>
+        query.state.data?.quotes.some((q) => q.status === "sent") ? 15_000 : false,
+    },
+  );
   const refresh = () => utils.groomQuotes.listForAppointment.invalidate({ tenantId, appointmentId });
 
   const [building, setBuilding] = useState(false);
@@ -76,6 +95,8 @@ export function GroomQuotePanel({
   });
 
   const quotes = list.data?.quotes ?? [];
+  /** An invoice already covers this booking, so an approval cannot be undone. */
+  const invoiced = Boolean(list.data?.invoiced);
   const draftTotal = quoteTotal(lines.filter((l) => l.description.trim() || l.amount));
   const validation = validateQuoteLines(
     lines.filter((l) => l.description.trim() || l.amount).map((l) => ({
@@ -110,21 +131,7 @@ export function GroomQuotePanel({
             <p className="mt-1 text-xs italic text-muted-foreground">{q.approvalNote}</p>
           )}
 
-          {q.status === "draft" && (
-            <div className="mt-2 flex gap-2">
-              <Button size="sm" className="h-8 flex-1" disabled={busy}
-                onClick={() => send.mutate({ tenantId, quoteId: q.id })}>
-                {send.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                <span className="ml-1.5">Text the owner</span>
-              </Button>
-              <Button size="sm" variant="ghost" className="h-8" disabled={busy}
-                onClick={() => withdraw.mutate({ tenantId, quoteId: q.id })}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          )}
-
-          {isQuoteAwaitingAnswer(q.status as any) && (
+          {(q.status === "draft" || q.status === "sent") && (
             answering === q.id ? (
               <div className="mt-2 space-y-2">
                 {/* Required, and the placeholder says what a useful one looks
@@ -151,7 +158,18 @@ export function GroomQuotePanel({
                 </div>
               </div>
             ) : (
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
+                {q.status === "draft" && (
+                  <Button size="sm" className="h-8 flex-1" disabled={busy}
+                    onClick={() => send.mutate({ tenantId, quoteId: q.id })}>
+                    {send.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    <span className="ml-1.5">{q.deliveryFailed ? "Try the text again" : "Text the owner"}</span>
+                  </Button>
+                )}
+                {/* Offered on a DRAFT too. The clients who cannot be texted
+                    at all — no mobile, or they replied STOP — are exactly
+                    the ones Text the owner refuses, and this used to be the
+                    only thing the error message told the groomer to do. */}
                 <Button size="sm" variant="outline" className="h-8 flex-1" disabled={busy}
                   onClick={() => setAnswering(q.id)}>
                   Record their answer
@@ -161,6 +179,29 @@ export function GroomQuotePanel({
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
+            )
+          )}
+
+          {q.status === "draft" && q.deliveryFailed && (
+            <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">
+              The text did not get through, so the owner has not seen this. Check the mobile
+              number, or ring them and record what they say.
+            </p>
+          )}
+
+          {q.status === "approved" && (
+            invoiced ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">On the bill for this booking.</p>
+            ) : (
+              /* Undo exists because an approval used to be permanent. An
+                 owner mis-tapping Yes, or this being recorded against the
+                 wrong dog, could otherwise only be fixed in the database.
+                 Refused once an invoice exists — nothing in the app edits
+                 an invoice line. */
+              <Button size="sm" variant="ghost" className="mt-1.5 h-7 text-xs" disabled={busy}
+                onClick={() => withdraw.mutate({ tenantId, quoteId: q.id })}>
+                Undo this approval
+              </Button>
             )
           )}
         </div>

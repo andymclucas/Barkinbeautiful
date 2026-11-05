@@ -39,6 +39,8 @@ import {
   invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, petWeights, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
   clientPackages, agreementSignatures, clientNotes,
+  groomQuotes,
+  groomQuoteLines,
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -78,6 +80,7 @@ import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFa
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
 import { groomQuotesRouter } from "./routers/groomQuotes";
+import { canQuoteInWorkflowState } from "@shared/groomQuote";
 import { loadApprovedQuoteExtras, approvedQuoteExtrasTotal } from "./groomQuoteExtras";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
@@ -2186,6 +2189,33 @@ const calendarRouter = router({
       });
 
       /*
+       * The dog is leaving, so any quote still waiting on the owner stops
+       * waiting.
+       *
+       * Without this an unanswered quote keeps a live link for up to four
+       * hours after pickup. The owner taps Yes from the car park, their
+       * page says "it will be added to your bill", and nothing is
+       * charged — decideAppointmentInvoice has already returned
+       * already_invoiced, and nothing in the app adds a line to an
+       * invoice that exists. Expiring it means the owner is told the
+       * truth and the groomer sees "No answer — not charged" rather than
+       * a clock that never stops.
+       *
+       * Only `sent` rows, so an answer arriving in the same second wins.
+       * A draft is left alone: it was never shown to anybody and the
+       * groomer may still be mid-sentence with them at the counter.
+       */
+      if (!canQuoteInWorkflowState(input.newState)) {
+        await db.update(groomQuotes)
+          .set({ status: "expired", updatedAt: new Date() })
+          .where(and(
+            eq(groomQuotes.tenantId, appt.tenantId),
+            eq(groomQuotes.appointmentId, input.appointmentId),
+            eq(groomQuotes.status, "sent"),
+          ));
+      }
+
+      /*
        * Andy, 04/11/2026: "Send auto cancellation and reschedule texts
        * also."
        *
@@ -2562,6 +2592,21 @@ const calendarRouter = router({
       // Remove only records that cannot exist without their parent appointment.
       await db.delete(workflowLogs).where(inArray(workflowLogs.appointmentId, appointmentIds));
       await db.delete(groomingReports).where(inArray(groomingReports.appointmentId, appointmentIds));
+      /* A quote cannot exist without its appointment — it names the dog,
+         the booking and the work found on the day. Lines first, so a
+         failure between the two cannot strand lines with no quote.
+         Nothing financial is lost: an approved quote that reached a bill
+         is already on the invoice, and invoices are unlinked rather than
+         deleted just below. */
+      {
+        const quoteIds = (await db.select({ id: groomQuotes.id }).from(groomQuotes)
+          .where(inArray(groomQuotes.appointmentId, appointmentIds)))
+          .map((r: { id: number }) => r.id);
+        if (quoteIds.length > 0) {
+          await db.delete(groomQuoteLines).where(inArray(groomQuoteLines.quoteId, quoteIds));
+          await db.delete(groomQuotes).where(inArray(groomQuotes.id, quoteIds));
+        }
+      }
       await db.update(invoices).set({ appointmentId: null }).where(inArray(invoices.appointmentId, appointmentIds));
       await db.update(petPhotos).set({ appointmentId: null }).where(inArray(petPhotos.appointmentId, appointmentIds));
       await db.update(groomStyleNotes).set({ appointmentId: null }).where(inArray(groomStyleNotes.appointmentId, appointmentIds));

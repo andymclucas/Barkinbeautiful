@@ -64,16 +64,28 @@ describe("the loader cannot quietly widen to unapproved quotes", () => {
    * charging people who never agreed, and it would pass every other test in
    * this suite.
    */
-  it("filters on approved and nothing else", () => {
-    expect(source).toContain('eq(groomQuotes.status, "approved")');
+  it("filters on approved and nothing else, in every loader", () => {
+    /*
+     * Counted rather than pinned at one. There are two loaders now — one
+     * appointment for the invoice, several for the payment panel — and
+     * the rule is not "there is a single filter" but "every filter says
+     * approved". Pinning the number just breaks when a third is added,
+     * which teaches whoever adds it to edit the test.
+     */
+    const filters = source.match(/eq\(groomQuotes\.status,\s*"([a-z]+)"\)/g) ?? [];
+    expect(filters.length).toBeGreaterThanOrEqual(2);
+    for (const filter of filters) {
+      expect(filter, "every quote loader must select approved only").toContain('"approved"');
+    }
+
     for (const status of ["draft", "sent", "declined", "expired", "withdrawn"]) {
-      expect(source, `the invoice loader must never select ${status} quotes`)
+      expect(source, `the invoice loaders must never select ${status} quotes`)
         .not.toContain(`"${status}"`);
     }
-    // One status filter, so a second cannot be ORed in beside it.
-    expect(source.match(/eq\(groomQuotes\.status,/g)).toHaveLength(1);
+    // No way to widen a status filter into a set or an alternation.
     expect(source).not.toContain("inArray(groomQuotes.status");
-    expect(source).not.toContain("or(");
+    expect(source).not.toContain("ne(groomQuotes.status");
+    expect(source).not.toMatch(/\bor\(/);
   });
 
   it("scopes every read to one salon", () => {

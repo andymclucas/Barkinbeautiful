@@ -100,11 +100,40 @@ export function canQuoteInWorkflowState(workflowState: string | null | undefined
 
 /** Where each state may go next. Everything absent is terminal. */
 const TRANSITIONS: Readonly<Record<QuoteStatus, readonly QuoteStatus[]>> = {
-  draft: ["sent", "withdrawn"],
+  /*
+   * A draft can be ANSWERED as well as sent, which looks like it breaks
+   * rule 1 and does not.
+   *
+   * The two clients who most need this are the ones who cannot be texted
+   * at all: no mobile on file, or they replied STOP. For them `send`
+   * refuses, and `send` was the only way out of draft — so the groomer
+   * could raise a quote, be told by the app to "ring them and record
+   * their answer", and find no way to record it. They would then work on
+   * a verbal yes and bill it as a hand-typed add-on with no record of
+   * who agreed, which is the one outcome this feature exists to prevent.
+   *
+   * The figure is still frozen at the moment of the answer, because
+   * canEditQuote is false for every state past draft and the answer is
+   * written in one guarded statement. What the owner was told came from
+   * a person reading it to them, which is exactly what approvalSource
+   * "staff" and the required note record.
+   */
+  draft: ["sent", "approved", "declined", "withdrawn"],
   // A sent quote can still be answered by either side, time out, or be
   // withdrawn by the groomer who realises the price is wrong.
   sent: ["approved", "declined", "expired", "withdrawn"],
-  approved: [],
+  /*
+   * An approved quote can be withdrawn, but ONLY while nothing has
+   * billed it — the caller checks that, because this file cannot see an
+   * invoice.
+   *
+   * Without it an approval was permanent: a mis-tap by the owner, or a
+   * staff "They said yes" on the wrong dog, could only be undone by
+   * editing the database, since nothing in the app edits an invoice line
+   * afterwards. Recording the reversal as `withdrawn` keeps the original
+   * answer in decided_at and approval_source rather than erasing it.
+   */
+  approved: ["withdrawn"],
   declined: [],
   expired: [],
   withdrawn: [],
@@ -195,9 +224,29 @@ export function quoteExpiresAt(sentAt: Date): Date {
   return new Date(sentAt.getTime() + QUOTE_EXPIRY_HOURS * 3_600_000);
 }
 
-export function isQuoteExpired(status: QuoteStatus, sentAt: Date | null, now: Date): boolean {
-  if (status !== "sent" || !sentAt) return false;
-  return now.getTime() >= quoteExpiresAt(sentAt).getTime();
+/**
+ * Has this quote run out of time?
+ *
+ * Judged against the deadline STORED on the quote, falling back to one
+ * computed from sentAt only when there is no stored value.
+ *
+ * That is the whole reason expires_at is a column: recomputing from the
+ * current QUOTE_EXPIRY_HOURS means changing the constant retroactively
+ * moves the deadline on every quote already in flight, so an owner could
+ * be told 1:40pm on their page and be refused at 1:20pm. The schema and
+ * the migration both say the stored value is authoritative; this is what
+ * makes that true.
+ */
+export function isQuoteExpired(
+  status: QuoteStatus,
+  sentAt: Date | null,
+  now: Date,
+  expiresAt?: Date | null,
+): boolean {
+  if (status !== "sent") return false;
+  const deadline = expiresAt ?? (sentAt ? quoteExpiresAt(sentAt) : null);
+  if (!deadline) return false;
+  return now.getTime() >= deadline.getTime();
 }
 
 /**
@@ -232,9 +281,24 @@ export function describeQuoteStatus(status: QuoteStatus, source?: QuoteApprovalS
  */
 export const QUOTE_LINE_SUFFIX = "agreed on the day";
 
+/**
+ * invoice_lines.description is VARCHAR(255) and this wraps the groomer's
+ * text in a pet name and a suffix, so a long line could exceed it.
+ *
+ * That failure lands at the worst possible moment: the dog is already
+ * marked complete, the invoice header has been inserted with a total, and
+ * the line insert throws — leaving a bill with a figure and no lines. So
+ * the description is trimmed to fit rather than being allowed to overflow,
+ * and the trim is visible rather than silent.
+ */
+export const INVOICE_LINE_MAX = 255;
+
 export function quoteLineDescription(petName: string | null | undefined, description: string): string {
   const pet = petName?.trim() || "Pet";
-  return `${pet} — ${description} (${QUOTE_LINE_SUFFIX})`;
+  const wrapper = `${pet} —  (${QUOTE_LINE_SUFFIX})`.length;
+  const room = INVOICE_LINE_MAX - wrapper;
+  const body = description.length > room ? `${description.slice(0, Math.max(0, room - 1))}…` : description;
+  return `${pet} — ${body} (${QUOTE_LINE_SUFFIX})`;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
