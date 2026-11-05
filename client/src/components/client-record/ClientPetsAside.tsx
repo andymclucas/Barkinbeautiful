@@ -59,8 +59,20 @@ export function ClientPetsAside({ clientId, pets }: { clientId: number; pets: As
               <div className="flex items-start gap-2">
                 <Dog className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{pet.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  {/*
+                    * Wraps rather than truncates.
+                    *
+                    * Andy, 05/11/2026: "Need to be able to see all text
+                    * in all the boxes." This aside is a narrow column,
+                    * and truncate turned a dog's details into
+                    * "Cavoodle · 10.50 kg · Small–Medium (1…" — the
+                    * size band, which is what the dog grooms like and
+                    * the single most useful thing on the line, cut off
+                    * mid-word. The parent is already min-w-0 flex-1, so
+                    * wrapping costs a line and loses nothing.
+                    */}
+                  <p className="text-sm font-semibold">{pet.name}</p>
+                  <p className="text-xs text-muted-foreground">
                     {[pet.breed, weight ? `${weight} kg` : null, band].filter(Boolean).join(" · ") || "No details recorded"}
                   </p>
                 </div>

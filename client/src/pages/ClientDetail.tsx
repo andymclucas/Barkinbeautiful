@@ -1343,7 +1343,11 @@ export default function ClientDetail() {
                     {upcomingBookings.map(a => (
                       <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
+                          {/* Not truncated: "Teddy · Classic Gro…" hides
+                              the one thing the row is for. The parent is
+                              min-w-0 inside a flex-wrap row, so this wraps
+                              to a second line instead of being cut. */}
+                          <p className="text-sm font-medium">
                             {a.petName} &middot; {SERVICE_LABELS[a.serviceType] ?? a.serviceType}
                           </p>
                           <p className="text-xs text-muted-foreground">
@@ -1580,6 +1584,33 @@ export default function ClientDetail() {
                           MoeGo never gave us one. Recording a weight sets
                           the band automatically; this is for the dogs
                           nobody is going to put on the scales. */}
+                      {/*
+                        * w-full, not a fixed width.
+                        *
+                        * Andy, 05/11/2026, with a photo of this card:
+                        * "Fix alignment so no boxes are cut off." At
+                        * w-[200px] these two dropdowns were the only
+                        * things in the card that did not reach its
+                        * right edge — every other box sat 16px from
+                        * each side, and these stopped at 42, so they
+                        * read as truncated. The pet card is a narrow
+                        * column whose width changes with the layout,
+                        * so any fixed width is wrong at most sizes.
+                        *
+                        * w-full and not flex-1: the Size row carries a
+                        * third item, the "from the recorded weight"
+                        * caption, so flex-1 makes the box share the
+                        * line with it and the dropdown collapses to
+                        * 46px. Measured both on the real card before
+                        * choosing. w-full puts the box on its own
+                        * line at the card's full width, which is what
+                        * every other box in the card already does.
+                        *
+                        * min-w-0 because a flex item will not shrink
+                        * below its content otherwise, which is how a
+                        * long groomer name would push the box back
+                        * out past the edge.
+                        */}
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-muted-foreground text-sm">Size:</span>
                         <Select
@@ -1591,7 +1622,7 @@ export default function ClientDetail() {
                             })
                           }
                         >
-                          <SelectTrigger className="h-8 w-[200px] text-sm"><SelectValue placeholder="Not set" /></SelectTrigger>
+                          <SelectTrigger className="h-8 w-full min-w-0 text-sm"><SelectValue placeholder="Not set" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">Not set</SelectItem>
                             {SIZE_BAND_IDS.map((band) => (
@@ -1622,7 +1653,7 @@ export default function ClientDetail() {
                             })
                           }
                         >
-                          <SelectTrigger className="h-8 w-[200px] text-sm" aria-label={`Usual groomer for ${pet.name}`}>
+                          <SelectTrigger className="h-8 w-full min-w-0 text-sm" aria-label={`Usual groomer for ${pet.name}`}>
                             <SelectValue placeholder="No preference" />
                           </SelectTrigger>
                           <SelectContent>
