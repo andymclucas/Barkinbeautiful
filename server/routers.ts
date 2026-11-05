@@ -111,7 +111,7 @@ import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
 import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
-import { lapsedClients as lapsedClientRows } from "@shared/lapsedClients";
+import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
@@ -4308,6 +4308,16 @@ const clientsRouter = router({
       /** How many of their own gaps away counts as gone rather than late. */
       overdueFactor: z.number().min(1).max(10).default(2),
       minVisits: z.number().int().min(2).max(20).default(3),
+      /*
+       * Sorting is done HERE, not in the browser, because the rows are
+       * sliced to `limit` below. A client-side sort would reorder the
+       * top `limit` BY REVENUE and silently omit everyone who did not
+       * make that cut — a complete-looking table answering a different
+       * question. On the salon's own book that is 241 clients shown as
+       * 200.
+       */
+      sortBy: z.enum(LAPSED_SORT_KEYS).default("notTaken"),
+      sortDir: z.enum(["asc", "desc"]).default("desc"),
     }).optional())
     .query(async ({ input, ctx }) => {
       const db = await getDb();
@@ -4407,13 +4417,17 @@ const clientsRouter = router({
 
       /*
        * Still paying and not coming goes first, whatever the spend says
-       * about them. Everyone else by what their absence is costing.
+       * about them. Everyone else by the chosen column, defaulting to
+       * what their absence is costing. The comparator lives in
+       * shared/lapsedClients.ts beside the report it orders, so the
+       * membership pin cannot be lost by a future caller sorting these
+       * rows somewhere else.
        */
-      const ranked = withDetail.sort((a, b) => {
-        if (a.onMembership !== b.onMembership) return a.onMembership ? -1 : 1;
-        return b.estimatedLostRevenue - a.estimatedLostRevenue
-          || b.totalSpend - a.totalSpend;
-      });
+      const ranked = sortLapsedRows(
+        withDetail,
+        input?.sortBy ?? "notTaken",
+        input?.sortDir ?? "desc",
+      );
 
       return {
         total: ranked.length,

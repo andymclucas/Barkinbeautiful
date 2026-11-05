@@ -4,7 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/DateField";
-import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff } from "lucide-react";
+import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
+import { LAPSED_SORT_DEFAULT_DIR, type LapsedSortKey, type LapsedSortDir } from "@shared/lapsedClients";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -35,6 +36,48 @@ const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
   fft: "FFT (Face, Feet & Hygiene Tidy)", nail_trim: "Nail Trim", daycare: "Daycare", deshed: "De-shed", other: "Other",
 };
+
+/**
+ * One sortable column heading.
+ *
+ * A button inside the th rather than a click handler on the th, so it is
+ * reachable by keyboard and announced as a control; `aria-sort` on the th
+ * is what tells a screen reader which way the table is ordered. Both are
+ * free here and neither is obvious to add later.
+ *
+ * The arrow is always rendered — faint when the column is not the active
+ * one — so the heading row does not change width when the sort moves and
+ * nudge every column sideways.
+ */
+function LapsedTh({ label, sortKey, sort, onSort, num }: {
+  label: string;
+  sortKey: LapsedSortKey;
+  sort: { key: LapsedSortKey; dir: LapsedSortDir };
+  onSort: (key: LapsedSortKey) => void;
+  num?: boolean;
+}) {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ChevronsUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <th
+      scope="col"
+      className={num ? "num" : undefined}
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        title={`Sort by ${label.toLowerCase()}`}
+        className={`inline-flex w-full items-center gap-1 uppercase tracking-[0.06em] transition-colors hover:text-foreground ${
+          num ? "justify-end" : "justify-start"
+        } ${active ? "text-foreground" : ""}`}
+      >
+        {label}
+        <Icon className={`h-3 w-3 shrink-0 ${active ? "opacity-100" : "opacity-35"}`} />
+      </button>
+    </th>
+  );
+}
 
 export default function Reporting() {
   // The same period control Analytics uses, so the two pages cannot
@@ -78,10 +121,43 @@ export default function Reporting() {
   /* How many of their own gaps away counts as gone rather than late.
      Left open because the right answer differs by salon and by season. */
   const [lapsedFactor, setLapsedFactor] = useState(2);
+  /*
+   * Sorting is a QUERY parameter, not a client-side array sort. The server
+   * ranks every lapsed client and returns the first `limit`; reordering
+   * what it sent back would sort the top 200 BY REVENUE and quietly leave
+   * out the other 41. See the note on the procedure's sortBy input.
+   */
+  const [lapsedSort, setLapsedSort] = useState<{ key: LapsedSortKey; dir: LapsedSortDir }>(
+    { key: "notTaken", dir: "desc" },
+  );
+  /** Same column flips direction; a new column opens the way it is most useful. */
+  const toggleLapsedSort = (key: LapsedSortKey) =>
+    setLapsedSort((curr) =>
+      curr.key === key
+        ? { key, dir: curr.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: LAPSED_SORT_DEFAULT_DIR[key] });
   const { data: lapsed, isLoading: loadingLapsed } =
     trpc.clients.lapsedClients.useQuery(
-      { limit: 200, overdueFactor: lapsedFactor },
-      { enabled: reportTab === "clients" },
+      { limit: 200, overdueFactor: lapsedFactor, sortBy: lapsedSort.key, sortDir: lapsedSort.dir },
+      {
+        enabled: reportTab === "clients",
+        /*
+         * Sorting changes the query key, so each new column is a fetch.
+         * These two keep that honest rather than expensive: the previous
+         * rows stay on screen instead of the table collapsing to
+         * "Loading…" and back, and flicking between columns that have
+         * already been asked for is served from cache rather than
+         * re-scanning the book each time.
+         *
+         * Deliberate, given 05/11/2026: the outage that morning was six
+         * queries on EVERY page load, two of them full scans. This one is
+         * gated on its own tab and fires on a click, which is a different
+         * shape — but it reads the same table, so it gets cached rather
+         * than left to repeat.
+         */
+        placeholderData: (previous) => previous,
+        staleTime: 5 * 60_000,
+      },
     );
   /* From the server, over every lapsed client — NOT a sum of the rows
      on screen, which stop at the query limit and would print a figure
@@ -516,13 +592,13 @@ export default function Reporting() {
                 <table className="console-table">
                   <thead>
                     <tr>
-                      <th scope="col">Client</th>
-                      <th scope="col" className="num">Visits</th>
-                      <th scope="col" className="num">Usual gap</th>
-                      <th scope="col">Last seen</th>
-                      <th scope="col" className="num">Away</th>
-                      <th scope="col" className="num">Missed</th>
-                      <th scope="col" className="num">Not taken</th>
+                      <LapsedTh label="Client" sortKey="name" sort={lapsedSort} onSort={toggleLapsedSort} />
+                      <LapsedTh label="Visits" sortKey="visits" sort={lapsedSort} onSort={toggleLapsedSort} num />
+                      <LapsedTh label="Usual gap" sortKey="usualGap" sort={lapsedSort} onSort={toggleLapsedSort} num />
+                      <LapsedTh label="Last seen" sortKey="lastSeen" sort={lapsedSort} onSort={toggleLapsedSort} />
+                      <LapsedTh label="Away" sortKey="away" sort={lapsedSort} onSort={toggleLapsedSort} num />
+                      <LapsedTh label="Missed" sortKey="missed" sort={lapsedSort} onSort={toggleLapsedSort} num />
+                      <LapsedTh label="Not taken" sortKey="notTaken" sort={lapsedSort} onSort={toggleLapsedSort} num />
                     </tr>
                   </thead>
                   <tbody>
