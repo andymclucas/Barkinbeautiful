@@ -1,4 +1,5 @@
 import { applyLineDiscount, discountFromColumns, describeLineDiscount } from "./lineDiscount";
+import { quoteLineDescription } from "./groomQuote";
 /**
  * Extras done on the day, and the itemised invoice they produce.
  *
@@ -78,6 +79,18 @@ export function buildInvoiceLines(input: {
    * nothing else reads like a mistake.
    */
   membershipCovered?: boolean;
+  /**
+   * Extra work the owner agreed to mid-groom — see shared/groomQuote.ts.
+   *
+   * ALWAYS charged, membership or not. A membership groom carries no price
+   * because the weekly payment covers it, but extras done on the day ARE
+   * invoiced (Andy, 07/10/2026), and suppressing these for a membership dog
+   * would give away every de-matt the salon ever agreed a price for.
+   *
+   * Last, after the add-ons, because that is the order the day happened in:
+   * the groom was booked, the add-ons were chosen, and this was found.
+   */
+  approvedExtras?: readonly { description: string; amount: string | number }[];
 }): { lines: InvoiceLine[]; subtotalCents: number; subtotal: string } {
   const pet = input.petName?.trim() || "Pet";
   // Zero, explicitly: never the recorded price. A membership groom should
@@ -133,6 +146,17 @@ export function buildInvoiceLines(input: {
         lineTotal: centsToAmount(-discounted.discountCents),
       });
     }
+  }
+
+  for (const extra of input.approvedExtras ?? []) {
+    const extraCents = toCents(extra.amount);
+    subtotalCents += extraCents;
+    lines.push({
+      description: quoteLineDescription(input.petName, extra.description),
+      quantity: "1",
+      unitPrice: centsToAmount(extraCents),
+      lineTotal: centsToAmount(extraCents),
+    });
   }
 
   return { lines, subtotalCents, subtotal: centsToAmount(subtotalCents) };

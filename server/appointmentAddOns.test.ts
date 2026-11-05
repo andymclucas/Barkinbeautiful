@@ -562,3 +562,73 @@ describe("a cancelled dog must not be billed", () => {
     expect(countsTowardBooking({ status: null, workflowState: null })).toBe(true);
   });
 });
+
+describe("extra work the owner agreed to mid-groom", () => {
+  it("adds an approved quote as its own line, after the add-ons", () => {
+    const { lines, subtotal } = buildInvoiceLines({
+      petName: "Fergus",
+      serviceLabel: "Classic Groom",
+      servicePrice: "95.00",
+      addOns: [{ name: "Anal Glands", unitPrice: "15.00" }],
+      approvedExtras: [{ description: "De-matting", amount: "40.00" }],
+    });
+    expect(lines.map((l) => l.description)).toEqual([
+      "Fergus — Classic Groom",
+      "Fergus — Anal Glands",
+      "Fergus — De-matting (agreed on the day)",
+    ]);
+    expect(subtotal).toBe("150.00");
+  });
+
+  it("says on the line that the owner agreed, so the charge is recognisable weeks later", () => {
+    const { lines } = buildInvoiceLines({
+      petName: "Lola",
+      serviceLabel: "Bath",
+      servicePrice: "55.00",
+      addOns: [],
+      approvedExtras: [{ description: "Ear clean", amount: "20.00" }],
+    });
+    expect(lines[1].description).toContain("agreed on the day");
+  });
+
+  it("charges the extra on a membership dog, whose groom is covered", () => {
+    // A membership groom carries no price — the weekly payment covers it —
+    // but extras done on the day ARE invoiced (Andy, 07/10/2026). This is
+    // the case most likely to get broken later, so it is pinned.
+    const { lines, subtotal } = buildInvoiceLines({
+      petName: "Pip",
+      serviceLabel: "Styled Groom",
+      servicePrice: "120.00",
+      addOns: [],
+      membershipCovered: true,
+      approvedExtras: [{ description: "De-matting", amount: "40.00" }],
+    });
+    expect(lines[0].lineTotal).toBe("0.00");
+    expect(lines[0].description).toContain("covered by membership");
+    expect(lines[1].lineTotal).toBe("40.00");
+    expect(subtotal).toBe("40.00");
+  });
+
+  it("adds nothing when there are no approved extras", () => {
+    const withNone = buildInvoiceLines({
+      petName: "Boo", serviceLabel: "Bath", servicePrice: "50.00", addOns: [],
+    });
+    const withEmpty = buildInvoiceLines({
+      petName: "Boo", serviceLabel: "Bath", servicePrice: "50.00", addOns: [], approvedExtras: [],
+    });
+    expect(withNone.lines).toHaveLength(1);
+    expect(withEmpty.lines).toHaveLength(1);
+    expect(withNone.subtotal).toBe("50.00");
+  });
+
+  it("totals several approved quotes without floating-point drift", () => {
+    const { subtotal } = buildInvoiceLines({
+      petName: "Ruby", serviceLabel: "Bath", servicePrice: "0", addOns: [],
+      approvedExtras: [
+        { description: "a", amount: 0.1 },
+        { description: "b", amount: 0.2 },
+      ],
+    });
+    expect(subtotal).toBe("0.30");
+  });
+});
