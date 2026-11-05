@@ -11,6 +11,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Pencil, Plus, Power, Tags, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { RetailSection } from "@/components/RetailSection";
 
 type ServiceRecord = {
   id: number;
@@ -103,7 +104,7 @@ const displayServicePrice = (record: Pick<ServiceRecord, "priceMode" | "priceAud
 export default function Pricing() {
   const { user, loading } = useAuth();
   const utils = trpc.useUtils();
-  const [activeTab, setActiveTab] = useState<"services" | "add-ons" | "memberships" | "pet-codes">("services");
+  const [activeTab, setActiveTab] = useState<"services" | "add-ons" | "memberships" | "pet-codes" | "retail">("services");
   const [serviceEditor, setServiceEditor] = useState<{ record?: ServiceRecord; form: ServiceFormState } | null>(null);
   const [planEditor, setPlanEditor] = useState<{ record?: MembershipPlanRecord; form: ReturnType<typeof emptyPlanForm> } | null>(null);
 
@@ -206,17 +207,21 @@ export default function Pricing() {
         </div>
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
-          <TabsList className="grid w-full grid-cols-4 sm:w-[580px]">
+          <TabsList className="grid w-full grid-cols-5 sm:w-[700px]">
             <TabsTrigger value="services">Services <span className="ml-1 text-xs text-muted-foreground">{services.length}</span></TabsTrigger>
             <TabsTrigger value="add-ons">Add-ons <span className="ml-1 text-xs text-muted-foreground">{addOns.length}</span></TabsTrigger>
             <TabsTrigger value="memberships">Memberships <span className="ml-1 text-xs text-muted-foreground">{planRows.length}</span></TabsTrigger>
             <TabsTrigger value="pet-codes">Pet codes</TabsTrigger>
+            {/* Andy, 05/11/2026: "create another section under pricing
+                and services for 'retail'". */}
+            <TabsTrigger value="retail">Retail</TabsTrigger>
           </TabsList>
 
           <TabsContent value="services" className="mt-4"><CatalogueTable rows={services} loading={servicesLoading} onEdit={(record) => openServiceEditor("service", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ id: record.id }); }} /></TabsContent>
           <TabsContent value="add-ons" className="mt-4"><CatalogueTable rows={addOns} loading={servicesLoading} onEdit={(record) => openServiceEditor("add_on", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ id: record.id }); }} /></TabsContent>
           <TabsContent value="memberships" className="mt-4"><MembershipPlanTable rows={planRows} loading={plansLoading} onEdit={openPlanEditor} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change existing memberships.`)) deletePlanMutation.mutate({ id: record.id }); }} /></TabsContent>
           <TabsContent value="pet-codes" className="mt-4"><PetCodeCatalogue /></TabsContent>
+          <TabsContent value="retail" className="mt-4"><RetailSection /></TabsContent>
         </Tabs>
       </div>
 
