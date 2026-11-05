@@ -236,3 +236,38 @@ export function quoteLineDescription(petName: string | null | undefined, descrip
   const pet = petName?.trim() || "Pet";
   return `${pet} — ${description} (${QUOTE_LINE_SUFFIX})`;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Reaching the owner
+ *
+ * Deliberately crypto-free so the client bundle can import the rules above
+ * without pulling node:crypto in behind them. Minting and hashing the token
+ * is server work and lives in server/quoteToken.ts.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** Where the owner answers. Its own path, not under /portal: they are not
+ * signed in and must not be asked to be — the dog is on the table. */
+export function quoteUrl(baseUrl: string, token: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/quote/${token}`;
+}
+
+/**
+ * The text the owner gets.
+ *
+ * Plain ASCII on purpose. One non-GSM character — an em-dash, a curly
+ * apostrophe, the £ sign — forces the whole message into UCS-2, which cuts
+ * a segment from 160 characters to 70 and doubles the bill. The URL alone
+ * is about 70 characters, so a second segment is one stray dash away.
+ *
+ * The figure is in the message rather than only behind the link, because
+ * an owner should be able to tell from the notification whether this needs
+ * dealing with right now.
+ */
+export function quoteRequestSms(input: {
+  salonName: string;
+  petName: string;
+  total: string;
+  url: string;
+}): string {
+  return `${input.salonName}: extra work needed on ${input.petName}, $${input.total}. OK to go ahead? ${input.url}`;
+}

@@ -62,6 +62,18 @@ const PUBLIC = [
   "clientPortalRouter.rescheduleAppointment",
   "clientPortalRouter.sendChatMessage",
   "clientPortalRouter.updateMyProfile",
+  // An owner answering a quote for extra work found mid-groom, from a
+  // texted link. Public on purpose and not behind the portal login: the
+  // dog is on the table and an answer is wanted in minutes, so a password
+  // reset between the groomer and the answer means no answer.
+  //
+  // What the token can do is deliberately tiny: approve or decline ONE
+  // named piece of work at ONE frozen price, for four hours, after which
+  // it bills nothing. It reads no client record and changes no money by
+  // itself — an approval only makes the extra billable on an invoice the
+  // salon raises later.
+  "groomQuotesRouter.answerByToken",
+  "groomQuotesRouter.getByToken",
   "groomingReportsRouter.getCardReviewState",
   "groomingReportsRouter.getShared",
   "groomingReportsRouter.markPublicReviewOpened",
@@ -191,6 +203,23 @@ const OPERATIONAL = [
   "familyRouter.linkPets",
   "familyRouter.searchPets",
   "familyRouter.unlinkPet",
+  /*
+   * Quoting extra work, 06/11/2026. operationalProcedure throughout,
+   * because the person who finds matting is the groomer and most groomers
+   * here are restricted `staff` accounts — protectedProcedure would reject
+   * exactly the people the feature is for (CLAUDE.md §5).
+   *
+   * Each one still calls requireApprovedStaffAppointmentAccess, so a
+   * groomer reaches only their own salon's bookings. None of them charges
+   * anybody: raise and send ask a question, and recordAnswer writes down
+   * an answer a person gave, marked as staff-recorded rather than as the
+   * owner tapping the link.
+   */
+  "groomQuotesRouter.listForAppointment",
+  "groomQuotesRouter.raise",
+  "groomQuotesRouter.recordAnswer",
+  "groomQuotesRouter.send",
+  "groomQuotesRouter.withdraw",
   "groomStyleNotesRouter.create",
   "groomStyleNotesRouter.delete",
   "groomStyleNotesRouter.getLastCompletedStyle",
@@ -351,13 +380,20 @@ describe("tRPC procedure surface", () => {
     // updateWeight beside it, and reachable by restricted staff for the
     // same reason — a dog is weighed on the salon floor at its groom, so
     // a groomer must be able to take the reading and see the last one.
-    expect(surface).toHaveLength(380);
+    //
+    // 387 since 06/11/2026: the groomQuotes router, for agreeing extra
+    // work while the dog is on the table. Five operational (the groomer's
+    // end) and two public (the owner's, reached by a texted token).
+    expect(surface).toHaveLength(387);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
   it("exposes exactly these procedures without authentication", () => {
     expect(idsOfKind(surface, "public")).toEqual(PUBLIC);
-    expect(PUBLIC).toHaveLength(51);
+    // 53 since 06/11/2026: groomQuotes getByToken and answerByToken, the
+    // owner's end of a mid-groom quote. Unauthenticated by design — the
+    // note beside them in PUBLIC says what bounds them.
+    expect(PUBLIC).toHaveLength(53);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
@@ -376,8 +412,13 @@ describe("tRPC procedure surface", () => {
      * person who widens their dates when they ring back, and making the
      * edit owner-only would send them round the delete-and-re-add route
      * that loses the client's place in the queue.
+     *
+     * 138 since 06/11/2026: the five groomQuotes procedures a groomer
+     * uses at the board. A restricted groomer is the whole point of the
+     * feature, so protectedProcedure would have locked out everyone it
+     * is for.
      */
-    expect(OPERATIONAL).toHaveLength(133);
+    expect(OPERATIONAL).toHaveLength(138);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

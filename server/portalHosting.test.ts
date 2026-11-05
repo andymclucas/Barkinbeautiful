@@ -86,6 +86,7 @@ describe("which door a page belongs to", () => {
       "/portal/card-saved": "client", "/portal/card-cancelled": "client",
       "/portal/:token": "client", "/track/:token": "client", "/photo/:token": "client",
       "/slot/:token": "client", "/card/:token": "client",
+      "/quote/:token": "client",
     };
 
     const unlisted = declared.filter((p) => !(p in expected));

@@ -33,6 +33,13 @@ export const SECTION_BY_NAMESPACE: Readonly<Record<string, StaffSection>> = {
   workflow: "workflow",
   workflowReview: "workflow",
   tracker: "workflow",
+  // Quoting extra work is done at the board with a dog on the table, so
+  // it belongs to whoever is granted the floor. Gating it behind
+  // "pricing" instead would read tidier — it does set a charge — and
+  // would lock out every groomer, which is the only person who can raise
+  // one. The money guard is elsewhere: nothing bills until the OWNER
+  // approves.
+  groomQuotes: "workflow",
 
   clients: "clients",
   pets: "clients",

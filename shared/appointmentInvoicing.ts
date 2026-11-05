@@ -26,6 +26,21 @@ export type InvoiceDecisionInput = {
    * away by a guard meant for appointments with nothing on them at all.
    */
   addOnsTotal?: string | number | null;
+  /**
+   * What the owner AGREED TO mid-groom comes to, in dollars — see
+   * shared/groomQuote.ts. Approved quotes only; a quote nobody answered
+   * bills nothing.
+   *
+   * It has to be counted here and not just itemised later, because this
+   * function decides whether an invoice exists AT ALL. A membership dog
+   * whose groom is covered and who had no add-ons returns
+   * "membership_covered" below, so a $60 de-matt the owner said yes to on
+   * the phone would raise no invoice and be given away in silence — the
+   * exact failure groomQuote.ts warns is the most likely way this feature
+   * gets quietly broken. The same holds for a groom with no price recorded
+   * and nothing but an agreed extra on it.
+   */
+  approvedExtrasTotal?: string | number | null;
 };
 
 export type InvoiceDecision =
@@ -57,7 +72,11 @@ export function decideAppointmentInvoice(input: InvoiceDecisionInput): InvoiceDe
   // recorded explicitly, so a groom with no price and a $65 teeth clean has
   // something real to bill even though the groom itself does not.
   const amount = toAmount(input.price) ?? 0;
-  const extras = toAmount(input.addOnsTotal) ?? 0;
+  // Add-ons and agreed extras are both "work done on top of the groom" as
+  // far as this decision is concerned. They are itemised separately on the
+  // invoice because they are different promises to the client, but either
+  // one alone is reason enough to raise a bill.
+  const extras = (toAmount(input.addOnsTotal) ?? 0) + (toAmount(input.approvedExtrasTotal) ?? 0);
 
   // A membership groom is already paid for by the weekly membership charge.
   // Billing the GROOM again charges the client twice and double-counts the

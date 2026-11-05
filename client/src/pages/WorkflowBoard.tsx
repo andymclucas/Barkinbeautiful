@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { GroomQuotePanel } from "@/components/GroomQuotePanel";
 import { Textarea } from "@/components/ui/textarea";
 import { GroomingNoteTab } from "@/components/GroomingNoteTab";
 import { PetAvatar } from "@/components/PetAvatar";
@@ -1310,6 +1311,17 @@ export default function WorkflowBoard() {
                 </>
               );
             })()}
+
+            {/* Extra work found on the table. Above the stopwatch for the
+                same reason the groom details are: somebody opening this has
+                their hands on a dog, not on a report. Staff board only —
+                tvMode returns its own read-only view long before here, so
+                this never reaches the wall screen. */}
+            <GroomQuotePanel
+              appointmentId={petPopup.id}
+              petName={petPopup.petName}
+              workflowState={petPopup.workflowState}
+            />
 
             {/* Workflow timing */}
             <div className="rounded-lg border bg-muted p-3 space-y-2">

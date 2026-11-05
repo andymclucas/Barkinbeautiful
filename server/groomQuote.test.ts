@@ -4,8 +4,10 @@ import {
   canQuoteInWorkflowState, canTransitionQuote, canEditQuote, isQuoteBillable,
   isQuoteAwaitingAnswer, quoteTotal, validateQuoteLines, quoteExpiresAt,
   isQuoteExpired, requiresApprovalNote, describeQuoteStatus,
+  quoteRequestSms, quoteUrl,
   type QuoteStatus,
 } from "../shared/groomQuote";
+import { calculateSmsCost } from "../shared/smsSegments";
 
 /** The 12 appointment workflow states, from drizzle/schema.ts. */
 const ALL_WORKFLOW_STATES = [
@@ -227,5 +229,42 @@ describe("who said yes", () => {
   it("never calls an unpaid state approved", () => {
     expect(describeQuoteStatus("expired")).toContain("not charged");
     expect(describeQuoteStatus("declined")).toContain("Declined");
+  });
+});
+
+describe("the text the owner gets", () => {
+  const realistic = {
+    salonName: "Barkin Beautiful",
+    petName: "Link",
+    total: "60.00",
+    url: quoteUrl("https://client.barkinbeautiful.com.au", "a".repeat(32)),
+  };
+
+  it("fits one GSM-7 segment for the salon's real values", () => {
+    // Not a style preference. One non-GSM character — an em-dash, a curly
+    // apostrophe, a pound sign — forces the whole message to UCS-2, which
+    // cuts a segment from 160 characters to 70 and doubles the bill on
+    // every quote the salon ever sends. The URL alone is about 70
+    // characters, so there is no room to absorb it.
+    const cost = calculateSmsCost(quoteRequestSms(realistic));
+    expect(cost.encoding).toBe("GSM-7");
+    expect(cost.forcedUnicode).toBe(false);
+    expect(cost.segments).toBe(1);
+  });
+
+  it("puts the figure in the message, not only behind the link", () => {
+    // An owner should be able to tell from the notification whether this
+    // needs dealing with right now, without tapping anything.
+    expect(quoteRequestSms(realistic)).toContain("$60.00");
+    expect(quoteRequestSms(realistic)).toContain("Link");
+  });
+
+  it("builds the link on whichever host it is handed", () => {
+    // It must follow VITE_PORTAL_URL rather than hardcoding a host: this
+    // link is texted to a client, and client links moved to their own
+    // domain on 06/11/2026.
+    expect(quoteUrl("https://client.barkinbeautiful.com.au/", "abc")).toBe(
+      "https://client.barkinbeautiful.com.au/quote/abc",
+    );
   });
 });

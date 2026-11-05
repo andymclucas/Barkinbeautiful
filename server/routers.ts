@@ -77,6 +77,8 @@ import { createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpir
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
+import { groomQuotesRouter } from "./routers/groomQuotes";
+import { loadApprovedQuoteExtras, approvedQuoteExtrasTotal } from "./groomQuoteExtras";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
@@ -2282,6 +2284,12 @@ const calendarRouter = router({
         // Loaded before the decision, not after: an appointment with no
         // price but a real add-on still has something to bill.
         const addOns = await loadAddOnsForInvoice(db, appt.tenantId, appt.id);
+        // Work the owner agreed to mid-groom. Loaded beside the add-ons
+        // and counted in the SAME decision, because this function decides
+        // whether an invoice exists at all — a membership dog with no
+        // add-ons and an agreed $60 de-matt would otherwise raise nothing
+        // and give it away in silence.
+        const quoteExtras = await loadApprovedQuoteExtras(db, appt.tenantId, appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
@@ -2289,6 +2297,7 @@ const calendarRouter = router({
           workflowState: "complete",
           status: appt.status,
           addOnsTotal: addOnsTotal(addOns),
+          approvedExtrasTotal: approvedQuoteExtrasTotal(quoteExtras),
         });
         if (decision.invoice) {
           const [paidRow] = await db.select({ total: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)` })
@@ -2310,6 +2319,7 @@ const calendarRouter = router({
             servicePrice: total,
             addOns,
             membershipCovered: decision.bill === "extras_only",
+            approvedExtras: quoteExtras,
           });
           // Judged against the WHOLE bill, not the groom alone. Paying the
           // $145 groom on a $180 booking leaves the $35 extra owing, and
@@ -2638,6 +2648,12 @@ const calendarRouter = router({
         // cannot diverge — see shared/appointmentInvoicing.ts.
         const already = await countInvoicesCovering(db, appt.id);
         const addOns = await loadAddOnsForInvoice(db, tenantOf(ctx, input), appt.id);
+        // Work the owner agreed to mid-groom. Loaded beside the add-ons
+        // and counted in the SAME decision, because this function decides
+        // whether an invoice exists at all — a membership dog with no
+        // add-ons and an agreed $60 de-matt would otherwise raise nothing
+        // and give it away in silence.
+        const quoteExtras = await loadApprovedQuoteExtras(db, tenantOf(ctx, input), appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
@@ -2645,6 +2661,7 @@ const calendarRouter = router({
           workflowState: "complete",
           status: "confirmed",
           addOnsTotal: addOnsTotal(addOns),
+          approvedExtrasTotal: approvedQuoteExtrasTotal(quoteExtras),
         });
         if (!decision.invoice) { skipped.push({ petName: appt.petName ?? "Pet", reason: decision.reason }); continue; }
         const price = appt.price ? parseFloat(String(appt.price)) : 0;
@@ -2660,6 +2677,7 @@ const calendarRouter = router({
         const itemised = buildInvoiceLines({
           petName: appt.petName, serviceLabel, servicePrice: total, addOns,
           membershipCovered: decision.bill === "extras_only",
+          approvedExtras: quoteExtras,
         });
         const [result] = await db.insert(invoices).values({
           tenantId: tenantOf(ctx, input),
@@ -2743,6 +2761,12 @@ const calendarRouter = router({
       for (const appt of appts) {
         const already = await countInvoicesCovering(db, appt.id);
         const addOns = await loadAddOnsForInvoice(db, tenantId, appt.id);
+        // Work the owner agreed to mid-groom. Loaded beside the add-ons
+        // and counted in the SAME decision, because this function decides
+        // whether an invoice exists at all — a membership dog with no
+        // add-ons and an agreed $60 de-matt would otherwise raise nothing
+        // and give it away in silence.
+        const quoteExtras = await loadApprovedQuoteExtras(db, tenantId, appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
@@ -2750,6 +2774,7 @@ const calendarRouter = router({
           workflowState: "complete",
           status: "confirmed",
           addOnsTotal: addOnsTotal(addOns),
+          approvedExtrasTotal: approvedQuoteExtrasTotal(quoteExtras),
         });
         if (!decision.invoice) { skipped.push({ petName: appt.petName ?? "Pet", reason: decision.reason }); continue; }
         const itemised = buildInvoiceLines({
@@ -2758,6 +2783,7 @@ const calendarRouter = router({
           servicePrice: appt.price ? parseFloat(String(appt.price)).toFixed(2) : "0.00",
           addOns,
           membershipCovered: decision.bill === "extras_only",
+          approvedExtras: quoteExtras,
         });
         parts.push({
           appointmentId: appt.id, petName: appt.petName,
@@ -14192,6 +14218,7 @@ export const appRouter = router({
   trial: trialRouter,
   revenueTargets: revenueTargetsRouter,
   workflowReview: workflowReviewRouter,
+  groomQuotes: groomQuotesRouter,
   petCodes: petCodesRouter,
   search: searchRouter,
   presence: presenceRouter,
