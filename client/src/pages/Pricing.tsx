@@ -207,7 +207,7 @@ export default function Pricing() {
         </div>
 
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)}>
-          <TabsList className="tabs-scroll sm:w-[700px]">
+          <TabsList className="tabs-scroll">
             <TabsTrigger value="services">Services <span className="ml-1 text-xs text-muted-foreground">{services.length}</span></TabsTrigger>
             <TabsTrigger value="add-ons">Add-ons <span className="ml-1 text-xs text-muted-foreground">{addOns.length}</span></TabsTrigger>
             <TabsTrigger value="memberships">Memberships <span className="ml-1 text-xs text-muted-foreground">{planRows.length}</span></TabsTrigger>
