@@ -203,7 +203,10 @@ export default function Reporting() {
         <ReportRangePicker range={range} />
 
         {/* KPI summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* One object sharing its rules rather than four cards floating
+            on the page — these four figures are read together, so they
+            should look like one row. */}
+        <div className="console-grid grid-cols-2 md:grid-cols-4">
           {[
             {
               icon: DollarSign,
@@ -230,18 +233,14 @@ export default function Reporting() {
               sub: "Current",
             },
           ].map((k) => (
-            <Card key={k.label} className="border-border/60">
-              <CardHeader className="pb-2 pt-4 px-4">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <k.icon className="h-4 w-4" />
-                  <span className="text-xs font-medium uppercase tracking-wide">{k.label}</span>
-                </div>
-              </CardHeader>
-              <CardContent className="px-4 pb-4">
-                <p className="text-xl font-bold">{k.value}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{k.sub}</p>
-              </CardContent>
-            </Card>
+            <div key={k.label} className="px-4 py-3.5">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <k.icon className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="text-[11px] font-semibold uppercase tracking-[0.06em]">{k.label}</span>
+              </div>
+              <p className="mt-1.5 text-2xl font-bold tracking-[-0.02em] tabular-nums">{k.value}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{k.sub}</p>
+            </div>
           ))}
         </div>
 
@@ -513,50 +512,46 @@ export default function Reporting() {
                 answer you want.
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-xs text-muted-foreground">
-                    <tr className="border-b">
-                      <th className="py-2 pr-3 font-medium">Client</th>
-                      <th className="py-2 pr-3 font-medium text-right">Visits</th>
-                      <th className="py-2 pr-3 font-medium text-right">Usual gap</th>
-                      <th className="py-2 pr-3 font-medium">Last seen</th>
-                      <th className="py-2 pr-3 font-medium text-right">Away</th>
-                      <th className="py-2 pr-3 font-medium text-right">Missed</th>
-                      <th className="py-2 pr-3 font-medium text-right">Not taken</th>
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="console-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Client</th>
+                      <th scope="col" className="num">Visits</th>
+                      <th scope="col" className="num">Usual gap</th>
+                      <th scope="col">Last seen</th>
+                      <th scope="col" className="num">Away</th>
+                      <th scope="col" className="num">Missed</th>
+                      <th scope="col" className="num">Not taken</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/40">
+                  <tbody>
                     {lapsed.rows.map((r) => (
-                      <tr key={r.clientId} className="hover:bg-muted/40">
-                        <td className="py-2 pr-3">
+                      <tr key={r.clientId}>
+                        <td>
                           <span className="font-semibold">
                             {`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "\u2014"}
                           </span>
                           {r.onMembership && (
                             <span
-                              className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-300"
+                              className="console-tag ml-1 bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
                               title="Still paying a membership and not coming in. Ring this one first."
                             >still paying</span>
                           )}
                           {r.smsOptedOut && (
                             <span
-                              className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground"
+                              className="console-tag ml-1 bg-muted text-muted-foreground"
                               title="Opted out of messages — call, do not text"
                             >no texts</span>
                           )}
                           {r.phone && <span className="block text-xs text-muted-foreground">{r.phone}</span>}
                         </td>
-                        <td className="py-2 pr-3 text-right tabular-nums">{r.visits}</td>
-                        <td className="py-2 pr-3 text-right tabular-nums">
-                          {Math.round(r.usualGapDays / 7)} wks
-                        </td>
-                        <td className="py-2 pr-3">{localCalendarDayKey(r.lastVisit)}</td>
-                        <td className="py-2 pr-3 text-right tabular-nums">
-                          {Math.round(r.daysSince / 7)} wks
-                        </td>
-                        <td className="py-2 pr-3 text-right tabular-nums">{r.missedVisits}</td>
-                        <td className="py-2 pr-3 text-right tabular-nums">
+                        <td className="num">{r.visits}</td>
+                        <td className="num">{Math.round(r.usualGapDays / 7)} wks</td>
+                        <td>{localCalendarDayKey(r.lastVisit)}</td>
+                        <td className="num">{Math.round(r.daysSince / 7)} wks</td>
+                        <td className="num">{r.missedVisits}</td>
+                        <td className="num">
                           {/* A membership client's grooms are $0, so this
                               is genuinely nil for them — the weekly fee
                               is what they are losing, and it is still
@@ -626,17 +621,17 @@ export default function Reporting() {
               <div className="py-8 text-center text-sm text-muted-foreground">No grooming history yet.</div>
             ) : (
               <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto rounded-lg border">
+                  <table className="console-table">
                     <thead>
-                      <tr className="border-b text-left text-xs text-muted-foreground">
+                      <tr>
                         {([
                           ["name", "Dog", "left"], [null, "Client", "left"],
                           ["visits", "Visits", "right"], ["gap", "Usual gap", "right"],
                           ["spend", "Avg spend", "right"], ["total", "Total", "right"],
                           ["lastVisit", "Last visit", "left"], ["nextVisit", "Next", "left"],
                         ] as [RetentionSort | null, string, "left" | "right"][]).map(([column, label, align]) => (
-                          <th key={label} className={`py-2 pr-3 font-medium ${align === "right" ? "text-right" : ""}`}>
+                          <th key={label} scope="col" className={align === "right" ? "num" : undefined}>
                             {column ? (
                               <button
                                 type="button"
@@ -652,36 +647,36 @@ export default function Reporting() {
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/40">
+                    <tbody>
                       {retentionView.rows.map((r) => (
-                        <tr key={r.petId} className="hover:bg-muted/40">
-                          <td className="py-2 pr-3">
+                        <tr key={r.petId}>
+                          <td>
                             <span className="font-semibold">{r.petName ?? "—"}</span>
                             {r.breed && <span className="block text-xs text-muted-foreground">{r.breed}</span>}
                           </td>
-                          <td className="py-2 pr-3">
+                          <td>
                             <span>{`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "—"}</span>
                             {r.phone && <span className="block text-xs text-muted-foreground">{r.phone}</span>}
                           </td>
-                          <td className="py-2 pr-3 text-right tabular-nums">{r.visits}</td>
-                          <td className="py-2 pr-3 text-right tabular-nums">
+                          <td className="num">{r.visits}</td>
+                          <td className="num">
                             {/* Null means too little history to call it a
                                 rhythm — two visits is not a pattern. */}
                             {r.usualGapWeeks === null
                               ? <span className="text-muted-foreground">—</span>
                               : `${r.usualGapWeeks} wks`}
                           </td>
-                          <td className="py-2 pr-3 text-right tabular-nums">
+                          <td className="num">
                             {r.averageSpend === null ? <span className="text-muted-foreground">—</span> : money(r.averageSpend)}
                             {r.onMembership && (
                               <span
-                                className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                                className="console-tag ml-1 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200"
                                 title="On a membership — the groom carries no price because the weekly fee covers it"
                               >plan</span>
                             )}
                           </td>
-                          <td className="py-2 pr-3 text-right tabular-nums font-medium">{money(r.totalSpend)}</td>
-                          <td className="py-2 pr-3 whitespace-nowrap text-xs">
+                          <td className="text-right tabular-nums font-medium">{money(r.totalSpend)}</td>
+                          <td className="whitespace-nowrap text-xs">
                             {r.lastVisit ? new Date(r.lastVisit).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                           </td>
                           <td className="py-2 whitespace-nowrap text-xs">

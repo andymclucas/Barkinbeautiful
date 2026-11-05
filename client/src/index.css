@@ -710,6 +710,88 @@ button[data-slot="button"]:not(:disabled):hover {
 }
 
 /*
+ * Direction B — the operational console.
+ *
+ * Andy picked it on 05/11/2026 from two mockups of the same screens.
+ * What he picked, in the order it matters:
+ *
+ *  - DENSITY. Five dogs on screen where the other direction fits three.
+ *    Lauren and Megs read these tables at speed with a dog on the table,
+ *    and whitespace they have to scroll past is a cost, not a luxury.
+ *  - TABLES THAT LOOK LIKE TABLES. A quiet grey header in small caps, a
+ *    hairline between rows, an alternating tint, and numbers right
+ *    aligned in tabular figures so columns of money line up by digit.
+ *  - COLOUR AS SIGNAL ONLY. The chrome stays neutral so the stage and
+ *    service tags carry every bit of colour on the screen, and a glance
+ *    down the board reads as state rather than decoration.
+ *
+ * Opt-in by class rather than styling `table` globally: 21 hand-rolled
+ * tables carry their own Tailwind padding, which beats a bare element
+ * selector, so a global rule would leave the change half-applied —
+ * looking done while most of the app quietly ignored it.
+ */
+.console-grid {
+  display: grid;
+  gap: 1px;
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--foreground) 12%, transparent);
+  border-radius: calc(var(--radius) - 0.375rem);
+  overflow: hidden;
+}
+.console-grid > * {
+  background: var(--card);
+}
+
+.console-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.console-table thead th {
+  background: color-mix(in oklch, var(--muted) 70%, var(--foreground) 4%);
+  padding: 0.5rem 1rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  text-align: left;
+  white-space: nowrap;
+}
+.console-table tbody tr {
+  border-top: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+/* A tint, not a stripe: enough to follow a row across, not enough to
+   read as two different kinds of row. */
+.console-table tbody tr:nth-child(even) {
+  background: color-mix(in oklch, var(--foreground) 2%, transparent);
+}
+.console-table tbody tr:hover {
+  background: color-mix(in oklch, var(--brand-primary) 6%, transparent);
+}
+.console-table tbody td {
+  padding: 0.5rem 1rem;
+}
+/* Money and counts line up by digit, which is the whole reason a column
+   of figures is worth having. */
+.console-table .num,
+.console-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Small, square-ish tags — the pill radius belongs to things you press,
+   and a status is not a button. */
+.console-tag {
+  display: inline-block;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/*
  * The boards.
  *
  * The workflow table wore a near-black slab across the top with white
