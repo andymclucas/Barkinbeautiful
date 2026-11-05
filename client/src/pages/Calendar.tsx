@@ -108,12 +108,13 @@ import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
   FileDown, Check, CheckCircle2, ImagePlus, Mail, ChevronDown, ChevronUp, Clock, ExternalLink,
-  Clock3,
+  Clock3, Minus, Layers,
 } from "lucide-react";
 import { WaitlistPanel } from "@/components/WaitlistPanel";
+import { AppointmentStackPicker } from "@/components/AppointmentStackPicker";
 import { AngelWings } from "@/components/AngelWings";
 import { petHasPassedAway, PET_CANNOT_BE_SELECTED } from "@shared/petBookable";
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, useContext, createContext } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { StaffAvatar } from "@/components/StaffAvatar";
@@ -132,6 +133,9 @@ import {
 } from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
 import { overlapPlacement } from "@shared/appointmentCardOverlap";
+import { appointmentStack, MIN_DRAWN_MINUTES } from "@shared/appointmentStack";
+import { BASE_HOUR_HEIGHT } from "@shared/calendarZoom";
+import { useCalendarZoom } from "@/hooks/useCalendarZoom";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { blockoutDateKey } from "@shared/staffBlockouts";
 import { distinctClientCount, soleClientOf } from "@shared/appointmentSearch";
@@ -143,7 +147,19 @@ import { biteWarningsIn } from "@shared/petCodeRisk";
 import { EmailInvoiceButton } from "@/components/EmailInvoiceButton";
 // ── Constants ────────────────────────────────────────────────────────────────
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7am–7pm (13 rows)
-const HOUR_HEIGHT = 72; // px per hour
+/*
+ * How tall an hour is drawn. A constant until 05/11/2026, when Andy
+ * asked for pinch zoom on the phone: "a zoom in and out function on
+ * mobile which (like Google or Apple calendar works)".
+ *
+ * Fifteen places lay out against the time axis, so the page owns the
+ * value and they read it from a context rather than taking it as a
+ * prop through four levels of JSX. The default is the height the board
+ * has always drawn at, so anything rendered outside the provider — a
+ * test, the week grid — is unchanged.
+ */
+const HourHeightContext = createContext(BASE_HOUR_HEIGHT);
+const useHourHeight = () => useContext(HourHeightContext);
 const TIME_COL_W = 52; // px for the time gutter
 
 /** Before the board is measured, assume the readable desktop width. */
@@ -270,10 +286,10 @@ function getTodayAEST(): Date {
 }
 
 /** Convert AEST hour+minute into a pixel offset from the top of the grid (7am = 0) */
-function timeToTop(aestDate: Date): number {
+function timeToTop(aestDate: Date, hourHeight: number): number {
   const h = aestDate.getUTCHours();
   const m = aestDate.getUTCMinutes();
-  return (h - 7 + m / 60) * HOUR_HEIGHT;
+  return (h - 7 + m / 60) * hourHeight;
 }
 
 /** Compute collision columns so overlapping appts sit side-by-side */
@@ -390,11 +406,18 @@ function ApptBlock({
   onDragEnd,
   siblings,
   columnWidth,
+  stackCount = 0,
 }: {
   appt: Appt;
   col: number;
   totalCols: number;
   containerHeight: number;
+  /**
+   * How many cards sit on this one's patch of column, this one
+   * included. 0 or 1 means nothing is hidden behind it and the card
+   * behaves exactly as it always has.
+   */
+  stackCount?: number;
   /**
    * The staff column's width in CSS pixels. Needed because density has
    * to know how much ROOM the card gets, and height alone said a long
@@ -406,11 +429,12 @@ function ApptBlock({
   onDragEnd?: () => void;
   siblings?: Appt[];
 }) {
+  const HOUR_HEIGHT = useHourHeight();
   const start = toAESTDate(new Date(appt.scheduledStart));
-  const top    = timeToTop(start);
+  const top    = timeToTop(start, HOUR_HEIGHT);
   const durationMins = Math.max(
     (new Date(appt.scheduledEnd).getTime() - new Date(appt.scheduledStart).getTime()) / 60000,
-    30
+    MIN_DRAWN_MINUTES
   );
   const height = Math.max((durationMins / 60) * HOUR_HEIGHT - 2, 22);
   const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
@@ -543,8 +567,24 @@ function ApptBlock({
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onDragStart={canDrag && onDragStart ? (e) => onDragStart(e, appt) : undefined}
       onDragEnd={onDragEnd}
-      aria-label={`${isCancelled ? "Cancelled " : ""}appointment for ${sharedAppointmentLabel || "pet"}${hasArrivedOnSite(appt.workflowState, appt.status) ? ", checked in" : ""}`}
+      aria-label={`${isCancelled ? "Cancelled " : ""}appointment for ${sharedAppointmentLabel || "pet"}${hasArrivedOnSite(appt.workflowState, appt.status) ? ", checked in" : ""}${stackCount > 1 ? `, one of ${stackCount} overlapping — opens a list to choose from` : ""}`}
     >
+      {/*
+        * Says there is more here than you can see. Without it a stack
+        * of three looks like one card with a thick left edge, and
+        * nobody taps something they do not know is there.
+        *
+        * Bottom right, which is the corner the card's own text reaches
+        * last. On a buried card it is under the one above — that is
+        * unavoidable in a 14px sliver, and the top card is the one
+        * being tapped anyway.
+        */}
+      {stackCount > 1 && (
+        <div className="pointer-events-none absolute bottom-0.5 right-0.5 z-10 inline-flex items-center gap-0.5 rounded-full bg-slate-900/80 px-1.5 py-px text-[9px] font-bold text-white shadow-sm">
+          <Layers className="h-2.5 w-2.5" aria-hidden="true" />
+          {stackCount}
+        </div>
+      )}
       <div className="px-2 py-1 h-full overflow-hidden leading-tight">
         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
         {(pay.label || isVip) && (
@@ -743,6 +783,7 @@ function ApptBlock({
 
 // ── Shared time-gutter + grid lines ──────────────────────────────────────────
 function TimeGutter() {
+  const HOUR_HEIGHT = useHourHeight();
   return (
     <>
       {HOURS.map(hour => (
@@ -761,6 +802,7 @@ function TimeGutter() {
 }
 
 function GridLines({ cols }: { cols: number }) {
+  const HOUR_HEIGHT = useHourHeight();
   return (
     <>
       {HOURS.map(hour => (
@@ -786,6 +828,7 @@ function GridLines({ cols }: { cols: number }) {
  * a glance from across the salon.
  */
 function SessionDivider() {
+  const HOUR_HEIGHT = useHourHeight();
   const top = sessionDividerTop({
     dayStartHour: HOURS[0],
     dayEndHour: HOURS[HOURS.length - 1] + 1,
@@ -804,8 +847,9 @@ function SessionDivider() {
 
 // ── Current time indicator ────────────────────────────────────────────────────
 function NowLine({ totalGridWidth }: { totalGridWidth: number }) {
+  const HOUR_HEIGHT = useHourHeight();
   const now = toAESTDate(new Date());
-  const top = timeToTop(now);
+  const top = timeToTop(now, HOUR_HEIGHT);
   if (top < 0 || top > HOURS.length * HOUR_HEIGHT) return null;
   return (
     <div
@@ -1225,6 +1269,19 @@ export default function Calendar() {
 
   const [collectByDraft, setCollectByDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  /*
+   * Which stack of overlapping cards is being chosen from, and which
+   * of them was actually tapped. The tapped one is marked in the list
+   * so the gesture still feels like it went somewhere.
+   */
+  const [stackPicker, setStackPicker] = useState<{ ids: number[]; tappedId: number } | null>(null);
+  /*
+   * Pinch zoom on the time axis, Andy 05/11/2026. The gesture, the
+   * clamping and the scroll anchoring are in useCalendarZoom and
+   * shared/calendarZoom.ts; this page only has to draw at whatever
+   * height comes back and hand it down the context.
+   */
+  const { hourHeight: HOUR_HEIGHT, zoomIn, zoomOut, resetZoom, canZoomIn, canZoomOut, zoom } = useCalendarZoom(scrollRef);
   // The day board's own width, so the staff columns can be sized to fit it
   // instead of always taking 320px each and pushing the salon off-screen.
   // Measured rather than guessed from the viewport: the sidebar, the padding
@@ -1769,7 +1826,7 @@ export default function Calendar() {
     });
     const durationMinutes = Math.max(15, Math.round((new Date(appt.scheduledEnd).getTime() - new Date(appt.scheduledStart).getTime()) / 60_000));
     return { staffId: targetStaffId, startMinutes, durationMinutes };
-  }, []);
+  }, [HOUR_HEIGHT]);
 
   const handleDragOverColumn = useCallback((e: React.DragEvent, targetStaffId: number | null) => {
     e.preventDefault();
@@ -3062,7 +3119,7 @@ export default function Calendar() {
 
                 {/* Scrollable grid body. min-h-0 is what lets a flex child
                     shrink below its content and actually scroll. */}
-                <div className="overflow-y-auto min-h-0 flex-1" ref={scrollRef}>
+                <div className="overflow-y-auto min-h-0 flex-1" style={{ touchAction: "pan-x pan-y" }} ref={scrollRef}>
                   <div
                     className="relative"
                     style={{
@@ -3223,7 +3280,32 @@ export default function Calendar() {
                     }
                     Array.from(sessionPrimary.values()).forEach(primary => shownIds.add(primary.id));
                     const displayAppts = colAppts.filter(a => !a.sessionId || shownIds.has(a.id));
-                    return computeColumns(displayAppts).map(({ appt, col, totalCols }) => (
+                    /*
+                     * Andy, 05/11/2026: "Need to find a way to be able to
+                     * see the appts behind the ones over the top. Perhaps
+                     * when clicking on the top one, it gives the option of
+                     * the multiple ones that are sitting behind."
+                     *
+                     * Only where the cards CASCADE. Where the column is
+                     * wide enough to split them they sit side by side,
+                     * fully readable and each with its own tap target, so
+                     * a chooser there would cost the desktop a tap and buy
+                     * nothing. That is the same width test
+                     * overlapPlacement already makes for the layout.
+                     */
+                    const stackable = displayAppts.map(a => ({
+                      id: a.id,
+                      startMs: new Date(a.scheduledStart).getTime(),
+                      endMs: new Date(a.scheduledEnd).getTime(),
+                    }));
+                    return computeColumns(displayAppts).map(({ appt, col, totalCols }) => {
+                      const cascaded = overlapPlacement({
+                        col,
+                        totalCols,
+                        columnWidthPx: staffColumnWidth ?? READABLE_COLUMN_FALLBACK,
+                      }).cascaded;
+                      const stack = cascaded ? appointmentStack(stackable, appt.id) : [];
+                      return (
                       <ApptBlock
                         key={appt.id}
                         appt={appt as Appt}
@@ -3231,12 +3313,20 @@ export default function Calendar() {
                         totalCols={totalCols}
                         containerHeight={GRID_HEIGHT}
                         columnWidth={staffColumnWidth}
-                        onClick={() => openEdit(appt as Appt)}
+                        stackCount={stack.length}
+                        onClick={() => {
+                          if (stack.length > 1) {
+                            setStackPicker({ ids: stack.map(s => s.id), tappedId: appt.id });
+                            return;
+                          }
+                          openEdit(appt as Appt);
+                        }}
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                         siblings={getSiblings(appt as Appt)}
                       />
-                    ));
+                      );
+                    });
                   })()}
                 </div>
               );
@@ -3291,6 +3381,7 @@ export default function Calendar() {
     : fmtDateShort(dayDate);
 
   return (
+    <HourHeightContext.Provider value={HOUR_HEIGHT}>
     <DashboardLayout>
       <div className="flex min-h-0 flex-col gap-4 lg:h-[calc(100dvh-6.5rem)]">
         {/* Toolbar */}
@@ -3591,6 +3682,46 @@ export default function Calendar() {
                 onClick={() => setViewMode("agenda")}
               >Agenda</button>
             </div>
+            {/*
+              * Andy, 05/11/2026: "a zoom in and out function on mobile
+              * which (like Google or Apple calendar works)". Pinch is
+              * the gesture and needs no chrome; these are for a mouse,
+              * and they are the only way to discover the feature
+              * exists. Hidden in agenda view, which has no time axis.
+              */}
+            {viewMode !== "agenda" && (
+              <div className="flex items-center gap-0.5 rounded-full border bg-muted/40 p-0.5" role="group" aria-label="Calendar zoom">
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+                  onClick={zoomOut}
+                  disabled={!canZoomOut}
+                  aria-label="Zoom out"
+                  title="Zoom out — or pinch the grid"
+                >
+                  <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="min-w-[2.75rem] rounded-full px-1 text-[11px] font-bold tabular-nums text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                  onClick={resetZoom}
+                  aria-label={`Zoom ${Math.round(zoom * 100)} per cent. Reset to 100 per cent`}
+                  title="Reset zoom"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+                  onClick={zoomIn}
+                  disabled={!canZoomIn}
+                  aria-label="Zoom in"
+                  title="Zoom in — or pinch the grid"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            )}
             <Button
               variant="outline"
               onClick={() => {
@@ -5664,6 +5795,43 @@ export default function Calendar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/*
+        * The stack picker. Opened only where the cards CASCADE — see
+        * the day grid — so the desktop, where overlaps split side by
+        * side and every card already has its own tap target, is
+        * untouched. The component itself takes plain props so it can
+        * be rendered in a test; this just turns appointments into
+        * them.
+        */}
+      <AppointmentStackPicker
+        open={stackPicker !== null}
+        onOpenChange={(open) => { if (!open) setStackPicker(null); }}
+        tappedId={stackPicker?.tappedId ?? null}
+        onPick={(id) => {
+          const appt = filteredAppts.find((a) => a.id === id) as Appt | undefined;
+          setStackPicker(null);
+          if (appt) openEdit(appt);
+        }}
+        appointments={(stackPicker?.ids ?? []).flatMap((id) => {
+          const appt = filteredAppts.find((a) => a.id === id) as Appt | undefined;
+          if (!appt) return [];
+          const isCancelled = isCancelledAppointment(appt);
+          const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
+          return [{
+            id,
+            time: fmtTime(toAESTDate(new Date(appt.scheduledStart))),
+            label: formatSharedAppointmentName({
+              petNames: [appt, ...getSiblings(appt)].map((pet) => pet.petName),
+              surname: appt.clientLastName,
+            }) || (appt.petName ?? "Unnamed"),
+            service: SERVICE_LABELS[appt.serviceType] ?? appt.serviceType,
+            isCancelled,
+            accent: isCancelled ? "#cbd5e1" : svc.border,
+          }];
+        })}
+      />
     </DashboardLayout>
+    </HourHeightContext.Provider>
   );
 }
