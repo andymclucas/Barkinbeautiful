@@ -55,7 +55,10 @@
 import "dotenv/config";
 import fs from "node:fs";
 import mysql from "mysql2/promise";
-import { resolveMoegoStaff, type MoegoStaffMember, type MoegoStaffAlias } from "../shared/moegoStaffAlias";
+import {
+  resolveMoegoStaffForPets, describeStaffResolution,
+  type MoegoStaffMember, type MoegoStaffAlias,
+} from "../shared/moegoStaffAlias";
 import { phoneMatchKey } from "../shared/moegoImport";
 
 const APPLY = process.argv.includes("--apply");
@@ -156,12 +159,38 @@ function durationFrom(text: string, type: string): number | null {
     if (clients.length > 1) { held.push({ booking: r.bookingId, who, why: `${clients.length} Groomigo clients match` }); continue; }
     const client = clients[0];
 
-    // --- staff: one name covers all; more than one is a human's call ------
+    /* --- staff ------------------------------------------------------------
+     *
+     * Andy, 05/11/2026, asked for position after seeing what holding
+     * cost: of 84 sibling dogs missing from the December board, the
+     * strict rule placed 18.
+     *
+     * So this uses the project's own resolveMoegoStaffForPets, which is
+     * what Trap 11 says to use. One name covers every dog; names equal
+     * to dogs are taken in order; any other count is refused, because
+     * the names themselves can contain a comma and a wrong split is
+     * unrecoverable.
+     *
+     * Trap 3 warns that position is a coincidence even when the counts
+     * line up, and it is right that this is not certain. Both of its
+     * worked examples are count MISMATCHES, which this still refuses.
+     * Every booking placed by position is printed under "assigned by
+     * position" so Lauren can check them against MoeGo's own booking
+     * pages, which is the only authoritative source.
+     */
     const names = r.staffs.split(",").map((s) => s.trim()).filter(Boolean);
     if (names.length === 0) { held.push({ booking: r.bookingId, who, why: "MoeGo names no groomer" }); continue; }
-    if (names.length > 1) { held.push({ booking: r.bookingId, who, why: `${names.length} groomers listed for ${r.pets.length} dog(s) — Trap 3, not alignable: ${r.staffs}` }); continue; }
-    const resolved = resolveMoegoStaff(names[0], staffRoster, aliases);
-    if (!resolved.ok) { held.push({ booking: r.bookingId, who, why: `groomer "${names[0]}" does not resolve (${resolved.kind})` }); continue; }
+    const staffing = resolveMoegoStaffForPets(r.staffs, r.pets.length, staffRoster, aliases);
+    if (!staffing.ok) {
+      held.push({ booking: r.bookingId, who, why: `${staffing.names.length} groomers for ${staffing.petCount} dog(s) — cannot be split: ${r.staffs}` });
+      continue;
+    }
+    const byPosition = names.length > 1;
+    const unresolved = staffing.perPet.find((p) => !p.ok);
+    if (unresolved) {
+      held.push({ booking: r.bookingId, who, why: `groomer does not resolve: ${describeStaffResolution(unresolved)}` });
+      continue;
+    }
 
     // --- service + duration ----------------------------------------------
     const main = r.services.split(",").map((s) => s.trim()).filter((s) => s && !ADD_ON.test(s));
@@ -174,7 +203,7 @@ function durationFrom(text: string, type: string): number | null {
 
     const start = slot(r.date, r.time);
 
-    for (const petName of r.pets) {
+    for (const [petIndex, petName] of r.pets.entries()) {
       const [pets]: any = await c.query(
         "SELECT id, name FROM pets WHERE client_id=? AND LOWER(TRIM(name))=LOWER(TRIM(?))",
         [client.id, petName]);
@@ -194,10 +223,12 @@ function durationFrom(text: string, type: string): number | null {
         continue;
       }
 
+      const forThisPet = staffing.perPet[petIndex];
+      if (!forThisPet.ok) { held.push({ booking: r.bookingId, who: petName, why: "no groomer for this dog" }); continue; }
       create.push({
         bookingId: r.bookingId, petId: pet.id, petName: pet.name, clientId: client.id,
-        clientName: `${client.first_name} ${client.last_name}`, staffId: resolved.staffId,
-        staffName: resolved.staffName, start, minutes, type, matchedBy,
+        clientName: `${client.first_name} ${client.last_name}`, staffId: forThisPet.staffId,
+        staffName: forThisPet.staffName, start, minutes, type, matchedBy, byPosition,
       });
     }
   }
@@ -209,6 +240,20 @@ function durationFrom(text: string, type: string): number | null {
   for (const x of create) { const d = x.start.slice(0, 10); byDay[d] = (byDay[d] ?? 0) + 1; }
   console.log("\ncreates per day:");
   console.table(Object.keys(byDay).sort().map((d) => ({ day: d, dogs: byDay[d] })));
+  const positional = create.filter((x) => x.byPosition);
+  if (positional.length) {
+    console.log(`\nASSIGNED BY POSITION — ${positional.length} dogs. MoeGo listed one groomer per`);
+    console.log("dog on these bookings and they were taken in order. Worth Lauren");
+    console.log("checking against the client's own Bookings page in MoeGo:");
+    const byBooking = new Map<string, string[]>();
+    for (const x of positional) {
+      const line = `${x.petName} -> ${x.staffName}`;
+      byBooking.set(x.bookingId, [...(byBooking.get(x.bookingId) ?? []), line]);
+    }
+    for (const [booking, lines] of byBooking) {
+      console.log(`  ${booking}  ${lines.join(" | ")}`);
+    }
+  }
   if (held.length) {
     console.log("\nHELD — these go to Lauren, nothing is written for them:");
     for (const h of held) console.log(`  ${h.booking}  ${h.who}\n      ${h.why}`);
