@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, Legend, type TooltipProps } from "recharts";
 import { CHART_MARKS, chartMeasureColours, CHART_TOKENS, chartTooltipStyle, CHART_TOOLTIP_MOTION } from "@shared/chartStyle";
 import { ChartStyleToggle, useChartStyle } from "@/components/ChartStyleToggle";
@@ -186,6 +187,28 @@ export default function Analytics() {
           ))}
         </div>
 
+        {/*
+          * Andy, 05/11/2026: "Set out the analytics and reporting sections
+          * into different tab groups at the top of the page so it's not one
+          * long scroll for all features."
+          *
+          * The range picker and the KPI row stay above the tabs: they are
+          * the summary every tab below is a different cut of, and hiding
+          * them behind one would mean choosing a tab to see the headline.
+          *
+          * Memberships has a tab of its own rather than sitting under
+          * revenue. The weekly fee is a different kind of money from a
+          * groom — a membership groom carries no price at all — and
+          * reading the two as one column is how that gets double-counted.
+          */}
+        <Tabs defaultValue="revenue">
+          <TabsList className="grid w-full grid-cols-3 sm:w-[420px]">
+            <TabsTrigger value="revenue">Revenue</TabsTrigger>
+            <TabsTrigger value="memberships">Memberships</TabsTrigger>
+            <TabsTrigger value="groomers">Groomers</TabsTrigger>
+          </TabsList>
+
+        <TabsContent value="revenue" className="mt-4 space-y-6">
         {/* Revenue Streams */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Appointment Revenue */}
@@ -238,7 +261,57 @@ export default function Analytics() {
             </CardContent>
           </Card>
         </div>
+        {/* Net sales against a comparison period — the headline revenue
+            question, so it sits above the breakdown trends below. */}
+        <NetSalesPerformance dateFrom={dateFrom} dateTo={dateTo} />
+        {/* Revenue Trend Chart */}
+        {timeSeries && timeSeries.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-4">
+              {/* The form picker sits with the title because this card has
+                  no other filters — everything that changes what the chart
+                  shows stays in one row. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-sm font-semibold">Revenue Trends — Appointment vs Membership</CardTitle>
+                <ChartStyleToggle style={trendStyle} onChange={chooseTrendStyle} label="Revenue trend chart style" />
+              </div>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart
+                  data={timeSeries}
+                  margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
+                  barGap={CHART_MARKS.barGap}
+                  barCategoryGap={CHART_MARKS.barCategoryGap}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_TOKENS.grid} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${v}`} />
+                  <Tooltip {...CHART_TOOLTIP_MOTION} contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
+                  <Legend formatter={(v: string) => v === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"} />
+                  {/* Separate conditionals rather than a fragment: recharts
+                      inspects its children to find the axes, and a fragment
+                      hides them from it. */}
+                  {trendStyle === "line" && (
+                    <Line type="monotone" dataKey="apptRevenue" stroke={trendColours.primary} strokeWidth={CHART_MARKS.lineWidth} dot={false} activeDot={{ r: CHART_MARKS.activeDotRadius }} name="apptRevenue" isAnimationActive={false} />
+                  )}
+                  {trendStyle === "line" && (
+                    <Line type="monotone" dataKey="memberRevenue" stroke={trendColours.secondary} strokeWidth={CHART_MARKS.lineWidth} dot={false} activeDot={{ r: CHART_MARKS.activeDotRadius }} name="memberRevenue" isAnimationActive={false} />
+                  )}
+                  {trendStyle === "bar" && (
+                    <Bar dataKey="apptRevenue" fill={trendColours.primary} radius={CHART_MARKS.barRadius} name="apptRevenue" isAnimationActive={false} />
+                  )}
+                  {trendStyle === "bar" && (
+                    <Bar dataKey="memberRevenue" fill={trendColours.secondary} radius={CHART_MARKS.barRadius} name="memberRevenue" isAnimationActive={false} />
+                  )}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+        </TabsContent>
 
+        <TabsContent value="memberships" className="mt-4 space-y-6">
         {/* Membership Revenue Breakdown by Tier */}
         {membershipBreakdown && membershipBreakdown.tiers.length > 0 && (
           <Card>
@@ -282,7 +355,9 @@ export default function Analytics() {
             </CardContent>
           </Card>
         )}
+        </TabsContent>
 
+        <TabsContent value="groomers" className="mt-4 space-y-6">
         {/* Staff productivity charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
@@ -357,57 +432,6 @@ export default function Analytics() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Net sales against a comparison period — the headline revenue
-            question, so it sits above the breakdown trends below. */}
-        <NetSalesPerformance dateFrom={dateFrom} dateTo={dateTo} />
-
-        {/* Revenue Trend Chart */}
-        {timeSeries && timeSeries.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2 pt-4 px-4">
-              {/* The form picker sits with the title because this card has
-                  no other filters — everything that changes what the chart
-                  shows stays in one row. */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle className="text-sm font-semibold">Revenue Trends — Appointment vs Membership</CardTitle>
-                <ChartStyleToggle style={trendStyle} onChange={chooseTrendStyle} label="Revenue trend chart style" />
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <ResponsiveContainer width="100%" height={260}>
-                <ComposedChart
-                  data={timeSeries}
-                  margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
-                  barGap={CHART_MARKS.barGap}
-                  barCategoryGap={CHART_MARKS.barCategoryGap}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_TOKENS.grid} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => `$${v}`} />
-                  <Tooltip {...CHART_TOOLTIP_MOTION} contentStyle={chartTooltipStyle()} cursor={{ fill: CHART_TOKENS.cursorFill, fillOpacity: 0.4 }} formatter={(v: number, name: string) => [`$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, name === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"]} />
-                  <Legend formatter={(v: string) => v === "apptRevenue" ? "Appointment Revenue" : "Membership Revenue"} />
-                  {/* Separate conditionals rather than a fragment: recharts
-                      inspects its children to find the axes, and a fragment
-                      hides them from it. */}
-                  {trendStyle === "line" && (
-                    <Line type="monotone" dataKey="apptRevenue" stroke={trendColours.primary} strokeWidth={CHART_MARKS.lineWidth} dot={false} activeDot={{ r: CHART_MARKS.activeDotRadius }} name="apptRevenue" isAnimationActive={false} />
-                  )}
-                  {trendStyle === "line" && (
-                    <Line type="monotone" dataKey="memberRevenue" stroke={trendColours.secondary} strokeWidth={CHART_MARKS.lineWidth} dot={false} activeDot={{ r: CHART_MARKS.activeDotRadius }} name="memberRevenue" isAnimationActive={false} />
-                  )}
-                  {trendStyle === "bar" && (
-                    <Bar dataKey="apptRevenue" fill={trendColours.primary} radius={CHART_MARKS.barRadius} name="apptRevenue" isAnimationActive={false} />
-                  )}
-                  {trendStyle === "bar" && (
-                    <Bar dataKey="memberRevenue" fill={trendColours.secondary} radius={CHART_MARKS.barRadius} name="memberRevenue" isAnimationActive={false} />
-                  )}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Staff productivity table */}
         <Card>
           <CardHeader className="pb-2 pt-4 px-4">
@@ -473,6 +497,8 @@ export default function Analytics() {
             </div>
           </CardContent>
         </Card>
+        </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );

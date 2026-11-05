@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/DateField";
 import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock } from "lucide-react";
@@ -10,6 +11,11 @@ import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
 import { WorkflowTimingChart } from "@/components/WorkflowTimingChart";
 import { DayTimingReport } from "@/components/DayTimingReport";
 import { brisbaneDateKey, localCalendarDay, localCalendarDayKey } from "@shared/localDateTime";
+import { Input } from "@/components/ui/input";
+import {
+  filterRetention, sortRetention, pageRetention, isOverdue,
+  RETENTION_PAGE_SIZE, type RetentionSort, type RetentionRow,
+} from "@shared/clientRetentionView";
 
 /** Same shape as the figures in the cards above the table. */
 const money = (amount: number) =>
@@ -37,7 +43,35 @@ export default function Reporting() {
    * its whole history, and asking "how often does Bella come" over the
    * last 30 days answers nothing.
    */
-  const { data: retention, isLoading: loadingRetention } = trpc.clients.clientRetention.useQuery({ limit: 100 });
+  const { data: retention, isLoading: loadingRetention } = trpc.clients.clientRetention.useQuery({ limit: 500 });
+  /* Andy, 05/11/2026: "Add sorting and filters for Client Retention and
+     only show 20 per page." Pulled whole and worked on here: the book
+     is a few hundred dogs, and sorting a page of twenty server-side
+     would mean a round trip for every column heading. */
+  const [retentionSort, setRetentionSort] = useState<RetentionSort>("total");
+  const [retentionDesc, setRetentionDesc] = useState(true);
+  const [retentionSearch, setRetentionSearch] = useState("");
+  const [retentionUnbooked, setRetentionUnbooked] = useState(false);
+  const [retentionOverdue, setRetentionOverdue] = useState(false);
+  const [retentionPage, setRetentionPage] = useState(1);
+  const retentionView = (() => {
+    const all = (retention?.rows ?? []) as unknown as RetentionRow[];
+    const matched = filterRetention(all, {
+      search: retentionSearch,
+      unbooked: retentionUnbooked,
+      overdue: retentionOverdue,
+    });
+    return pageRetention(sortRetention(matched, retentionSort, retentionDesc), retentionPage);
+  })();
+  /* Clicking a heading sorts by it, clicking it again flips the
+     direction — and always returns to page one, because staying on
+     page seven of a freshly reordered table shows nothing you asked
+     for. */
+  const sortBy = (column: RetentionSort) => {
+    if (retentionSort === column) setRetentionDesc((d) => !d);
+    else { setRetentionSort(column); setRetentionDesc(true); }
+    setRetentionPage(1);
+  };
 
   const { data: summary, isLoading: loadingSummary } = trpc.analytics.summary.useQuery({
     dateFrom: from, dateTo: to,
@@ -161,6 +195,26 @@ export default function Reporting() {
           ))}
         </div>
 
+        {/*
+          * Andy, 05/11/2026: "Set out the analytics and reporting sections
+          * into different tab groups at the top of the page so it's not one
+          * long scroll for all features."
+          *
+          * The range picker and the four headline figures stay above the
+          * tabs. They are the answer to "how did we do", which is the
+          * question every one of these sections is a different cut of —
+          * putting them inside a tab would mean picking a tab to find out.
+          */}
+        <Tabs defaultValue="staff">
+          <TabsList className="grid w-full grid-cols-5 sm:w-[560px]">
+            <TabsTrigger value="staff">Staff</TabsTrigger>
+            <TabsTrigger value="financial">Financial</TabsTrigger>
+            <TabsTrigger value="timing">Timing</TabsTrigger>
+            <TabsTrigger value="clients">Clients</TabsTrigger>
+            <TabsTrigger value="exports">Exports</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="staff" className="mt-4 space-y-6">
         {/* Staff productivity */}
         <Card className="border-border/60">
           <CardHeader className="pb-3">
@@ -210,7 +264,9 @@ export default function Reporting() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
 
+          <TabsContent value="financial" className="mt-4 space-y-6">
         {/* Financial breakdown */}
         <Card className="border-border/60">
           <CardHeader className="pb-3">
@@ -265,7 +321,9 @@ export default function Reporting() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
 
+          <TabsContent value="timing" className="mt-4 space-y-6">
         {/* Workflow timing */}
         <Card className="border-border/60">
           <CardHeader className="pb-3">
@@ -331,7 +389,9 @@ export default function Reporting() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
 
+          <TabsContent value="clients" className="mt-4 space-y-6">
         {/* Client retention */}
         <Card className="border-border/60">
           <CardHeader className="pb-3">
@@ -345,6 +405,39 @@ export default function Reporting() {
             </p>
           </CardHeader>
           <CardContent>
+            {/* The two questions this report is actually opened for sit
+                as switches, because "overdue with nothing booked" was a
+                scroll past the hundred biggest spenders before. */}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Input
+                value={retentionSearch}
+                onChange={(e) => { setRetentionSearch(e.target.value); setRetentionPage(1); }}
+                placeholder="Search dog, owner or phone"
+                className="h-8 w-full sm:w-64"
+              />
+              <Button
+                variant={retentionUnbooked ? "default" : "outline"}
+                size="sm" className="h-8"
+                onClick={() => { setRetentionUnbooked((v) => !v); setRetentionPage(1); }}
+              >
+                Nothing booked
+              </Button>
+              <Button
+                variant={retentionOverdue ? "default" : "outline"}
+                size="sm" className="h-8"
+                onClick={() => { setRetentionOverdue((v) => !v); setRetentionPage(1); }}
+              >
+                Overdue
+              </Button>
+              {(retentionSearch || retentionUnbooked || retentionOverdue) && (
+                <Button
+                  variant="ghost" size="sm" className="h-8 text-muted-foreground"
+                  onClick={() => { setRetentionSearch(""); setRetentionUnbooked(false); setRetentionOverdue(false); setRetentionPage(1); }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
             {loadingRetention ? (
               <div className="py-8 text-center text-sm text-muted-foreground">Loading…</div>
             ) : !retention || retention.rows.length === 0 ? (
@@ -355,18 +448,30 @@ export default function Reporting() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="py-2 pr-3 font-medium">Dog</th>
-                        <th className="py-2 pr-3 font-medium">Client</th>
-                        <th className="py-2 pr-3 text-right font-medium">Visits</th>
-                        <th className="py-2 pr-3 text-right font-medium">Usual gap</th>
-                        <th className="py-2 pr-3 text-right font-medium">Avg spend</th>
-                        <th className="py-2 pr-3 text-right font-medium">Total</th>
-                        <th className="py-2 pr-3 font-medium">Last visit</th>
-                        <th className="py-2 font-medium">Next</th>
+                        {([
+                          ["name", "Dog", "left"], [null, "Client", "left"],
+                          ["visits", "Visits", "right"], ["gap", "Usual gap", "right"],
+                          ["spend", "Avg spend", "right"], ["total", "Total", "right"],
+                          ["lastVisit", "Last visit", "left"], ["nextVisit", "Next", "left"],
+                        ] as [RetentionSort | null, string, "left" | "right"][]).map(([column, label, align]) => (
+                          <th key={label} className={`py-2 pr-3 font-medium ${align === "right" ? "text-right" : ""}`}>
+                            {column ? (
+                              <button
+                                type="button"
+                                onClick={() => sortBy(column)}
+                                className="inline-flex items-center gap-1 hover:text-foreground"
+                                aria-label={`Sort by ${label}`}
+                              >
+                                {label}
+                                {retentionSort === column && <span aria-hidden>{retentionDesc ? "\u2193" : "\u2191"}</span>}
+                              </button>
+                            ) : label}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/40">
-                      {retention.rows.map((r) => (
+                      {retentionView.rows.map((r) => (
                         <tr key={r.petId} className="hover:bg-muted/40">
                           <td className="py-2 pr-3">
                             <span className="font-semibold">{r.petName ?? "—"}</span>
@@ -400,15 +505,43 @@ export default function Reporting() {
                           <td className="py-2 whitespace-nowrap text-xs">
                             {r.nextVisit
                               ? new Date(r.nextVisit).toLocaleDateString("en-AU", { day: "numeric", month: "short" })
-                              : <span className="font-semibold text-amber-700 dark:text-amber-400">nothing booked</span>}
+                              : (
+                                <span className="font-semibold text-amber-700 dark:text-amber-400">
+                                  nothing booked{isOverdue(r as RetentionRow) ? " · overdue" : ""}
+                                </span>
+                              )}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <p className="pt-3 text-xs text-muted-foreground">
-                  Showing {retention.rows.length} of {retention.total} dogs with history. Built from
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-3">
+                  <p className="text-xs text-muted-foreground">
+                    {retentionView.matched === 0
+                      ? "Nothing matches those filters."
+                      : `Showing ${retentionView.from}–${retentionView.to} of ${retentionView.matched}`}
+                    {retentionView.matched !== (retention?.rows.length ?? 0) &&
+                      ` (filtered from ${retention?.rows.length ?? 0})`}
+                  </p>
+                  {retentionView.pageCount > 1 && (
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7"
+                        disabled={retentionView.page <= 1}
+                        onClick={() => setRetentionPage((p) => p - 1)}>Previous</Button>
+                      <span className="px-1 text-xs text-muted-foreground tabular-nums">
+                        {retentionView.page} / {retentionView.pageCount}
+                      </span>
+                      <Button variant="outline" size="sm" className="h-7"
+                        disabled={retentionView.page >= retentionView.pageCount}
+                        onClick={() => setRetentionPage((p) => p + 1)}>Next</Button>
+                    </div>
+                  )}
+                </div>
+                <p className="pt-2 text-xs text-muted-foreground">
+                  {retention.total > (retention.rows.length ?? 0) &&
+                    `The ${retention.rows.length} most valuable of ${retention.total} dogs with history. `}
+                  Built from
                   completed grooms only — a visit nobody closed out on the board does not count, and
                   roughly half the salon&rsquo;s past appointments are still sitting at{" "}
                   <em>scheduled</em>. Prices are as MoeGo recorded them: a handful of imported
@@ -419,7 +552,9 @@ export default function Reporting() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
 
+          <TabsContent value="exports" className="mt-4 space-y-6">
         {/* Placeholder reports */}
         <Card className="border-border/60">
           <CardHeader className="pb-3">
@@ -448,6 +583,8 @@ export default function Reporting() {
             </div>
           </CardContent>
         </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
