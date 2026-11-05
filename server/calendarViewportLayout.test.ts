@@ -85,7 +85,11 @@ describe("Appointments day viewport layout", () => {
     // flex child sizes to its content, the horizontal wrapper absorbs the
     // overflow, and the whole grid moves together with its headers.
     const src = source();
-    const scroller = /className="overflow-y-auto([^"]*)" ref=\{scrollRef\}/.exec(src);
+    // Tolerant of other attributes between the class list and the ref —
+    // pinning their ORDER is pinning formatting, and it turned red on
+    // 05/11/2026 for a touch-action added between the two while the
+    // property this test exists for was untouched.
+    const scroller = /className="overflow-y-auto([^"]*)"[^>]*ref=\{scrollRef\}/.exec(src);
     expect(scroller, "the grid body scroller should still carry ref={scrollRef}").not.toBeNull();
     expect(scroller![1]).toContain("min-h-0");
     expect(scroller![1]).toContain("flex-1");
