@@ -11,6 +11,8 @@ import { notifyOwner } from "./ownerNotification";
 import { classifyFailure, fromStripeCents, planAfterFailure } from "@shared/stripeBilling";
 import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
 import { isDuplicateEntryError } from "./dbErrors";
+import { isPlatformSubscriptionMetadata } from "@shared/platformBilling";
+import { syncPlatformSubscription, tenantIdForPlatformSubscription } from "./platformBilling";
 
 export type StripeCheckoutRequest = {
   invoiceId: number;
@@ -213,6 +215,77 @@ export async function processStripeEvent(event: Stripe.Event) {
     await syncAccountStatus(tenantId, account);
     console.log(`[stripe] tenant ${tenantId} account ${account.id}: charges ${account.charges_enabled}, payouts ${account.payouts_enabled}`);
     return { accountUpdated: true };
+  }
+
+  /*
+   * ── Groomigo's OWN subscription: a salon paying us ───────────────────
+   *
+   * Placed BEFORE the membership handlers below, and that order is
+   * load-bearing.
+   *
+   * Memberships run Stripe subscriptions too — a client paying the salon
+   * weekly — and they raise the same invoice.* and customer.subscription.*
+   * events on this same endpoint. Barkin' Beautiful has no connected
+   * account, so those membership subscriptions live on the PLATFORM
+   * account as well and `event.account` does not separate them.
+   *
+   * This block claims an event ONLY when it can prove the event is ours:
+   * either the subscription id matches a tenant's own
+   * platform_stripe_subscription_id, or the object carries the marker we
+   * put there ourselves. Anything else falls through untouched.
+   *
+   * The strictness matters in both directions. Each event id is recorded
+   * once and processStripeEvent returns early on a duplicate, so a
+   * handler that wrongly claimed a membership invoice would permanently
+   * stop that membership's billing from being processed — with no error
+   * anywhere to notice.
+   */
+  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+    const subscription = event.data.object as Stripe.Subscription;
+    const byId = await tenantIdForPlatformSubscription(subscription.id);
+    const byMarker = isPlatformSubscriptionMetadata(subscription.metadata as Record<string, string>)
+      ? Number((subscription.metadata ?? {}).groomigo_tenant_id || 0) || null
+      : null;
+    const tenantId = byId ?? byMarker;
+    if (tenantId !== null) {
+      await db.insert(stripeEvents).values({ stripeEventId: event.id, eventType: event.type, tenantId });
+      const { status } = await syncPlatformSubscription(tenantId, subscription);
+      console.log(`[stripe] platform subscription for tenant ${tenantId} is now ${status}`);
+      return { platformSubscription: status };
+    }
+    // Not ours. Falls through to the membership handlers below.
+  }
+
+  if (event.type === "invoice.paid" || event.type === "invoice.payment_succeeded" || event.type === "invoice.payment_failed") {
+    const invoice = event.data.object as Stripe.Invoice;
+    /*
+     * Matched on the subscription id against our OWN column, not on
+     * metadata. Stripe does not reliably copy subscription metadata onto
+     * every invoice, and an id that is sitting in tenants is proof enough
+     * — we put it there.
+     */
+    const platformTenantId = await tenantIdForPlatformSubscription(subscriptionIdOf(invoice));
+    if (platformTenantId !== null) {
+      await db.insert(stripeEvents).values({
+        stripeEventId: event.id, eventType: event.type, tenantId: platformTenantId,
+      });
+      /*
+       * Re-read the subscription rather than inferring a status from the
+       * invoice. A failed invoice does not necessarily mean past_due —
+       * Stripe may still be retrying, and it is Stripe's own view of the
+       * subscription that decides, not ours.
+       */
+      const stripe = requireStripeClient();
+      const subId = subscriptionIdOf(invoice);
+      if (subId) {
+        const subscription = await stripe.subscriptions.retrieve(subId);
+        const { status } = await syncPlatformSubscription(platformTenantId, subscription);
+        console.log(`[stripe] ${event.type} for tenant ${platformTenantId}; subscription now ${status}`);
+        return { platformSubscription: status };
+      }
+      return { platformSubscription: "unchanged" };
+    }
+    // Not ours. Falls through to the membership handlers below.
   }
 
   if (event.type === "checkout.session.completed") {

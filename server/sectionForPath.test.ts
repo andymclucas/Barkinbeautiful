@@ -39,6 +39,10 @@ describe("every namespace is classified on purpose", () => {
       // add a way to be wrong.
       "settings", "migration", "stripeBilling", "stripeConnect", "onlineBooking",
       "payments", "stripeCards", "smsUsage",
+      // The salon's own subscription to Groomigo, 06/11/2026. Its two
+      // money procedures are adminProcedure and `status` is
+      // protectedProcedure, which already rejects restricted staff.
+      "platformBilling",
       // Read-only surfaces: there is nothing to change.
       "analytics", "analyticsExt",
     ];

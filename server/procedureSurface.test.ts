@@ -403,7 +403,12 @@ describe("tRPC procedure surface", () => {
     //
     // 391 since 06/11/2026: the salons router — mine, canAccess, grant
     // and revoke — for running more than one salon from one account.
-    expect(surface).toHaveLength(391);
+    //
+    // 394 since 06/11/2026: platformBilling — the salon's own subscription
+    // to Groomigo. None of the three appears in OPERATIONAL or PUBLIC,
+    // which is the point: `status` is protectedProcedure and so rejects
+    // restricted staff, and the two that reach Stripe are adminProcedure.
+    expect(surface).toHaveLength(394);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
