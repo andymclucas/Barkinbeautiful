@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { DuplicateClients } from "@/components/DuplicateClients";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -16,6 +17,7 @@ import {
   Plus, Search, User, Phone, Mail,
   ChevronUp, ChevronDown, ChevronsUpDown,
   ChevronLeft, ChevronRight, Download, Dog, Calendar,
+  Merge,
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -214,6 +216,7 @@ export default function Clients() {
   const [sortBy, setSortBy] = useState<SortBy>("firstName");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [showAdd, setShowAdd] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const [addStep, setAddStep] = useState<1 | 2>(1);
   const [newClientId, setNewClientId] = useState<number | null>(null);
   const [savedPets, setSavedPets] = useState<Array<{ name: string; breed: string }>>([]);
@@ -381,9 +384,17 @@ export default function Clients() {
               {isLoading ? "Loading…" : `${total.toLocaleString()} clients`}
             </p>
           </div>
-          <Button onClick={() => setShowAdd(true)} className="gap-2">
-            <Plus className="h-4 w-4" /> Add Client
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Andy, 05/11/2026, asked for duplicate merging because he
+                has been doing it by hand. Owner-only, like deleting a
+                client, and for the same reason. */}
+            <Button variant="outline" className="gap-2" onClick={() => setShowDuplicates(true)}>
+              <Merge className="h-4 w-4" /> Find duplicates
+            </Button>
+            <Button onClick={() => setShowAdd(true)} className="gap-2">
+              <Plus className="h-4 w-4" /> Add Client
+            </Button>
+          </div>
         </div>
 
         {/* Search + filter toolbar.
@@ -802,6 +813,15 @@ export default function Clients() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDuplicates} onOpenChange={setShowDuplicates}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Duplicate client records</DialogTitle>
+          </DialogHeader>
+          <DuplicateClients onMerged={() => refetch()} />
         </DialogContent>
       </Dialog>
     </DashboardLayout>

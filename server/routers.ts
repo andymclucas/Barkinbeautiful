@@ -14,6 +14,8 @@ import { buildPaymentTimeline } from "@shared/portalBilling";
 import { prepareClientProfile } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
+import { findDuplicateGroups, suggestSurvivor } from "@shared/clientMerge";
+import { previewMerge, mergeClientInto } from "./clientMerge";
 import { forgetPetThumb } from "./petThumbCache";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
@@ -4028,6 +4030,103 @@ const clientsRouter = router({
    * written for staff records. Deleting a client is at least as
    * destructive as editing one.
    */
+  /**
+   * Records that look like the same customer entered twice.
+   *
+   * Andy, 05/11/2026, asked for merging because he has been doing it by
+   * hand. Run over the real book the same day: 10,113 clients, five
+   * genuine duplicates, and five HOUSEHOLDS that share a phone or an
+   * email and are not duplicates at all — see shared/clientMerge.ts.
+   */
+  findDuplicates: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1) }).optional())
+    .query(async ({ input, ctx }) => {
+      if (!canAdministerStaff(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the salon owner can merge client records." });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input ?? {});
+      const rows: any = await db.execute(sql`
+        SELECT cl.id, cl.first_name AS firstName, cl.last_name AS lastName,
+               cl.email, cl.phone, cl.created_at AS createdAt,
+               (SELECT COUNT(*) FROM pets p WHERE p.client_id = cl.id) AS pets,
+               (SELECT COUNT(*) FROM appointments a WHERE a.client_id = cl.id) AS appointments,
+               (SELECT COUNT(*) FROM invoices i WHERE i.client_id = cl.id) AS invoices,
+               (SELECT COUNT(*) > 0 FROM client_portal_access pa WHERE pa.client_id = cl.id) AS hasPortal
+          FROM clients cl WHERE cl.tenant_id = ${tenantId}`);
+      const list = (Array.isArray(rows) ? rows[0] ?? rows : rows) as any[];
+      const groups = findDuplicateGroups(list.map((r: any) => ({
+        ...r, hasPortal: Boolean(Number(r.hasPortal)),
+        pets: Number(r.pets), appointments: Number(r.appointments), invoices: Number(r.invoices),
+      })));
+      return groups.map((group) => ({ ...group, suggestedSurvivorId: suggestSurvivor(group.clients) }));
+    }),
+
+  /** What would move, so a person reads it before pressing merge. */
+  mergePreview: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), loserId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      if (!canAdministerStaff(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the salon owner can merge client records." });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      return previewMerge(db, input.loserId);
+    }),
+
+  /**
+   * Join two records. There is no undo a staff member can reach.
+   *
+   * Both ids are re-read and checked to be in this tenant before
+   * anything moves, and the whole thing runs in one transaction that
+   * rolls back if a single row is left pointing at the record being
+   * removed.
+   */
+  mergeInto: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      survivorId: z.number().int().positive(),
+      loserId: z.number().int().positive(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (!canAdministerStaff(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the salon owner can merge client records." });
+      }
+      if (input.survivorId === input.loserId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Those are the same record." });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+
+      const both: any = await db.execute(sql`
+        SELECT id, tenant_id AS tenantId, first_name AS firstName, last_name AS lastName
+          FROM clients WHERE id IN (${input.survivorId}, ${input.loserId})`);
+      const found = (Array.isArray(both) ? both[0] ?? both : both) as any[];
+      if (found.length !== 2) throw new TRPCError({ code: "NOT_FOUND", message: "One of those records is gone." });
+      if (found.some((r: any) => Number(r.tenantId) !== tenantId)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Those records are not both this salon's." });
+      }
+      const loser = found.find((r: any) => Number(r.id) === input.loserId);
+
+      await db.execute(sql`START TRANSACTION`);
+      try {
+        const result = await mergeClientInto(db, tenantId, input.survivorId, input.loserId);
+        await db.execute(sql`COMMIT`);
+        return {
+          ...result,
+          mergedName: `${loser?.firstName ?? ""} ${loser?.lastName ?? ""}`.trim(),
+        };
+      } catch (error: any) {
+        await db.execute(sql`ROLLBACK`);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Nothing was changed: ${error?.message ?? error}`,
+        });
+      }
+    }),
+
   remove: protectedProcedure
     .input(z.object({ clientId: z.number().int().positive() }))
     .mutation(async ({ input, ctx }) => {
