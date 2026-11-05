@@ -1,4 +1,5 @@
 import { describePets } from "./pickupGroup";
+import { REPLY_PROMPT } from "./replyPrompt";
 /**
  * The text a client gets when the salon books their dog in.
  *
@@ -73,7 +74,7 @@ export function buildBookingConfirmationSms(input: BookingConfirmationInput): st
    * mistake from the other end. The test that covered this asserted
    * `toContain("are booked for")` and so pinned it.
    */
-  return `Hi ${who}! ${subject}'s grooming appointment at ${salon} is booked for ${input.date} at ${input.time}${withGroomer}. See you then! 🐾`;
+  return `Hi ${who}! ${subject}'s grooming appointment at ${salon} is booked for ${input.date} at ${input.time}${withGroomer}. ${REPLY_PROMPT}`;
 }
 
 export type ConfirmationSkipReason =

@@ -1,4 +1,5 @@
 import { automatedSmsPermitted } from "@shared/automatedSms";
+import { decideReplyAction, describeReplyRefusal } from "@shared/inboundReplyAction";
 import "dotenv/config";
 import { startPresenceSweeper } from "../presenceRegistry";
 import express from "express";
@@ -16,7 +17,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { portalHostRedirect } from "../portalHostRedirect";
 import { getDb } from "../db";
-import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, missedCallAutoTexts, clientErrorLogs } from "../../drizzle/schema";
+import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, missedCallAutoTexts, clientErrorLogs, workflowLogs } from "../../drizzle/schema";
 import {
   MISSED_CALL_AUTO_TEXT,
   autoTextPhoneKey,
@@ -242,36 +243,125 @@ async function startServer() {
     const intent = classifyInboundReply(String(Body ?? ""));
     let clientId: number | undefined;
     let appointmentId: number | undefined;
+    /** Set when the client's N cancelled the booking without a staff tap. */
+    let autoCancelled: number[] = [];
 
     if (db && From) {
       const inboundNumber = normaliseAustralianMobile(From);
       const caller = await lookupCallerByPhone(db, inboundNumber, tenantId);
       clientId = caller.clientId;
 
-      // Link every reply to the latest future reminder where the match is clear.
-      // No inbound reply can change an appointment without an explicit staff review.
+      /*
+       * Tie the reply to the text it is answering.
+       *
+       * Confirmations as well as reminders since 06/11/2026: both now
+       * carry "Reply Y to confirm or N to cancel", so both are things a
+       * client answers, and matching only reminders would ignore a reply
+       * to the booking confirmation they were just sent.
+       */
       if (clientId) {
-        const [reminder] = await db.select({ appointmentId: smsLogs.appointmentId })
+        const [matched] = await db.select({
+          appointmentId: smsLogs.appointmentId,
+          sentAt: smsLogs.sentAt,
+        })
           .from(smsLogs)
           .where(and(
             eq(smsLogs.clientId, clientId),
-            eq(smsLogs.type, "reminder"),
+            inArray(smsLogs.type, ["reminder", "confirmation"]),
             eq(smsLogs.direction, "outbound"),
             isNotNull(smsLogs.appointmentId)
           ))
           .orderBy(desc(smsLogs.sentAt))
           .limit(1);
-        if (reminder?.appointmentId) {
-          const [appointment] = await db.select({ id: appointments.id })
+        if (matched?.appointmentId) {
+          const [appointment] = await db.select({
+            id: appointments.id,
+            scheduledStart: appointments.scheduledStart,
+          })
             .from(appointments)
             .where(and(
-              eq(appointments.id, reminder.appointmentId),
+              eq(appointments.id, matched.appointmentId),
               eq(appointments.clientId, clientId),
               gt(appointments.scheduledStart, new Date())
             ))
             .orderBy(asc(appointments.scheduledStart))
             .limit(1);
-          if (appointment) appointmentId = appointment.id;
+          if (appointment) {
+            appointmentId = appointment.id;
+
+            /*
+             * Andy, 06/11/2026: "only changes if N response is received."
+             *
+             * A Y still waits for the one-tap staff review it has always
+             * had — confirming changes nothing operationally. An N frees
+             * a slot and stops a groomer waiting for a dog that is not
+             * coming, which is worth minutes rather than hours.
+             *
+             * It cancels the whole BOOKING. One reminder covers every dog
+             * at that time (groupRemindersByBooking), but smsLogs stores
+             * only the lead appointment's id — so acting on that id alone
+             * would take one dog off the board and leave its sibling on
+             * it, for a client who said neither was coming.
+             *
+             * Every refusal still reaches Messages as a staff review, so
+             * nothing is lost by being cautious here.
+             */
+            const booking = await db.select({
+              id: appointments.id,
+              workflowState: appointments.workflowState,
+              status: appointments.status,
+              scheduledStart: appointments.scheduledStart,
+            })
+              .from(appointments)
+              .where(and(
+                eq(appointments.tenantId, tenantId),
+                eq(appointments.clientId, clientId),
+                eq(appointments.scheduledStart, appointment.scheduledStart)
+              ));
+
+            const decision = decideReplyAction({
+              intent,
+              matchedMessageSentAt: matched.sentAt ?? null,
+              bookingAppointments: booking,
+              receivedAt: new Date(),
+            });
+
+            if (decision.act) {
+              await db.update(appointments)
+                .set({ status: "cancelled", workflowState: "cancelled", updatedAt: new Date() })
+                .where(and(
+                  inArray(appointments.id, decision.appointmentIds),
+                  // Re-stated in the WHERE so a dog checked in between the
+                  // read and the write is not cancelled from under the
+                  // groomer holding it.
+                  eq(appointments.workflowState, "scheduled")
+                ));
+              /* The audit row the Pet Tracker and the timing analytics
+                 read. changedByStaffId is null because no staff member
+                 did this — the client did, by text. */
+              await db.insert(workflowLogs).values(
+                booking
+                  .filter((a) => decision.appointmentIds.includes(a.id))
+                  .map((a) => ({
+                    appointmentId: a.id,
+                    fromState: a.workflowState,
+                    toState: "cancelled" as const,
+                    changedByStaffId: null,
+                    notes: "Client replied N to the appointment text",
+                  })),
+              );
+              autoCancelled = decision.appointmentIds;
+              console.log(
+                `[SMS] ${inboundNumber} replied N - cancelled ${decision.appointmentIds.length}`
+                + ` appointment(s): ${decision.appointmentIds.join(", ")}`,
+              );
+            } else if (intent === "cancel") {
+              console.log(
+                `[SMS] ${inboundNumber} replied N but it was left for staff:`
+                + ` ${describeReplyRefusal(decision.reason)}`,
+              );
+            }
+          }
         }
       }
 
@@ -301,6 +391,13 @@ async function startServer() {
         type: "inbound",
         direction: "inbound",
         replyIntent: intent,
+        /* Already dealt with, so Messages does not offer a staff tap for
+           something that has happened. processedByUserId stays null,
+           which is how the thread tells an automatic cancellation from
+           one a person actioned. */
+        ...(autoCancelled.length > 0
+          ? { processedAt: new Date(), reviewAction: "cancel" as const }
+          : {}),
       }).$returningId();
       emitNewMessage(tenantId, {
         id: insertedMessage.id,

@@ -1,3 +1,4 @@
+import { REPLY_PROMPT } from "@shared/replyPrompt";
 import { automatedSmsAllowed, automatedSmsPermitted, describeBlockedSms, type AutomatedSmsType } from "@shared/automatedSms";
 import { describePets } from "@shared/pickupGroup";
 import twilio from "twilio";
@@ -174,15 +175,15 @@ export function buildAppointmentReminderSms(opts: {
   // not a list of names: "Albert and Eddy's", never "Albert and Eddy'".
   const possessive = `${subject}'s`;
   if (opts.stage === "4d") {
-    return `Hi ${opts.clientFirstName}! Just a heads up \u2014 ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment coming up at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. See you soon! 🐾`;
+    return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. ${REPLY_PROMPT}`;
   }
   if (opts.stage === "2d") {
-    return `Hi ${opts.clientFirstName}! Reminder: ${possessive} grooming appointment at ${salon} is in 2 days, on ${opts.date} at ${opts.time} with ${opts.groomer}. 🐾`;
+    return `Hi ${opts.clientFirstName}! ${possessive} grooming appointment at ${salon} is in 2 days, ${opts.date} at ${opts.time} with ${opts.groomer}. ${REPLY_PROMPT}`;
   }
   if (opts.stage === "morning") {
-    return `Good morning ${opts.clientFirstName}! Just a reminder that ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment today at ${opts.time} with ${opts.groomer} at ${salon}. See you soon! 🐾`;
+    return `Good morning ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment today at ${opts.time} with ${opts.groomer} at ${salon}. ${REPLY_PROMPT}`;
   }
-  return `Hi ${opts.clientFirstName}! Just a reminder that ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. See you then! 🐾`;
+  return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. ${REPLY_PROMPT}`;
 }
 
 export function buildAppointmentConfirmationSms(opts: {
