@@ -799,18 +799,37 @@ textarea[data-slot="textarea"],
   border: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
   background: color-mix(in oklch, var(--muted) 80%, var(--foreground) 5%);
 }
-[data-slot="tabs-trigger"] {
+/*
+ * Keyed on role and aria-selected as well as the data attributes.
+ *
+ * Wrapping a TabsTrigger in a TooltipTrigger with `asChild` — which is
+ * how the Reporting tabs got their hover descriptions — makes Radix
+ * merge the OUTER component's props onto the element, and the tooltip
+ * wins both: data-slot becomes "tooltip-trigger" and data-state becomes
+ * the tooltip's own "closed" rather than the tab's "active". So every
+ * rule below silently stopped matching and the bar shipped unstyled on
+ * 05/11/2026, while still working perfectly, which is why nothing
+ * failed.
+ *
+ * role="tab" and aria-selected are set by Radix Tabs and survive the
+ * merge, because the tooltip has no opinion about either. They are also
+ * the honest thing to style: what this IS, not which component drew it.
+ */
+[data-slot="tabs-trigger"],
+[role="tab"] {
   border-radius: 9999px;
   font-weight: 600;
   color: color-mix(in oklch, var(--foreground) 62%, transparent);
   transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 /* An inactive tab has to look like something you can press. */
-[data-slot="tabs-trigger"]:hover:not([data-state="active"]):not(:disabled) {
+[data-slot="tabs-trigger"]:hover:not([data-state="active"]):not(:disabled),
+[role="tab"]:hover:not([aria-selected="true"]):not(:disabled) {
   background: color-mix(in oklch, var(--brand-primary) 12%, transparent);
   color: var(--brand-primary);
 }
-[data-slot="tabs-trigger"][data-state="active"] {
+[data-slot="tabs-trigger"][data-state="active"],
+[role="tab"][aria-selected="true"] {
   background-image: linear-gradient(
     180deg,
     color-mix(in oklch, var(--brand-primary) 90%, white) 0%,
@@ -827,7 +846,9 @@ textarea[data-slot="textarea"],
    above, because a background-color beats a background-image's
    transparency and the stock classes repaint it white. */
 [data-slot="tabs-trigger"][data-state="active"],
-.dark [data-slot="tabs-trigger"][data-state="active"] {
+[role="tab"][aria-selected="true"],
+.dark [data-slot="tabs-trigger"][data-state="active"],
+.dark [role="tab"][aria-selected="true"] {
   background-color: transparent;
 }
 
@@ -858,7 +879,8 @@ textarea[data-slot="textarea"],
   display: none;
 }
 /* flex-1 is what squashed them; each tab takes its own width instead. */
-[data-slot="tabs-list"].tabs-scroll > [data-slot="tabs-trigger"] {
+[data-slot="tabs-list"].tabs-scroll > [data-slot="tabs-trigger"],
+[data-slot="tabs-list"].tabs-scroll > [role="tab"] {
   flex: 0 0 auto;
   padding-inline: 0.875rem;
 }
