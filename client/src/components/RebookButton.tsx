@@ -40,6 +40,21 @@ function toLocalInput(iso: string): string {
   return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
 }
 
+/** "14:30" as the salon says it out loud. */
+function prettyTime(value: string): string {
+  const [h, m] = value.split(":").map(Number);
+  const hour = h! % 12 === 0 ? 12 : h! % 12;
+  const suffix = h! < 12 ? "am" : "pm";
+  return m === 0 ? `${hour}${suffix}` : `${hour}:${String(m).padStart(2, "0")}${suffix}`;
+}
+
+/** "2027-01-13" as "Wed 13 Jan". */
+function prettyDate(dateKey: string): string {
+  return new Date(`${dateKey}T00:00:00+10:00`).toLocaleDateString("en-AU", {
+    timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short",
+  });
+}
+
 /** Brisbane is UTC+10 with no DST, so the offset is a constant. */
 function fromLocalInput(local: string): string {
   return new Date(`${local}:00+10:00`).toISOString();
@@ -64,6 +79,29 @@ export function RebookButton({ appointmentId, onRebooked }: {
     { appointmentId, ...(weeksOverride ? { weeksOverride } : {}) },
     { enabled: open },
   );
+
+  /*
+   * What is actually free on whatever day is in the box.
+   *
+   * Lauren, 05/11/2026, having just taught Megs to rebook: "it would be
+   * handy to only show timeslots that are free for those dates. Like 10
+   * weeks from now.. time slots - 9am, 12pm, 12:30 or no time slots on
+   * that day. Shows other alternative dates around that 10 week mark."
+   *
+   * Keyed off the DATE only, so retyping the time does not refetch.
+   */
+  const targetDate = when.slice(0, 10);
+  const { data: free, isFetching: loadingFree } = trpc.calendar.rebookFreeTimes.useQuery(
+    {
+      targetDate,
+      durationMinutes: suggestion?.durationMinutes ?? 60,
+      staffIds: suggestion?.staffId ? [suggestion.staffId] : [],
+    },
+    { enabled: open && targetDate.length === 10 && Boolean(suggestion) },
+  );
+
+  /** Put a chip's date and time into the box the dialog books from. */
+  const pick = (date: string, time: string) => setWhen(`${date}T${time}`);
 
   /*
    * Fill the box the first time a suggestion arrives, then leave
@@ -133,6 +171,79 @@ export function RebookButton({ appointmentId, onRebooked }: {
                   onChange={setWhen}
                 />
               </div>
+
+              {/*
+                * Free times on the day in the box. The dialog used to
+                * offer every half hour whether or not anyone was free,
+                * so a time got picked at the counter and the clash
+                * turned up afterwards with the client still standing
+                * there.
+                */}
+              {suggestion && targetDate.length === 10 && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Free that day
+                  </p>
+                  {loadingFree && !free ? (
+                    <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Checking the diary…
+                    </p>
+                  ) : free && free.target.times.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {free.target.times.map((time) => {
+                        const chosen = when === `${free.target.date}T${time}`;
+                        return (
+                          <button
+                            key={time}
+                            type="button"
+                            onClick={() => pick(free.target.date, time)}
+                            aria-pressed={chosen}
+                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors ${
+                              chosen
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-transparent bg-muted hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                            }`}
+                          >
+                            {prettyTime(time)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      {/* Why, not just "none" — "the salon is closed" and
+                          "fully booked" lead to different next sentences
+                          at the counter. */}
+                      {free?.target.message || "No times free that day."}
+                    </p>
+                  )}
+
+                  {/* Nearby days that do have room, so the answer to
+                      "nothing on the 14th" is "the 13th or the 16th"
+                      rather than another search. */}
+                  {free && free.alternatives.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[11px] text-muted-foreground">Or nearby:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {free.alternatives.map((alt) => (
+                          <button
+                            key={alt.date}
+                            type="button"
+                            onClick={() => pick(alt.date, alt.times[0]!)}
+                            title={`${alt.times.length} time${alt.times.length === 1 ? "" : "s"} free — first is ${prettyTime(alt.times[0]!)}`}
+                            className="rounded-full border border-transparent bg-muted px-2.5 py-1 text-[11px] font-semibold transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                          >
+                            {prettyDate(alt.date)}
+                            <span className="ml-1 font-normal text-muted-foreground">
+                              {alt.times.length}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {suggestion && (
                 <div className="space-y-1.5">

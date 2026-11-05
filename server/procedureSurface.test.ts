@@ -154,6 +154,12 @@ const OPERATIONAL = [
   "calendarRouter.monthCapacity",
   "calendarRouter.nextAvailable",
   "calendarRouter.rebook",
+  /* Added 05/11/2026 beside the two above, and reachable by restricted
+     staff for the same reason they are: rebooking happens at the
+     counter with the client waiting, so a groomer must not hit a
+     FORBIDDEN mid-handover. It reads availability only — no contact
+     details, no money, nothing the owner surface guards. */
+  "calendarRouter.rebookFreeTimes",
   "calendarRouter.rebookSuggestion",
   "calendarRouter.reschedule",
   "calendarRouter.searchAppointments",
@@ -327,7 +333,13 @@ describe("tRPC procedure surface", () => {
     // win-back report. protectedProcedure matching clientRetention
     // beside it, and for the same reason — it is the client book with
     // phone numbers and a value ranking on it, which is owner surface.
-    expect(surface).toHaveLength(378);
+    //
+    // 379 since 05/11/2026: calendarRouter gained rebookFreeTimes, the
+    // free times on the day the rebook dialog jumped to.
+    // operationalProcedure matching nextAvailable and rebookSuggestion
+    // beside it — rebooking at the counter is the salon floor, and a
+    // restricted groomer doing it must not hit a FORBIDDEN.
+    expect(surface).toHaveLength(379);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -353,7 +365,7 @@ describe("tRPC procedure surface", () => {
      * edit owner-only would send them round the delete-and-re-add route
      * that loses the client's place in the queue.
      */
-    expect(OPERATIONAL).toHaveLength(131);
+    expect(OPERATIONAL).toHaveLength(132);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

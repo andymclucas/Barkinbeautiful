@@ -64,36 +64,63 @@ export function dayIsBookable(day: DayAvailability): { ok: boolean; reason?: "cl
   return { ok: true };
 }
 
+/**
+ * Every start time that is genuinely free on one day.
+ *
+ * Lauren, 05/11/2026, after teaching Megs to rebook: "when then when we
+ * jump weeks ahead.. it would be handy to only show timeslots that are
+ * free for those dates. Like 10 weeks from now.. time slots - 9am,
+ * 12pm, 12:30 or no time slots on that day."
+ *
+ * The rebook dialog offers every half hour whether or not anyone is
+ * free, so staff pick a time at the counter and find out it clashes
+ * afterwards. This is the list that should be offered instead.
+ *
+ * firstFreeSlot is now this function's first answer, which is the
+ * point: the time the dialog SUGGESTS and the times it OFFERS come
+ * from one rule, so they cannot drift into disagreeing — the way three
+ * copies of the restricted-staff route list did.
+ */
+export function freeSlotsOn(
+  day: DayAvailability,
+  opts: NextSlotOptions,
+): number[] {
+  const span = opts.durationMinutes > 0 ? opts.durationMinutes : 0;
+  if (span <= 0) return [];
+  if (!dayIsBookable(day).ok) return [];
+  const close = opts.closeMinutes ?? DEFAULT_CLOSE_MINUTES;
+  const out: number[] = [];
+
+  for (const start of opts.slotStartsFor(day.dateKey)) {
+    /* A booking that would still be running at closing is not a slot,
+       however empty the diary looks after it. */
+    if (start + span > close) continue;
+
+    /* Today only: a slot that has already started is not available,
+       and offering 8am at 3pm makes the whole feature untrustworthy. */
+    if (opts.todayKey && day.dateKey === opts.todayKey
+        && typeof opts.nowMinutes === "number" && start < opts.nowMinutes) continue;
+
+    /* Leave blocks a slot outright. Another dog does not: the salon
+       overlaps deliberately, and `blockingClashes` is the existing
+       rule for which of the two a clash is. */
+    const clashes = clashesFor(start, start + span, day.busy);
+    if (blockingClashes(clashes).length > 0) continue;
+    if (clashes.length > 0) continue;
+
+    out.push(start);
+  }
+  return out;
+}
+
 export function firstFreeSlot(
   days: readonly DayAvailability[],
   opts: NextSlotOptions,
 ): FoundSlot | null {
-  const span = opts.durationMinutes > 0 ? opts.durationMinutes : 0;
-  if (span <= 0) return null;
-  const close = opts.closeMinutes ?? DEFAULT_CLOSE_MINUTES;
-
   for (let i = 0; i < days.length; i++) {
-    const day = days[i]!;
-    if (!dayIsBookable(day).ok) continue;
-
-    for (const start of opts.slotStartsFor(day.dateKey)) {
-      /* A booking that would still be running at closing is not a slot,
-         however empty the diary looks after it. */
-      if (start + span > close) continue;
-
-      /* Today only: a slot that has already started is not available,
-         and offering 8am at 3pm makes the whole feature untrustworthy. */
-      if (opts.todayKey && day.dateKey === opts.todayKey
-          && typeof opts.nowMinutes === "number" && start < opts.nowMinutes) continue;
-
-      /* Leave blocks a slot outright. Another dog does not: the salon
-         overlaps deliberately, and `blockingClashes` is the existing
-         rule for which of the two a clash is. */
-      const clashes = clashesFor(start, start + span, day.busy);
-      if (blockingClashes(clashes).length > 0) continue;
-      if (clashes.length > 0) continue;
-
-      return { dateKey: day.dateKey, startMinutes: start, daysAhead: i };
+    const [start] = freeSlotsOn(days[i]!, opts);
+    if (start !== undefined) {
+      return { dateKey: days[i]!.dateKey, startMinutes: start, daysAhead: i };
     }
   }
   return null;

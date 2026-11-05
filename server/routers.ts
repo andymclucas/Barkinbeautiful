@@ -89,7 +89,9 @@ import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPri
 import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
-import { firstFreeSlot, describeNoSlot, tradingWeekdays, type DayAvailability } from "../shared/nextAvailableSlot";
+import { firstFreeSlot, describeNoSlot } from "../shared/nextAvailableSlot";
+import { buildDayAvailability } from "./dayAvailability";
+import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
 import { buildTimeSlots, minutesToTimeValue } from "../shared/bookingTimeSlots";
 
 /** The staff dialog's own grid, so the button cannot offer a time the
@@ -1393,133 +1395,16 @@ const calendarRouter = router({
         }
       }
 
-      const from = parseBrisbaneLocalDateTime(`${input.fromDate}T00:00:00`);
-      const to = new Date(from.getTime() + input.days * 86_400_000);
-
-      const minutesInSalonDay = (at: Date): number => {
-        const parts = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false,
-        }).formatToParts(at);
-        return Number(parts.find((p) => p.type === "hour")?.value ?? "0") * 60
-          + Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-      };
-
-      const wantStaff = Array.from(new Set(input.staffIds));
-      const roster = await db.select({
-        id: staff.id, name: staff.name,
-        dailyClipCapacity: staff.dailyClipCapacity, isActive: staff.isActive,
-      }).from(staff).where(eq(staff.tenantId, tenantId));
-      /* No groomer chosen yet: anyone who clips will do, so the search
-         asks whether the SALON has room rather than one person. */
-      const searchStaff = wantStaff.length > 0
-        ? roster.filter((r) => wantStaff.includes(r.id))
-        : roster.filter((r) => r.isActive && typeof r.dailyClipCapacity === "number" && r.dailyClipCapacity > 0);
-      if (searchStaff.length === 0) return { found: null, searchedDays: 0, message: "No groomer to look at." };
-      const searchIds = searchStaff.map((r) => r.id);
-
-      /* Which weekdays this salon trades on, learned from its own
-         diary. Closed days are not blockouts — they simply have no
-         bookings — so without this the search offered Saturday
-         31/10/2026, a day the salon is shut. */
-      const WEEKS_OBSERVED = 8;
-      /* Grouped by the select ALIAS — see the note on closeSalon's guard.
-         Drizzle qualifies a column differently in the select list than in
-         the group by, and ONLY_FULL_GROUP_BY rejects the mismatch, so
-         this whole procedure returned a 500 until 30/10/2026. */
-      const tradingRows = await db.select({
-        weekday: sql<number>`DAYOFWEEK(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')) - 1`.as("weekday"),
-        daysTraded: sql<number>`COUNT(DISTINCT DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')))`.as("days_traded"),
-      }).from(appointments).where(and(
-        eq(appointments.tenantId, tenantId),
-        notInArray(appointments.status, ["cancelled", "no_show"]),
-        gte(appointments.scheduledStart, new Date(Date.now() - WEEKS_OBSERVED * 7 * 86_400_000)),
-        lt(appointments.scheduledStart, new Date()),
-      )).groupBy(sql`weekday`);
-      const trading = tradingWeekdays(
-        Object.fromEntries(tradingRows.map((r) => [Number(r.weekday), Number(r.daysTraded)])),
-        WEEKS_OBSERVED,
-      );
-
-      const [booked, leave] = await Promise.all([
-        db.select({
-          staffId: appointments.staffId,
-          day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`,
-          scheduledStart: appointments.scheduledStart,
-          scheduledEnd: appointments.scheduledEnd,
-          petName: pets.name,
-        }).from(appointments).leftJoin(pets, eq(appointments.petId, pets.id)).where(and(
-          eq(appointments.tenantId, tenantId),
-          inArray(appointments.staffId, searchIds),
-          gte(appointments.scheduledStart, from),
-          lt(appointments.scheduledStart, to),
-          ne(appointments.status, "cancelled"),
-          ne(appointments.workflowState, "cancelled"),
-        )),
-        db.select({
-          staffId: staffBlockouts.staffId,
-          day: sql<string>`DATE_FORMAT(${staffBlockouts.blockoutDate}, '%Y-%m-%d')`,
-          isFullDay: staffBlockouts.isFullDay,
-          startTime: staffBlockouts.startTime,
-          endTime: staffBlockouts.endTime,
-          reason: staffBlockouts.reason,
-        }).from(staffBlockouts).where(and(
-          eq(staffBlockouts.tenantId, tenantId),
-          inArray(staffBlockouts.staffId, searchIds),
-          gte(staffBlockouts.blockoutDate, from),
-          lt(staffBlockouts.blockoutDate, to),
-        )),
-      ]);
-
-      const busyByDay = new Map<string, BusyInterval[]>();
-      const bookedByDayStaff = new Map<string, number>();
-      for (const row of booked) {
-        if (row.staffId == null || !row.scheduledStart || !row.scheduledEnd) continue;
-        const key = String(row.day);
-        bookedByDayStaff.set(`${key}:${row.staffId}`, (bookedByDayStaff.get(`${key}:${row.staffId}`) ?? 0) + 1);
-        /* Only a chosen groomer's own bookings block a slot. With nobody
-           chosen the salon is the unit, and one person being busy does
-           not stop another taking the dog. */
-        if (wantStaff.length === 0) continue;
-        const startMinutes = minutesInSalonDay(new Date(row.scheduledStart));
-        const endMinutes = Math.max(startMinutes + 1, minutesInSalonDay(new Date(row.scheduledEnd)));
-        if (!busyByDay.has(key)) busyByDay.set(key, []);
-        busyByDay.get(key)!.push({ startMinutes, endMinutes, kind: "appointment", label: row.petName ?? "A dog" });
-      }
-      const awayByDayStaff = new Set<string>();
-      for (const row of leave) {
-        const key = String(row.day);
-        if (row.isFullDay) awayByDayStaff.add(`${key}:${row.staffId}`);
-        if (wantStaff.length === 0) continue;
-        const startMinutes = row.isFullDay ? 0 : timeValueToMinutes(row.startTime ?? "") ?? 0;
-        const endMinutes = row.isFullDay ? 24 * 60 : timeValueToMinutes(row.endTime ?? "") ?? 24 * 60;
-        if (!busyByDay.has(key)) busyByDay.set(key, []);
-        busyByDay.get(key)!.push({ startMinutes, endMinutes, kind: "blockout", label: row.reason ?? "Leave" });
-      }
-
-      const days: DayAvailability[] = [];
-      for (let i = 0; i < input.days; i++) {
-        const at = new Date(from.getTime() + i * 86_400_000);
-        const dateKey = new Date(at.getTime() + 10 * 3_600_000).toISOString().slice(0, 10);
-        /* Every chosen groomer must have room; with nobody chosen, any
-           one of them having room is enough. */
-        const loads = searchStaff
-          .filter((r) => !awayByDayStaff.has(`${dateKey}:${r.id}`))
-          .map((r) => ({
-            capacity: typeof r.dailyClipCapacity === "number" ? r.dailyClipCapacity : null,
-            booked: bookedByDayStaff.get(`${dateKey}:${r.id}`) ?? 0,
-          }));
-        const withRoom = loads.filter((l) => l.capacity === null || l.booked < l.capacity);
-        const hasRoom = wantStaff.length === 0 ? withRoom.length > 0 : withRoom.length === loads.length && loads.length > 0;
-        const [y, mo, d] = dateKey.split("-").map(Number);
-        const weekday = new Date(Date.UTC(y!, mo! - 1, d!)).getUTCDay();
-        days.push({
-          dateKey,
-          busy: busyByDay.get(dateKey) ?? [],
-          booked: loads.reduce((n, l) => n + l.booked, 0),
-          capacity: hasRoom ? Number.MAX_SAFE_INTEGER : 0,
-          closed: loads.length === 0 || !trading.has(weekday),
-        });
-      }
+      /* The whole availability picture — trading days, leave, capacity
+         — now lives in server/dayAvailability.ts, because the rebook
+         dialog needs exactly the same one and a second copy of it is
+         what drifts. */
+      const { days, minutesInSalonDay, error } = await buildDayAvailability(db, tenantId, {
+        staffIds: input.staffIds,
+        fromDate: input.fromDate,
+        days: input.days,
+      });
+      if (error) return { found: null, searchedDays: 0, message: error };
 
       const todayKey = brisbaneDateKey(new Date());
       const nowMinutes = minutesInSalonDay(new Date());
@@ -1533,6 +1418,98 @@ const calendarRouter = router({
         found: found ? { date: found.dateKey, time: minutesToTimeValue(found.startMinutes), daysAhead: found.daysAhead } : null,
         searchedDays: days.length,
         message: found ? "" : describeNoSlot(days),
+      };
+    }),
+
+  /**
+   * What is actually free on the day the rebook dialog jumped to.
+   *
+   * Lauren, 05/11/2026, having just taught Megs to invoice and rebook:
+   * "when then when we jump weeks ahead.. it would be handy to only show
+   * timeslots that are free for those dates. Like 10 weeks from now..
+   * time slots - 9am, 12pm, 12:30 or no time slots on that day. Shows
+   * other alternative dates around that 10 week mark."
+   *
+   * The dialog offers every half hour whether or not anyone is free, so
+   * a time gets picked at the counter and the clash shows up afterwards,
+   * with the client still standing there.
+   *
+   * Reads the same availability picture as nextAvailable — same helper,
+   * same trading-day and capacity rules — so the time this OFFERS and
+   * the one the finder SUGGESTS cannot disagree.
+   *
+   * operationalProcedure, matching nextAvailable and rebookSuggestion:
+   * rebooking at the counter is the salon floor, and a restricted
+   * groomer doing it must not hit a FORBIDDEN.
+   */
+  rebookFreeTimes: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      staffIds: z.array(z.number().int().positive()).max(12).default([]),
+      durationMinutes: z.number().int().min(15).max(600),
+      targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      /** How far either side still counts as "around" the mark. */
+      windowDays: z.number().int().min(1).max(30).default(14),
+    }))
+    .query(async ({ input, ctx }) => {
+      const empty = {
+        target: { date: input.targetDate, times: [] as string[], reason: "unknown" as const, message: "" },
+        alternatives: [] as { date: string; times: string[] }[],
+      };
+      const db = await getDb();
+      if (!db) return empty;
+      const tenantId = tenantOf(ctx, input);
+      if (ctx.user.role === "staff") {
+        const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+        if (portalStaff && portalStaff.tenantId !== tenantId) {
+          throw new Error("This calendar is not available to your salon staff profile");
+        }
+      }
+
+      /*
+       * The window starts a fortnight before the target so alternatives
+       * can be offered on BOTH sides — but never before today, because
+       * a date already gone is not an alternative.
+       */
+      const todayKey = brisbaneDateKey(new Date());
+      const wanted = new Date(`${input.targetDate}T00:00:00+10:00`);
+      const earliest = new Date(wanted.getTime() - input.windowDays * 86_400_000);
+      const fromDate = [brisbaneDateKey(earliest), todayKey].sort()[1]!;
+      const spanDays = Math.min(
+        90,
+        Math.max(
+          1,
+          Math.round((wanted.getTime() - new Date(`${fromDate}T00:00:00+10:00`).getTime()) / 86_400_000)
+            + input.windowDays + 1,
+        ),
+      );
+
+      const { days, minutesInSalonDay, error } = await buildDayAvailability(db, tenantId, {
+        staffIds: input.staffIds,
+        fromDate,
+        days: spanDays,
+      });
+      if (error) return { ...empty, target: { ...empty.target, message: error } };
+
+      const around = slotsAroundTarget(days, input.targetDate, {
+        durationMinutes: input.durationMinutes,
+        slotStartsFor: () => STAFF_SLOT_STARTS,
+        todayKey,
+        nowMinutes: minutesInSalonDay(new Date()),
+        maxDistanceDays: input.windowDays,
+      });
+
+      return {
+        target: {
+          date: around.target.dateKey,
+          times: around.target.slots.map(minutesToTimeValue),
+          reason: around.target.reason,
+          message: around.target.reason ? describeNoSlotReason(around.target.reason) : "",
+        },
+        alternatives: around.alternatives.map((a) => ({
+          date: a.dateKey,
+          times: a.slots.map(minutesToTimeValue),
+        })),
       };
     }),
 
