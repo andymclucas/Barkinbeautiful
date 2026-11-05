@@ -322,7 +322,12 @@ describe("tRPC procedure surface", () => {
     // list and create they sit beside: Pricing & Services is owner
     // surface and is not in STAFF_OPERATION_ROUTES, so a restricted
     // groomer never sees the screen they are on.
-    expect(surface).toHaveLength(377);
+    //
+    // 378 since 05/11/2026: clientsRouter gained lapsedClients, the
+    // win-back report. protectedProcedure matching clientRetention
+    // beside it, and for the same reason — it is the client book with
+    // phone numbers and a value ranking on it, which is owner surface.
+    expect(surface).toHaveLength(378);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

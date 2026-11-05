@@ -109,6 +109,8 @@ import { petWeightUpdate } from "@shared/petWeight";
 import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMessage";
 import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
+import { lapsedClients as lapsedClientRows } from "@shared/lapsedClients";
+import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
@@ -4286,6 +4288,154 @@ const clientsRouter = router({
           onMembership: memberPetIds.has(r.petId),
           nextVisit: nextByPet.get(r.petId) ?? null,
         })),
+      };
+    }),
+
+  /**
+   * The lapsed-customer report. Who has stopped coming, and who to ring.
+   *
+   * The complement of clientRetention directly above, not a second copy.
+   * That one is per DOG, ranked by lifetime spend, and answers "who is
+   * slipping". This is per CLIENT, ranked by what is being lost, and
+   * answers "who has gone". You ring a person, not a dog.
+   *
+   * `protectedProcedure`, matching clientRetention: this is the client
+   * book with phone numbers on it and a value ranking beside them, which
+   * is owner surface. Restricted staff stay on their own appointments.
+   *
+   * ## Three things the ranking has to get right
+   *
+   * A client on an ACTIVE membership who has stopped coming is the most
+   * urgent row in the report and the one the money says is worthless:
+   * their grooms are $0 because the weekly fee covers them, so estimated
+   * lost revenue is nil while they are still being charged every week.
+   * They sort to the top regardless of spend.
+   *
+   * `blocked` clients are excluded outright. Andy's own rule is that
+   * blocked only drops someone from marketing, and a win-back call list
+   * is marketing — this is exactly the list they must not appear on.
+   *
+   * Completed grooms only, the same evidence clientRetention and
+   * overdueForGroom use, so the three cannot tell different stories
+   * about the same client.
+   */
+  lapsedClients: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      limit: z.number().int().min(1).max(500).default(100),
+      /** How many of their own gaps away counts as gone rather than late. */
+      overdueFactor: z.number().min(1).max(10).default(2),
+      minVisits: z.number().int().min(2).max(20).default(3),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input ?? {});
+
+      const visits = await db
+        .select({
+          clientId: appointments.clientId,
+          scheduledStart: appointments.scheduledStart,
+          price: appointments.price,
+        })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.workflowState, "complete"),
+          isNotNull(appointments.clientId),
+        ));
+
+      /*
+       * Anything in the diary ahead of now disqualifies a client
+       * entirely. Cancelled and no-show do NOT count as booked — a
+       * cancellation nobody rebooked is precisely how a client slips
+       * away, and treating it as a booking would hide the very rows this
+       * report exists to surface.
+       */
+      const ahead = await db
+        .select({ clientId: appointments.clientId })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          gte(appointments.scheduledStart, new Date()),
+          notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+          isNotNull(appointments.clientId),
+        ));
+      const bookedClientIds = new Set(ahead.map((a) => a.clientId as number));
+
+      const rows = lapsedClientRows(
+        visits.map((v) => ({
+          clientId: v.clientId as number,
+          scheduledStart: v.scheduledStart,
+          price: v.price,
+        })),
+        {
+          now: new Date(),
+          timeZone: SALON_TIME_ZONE,
+          minVisits: input?.minVisits ?? 3,
+          minOverdueFactor: input?.overdueFactor ?? 2,
+          bookedClientIds,
+        },
+      );
+      if (rows.length === 0) return { rows: [], total: 0 };
+
+      const clientIds = rows.map((r) => r.clientId);
+      const detail = await db
+        .select({
+          id: clients.id,
+          firstName: clients.firstName,
+          lastName: clients.lastName,
+          phone: clients.phone,
+          email: clients.email,
+          status: clients.status,
+          smsOptedOutAt: clients.smsOptedOutAt,
+        })
+        .from(clients)
+        .where(and(eq(clients.tenantId, tenantId), inArray(clients.id, clientIds)));
+      const byClient = new Map(detail.map((d) => [d.id, d]));
+
+      const activeMemberships = await db
+        .select({ clientId: memberships.clientId, pricePerCycle: memberships.pricePerCycle })
+        .from(memberships)
+        .where(and(
+          eq(memberships.tenantId, tenantId),
+          eq(memberships.status, "active"),
+          eq(memberships.isTest, false),
+          inArray(memberships.clientId, clientIds),
+        ));
+      const memberByClient = new Map(activeMemberships.map((m) => [m.clientId, m.pricePerCycle]));
+
+      const withDetail = rows
+        .map((r) => {
+          const client = byClient.get(r.clientId);
+          return {
+            ...r,
+            firstName: client?.firstName ?? null,
+            lastName: client?.lastName ?? null,
+            phone: client?.phone ?? null,
+            email: client?.email ?? null,
+            status: client?.status ?? null,
+            smsOptedOut: Boolean(client?.smsOptedOutAt),
+            onMembership: memberByClient.has(r.clientId),
+            membershipWeekly: memberByClient.get(r.clientId) ?? null,
+          };
+        })
+        // A client record that no longer exists, and anyone blocked.
+        .filter((r) => r.status !== null && r.status !== "blocked");
+
+      /*
+       * Still paying and not coming goes first, whatever the spend says
+       * about them. Everyone else by what their absence is costing.
+       */
+      const ranked = withDetail.sort((a, b) => {
+        if (a.onMembership !== b.onMembership) return a.onMembership ? -1 : 1;
+        return b.estimatedLostRevenue - a.estimatedLostRevenue
+          || b.totalSpend - a.totalSpend;
+      });
+
+      return {
+        total: ranked.length,
+        rows: ranked.slice(0, input?.limit ?? 100),
       };
     }),
 

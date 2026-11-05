@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/DateField";
-import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock } from "lucide-react";
+import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -44,6 +44,15 @@ export default function Reporting() {
    * last 30 days answers nothing.
    */
   const { data: retention, isLoading: loadingRetention } = trpc.clients.clientRetention.useQuery({ limit: 500 });
+  /* How many of their own gaps away counts as gone rather than late.
+     Left open because the right answer differs by salon and by season. */
+  const [lapsedFactor, setLapsedFactor] = useState(2);
+  const { data: lapsed, isLoading: loadingLapsed } =
+    trpc.clients.lapsedClients.useQuery({ limit: 200, overdueFactor: lapsedFactor });
+  /* What the whole list adds up to. Membership rows contribute nothing
+     here by design — their grooms carry no price — so this is money the
+     salon has not taken, not the full cost of the people on the list. */
+  const lapsedLost = (lapsed?.rows ?? []).reduce((sum, r) => sum + r.estimatedLostRevenue, 0);
   /* Andy, 05/11/2026: "Add sorting and filters for Client Retention and
      only show 20 per page." Pulled whole and worked on here: the book
      is a few hundred dogs, and sorting a page of twenty server-side
@@ -392,6 +401,122 @@ export default function Reporting() {
           </TabsContent>
 
           <TabsContent value="clients" className="mt-4 space-y-6">
+        {/*
+          * Lapsed customers — the win-back call list.
+          *
+          * Above retention on purpose. Retention tells you who is
+          * slipping; this tells you who has already gone, with a phone
+          * number and a figure beside it, so it is the one that has an
+          * action attached.
+          */}
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <PhoneOff className="h-4 w-4 text-primary" /> Lapsed Customers
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Clients who have stopped coming and have nothing in the diary, measured against
+              their own usual gap rather than one figure for the salon. Ranked by what their
+              absence is costing &mdash; except anyone still paying a membership, who comes first
+              whatever the spend says.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Gone when they are</span>
+              {/* The one judgement in the report worth leaving open: at
+                  1.5 it is a chase list, at 3 it is the people who are
+                  genuinely not coming back. */}
+              {[1.5, 2, 3].map((factor) => (
+                <button
+                  key={factor}
+                  type="button"
+                  onClick={() => setLapsedFactor(factor)}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+                    lapsedFactor === factor
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  {factor}&times; their gap
+                </button>
+              ))}
+              {lapsed && (
+                <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                  {lapsed.total} {lapsed.total === 1 ? "client" : "clients"}
+                  {lapsedLost > 0 && <> &middot; {money(lapsedLost)} not taken</>}
+                </span>
+              )}
+            </div>
+            {loadingLapsed ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">Loading&hellip;</p>
+            ) : !lapsed || lapsed.rows.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                Nobody is more than {lapsedFactor}&times; their usual gap overdue. That is the
+                answer you want.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-muted-foreground">
+                    <tr className="border-b">
+                      <th className="py-2 pr-3 font-medium">Client</th>
+                      <th className="py-2 pr-3 font-medium text-right">Visits</th>
+                      <th className="py-2 pr-3 font-medium text-right">Usual gap</th>
+                      <th className="py-2 pr-3 font-medium">Last seen</th>
+                      <th className="py-2 pr-3 font-medium text-right">Away</th>
+                      <th className="py-2 pr-3 font-medium text-right">Missed</th>
+                      <th className="py-2 pr-3 font-medium text-right">Not taken</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {lapsed.rows.map((r) => (
+                      <tr key={r.clientId} className="hover:bg-muted/40">
+                        <td className="py-2 pr-3">
+                          <span className="font-semibold">
+                            {`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "\u2014"}
+                          </span>
+                          {r.onMembership && (
+                            <span
+                              className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-300"
+                              title="Still paying a membership and not coming in. Ring this one first."
+                            >still paying</span>
+                          )}
+                          {r.smsOptedOut && (
+                            <span
+                              className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground"
+                              title="Opted out of messages — call, do not text"
+                            >no texts</span>
+                          )}
+                          {r.phone && <span className="block text-xs text-muted-foreground">{r.phone}</span>}
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{r.visits}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {Math.round(r.usualGapDays / 7)} wks
+                        </td>
+                        <td className="py-2 pr-3">{localCalendarDayKey(r.lastVisit)}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {Math.round(r.daysSince / 7)} wks
+                        </td>
+                        <td className="py-2 pr-3 text-right tabular-nums">{r.missedVisits}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {/* A membership client's grooms are $0, so this
+                              is genuinely nil for them — the weekly fee
+                              is what they are losing, and it is still
+                              being charged. The badge says so. */}
+                          {r.estimatedLostRevenue > 0
+                            ? money(r.estimatedLostRevenue)
+                            : <span className="text-muted-foreground">&mdash;</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Client retention */}
         <Card className="border-border/60">
           <CardHeader className="pb-3">
@@ -566,6 +691,7 @@ export default function Reporting() {
                 { name: "Appointment History", desc: "Full list of all appointments with filters", ready: true },
                 { name: "Revenue by Service Type", desc: "Breakdown of income by groom type", ready: true },
                 { name: "Client Retention", desc: "Avg. weeks between visits per client", ready: true },
+                { name: "Lapsed Customers", desc: "Who has stopped coming, and what it is costing", ready: true },
                 { name: "Membership Billing", desc: "Subscription revenue and failed payments", ready: true },
                 { name: "Staff Hours & Pay", desc: "Timesheet summary for payroll", ready: false },
                 { name: "Retail Sales", desc: "Product sales and stock movement", ready: false },
