@@ -45,6 +45,37 @@ import { SERVICE_TYPES } from "@shared/serviceTypes";
 
 
 // ─── Main component ───────────────────────────────────────────────────────────
+/**
+ * The board toolbar, built to hold its own above the table.
+ *
+ * The outline button is deliberately soft — `border-border/80` over
+ * `bg-card/60` — which is right for a button sitting in a form and wrong
+ * for one sitting above 34 rows of coloured stage chips, where it simply
+ * disappears. Andy, 05/11/2026: "Make the header slightly larger with the
+ * buttons also larger & more prominent in all theme modes."
+ *
+ * Drawn from --foreground and --card rather than a light rule plus a dark
+ * override, so ONE definition stays true in both themes instead of two
+ * that drift apart. Same reasoning as .surface-raised in index.css, and
+ * the reason this is a constant rather than eight copies of a class list:
+ * the next person to add a control to this toolbar gets it for free.
+ *
+ * The `data-[size=default]` height is for SelectTrigger, which sets its
+ * own height through that attribute and would otherwise out-specify a
+ * plain h-10.
+ */
+const BOARD_CONTROL =
+  "h-10 data-[size=default]:h-10 text-[0.9375rem] bg-card border-foreground/25 " +
+  "shadow-sm hover:border-primary/50 hover:bg-primary/5 " +
+  // The dark: duplicates are load-bearing, not belt-and-braces. Both Button
+  // and SelectTrigger carry their own `dark:bg-input/20` and
+  // `dark:hover:bg-input/40`, and tailwind-merge does NOT treat a
+  // dark:-prefixed utility as conflicting with an unprefixed one — so a
+  // plain `bg-card` is simply outranked in dark mode and the control stays
+  // as washed out as before. Naming the dark variants here is what makes
+  // twMerge drop theirs. Checked against the merged class list, not assumed.
+  "dark:bg-card dark:hover:bg-primary/10";
+
 export default function WorkflowBoard() {
   /**
    * The board is left open all day and cast to a screen in the salon,
@@ -596,11 +627,11 @@ export default function WorkflowBoard() {
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h1 className="text-2xl font-bold font-display flex items-center gap-2">
-              <Dog className="h-6 w-6 text-primary" />
+            <h1 className="text-3xl font-bold font-display flex items-center gap-2.5">
+              <Dog className="h-7 w-7 text-primary" />
               Workflow Board
             </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <p className="text-[0.9375rem] text-muted-foreground mt-1">
               {isToday ? "Today" : formatAestDate(boardDate + "T12:00:00Z", { weekday: "long", day: "numeric", month: "long" })}
               {" · "}{rows.length} dogs
             </p>
@@ -608,26 +639,26 @@ export default function WorkflowBoard() {
           <div className="flex items-center gap-2 flex-wrap">
             {/* Prev / Next day + Today */}
             <div className="flex items-center">
-              <Button variant="outline" size="icon" className="h-9 w-9 rounded-r-none border-r-0" title="Previous day"
+              <Button variant="outline" size="icon" className={`${BOARD_CONTROL} w-10 rounded-r-none border-r-0`} title="Previous day"
                 onClick={() => setBoardDate(current => shiftDateKey(current, -1))}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <DateField value={boardDate} onChange={setBoardDate} aria-label="Board date" wrapperClassName="w-36" className="h-9 text-sm rounded-none border-x-0" />
-              <Button variant="outline" size="icon" className="h-9 w-9 rounded-l-none border-l-0" title="Next day"
+              <DateField value={boardDate} onChange={setBoardDate} aria-label="Board date" wrapperClassName="w-40" className={`${BOARD_CONTROL} rounded-none border-x-0`} />
+              <Button variant="outline" size="icon" className={`${BOARD_CONTROL} w-10 rounded-l-none border-l-0`} title="Next day"
                 onClick={() => setBoardDate(current => shiftDateKey(current, 1))}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
               {!isToday && (
-                <Button variant="outline" size="sm" className="h-9 ml-1 text-sm" onClick={() => setBoardDate(today)}>Today</Button>
+                <Button variant="outline" size="sm" className={`${BOARD_CONTROL} ml-1.5`} onClick={() => setBoardDate(today)}>Today</Button>
               )}
             </div>
-            <Button variant="outline" size="sm" onClick={() => setShowCompleted(v => !v)}>
+            <Button variant="outline" size="sm" className={BOARD_CONTROL} onClick={() => setShowCompleted(v => !v)}>
               {showCompleted ? "Hide Completed" : "Show Completed"}
             </Button>
             {/* Groomer filter */}
             <Select value={groomerFilter} onValueChange={setGroomerFilter}>
-              <SelectTrigger className="w-36 h-9 text-sm">
-                <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+              <SelectTrigger className={`${BOARD_CONTROL} w-40`}>
+                <Filter className="h-4 w-4 mr-1.5 text-muted-foreground" />
                 <SelectValue placeholder="All groomers" />
               </SelectTrigger>
               <SelectContent>
@@ -639,7 +670,7 @@ export default function WorkflowBoard() {
             </Select>
             {/* Stage filter */}
             <Select value={stageFilter} onValueChange={setStageFilter}>
-              <SelectTrigger className="w-36 h-9 text-sm">
+              <SelectTrigger className={`${BOARD_CONTROL} w-40`}>
                 <SelectValue placeholder="All stages" />
               </SelectTrigger>
               <SelectContent>
@@ -654,19 +685,19 @@ export default function WorkflowBoard() {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => refetch()} title="Refresh">
-              <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            <Button variant="outline" size="icon" className={`${BOARD_CONTROL} w-10`} onClick={() => refetch()} title="Refresh">
+              <RefreshCw className={`h-[1.125rem] w-[1.125rem] ${isLoading ? "animate-spin" : ""}`} />
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" asChild>
+            <Button variant="outline" size="sm" className={`${BOARD_CONTROL} gap-2`} asChild>
               <a href="/workflow/display" target="_blank" rel="noreferrer" title="Open a separate read-only workflow screen for a TV or back-room iPad. This does not change this controller board.">
-                <ExternalLink className="h-4 w-4" /> Open TV Screen
+                <ExternalLink className="h-[1.125rem] w-[1.125rem]" /> Open TV Screen
               </a>
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTvMode(true)} title="Preview the TV layout in this tab. Use Open TV Screen to keep a separate controller view.">
-              <Tv2 className="h-4 w-4" /> TV Preview
+            <Button variant="outline" size="sm" className={`${BOARD_CONTROL} gap-2`} onClick={() => setTvMode(true)} title="Preview the TV layout in this tab. Use Open TV Screen to keep a separate controller view.">
+              <Tv2 className="h-[1.125rem] w-[1.125rem]" /> TV Preview
             </Button>
-            <Button size="sm" className="gap-1.5 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => setWalkInOpen(true)}>
-              <UserPlus className="h-4 w-4" /> Add Walk-in
+            <Button size="sm" className="h-10 text-[0.9375rem] gap-2 bg-violet-600 hover:bg-violet-700 text-white shadow-sm" onClick={() => setWalkInOpen(true)}>
+              <UserPlus className="h-[1.125rem] w-[1.125rem]" /> Add Walk-in
             </Button>
           </div>
         </div>

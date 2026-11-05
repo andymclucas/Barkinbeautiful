@@ -27,7 +27,7 @@ import { getDb } from "../db";
 import { clients, tenants, pets, clientPhotoRequests, clientPhotos, smsLogs } from "../../drizzle/schema";
 import { requireApprovedStaffTenant } from "../staffAccess";
 import { sendSms } from "../sms";
-import { getAppBaseUrl } from "../appUrl";
+import { getPortalBaseUrl } from "../appUrl";
 import {
   createClientPhotoToken,
   hashClientPhotoToken,
@@ -95,7 +95,7 @@ export const clientPhotosRouter = router({
       });
       const requestId = (created as any).insertId as number;
 
-      const url = clientPhotoUrl(getAppBaseUrl(), token);
+      const url = clientPhotoUrl(getPortalBaseUrl(), token);
       const body = photoRequestSms(client.salonName ?? "Your groomer", url);
       const result = await sendSms(client.phone, body, { tenantId, trigger: "staff" });
 
