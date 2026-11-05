@@ -279,6 +279,7 @@ const OPERATIONAL = [
   "waitlistRouter.matchesForSlot",
   "waitlistRouter.offer",
   "waitlistRouter.remove",
+  "waitlistRouter.update",
   "workflowReviewRouter.getBoardThresholds",
   "workflowRouter.getBoard",
   "workflowRouter.getStaff",
@@ -306,7 +307,7 @@ describe("tRPC procedure surface", () => {
     //    canAdministerStaff, because users.role = "admin" includes four
     //    groomers and this removes a record. This file cannot see that
     //    check, so clientDeletion.test.ts carries the rule.
-    expect(surface).toHaveLength(370);
+    expect(surface).toHaveLength(371);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -324,8 +325,15 @@ describe("tRPC procedure surface", () => {
      * touches is access-checked on its own, so a groomer who can reach
      * one dog of a booking but not its siblings is refused the whole
      * action rather than cancelling half a family.
+     *
+     * 131 since 05/11/2026: waitlistRouter.update. It sits beside join
+     * and remove, which are already operational — somebody on the desk
+     * who can put a client on the list and take them off it is the same
+     * person who widens their dates when they ring back, and making the
+     * edit owner-only would send them round the delete-and-re-add route
+     * that loses the client's place in the queue.
      */
-    expect(OPERATIONAL).toHaveLength(130);
+    expect(OPERATIONAL).toHaveLength(131);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

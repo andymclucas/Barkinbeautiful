@@ -168,3 +168,91 @@ export function AddKnownClientToWaitlist({
     </div>
   );
 }
+
+/**
+ * Change an entry somebody is already on, rather than removing and
+ * re-adding them.
+ *
+ * Andy, 05/11/2026: "If they have been added and anything changes, give
+ * the function to edit waitlist options."
+ *
+ * Delete-and-re-add was the only way before this, and it loses the
+ * created_at that rankMatches orders offers by — so a client who
+ * widened their dates by one day went to the back of the queue behind
+ * people who asked after them.
+ */
+export function EditWaitlistEntry({
+  entry, onSaved,
+}: {
+  entry: {
+    id: number;
+    petName: string;
+    earliestDate: string;
+    latestDate: string;
+    timeOfDay: string;
+    preferredStaffId: number | null;
+    note: string | null;
+  };
+  onSaved?: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [form, setForm] = useState<WaitlistFields>({
+    earliestDate: entry.earliestDate,
+    latestDate: entry.latestDate,
+    timeOfDay: entry.timeOfDay,
+    staffId: entry.preferredStaffId ? String(entry.preferredStaffId) : "",
+    note: entry.note ?? "",
+  });
+
+  const update = trpc.waitlist.update.useMutation({
+    onSuccess: () => {
+      toast.success(`${entry.petName}'s waitlist entry updated`);
+      utils.waitlist.listEntries.invalidate();
+      onSaved?.();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const remove = trpc.waitlist.remove.useMutation({
+    onSuccess: () => {
+      toast.success(`${entry.petName} taken off the waitlist`);
+      utils.waitlist.listEntries.invalidate();
+      onSaved?.();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-3">
+      <WaitlistEntryFields value={form} onChange={setForm} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          disabled={update.isPending}
+          onClick={() => update.mutate({
+            entryId: entry.id,
+            earliestDate: form.earliestDate,
+            latestDate: form.latestDate,
+            timeOfDay: form.timeOfDay as "any" | "morning" | "afternoon",
+            preferredStaffId: form.staffId ? Number(form.staffId) : null,
+            note: form.note.trim() || null,
+          })}
+        >
+          {update.isPending ? "Saving…" : "Save changes"}
+        </Button>
+        {/* Taking them off is the other thing somebody opens this to do,
+            and sending them to the calendar's waitlist panel for it is a
+            trip across the app for one click. */}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-destructive hover:text-destructive"
+          disabled={remove.isPending}
+          onClick={() => remove.mutate({ entryId: entry.id })}
+        >
+          {remove.isPending ? "Removing…" : "Take off the waitlist"}
+        </Button>
+      </div>
+    </div>
+  );
+}

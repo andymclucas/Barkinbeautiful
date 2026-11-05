@@ -2,7 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
 import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
-import { AddKnownClientToWaitlist } from "@/components/WaitlistEntryFields";
+import { AddKnownClientToWaitlist, EditWaitlistEntry } from "@/components/WaitlistEntryFields";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { PetNoteArchive } from "@/components/PetNoteArchive";
 import { MoegoBadge } from "@/components/MoegoBadge";
@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel } from "@/components/client-record/ClientOverview";
+import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel, ClientWaitlistPanel } from "@/components/client-record/ClientOverview";
 import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
 import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
 import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
@@ -352,6 +352,14 @@ export default function ClientDetail() {
    */
   const [confirmDeleteClient, setConfirmDeleteClient] = useState(false);
   const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [editWaitlistId, setEditWaitlistId] = useState<number | null>(null);
+  /* Drives both the overview card and whether "Add to waitlist" is
+     offered. One query, so the menu and the card cannot disagree. */
+  const { data: waitlistEntries } = trpc.waitlist.listEntries.useQuery(
+    { clientId, status: "active" },
+  );
+  const waitlistedPetIds = new Set((waitlistEntries ?? []).map((entry) => entry.petId));
+  const editingWaitlistEntry = (waitlistEntries ?? []).find((entry) => entry.id === editWaitlistId);
   /**
    * Removing a groom photo, with the same named confirm a booking gets.
    *
@@ -863,9 +871,26 @@ export default function ClientDetail() {
                       panel all along, but it starts by searching for a
                       client — and from here the client is the page you
                       are already looking at. */}
-                  <DropdownMenuItem disabled={activePets.length === 0} onSelect={() => setWaitlistOpen(true)}>
-                    Add to waitlist
-                  </DropdownMenuItem>
+                  {/*
+                    * Andy, 05/11/2026: "remove the option to add them to
+                    * the waitlist if they've already been added."
+                    *
+                    * Per DOG, not per client. A two-dog household can have
+                    * one waiting and the other not, so Add stays while any
+                    * active dog is still off the list and disappears only
+                    * once they are all on it. Edit appears alongside as
+                    * soon as there is something to edit.
+                    */}
+                  {activePets.some(pet => !waitlistedPetIds.has(pet.id)) && (
+                    <DropdownMenuItem disabled={activePets.length === 0} onSelect={() => setWaitlistOpen(true)}>
+                      Add to waitlist
+                    </DropdownMenuItem>
+                  )}
+                  {(waitlistEntries ?? []).map(entry => (
+                    <DropdownMenuItem key={entry.id} onSelect={() => setEditWaitlistId(entry.id)}>
+                      Edit {entry.petName}'s waitlist entry
+                    </DropdownMenuItem>
+                  ))}
                   {manageableDepartedMemberships.length > 0 && <DropdownMenuSeparator />}
                   {manageableDepartedMemberships.map(({ pet, membership }) => (
                     <DropdownMenuItem key={membership.id} onSelect={() => openDepartedMembershipAction(pet, membership)}>
@@ -893,9 +918,39 @@ export default function ClientDetail() {
             </p>
             <AddKnownClientToWaitlist
               clientId={clientId}
-              pets={activePets.map((pet) => ({ id: pet.id, name: pet.name }))}
+              pets={activePets
+                .filter((pet) => !waitlistedPetIds.has(pet.id))
+                .map((pet) => ({ id: pet.id, name: pet.name }))}
               onAdded={() => setWaitlistOpen(false)}
             />
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={editWaitlistId !== null} onOpenChange={(open) => !open && setEditWaitlistId(null)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Waitlist entry</DialogTitle>
+            </DialogHeader>
+            {editingWaitlistEntry && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {editingWaitlistEntry.petName} is waiting for a cancellation. Change the
+                  window or the note, or take them off.
+                </p>
+                <EditWaitlistEntry
+                  entry={{
+                    id: editingWaitlistEntry.id,
+                    petName: editingWaitlistEntry.petName,
+                    earliestDate: editingWaitlistEntry.earliestDate,
+                    latestDate: editingWaitlistEntry.latestDate,
+                    timeOfDay: editingWaitlistEntry.timeOfDay,
+                    preferredStaffId: editingWaitlistEntry.preferredStaffId ?? null,
+                    note: editingWaitlistEntry.note ?? null,
+                  }}
+                  onSaved={() => setEditWaitlistId(null)}
+                />
+              </>
+            )}
           </DialogContent>
         </Dialog>
 
@@ -1325,6 +1380,8 @@ export default function ClientDetail() {
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,19rem)] xl:items-start">
               <div className="min-w-0 space-y-4">
                 <ClientMetrics clientId={clientId} />
+
+                <ClientWaitlistPanel clientId={clientId} onEdit={setEditWaitlistId} />
 
                 <Card>
                   <CardHeader className="pb-3">
