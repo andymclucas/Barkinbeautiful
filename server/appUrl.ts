@@ -106,7 +106,7 @@ let warnedPortalInvalid = false;
  * right that it was the correct address. It was the wrong door.
  *
  * So client links get their own host, set as VITE_PORTAL_URL (for
- * example https://clients.barkinbeautiful.com.au). Both names serve
+ * example https://client.barkinbeautiful.com.au). Both names serve
  * the same app, so the split is about what a client is TOLD rather
  * than what works.
  *

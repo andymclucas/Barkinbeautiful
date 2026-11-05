@@ -2365,7 +2365,7 @@ const calendarRouter = router({
           .where(eq(appointments.id, input.appointmentId))
           .limit(1);
         if (trackerRecipient?.phone) {
-          const trackerUrl = `${getAppBaseUrl()}/track/${appt.trackerToken}`;
+          const trackerUrl = `${getPortalBaseUrl()}/track/${appt.trackerToken}`;
           const body = buildPetTrackerSms({
             clientFirstName: trackerRecipient.firstName ?? "there",
             petName: trackerRecipient.petName ?? "your dog",
@@ -9960,7 +9960,7 @@ const groomingReportsRouter = router({
           const { ensureGroomingShareToken } = await import("./groomingShare");
           const { groomingShareUrl } = await import("@shared/groomingShareToken");
           const { getAppBaseUrl } = await import("./appUrl");
-          shareUrl = groomingShareUrl(getAppBaseUrl(), await ensureGroomingShareToken(db, report.id, report.tenantId));
+          shareUrl = groomingShareUrl(getPortalBaseUrl(), await ensureGroomingShareToken(db, report.id, report.tenantId));
         }
       } catch (err) {
         console.error("[emailReport] could not mint share link", err);
@@ -9990,7 +9990,7 @@ const groomingReportsRouter = router({
       const token = await ensureGroomingShareToken(db, report.id, report.tenantId);
       const { getAppBaseUrl } = await import("./appUrl");
       const { groomingShareUrl } = await import("@shared/groomingShareToken");
-      return { token, url: groomingShareUrl(getAppBaseUrl(), token) };
+      return { token, url: groomingShareUrl(getPortalBaseUrl(), token) };
     }),
 
   /**
@@ -11329,7 +11329,8 @@ const emailCampaignsRouter = router({
       const { sendEmail } = await import("./email.js");
 
       let sent = 0;
-      const unsubscribeBaseUrl = getAppBaseUrl();
+      // The client clicks this, so it belongs on the client host.
+      const unsubscribeBaseUrl = getPortalBaseUrl();
 
       for (const recipient of eligible) {
         if (!recipient.email) continue;

@@ -25,7 +25,7 @@ import { and, eq } from "drizzle-orm";
 import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
-import { getAppBaseUrl } from "./appUrl";
+import { getPortalBaseUrl } from "./appUrl";
 import { toStripeCents, stripeRecurring } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
@@ -73,7 +73,9 @@ export async function ensureStripeCustomer(clientId: number): Promise<string> {
 export async function createCardSetupLink(clientId: number) {
   const stripe = requireStripeClient();
   const customerId = await ensureStripeCustomer(clientId);
-  const base = getAppBaseUrl();
+  // The CLIENT returns to this after saving a card, so it is a client
+  // page and belongs on the client host.
+  const base = getPortalBaseUrl();
   const session = await stripe.checkout.sessions.create({
     mode: "setup",
     customer: customerId,

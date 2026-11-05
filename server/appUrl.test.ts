@@ -109,15 +109,15 @@ describe("getPortalBaseUrl", () => {
 
   it("sends clients to their own host when one is set", async () => {
     process.env.VITE_APP_URL = "https://staff.barkinbeautiful.com.au";
-    process.env.VITE_PORTAL_URL = "https://clients.barkinbeautiful.com.au";
+    process.env.VITE_PORTAL_URL = "https://client.barkinbeautiful.com.au";
     const { getPortalBaseUrl } = await import("./appUrl");
-    expect(getPortalBaseUrl()).toBe("https://clients.barkinbeautiful.com.au");
+    expect(getPortalBaseUrl()).toBe("https://client.barkinbeautiful.com.au");
   });
 
   it("strips a trailing slash, like its sibling", async () => {
-    process.env.VITE_PORTAL_URL = "https://clients.barkinbeautiful.com.au/";
+    process.env.VITE_PORTAL_URL = "https://client.barkinbeautiful.com.au/";
     const { getPortalBaseUrl } = await import("./appUrl");
-    expect(getPortalBaseUrl()).toBe("https://clients.barkinbeautiful.com.au");
+    expect(getPortalBaseUrl()).toBe("https://client.barkinbeautiful.com.au");
   });
 
   /**
