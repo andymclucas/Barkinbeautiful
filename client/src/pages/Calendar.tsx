@@ -2917,7 +2917,11 @@ export default function Calendar() {
   };
 
   const renderWeekView = () => (
-    <div className="bg-card rounded-xl border overflow-auto">
+    /* min-h-0 and flex-1 are what make `overflow-auto` mean anything. Without
+       a bounded height this div simply grew to fit a whole week and spilled
+       past the page, so the scroll container never scrolled and the grid was
+       drawn over whatever came after it. */
+    <div className="min-h-0 flex-1 bg-card rounded-xl border overflow-auto">
       <div className="min-w-[700px]">
         {/* Day header row */}
         <div
@@ -3795,7 +3799,20 @@ export default function Calendar() {
             open-choose-close, and there was no way to see next week's shape
             while looking at today. The rail is lg-and-up; on a phone the
             toolbar's date picker stays the way in. */}
-        <div className={viewMode !== "week" ? "flex min-h-0 flex-1 gap-4" : "flex min-h-0 gap-4"}>
+        {/* flex-1 and min-h-0 for EVERY view, week included.
+
+            Week view used to leave flex-1 off. The page column above has a
+            fixed height (lg:h-[calc(100dvh-6.5rem)]), so somebody has to
+            absorb a week that is taller than the screen — and with
+            `flex: 0 1 auto` and a content-sized basis, this row would not.
+            Flex took the space out of the TOOLBAR instead, squeezing it to
+            59px when its two rows need about 100, so the search and filter
+            row spilled out of its own box and landed on top of the mini
+            calendar. The grid overflowed the bottom the same way and drew
+            over the Unassigned panel.
+
+            Both symptoms were one missing flex-1. */}
+        <div className="flex min-h-0 flex-1 gap-4">
           <CalendarSidebar
             selected={viewMode !== "week" ? dayDate : weekStart}
             onSelectDate={(d) => {
@@ -3810,7 +3827,7 @@ export default function Calendar() {
             summaryLabel={viewMode !== "week" ? fmtDateShort(dayDate) : `Week of ${weekLabel}`}
             capacityByDate={capacityByDate}
           />
-          <div className={viewMode !== "week" ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1"}>
+          <div className="flex min-h-0 flex-1 flex-col">
             {viewMode === "week" ? renderWeekView() : viewMode === "agenda" ? renderAgendaView() : renderDayView()}
           </div>
         </div>
