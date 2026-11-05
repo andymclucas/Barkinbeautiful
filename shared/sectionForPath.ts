@@ -99,6 +99,18 @@ export const UNGATED_PATHS: readonly string[] = [
 
 export const UNGATED_NAMESPACES: readonly string[] = [
   "auth",
+  /*
+   * Which salon you are in cannot depend on a permission, for the same
+   * reason signing in cannot: the header asks salons.mine on every page
+   * load, and a groomer who could not read their own salon list would
+   * get a page that will not render rather than one with a section
+   * missing.
+   *
+   * It exposes nothing: `mine` returns only salons the caller already has
+   * access to, and grant/revoke are adminProcedure, which is checked
+   * independently of any section.
+   */
+  "salons",
   "pushSubscriptions",
   "trial",
   "salonSignup",

@@ -2090,3 +2090,32 @@ export const groomQuoteLines = mysqlTable("groom_quote_lines", {
 
 export type GroomQuoteRow = typeof groomQuotes.$inferSelect;
 export type GroomQuoteLineRow = typeof groomQuoteLines.$inferSelect;
+
+/**
+ * Who may act in which salon.
+ *
+ * Lauren owns Barkin' Beautiful and, from 23/11/2026, The Pet Pad. They are
+ * separate books, so she needs access to two tenants and a switcher — not
+ * the shared-site model, which would mean one client record spanning both.
+ *
+ * Many-to-many on purpose: one person can own several salons and a salon has
+ * several people. `granted_by_user_id` and `created_at` make it auditable,
+ * because this row is what lets somebody read another business's clients.
+ *
+ * It does NOT replace users.tenant_id or staff.tenant_id. Those say where a
+ * person belongs; this says where they are allowed, and
+ * shared/salonAccess.ts resolves the active one from both. An account with
+ * no row here behaves exactly as it does today.
+ */
+export const salonAccess = mysqlTable("salon_access", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  tenantId: int("tenant_id").notNull(),
+  grantedByUserId: int("granted_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_salon_access_user_tenant").on(t.userId, t.tenantId),
+  index("idx_salon_access_user").on(t.userId),
+]);
+
+export type SalonAccessRow = typeof salonAccess.$inferSelect;

@@ -5,6 +5,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useTheme, type ThemeChoice } from "@/contexts/ThemeContext";
 import NotificationBell from "@/components/NotificationBell";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { SalonSwitcher } from "@/components/SalonSwitcher";
 import SystemNotificationBell from "@/components/SystemNotificationBell";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { TrialBanner } from "@/components/TrialBanner";
@@ -853,11 +854,12 @@ function DashboardLayoutContent({
             * centre, and the sidebar already names the page you are on.
             */
           <div className="grid border-b h-14 grid-cols-[1fr_auto_1fr] items-center gap-1 bg-background/90 px-2 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40 shadow-sm">
-            <div className="flex justify-start">
+            <div className="flex min-w-0 items-center gap-1 justify-start">
               <SidebarTrigger
                 className="h-9 w-9 rounded-lg bg-background hover:bg-accent transition-colors"
                 aria-label="Toggle menu"
               />
+              <SalonSwitcher />
             </div>
             <div className="flex min-w-0 justify-center">
               <GlobalSearch />
@@ -878,7 +880,12 @@ function DashboardLayoutContent({
             * middle one is the true centre whatever is in them.
             */
           <div className="sticky top-0 z-40 grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-border/80 bg-card/75 px-4 backdrop-blur">
-            <div />
+            {/* The left column was empty. A salon switcher belongs here:
+                which business you are looking at is the first thing to
+                establish, and it must not push the search off centre —
+                this column is 1fr, so it cannot. Renders nothing at all
+                for a single-salon account. */}
+            <div className="flex min-w-0 justify-start"><SalonSwitcher /></div>
             <GlobalSearch />
             <div className="flex justify-end">{accountControls}</div>
           </div>

@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import "./index.css";
+import { readActiveSalon, SALON_HEADER } from "./lib/activeSalon";
 
 // Catches JS errors that happen outside React's own render cycle (e.g. a
 // timer callback or event handler), which the ErrorBoundary can't see.
@@ -126,9 +127,24 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       fetch(input, init) {
+        /*
+         * Which salon this tab is looking at, read fresh on every
+         * request rather than captured when the client was built — the
+         * switcher changes it without a reload.
+         *
+         * A request, not a decision: the server checks it against the
+         * salons this user actually has access to and ignores it
+         * otherwise, so a value the user could edit cannot select
+         * somebody else's books.
+         */
+        const salon = readActiveSalon();
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+          headers: {
+            ...((init ?? {}).headers ?? {}),
+            ...(salon === null ? {} : { [SALON_HEADER]: String(salon) }),
+          },
         });
       },
     }),

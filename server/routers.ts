@@ -80,6 +80,7 @@ import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFa
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
 import { groomQuotesRouter } from "./routers/groomQuotes";
+import { salonsRouter } from "./routers/salons";
 import { canQuoteInWorkflowState } from "@shared/groomQuote";
 import { loadApprovedQuoteExtras, approvedQuoteExtrasTotal } from "./groomQuoteExtras";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
@@ -14285,6 +14286,7 @@ export const appRouter = router({
   revenueTargets: revenueTargetsRouter,
   workflowReview: workflowReviewRouter,
   groomQuotes: groomQuotesRouter,
+  salons: salonsRouter,
   petCodes: petCodesRouter,
   search: searchRouter,
   presence: presenceRouter,
