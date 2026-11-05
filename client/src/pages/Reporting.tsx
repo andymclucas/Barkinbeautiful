@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/DateField";
 import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff } from "lucide-react";
@@ -20,6 +21,15 @@ import {
 /** Same shape as the figures in the cards above the table. */
 const money = (amount: number) =>
   `$${amount.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** What is actually in each tab, for the hover. */
+const REPORT_TABS = [
+  { value: "staff", label: "Staff", contains: "Productivity per groomer — appointments, revenue and clips over the period." },
+  { value: "financial", label: "Financial", contains: "Revenue by service, daily net sales, memberships and discounts." },
+  { value: "timing", label: "Timing", contains: "How long each stage takes, and where the day runs late." },
+  { value: "clients", label: "Clients", contains: "Lapsed customers to ring back, and retention per dog." },
+  { value: "exports", label: "Exports", contains: "Download appointments, clients and invoices as CSV." },
+] as const;
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -218,12 +228,28 @@ export default function Reporting() {
           * putting them inside a tab would mean picking a tab to find out.
           */}
         <Tabs defaultValue="staff">
-          <TabsList className="tabs-scroll sm:w-[560px]">
-            <TabsTrigger value="staff">Staff</TabsTrigger>
-            <TabsTrigger value="financial">Financial</TabsTrigger>
-            <TabsTrigger value="timing">Timing</TabsTrigger>
-            <TabsTrigger value="clients">Clients</TabsTrigger>
-            <TabsTrigger value="exports">Exports</TabsTrigger>
+          {/*
+            * Andy, 05/11/2026: "make it more prominent and hover
+            * features when hovering over each title."
+            *
+            * The prominence is in index.css and applies to every tab bar.
+            * This is the second half: what is actually inside each tab,
+            * on hover, so the sections can be found without opening all
+            * five. The contrast problem had hidden that they were even
+            * tabs.
+            */}
+          <TabsList className="tabs-scroll">
+            {REPORT_TABS.map((tab) => (
+              <Tooltip key={tab.value}>
+                <TooltipTrigger asChild>
+                  <TabsTrigger value={tab.value}>{tab.label}</TabsTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[15rem]">
+                  <p className="font-semibold">{tab.label}</p>
+                  <p className="text-xs opacity-90">{tab.contains}</p>
+                </TooltipContent>
+              </Tooltip>
+            ))}
           </TabsList>
 
           <TabsContent value="staff" className="mt-4 space-y-6">

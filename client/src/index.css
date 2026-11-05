@@ -773,18 +773,62 @@ textarea[data-slot="textarea"],
 [data-slot="badge"] {
   border-radius: 9999px;
 }
-/* The segmented control reads as one object with a pill sliding in it. */
+/*
+ * The segmented control reads as one object with a pill sliding in it.
+ *
+ * Andy, 05/11/2026, with a photo of the Reporting tabs: "This banner
+ * was hard to see - make it more prominent and hover features when
+ * hovering over each title."
+ *
+ * He is right, and the reason is a contrast problem the stock shadcn
+ * tabs have on a light brand: the bar sits on --muted, which here is a
+ * pale pink, and the ACTIVE tab goes to --background, which is white.
+ * White on pale pink is almost no contrast at all, so the one thing the
+ * control exists to tell you — which section you are in — was the
+ * hardest thing on it to see. Nothing said the others were clickable
+ * either.
+ *
+ * So the active tab now carries the brand rather than the absence of
+ * it, the bar gets an edge so it reads as an object, and hover gives
+ * the inactive ones a visible state. Applied to every tab bar, not just
+ * Reporting: the same washed-out pair was on all of them.
+ */
 [data-slot="tabs-list"] {
   border-radius: 9999px;
   padding: 0.25rem;
+  border: 1px solid color-mix(in oklch, var(--foreground) 10%, transparent);
+  background: color-mix(in oklch, var(--muted) 80%, var(--foreground) 5%);
 }
 [data-slot="tabs-trigger"] {
   border-radius: 9999px;
+  font-weight: 600;
+  color: color-mix(in oklch, var(--foreground) 62%, transparent);
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+/* An inactive tab has to look like something you can press. */
+[data-slot="tabs-trigger"]:hover:not([data-state="active"]):not(:disabled) {
+  background: color-mix(in oklch, var(--brand-primary) 12%, transparent);
+  color: var(--brand-primary);
 }
 [data-slot="tabs-trigger"][data-state="active"] {
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--brand-primary) 90%, white) 0%,
+    var(--brand-primary) 60%,
+    color-mix(in oklch, var(--brand-primary) 94%, black) 100%
+  );
+  color: var(--primary-foreground);
   box-shadow:
-    inset 0 1px 0 color-mix(in oklch, white 50%, transparent),
-    var(--shadow-sm);
+    inset 0 1px 0 color-mix(in oklch, white 30%, transparent),
+    0 1px 2px color-mix(in oklch, var(--brand-primary) 32%, transparent),
+    0 6px 14px -8px color-mix(in oklch, var(--brand-primary) 55%, transparent);
+}
+/* Radix sets these on the active trigger; they would undo the gradient
+   above, because a background-color beats a background-image's
+   transparency and the stock classes repaint it white. */
+[data-slot="tabs-trigger"][data-state="active"],
+.dark [data-slot="tabs-trigger"][data-state="active"] {
+  background-color: transparent;
 }
 
 /*
@@ -819,9 +863,19 @@ textarea[data-slot="textarea"],
   padding-inline: 0.875rem;
 }
 @media (min-width: 640px) {
-  /* Back to a proper segmented control once there is room for one. */
+  /*
+   * Back to a proper segmented control once there is room for one.
+   *
+   * fit-content, NOT auto. The rule above sets `display: flex` so the
+   * bar can scroll on a phone, and that makes it block-level — at which
+   * point `width: auto` means "fill the container", not "hug the tabs".
+   * Every one of these bars was a full-width slab on desktop from the
+   * phone fix of 05/11/2026 until later the same day, with the tabs
+   * huddled at one end of it. That dead space is most of why the
+   * Reporting bar read as a faint banner rather than a control.
+   */
   [data-slot="tabs-list"].tabs-scroll {
-    width: auto;
+    width: fit-content;
     overflow-x: visible;
   }
 }
