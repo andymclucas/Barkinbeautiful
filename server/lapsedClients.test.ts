@@ -3,6 +3,7 @@ import {
   lapsedClients,
   DEFAULT_MIN_VISITS,
   DEFAULT_OVERDUE_FACTOR,
+  MIN_PLAUSIBLE_GAP_DAYS,
   type LapsedVisit,
 } from "@shared/lapsedClients";
 
@@ -131,6 +132,40 @@ describe("lapsedClients", () => {
     );
     expect(rows).toHaveLength(1);
     expect(Number.isFinite(rows[0].estimatedLostRevenue)).toBe(true);
+  });
+
+  it("does not mistake a run of consecutive days for a daily rhythm", () => {
+    // Four grooms on four consecutive days and nothing since. The first
+    // version read that as a one-day cadence, four hundred days overdue,
+    // and put five figures of imagined lost revenue at the top of the
+    // report. It is a booking being corrected, not a dog groomed daily.
+    const consecutive = [0, 1, 2, 3].map((offset) => ({
+      clientId: 1,
+      scheduledStart: new Date(NOW.getTime() - (413 - offset) * 24 * 60 * 60 * 1000),
+      price: "60.00",
+    }));
+    expect(lapsedClients(consecutive, opts())).toEqual([]);
+  });
+
+  it("keeps a real rhythm that happens to contain one correction", () => {
+    // Five six-weekly trips, one of them re-done the next day. The redo
+    // must not drag the median down; the client is still six-weekly.
+    const visits = [
+      ...rhythm(1, 5, 42, 200),
+      { clientId: 1, scheduledStart: new Date(NOW.getTime() - 199 * 24 * 60 * 60 * 1000), price: "60.00" },
+    ];
+    const rows = lapsedClients(visits, opts());
+    expect(rows).toHaveLength(1);
+    expect(rows[0].usualGapDays).toBeCloseTo(42);
+  });
+
+  it("drops a client whose every gap is implausible", () => {
+    // Trips three days apart are not a grooming interval at any count.
+    expect(lapsedClients(rhythm(1, 8, 3, 400), opts())).toEqual([]);
+  });
+
+  it("pins the plausible floor at a week", () => {
+    expect(MIN_PLAUSIBLE_GAP_DAYS).toBe(7);
   });
 
   it("pins the threshold at twice their own gap", () => {
