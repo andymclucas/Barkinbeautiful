@@ -212,3 +212,55 @@ export function windowLengthDays(earliestDate: string, latestDate: string): numb
   if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return 0;
   return Math.round((to - from) / 86_400_000) + 1;
 }
+
+/**
+ * Whether booking this dog in settles what they were waiting for.
+ *
+ * Andy, 05/11/2026: "once they've been booked, remove waitlist
+ * notification."
+ *
+ * A waitlist entry is a request for a slot the salon did not have. The
+ * moment the dog HAS one inside the window they asked about, the
+ * request is answered — whether it came from an offer, a cancellation
+ * somebody rang about, or staff simply booking them in. Nothing in the
+ * app closed an entry except a person deleting it, so the salon's only
+ * active entry has sat there since somebody typed it.
+ *
+ * Deliberately per DOG and not per client: a two-dog household can have
+ * one booked and the other still waiting, and clearing both because one
+ * was booked loses a customer's place.
+ *
+ * The date comparison is on the salon's calendar day as a "YYYY-MM-DD"
+ * string, which is how the window is stored — not a Date, which would
+ * drag the browser's timezone into a question about Brisbane days.
+ */
+export function bookingFulfilsEntry(
+  entry: { petId: number; earliestDate: string; latestDate: string; status: string },
+  booking: { petId: number; dayKey: string },
+): boolean {
+  if (entry.status !== "active") return false;
+  if (entry.petId !== booking.petId) return false;
+  // Inclusive at both ends: the client asked for "between these dates".
+  return booking.dayKey >= entry.earliestDate && booking.dayKey <= entry.latestDate;
+}
+
+/**
+ * How a client's waitlist entry reads on their record.
+ *
+ * Andy asked for it on the overview, which means it has to say the
+ * useful thing in one line without the reader opening anything: what
+ * the dog is waiting for and between which dates.
+ */
+export function describeWaitlistWindow(entry: {
+  earliestDate: string;
+  latestDate: string;
+  timeOfDay: TimeOfDay;
+}): string {
+  const day = (key: string) => {
+    const [y, m, d] = key.split("-").map(Number);
+    if (!y || !m || !d) return key;
+    return `${d} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1]}`;
+  };
+  const when = entry.timeOfDay === "any" ? "" : ` · ${entry.timeOfDay}s only`;
+  return `${day(entry.earliestDate)} – ${day(entry.latestDate)}${when}`;
+}

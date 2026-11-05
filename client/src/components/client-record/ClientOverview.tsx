@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Pin, Plus, Star } from "lucide-react";
+import { Hourglass, Pin, Plus, Star } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useTimezone } from "@/lib/timezone";
+import { describeWaitlistWindow } from "@shared/waitlist";
 
 /**
  * The eight figures a salon owner looks at before anything else.
@@ -247,6 +248,66 @@ export function ClientReviewsPanel({ clientId }: { clientId: number }) {
             {create.isPending ? "Saving…" : "Record review"}
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * What this client is waiting for, on the record rather than buried in
+ * the calendar's waitlist panel.
+ *
+ * Andy, 05/11/2026: "I believe this client was added to the waitlist
+ * yesterday for any Tuesday cancellations upcoming. Where does it show
+ * this?" It did not — the only place a waitlist entry appeared was the
+ * Waitlist panel on the calendar, which nobody opens while looking at a
+ * client. The salon had exactly one active entry and it was invisible
+ * from the one screen you would check.
+ *
+ * Renders nothing at all when there is nothing waiting, so the overview
+ * does not grow an empty card for the 99% of clients who are not on it.
+ */
+export function ClientWaitlistPanel({
+  clientId, onEdit,
+}: { clientId: number; onEdit?: (entryId: number) => void }) {
+  const { data } = trpc.waitlist.listEntries.useQuery({ clientId, status: "active" });
+  const entries = data ?? [];
+  if (entries.length === 0) return null;
+
+  return (
+    <Card className="border-amber-300/70 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Hourglass className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          On the waitlist
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {entries.map(entry => (
+          <div key={entry.id} className="rounded-lg border bg-card p-2.5">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{entry.petName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {describeWaitlistWindow(entry)}
+                  {entry.preferredStaffName ? ` · prefers ${entry.preferredStaffName}` : ""}
+                </p>
+              </div>
+              {onEdit && (
+                <Button variant="outline" size="sm" className="h-7 shrink-0 text-xs"
+                  onClick={() => onEdit(entry.id)}>
+                  Edit
+                </Button>
+              )}
+            </div>
+            {/* The note is the part staff actually act on — "any Tuesday
+                is best" is the whole reason the entry exists — so it is
+                shown rather than hidden behind the Edit button. */}
+            {entry.note && (
+              <p className="mt-1.5 text-xs italic text-muted-foreground">“{entry.note}”</p>
+            )}
+          </div>
+        ))}
       </CardContent>
     </Card>
   );

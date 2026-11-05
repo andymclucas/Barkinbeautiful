@@ -49,6 +49,7 @@ import {
   createWaitlistToken, hashWaitlistToken, matchesSlot, offerState,
   rankMatches, waitlistOfferSms, waitlistOfferUrl, windowLengthDays,
 } from "@shared/waitlist";
+import { settleWaitlistEntries } from "../waitlistSettle";
 
 const DATE_KEY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -137,6 +138,77 @@ export const waitlistRouter = router({
         createdByUserId: ctx.user.id,
       });
       return { entryId: (created as any).insertId as number, petName: pet.name };
+    }),
+
+
+  /**
+   * Change an entry somebody is already on.
+   *
+   * Andy, 05/11/2026: "If they have been added and anything changes,
+   * give the function to edit waitlist options."
+   *
+   * Before this the only edit was delete-and-re-add, which loses the
+   * created_at the offer ranking uses — so a client who widened their
+   * dates by a day went to the back of the queue behind people who
+   * asked after them. Same validation as join, deliberately: a window
+   * that is nonsense is nonsense whenever it is typed.
+   *
+   * Only an ACTIVE entry can be edited. Reopening a fulfilled one by
+   * editing it would put a dog back on the list after it was booked,
+   * which is the thing the fulfilment rule exists to stop.
+   */
+  update: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      entryId: z.number(),
+      serviceType: z.string().max(40).nullable().optional(),
+      preferredStaffId: z.number().nullable().optional(),
+      earliestDate: DATE_KEY,
+      latestDate: DATE_KEY,
+      timeOfDay: z.enum(["any", "morning", "afternoon"]),
+      note: z.string().trim().max(500).nullable().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      await assertTenant(db, ctx, tenantId);
+
+      const length = windowLengthDays(input.earliestDate, input.latestDate);
+      if (length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "The last date must be on or after the first." });
+      }
+      if (length > MAX_WAITLIST_WINDOW_DAYS) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `That window is ${length} days. Keep it to ${MAX_WAITLIST_WINDOW_DAYS} or fewer so offers still make sense when they arrive.`,
+        });
+      }
+
+      const [existing] = await db.select({ id: waitlistEntries.id, status: waitlistEntries.status })
+        .from(waitlistEntries)
+        .where(and(eq(waitlistEntries.id, input.entryId), eq(waitlistEntries.tenantId, tenantId)))
+        .limit(1);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "That waitlist entry is gone" });
+      if (existing.status !== "active") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `That entry is ${existing.status}, so there is nothing waiting to change. Add them again if they want to go back on.`,
+        });
+      }
+
+      await db.update(waitlistEntries)
+        .set({
+          serviceType: input.serviceType ?? null,
+          preferredStaffId: input.preferredStaffId ?? null,
+          earliestDate: input.earliestDate,
+          latestDate: input.latestDate,
+          timeOfDay: input.timeOfDay,
+          note: input.note || null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(waitlistEntries.id, input.entryId), eq(waitlistEntries.tenantId, tenantId)));
+      return { success: true };
     }),
 
 
@@ -281,6 +353,17 @@ export const waitlistRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const tenantId = tenantOf(ctx, input);
       await assertTenant(db, ctx, tenantId);
+
+      /*
+       * Close anything that has been booked since it was last looked at.
+       *
+       * A reconciliation rather than a trigger — see waitlistSettle.ts.
+       * Six code paths create an appointment and the Monday MoeGo sync
+       * creates hundreds with raw SQL, so hooking each one means the
+       * one added next is the one that forgets. Reading the list is the
+       * one place that cannot be skipped.
+       */
+      await settleWaitlistEntries(db, tenantId, { clientId: input.clientId });
 
       return db.select({
         id: waitlistEntries.id,
