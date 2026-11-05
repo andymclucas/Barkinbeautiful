@@ -67,7 +67,7 @@
 
   /* ── Typography ─────────────────────────────────────────────────────────── */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-display: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
 
   /* ── Radius ─────────────────────────────────────────────────────────────── */
   --radius: 0.875rem;
@@ -364,7 +364,14 @@
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
-    letter-spacing: -0.015em;
+    /* Bricolage runs a touch wide at display sizes; the optical-size
+       axis and a slightly tighter track stop a page title sprawling. */
+    font-optical-sizing: auto;
+    letter-spacing: -0.021em;
+  }
+  .font-display {
+    font-optical-sizing: auto;
+    letter-spacing: -0.021em;
   }
 
   /* Tabular figures keep dashboard numbers from jittering as they update. */
