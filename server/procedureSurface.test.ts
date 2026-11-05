@@ -242,6 +242,12 @@ const OPERATIONAL = [
   "petsRouter.updatePreferredGroomer",
   "petsRouter.updateSizeBand",
   "petsRouter.updateWeight",
+  /* Added 05/11/2026, reachable by restricted staff for the same reason
+     updateWeight above it is: the dog is weighed on the salon floor at
+     its groom, so the groomer taking the reading must also be able to
+     see what it was last time. Weights only — no contact details, no
+     money. */
+  "petsRouter.weightHistory",
   "portalChatRouter.getThread",
   "portalChatRouter.listThreads",
   "portalChatRouter.markRead",
@@ -339,7 +345,13 @@ describe("tRPC procedure surface", () => {
     // operationalProcedure matching nextAvailable and rebookSuggestion
     // beside it — rebooking at the counter is the salon floor, and a
     // restricted groomer doing it must not hit a FORBIDDEN.
-    expect(surface).toHaveLength(379);
+    //
+    // 380 since 05/11/2026: petsRouter gained weightHistory, every
+    // weighing on record for one dog. operationalProcedure like
+    // updateWeight beside it, and reachable by restricted staff for the
+    // same reason — a dog is weighed on the salon floor at its groom, so
+    // a groomer must be able to take the reading and see the last one.
+    expect(surface).toHaveLength(380);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -365,7 +377,7 @@ describe("tRPC procedure surface", () => {
      * edit owner-only would send them round the delete-and-re-add route
      * that loses the client's place in the queue.
      */
-    expect(OPERATIONAL).toHaveLength(132);
+    expect(OPERATIONAL).toHaveLength(133);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

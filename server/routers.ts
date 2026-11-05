@@ -36,7 +36,7 @@ import {
   memberships, membershipPayments, membershipLedgerEntries, invoices, invoiceLineItems, retailProducts,
   timesheets, petPhotos, migrationJobs, staffBlockouts, groomStyleNotes,
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
-  invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
+  invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, petWeights, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
   clientPackages, agreementSignatures, clientNotes,
 } from "../drizzle/schema";
@@ -4167,6 +4167,10 @@ const clientsRouter = router({
        */
       await db.delete(clientContacts).where(eq(clientContacts.clientId, client.id));
       await db.delete(clientNotes).where(eq(clientNotes.clientId, client.id));
+      // The dogs' weighings go with the dogs. There are no real foreign
+      // keys here (see pet_weights in schema.ts), so nothing would stop
+      // these becoming orphans pointing at a deleted pet.
+      if (petIds.length > 0) await db.delete(petWeights).where(inArray(petWeights.petId, petIds));
       if (petIds.length > 0) await db.delete(pets).where(inArray(pets.id, petIds));
       await db.delete(clients).where(eq(clients.id, client.id));
 
@@ -5477,6 +5481,7 @@ const petsRouter = router({
       tenantId: z.number().default(1),
       petId: z.number(),
       weightKg: z.number().finite().min(0).max(80).nullable(),
+      note: z.string().max(255).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -5493,8 +5498,85 @@ const petsRouter = router({
       // What this writes — both weight columns, and the band when there is
       // one — is decided in shared/petWeight.ts and tested there.
       const update = petWeightUpdate(input.weightKg);
-      await db.update(pets).set(update).where(eq(pets.id, pet.id));
+
+      /*
+       * The same write appends to the history, rather than a second
+       * procedure doing it. One write path means "the dog's current
+       * weight" and "the dog's weight history" cannot disagree — two
+       * entry points would drift the first time one of them was called
+       * from somewhere new.
+       *
+       * IN ONE TRANSACTION, or that claim is just a comment: two
+       * auto-committed statements can leave the pet's weight changed
+       * with nothing in the history, which is the exact disagreement
+       * the single write path exists to prevent.
+       *
+       * The history stores `update.weightKg` — the very string written
+       * to the pet — rather than re-rounding the input. toFixed(1) on
+       * one and toFixed(2) on the other would have let history hold
+       * 12.34 for a dog recorded as 12.3.
+       *
+       * Only for a real figure. Clearing a weight is not a weighing:
+       * recording that a dog weighs nothing would put a zero on the
+       * graph and make every trend after it a recovery.
+       */
+      await db.transaction(async (tx) => {
+        await tx.update(pets).set(update).where(eq(pets.id, pet.id));
+        if (update.weightKg !== null) {
+          await tx.insert(petWeights).values({
+            tenantId: pet.tenantId,
+            petId: pet.id,
+            weightKg: update.weightKg,
+            recordedByUserId: Number(ctx.user.id) || null,
+            note: input.note ?? null,
+          });
+        }
+      });
       return { success: true, weightKg: update.weightKg, sizeBand: update.sizeBand ?? null };
+    }),
+
+  /**
+   * Every weighing on record for one dog, oldest first.
+   *
+   * operationalProcedure, like updateWeight beside it: a dog is weighed on
+   * the salon floor at its groom, so a restricted groomer must be able to
+   * both take the reading and see what it was last time. It carries no
+   * contact details and no money.
+   *
+   * The trend and the "worth mentioning to the owner" threshold are
+   * shared/petWeightHistory.ts, not here, so the graph and any future
+   * caller read the same rule.
+   */
+  weightHistory: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      petId: z.number(),
+      limit: z.number().int().min(1).max(200).default(50),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantId) {
+        throw new Error("This pet is not available to your salon staff profile");
+      }
+      const rows = await db
+        .select({
+          id: petWeights.id,
+          weightKg: petWeights.weightKg,
+          recordedAt: petWeights.recordedAt,
+          note: petWeights.note,
+          appointmentId: petWeights.appointmentId,
+        })
+        .from(petWeights)
+        .where(and(eq(petWeights.tenantId, tenantId), eq(petWeights.petId, input.petId)))
+        .orderBy(desc(petWeights.recordedAt))
+        .limit(input.limit);
+      // Newest first out of the database so the limit keeps the RECENT
+      // readings; oldest first on the way out, which is how a graph and
+      // weightTrend both want them.
+      return { entries: rows.reverse() };
     }),
 
   /**
@@ -5713,6 +5795,9 @@ const petsRouter = router({
 
       // Nothing references it, so there is nothing to cascade. The event
       // trail is kept: it records that a row existed and was removed.
+      // Same reason as clients.delete above: no FK, so the weighings would
+      // outlive the dog.
+      await db.delete(petWeights).where(and(eq(petWeights.petId, pet.id), eq(petWeights.tenantId, tenantId)));
       await db.delete(pets).where(and(eq(pets.id, pet.id), eq(pets.tenantId, tenantId)));
       return { checked: false as const, success: true, petName: pet.name, clientId: pet.clientId };
     }),
