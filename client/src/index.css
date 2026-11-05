@@ -743,6 +743,45 @@ textarea[data-slot="textarea"],
     var(--shadow-sm);
 }
 
+/*
+ * A tab bar wider than the phone scrolls; it does not cram.
+ *
+ * Andy, 05/11/2026, with a photo of Pricing & Services on his phone:
+ * "Adjust alignment on mobile version." Five tabs in a fixed
+ * five-column grid gave each one about 71px on a 390px screen, and
+ * "Memberships 51" needs 108 — so the labels ran into each other and
+ * the counts landed on top of the next tab's name.
+ *
+ * An equal-width grid is right on a desktop, where the tabs are a
+ * segmented control and should look like one. On a phone there is no
+ * width to divide, so the row scrolls sideways and each tab keeps the
+ * space its own label needs. Nothing is hidden and nothing overlaps.
+ */
+[data-slot="tabs-list"].tabs-scroll {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+[data-slot="tabs-list"].tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+/* flex-1 is what squashed them; each tab takes its own width instead. */
+[data-slot="tabs-list"].tabs-scroll > [data-slot="tabs-trigger"] {
+  flex: 0 0 auto;
+  padding-inline: 0.875rem;
+}
+@media (min-width: 640px) {
+  /* Back to a proper segmented control once there is room for one. */
+  [data-slot="tabs-list"].tabs-scroll {
+    width: auto;
+    overflow-x: visible;
+  }
+}
+
 /* ── Sidebar nav ──────────────────────────────────────────────────────────── */
 /*
  * The global button rule above runs at --dur-fast, which is right for a button

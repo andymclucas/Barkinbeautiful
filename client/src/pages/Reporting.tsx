@@ -206,7 +206,7 @@ export default function Reporting() {
           * putting them inside a tab would mean picking a tab to find out.
           */}
         <Tabs defaultValue="staff">
-          <TabsList className="grid w-full grid-cols-5 sm:w-[560px]">
+          <TabsList className="tabs-scroll sm:w-[560px]">
             <TabsTrigger value="staff">Staff</TabsTrigger>
             <TabsTrigger value="financial">Financial</TabsTrigger>
             <TabsTrigger value="timing">Timing</TabsTrigger>
