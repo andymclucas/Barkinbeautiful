@@ -55,6 +55,7 @@ import { getAppBaseUrl, getPortalBaseUrl } from "../appUrl";
 import { addOnsTotal, isUsableBilledOverride, countsTowardBooking } from "@shared/appointmentAddOns";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import { loadBillableTotals, refreshPaymentStatus } from "../billableTotals";
+import { loadApprovedQuoteExtrasForAppointments, approvedQuoteExtrasTotal } from "../groomQuoteExtras";
 import {
   PAYMENT_METHODS,
   summarisePayments,
@@ -95,6 +96,12 @@ export interface BookingAppointmentPayments {
   servicePrice: number | null;
   /** This dog's OWN extras, added up. */
   addOnsTotal: number;
+  /**
+   * Work the owner agreed to mid-groom and said yes to — see
+   * shared/groomQuote.ts. Part of `total` and therefore part of what is
+   * owed, shown separately so the counter can say which line it is.
+   */
+  approvedExtrasTotal: number;
   /** Set when a person typed the figure instead of it being worked out. */
   billedTotalOverride: number | null;
   billedOverrideReason: string | null;
@@ -194,6 +201,11 @@ async function loadBillingBreakdown(db: any, appointmentIds: number[]) {
   const breakdown = new Map<number, {
     servicePrice: number | null;
     addOnsTotal: number;
+    /* Work the owner agreed to mid-groom. Shown as its own line rather
+       than folded into the extras, because "you agreed to this on the
+       day" is a different thing to explain at the counter than "this was
+       booked", and it is the line a client queries. */
+    approvedExtrasTotal: number;
     billedTotalOverride: number | null;
     billedOverrideReason: string | null;
   }>();
@@ -225,6 +237,8 @@ async function loadBillingBreakdown(db: any, appointmentIds: number[]) {
     .from(appointmentAddOns)
     .where(inArray(appointmentAddOns.appointmentId, appointmentIds));
 
+  const quoteExtras = await loadApprovedQuoteExtrasForAppointments(db, appointmentIds);
+
   const num = (value: any) =>
     value === null || value === undefined || String(value).trim() === "" ? null : Number(value);
 
@@ -232,6 +246,9 @@ async function loadBillingBreakdown(db: any, appointmentIds: number[]) {
     breakdown.set(row.id, {
       servicePrice: num(row.price),
       addOnsTotal: Number(addOnsTotal(addOns.filter((a: any) => a.appointmentId === row.id))),
+      approvedExtrasTotal: Number(approvedQuoteExtrasTotal(
+        quoteExtras.filter((e) => e.appointmentId === row.id),
+      )),
       billedTotalOverride: num(row.billedTotalOverride),
       billedOverrideReason: row.billedOverrideReason ?? null,
     });
@@ -389,6 +406,7 @@ export const paymentsRouter = router({
           discountReason: row.discountReason ?? null,
           servicePrice: breakdown.get(row.id)?.servicePrice ?? null,
           addOnsTotal: breakdown.get(row.id)?.addOnsTotal ?? 0,
+          approvedExtrasTotal: breakdown.get(row.id)?.approvedExtrasTotal ?? 0,
           billedTotalOverride: breakdown.get(row.id)?.billedTotalOverride ?? null,
           billedOverrideReason: breakdown.get(row.id)?.billedOverrideReason ?? null,
           ...summarisePayments(totals.get(row.id) ?? null, own),

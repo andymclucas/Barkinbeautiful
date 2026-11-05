@@ -45,6 +45,10 @@ export const CLIENT_PATH_ROOTS: readonly string[] = [
   "/photo",
   "/slot",
   "/card",
+  // Where an owner agrees to extra work found mid-groom. Texted to them
+  // while the dog is on the table, so it belongs on the client host with
+  // everything else they are sent.
+  "/quote",
 ];
 
 /** Staff surface that happens to sit inside a client tree. */

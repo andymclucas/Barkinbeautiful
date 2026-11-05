@@ -39,6 +39,8 @@ import {
   invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, petWeights, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
   clientPackages, agreementSignatures, clientNotes,
+  groomQuotes,
+  groomQuoteLines,
 } from "../drizzle/schema";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
@@ -77,6 +79,9 @@ import { createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpir
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
+import { groomQuotesRouter } from "./routers/groomQuotes";
+import { canQuoteInWorkflowState } from "@shared/groomQuote";
+import { loadApprovedQuoteExtras, approvedQuoteExtrasTotal } from "./groomQuoteExtras";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
@@ -2184,6 +2189,33 @@ const calendarRouter = router({
       });
 
       /*
+       * The dog is leaving, so any quote still waiting on the owner stops
+       * waiting.
+       *
+       * Without this an unanswered quote keeps a live link for up to four
+       * hours after pickup. The owner taps Yes from the car park, their
+       * page says "it will be added to your bill", and nothing is
+       * charged — decideAppointmentInvoice has already returned
+       * already_invoiced, and nothing in the app adds a line to an
+       * invoice that exists. Expiring it means the owner is told the
+       * truth and the groomer sees "No answer — not charged" rather than
+       * a clock that never stops.
+       *
+       * Only `sent` rows, so an answer arriving in the same second wins.
+       * A draft is left alone: it was never shown to anybody and the
+       * groomer may still be mid-sentence with them at the counter.
+       */
+      if (!canQuoteInWorkflowState(input.newState)) {
+        await db.update(groomQuotes)
+          .set({ status: "expired", updatedAt: new Date() })
+          .where(and(
+            eq(groomQuotes.tenantId, appt.tenantId),
+            eq(groomQuotes.appointmentId, input.appointmentId),
+            eq(groomQuotes.status, "sent"),
+          ));
+      }
+
+      /*
        * Andy, 04/11/2026: "Send auto cancellation and reschedule texts
        * also."
        *
@@ -2282,6 +2314,12 @@ const calendarRouter = router({
         // Loaded before the decision, not after: an appointment with no
         // price but a real add-on still has something to bill.
         const addOns = await loadAddOnsForInvoice(db, appt.tenantId, appt.id);
+        // Work the owner agreed to mid-groom. Loaded beside the add-ons
+        // and counted in the SAME decision, because this function decides
+        // whether an invoice exists at all — a membership dog with no
+        // add-ons and an agreed $60 de-matt would otherwise raise nothing
+        // and give it away in silence.
+        const quoteExtras = await loadApprovedQuoteExtras(db, appt.tenantId, appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
@@ -2289,6 +2327,7 @@ const calendarRouter = router({
           workflowState: "complete",
           status: appt.status,
           addOnsTotal: addOnsTotal(addOns),
+          approvedExtrasTotal: approvedQuoteExtrasTotal(quoteExtras),
         });
         if (decision.invoice) {
           const [paidRow] = await db.select({ total: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)` })
@@ -2310,6 +2349,7 @@ const calendarRouter = router({
             servicePrice: total,
             addOns,
             membershipCovered: decision.bill === "extras_only",
+            approvedExtras: quoteExtras,
           });
           // Judged against the WHOLE bill, not the groom alone. Paying the
           // $145 groom on a $180 booking leaves the $35 extra owing, and
@@ -2552,6 +2592,21 @@ const calendarRouter = router({
       // Remove only records that cannot exist without their parent appointment.
       await db.delete(workflowLogs).where(inArray(workflowLogs.appointmentId, appointmentIds));
       await db.delete(groomingReports).where(inArray(groomingReports.appointmentId, appointmentIds));
+      /* A quote cannot exist without its appointment — it names the dog,
+         the booking and the work found on the day. Lines first, so a
+         failure between the two cannot strand lines with no quote.
+         Nothing financial is lost: an approved quote that reached a bill
+         is already on the invoice, and invoices are unlinked rather than
+         deleted just below. */
+      {
+        const quoteIds = (await db.select({ id: groomQuotes.id }).from(groomQuotes)
+          .where(inArray(groomQuotes.appointmentId, appointmentIds)))
+          .map((r: { id: number }) => r.id);
+        if (quoteIds.length > 0) {
+          await db.delete(groomQuoteLines).where(inArray(groomQuoteLines.quoteId, quoteIds));
+          await db.delete(groomQuotes).where(inArray(groomQuotes.id, quoteIds));
+        }
+      }
       await db.update(invoices).set({ appointmentId: null }).where(inArray(invoices.appointmentId, appointmentIds));
       await db.update(petPhotos).set({ appointmentId: null }).where(inArray(petPhotos.appointmentId, appointmentIds));
       await db.update(groomStyleNotes).set({ appointmentId: null }).where(inArray(groomStyleNotes.appointmentId, appointmentIds));
@@ -2638,6 +2693,12 @@ const calendarRouter = router({
         // cannot diverge — see shared/appointmentInvoicing.ts.
         const already = await countInvoicesCovering(db, appt.id);
         const addOns = await loadAddOnsForInvoice(db, tenantOf(ctx, input), appt.id);
+        // Work the owner agreed to mid-groom. Loaded beside the add-ons
+        // and counted in the SAME decision, because this function decides
+        // whether an invoice exists at all — a membership dog with no
+        // add-ons and an agreed $60 de-matt would otherwise raise nothing
+        // and give it away in silence.
+        const quoteExtras = await loadApprovedQuoteExtras(db, tenantOf(ctx, input), appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
@@ -2645,6 +2706,7 @@ const calendarRouter = router({
           workflowState: "complete",
           status: "confirmed",
           addOnsTotal: addOnsTotal(addOns),
+          approvedExtrasTotal: approvedQuoteExtrasTotal(quoteExtras),
         });
         if (!decision.invoice) { skipped.push({ petName: appt.petName ?? "Pet", reason: decision.reason }); continue; }
         const price = appt.price ? parseFloat(String(appt.price)) : 0;
@@ -2660,6 +2722,7 @@ const calendarRouter = router({
         const itemised = buildInvoiceLines({
           petName: appt.petName, serviceLabel, servicePrice: total, addOns,
           membershipCovered: decision.bill === "extras_only",
+          approvedExtras: quoteExtras,
         });
         const [result] = await db.insert(invoices).values({
           tenantId: tenantOf(ctx, input),
@@ -2743,6 +2806,12 @@ const calendarRouter = router({
       for (const appt of appts) {
         const already = await countInvoicesCovering(db, appt.id);
         const addOns = await loadAddOnsForInvoice(db, tenantId, appt.id);
+        // Work the owner agreed to mid-groom. Loaded beside the add-ons
+        // and counted in the SAME decision, because this function decides
+        // whether an invoice exists at all — a membership dog with no
+        // add-ons and an agreed $60 de-matt would otherwise raise nothing
+        // and give it away in silence.
+        const quoteExtras = await loadApprovedQuoteExtras(db, tenantId, appt.id);
         const decision = decideAppointmentInvoice({
           price: appt.price,
           membershipId: appt.membershipId,
@@ -2750,6 +2819,7 @@ const calendarRouter = router({
           workflowState: "complete",
           status: "confirmed",
           addOnsTotal: addOnsTotal(addOns),
+          approvedExtrasTotal: approvedQuoteExtrasTotal(quoteExtras),
         });
         if (!decision.invoice) { skipped.push({ petName: appt.petName ?? "Pet", reason: decision.reason }); continue; }
         const itemised = buildInvoiceLines({
@@ -2758,6 +2828,7 @@ const calendarRouter = router({
           servicePrice: appt.price ? parseFloat(String(appt.price)).toFixed(2) : "0.00",
           addOns,
           membershipCovered: decision.bill === "extras_only",
+          approvedExtras: quoteExtras,
         });
         parts.push({
           appointmentId: appt.id, petName: appt.petName,
@@ -14192,6 +14263,7 @@ export const appRouter = router({
   trial: trialRouter,
   revenueTargets: revenueTargetsRouter,
   workflowReview: workflowReviewRouter,
+  groomQuotes: groomQuotesRouter,
   petCodes: petCodesRouter,
   search: searchRouter,
   presence: presenceRouter,

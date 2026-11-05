@@ -2006,3 +2006,87 @@ export const waitlistOffers = mysqlTable("waitlist_offers", {
 
 export type WaitlistEntryRow = typeof waitlistEntries.$inferSelect;
 export type WaitlistOfferRow = typeof waitlistOffers.$inferSelect;
+
+/**
+ * A quote for extra work found while the dog is at the salon.
+ *
+ * The groomer finds matting, or an ear that needs attention, and asks the
+ * owner to agree to the charge BEFORE doing the work. Andy chose this shape
+ * on 05/11/2026 over a prospective-client estimate and a draft invoice.
+ *
+ * The salon already has somewhere to put an extra charge. What it had
+ * nowhere to put is the owner's ANSWER — who was asked, what figure they
+ * were shown, what they said, when, and whether they said it themselves or
+ * staff recorded it for them. That is what these columns are for, and the
+ * rules that protect them live in shared/groomQuote.ts.
+ *
+ * No `.references()`, same as petWeights and for the same reason: once the
+ * snapshot chain is repaired drizzle-kit would try to add real foreign keys
+ * against live data, and an FK on `appointment_id` would make the bulk
+ * appointment delete in routers.ts throw for any quoted dog. The three
+ * delete paths clear these rows explicitly instead.
+ */
+export const groomQuotes = mysqlTable("groom_quotes", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  appointmentId: int("appointment_id").notNull(),
+  petId: int("pet_id").notNull(),
+  clientId: int("client_id").notNull(),
+  status: mysqlEnum("status", ["draft", "sent", "approved", "declined", "expired", "withdrawn"]).default("draft").notNull(),
+  /**
+   * Dollars. Frozen once the quote is sent — the figure the owner saw is the
+   * figure, and needing a different one means withdrawing this quote and
+   * raising another. Kept here as well as on the lines so a dispute reads
+   * one number, not a sum somebody has to recompute.
+   */
+  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  /** What the groomer found, in their own words. */
+  reason: varchar("reason", { length: 500 }),
+  /**
+   * SHA-256 only, exactly as waitlistOffers does it: the link travels by SMS
+   * and lingers in the thread for ever. NULL until the quote is sent, which
+   * a MySQL unique index allows any number of.
+   */
+  tokenHash: varchar("token_hash", { length: 64 }),
+  raisedByUserId: int("raised_by_user_id"),
+  raisedByStaffId: int("raised_by_staff_id"),
+  sentAt: timestamp("sent_at"),
+  /**
+   * Stored rather than computed from sent_at, so changing
+   * QUOTE_EXPIRY_HOURS never retroactively expires a quote an owner is
+   * still looking at.
+   */
+  expiresAt: timestamp("expires_at"),
+  decidedAt: timestamp("decided_at"),
+  /** Who gave the answer. A dispute turns on this one column. */
+  approvalSource: mysqlEnum("approval_source", ["client", "staff"]),
+  /** How the owner was reached. Required when staff answer on their behalf. */
+  approvalNote: varchar("approval_note", { length: 255 }),
+  decidedByUserId: int("decided_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  uniqueIndex("uq_groom_quotes_token").on(t.tokenHash),
+  index("idx_groom_quotes_appointment").on(t.tenantId, t.appointmentId),
+  index("idx_groom_quotes_open").on(t.tenantId, t.status, t.expiresAt),
+]);
+
+/**
+ * The lines of a quote, one per thing being charged for.
+ *
+ * A real table rather than JSON on the quote, because "how much de-matting
+ * did we sell last month" is a question this salon's owner asks, and JSON
+ * makes it unanswerable.
+ */
+export const groomQuoteLines = mysqlTable("groom_quote_lines", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  quoteId: int("quote_id").notNull(),
+  description: varchar("description", { length: 255 }).notNull(),
+  /** Dollars. Cents only at the Stripe boundary, per CLAUDE.md §10. */
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("idx_groom_quote_lines_quote").on(t.tenantId, t.quoteId)]);
+
+export type GroomQuoteRow = typeof groomQuotes.$inferSelect;
+export type GroomQuoteLineRow = typeof groomQuoteLines.$inferSelect;

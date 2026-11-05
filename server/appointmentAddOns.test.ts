@@ -562,3 +562,133 @@ describe("a cancelled dog must not be billed", () => {
     expect(countsTowardBooking({ status: null, workflowState: null })).toBe(true);
   });
 });
+
+describe("extra work the owner agreed to mid-groom", () => {
+  it("adds an approved quote as its own line, after the add-ons", () => {
+    const { lines, subtotal } = buildInvoiceLines({
+      petName: "Fergus",
+      serviceLabel: "Classic Groom",
+      servicePrice: "95.00",
+      addOns: [{ name: "Anal Glands", unitPrice: "15.00" }],
+      approvedExtras: [{ description: "De-matting", amount: "40.00" }],
+    });
+    expect(lines.map((l) => l.description)).toEqual([
+      "Fergus — Classic Groom",
+      "Fergus — Anal Glands",
+      "Fergus — De-matting (agreed on the day)",
+    ]);
+    expect(subtotal).toBe("150.00");
+  });
+
+  it("says on the line that the owner agreed, so the charge is recognisable weeks later", () => {
+    const { lines } = buildInvoiceLines({
+      petName: "Lola",
+      serviceLabel: "Bath",
+      servicePrice: "55.00",
+      addOns: [],
+      approvedExtras: [{ description: "Ear clean", amount: "20.00" }],
+    });
+    expect(lines[1].description).toContain("agreed on the day");
+  });
+
+  it("charges the extra on a membership dog, whose groom is covered", () => {
+    // A membership groom carries no price — the weekly payment covers it —
+    // but extras done on the day ARE invoiced (Andy, 07/10/2026). This is
+    // the case most likely to get broken later, so it is pinned.
+    const { lines, subtotal } = buildInvoiceLines({
+      petName: "Pip",
+      serviceLabel: "Styled Groom",
+      servicePrice: "120.00",
+      addOns: [],
+      membershipCovered: true,
+      approvedExtras: [{ description: "De-matting", amount: "40.00" }],
+    });
+    expect(lines[0].lineTotal).toBe("0.00");
+    expect(lines[0].description).toContain("covered by membership");
+    expect(lines[1].lineTotal).toBe("40.00");
+    expect(subtotal).toBe("40.00");
+  });
+
+  it("adds nothing when there are no approved extras", () => {
+    const withNone = buildInvoiceLines({
+      petName: "Boo", serviceLabel: "Bath", servicePrice: "50.00", addOns: [],
+    });
+    const withEmpty = buildInvoiceLines({
+      petName: "Boo", serviceLabel: "Bath", servicePrice: "50.00", addOns: [], approvedExtras: [],
+    });
+    expect(withNone.lines).toHaveLength(1);
+    expect(withEmpty.lines).toHaveLength(1);
+    expect(withNone.subtotal).toBe("50.00");
+  });
+
+  it("totals several approved quotes without floating-point drift", () => {
+    const { subtotal } = buildInvoiceLines({
+      petName: "Ruby", serviceLabel: "Bath", servicePrice: "0", addOns: [],
+      approvedExtras: [
+        { description: "a", amount: 0.1 },
+        { description: "b", amount: 0.2 },
+      ],
+    });
+    expect(subtotal).toBe("0.30");
+  });
+});
+
+describe("the counter asks for work the owner agreed to mid-groom", () => {
+  /*
+   * This is the figure staff collect against: the panel's total, what
+   * payments.record validates, and what sizes a Pay Now link. The invoice
+   * builders were wired to approved quotes and this was not, so the salon
+   * agreed $60 with an owner, raised a $205 invoice, asked for $145,
+   * REFUSED anyone trying to pay $205 as "more than the outstanding", and
+   * stamped the booking paid in full — with the $60 stranded on a draft
+   * invoice that nobody chases and that is not even emailed.
+   */
+  const deMatt = [{ amount: "60.00" }];
+
+  it("adds the agreed extra to a priced groom", () => {
+    expect(billableTotal("145.00", [], null, deMatt)).toBe("205.00");
+  });
+
+  it("prices a MEMBERSHIP groom that has nothing but an agreed extra", () => {
+    // The membership pays for the groom, so price is null. Returning null
+    // here showed the dog as unpriced on the panel, so nobody was ever
+    // prompted to collect the $60 the owner had said yes to.
+    expect(billableTotal(null, [], null, deMatt)).toBe("60.00");
+  });
+
+  it("still returns null when there is genuinely nothing to charge", () => {
+    expect(billableTotal(null, [], null, [])).toBeNull();
+    expect(billableTotal(null, [])).toBeNull();
+  });
+
+  it("adds agreed extras on top of add-ons, not instead of them", () => {
+    expect(billableTotal("145.00", [{ name: "Teeth", unitPrice: "35.00", quantity: 1 }], null, deMatt))
+      .toBe("240.00");
+  });
+
+  it("lets a typed-in price still override everything", () => {
+    // "This one is on us" is a decision a person made, and an agreed extra
+    // does not quietly reinstate the charge they waived.
+    expect(billableTotal("145.00", [], "0", deMatt)).toBe("0.00");
+    expect(billableTotal("145.00", [], "100.00", deMatt)).toBe("100.00");
+  });
+
+  it("keeps each dog's agreed extra on its own bill", () => {
+    // A two-dog booking is two appointments and one flat list. Putting
+    // Louie's de-matt on Lollie's bill is the mistake this function
+    // already exists to prevent for add-ons.
+    const totals = billableTotalsByAppointment(
+      [{ id: 1, price: "110.00" }, { id: 2, price: "110.00" }],
+      [],
+      [{ appointmentId: 1, amount: "60.00" }],
+    );
+    expect(totals.get(1)).toBe("170.00");
+    expect(totals.get(2)).toBe("110.00");
+  });
+
+  it("behaves exactly as before when no quote was ever raised", () => {
+    // Every booking in the salon's history. The feature must be invisible.
+    expect(billableTotalsByAppointment([{ id: 1, price: "110.00" }], []).get(1)).toBe("110.00");
+    expect(billableTotal("145.00", [])).toBe("145.00");
+  });
+});

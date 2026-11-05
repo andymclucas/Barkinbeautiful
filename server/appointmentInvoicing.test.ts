@@ -166,3 +166,72 @@ describe("add-ons make an otherwise unbillable groom billable", () => {
       .toEqual({ invoice: false, reason: "cancelled" });
   });
 });
+
+describe("work the owner agreed to mid-groom reaches the bill", () => {
+  const base = {
+    membershipId: null, existingInvoiceCount: 0,
+    workflowState: "complete", status: "confirmed",
+  };
+
+  it("bills a MEMBERSHIP groom that had no add-ons but an agreed extra", () => {
+    // The case this whole guard exists for, and the one shared/groomQuote.ts
+    // names as the most likely way the feature gets quietly broken. The
+    // weekly payment covers the groom, so without the agreed extra counted
+    // here this returns membership_covered, no invoice is raised at all,
+    // and a $60 de-matt the owner said yes to on the phone is given away in
+    // silence — no error, no skipped row, nothing to notice.
+    expect(decideAppointmentInvoice({
+      ...base, membershipId: 12, price: null, addOnsTotal: "0.00", approvedExtrasTotal: "60.00",
+    })).toEqual({ invoice: true, bill: "extras_only" });
+  });
+
+  it("bills a groom with no price and nothing but an agreed extra", () => {
+    expect(decideAppointmentInvoice({
+      ...base, price: null, addOnsTotal: "0.00", approvedExtrasTotal: "45.00",
+    })).toEqual({ invoice: true, bill: "everything" });
+  });
+
+  it("counts agreed extras alongside add-ons rather than instead of them", () => {
+    expect(decideAppointmentInvoice({
+      ...base, price: "95.00", addOnsTotal: "35.00", approvedExtrasTotal: "60.00",
+    })).toEqual({ invoice: true, bill: "everything" });
+  });
+
+  it("changes nothing when there are no agreed extras", () => {
+    // Every appointment in the salon's history is this one. The feature
+    // must be invisible to them.
+    expect(decideAppointmentInvoice({ ...base, membershipId: 12, price: null, addOnsTotal: "0.00" }))
+      .toEqual({ invoice: false, reason: "membership_covered" });
+    expect(decideAppointmentInvoice({
+      ...base, membershipId: 12, price: null, addOnsTotal: "0.00", approvedExtrasTotal: "0.00",
+    })).toEqual({ invoice: false, reason: "membership_covered" });
+    expect(decideAppointmentInvoice({ ...base, price: null, approvedExtrasTotal: null }))
+      .toEqual({ invoice: false, reason: "no_price" });
+  });
+
+  it("still refuses a cancelled appointment the owner agreed extras on", () => {
+    // Agreeing to a de-matt does not un-cancel a booking, and billing for
+    // work on a dog that never came is the worst version of this feature.
+    expect(decideAppointmentInvoice({
+      ...base, status: "cancelled", price: "95.00", approvedExtrasTotal: "60.00",
+    })).toEqual({ invoice: false, reason: "cancelled" });
+    expect(decideAppointmentInvoice({
+      ...base, status: "no_show", price: "95.00", approvedExtrasTotal: "60.00",
+    })).toEqual({ invoice: false, reason: "cancelled" });
+  });
+
+  it("still refuses an appointment that already has an invoice", () => {
+    expect(decideAppointmentInvoice({
+      ...base, existingInvoiceCount: 1, approvedExtrasTotal: "60.00",
+    })).toEqual({ invoice: false, reason: "already_invoiced" });
+  });
+
+  it("will not bill an incomplete groom for an agreed extra", () => {
+    // The owner can say yes at 9am while the dog is still in the bath. That
+    // agreement is real, but the invoice waits for the dog to be finished
+    // like every other charge.
+    expect(decideAppointmentInvoice({
+      ...base, workflowState: "grooming", approvedExtrasTotal: "60.00",
+    })).toEqual({ invoice: false, reason: "not_complete" });
+  });
+});

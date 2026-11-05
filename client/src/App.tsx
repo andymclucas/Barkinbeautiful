@@ -49,6 +49,7 @@ const OnlineBooking = lazyPage(() => import("./pages/OnlineBooking"));
 const MembershipSignup = lazyPage(() => import("./pages/MembershipSignup"));
 const ClientPhotoUpload = lazyPage(() => import("./pages/ClientPhotoUpload"));
 const WaitlistOffer = lazyPage(() => import("./pages/WaitlistOffer"));
+const GroomQuote = lazyPage(() => import("./pages/GroomQuote"));
 const WaitlistJoin = lazyPage(() => import("./pages/WaitlistJoin"));
 const Login = lazyPage(() => import("./pages/Login"));
 const SalonSignup = lazyPage(() => import("./pages/SalonSignup"));
@@ -119,6 +120,9 @@ function Router() {
       <Route path="/track/:token" component={PetTracker} />
       {/* Public grooming card. The token is the authorisation, same as /track. */}
       <Route path="/card/:token" component={GroomingCard} />
+      {/* Where an owner agrees to extra work found mid-groom. Token-only,
+          deliberately not behind the portal login: the dog is on the table. */}
+      <Route path="/quote/:token" component={GroomQuote} />
       <Route path="/portal" component={ClientPortal} />
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/setup/:token" component={ClientPortalSetup} />

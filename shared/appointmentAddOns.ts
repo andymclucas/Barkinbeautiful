@@ -1,4 +1,5 @@
 import { applyLineDiscount, discountFromColumns, describeLineDiscount } from "./lineDiscount";
+import { quoteLineDescription } from "./groomQuote";
 /**
  * Extras done on the day, and the itemised invoice they produce.
  *
@@ -78,6 +79,18 @@ export function buildInvoiceLines(input: {
    * nothing else reads like a mistake.
    */
   membershipCovered?: boolean;
+  /**
+   * Extra work the owner agreed to mid-groom — see shared/groomQuote.ts.
+   *
+   * ALWAYS charged, membership or not. A membership groom carries no price
+   * because the weekly payment covers it, but extras done on the day ARE
+   * invoiced (Andy, 07/10/2026), and suppressing these for a membership dog
+   * would give away every de-matt the salon ever agreed a price for.
+   *
+   * Last, after the add-ons, because that is the order the day happened in:
+   * the groom was booked, the add-ons were chosen, and this was found.
+   */
+  approvedExtras?: readonly { description: string; amount: string | number }[];
 }): { lines: InvoiceLine[]; subtotalCents: number; subtotal: string } {
   const pet = input.petName?.trim() || "Pet";
   // Zero, explicitly: never the recorded price. A membership groom should
@@ -133,6 +146,17 @@ export function buildInvoiceLines(input: {
         lineTotal: centsToAmount(-discounted.discountCents),
       });
     }
+  }
+
+  for (const extra of input.approvedExtras ?? []) {
+    const extraCents = toCents(extra.amount);
+    subtotalCents += extraCents;
+    lines.push({
+      description: quoteLineDescription(input.petName, extra.description),
+      quantity: "1",
+      unitPrice: centsToAmount(extraCents),
+      lineTotal: centsToAmount(extraCents),
+    });
   }
 
   return { lines, subtotalCents, subtotal: centsToAmount(subtotalCents) };
@@ -219,14 +243,34 @@ export function billableTotal(
    * decision somebody made, not a missing value.
    */
   billedTotalOverride?: string | number | null,
+  /**
+   * Work the owner agreed to mid-groom — see shared/groomQuote.ts.
+   * Approved quotes only; the loader never hands over any other state.
+   *
+   * This has to be here and not only on the invoice. The invoice is a
+   * record; THIS is the figure the counter asks for, the one
+   * payments.record validates against and the one that sizes a Pay Now
+   * link. Left out, the salon agreed $60 with the owner, raised a $205
+   * invoice, asked for $145, refused anyone trying to pay $205, and
+   * stamped the booking paid in full — losing the money the whole
+   * feature exists to collect.
+   */
+  approvedExtras?: ReadonlyArray<{ amount: string | number }>,
 ): string | null {
   const override = parseOverride(billedTotalOverride);
   if (override !== null) return centsToAmount(override);
 
+  const extras = approvedExtras ?? [];
   const hasPrice =
     servicePrice !== null && servicePrice !== undefined && String(servicePrice).trim() !== "";
-  if (!hasPrice && addOns.length === 0) return null;
-  return appointmentTotal(hasPrice ? servicePrice : 0, addOns);
+  // An unpriced membership groom with nothing but an agreed de-matt is
+  // NOT unpriced. Returning null here is what showed it as "no charge"
+  // on the panel, so nobody was ever prompted to collect the $60.
+  if (!hasPrice && addOns.length === 0 && extras.length === 0) return null;
+
+  let cents = toCents(appointmentTotal(hasPrice ? servicePrice : 0, addOns));
+  for (const extra of extras) cents += toCents(extra.amount);
+  return centsToAmount(cents);
 }
 
 /** An override in whole cents, or null when there isn't a usable one. */
@@ -259,11 +303,22 @@ export function billableTotalsByAppointment(
     billedTotalOverride?: string | number | null;
   }>,
   addOns: ReadonlyArray<AddOnLine & { appointmentId: number }>,
+  /**
+   * Flat, like the add-ons, and matched the same way. A two-dog booking
+   * is two appointments, and putting one dog's agreed de-matt on the
+   * other dog's bill is the same mistake this function already exists to
+   * prevent for extras.
+   */
+  approvedExtras: ReadonlyArray<{ appointmentId: number; amount: string | number }> = [],
 ): Map<number, string | null> {
   const totals = new Map<number, string | null>();
   for (const appointment of appointments) {
     const own = addOns.filter((addOn) => addOn.appointmentId === appointment.id);
-    totals.set(appointment.id, billableTotal(appointment.price, own, appointment.billedTotalOverride));
+    const ownExtras = approvedExtras.filter((extra) => extra.appointmentId === appointment.id);
+    totals.set(
+      appointment.id,
+      billableTotal(appointment.price, own, appointment.billedTotalOverride, ownExtras),
+    );
   }
   return totals;
 }
