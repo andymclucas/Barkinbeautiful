@@ -14,6 +14,7 @@ import { paymentRetryHandler, appointmentReminderHandler } from "../scheduledHan
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { portalHostRedirect } from "../portalHostRedirect";
 import { getDb } from "../db";
 import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, missedCallAutoTexts, clientErrorLogs } from "../../drizzle/schema";
 import {
@@ -790,6 +791,17 @@ async function startServer() {
   // rather than at import so it starts once, after dotenv has run and the
   // VAPID keys are actually readable.
   startPushFanout();
+
+  /*
+   * Page requests go to the host they belong to — the client portal on
+   * its own address, staff screens on theirs. Mounted HERE, after every
+   * /api route above, so nothing an API serves can be redirected; it
+   * also declines /api and anything with a file extension of its own.
+   *
+   * A no-op until VITE_PORTAL_URL names a different host, so this is
+   * safe to deploy before the domain exists.
+   */
+  app.use(portalHostRedirect);
 
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
