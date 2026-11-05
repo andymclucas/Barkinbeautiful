@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { approvedQuoteExtrasTotal } from "./groomQuoteExtras";
+import { decideAppointmentInvoice } from "../shared/appointmentInvoicing";
+import { buildInvoiceLines } from "../shared/appointmentAddOns";
 
 describe("approvedQuoteExtrasTotal", () => {
   it("adds in cents, so a bill never disagrees with the quote by a cent", () => {
@@ -77,5 +79,74 @@ describe("the loader cannot quietly widen to unapproved quotes", () => {
   it("scopes every read to one salon", () => {
     expect(source).toContain("eq(groomQuotes.tenantId, tenantId)");
     expect(source).toContain("eq(groomQuoteLines.tenantId, groomQuotes.tenantId)");
+  });
+});
+
+describe("a membership dog with one agreed extra, end to end", () => {
+  /*
+   * The three pieces the invoice paths use, composed the way routers.ts
+   * composes them. Each is tested alone elsewhere; this asserts the NUMBER
+   * that reaches the client, which is the only thing they actually care
+   * about and the thing no single-unit test states.
+   *
+   * The case is the one from Andy, 07/10/2026: the weekly membership pays
+   * for the groom, so the groom bills nothing, but the de-matting agreed
+   * on the day is charged in full.
+   */
+  const extras = [{ description: "De-matting", amount: "60.00" }];
+
+  it("raises an invoice for exactly the extra, with the groom at zero", () => {
+    // Exactly what loadApprovedQuoteExtras hands over: the raw line, not
+    // an invoice-formatted one. Formatting it here too is the bug this
+    // test caught — see ApprovedQuoteExtra.description.
+    const loaded = extras;
+
+    const decision = decideAppointmentInvoice({
+      price: null,
+      membershipId: 12,
+      existingInvoiceCount: 0,
+      workflowState: "complete",
+      status: "confirmed",
+      addOnsTotal: "0.00",
+      approvedExtrasTotal: approvedQuoteExtrasTotal(loaded),
+    });
+    expect(decision).toEqual({ invoice: true, bill: "extras_only" });
+
+    const itemised = buildInvoiceLines({
+      petName: "Link",
+      serviceLabel: "Styled Groom",
+      servicePrice: null,
+      addOns: [],
+      membershipCovered: decision.invoice && decision.bill === "extras_only",
+      approvedExtras: loaded,
+    });
+
+    // The groom still gets a line, at zero. A membership client opening a
+    // bill for $60 has to be able to see what it was on top of.
+    expect(itemised.lines[0].lineTotal).toBe("0.00");
+    expect(itemised.lines[0].description).toContain("covered by membership");
+
+    // And the extra is charged in full, named so they recognise it.
+    expect(itemised.lines[1].description).toBe("Link — De-matting (agreed on the day)");
+    expect(itemised.lines[1].lineTotal).toBe("60.00");
+
+    expect(itemised.subtotal).toBe("60.00");
+    expect(itemised.subtotalCents).toBe(6000);
+  });
+
+  it("charges nothing at all when the owner never answered", () => {
+    // The same dog, same found matting, no reply. loadApprovedQuoteExtras
+    // returns [] because the quote is not `approved`, and the salon is
+    // back to a membership groom with nothing on it — which raises no
+    // invoice rather than a $0 one nobody can explain.
+    expect(decideAppointmentInvoice({
+      price: null,
+      membershipId: 12,
+      existingInvoiceCount: 0,
+      workflowState: "complete",
+      status: "confirmed",
+      addOnsTotal: "0.00",
+      approvedExtrasTotal: approvedQuoteExtrasTotal([]),
+    })).toEqual({ invoice: false, reason: "membership_covered" });
   });
 });

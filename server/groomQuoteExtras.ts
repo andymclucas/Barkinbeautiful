@@ -22,10 +22,19 @@
  * billing for work nobody agreed to.
  */
 import { and, eq } from "drizzle-orm";
-import { groomQuoteLines, groomQuotes, pets } from "../drizzle/schema";
-import { quoteLineDescription } from "@shared/groomQuote";
+import { groomQuoteLines, groomQuotes } from "../drizzle/schema";
 
 export type ApprovedQuoteExtra = {
+  /**
+   * RAW, as the groomer typed it — "De-matting", not "Link — De-matting
+   * (agreed on the day)".
+   *
+   * buildInvoiceLines applies quoteLineDescription itself, and it has the
+   * pet name to do it with. Formatting here as well produced
+   * "Link — Link — De-matting (agreed on the day) (agreed on the day)" on
+   * the invoice: both halves individually correct, each unaware of the
+   * other. Invoice presentation belongs to the invoice builder.
+   */
   description: string;
   amount: string;
 };
@@ -46,7 +55,6 @@ export async function loadApprovedQuoteExtras(
     .select({
       description: groomQuoteLines.description,
       amount: groomQuoteLines.amount,
-      petName: pets.name,
     })
     .from(groomQuotes)
     .innerJoin(
@@ -59,7 +67,6 @@ export async function loadApprovedQuoteExtras(
         eq(groomQuoteLines.tenantId, groomQuotes.tenantId),
       ),
     )
-    .leftJoin(pets, eq(pets.id, groomQuotes.petId))
     .where(
       and(
         eq(groomQuotes.tenantId, tenantId),
@@ -68,10 +75,8 @@ export async function loadApprovedQuoteExtras(
       ),
     );
 
-  return rows.map((r: { description: string; amount: string; petName: string | null }) => ({
-    // Named on the invoice the way the owner will recognise it weeks later:
-    // the dog, what was done, and that they agreed to it on the day.
-    description: quoteLineDescription(r.petName, r.description),
+  return rows.map((r: { description: string; amount: string }) => ({
+    description: r.description,
     amount: String(r.amount),
   }));
 }
