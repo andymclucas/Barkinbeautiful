@@ -66,7 +66,7 @@ import {
   styleDraftFromNote,
   type StyleNoteDraft,
 } from "@shared/styleNoteDraft";
-import { formatAestDate, formatAestDateTime } from "@shared/auditTimestamp";
+import { formatAestDate, formatAestDateTime, formatAestTime } from "@shared/auditTimestamp";
 import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -5835,7 +5835,20 @@ export default function Calendar() {
           const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
           return [{
             id,
-            time: fmtTime(toAESTDate(new Date(appt.scheduledStart))),
+            /*
+             * shared/auditTimestamp's formatAestTime, which says of
+             * itself "use for appointment/workflow times everywhere" —
+             * not this file's own fmtTime.
+             *
+             * fmtTime hand-rolls the Brisbane offset and applies it
+             * internally, so it takes a RAW date. This passed it an
+             * already-shifted one, added the ten hours twice, and put a
+             * 9:30 am dog in front of staff as 7:30 pm. Two formatters
+             * for one job is what made that possible; the shared one
+             * takes an instant, uses a real time zone rather than a
+             * hardcoded +10, and cannot be double-applied.
+             */
+            time: formatAestTime(appt.scheduledStart, undefined, getActiveTimeZone()),
             label: formatSharedAppointmentName({
               petNames: [appt, ...getSiblings(appt)].map((pet) => pet.petName),
               surname: appt.clientLastName,
