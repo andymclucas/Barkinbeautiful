@@ -407,35 +407,45 @@ export function WorkflowBoardTable({
   const updateStage = { isPending: a.updateStagePending };
 
   return (
-        <div className="overflow-x-auto rounded-xl border shadow-sm">
+        <div className="surface-raised overflow-x-auto rounded-2xl border bg-card">
           <table className="w-full text-sm border-collapse min-w-[980px]">
             <thead>
-              <tr className="bg-slate-900 text-slate-100 text-xs uppercase tracking-wider">
-                <th className="px-2 py-2.5 text-center w-20">Time</th>
-                <th className="px-2 py-2.5 text-center w-12 bg-blue-900 text-blue-50 border-x border-blue-700">Cage</th>
-                <th className="px-2 py-2.5 text-center w-12 bg-violet-900 text-violet-50 border-r border-violet-700">Tag</th>
-                <th className="px-2 py-2.5 text-left min-w-[140px]">Dog / Owner</th>
-                <th className="px-2 py-2.5 text-center w-14">Family</th>
-                <th className="px-2 py-2.5 text-left w-36">Breed</th>
-                <th className="px-2 py-2.5 text-left min-w-[100px]">Service</th>
-                <th className="px-2 py-2.5 text-center w-24">Bath</th>
-                <th className="px-2 py-2.5 text-center w-24 bg-slate-800 text-slate-50 border-x border-slate-600">Bath priority</th>
-                <th className="px-2 py-2.5 text-center w-24">Dry</th>
-                <th className="px-2 py-2.5 text-center w-24">Groomer</th>
-                <th className="px-2 py-2.5 text-center min-w-[400px]">Stage</th>
-                <th className="px-2 py-2.5 text-center w-16">Out</th>
+              {/* A near-black slab with white caps is the header every
+                  admin template ships with, and it fought everything
+                  below it. The column coding staff navigate by — cage
+                  blue, tag violet, bath priority — survives as a tint
+                  instead of a block, so it still reads at a glance
+                  without being the loudest thing on the board. */}
+              <tr className="border-b bg-muted/60 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <th className="px-2 py-3 text-center w-20">Time</th>
+                <th className="px-2 py-3 text-center w-12 bg-blue-500/10 text-blue-700 dark:text-blue-300">Cage</th>
+                <th className="px-2 py-3 text-center w-12 bg-violet-500/10 text-violet-700 dark:text-violet-300">Tag</th>
+                <th className="px-2 py-3 text-left min-w-[140px]">Dog / Owner</th>
+                <th className="px-2 py-3 text-center w-14">Family</th>
+                <th className="px-2 py-3 text-left w-36">Breed</th>
+                <th className="px-2 py-3 text-left min-w-[100px]">Service</th>
+                <th className="px-2 py-3 text-center w-24">Bath</th>
+                <th className="px-2 py-3 text-center w-24 bg-foreground/[0.06] text-foreground/70">Bath priority</th>
+                <th className="px-2 py-3 text-center w-24">Dry</th>
+                <th className="px-2 py-3 text-center w-24">Groomer</th>
+                <th className="px-2 py-3 text-center min-w-[400px]">Stage</th>
+                <th className="px-2 py-3 text-center w-16">Out</th>
               </tr>
               {/* Drag-drop target row */}
               {!readOnly && (
-              <tr className="bg-slate-800/60">
+              <tr className="border-b bg-muted/30">
                 <td colSpan={13} className="px-2 py-1">
                   <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground italic">
                     <span>Drag a row onto a stage chip:</span>
                     {STAGES.map(s => (
                       <span
                         key={s.key}
-                        className="inline-block px-2 py-0.5 rounded text-[10px] font-bold text-white cursor-pointer select-none not-italic"
-                        style={{ background: s.colour }}
+                        className="meter-seg inline-block cursor-pointer select-none rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white not-italic transition-transform hover:-translate-y-px"
+                        /* backgroundColor, not the `background` shorthand:
+                           the shorthand would reset background-image and
+                           wipe out .meter-seg's gradient, because an inline
+                           style beats a class. */
+                        style={{ ["--seg"]: s.colour, backgroundColor: s.colour } as React.CSSProperties}
                         onDragOver={e => { e.preventDefault(); (e.currentTarget as HTMLElement).style.opacity = "0.7"; }}
                         onDragLeave={e => { (e.currentTarget as HTMLElement).style.opacity = "1"; }}
                         onDrop={e => {
@@ -511,7 +521,7 @@ export function WorkflowBoardTable({
                   <tr
                     id={`workflow-appointment-${appt.id}`}
                     data-review-focused={isReviewFocused ? "true" : undefined}
-                    className={`${rowBg} ${isReviewFocused ? "bg-amber-100/80 dark:bg-amber-950/80 shadow-[inset_0_0_0_2px_rgb(245_158_11)]" : ""} border-t transition-colors ${readOnly ? "" : "hover:bg-primary/5 cursor-grab active:cursor-grabbing"}`}
+                    className={`${rowBg} ${isReviewFocused ? "bg-amber-100/80 dark:bg-amber-950/80 shadow-[inset_0_0_0_2px_rgb(245_158_11)]" : ""} border-t border-border/60 transition-colors ${readOnly ? "" : "hover:bg-primary/5 cursor-grab active:cursor-grabbing"}`}
                     draggable={!readOnly}
                     onDragStart={readOnly ? undefined : () => { dragApptId.current = appt.id; }}
                     onDragEnd={readOnly ? undefined : () => { dragApptId.current = null; }}

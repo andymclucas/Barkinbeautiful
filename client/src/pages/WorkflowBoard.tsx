@@ -693,7 +693,13 @@ export default function WorkflowBoard() {
             there is room, there is a legend beneath for the ones too narrow to
             fit, and hovering a segment names the stage and lists the dogs in
             it. */}
-        <div className="flex gap-1 h-9 rounded-lg overflow-hidden border">
+        {/* Segments, not slices of one bar. The box this used to sit
+            in was `rounded-lg overflow-hidden`, which squared off every
+            segment inside it AND clipped the hover tooltip below —
+            `top-full` puts the tooltip outside the segment, so
+            overflow-hidden on both meant the tooltip the comment above
+            describes has never once appeared. */}
+        <div className="flex h-9 gap-1.5">
           {STAGES.map(stage => {
             const inStage = rows.filter(r => r.workflowState === stage.key);
             const count = inStage.length;
@@ -707,19 +713,29 @@ export default function WorkflowBoard() {
             return (
               <div
                 key={stage.key}
-                className="group relative flex items-center justify-center gap-1.5 overflow-hidden text-white transition-all duration-500"
-                style={{ background: stage.colour, width: `${Math.max(pct, 6)}%`, minWidth: "44px" }}
+                className="meter-seg group relative flex items-center justify-center rounded-full px-2 text-white transition-all duration-500"
+                /* backgroundColor rather than the `background` shorthand,
+                   which would reset background-image and lose
+                   .meter-seg's gradient — an inline style beats a class. */
+                style={{ ["--seg"]: stage.colour, backgroundColor: stage.colour, width: `${Math.max(pct, 6)}%`, minWidth: "48px" } as React.CSSProperties}
               >
-                <span className="text-[11px] font-bold tabular-nums">{count}</span>
-                {/* Only when the segment is genuinely wide enough to read;
-                    narrower ones are named by the legend underneath. A
-                    container query was wrong here - the parent has no
-                    container-type, so the class silently did nothing. */}
-                {pct >= 15 && (
-                  <span className="truncate text-[10px] font-semibold uppercase tracking-wide opacity-90">
-                    {stage.label}
-                  </span>
-                )}
+                {/* The clipping lives on this inner span now, so a long
+                    label is still cut off without taking the tooltip
+                    with it. min-w-0 is what lets `truncate` engage at
+                    all: a flex item will not shrink below its content
+                    without it. */}
+                <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                  <span className="text-[11px] font-bold tabular-nums">{count}</span>
+                  {/* Only when the segment is genuinely wide enough to read;
+                      narrower ones are named by the legend underneath. A
+                      container query was wrong here - the parent has no
+                      container-type, so the class silently did nothing. */}
+                  {pct >= 15 && (
+                    <span className="truncate text-[10px] font-semibold uppercase tracking-wide opacity-90">
+                      {stage.label}
+                    </span>
+                  )}
+                </span>
                 <div
                   role="tooltip"
                   className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-max max-w-[16rem] -translate-x-1/2 rounded-md border bg-popover px-2.5 py-1.5 text-left text-popover-foreground shadow-md group-hover:block"
