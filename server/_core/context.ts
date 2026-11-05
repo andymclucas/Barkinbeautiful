@@ -89,12 +89,36 @@ export async function createContext(
 export async function accessibleSalons(user: User): Promise<number[]> {
   const ids = new Set<number>();
   if (typeof user.tenantId === "number") ids.add(user.tenantId);
+  const db = await getDb();
+
+  /*
+   * TWO try/catches, not one around both.
+   *
+   * They were together, and that made the merge order load-bearing in the
+   * worst way. salon_access is created by migration 0157; merge this
+   * before that runs and the first query throws, one catch swallows it,
+   * and the STAFF query never executes. Lauren has users.tenant_id NULL
+   * and her salon named only on her staff record — so she would resolve
+   * to no salon at all and be locked out of the business she owns, which
+   * is the exact person this feature is for.
+   *
+   * Separated, a missing salon_access costs the grants and nothing else,
+   * and every account behaves as it does today. The migration should
+   * still go first; this is what makes getting that wrong survivable
+   * rather than an outage.
+   */
   try {
-    const db = await getDb();
     if (db) {
       const granted = await db.select({ tenantId: salonAccess.tenantId })
         .from(salonAccess).where(eq(salonAccess.userId, user.id));
       for (const row of granted) ids.add(row.tenantId);
+    }
+  } catch {
+    // No grants readable. Their own salon still resolves below.
+  }
+
+  try {
+    if (db) {
       const staffRows = await db.select({ tenantId: staff.tenantId })
         .from(staff).where(eq(staff.userId, user.id));
       for (const row of staffRows) {
@@ -104,6 +128,7 @@ export async function accessibleSalons(user: User): Promise<number[]> {
   } catch {
     // Fall through to whatever the user row already told us.
   }
+
   return [...ids].sort((a, b) => a - b);
 }
 
