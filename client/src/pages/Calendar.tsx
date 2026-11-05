@@ -827,7 +827,7 @@ function GridLines({ cols }: { cols: number }) {
  * a boundary, and it has to be legible as a different kind of thing at
  * a glance from across the salon.
  */
-function SessionDivider() {
+function SessionDivider({ showLabel = false }: { showLabel?: boolean }) {
   const HOUR_HEIGHT = useHourHeight();
   const top = sessionDividerTop({
     dayStartHour: HOURS[0],
@@ -837,16 +837,28 @@ function SessionDivider() {
   if (top === null) return null;
   return (
     <div className="absolute left-0 right-0 z-[9] pointer-events-none" style={{ top }}>
-      <div className="h-0 border-t-2 border-dashed border-red-500/70 w-full" />
-      <span className="absolute left-1 -top-2 rounded bg-red-500 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
-        {AFTERNOON_SESSION_LABEL}
-      </span>
+      <div className="h-0 w-full border-t-2 border-dashed border-red-500/70" />
+      {/*
+        * One label for the whole board, on the leftmost column only.
+        *
+        * Each groomer's column draws its own divider, so the label was
+        * drawn once per column: Andy's phone photo of 05/11/2026 has
+        * four red AFTERNOON pills in a row across a 390px screen,
+        * which is louder than the boundary it marks. The dashed rule
+        * still runs the full width — it is the line that carries the
+        * meaning, and the word only has to be said once.
+        */}
+      {showLabel && (
+        <span className="absolute left-1 -top-2 rounded-full bg-red-500 px-2 py-px text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm">
+          {AFTERNOON_SESSION_LABEL}
+        </span>
+      )}
     </div>
   );
 }
 
 // ── Current time indicator ────────────────────────────────────────────────────
-function NowLine({ totalGridWidth }: { totalGridWidth: number }) {
+function NowLine({ totalGridWidth, showDot = false }: { totalGridWidth: number; showDot?: boolean }) {
   const HOUR_HEIGHT = useHourHeight();
   const now = toAESTDate(new Date());
   const top = timeToTop(now, HOUR_HEIGHT);
@@ -857,7 +869,10 @@ function NowLine({ totalGridWidth }: { totalGridWidth: number }) {
       style={{ top }}
     >
       <div className="h-px bg-red-500 w-full" />
-      <div className="absolute -left-1 -top-1.5 h-3 w-3 rounded-full bg-red-500" />
+      {/* Leftmost column only, for the same reason as the divider's
+          label: one marker reads as "it is now this time", one per
+          groomer reads as a row of dots. */}
+      {showDot && <div className="absolute -left-1 -top-1.5 h-3 w-3 rounded-full bg-red-500 ring-2 ring-background" />}
     </div>
   );
 }
@@ -3205,8 +3220,8 @@ export default function Calendar() {
                     </div>
                   )}
                   {/* Now line */}
-                  <SessionDivider />
-                  <NowLine totalGridWidth={0} />
+                  <SessionDivider showLabel={ci === 0} />
+                  <NowLine totalGridWidth={0} showDot={ci === 0} />
                   {/* Blockout banners */}
                   {(blockouts ?? []).filter(b => {
                     const bd = new Date(b.blockoutDate);
