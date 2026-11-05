@@ -111,6 +111,7 @@ import {
   Clock3, Minus, Layers,
 } from "lucide-react";
 import { WaitlistPanel } from "@/components/WaitlistPanel";
+import { AppointmentStackPicker } from "@/components/AppointmentStackPicker";
 import { AngelWings } from "@/components/AngelWings";
 import { petHasPassedAway, PET_CANNOT_BE_SELECTED } from "@shared/petBookable";
 import { useState, useMemo, useRef, useEffect, useCallback, useContext, createContext } from "react";
@@ -5796,71 +5797,40 @@ export default function Calendar() {
       </Dialog>
 
       {/*
-        * The stack picker.
-        *
-        * Andy, 05/11/2026, with a photo of three dogs piled up in
-        * Ashleigh's 8-10am on a phone: "Need to find a way to be able to
-        * see the appts behind the ones over the top. Perhaps when
-        * clicking on the top one, it gives the option of the multiple
-        * ones that are sitting behind for the staff to click on."
-        *
-        * It only opens where the cards cascade — see the day grid — so
-        * the desktop, where overlaps split side by side and every card
-        * already has its own tap target, is untouched.
+        * The stack picker. Opened only where the cards CASCADE — see
+        * the day grid — so the desktop, where overlaps split side by
+        * side and every card already has its own tap target, is
+        * untouched. The component itself takes plain props so it can
+        * be rendered in a test; this just turns appointments into
+        * them.
         */}
-      <Dialog open={stackPicker !== null} onOpenChange={(open) => { if (!open) setStackPicker(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-base">
-              {stackPicker?.ids.length ?? 0} dogs at this time
-            </DialogTitle>
-          </DialogHeader>
-          <p className="-mt-2 text-xs text-muted-foreground">
-            These overlap, so on the board they sit on top of each other. Pick the one you want.
-          </p>
-          <div className="space-y-1.5">
-            {(stackPicker?.ids ?? []).map((id) => {
-              const appt = filteredAppts.find((a) => a.id === id) as Appt | undefined;
-              if (!appt) return null;
-              const isCancelled = isCancelledAppointment(appt);
-              const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
-              const label = formatSharedAppointmentName({
-                petNames: [appt, ...getSiblings(appt)].map((pet) => pet.petName),
-                surname: appt.clientLastName,
-              });
-              const tapped = stackPicker?.tappedId === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors hover:bg-muted/60 ${tapped ? "border-primary/60 bg-primary/5" : ""}`}
-                  style={{ borderLeft: `4px solid ${isCancelled ? "#cbd5e1" : svc.border}` }}
-                  onClick={() => {
-                    setStackPicker(null);
-                    openEdit(appt);
-                  }}
-                >
-                  <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-muted-foreground">
-                    {fmtTime(toAESTDate(new Date(appt.scheduledStart)))}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{label || appt.petName}</span>
-                    <span className="block truncate text-[11px] text-muted-foreground">
-                      {SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}
-                      {isCancelled ? " · cancelled" : ""}
-                    </span>
-                  </span>
-                  {tapped && (
-                    <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-                      Tapped
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <AppointmentStackPicker
+        open={stackPicker !== null}
+        onOpenChange={(open) => { if (!open) setStackPicker(null); }}
+        tappedId={stackPicker?.tappedId ?? null}
+        onPick={(id) => {
+          const appt = filteredAppts.find((a) => a.id === id) as Appt | undefined;
+          setStackPicker(null);
+          if (appt) openEdit(appt);
+        }}
+        appointments={(stackPicker?.ids ?? []).flatMap((id) => {
+          const appt = filteredAppts.find((a) => a.id === id) as Appt | undefined;
+          if (!appt) return [];
+          const isCancelled = isCancelledAppointment(appt);
+          const svc = SERVICE_COLOURS[appt.serviceType] ?? SERVICE_COLOURS.other;
+          return [{
+            id,
+            time: fmtTime(toAESTDate(new Date(appt.scheduledStart))),
+            label: formatSharedAppointmentName({
+              petNames: [appt, ...getSiblings(appt)].map((pet) => pet.petName),
+              surname: appt.clientLastName,
+            }) || (appt.petName ?? "Unnamed"),
+            service: SERVICE_LABELS[appt.serviceType] ?? appt.serviceType,
+            isCancelled,
+            accent: isCancelled ? "#cbd5e1" : svc.border,
+          }];
+        })}
+      />
     </DashboardLayout>
     </HourHeightContext.Provider>
   );
