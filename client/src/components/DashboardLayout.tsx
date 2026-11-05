@@ -890,6 +890,19 @@ function DashboardLayoutContent({
         <TrialBanner />
         <main className="flex-1 p-4 md:p-6 gm-fade">{children}</main>
       </SidebarInset>
+      {/*
+        * My profile.
+        *
+        * This was imported and `profileOpen` was being SET, and the
+        * dialog was never rendered — so "My profile" in the account
+        * menu did nothing, and the sidebar-hover setting that lives
+        * inside it could not be reached at all. Exactly the shape of
+        * 45253c5, where a router was defined in its own file and never
+        * composed into appRouter: everything compiles, nothing runs.
+        * Rendered here rather than inside the dropdown, so closing the
+        * menu does not unmount the dialog with it.
+        */}
+      <MyProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
     </>
   );
 }
