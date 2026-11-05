@@ -291,6 +291,22 @@ const OPERATIONAL = [
   "pushSubscriptionsRouter.sendTest",
   "pushSubscriptionsRouter.subscribe",
   "pushSubscriptionsRouter.unsubscribe",
+  /*
+   * Moving between salons, 06/11/2026. Lauren runs Barkin' Beautiful and
+   * The Pet Pad as separate books and needs a switcher.
+   *
+   * operationalProcedure because the header asks `mine` on every page
+   * load and a restricted groomer must be able to render the page they
+   * are allowed to be on. It exposes nothing: the list is built from
+   * ctx.accessibleTenantIds, which the server derives from the caller's
+   * own rows, so it can only ever return salons they already reach.
+   *
+   * Granting and revoking access are adminProcedure and are NOT here —
+   * a row in salon_access is what lets somebody read another business's
+   * clients and takings.
+   */
+  "salonsRouter.canAccess",
+  "salonsRouter.mine",
   "searchRouter.everything",
   "settingsRouter.getTenantInfo",
   "sidebarCountsRouter.get",
@@ -384,7 +400,10 @@ describe("tRPC procedure surface", () => {
     // 387 since 06/11/2026: the groomQuotes router, for agreeing extra
     // work while the dog is on the table. Five operational (the groomer's
     // end) and two public (the owner's, reached by a texted token).
-    expect(surface).toHaveLength(387);
+    //
+    // 391 since 06/11/2026: the salons router — mine, canAccess, grant
+    // and revoke — for running more than one salon from one account.
+    expect(surface).toHaveLength(391);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -417,8 +436,11 @@ describe("tRPC procedure surface", () => {
      * uses at the board. A restricted groomer is the whole point of the
      * feature, so protectedProcedure would have locked out everyone it
      * is for.
+     *
+     * 140 since 06/11/2026: salons.mine and salons.canAccess. Both read
+     * only from the caller's own access list.
      */
-    expect(OPERATIONAL).toHaveLength(138);
+    expect(OPERATIONAL).toHaveLength(140);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
