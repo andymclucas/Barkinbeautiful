@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useFollowSalonDay } from "@/lib/followSalonDay";
 import { WORKFLOW_STAGE_COLOURS } from "@shared/workflowStageColours";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -160,9 +161,7 @@ export default function WorkflowDisplay() {
    * not be dragged back. `salonToday` changes once a day, so despite the
    * one-second clock tick this runs once at midnight.
    */
-  useEffect(() => {
-    setBoardDate(current => (isDayBefore(current, salonToday) ? salonToday : current));
-  }, [salonToday]);
+  useFollowSalonDay(salonToday, setBoardDate);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
