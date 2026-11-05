@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import { sidebarEntriesFor, groupContaining, type SidebarGroupKey } from "@shared/sidebarNavigation";
+import { useSidebarHover } from "@/hooks/useSidebarHover";
 import {
   CalendarDays,
   Workflow,
@@ -406,19 +407,44 @@ function DashboardLayoutContent({
    * finger grazes it. Touch devices report `(hover: none)`, so they get
    * the click behaviour whatever their size.
    */
-  const [hoverOpens, setHoverOpens] = useState(false);
+  const [pointerHasHover, setPointerHasHover] = useState(false);
   useEffect(() => {
     const query = window.matchMedia("(hover: hover) and (pointer: fine)");
-    const sync = () => setHoverOpens(query.matches);
+    const sync = () => setPointerHasHover(query.matches);
     sync();
     query.addEventListener("change", sync);
     return () => query.removeEventListener("change", sync);
   }, []);
+  /* The person's own setting, from My profile. Hover can only open a
+     group on a device that HAS hover, so the two are an AND. */
+  const { hoverOpens: hoverPreferred } = useSidebarHover();
+  const hoverOpens = pointerHasHover && hoverPreferred;
+
+  /*
+   * Clicked open and hovered open are different things, and conflating
+   * them is what made the groups un-clickable.
+   *
+   * Andy, 05/11/2026: "Make them clickable - not just expand on hover."
+   * With one set, a click opened a group and the mouse leaving closed
+   * it again a moment later, so clicking appeared to do nothing at all.
+   *
+   * `openGroups` is what you clicked and stays until you click it
+   * again. `hoveredGroup` is where the pointer is and goes when it
+   * leaves. A group is open if either says so.
+   */
   const [openGroups, setOpenGroups] = useState<ReadonlySet<SidebarGroupKey>>(new Set());
+  const [hoveredGroup, setHoveredGroup] = useState<SidebarGroupKey | null>(null);
   const toggleGroup = (key: SidebarGroupKey) =>
     setOpenGroups((open) => {
       const next = new Set(open);
-      if (next.has(key)) next.delete(key); else next.add(key);
+      if (next.has(key)) {
+        next.delete(key);
+        // Clicking a hovered-open group shut has to actually shut it,
+        // not leave it held open by the pointer that is still on it.
+        setHoveredGroup((current) => (current === key ? null : current));
+      } else {
+        next.add(key);
+      }
       return next;
     });
 
@@ -707,7 +733,10 @@ function DashboardLayoutContent({
                     .filter((item): item is NavItem => Boolean(item));
                   if (children.length === 0) return null;
 
-                  const open = openGroups.has(entry.key) || activeGroup === entry.key;
+                  const open =
+                    openGroups.has(entry.key) ||
+                    hoveredGroup === entry.key ||
+                    activeGroup === entry.key;
                   const GroupIcon = GROUP_ICON[entry.key];
                   /* Rolled up from the children while the group is shut.
                      Messages is inside Communication now, and a closed
@@ -719,12 +748,8 @@ function DashboardLayoutContent({
                   return (
                     <SidebarMenuItem
                       key={entry.key}
-                      onMouseEnter={hoverOpens ? () => setOpenGroups((o) => new Set(o).add(entry.key)) : undefined}
-                      onMouseLeave={hoverOpens ? () => setOpenGroups((o) => {
-                        const next = new Set(o);
-                        next.delete(entry.key);
-                        return next;
-                      }) : undefined}
+                      onMouseEnter={hoverOpens ? () => setHoveredGroup(entry.key) : undefined}
+                      onMouseLeave={hoverOpens ? () => setHoveredGroup((current) => (current === entry.key ? null : current)) : undefined}
                     >
                       <SidebarMenuButton
                         onClick={() => toggleGroup(entry.key)}
@@ -756,11 +781,10 @@ function DashboardLayoutContent({
                                   onClick={() => setLocation(child.path)}
                                   className="h-9 cursor-pointer text-sm group/navsub"
                                 >
-                                  <child.icon
-                                    className={`h-4 w-4 shrink-0 transition-colors ${
-                                      isActive ? "text-white" : "text-muted-foreground group-hover/navsub:text-primary"
-                                    }`}
-                                  />
+                                  {/* No colour classes: index.css derives these
+                                      from the runtime sidebar foreground so they
+                                      stay readable on any brand colour. */}
+                                  <child.icon className="h-4 w-4 shrink-0 transition-colors" />
                                   <span className={isActive ? "font-semibold" : ""}>{child.label}</span>
                                   {count > 0 && badgeFor(count, isActive, `${count} waiting`)}
                                 </SidebarMenuSubButton>

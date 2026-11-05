@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { IceCream2, ImageOff, ImagePlus, Loader2, ShieldAlert } from "lucide-react";
+import { IceCream2, ImageOff, ImagePlus, Loader2, MousePointerClick, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { useSidebarHover } from "@/hooks/useSidebarHover";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -48,6 +50,7 @@ export function MyProfileDialog({
   const utils = trpc.useUtils();
   const { data: me, isLoading } = trpc.staff.getMyProfile.useQuery(undefined, { enabled: open });
   const [form, setForm] = useState<ProfileForm>(EMPTY);
+  const { hoverOpens, setHoverOpens } = useSidebarHover();
   const [photoUploading, setPhotoUploading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -204,6 +207,42 @@ export function MyProfileDialog({
                 <IceCream2 className="h-3.5 w-3.5 text-muted-foreground" /> Favourite flavour of ice cream
               </Label>
               <Input id="mp-ice" value={form.favouriteIceCream} onChange={set("favouriteIceCream")} placeholder="Salted caramel" />
+            </div>
+
+            {/*
+              * Andy, 05/11/2026: "Make this a feature to be able to turn
+              * on or off in profile settings so each user can have it
+              * customised the way they want."
+              *
+              * Outside the form on purpose. Everything above is saved by
+              * the Save button through staff.updateMyProfile; this is a
+              * display preference held in this browser, so it takes
+              * effect the moment it is switched and Cancel does not undo
+              * it. Saying so in the hint is cheaper than making it
+              * behave like the fields above, which would mean a column,
+              * a migration and a round trip to decide whether a menu
+              * opens on hover.
+              */}
+            <div className="space-y-1.5 border-t pt-4">
+              <Label className="flex items-center gap-1.5">
+                <MousePointerClick className="h-3.5 w-3.5 text-muted-foreground" /> Sidebar menus
+              </Label>
+              <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Open groups when I hover over them</p>
+                  <p className="text-xs text-muted-foreground">
+                    Financials, Communication and Insights open as the pointer passes. Turn this
+                    off to open them only by clicking. Clicking works either way, and this is
+                    saved on this device.
+                  </p>
+                </div>
+                <Switch
+                  checked={hoverOpens}
+                  onCheckedChange={setHoverOpens}
+                  aria-label="Open sidebar groups on hover"
+                  className="mt-0.5 shrink-0"
+                />
+              </div>
             </div>
           </div>
         )}
