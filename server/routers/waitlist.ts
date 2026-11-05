@@ -38,7 +38,7 @@ import {
 } from "../../drizzle/schema";
 import { requireApprovedStaffTenant } from "../staffAccess";
 import { sendSms } from "../sms";
-import { getAppBaseUrl } from "../appUrl";
+import { getPortalBaseUrl } from "../appUrl";
 import { nanoid } from "nanoid";
 import { departedBookingMessage } from "@shared/petBookable";
 import { brisbaneDateKey } from "@shared/localDateTime";
@@ -530,7 +530,7 @@ export const waitlistRouter = router({
           salonName: salon?.name ?? "Your groomer",
           petName: entry.petName,
           whenLabel: label,
-          url: waitlistOfferUrl(getAppBaseUrl(), token),
+          url: waitlistOfferUrl(getPortalBaseUrl(), token),
         });
         const result = await sendSms(entry.phone, body, { tenantId, trigger: "staff" });
         // Logged either way, so the conversation shows the salon tried

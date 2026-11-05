@@ -2364,7 +2364,7 @@ const calendarRouter = router({
           .where(eq(appointments.id, input.appointmentId))
           .limit(1);
         if (trackerRecipient?.phone) {
-          const trackerUrl = `${getAppBaseUrl()}/track/${appt.trackerToken}`;
+          const trackerUrl = `${getPortalBaseUrl()}/track/${appt.trackerToken}`;
           const body = buildPetTrackerSms({
             clientFirstName: trackerRecipient.firstName ?? "there",
             petName: trackerRecipient.petName ?? "your dog",
@@ -9959,7 +9959,7 @@ const groomingReportsRouter = router({
           const { ensureGroomingShareToken } = await import("./groomingShare");
           const { groomingShareUrl } = await import("@shared/groomingShareToken");
           const { getAppBaseUrl } = await import("./appUrl");
-          shareUrl = groomingShareUrl(getAppBaseUrl(), await ensureGroomingShareToken(db, report.id, report.tenantId));
+          shareUrl = groomingShareUrl(getPortalBaseUrl(), await ensureGroomingShareToken(db, report.id, report.tenantId));
         }
       } catch (err) {
         console.error("[emailReport] could not mint share link", err);
@@ -9989,7 +9989,7 @@ const groomingReportsRouter = router({
       const token = await ensureGroomingShareToken(db, report.id, report.tenantId);
       const { getAppBaseUrl } = await import("./appUrl");
       const { groomingShareUrl } = await import("@shared/groomingShareToken");
-      return { token, url: groomingShareUrl(getAppBaseUrl(), token) };
+      return { token, url: groomingShareUrl(getPortalBaseUrl(), token) };
     }),
 
   /**
@@ -11328,7 +11328,8 @@ const emailCampaignsRouter = router({
       const { sendEmail } = await import("./email.js");
 
       let sent = 0;
-      const unsubscribeBaseUrl = getAppBaseUrl();
+      // The client clicks this, so it belongs on the client host.
+      const unsubscribeBaseUrl = getPortalBaseUrl();
 
       for (const recipient of eligible) {
         if (!recipient.email) continue;
@@ -13236,7 +13237,11 @@ const clientPortalRouter = router({
       // wrong in the customer's inbox — and it is the client, not the sender,
       // who has to open it. CLAUDE.md section 8: client-facing links come
       // from appUrl.ts, which also logs loudly when VITE_APP_URL is unset.
-      const baseUrl = getAppBaseUrl();
+      // getPortalBaseUrl, not getAppBaseUrl. This is a CLIENT portal link
+      // and the comment above says so — but it was built from the staff
+      // base while the setup link a hundred lines below already used the
+      // portal one. Two portal links, two different hosts.
+      const baseUrl = getPortalBaseUrl();
       return {
         portalUrl: `${baseUrl}/portal/${access.token}`,
         expiresAt: access.expiresAt,
