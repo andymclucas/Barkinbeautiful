@@ -26,14 +26,22 @@ describe("Appointments day viewport layout", () => {
     // for no reason. What matters is that the page is a shrinkable flex
     // column sized to the viewport minus that chrome.
     expect(src).toMatch(/flex min-h-0 flex-col gap-4 lg:h-\[calc\(100dvh-[\d.]+rem\)\]/);
-    // The day view must fill the viewport rather than sizing to content. The
-    // exact string moved when the sidebar was added beside the grid, so this
-    // asserts the property: in day mode the view container is a shrinkable
-    // flex column that grows.
-    // `!== "week"` rather than `=== "day"`: the Agenda view added on
-    // 04/11/2026 is a day view in everything but layout, and must fill
-    // the viewport the same way.
-    expect(src).toContain('viewMode !== "week" ? "flex min-h-0 flex-1 flex-col"');
+    /*
+     * EVERY view fills the viewport, week included.
+     *
+     * This used to require the ternary that excluded week view — and that
+     * ternary was the bug. The page column above has a fixed height, so
+     * something must absorb a week taller than the screen; with no flex-1
+     * the calendar row would not, and flex took the space out of the
+     * TOOLBAR instead, spilling its second row onto the mini calendar and
+     * pushing the grid over the Unassigned panel.
+     *
+     * Which is the second time this file has held a layout bug in place by
+     * pinning the broken markup — see the note at the top. Asserting the
+     * property rather than the string is the whole point of that note.
+     */
+    expect(src).toContain('<div className="flex min-h-0 flex-1 flex-col">');
+    expect(src).not.toContain('viewMode !== "week" ? "flex min-h-0 flex-1 flex-col"');
   });
 
   it("keeps the day card flexible and confines overflow to the staff calendar grid", () => {
@@ -77,7 +85,9 @@ describe("Appointments day viewport layout", () => {
     const src = source();
     expect(src).toContain("<CalendarSidebar");
     expect(src).toContain("summary={sidebarSummary}");
-    expect(src).toContain('viewMode !== "week" ? "flex min-h-0 flex-1 gap-4" : "flex min-h-0 gap-4"');
+    // One class list for every view. The week-only variant dropped flex-1,
+    // which is what let the toolbar be squeezed into the sidebar.
+    expect(src).toContain('<div className="flex min-h-0 flex-1 gap-4">');
   });
 
   it("gives the grid body a bounded height so it scrolls itself", () => {
@@ -93,6 +103,21 @@ describe("Appointments day viewport layout", () => {
     expect(scroller, "the grid body scroller should still carry ref={scrollRef}").not.toBeNull();
     expect(scroller![1]).toContain("min-h-0");
     expect(scroller![1]).toContain("flex-1");
+  });
+
+  it("bounds the WEEK grid too, so its overflow-auto means something", () => {
+    /*
+     * `overflow-auto` on a container with no height constraint never
+     * scrolls — it simply grows. Measured on the live page before the fix,
+     * the week grid was 3,328px tall inside a 654px row, with
+     * scrollHeight === clientHeight: the scroller was not scrolling, it
+     * was overflowing, and drawing over everything below it.
+     */
+    const src = source();
+    const weekRoot = /<div className="([^"]*)bg-card rounded-xl border overflow-auto"/.exec(src);
+    expect(weekRoot, "the week view root should still be findable").not.toBeNull();
+    expect(weekRoot![1]).toContain("min-h-0");
+    expect(weekRoot![1]).toContain("flex-1");
   });
 
   it("wraps the grid in a flex column that may shrink, not a rigid block", () => {
