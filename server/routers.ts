@@ -112,6 +112,7 @@ import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMe
 import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows } from "@shared/lapsedClients";
+import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
@@ -13240,7 +13241,8 @@ const clientPortalRouter = router({
       // getPortalBaseUrl, not getAppBaseUrl. This is a CLIENT portal link
       // and the comment above says so — but it was built from the staff
       // base while the setup link a hundred lines below already used the
-      // portal one. Two portal links, two different hosts.
+      // portal one. Two portal links, two different hosts, and the moment
+      // VITE_PORTAL_URL is set they diverge for real.
       const baseUrl = getPortalBaseUrl();
       return {
         portalUrl: `${baseUrl}/portal/${access.token}`,
@@ -13354,7 +13356,7 @@ const clientPortalRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
-      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId, email: clients.email, portalLoginEmail: clients.portalLoginEmail, firstName: clients.firstName })
+      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId, email: clients.email, portalLoginEmail: clients.portalLoginEmail, firstName: clients.firstName, portalAccountStatus: clients.portalAccountStatus })
         .from(clients)
         .where(eq(clients.id, input.clientId))
         .limit(1);
@@ -13376,13 +13378,29 @@ const clientPortalRouter = router({
       }
 
       const setup = createClientPortalToken();
+      /*
+       * What this writes depends on whether the client already has a
+       * working account — see shared/portalSetupLink.ts. Clearing the
+       * password unconditionally is what locked a client out on
+       * 05/11/2026: she had signed in on 14 October, the link was
+       * reissued, and the credential her password manager still held had
+       * nothing left to match. A reset link for a live account is a reset
+       * link; the old password keeps working until the new one is set.
+       */
+      const effect = portalLinkIssueEffect({
+        currentStatus: client.portalAccountStatus as PortalAccountStatus,
+        currentLoginEmail: client.portalLoginEmail,
+        newLoginEmail: loginEmail,
+      });
       await db.update(clients).set({
         portalLoginEmail: loginEmail,
-        portalAccountStatus: "setup_pending",
-        portalPasswordHash: null,
+        portalAccountStatus: effect.status,
+        ...(effect.keepPassword ? {} : { portalPasswordHash: null }),
         portalSetupTokenHash: setup.tokenHash,
         portalSetupExpiresAt: setup.expiresAt,
-        portalSessionVersion: sql`${clients.portalSessionVersion} + 1`,
+        ...(effect.bumpSessionVersion
+          ? { portalSessionVersion: sql`${clients.portalSessionVersion} + 1` }
+          : {}),
         updatedAt: new Date(),
       }).where(eq(clients.id, client.id));
 
@@ -13399,7 +13417,12 @@ const clientPortalRouter = router({
       const setupUrl = `${baseUrl}/portal/setup/${setup.token}`;
 
       const { sendEmail } = await import("./email");
-      const isReset = client.portalLoginEmail === loginEmail; // same address already had an account \u2014 this is a reset, not a first-time setup
+      // True only for a LIVE account at the same address. A client who never
+      // finished setting up is being SET UP, not reset, whatever their
+      // email says — and telling somebody to reset a password they never
+      // had is half of why one of them spent a week certain the fault was
+      // at her end.
+      const isReset = effect.isReset; // same address already had an account \u2014 this is a reset, not a first-time setup
       const emailSent = input.sendEmail === false ? false : await sendEmail({
         to: loginEmail,
         subject: isReset ? "Reset your Barkin' Beautiful client portal password" : "Set up your Barkin' Beautiful client portal account",
@@ -13465,31 +13488,52 @@ const clientPortalRouter = router({
         portalLoginEmail: clients.portalLoginEmail,
         portalSetupExpiresAt: clients.portalSetupExpiresAt,
         portalSessionVersion: clients.portalSessionVersion,
+        portalAccountStatus: clients.portalAccountStatus,
         salonName: tenants.name,
       })
         .from(clients)
         .innerJoin(tenants, eq(clients.tenantId, tenants.id))
         .where(and(
           eq(clients.portalSetupTokenHash, hashClientPortalToken(input.token)),
-          eq(clients.portalAccountStatus, "setup_pending"),
+          // Not just setup_pending. An ACTIVE account can now hold a live
+          // setup token — that is the point of the change: reissuing a
+          // link no longer deletes a working password, so the account
+          // stays active while the link is outstanding. Matching only
+          // setup_pending here would mint links that could never be
+          // redeemed.
+          inArray(clients.portalAccountStatus, [...REDEEMABLE_PORTAL_STATUSES]),
         ))
         .limit(1);
       if (!client) throw new TRPCError({ code: "UNAUTHORIZED", message: "This client portal setup link is invalid or no longer active." });
       if (!client.portalSetupExpiresAt || client.portalSetupExpiresAt.getTime() <= Date.now()) {
+        /*
+         * An expired link used to reset the account to not_enabled and
+         * null BOTH the password and the login email. On a setup that was
+         * never completed that is tidy. On a live account whose unused
+         * reset link simply went stale, it would delete a working portal
+         * account because nobody clicked a link — so this half cannot be
+         * left behind when issuing stops clearing the password.
+         */
+        const { wipeAccount } = portalLinkExpiryEffect(client.portalAccountStatus as PortalAccountStatus);
         await db.update(clients).set({
-          portalAccountStatus: "not_enabled",
-          portalLoginEmail: null,
-          portalPasswordHash: null,
+          ...(wipeAccount
+            ? { portalAccountStatus: "not_enabled" as const, portalLoginEmail: null, portalPasswordHash: null }
+            : {}),
           portalSetupTokenHash: null,
           portalSetupExpiresAt: null,
-          portalSessionVersion: sql`${clients.portalSessionVersion} + 1`,
+          ...(wipeAccount ? { portalSessionVersion: sql`${clients.portalSessionVersion} + 1` } : {}),
           updatedAt: new Date(),
         }).where(and(
           eq(clients.id, client.id),
           eq(clients.portalSetupTokenHash, hashClientPortalToken(input.token)),
-          eq(clients.portalAccountStatus, "setup_pending"),
+          inArray(clients.portalAccountStatus, [...REDEEMABLE_PORTAL_STATUSES]),
         ));
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "This client portal setup link has expired. Please ask the salon for a new link." });
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: wipeAccount
+            ? "This client portal setup link has expired. Please ask the salon for a new link."
+            : "This link has expired, but your existing password still works. Ask the salon for a new link if you need to change it.",
+        });
       }
       return {
         client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail },
@@ -13511,29 +13555,50 @@ const clientPortalRouter = router({
         portalLoginEmail: clients.portalLoginEmail,
         portalSetupExpiresAt: clients.portalSetupExpiresAt,
         portalSessionVersion: clients.portalSessionVersion,
+        portalAccountStatus: clients.portalAccountStatus,
       })
         .from(clients)
         .where(and(
           eq(clients.portalSetupTokenHash, hashClientPortalToken(input.token)),
-          eq(clients.portalAccountStatus, "setup_pending"),
+          // Not just setup_pending. An ACTIVE account can now hold a live
+          // setup token — that is the point of the change: reissuing a
+          // link no longer deletes a working password, so the account
+          // stays active while the link is outstanding. Matching only
+          // setup_pending here would mint links that could never be
+          // redeemed.
+          inArray(clients.portalAccountStatus, [...REDEEMABLE_PORTAL_STATUSES]),
         ))
         .limit(1);
       if (!client) throw new TRPCError({ code: "UNAUTHORIZED", message: "This client portal setup link is invalid or no longer active." });
       if (!client.portalSetupExpiresAt || client.portalSetupExpiresAt.getTime() <= Date.now()) {
+        /*
+         * An expired link used to reset the account to not_enabled and
+         * null BOTH the password and the login email. On a setup that was
+         * never completed that is tidy. On a live account whose unused
+         * reset link simply went stale, it would delete a working portal
+         * account because nobody clicked a link — so this half cannot be
+         * left behind when issuing stops clearing the password.
+         */
+        const { wipeAccount } = portalLinkExpiryEffect(client.portalAccountStatus as PortalAccountStatus);
         await db.update(clients).set({
-          portalAccountStatus: "not_enabled",
-          portalLoginEmail: null,
-          portalPasswordHash: null,
+          ...(wipeAccount
+            ? { portalAccountStatus: "not_enabled" as const, portalLoginEmail: null, portalPasswordHash: null }
+            : {}),
           portalSetupTokenHash: null,
           portalSetupExpiresAt: null,
-          portalSessionVersion: sql`${clients.portalSessionVersion} + 1`,
+          ...(wipeAccount ? { portalSessionVersion: sql`${clients.portalSessionVersion} + 1` } : {}),
           updatedAt: new Date(),
         }).where(and(
           eq(clients.id, client.id),
           eq(clients.portalSetupTokenHash, hashClientPortalToken(input.token)),
-          eq(clients.portalAccountStatus, "setup_pending"),
+          inArray(clients.portalAccountStatus, [...REDEEMABLE_PORTAL_STATUSES]),
         ));
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "This client portal setup link has expired. Please ask the salon for a new link." });
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: wipeAccount
+            ? "This client portal setup link has expired. Please ask the salon for a new link."
+            : "This link has expired, but your existing password still works. Ask the salon for a new link if you need to change it.",
+        });
       }
       const passwordHash = await bcrypt.hash(input.password, 12);
       const setupResult = await db.update(clients).set({
@@ -13547,7 +13612,7 @@ const clientPortalRouter = router({
       }).where(and(
         eq(clients.id, client.id),
         eq(clients.portalSetupTokenHash, hashClientPortalToken(input.token)),
-        eq(clients.portalAccountStatus, "setup_pending"),
+        inArray(clients.portalAccountStatus, [...REDEEMABLE_PORTAL_STATUSES]),
         gt(clients.portalSetupExpiresAt, new Date()),
       ));
       // result[0].affectedRows. Reading it off the array itself gives
