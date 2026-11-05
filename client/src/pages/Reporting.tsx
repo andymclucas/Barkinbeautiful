@@ -49,10 +49,13 @@ export default function Reporting() {
   const [lapsedFactor, setLapsedFactor] = useState(2);
   const { data: lapsed, isLoading: loadingLapsed } =
     trpc.clients.lapsedClients.useQuery({ limit: 200, overdueFactor: lapsedFactor });
-  /* What the whole list adds up to. Membership rows contribute nothing
-     here by design — their grooms carry no price — so this is money the
-     salon has not taken, not the full cost of the people on the list. */
-  const lapsedLost = (lapsed?.rows ?? []).reduce((sum, r) => sum + r.estimatedLostRevenue, 0);
+  /* From the server, over every lapsed client — NOT a sum of the rows
+     on screen, which stop at the query limit and would print a figure
+     for two hundred beside a count for all of them. Membership rows
+     contribute nothing by design, their grooms carrying no price, so
+     this is money the salon has not taken rather than the full cost of
+     the people on the list. */
+  const lapsedLost = lapsed?.totalLostRevenue ?? 0;
   /* Andy, 05/11/2026: "Add sorting and filters for Client Retention and
      only show 20 per page." Pulled whole and worked on here: the book
      is a few hundred dogs, and sorting a page of twenty server-side

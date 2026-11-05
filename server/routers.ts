@@ -4435,6 +4435,16 @@ const clientsRouter = router({
 
       return {
         total: ranked.length,
+        /*
+         * Summed over EVERY lapsed client, not over the page of rows
+         * returned beside it. The client used to add up what it had
+         * been sent, so a book with more lapsed clients than the limit
+         * printed a count for all of them and a figure for the first
+         * two hundred — two numbers on one line that disagreed. The
+         * same mistake the day-view header made when it counted a
+         * different list from the sidebar two inches away.
+         */
+        totalLostRevenue: ranked.reduce((sum, r) => sum + r.estimatedLostRevenue, 0),
         rows: ranked.slice(0, input?.limit ?? 100),
       };
     }),
