@@ -74,6 +74,14 @@ export function useCalendarZoom(scrollRef: RefObject<HTMLDivElement | null>) {
     let startDistance = 0;
     let startZoom = 1;
     let pinching = false;
+    /*
+     * touchmove fires far faster than the screen refreshes, and every
+     * setZoom re-renders the whole day board. Coalescing to one frame
+     * keeps the gesture at the phone's refresh rate instead of asking
+     * React to lay out thirty cards per event.
+     */
+    let frame = 0;
+    let pending = 0;
 
     const spread = (touches: TouchList) =>
       Math.hypot(
@@ -97,13 +105,32 @@ export function useCalendarZoom(scrollRef: RefObject<HTMLDivElement | null>) {
       // whole page instead, which is the thing that makes a web
       // calendar feel unlike a native one.
       event.preventDefault();
-      setZoom(zoomFromPinch(startZoom, startDistance, spread(event.touches)));
+      pending = zoomFromPinch(startZoom, startDistance, spread(event.touches));
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setZoom(pending);
+      });
     };
 
     const onEnd = (event: TouchEvent) => {
       if (event.touches.length >= 2) return;
       pinching = false;
-      anchorRef.current = null;
+      /*
+       * The anchor is deliberately NOT cleared here. setZoom is
+       * batched, so the layout effect that uses it runs after this
+       * handler has returned — clearing it now would re-anchor the
+       * last frame of the pinch on the middle of the screen and jump
+       * the board as the fingers lift. The buttons clear it for
+       * themselves, and the next touchstart overwrites it.
+       */
+      // Land on where the fingers actually finished, not on whichever
+      // frame happened to run last.
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        setZoom(pending);
+      }
     };
 
     el.addEventListener("touchstart", onStart, { passive: true });
@@ -111,6 +138,7 @@ export function useCalendarZoom(scrollRef: RefObject<HTMLDivElement | null>) {
     el.addEventListener("touchend", onEnd, { passive: true });
     el.addEventListener("touchcancel", onEnd, { passive: true });
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       el.removeEventListener("touchstart", onStart);
       el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
