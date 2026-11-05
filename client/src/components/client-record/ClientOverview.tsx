@@ -104,7 +104,13 @@ export function ClientMetrics({ clientId }: { clientId: number }) {
             <p className={`mt-1 font-bold font-display leading-tight tabular-nums ${sizeForValue(tile.value)} ${tile.tone ?? ""}`}>
               {tile.value}
             </p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{tile.detail ?? "\u00a0"}</p>
+            {/* Wraps rather than truncates, for the same reason the
+                value above is sized rather than clipped: a detail cut to
+                "last used 14…" does not answer the question it exists to
+                answer. Andy, 05/11/2026: "Can't tell when portal was
+                last accessed." The grid stretches every card in a row to
+                the tallest, so a second line here costs nothing. */}
+            <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{tile.detail ?? "\u00a0"}</p>
           </CardContent>
         </Card>
       ))}

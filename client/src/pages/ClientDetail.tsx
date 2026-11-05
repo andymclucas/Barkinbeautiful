@@ -1343,7 +1343,11 @@ export default function ClientDetail() {
                     {upcomingBookings.map(a => (
                       <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
+                          {/* Not truncated: "Teddy · Classic Gro…" hides
+                              the one thing the row is for. The parent is
+                              min-w-0 inside a flex-wrap row, so this wraps
+                              to a second line instead of being cut. */}
+                          <p className="text-sm font-medium">
                             {a.petName} &middot; {SERVICE_LABELS[a.serviceType] ?? a.serviceType}
                           </p>
                           <p className="text-xs text-muted-foreground">
