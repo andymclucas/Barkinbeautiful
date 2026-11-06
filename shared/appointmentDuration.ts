@@ -14,7 +14,21 @@ const DURATION_MINUTES_BY_WEIGHT_CLASS: Record<string, number> = {
   giant: 180,
 };
 
-const AUTO_DURATION_SERVICE_TYPES = new Set(["classic_groom", "styled_groom", "fft"]);
+/**
+ * The services a length can be worked out for.
+ *
+ * Exported so the booking dialog can say which it is. The other five —
+ * bath, deshed, nail trim, daycare, other — get no suggestion, and that
+ * is 205 of 1,295 upcoming bookings, so roughly one in six is booked
+ * with an empty finish time. Telling somebody a length was "suggested
+ * from the dogs' size" when none was is what made that puzzling as well
+ * as tedious.
+ */
+export const AUTO_DURATION_SERVICES: ReadonlySet<string> = new Set([
+  "classic_groom", "styled_groom", "fft",
+]);
+
+const AUTO_DURATION_SERVICE_TYPES = AUTO_DURATION_SERVICES;
 
 /**
  * The dog's recorded size band, used when no weight is on file.

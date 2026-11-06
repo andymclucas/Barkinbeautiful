@@ -67,7 +67,7 @@ import {
   type StyleNoteDraft,
 } from "@shared/styleNoteDraft";
 import { formatAestDate, formatAestDateTime, formatAestTime } from "@shared/auditTimestamp";
-import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
+import { getAutoDurationMinutesForPets, AUTO_DURATION_SERVICES } from "@shared/appointmentDuration";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -4385,8 +4385,26 @@ export default function Calendar() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Ends</Label>
-                <DateTimeField aria-label="Ends" value={newAppt.scheduledEnd} onChange={next => setNewAppt(p => ({ ...p, scheduledEnd: next }))} />
-                <p className="text-[11px] text-muted-foreground">Suggested from the dogs' size — change it for a known-quick or a difficult groom.</p>
+                {/* fallbackDate, so the day is already there and only a time
+                    has to be typed. Five of eight service types get no
+                    suggested duration, and for those both halves were blank
+                    and the picker opened on today — a January booking meant
+                    paging forward three months to re-enter a date that was
+                    never going to differ from the start. */}
+                <DateTimeField
+                  aria-label="Ends"
+                  value={newAppt.scheduledEnd}
+                  fallbackDate={newAppt.scheduledStart.slice(0, 10)}
+                  onChange={next => setNewAppt(p => ({ ...p, scheduledEnd: next }))}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {AUTO_DURATION_SERVICES.has(newAppt.serviceType)
+                    ? "Suggested from the dogs' size — change it for a known-quick or a difficult groom."
+                    /* Honest for the other five. Claiming a suggestion that
+                       never comes is what made the empty field puzzling as
+                       well as tedious. */
+                    : "No suggested length for this service — set the finish time."}
+                </p>
               </div>
             </div>
             {blockingClashes(bookingClashes).length > 0 && (
@@ -5148,7 +5166,7 @@ export default function Calendar() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>End</Label>
-                    <DateTimeField aria-label="Ends" value={editForm.scheduledEnd} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledEnd: next }))} />
+                    <DateTimeField aria-label="Ends" value={editForm.scheduledEnd} fallbackDate={editForm.scheduledStart?.slice(0, 10)} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledEnd: next }))} />
                   </div>
                 </div>
                 {(blockingClashes(editClashes).length > 0 || editMoveCapacityWarning) && (
