@@ -4,13 +4,14 @@ import {
   WaitlistEntryFields, emptyWaitlistFields, waitlistJoinInput, type WaitlistFields,
 } from "@/components/WaitlistEntryFields";
 import { Badge } from "@/components/ui/badge";
+import { ClientLink, PetLink } from "@/components/RecordLink";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarClock, Check, Clock3, Dog, Plus, Send, Trash2, X } from "lucide-react";
+import { CalendarClock, Check, Clock3, Dog, Plus, Send, Trash2, X, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { describeWindow } from "@shared/waitlist";
 
@@ -319,8 +320,37 @@ export function WaitlistPanel() {
             <div className="mt-2 space-y-1.5">
               {entries.data.map((e: any) => (
                 <div key={e.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm">
-                  <span className="font-medium">{e.clientName}</span>
-                  <span className="text-muted-foreground">· {e.petName}</span>
+                  {/* Lauren, 06/11/2026: "can I also click on the people in
+                      the waitlist so can quickly call to come in".
+
+                      The query already returned clientId and clientPhone —
+                      the row simply printed neither. So a slot coming free
+                      meant reading a name off this dialog, closing it,
+                      searching for the client and opening their record, for
+                      something the salon does standing at the bench with a
+                      gap in front of them.
+
+                      Also what Andy asked for on 28/10/2026 — "make all
+                      client names clickable across the whole platform
+                      regardless of the screen they're on, same with dogs".
+                      This screen was missed. */}
+                  <ClientLink clientId={e.clientId} className="font-medium">{e.clientName}</ClientLink>
+                  <span className="text-muted-foreground">· <PetLink clientId={e.clientId} petId={e.petId}>{e.petName}</PetLink></span>
+                  {e.clientPhone ? (
+                    <a
+                      href={`tel:${String(e.clientPhone).replace(/\s/g, "")}`}
+                      className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-primary"
+                      /* The whole point is the salon is on a phone or an
+                         iPad on the floor, where this opens the dialer. */
+                      aria-label={`Call ${e.clientName} on ${e.clientPhone}`}
+                    >
+                      <Phone className="h-3 w-3" /> {e.clientPhone}
+                    </a>
+                  ) : (
+                    /* Said out loud rather than left blank: "no number" is
+                       why you cannot ring them, and a gap looks like a bug. */
+                    <span className="text-xs italic text-muted-foreground">no number on file</span>
+                  )}
                   <Badge variant="outline">{describeWindow(e)}</Badge>
                   {e.preferredStaffName && <Badge variant="secondary">{e.preferredStaffName}</Badge>}
                   {e.note && <span className="text-xs italic text-muted-foreground">"{e.note}"</span>}
