@@ -320,6 +320,12 @@ const OPERATIONAL = [
   "smsRouter.getPickupRecipients",
   "smsRouter.myAssignments",
   "smsRouter.sendPickupMessage",
+  /* Texting a client the dates they are booked in for — Lauren,
+     06/11/2026. Operational, unlike sms.sendToClient beside it, because
+     the body is BUILT from the client's own bookings and nothing a
+     caller can put into it. The free-text composer stays owner-only. */
+  "smsRouter.sendUpcomingDates",
+  "smsRouter.upcomingDatesPreview",
   "smsUsageRouter.get",
   "staffRouter.createBlockout",
   "staffRouter.deleteBlockout",
@@ -410,6 +416,9 @@ describe("tRPC procedure surface", () => {
     // 391 since 06/11/2026: the salons router — mine, canAccess, grant
     // and revoke — for running more than one salon from one account.
     //
+    // 397 since 06/11/2026: sms.upcomingDatesPreview and
+    // sms.sendUpcomingDates, for texting a client her list of dates.
+    //
     // 395 since 06/11/2026: calendar.addRecurrenceToAppointment, for
     // turning a booking that already exists into a series.
     //
@@ -418,7 +427,7 @@ describe("tRPC procedure surface", () => {
     // adminProcedure — provisioning makes a new business on the platform
     // and hands somebody the keys, and eligibleOwners lists the
     // platform's accounts — so none appears in OPERATIONAL or PUBLIC.
-    expect(surface).toHaveLength(395);
+    expect(surface).toHaveLength(397);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -452,6 +461,10 @@ describe("tRPC procedure surface", () => {
      * feature, so protectedProcedure would have locked out everyone it
      * is for.
      *
+     * 143 since 06/11/2026: sms.upcomingDatesPreview and
+     * sms.sendUpcomingDates. The receptionist at the desk is who reads a
+     * client her dates, and the body is built rather than typed.
+     *
      * 141 since 06/11/2026: calendar.addRecurrenceToAppointment. Turning
      * a booking into a series is floor work — the groomer standing with
      * the client at the end of a groom is who books the next six — and it
@@ -460,7 +473,7 @@ describe("tRPC procedure surface", () => {
      * 140 since 06/11/2026: salons.mine and salons.canAccess. Both read
      * only from the caller's own access list.
      */
-    expect(OPERATIONAL).toHaveLength(141);
+    expect(OPERATIONAL).toHaveLength(143);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
