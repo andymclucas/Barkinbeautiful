@@ -133,6 +133,7 @@ import {
   wholeBookingCancellation, describeWholeBookingCancellation,
 } from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
+import { toastBookingConfirmation } from "@/lib/confirmationToast";
 import {
   describeRecurrence, recurrenceStarts,
   MAX_FREQUENCY_WEEKS, MIN_FREQUENCY_WEEKS, type RecurrenceEnd,
@@ -1745,8 +1746,9 @@ export default function Calendar() {
   const { data: tenantInfo } = trpc.settings.getTenantInfo.useQuery({});
 
   const createMutation = trpc.calendar.createAppointment.useMutation({
-    onSuccess: () => {
+    onSuccess: (r) => {
       toast.success("Appointment created");
+      toastBookingConfirmation(r.confirmationSms);
       setShowNewAppt(false);
       setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
@@ -2547,6 +2549,7 @@ export default function Calendar() {
   const multiPetCreateMutation = trpc.calendar.createMultiPetAppointment.useMutation({
     onSuccess: (r) => {
       toast.success(`${r.created} appointment${r.created !== 1 ? "s" : ""} created`);
+      toastBookingConfirmation(r.confirmationSms);
       setShowNewAppt(false);
       setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");

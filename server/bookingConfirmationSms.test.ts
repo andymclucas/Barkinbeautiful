@@ -258,10 +258,27 @@ describe("the live booking path actually sends", () => {
   });
 
   it("has exactly the call sites it is meant to have", () => {
-    // Two: the live multi-pet path, and the dead single path kept in
-    // step so the two cannot diverge. A third appearing without a group
-    // design would mean a series texting once per occurrence.
-    expect(routers.match(/await sendBookingConfirmation\(/g) ?? []).toHaveLength(2);
+    /*
+     * Three: the live multi-pet path, the dead single path kept in step
+     * so the two cannot diverge, and rebook.
+     *
+     * The warning this test was written with still stands — "a third
+     * appearing without a group design would mean a series texting once
+     * per occurrence" — and rebook satisfies it. It books ONE visit per
+     * press and hands the helper every dog of that visit in one array,
+     * so a two-dog family gets one text naming both.
+     *
+     * A repeat that creates up to sixty occurrences must NOT be wired in
+     * here. Sixty texts is not a confirmation, it is an incident; that
+     * one gets a single staff-pressed message listing the dates.
+     */
+    expect(routers.match(/await sendBookingConfirmation\(/g) ?? []).toHaveLength(3);
+    // Rebook hands over the whole booking, not one row at a time.
+    expect(routers).toMatch(/sendBookingConfirmation\(db, created\)/);
+    // And the repeat stays out of it.
+    const repeat = routers.slice(routers.indexOf("addRecurrenceToAppointment: operationalProcedure"));
+    const repeatBody = repeat.slice(0, repeat.indexOf("\n  createMultiPetAppointment"));
+    expect(repeatBody).not.toContain("sendBookingConfirmation");
   });
 });
 

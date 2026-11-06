@@ -909,7 +909,27 @@ const calendarRouter = router({
           scheduledStart: start,
           scheduledEnd: new Date(start.getTime() + minutes * 60000),
           workflowState: "scheduled",
-          status: "pending",
+          /*
+           * CONFIRMED, not pending — changed 06/11/2026.
+           *
+           * It was pending, and `status` does not mean what that
+           * suggests. shared/reminderDecision.ts had to work this out
+           * the hard way: every booking created in Groomigo is born
+           * "confirmed" before any client has confirmed anything, and
+           * every MoeGo import lands "pending", so the field records
+           * where a booking came from rather than whether anyone agreed
+           * to it. shared/bookingBuckets.ts has the count — 1,023 of
+           * 1,025 future bookings read "pending".
+           *
+           * It mattered here because the confirmation gate DOES read it,
+           * and correctly so for an online request nobody has approved.
+           * A rebook is the opposite: a staff member at the counter
+           * pressing "book the next visit" with the client in front of
+           * them. Born pending, it was refused "not_confirmed" and the
+           * client was never told their next date — Lauren, 06/11/2026:
+           * "Also they dont get a text with their next date."
+           */
+          status: "confirmed",
           price: dog.price,
           sessionId,
           // Booked here, so no MoeGo id. reminder_* stay NULL: this is a
@@ -926,7 +946,20 @@ const calendarRouter = router({
         });
       }
 
-      return { success: true, created, sessionId, dogs: siblings.length };
+      /*
+       * One text for the whole booking, through the same gate every
+       * other confirmation goes through — so a client who replied STOP,
+       * a booking inside the lead time, and the quiet hours are all
+       * honoured without this path knowing about any of them.
+       *
+       * After the inserts and never throwing: the dogs are booked and
+       * the staff member has seen it succeed, so a Twilio outage must
+       * not surface as a failed rebook. The reason comes back instead,
+       * and the screen shows it.
+       */
+      const confirmationSms = await sendBookingConfirmation(db, created);
+
+      return { success: true, created, sessionId, dogs: siblings.length, confirmationSms };
     }),
 
   searchAppointments: operationalProcedure
