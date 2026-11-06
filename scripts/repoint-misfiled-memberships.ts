@@ -27,137 +27,203 @@
  * stop a plan priced for a small dog being carried onto a large one
  * when a dog dies, which is a new decision about money. This is a
  * filing correction: the fee, the tier and the band are unchanged and
- * the plan was always this dog's. So the bands are PRINTED as evidence
- * for the person reading the output, and never used to block.
+ * the plan was always this dog's. Running
+ * `isEligibleMembershipReplacement` over the four decided pairs that
+ * have weights returns false for all four — it would block every
+ * correct move.
+ *
+ * So the bands are PRINTED instead, as evidence for the person reading
+ * the output. Raw kilos and the stored `size_band` are printed beside
+ * the derived band, because the derivation is lossy: the bands leave a
+ * gap between 13 and 14 kg, so Carly Herbert's Lily at 13.2 kg has no
+ * band at all. The plan's own named band is printed next to it and is
+ * never used to decide — `shared/membershipCoveredPets.ts` is explicit
+ * that a plan name is for flagging and never for pricing, and Dusty
+ * sits on a plan named "MED" at 20 kg today.
  *
  * ## What it does and does not touch
  *
  * One column, `memberships.pet_id`, plus an audit row per move. It
  * never touches `price_per_cycle`, `status`, `tier`, `service_type`,
- * any appointment, or any invoice. The weekly money does not move.
+ * any appointment, or any invoice.
  *
- * Linking the existing bookings is a SEPARATE job — run
- * `scripts/backfill-appointment-memberships.ts` afterwards, or the 21
- * upcoming grooms for these dogs keep `membership_id = NULL` and the
- * gold VIP disc stays off.
+ * The WEEKLY money does not move: billing resolves a plan by its own id
+ * and `stripe_subscription_id`, never by the dog. One derived figure
+ * does change — the Accounts Receivable view totals completed grooms
+ * for `memberships.pet_id` since `started_at`, so after the move each
+ * plan counts the right dog's grooms instead of the wrong dog's. That
+ * is the view becoming correct, but it is a visible change and the dry
+ * run prints it.
+ *
+ * ## Run this BEFORE the backfill, not after
+ *
+ * `scripts/backfill-appointment-memberships.ts` links existing bookings
+ * to the plan that covers them. For a dog carrying TWO plans it has no
+ * ORDER BY and keeps the first row the database returns, so run it
+ * first and the three undecided households get their bookings linked to
+ * an arbitrary one of their two plans. The guard below then refuses
+ * whichever plan is finally chosen, and the only cure is editing
+ * `appointments.membership_id` by hand.
+ *
+ * So: decide all nine, move all nine, then backfill. If a partial run
+ * is unavoidable the dry run says plainly not to backfill yet.
  *
  * ## Re-running is safe
  *
  * Each entry is checked against the live row before anything is
  * written. A plan already sitting on its target is reported as done and
- * skipped; a plan sitting on neither the old nor the new dog aborts the
- * whole run, because somebody else has moved it and this script's table
- * is then out of date. So the three undecided entries can be filled in
- * later and the script re-run without disturbing the six.
+ * skipped — that check runs BEFORE the status check, so a plan that has
+ * since gone `pending_payment` cannot block the entries that still have
+ * to move. A plan sitting on neither the old nor the new dog aborts the
+ * whole run, because somebody has moved it and this table is stale.
+ *
+ * ## `pnpm run check` does NOT cover this file
+ *
+ * `tsconfig.json` includes only `client/src`, `shared` and `server`, so
+ * the repo's typecheck never reads `scripts/`. Check it directly:
+ *
+ *   corepack pnpm exec tsc --noEmit --skipLibCheck --target ES2022 \
+ *     --module ESNext --moduleResolution bundler --strict \
+ *     scripts/repoint-misfiled-memberships.ts
  *
  *   node --import tsx scripts/repoint-misfiled-memberships.ts
  *   node --import tsx scripts/repoint-misfiled-memberships.ts --apply
  */
 import "dotenv/config";
-import mysql from "mysql2/promise";
-import { getReplacementWeightBand } from "../shared/departedPetMembership";
+import mysql, { type RowDataPacket } from "mysql2/promise";
+import { getMembershipWeightBand } from "../shared/membershipPackages";
+import { resolveAppointmentMembershipCoverage, type ActivePetMembership }
+  from "../shared/appointmentMembershipCoverage";
 
 const APPLY = process.argv.includes("--apply");
 const TENANT = 1;
 
 type Correction = {
-  membershipId: number;
+  /**
+   * The plan that moves. NULL on an entry where nobody has decided
+   * WHICH of the client's two plans it is — which is a different
+   * question from which dog, and is open on three of the nine.
+   */
+  membershipId: number | null;
   clientId: number;
   /** The dog the plan is on now. Checked before anything is written. */
   fromPetId: number;
   /** The dog it belongs to. NULL until a human decides. */
   toPetId: number | null;
-  /** Everything below is for the person reading the output, not for logic. */
+  /**
+   * Why this dog and this plan — copied verbatim into the audit row, so
+   * it must read as a decision and not as an open question. Required
+   * whenever the entry is decided.
+   */
+  decision: string | null;
+  /** For the person reading the output. Never used to decide anything. */
   client: string;
-  plan: string;
-  why: string;
+  options: string;
+  openQuestion?: string;
 };
 
 /**
  * Six are settled by the weight band: the household's second dog sits
  * in the band the plan names, and the first dog sits in the other
- * plan's band. Three are not, and are left NULL rather than guessed —
+ * plan's band. Three are not, and are left open rather than guessed —
  * the dogs' own booking history was checked on 06/11/2026 and does not
  * settle any of them either.
  *
- * Pricing is never decided from a plan name (shared/membershipCoveredPets
- * is explicit about that). The name is being used here to identify WHICH
- * of a client's two plans is which, with the fee unchanged either way —
- * not to decide what anybody pays.
+ * The name is being used here to identify WHICH of a client's two plans
+ * is which, with the fee unchanged either way — not to decide what
+ * anybody pays.
  */
 const CORRECTIONS: Correction[] = [
   {
     membershipId: 29, clientId: 75, fromPetId: 166, toPetId: 167,
-    client: "Carole Adams", plan: "Silver VIP Classic - Small (0-10kg) $17.00",
-    why: "Spencer is 7.3kg (small); Charlie is 11.1kg and keeps the SML-MED plan.",
+    client: "Carole Adams", options: "m29 Silver Classic Small (0-10kg) $17.00",
+    decision: "Spencer is 7.3kg (small); Charlie is 11.1kg and keeps the SML-MED plan.",
   },
   {
     membershipId: 18, clientId: 39, fromPetId: 89, toPetId: 90,
-    client: "Scott Barker", plan: "Silver VIP Styled - SML-MED (11-13kg) $28.00",
-    why: "Effie is 13.0kg (small-medium); Dusty is 20.0kg and keeps the MED plan.",
+    client: "Scott Barker", options: "m18 Silver Styled SML-MED (11-13kg) $28.00",
+    decision: "Effie is 13.0kg (small-medium); Dusty is 20.0kg and keeps the MED plan.",
   },
   {
     membershipId: 6, clientId: 21, fromPetId: 48, toPetId: 49,
-    client: "Carly Herbert", plan: "Gold VIP Styled - SML-MED (11-13kg) $30.00",
-    why: "Lily is 13.2kg; Alfie is 6.7kg and keeps the SML plan.",
+    client: "Carly Herbert", options: "m6 Gold Styled SML-MED (11-13kg) $30.00",
+    decision: "Lily is 13.2kg; Alfie is 6.7kg and keeps the SML plan.",
   },
   {
     membershipId: 25, clientId: 60, fromPetId: 134, toPetId: 135,
-    client: "Lynnette Matuschka", plan: "Gold VIP Classic - SML-MED (11-13kg) $26.00",
-    why: "Jackson is 14.2kg; Elle-May is 9.0kg and keeps the Small plan.",
+    client: "Lynnette Matuschka", options: "m25 Gold Classic SML-MED (11-13kg) $26.00",
+    decision: "Jackson is 14.2kg; Elle-May is 9.0kg and keeps the Small plan.",
   },
   {
     membershipId: 35, clientId: 85, fromPetId: 182, toPetId: 183,
-    client: "Stellina Popplewell", plan: "Silver VIP Classic - SML-MED (11-13kg) $22.00",
-    why: "Luna is 12.8kg (small-medium); Freddi is 15.2kg and keeps the MED plan.",
+    client: "Stellina Popplewell", options: "m35 Silver Classic SML-MED (11-13kg) $22.00",
+    decision: "Luna is 12.8kg (small-medium); Freddi is 15.2kg and keeps the MED plan.",
   },
   {
     membershipId: 8, clientId: 25, fromPetId: 57, toPetId: 58,
-    client: "Tricia Taylor", plan: "Gold VIP Styled - SML-MED (11-13kg) $30.00",
-    why: "Lily is small-medium; Gracie is small and keeps the SML plan.",
+    client: "Tricia Taylor", options: "m8 Gold Styled SML-MED (11-13kg) $30.00",
+    decision: "Lily is small-medium; Gracie is small and keeps the SML plan.",
   },
 
   /*
    * ── Undecided ──────────────────────────────────────────────────────
    *
-   * TWO fields are open on these three, not one. The question is not
-   * only which dog the second plan belongs to, it is WHICH OF THE TWO
-   * PLANS moves — and `membershipId` below is a placeholder, not an
-   * answer. Each entry names the client's other plan so both can be
-   * weighed; set `membershipId` to whichever one moves and `toPetId` to
-   * the second dog, then re-run.
+   * THREE fields are open on each of these, not one: which of the two
+   * plans moves (`membershipId`), which dog it lands on (`toPetId`), and
+   * the reason that goes permanently into the audit row (`decision`).
+   * All three are null, and the script treats any null as undecided, so
+   * a half-filled entry cannot execute.
    */
   {
-    membershipId: 16, clientId: 38, fromPetId: 87, toPetId: null,
-    client: "Sonia Condon", plan: "m16 Bronze Classic MED (14-16kg) $24.00 — or m15 LRG (17-25kg) $27.00",
-    why: "Harvey is pet 88. Both dogs read LARGE — Ella 17.0kg, Harvey 22.0kg — so"
+    membershipId: null, clientId: 38, fromPetId: 87, toPetId: null, decision: null,
+    client: "Sonia Condon", options: "m15 Bronze Classic LRG (17-25kg) $27.00 | m16 MED (14-16kg) $24.00",
+    openQuestion: "Harvey is pet 88. Both dogs read LARGE — Ella 17.0kg, Harvey 22.0kg — so"
       + " MED (14-16kg) fits neither and the band cannot choose, and both are"
       + " classic-only so service cannot either. On size alone Harvey at 22kg is"
       + " the likelier LRG, which would mean moving m15 and leaving Ella on m16 —"
       + " but that is a guess about $3/wk. Needs MoeGo or Andy.",
   },
   {
-    membershipId: 21, clientId: 46, fromPetId: 103, toPetId: null,
-    client: "Selina Robson", plan: "m21 Silver Styled SML (0-10kg) $22.00 — or m20 Classic Small $17.00",
-    why: "Rocky is pet 104. Both dogs are small with no weight on file, so the split"
+    membershipId: null, clientId: 46, fromPetId: 103, toPetId: null, decision: null,
+    client: "Selina Robson", options: "m20 Silver Classic Small $17.00 | m21 Styled SML (0-10kg) $22.00",
+    openQuestion: "Rocky is pet 104. Both dogs are small with no weight on file, so the split"
       + " has to be by service — and neither dog is a styled dog: Archie has 22"
-      + " classic grooms to 1 styled, Rocky 3 to 1. Whichever dog the Styled plan"
-      + " is really for takes m21. Needs MoeGo or Andy.",
+      + " classic grooms to 1 styled, Rocky 3 to 1. Needs MoeGo or Andy.",
   },
   {
-    membershipId: 12, clientId: 28, fromPetId: 66, toPetId: null,
-    client: "Nicki Waldon", plan: "m12 Gold Styled SML (0-10kg) $26.00 — or m11 Classic Small $22.00",
-    why: "Snickers is pet 67. Chester 4.0kg and Snickers 5.0kg are both small, and"
+    membershipId: null, clientId: 28, fromPetId: 66, toPetId: null, decision: null,
+    client: "Nicki Waldon", options: "m11 Gold Classic Small $22.00 | m12 Styled SML (0-10kg) $26.00",
+    openQuestion: "Snickers is pet 67. Chester 4.0kg and Snickers 5.0kg are both small, and"
       + " NEITHER has ever had a styled groom — 29 classic + 3 fft for Chester, 3 +"
       + " 3 for Snickers — so the Styled plan matches no history at all and the"
       + " service split cannot be read off either dog. Needs MoeGo or Andy.",
   },
 ];
 
-type PetRow = { id: number; name: string; client_id: number; status: string; weight_kg: unknown; weight: unknown };
+type PetRow = RowDataPacket & {
+  id: number; name: string; client_id: number; status: string;
+  weight_kg: string | null; weight: string | null; size_band: string | null;
+};
+type MembershipRow = RowDataPacket & {
+  id: number; tenant_id: number; client_id: number; pet_id: number; name: string;
+  tier: string; service_type: "classic" | "styled"; status: string;
+  price_per_cycle: string; booking_suspended: number;
+};
 
-const bandOf = (pet: PetRow | undefined) =>
-  pet ? (getReplacementWeightBand({ id: pet.id, weightKg: pet.weight_kg as never, weight: pet.weight as never })?.label ?? "unrecorded") : "?";
+/**
+ * Everything known about a dog's size, raw first.
+ *
+ * The derived band is last because it is the lossiest: the bands skip
+ * 13 to 14 kg, so a real 13.2 kg dog reads "no band". Printing the
+ * kilos and the stored size_band beside it means a reader is never
+ * shown only the lossy answer.
+ */
+function describeSize(pet: PetRow | undefined): string {
+  if (!pet) return "?";
+  const kg = pet.weight_kg ?? pet.weight;
+  const band = getMembershipWeightBand(kg)?.label ?? "no band";
+  return `${kg ? `${kg}kg` : "no weight"} · ${pet.size_band ?? "no size_band"} · ${band}`;
+}
 
 async function main() {
   const db = await mysql.createConnection({
@@ -172,35 +238,44 @@ async function main() {
     keepAliveInitialDelay: 5_000,
   });
 
-  const membershipIds = CORRECTIONS.map((c) => c.membershipId);
-  const [membershipRows] = await db.query<any[]>(
+  const clientIds = [...new Set(CORRECTIONS.map((c) => c.clientId))];
+
+  /*
+   * Every plan of every household, not just the ones being moved. The
+   * post-condition cannot be stated without the sibling: "this dog is
+   * now covered" depends on a plan this table never names.
+   */
+  const [membershipRows] = await db.query<MembershipRow[]>(
     `SELECT id, tenant_id, client_id, pet_id, name, tier, service_type, status,
             price_per_cycle, booking_suspended
        FROM memberships
-      WHERE tenant_id=? AND id IN (${membershipIds.map(() => "?").join(",")})`,
-    [TENANT, ...membershipIds]);
-  const membershipById = new Map<number, any>(membershipRows.map((m) => [m.id, m]));
+      WHERE tenant_id=? AND client_id IN (${clientIds.map(() => "?").join(",")})`,
+    [TENANT, ...clientIds]);
+  const membershipById = new Map<number, MembershipRow>(membershipRows.map((m) => [m.id, m]));
 
-  const petIds = [...new Set(CORRECTIONS.flatMap((c) => [c.fromPetId, ...(c.toPetId ? [c.toPetId] : [])]))];
   const [petRows] = await db.query<PetRow[]>(
-    `SELECT id, name, client_id, status, weight_kg, weight
-       FROM pets WHERE tenant_id=? AND id IN (${petIds.map(() => "?").join(",")})`,
-    [TENANT, ...petIds]);
+    `SELECT id, name, client_id, status, weight_kg, weight, size_band
+       FROM pets WHERE tenant_id=? AND client_id IN (${clientIds.map(() => "?").join(",")})`,
+    [TENANT, ...clientIds]);
   const petById = new Map<number, PetRow>(petRows.map((p) => [p.id, p]));
 
   /**
    * Any assignment row on a plan being moved changes the arithmetic:
    * after the move the plan would cover the new dog AND still cover the
    * old one through the join table, so one fee would buy two grooms.
-   * None of these nine had a row on 06/11/2026. If one has appeared
-   * since, stop and let a person decide — this script must not silently
-   * widen a plan.
+   *
+   * Queried across the whole HOUSEHOLD rather than just the moved plan,
+   * because a row on the SIBLING plan naming the target dog puts that
+   * dog on two plans just as surely. None of the nine had any row on
+   * 06/11/2026.
    */
-  const [assignedRows] = await db.query<any[]>(
+  const [assignedRows] = await db.query<RowDataPacket[]>(
     `SELECT mp.membership_id, mp.pet_id, p.name
-       FROM membership_pets mp LEFT JOIN pets p ON p.id = mp.pet_id
-      WHERE mp.tenant_id=? AND mp.membership_id IN (${membershipIds.map(() => "?").join(",")})`,
-    [TENANT, ...membershipIds]);
+       FROM membership_pets mp
+       JOIN memberships m ON m.id = mp.membership_id
+       LEFT JOIN pets p ON p.id = mp.pet_id
+      WHERE mp.tenant_id=? AND m.client_id IN (${clientIds.map(() => "?").join(",")})`,
+    [TENANT, ...clientIds]);
 
   /**
    * Bookings already pointing at a plan that is about to move.
@@ -211,41 +286,66 @@ async function main() {
    * "lie that costs money at the counter" that shared/membershipMark.ts
    * warns about, and it would survive a re-run of the backfill because
    * that only ever fills a NULL.
-   *
-   * All 192 appointments across the six decided clients were unlinked on
-   * 06/11/2026, so this fires only if the backfill is applied FIRST.
-   * That is the wrong order, and it is cheaper to refuse than to explain.
    */
-  const [linkedRows] = await db.query<any[]>(
-    `SELECT a.id, a.membership_id, a.pet_id, p.name
+  const [linkedRows] = await db.query<RowDataPacket[]>(
+    `SELECT a.id, a.membership_id, a.pet_id, a.price, a.scheduled_start, p.name
        FROM appointments a LEFT JOIN pets p ON p.id = a.pet_id
-      WHERE a.tenant_id=? AND a.membership_id IN (${membershipIds.map(() => "?").join(",")})`,
-    [TENANT, ...membershipIds]);
+      WHERE a.tenant_id=? AND a.client_id IN (${clientIds.map(() => "?").join(",")})
+        AND a.membership_id IS NOT NULL`,
+    [TENANT, ...clientIds]);
 
-  const moves: { correction: Correction; membership: any; from: PetRow; to: PetRow }[] = [];
+  /**
+   * Upcoming grooms for a target dog that still carry a price.
+   *
+   * Linking a booking does not reprice it — the backfill says so
+   * explicitly — so a priced groom for a now-covered dog still bills at
+   * the counter and still draws down store credit, which ignores
+   * `membership_id` entirely. None of the six target dogs had one on
+   * 06/11/2026. Reported, never changed: zeroing a booking is a
+   * decision for staff.
+   */
+  const [pricedRows] = await db.query<RowDataPacket[]>(
+    `SELECT id, pet_id, scheduled_start, service_type, price
+       FROM appointments
+      WHERE tenant_id=? AND client_id IN (${clientIds.map(() => "?").join(",")})
+        AND scheduled_start >= NOW() AND membership_id IS NULL
+        AND price IS NOT NULL AND price > 0
+        AND workflow_state NOT IN ('cancelled','no_show')`,
+    [TENANT, ...clientIds]);
+
+  const moves: { correction: Correction; membership: MembershipRow; from: PetRow; to: PetRow }[] = [];
   const problems: string[] = [];
+  const warnings: string[] = [];
   let alreadyDone = 0;
   let undecided = 0;
 
-  console.log(`${APPLY ? "APPLY" : "DRY RUN"} — ${CORRECTIONS.length} plans in the correction table\n`);
+  console.log(`${APPLY ? "APPLY" : "DRY RUN"} — ${CORRECTIONS.length} households in the correction table\n`);
 
   for (const c of CORRECTIONS) {
-    const label = `  ${c.client.padEnd(21)} m${String(c.membershipId).padEnd(4)}`;
-    const membership = membershipById.get(c.membershipId);
+    const label = `  ${c.client.padEnd(21)}`;
 
-    if (!membership) { problems.push(`${c.client}: membership ${c.membershipId} not found in tenant ${TENANT}`); continue; }
-    if (membership.client_id !== c.clientId) { problems.push(`${c.client}: membership ${c.membershipId} belongs to client ${membership.client_id}, not ${c.clientId}`); continue; }
-    if (membership.status !== "active") { problems.push(`${c.client}: membership ${c.membershipId} is ${membership.status}, not active`); continue; }
-
-    if (c.toPetId === null) {
+    // Any null means a human has not finished deciding. All three
+    // fields are part of the same decision and none stands alone.
+    if (c.membershipId === null || c.toPetId === null || !c.decision) {
       undecided++;
-      console.log(`${label} NEEDS A DECISION — ${c.plan}`);
-      console.log(`${" ".repeat(30)}${c.why}`);
+      console.log(`${label} NEEDS A DECISION — ${c.options}`);
+      console.log(`${" ".repeat(23)}${c.openQuestion ?? ""}`);
       continue;
     }
 
-    // Idempotence: a plan already on its target is finished, not a fault.
-    if (membership.pet_id === c.toPetId) { alreadyDone++; console.log(`${label} already done`); continue; }
+    const membership = membershipById.get(c.membershipId);
+    if (!membership) { problems.push(`${c.client}: membership ${c.membershipId} not found for client ${c.clientId} in tenant ${TENANT}`); continue; }
+    if (membership.client_id !== c.clientId) { problems.push(`${c.client}: membership ${c.membershipId} belongs to client ${membership.client_id}, not ${c.clientId}`); continue; }
+
+    /*
+     * Idempotence BEFORE the status check, deliberately. A plan moved on
+     * an earlier run that has since gone pending_payment — which any
+     * single failed payment does — needs nothing, and failing it would
+     * block the entries that still have to move.
+     */
+    if (membership.pet_id === c.toPetId) { alreadyDone++; console.log(`${label} already done — ${membership.name}`); continue; }
+
+    if (membership.status !== "active") { problems.push(`${c.client}: membership ${c.membershipId} is ${membership.status}, not active`); continue; }
     if (membership.pet_id !== c.fromPetId) {
       problems.push(`${c.client}: membership ${c.membershipId} is on pet ${membership.pet_id}, expected ${c.fromPetId} — somebody has moved it, this table is stale`);
       continue;
@@ -253,15 +353,16 @@ async function main() {
 
     const from = petById.get(c.fromPetId);
     const to = petById.get(c.toPetId);
-    if (!from || !to) { problems.push(`${c.client}: pet ${!from ? c.fromPetId : c.toPetId} not found in tenant ${TENANT}`); continue; }
+    if (!from || !to) { problems.push(`${c.client}: pet ${!from ? c.fromPetId : c.toPetId} not found on client ${c.clientId}`); continue; }
     // The same guard setCoveredPets applies: a plan can only ever cover a
     // dog on its own client's record.
     if (to.client_id !== membership.client_id) { problems.push(`${c.client}: pet ${to.id} (${to.name}) belongs to client ${to.client_id}, not ${membership.client_id}`); continue; }
     if (to.status !== "active") { problems.push(`${c.client}: pet ${to.id} (${to.name}) is ${to.status}`); continue; }
 
-    const assigned = assignedRows.filter((a) => a.membership_id === c.membershipId);
+    const assigned = assignedRows.filter((a) => a.membership_id === c.membershipId || a.pet_id === c.toPetId);
     if (assigned.length > 0) {
-      problems.push(`${c.client}: membership ${c.membershipId} has membership_pets rows (${assigned.map((a) => `${a.name ?? a.pet_id}`).join(", ")}) — moving it would widen the cover. Clear them first.`);
+      problems.push(`${c.client}: membership_pets rows touch this move (${assigned.map((a) => `m${a.membership_id}->${a.name ?? a.pet_id}`).join(", ")})`
+        + ` — it would put a dog on two plans. setCoveredPets cannot clear these (it always re-inserts the primary); delete them by SQL first.`);
       continue;
     }
 
@@ -271,28 +372,92 @@ async function main() {
     if (stranded.length > 0) {
       problems.push(`${c.client}: ${stranded.length} booking(s) already link to membership ${c.membershipId} for ${[...new Set(stranded.map((a) => a.name ?? a.pet_id))].join(", ")}`
         + ` — moving the plan would leave them marked as covered when they are not.`
-        + ` Repoint BEFORE running the backfill, or clear appointments ${stranded.map((a) => a.id).join(", ")} first.`);
+        + ` The backfill was run too early; clear appointments ${stranded.map((a) => a.id).join(", ")} first.`);
       continue;
+    }
+
+    /*
+     * Not fatal, but it means the move will not achieve the thing it was
+     * run for: a held plan covers nobody, so the second dog stays
+     * uncovered and Lauren's complaint simply changes dogs.
+     */
+    if (membership.booking_suspended) {
+      warnings.push(`${c.client}: membership ${c.membershipId} is booking_suspended, so ${to.name} will still not be covered until the hold is lifted`);
     }
 
     moves.push({ correction: c, membership, from, to });
     /*
      * The plan is named from the DATABASE row, never from the table
-     * above. On the undecided entries `membershipId` is a placeholder a
-     * human is expected to change, and a hand-written label left
-     * un-updated beside it would describe a move that is not the one
-     * about to happen — which is the one thing this output must not do.
+     * above, so a hand-written label left un-updated beside an edited
+     * membershipId cannot describe a move that is not the one about to
+     * happen.
      */
     console.log(`${label} ${from.name} -> ${to.name}   ${membership.name} $${membership.price_per_cycle}/cycle`);
-    console.log(`${" ".repeat(30)}bands: ${from.name} ${bandOf(from)} | ${to.name} ${bandOf(to)}`);
-    console.log(`${" ".repeat(30)}${c.why}`);
+    console.log(`${" ".repeat(23)}${from.name}: ${describeSize(from)}`);
+    console.log(`${" ".repeat(23)}${to.name}: ${describeSize(to)}`);
+    console.log(`${" ".repeat(23)}${c.decision}`);
+
+    const priced = pricedRows.filter((a) => a.pet_id === c.toPetId);
+    if (priced.length > 0) {
+      warnings.push(`${c.client}: ${to.name} has ${priced.length} priced upcoming booking(s) (${priced.map((a) => `#${a.id} $${a.price}`).join(", ")})`
+        + ` — linking does not reprice, so these still bill at the counter. Zero them by hand if they should be covered.`);
+    }
   }
 
   console.log(`\n  ${moves.length} to move · ${alreadyDone} already done · ${undecided} undecided · ${problems.length} problems`);
 
+  for (const w of warnings) console.log(`  WARNING  ${w}`);
+
   if (problems.length > 0) {
     console.error("\nSTOPPING — nothing written:");
     for (const p of problems) console.error(`  - ${p}`);
+    process.exitCode = 1;
+    await db.end();
+    return;
+  }
+
+  /**
+   * The post-condition, computed up front so the dry run shows it too.
+   *
+   * Asserting "no dog holds two plans" is one-sided — it cannot see the
+   * outcome this script exists for, which is that the SECOND dog ends
+   * up covered. So the real resolver is run over each household's plans
+   * as they will be after the move, for a classic groom, which every
+   * plan covers whatever its service type.
+   */
+  function projectedProblems(): string[] {
+    const found: string[] = [];
+    for (const clientId of [...new Set(moves.map((m) => m.membership.client_id))]) {
+      const movedHere = moves.filter((m) => m.membership.client_id === clientId);
+      const plans: ActivePetMembership[] = membershipRows
+        .filter((m) => m.client_id === clientId && m.status === "active")
+        .map((m) => ({
+          id: m.id,
+          petId: movedHere.find((mv) => mv.membership.id === m.id)?.to.id ?? m.pet_id,
+          name: m.name, tier: m.tier, serviceType: m.service_type,
+          status: m.status, bookingSuspended: Boolean(m.booking_suspended),
+          coveredPetIds: [],
+        }));
+      const dogs = [...new Set(movedHere.flatMap((m) => [m.from.id, m.to.id]))];
+      const coverage = resolveAppointmentMembershipCoverage(dogs, "classic_groom", plans);
+      const uncovered = coverage.uncoveredPetIds
+        .map((id) => petById.get(id)?.name ?? String(id));
+      if (uncovered.length > 0) {
+        found.push(`client ${clientId}: ${uncovered.join(", ")} would STILL be uncovered after the move`);
+      }
+      // Two dogs landing on one plan would mean one fee covering both.
+      const claimed = dogs.map((id) => coverage.membershipByPetId[id]?.id).filter(Boolean);
+      if (new Set(claimed).size !== claimed.length) {
+        found.push(`client ${clientId}: two dogs would be covered by the same plan`);
+      }
+    }
+    return found;
+  }
+
+  const projected = projectedProblems();
+  if (projected.length > 0) {
+    console.error("\nSTOPPING — the move would not achieve what it is for:");
+    for (const p of projected) console.error(`  - ${p}`);
     process.exitCode = 1;
     await db.end();
     return;
@@ -306,10 +471,19 @@ async function main() {
 
   if (!APPLY) {
     console.log("\nnothing written. Re-run with --apply to write.");
-    console.log("Afterwards run scripts/backfill-appointment-memberships.ts to link the bookings.");
+    console.log(undecided > 0
+      ? `\nDO NOT run the backfill yet — ${undecided} household(s) still hold two plans on one dog,\n`
+        + "and the backfill would link their bookings to an arbitrary one of the two."
+      : "\nAfterwards run scripts/backfill-appointment-memberships.ts to link the bookings.");
     await db.end();
     return;
   }
+
+  // Brisbane, not the host clock. Stamping a December move as 06/11 is
+  // exactly the kind of quiet wrongness an audit row exists to prevent.
+  const today = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Brisbane", day: "2-digit", month: "2-digit", year: "numeric",
+  }).format(new Date());
 
   await db.beginTransaction();
   try {
@@ -321,7 +495,7 @@ async function main() {
        * the affected-row count then comes back 0 and the whole run
        * rolls back rather than landing half of it.
        */
-      const [res] = await db.query<any>(
+      const [res] = await db.query<mysql.ResultSetHeader>(
         `UPDATE memberships SET pet_id=? WHERE id=? AND tenant_id=? AND pet_id=? AND status='active'`,
         [move.to.id, move.membership.id, TENANT, move.from.id]);
       if (res.affectedRows !== 1) {
@@ -336,7 +510,8 @@ async function main() {
        *
        * changedByUserId is NULL because nobody pressed a button; the
        * History tab renders that as "Administrator" and the note says
-       * what actually happened.
+       * what actually happened. The note carries the DECISION, never the
+       * open question that preceded it.
        */
       await db.query(
         `INSERT INTO pet_membership_events
@@ -344,7 +519,7 @@ async function main() {
          VALUES (?,?,?,?,?,'membership_transferred',?,NULL)`,
         [TENANT, move.membership.client_id, move.from.id, move.membership.id, move.to.id,
          `Filed under the wrong dog by the MoeGo import. Moved to ${move.to.name} by `
-         + `scripts/repoint-misfiled-memberships.ts on 06/11/2026. ${move.correction.why} `
+         + `scripts/repoint-misfiled-memberships.ts on ${today}. ${move.correction.decision} `
          + `Fee unchanged at $${move.membership.price_per_cycle}/cycle.`]);
     }
 
@@ -353,38 +528,42 @@ async function main() {
     }
 
     /**
-     * The post-condition, asserted inside the transaction: no client may
-     * be left with two active plans on one dog. That is the fault this
-     * whole script exists to clear, so finishing without checking it
-     * would be taking the correction on trust.
-     *
-     * The three undecided clients still fail it, so they are excluded by
-     * name — their entry in CORRECTIONS carries toPetId: null and they
-     * are expected to be wrong until somebody fills it in.
+     * Re-asserted against the database inside the transaction, rather
+     * than trusting the projection computed from the earlier read.
      */
-    const stillUndecided = CORRECTIONS.filter((c) => c.toPetId === null).map((c) => c.clientId);
-    const touched = [...new Set(moves.map((m) => m.membership.client_id))].filter((id) => !stillUndecided.includes(id));
-    if (touched.length > 0) {
-      const [dupes] = await db.query<any[]>(
-        `SELECT client_id, pet_id, COUNT(*) n FROM memberships
-          WHERE tenant_id=? AND status='active' AND client_id IN (${touched.map(() => "?").join(",")})
-          GROUP BY client_id, pet_id HAVING n > 1`, [TENANT, ...touched]);
-      if (dupes.length > 0) {
-        throw new Error(`still ${dupes.length} client/dog pairs holding more than one active plan: `
-          + dupes.map((d) => `client ${d.client_id} pet ${d.pet_id} x${d.n}`).join("; "));
-      }
+    const touched = [...new Set(moves.map((m) => m.membership.client_id))];
+    const [dupes] = await db.query<RowDataPacket[]>(
+      `SELECT client_id, pet_id, COUNT(*) n FROM memberships
+        WHERE tenant_id=? AND status='active' AND client_id IN (${touched.map(() => "?").join(",")})
+        GROUP BY client_id, pet_id HAVING n > 1`, [TENANT, ...touched]);
+    if (dupes.length > 0) {
+      throw new Error(`still ${dupes.length} client/dog pairs holding more than one active plan: `
+        + dupes.map((d) => `client ${d.client_id} pet ${d.pet_id} x${d.n}`).join("; "));
     }
 
     await db.commit();
     console.log(`\nCOMMITTED — ${written} plans repointed, ${written} audit rows written.`);
-    console.log("Now run scripts/backfill-appointment-memberships.ts to link the bookings,");
-    console.log("or the dogs stay unmarked on the calendar.");
+    console.log(undecided > 0
+      ? `\nDO NOT run the backfill yet — ${undecided} household(s) are still undecided.`
+      : "\nNow run scripts/backfill-appointment-memberships.ts to link the bookings,\n"
+        + "or the dogs stay unmarked on the calendar.");
   } catch (err) {
-    await db.rollback();
-    console.error("\nROLLED BACK:", (err as Error).message);
+    try {
+      await db.rollback();
+      console.error("\nROLLED BACK:", (err as Error).message);
+    } catch (rollbackErr) {
+      // A rollback that itself fails leaves the operator unable to tell
+      // whether the commit landed. Say so rather than crashing.
+      console.error("\nFAILED:", (err as Error).message);
+      console.error("ROLLBACK ALSO FAILED:", (rollbackErr as Error).message);
+      console.error("State is UNKNOWN — re-run the dry run before doing anything else.");
+    }
     process.exitCode = 1;
   }
   await db.end();
 }
 
-main();
+main().catch((err) => {
+  console.error("FAILED:", (err as Error).message);
+  process.exitCode = 1;
+});
