@@ -1358,7 +1358,18 @@ export default function ClientDetail() {
               the grid stretches it, so the divider runs the full length;
               the nav inside stays stuck to the top while you scroll. */}
           <div className="lg:h-full lg:border-r lg:border-border lg:pr-3">
-          <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:sticky lg:top-4 lg:flex-col lg:flex-nowrap">
+          {/* tabs-rail squares the corners. index.css paints every tab list
+              as a pill — right for a short, wide segmented control and an
+              ellipse on a rail ten items tall, which closed over Overview
+              at the top and History at the bottom.
+
+              That rule is UNLAYERED, so it beats Tailwind utilities
+              whatever their specificity: the `bg-transparent p-0` that
+              used to be here never applied, and reading it would tell you
+              the rail was unpainted when it was not. Removed rather than
+              left to mislead — the stylesheet owns the fill, the border
+              and the padding. */}
+          <TabsList className="tabs-rail flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 lg:sticky lg:top-4 lg:flex-col lg:flex-nowrap">
             {[
               { value: "overview", label: "Overview", icon: LayoutDashboard },
               { value: "pets", label: `Pets (${pets.length})`, icon: Dog },
