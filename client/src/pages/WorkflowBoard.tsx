@@ -7,7 +7,7 @@ import { useBuildVersionReload, buildReloadMode } from "@/hooks/useBuildVersionR
 import { useTvMode } from "@/lib/tvMode";
 import { DaycareBoardSection } from "@/components/DaycareBoardSection";
 import { useTimezone } from "@/lib/timezone";
-import { dayInZone, timeOfDayInZone } from "@shared/calendarDay";
+import { dayInZone } from "@shared/calendarDay";
 import { useFollowSalonDay } from "@/lib/followSalonDay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ import { toast } from "sonner";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { useDisplayTheme } from "@/lib/displayTheme";
 import { useTheme } from "@/contexts/ThemeContext";
-import { BreedInput } from "@/components/BreedInput";
+import { QuickAppointmentDialog } from "@/components/QuickAppointmentDialog";
 import { dogBoardSummary } from "@shared/dogBoardSummary";
 import { collectByTone } from "@shared/collectBy";
 import {
@@ -189,18 +189,6 @@ export default function WorkflowBoard() {
   const salonToday = dayInZone(now, salonTimezone) ?? "";
   useFollowSalonDay(salonToday, setBoardDate);
   const dragApptId = useRef<number | null>(null);
-  const [walkInOpen, setWalkInOpen] = useState(false);
-  const [walkInClient, setWalkInClient] = useState("");
-  const [walkInPet, setWalkInPet] = useState("");
-  const [walkInBreed, setWalkInBreed] = useState("");
-  const [walkInService, setWalkInService] = useState("classic_groom");
-  const [walkInStaffId, setWalkInStaffId] = useState<string>("");
-  // A walk-in happens at the salon, so it is prefilled with the salon's
-  // clock. getUTCHours() on an offset-shifted Date also rendered midnight
-  // as "24:05", which <input type="time"> rejects outright.
-  const [walkInTime, setWalkInTime] = useState(
-    () => timeOfDayInZone(Date.now(), salonTimezone) ?? "09:00",
-  );
   const [checkInFamilyPrompt, setCheckInFamilyPrompt] = useState<{
     appointmentId: number;
     fields: Record<string, unknown>;
@@ -226,12 +214,6 @@ export default function WorkflowBoard() {
     onError: (e) => toast.error(e.message),
   });
     const [outMarkPaid, setOutMarkPaid] = useState(false);
-  const [walkInClientSearch, setWalkInClientSearch] = useState("");
-  const [walkInClientId, setWalkInClientId] = useState<number | null>(null);
-  const { data: walkInClientResults } = trpc.memberships.searchClients.useQuery(
-    { search: walkInClientSearch },
-    { enabled: walkInClientSearch.length >= 2 }
-  );
 
   // Tick each second so every active stage tracker is visibly live.
   useEffect(() => {
@@ -707,9 +689,13 @@ export default function WorkflowBoard() {
             <Button variant="outline" size="sm" className={`${BOARD_CONTROL} gap-2`} onClick={() => setTvMode(true)} title="Preview the TV layout in this tab. Use Open TV Screen to keep a separate controller view.">
               <Tv2 className="h-[1.125rem] w-[1.125rem]" /> TV Preview
             </Button>
-            <Button size="sm" className="h-10 text-[0.9375rem] gap-2 bg-violet-600 hover:bg-violet-700 text-white shadow-sm" onClick={() => setWalkInOpen(true)}>
-              <UserPlus className="h-[1.125rem] w-[1.125rem]" /> Add Walk-in
-            </Button>
+            <QuickAppointmentDialog
+              onCreated={() => refetch()}
+              triggerLabel="Add Walk-in"
+              triggerVariant="default"
+              triggerIcon={<UserPlus className="h-[1.125rem] w-[1.125rem]" />}
+              triggerClassName="h-10 text-[0.9375rem] gap-2 bg-violet-600 hover:bg-violet-700 text-white shadow-sm"
+            />
           </div>
         </div>
 
@@ -1090,121 +1076,6 @@ export default function WorkflowBoard() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* ── Add Walk-in Dialog ── */}
-      {walkInOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setWalkInOpen(false)}>
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="relative bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold flex items-center gap-2">
-                <UserPlus className="h-5 w-5 text-violet-600 dark:text-violet-400" /> Add Walk-in
-              </h3>
-              <button onClick={() => setWalkInOpen(false)} className="text-muted-foreground hover:text-foreground p-1 rounded">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Owner Name *</label>
-                <div className="relative mt-1">
-                  <Input
-                    value={walkInClientSearch || walkInClient}
-                    onChange={e => {
-                      setWalkInClientSearch(e.target.value);
-                      setWalkInClient(e.target.value);
-                      setWalkInClientId(null);
-                    }}
-                    placeholder="Search existing client or type new name..."
-                    className="pr-8"
-                  />
-                  {walkInClientId && (
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-600 dark:text-emerald-400 text-xs font-bold">✓</span>
-                  )}
-                </div>
-                {walkInClientResults && walkInClientResults.length > 0 && !walkInClientId && (
-                  <div className="border rounded-lg mt-1 overflow-hidden bg-card shadow-sm max-h-32 overflow-y-auto">
-                    {walkInClientResults.map((r: any) => (
-                      <button
-                        key={r.clientId}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary/5 border-b last:border-0"
-                        onClick={() => {
-                          setWalkInClient(`${r.firstName} ${r.lastName}`);
-                          setWalkInClientId(r.clientId);
-                          setWalkInClientSearch("");
-                        }}
-                      >
-                        <span className="font-semibold">{r.firstName} {r.lastName}</span>
-                        {r.phone && <span className="text-muted-foreground ml-2">{r.phone}</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Dog Name *</label>
-                  <Input value={walkInPet} onChange={e => setWalkInPet(e.target.value)} placeholder="e.g. Buddy" className="mt-1" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Breed</label>
-                  <BreedInput value={walkInBreed} onChange={setWalkInBreed} placeholder="e.g. Cavoodle" className="mt-1" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Service</label>
-                  <Select value={walkInService} onValueChange={setWalkInService}>
-                    <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="classic_groom">Classic Groom</SelectItem>
-                      <SelectItem value="styled_groom">Styled Groom</SelectItem>
-                      <SelectItem value="bath_only">Bath &amp; Blow Dry</SelectItem>
-                      <SelectItem value="deshed">De-shed</SelectItem>
-                      <SelectItem value="nail_trim">Nail Trim</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Time</label>
-                  <Input type="time" value={walkInTime} onChange={e => setWalkInTime(e.target.value)} className="mt-1" />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Groomer</label>
-                <Select value={walkInStaffId || "__none__"} onValueChange={v => setWalkInStaffId(v === "__none__" ? "" : v)}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Any" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Any available</SelectItem>
-                    {staffList?.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button
-                className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors"
-                onClick={() => setWalkInOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="flex-1 px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 transition-colors"
-                onClick={() => {
-                  if (!walkInPet.trim()) { toast.error("Dog name is required"); return; }
-                  if (!walkInClient.trim()) { toast.error("Owner name is required"); return; }
-                  // Add to board as a local placeholder row (no DB — walk-ins are informal)
-                  toast.success(`Walk-in added: ${walkInPet} (${walkInClient}) — please create a full appointment in the calendar`);
-                  setWalkInOpen(false);
-                  setWalkInClient(""); setWalkInPet(""); setWalkInBreed("");
-                }}
-              >
-                Add to Board
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Pet Grooming Notes Popup ── */}
       {petPopup && (
