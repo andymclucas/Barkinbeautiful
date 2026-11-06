@@ -1,0 +1,35 @@
+-- A walk-in nail clip or quick bath, marked as what it is.
+--
+-- Andy, 06/11/2026: a Quick Appointment button for a job "usually done in
+-- 10-15 mins", shown on the board as "Walk-In: Nail Clip" and deliberately
+-- outside the 12-state workflow -- a nail clip does not wait for a bath, get
+-- dried, then wait for a groom.
+--
+-- ONE BOOLEAN, NOT TWO NEW SERVICE TYPES. The obvious move is to add
+-- "quick_bath" and "nail_clip" to appointments.service_type, and it is the
+-- expensive one: that enum is named in 54 places across client, server and
+-- shared, and CLAUDE.md is explicit that adding a value means auditing every
+-- switch, map and exhaustive check over it or the UI silently renders
+-- nothing. The existing values already say what the WORK is -- nail_trim is a
+-- nail clip, bath_only is a bath. What was missing is "and it is a ten-minute
+-- walk-in", which is this column. Reporting can still tell a $25 quick bath
+-- from a $70 booked one by reading it.
+--
+-- Nullable with no default, so every existing row stays valid and old code
+-- that never names the column keeps inserting.
+--
+-- ON THE NUMBER. feat/platform-billing also wrote an 0158. Neither had been
+-- applied, and the journal test forbids a gap in idx, so this one takes 158
+-- and that one was renumbered to 0159 on its own branch with a later `when`.
+-- Two migrations must never share a `when`: CLAUDE.md section 6 -- migrate
+-- compares strictly, so the second is SKIPPED rather than rejected, the DDL
+-- never runs, and schema.ts still names the column.
+--
+-- MIGRATE BEFORE THE CODE MERGES. Drizzle names every column declared in
+-- schema.ts in every bare select() and insert(), so the moment schema.ts
+-- carries this the app asks the database for it whether or not any code
+-- mentions it by name. Shipping the code first breaks
+-- requireApprovedStaffAppointmentAccess (17 procedures), updateWorkflowState
+-- and every appointment insert -- no dog can be moved between stages and no
+-- booking can be created.
+ALTER TABLE `appointments` ADD COLUMN `is_quick` BOOLEAN NULL;

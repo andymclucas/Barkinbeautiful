@@ -541,6 +541,18 @@ export const appointments = mysqlTable("appointments", {
   bookedOnline: boolean("booked_online").default(false).notNull(),
   sessionId: varchar("session_id", { length: 64 }),
   recurringGroupId: varchar("recurring_group_id", { length: 64 }),
+  /**
+   * A walk-in nail clip or quick bath, in and out in ten minutes.
+   *
+   * One boolean rather than two new service_type values: that enum is
+   * named in 54 places and adding to it means auditing every switch and
+   * map over it. nail_trim and bath_only already say what the WORK is;
+   * this says it was a walk-in, so a $25 quick bath is still tellable
+   * from a $70 booked one in reporting.
+   *
+   * Nullable: every row that existed before 06/11/2026 is not one.
+   */
+  isQuick: boolean("is_quick"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
   cageNumber: int("cage_number"),

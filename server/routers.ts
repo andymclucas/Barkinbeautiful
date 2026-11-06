@@ -102,6 +102,8 @@ import { calculateSmsCost } from "@shared/smsSegments";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
 import { firstFreeSlot, describeNoSlot } from "../shared/nextAvailableSlot";
+import { QUICK_DEFAULT_MINUTES, quickWalkInError } from "@shared/quickAppointment";
+import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
 import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
 import { buildTimeSlots, minutesToTimeValue } from "../shared/bookingTimeSlots";
@@ -1485,6 +1487,211 @@ const calendarRouter = router({
    * board could not see. A groomer with eight of eight clips booked
    * has no room at 2pm however empty 2pm looks.
    */
+  /**
+   * A walk-in who is already on the books, found by their number.
+   *
+   * Typed into the Quick Appointment form as the phone goes in, so a
+   * client who has walked in before is one tap rather than four fields
+   * retyped — and so three visits do not become three Jo Gerards.
+   *
+   * Matched on the last nine digits via phoneMatchKey, the same rule the
+   * MoeGo importer uses, because a number gets written down five ways
+   * at a counter and "(07) 3123 4567" and "0731234567" are one client.
+   */
+  walkInMatch: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), phone: z.string().min(4) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return { clients: [] };
+      const tenantId = tenantOf(ctx, input);
+      const key = phoneMatchKey(input.phone);
+      if (!key) return { clients: [] };
+
+      /* Fetched by tenant and matched in JS rather than in SQL: the
+         stored numbers are not normalised, so no LIKE pattern finds
+         "(07) 3123 4567" from "0731234567". */
+      const rows = await db.select({
+        id: clients.id, firstName: clients.firstName, lastName: clients.lastName,
+        phone: clients.phone, email: clients.email,
+      }).from(clients).where(and(
+        eq(clients.tenantId, tenantId),
+        isNotNull(clients.phone),
+        ne(clients.status, "blocked"),
+      ));
+
+      const matched = rows
+        .filter((row: { phone: string | null }) => phoneMatchKey(row.phone) === key)
+        .slice(0, 5);
+      if (matched.length === 0) return { clients: [] };
+
+      const dogs = await db.select({
+        id: pets.id, name: pets.name, breed: pets.breed, clientId: pets.clientId,
+      }).from(pets).where(and(
+        eq(pets.tenantId, tenantId),
+        inArray(pets.clientId, matched.map((c: { id: number }) => c.id)),
+        eq(pets.status, "active"),
+      ));
+
+      return {
+        clients: matched.map((client: { id: number }) => ({
+          ...client,
+          pets: dogs.filter((dog: { clientId: number }) => dog.clientId === client.id),
+        })),
+      };
+    }),
+
+  /**
+   * A walk-in nail clip or quick bath, booked at the counter.
+   *
+   * Andy, 06/11/2026: a Quick Appointment with a two-item service list,
+   * free pricing, shown on the board as "Walk-In: Nail Clip", outside
+   * the normal stages because the job takes ten minutes.
+   *
+   * ## It creates a REAL client and dog, not a placeholder
+   *
+   * The first design filed walk-ins under one shared "Walk-in" client.
+   * Andy asked for mandatory details the same day — "just in case
+   * anything goes wrong, they have a record of who came in and when" —
+   * and that makes the better version possible: a real client and a
+   * real pet, searchable for ever, with paperwork able to hang off the
+   * dog and the second visit one tap instead of four fields.
+   *
+   * Four fields are enforced and two are not. shared/quickAppointment.ts
+   * has the reasoning; the short version is that a mandatory email at a
+   * counter produces `a@a.com`, and a record that looks like it has
+   * contact details and does not is worse than an honest blank.
+   *
+   * ## It does not text them
+   *
+   * Confirmations are live in the allow-list since 04/11, and texting a
+   * booking confirmation to somebody standing in front of you is noise.
+   * sendBookingConfirmation is simply never called here, which is the
+   * honest way to mean it rather than relying on a gate to refuse.
+   *
+   * ## And it records when
+   *
+   * `scheduled` is skipped: the dog is here. workflow_logs gets the
+   * check-in, and a second row when staff press done — which is the
+   * "and when" half of what this feature is for.
+   */
+  createQuickAppointment: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** An existing client, when the phone matched one. */
+      clientId: z.number().int().positive().optional(),
+      petId: z.number().int().positive().optional(),
+      firstName: z.string().trim().max(100).default(""),
+      lastName: z.string().trim().max(100).default(""),
+      petName: z.string().trim().max(100).default(""),
+      phone: z.string().trim().max(30).default(""),
+      breed: z.string().trim().max(100).optional(),
+      email: z.string().trim().max(320).optional(),
+      serviceType: z.enum(["nail_trim", "bath_only"]),
+      price: z.string().trim().max(12).optional(),
+      staffId: z.number().int().positive().nullable().default(null),
+      notes: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+
+      let clientId = input.clientId ?? null;
+      let petId = input.petId ?? null;
+
+      if (clientId) {
+        const [existing] = await db.select({ id: clients.id }).from(clients)
+          .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId))).limit(1);
+        if (!existing) throw new Error("That client is not on this salon's books");
+      }
+
+      if (!clientId || !petId) {
+        /* Checked here as well as on the form. The form is not the only
+           way in, and this is the record that has to exist if something
+           goes wrong. */
+        const problem = quickWalkInError({
+          firstName: input.firstName, lastName: input.lastName,
+          petName: input.petName, phone: input.phone,
+        });
+        if (problem) throw new Error(problem);
+      }
+
+      if (!clientId) {
+        const [created]: any = await db.insert(clients).values({
+          tenantId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          phone: input.phone,
+          email: input.email?.trim() || null,
+          status: "active",
+          /* Said out loud on the record rather than inferred later from
+             the booking: somebody reading this client in six months
+             should know they walked in rather than booked. */
+          notes: "Walk-in, added at the counter.",
+        });
+        clientId = Number(created?.insertId ?? 0);
+        if (!clientId) throw new Error("Could not create the client");
+      }
+
+      if (!petId) {
+        const [createdPet]: any = await db.insert(pets).values({
+          tenantId,
+          clientId,
+          name: input.petName,
+          breed: input.breed?.trim() || null,
+          species: "dog",
+          status: "active",
+        });
+        petId = Number(createdPet?.insertId ?? 0);
+        if (!petId) throw new Error("Could not create the dog");
+      } else {
+        const [existingPet] = await db.select({ id: pets.id, status: pets.status, name: pets.name })
+          .from(pets)
+          .where(and(eq(pets.id, petId), eq(pets.tenantId, tenantId), eq(pets.clientId, clientId)))
+          .limit(1);
+        if (!existingPet) throw new Error("That dog is not on this client's record");
+        const departed = departedBookingMessage([existingPet]);
+        if (departed) throw new Error(departed);
+      }
+
+      const start = new Date();
+      const end = new Date(start.getTime() + QUICK_DEFAULT_MINUTES * 60_000);
+
+      const [bookedRow]: any = await db.insert(appointments).values({
+        tenantId,
+        clientId,
+        petId,
+        staffId: input.staffId,
+        serviceType: input.serviceType,
+        scheduledStart: start,
+        scheduledEnd: end,
+        price: input.price?.trim() || null,
+        notes: input.notes?.trim() || null,
+        trackerToken: nanoid(32),
+        /* The dog is here. `scheduled` would be a lie for the ten
+           seconds before somebody pressed check-in, and the board would
+           show a walk-in as not yet arrived. */
+        workflowState: "checked_in",
+        status: "confirmed",
+        isQuick: true,
+      });
+      const appointmentId = Number(bookedRow?.insertId ?? 0);
+      if (!appointmentId) throw new Error("Could not create the appointment");
+
+      /* The audit row. workflow_logs is what the Pet Tracker and the
+         timing analytics read, and it is also the "and when" this
+         feature exists for. */
+      await db.insert(workflowLogs).values({
+        appointmentId,
+        fromState: null,
+        toState: "checked_in",
+        changedAt: start,
+        notes: "Walk-in, arrived at the counter.",
+      });
+
+      return { success: true, appointmentId, clientId, petId };
+    }),
+
   nextAvailable: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -3366,6 +3573,10 @@ const workflowRouter = router({
           scheduledEnd: appointments.scheduledEnd,
           workflowState: appointments.workflowState,
           serviceType: appointments.serviceType,
+          /* Tells the board to draw "Walk-In: Nail Clip" rather than
+             "NAIL", and tells a groomer this one is not part of the
+             day's run. */
+          isQuick: appointments.isQuick,
           price: appointments.price,
           status: appointments.status,
           notes: appointments.notes,

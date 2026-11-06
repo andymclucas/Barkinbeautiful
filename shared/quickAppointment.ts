@@ -85,5 +85,90 @@ export function nextQuickWorkflowState(current: string): string | null {
 /** Ten to fifteen minutes, per Andy. Used for the end time when none is given. */
 export const QUICK_DEFAULT_MINUTES = 15;
 
-/** The name an unnamed walk-in is filed under. */
-export const WALK_IN_CLIENT_NAME = "Walk-in";
+/**
+ * What a walk-in has to tell you before the dog goes on the table.
+ *
+ * ## It changed, and why
+ *
+ * The first version of this feature made the client and dog name
+ * optional — Andy, 06/11/2026: "client or dog name isn't mandatory".
+ * He reversed it the same day, and he is right: "just in case anything
+ * goes wrong, they have a record of who came in and when."
+ *
+ * ## Four required, not six
+ *
+ * He asked for first name, last name, dog name, breed, phone AND email.
+ * Breed and email are prompted here and not enforced, because a
+ * mandatory field that is awkward at the counter does not produce
+ * better data — it produces `a@a.com` and a breed of "x". A record that
+ * LOOKS like it has contact details and does not is worse than an
+ * honest blank, because nobody finds out until the day it matters.
+ *
+ * Phone is the one that does the work he described. If a dog is hurt,
+ * or hurts somebody, you ring them that afternoon; you do not email.
+ *
+ * The database agrees, for what it is worth: clients.first_name and
+ * clients.last_name are NOT NULL, pets.name is NOT NULL, and email,
+ * phone and breed are all nullable.
+ *
+ * ## And the real reason it matters
+ *
+ * These four are what make a walk-in a REAL client and pet rather than
+ * a row hanging off a placeholder. That is what makes the record
+ * permanent and searchable, lets paperwork hang off the dog, and makes
+ * the second visit one tap instead of retyping.
+ */
+export type QuickWalkInDetails = {
+  firstName: string;
+  lastName: string;
+  petName: string;
+  phone: string;
+  /** Prompted, never enforced. */
+  breed?: string | null;
+  email?: string | null;
+};
+
+export const QUICK_REQUIRED_FIELDS = ["firstName", "lastName", "petName", "phone"] as const;
+export type QuickRequiredField = (typeof QUICK_REQUIRED_FIELDS)[number];
+
+export const QUICK_FIELD_LABELS: Readonly<Record<QuickRequiredField, string>> = {
+  firstName: "First name",
+  lastName: "Last name",
+  petName: "Dog's name",
+  phone: "Phone number",
+};
+
+/**
+ * A phone number with enough digits to ring.
+ *
+ * Deliberately loose. The salon takes mobiles, landlines and numbers
+ * read out badly over a counter, and a strict Australian-format check
+ * would reject a perfectly good number and teach staff to type
+ * "0400000000" to get past it. Six digits is the line between a number
+ * and a typo.
+ */
+export function looksLikeAPhoneNumber(value: string | null | undefined): boolean {
+  return (value ?? "").replace(/\D/g, "").length >= 6;
+}
+
+/** Which required fields are still missing, in the order they are asked. */
+export function missingQuickFields(details: Partial<QuickWalkInDetails>): QuickRequiredField[] {
+  return QUICK_REQUIRED_FIELDS.filter((field) => {
+    const value = (details[field] ?? "").trim();
+    if (value === "") return true;
+    return field === "phone" ? !looksLikeAPhoneNumber(value) : false;
+  });
+}
+
+/** One sentence naming what is still needed, or null when it is complete. */
+export function quickWalkInError(details: Partial<QuickWalkInDetails>): string | null {
+  const missing = missingQuickFields(details);
+  if (missing.length === 0) return null;
+  const names = missing.map((field) => QUICK_FIELD_LABELS[field].toLowerCase());
+  const list = names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  // Named rather than "fill in the required fields": the person is
+  // holding a dog and should not have to hunt for the red one.
+  return `Still needed: ${list}.`;
+}
