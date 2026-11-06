@@ -38,7 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel, ClientWaitlistPanel } from "@/components/client-record/ClientOverview";
 import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
 import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
-import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
+import { bookingBucket, countBookingBuckets, sortBookingsForBucket, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
 import { ClientPetsAside } from "@/components/client-record/ClientPetsAside";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -827,9 +827,15 @@ export default function ClientDetail() {
     .slice()
     .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime())
     .slice(0, 5);
-  const bookingsInTab = appointments
-    .filter(a => bookingBucket(a) === bookingTab)
-    .filter(a => paymentFilter === "all" || (a.paymentStatus ?? "unpaid") === paymentFilter);
+  /* Soonest-first for Upcoming, most-recent-first for the rest — see
+     sortBookingsForBucket. This list had no sort at all and inherited the
+     server's newest-first order, which reads a 4-weekly series backwards. */
+  const bookingsInTab = sortBookingsForBucket(
+    appointments
+      .filter(a => bookingBucket(a) === bookingTab)
+      .filter(a => paymentFilter === "all" || (a.paymentStatus ?? "unpaid") === paymentFilter),
+    bookingTab,
+  );
   const bookingPageCount = Math.max(1, Math.ceil(bookingsInTab.length / BOOKINGS_PER_PAGE));
   // Deleting or filtering can strand you past the end; clamp on render
   // rather than leaving a blank table with no way back.

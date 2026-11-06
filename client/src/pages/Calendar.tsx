@@ -2539,8 +2539,29 @@ export default function Calendar() {
 
   const createRecurringMutation = trpc.calendar.createRecurringAppointments.useMutation({
     onSuccess: (r) => {
-      const skippedMsg = r.skipped.length > 0 ? ` (${r.skipped.length} skipped due to a groomer clash)` : "";
-      toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created${skippedMsg}`);
+      toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created`);
+      /*
+       * The skipped dates by NAME, as their own message that stays up.
+       *
+       * This used to be "(1 skipped due to a groomer clash)" tacked onto
+       * the success toast. A count is not actionable: Lauren set a
+       * 4-weekly series from 15 January, the first occurrence clashed
+       * with two dogs already booked on that groomer at 8am, it was
+       * dropped, and the series began on 12 February. She had no way to
+       * know WHICH one was missing and asked why it said 12 February.
+       *
+       * Separate toast rather than appended, because a skipped booking
+       * is not part of a success — somebody has to go and rebook it.
+       */
+      if (r.skipped.length > 0) {
+        const when = r.skipped
+          .map(s => formatAestDate(s.scheduledStart, { weekday: "short", day: "numeric", month: "short" }))
+          .join(", ");
+        toast.warning(
+          `Not booked — the groomer is already busy: ${when}. Rebook ${r.skipped.length === 1 ? "it" : "them"} at another time or with someone else.`,
+          { duration: 15000 },
+        );
+      }
       setShowNewAppt(false);
       setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });

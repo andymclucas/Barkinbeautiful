@@ -73,3 +73,28 @@ export function countBookingBuckets(
   for (const booking of bookings) counts[bookingBucket(booking, now)]++;
   return counts;
 }
+
+/**
+ * The order a bucket is read in.
+ *
+ * Upcoming runs soonest-first: it is a list of what happens next, and the
+ * top row is the one you act on. Everything else runs most-recent-first,
+ * because the last groom, the last cancellation and the last no-show are
+ * what anybody is looking for.
+ *
+ * Lauren, 06/11/2026: "its back to front when viewing". The Bookings tab
+ * had no sort at all and inherited the server's newest-first order, so a
+ * 4-weekly series read 12 Mar, 12 Feb, 4 Dec — which looks like a series
+ * that skipped January, and was the reason she asked why it started in
+ * February.
+ */
+export function sortBookingsForBucket<T extends { scheduledStart: Date | string | number }>(
+  bookings: readonly T[],
+  bucket: BookingBucket,
+): T[] {
+  const ascending = bucket === "upcoming";
+  return bookings.slice().sort((a, b) => {
+    const diff = new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime();
+    return ascending ? diff : -diff;
+  });
+}
