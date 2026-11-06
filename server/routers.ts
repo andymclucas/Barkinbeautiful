@@ -49,7 +49,8 @@ import { BATH_RESOURCE_MINUTES, countOverlappingBookings, countSharedBathResourc
 import { onlineDailyCapacityVerdict } from "../shared/onlineBookingCapacity";
 import { ESTIMATE_DISCLAIMER, estimateOnlineBookingPrice } from "../shared/onlineBookingPrice";
 import { notifyOnlineBooking } from "./onlineBookingNotify";
-import { getPetWeightBand, isEligibleOnlineBookingService } from "../shared/onlineBookingWeightEligibility";
+import { getPetWeightBand, isEligibleOnlineBookingService, isEligibleOnlineBookingServiceForBand } from "../shared/onlineBookingWeightEligibility";
+import { bandForWeight, type DogSizeBand } from "../shared/dogSizeBand";
 import { buildOnlineBookingNotes } from "../shared/onlineBookingPreview";
 import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
 import { planMembershipSeries } from "../shared/membershipSeries";
@@ -8662,6 +8663,10 @@ const membershipsRouter = router({
           petStatus: pets.status,
           petWeightKg: pets.weightKg,
           petWeight: pets.weight,
+          // Most dogs here have a band and no weight, and without it the
+          // eligibility guard has nothing to compare. See
+          // getReplacementWeightBand.
+          petSizeBand: pets.sizeBand,
         })
         .from(memberships)
         .innerJoin(pets, eq(memberships.petId, pets.id))
@@ -8700,6 +8705,7 @@ const membershipsRouter = router({
           status: pets.status,
           weightKg: pets.weightKg,
           weight: pets.weight,
+          sizeBand: pets.sizeBand,
         })
         .from(pets)
         .where(and(eq(pets.id, input.replacementPetId), eq(pets.tenantId, tenantOf(ctx, input))))
@@ -8707,7 +8713,7 @@ const membershipsRouter = router({
       if (!replacementPet || replacementPet.clientId !== membership.clientId || replacementPet.status !== "active") {
         throw new Error("Choose an active pet belonging to the same client");
       }
-      const departedCandidate = { id: membership.petId, weightKg: membership.petWeightKg, weight: membership.petWeight, status: "departed" as const };
+      const departedCandidate = { id: membership.petId, weightKg: membership.petWeightKg, weight: membership.petWeight, sizeBand: membership.petSizeBand, status: "departed" as const };
       if (!isEligibleMembershipReplacement(departedCandidate, replacementPet)) {
         const membershipBand = getReplacementWeightBand(departedCandidate)?.label ?? "unrecorded";
         const replacementBand = getReplacementWeightBand(replacementPet)?.label ?? "unrecorded";
@@ -11596,7 +11602,7 @@ async function listRescheduleSlots(input: { tenantId: number; staffId: number; s
  * figure, which is the honest outcome: an invented number becomes a
  * figure somebody was quoted.
  */
-async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg: number }) {
+async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg?: number; sizeBand?: DogSizeBand | null }) {
   const db = await getDb();
   if (!db) return null;
   try {
@@ -11616,6 +11622,7 @@ async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceT
     return estimateOnlineBookingPrice({
       serviceType: input.serviceType,
       weightKg: input.weightKg,
+      sizeBand: input.sizeBand,
       catalogue,
     });
   } catch (err) {
@@ -11627,7 +11634,7 @@ async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceT
 }
 
 /** Just the figure, for the column on the appointment row. */
-async function onlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg: number }) {
+async function onlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg?: number; sizeBand?: DogSizeBand | null }) {
   const estimate = await estimateOnlineBookingPriceFor(input);
   return estimate?.known ? estimate.price : null;
 }
@@ -11715,7 +11722,7 @@ const onlineBookingRouter = router({
   }),
   create: publicProcedure.input(z.object({ tenantId: z.number().default(1), clientId: z.number(), petId: z.number(), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), scheduledStart: z.coerce.date(), notes: z.string().max(1000).optional() })).mutation(async ({ input, ctx }) => {
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
-    const [pet] = await db.select({ id: pets.id, name: pets.name, status: pets.status, weightKg: pets.weightKg, weight: pets.weight }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
+    const [pet] = await db.select({ id: pets.id, name: pets.name, status: pets.status, weightKg: pets.weightKg, weight: pets.weight, sizeBand: pets.sizeBand }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
     if (!pet) throw new Error("Pet does not belong to the selected client");
     /* The staff booking paths have refused a departed dog since
        19/10/2026; this one never did, and it is the PUBLIC one — a
@@ -11724,13 +11731,30 @@ const onlineBookingRouter = router({
     const onlineDeparted = departedBookingMessage([pet]);
     if (onlineDeparted) throw new Error(onlineDeparted);
     const petWeight = pet.weightKg ?? pet.weight;
-    if (!isEligibleOnlineBookingService(input.serviceType, petWeight)) throw new Error("This pet needs a recorded weight between 0 and 80kg before online booking");
-    const capacity = await checkOnlineCapacity({ ...input, petWeightKg: Number(petWeight) }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
+    /*
+     * The dog's band, from the scales if it has been weighed and from
+     * `pets.size_band` if it has not.
+     *
+     * This used to ask isEligibleOnlineBookingService for the WEIGHT,
+     * and a dog with no weight on file reaches that as null, which
+     * getPetWeightBand answers "Small" — so every unweighed dog passed
+     * a guard whose own message says it should not, was then carried
+     * through as Number(null) = 0, and was announced to the salon as
+     * "Small (0–10 kg) (0kg, as entered)". A dog that might be a Giant.
+     *
+     * Asking for the band instead refuses only a dog with neither a
+     * weight nor a size, which is what the message below describes, and
+     * lets the 4,478 dogs that have a band book and be priced properly.
+     */
+    const bookingBand = bandForWeight(petWeight) ?? (pet.sizeBand as DogSizeBand | null) ?? null;
+    if (!isEligibleOnlineBookingServiceForBand(input.serviceType, bookingBand)) throw new Error("This pet needs a recorded weight or size before online booking");
+    const weighedKg = bandForWeight(petWeight) ? Number(petWeight) : null;
+    const capacity = await checkOnlineCapacity({ ...input, petWeightKg: weighedKg ?? undefined }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
     const tenantId = tenantOf(ctx, input);
-    const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: Number(petWeight) });
+    const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: weighedKg ?? undefined, sizeBand: bookingBand });
     const [result] = await db.insert(appointments).values({ tenantId, clientId: input.clientId, petId: input.petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes: input.notes ?? null, price: estimatePrice, status: "pending", workflowState: "scheduled", bookedOnline: true });
     const appointmentId = (result as any).insertId as number;
-    const delivery = await notifyOnlineBooking({ tenantId, clientId: input.clientId, petId: input.petId, appointmentId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, weightKg: Number(petWeight), estimatePrice });
+    const delivery = await notifyOnlineBooking({ tenantId, clientId: input.clientId, petId: input.petId, appointmentId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, weightKg: weighedKg, sizeBand: bookingBand, estimatePrice });
     return { success: true, appointmentId, estimatePrice, disclaimer: estimatePrice ? ESTIMATE_DISCLAIMER : null, delivery };
   }),
   createGuest: publicProcedure.input(z.object({

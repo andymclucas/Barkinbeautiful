@@ -61,7 +61,7 @@ import { Link } from "wouter";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { HeartCrack, History, Replace, Unlink } from "lucide-react";
-import { getDepartedMembershipBillingImpact, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
+import { getDepartedMembershipBillingImpact, getReplacementWeightBand, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
 import { resolveAppointmentMembershipCoverage } from "@shared/appointmentMembershipCoverage";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { BreedInput } from "@/components/BreedInput";
@@ -2528,7 +2528,12 @@ export default function ClientDetail() {
                         {pets.filter(pet => pet.status === "active" && pet.id !== membershipAction?.petId).map(pet => {
                           const source = pets.find(item => item.id === membershipAction?.petId);
                           const eligible = source ? isEligibleMembershipReplacement(source, pet) : false;
-                          return <SelectItem key={pet.id} value={String(pet.id)} disabled={!eligible}>{pet.name} {pet.weightKg ? `· ${pet.weightKg}kg` : "· weight required"}{eligible ? "" : " · different band"}</SelectItem>;
+                          /* "weight required" was wrong for most of the salon: a dog
+                             with no weight but a recorded size band is eligible, and
+                             the label told staff to go and weigh a dead dog's sibling
+                             when the band was already on file. */
+                          const size = pet.weightKg ? `· ${pet.weightKg}kg` : getReplacementWeightBand(pet) ? `· ${getReplacementWeightBand(pet)?.label} (no weight)` : "· no weight or size on file";
+                          return <SelectItem key={pet.id} value={String(pet.id)} disabled={!eligible}>{pet.name} {size}{eligible ? "" : " · different band"}</SelectItem>;
                         })}
                       </SelectContent>
                     </Select>

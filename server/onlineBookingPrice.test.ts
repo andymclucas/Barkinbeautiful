@@ -152,3 +152,53 @@ describe("describeBookedWeight", () => {
     expect(describeBookedWeight(120)).toBe("120kg, as entered");
   });
 });
+
+/**
+ * A dog the salon knows but has never weighed.
+ *
+ * 4,478 active dogs have a size band and no weight. Through the portal
+ * they reached the estimator as `Number(null)` — 0 — and got no price
+ * at all, while the eligibility guard above them read that same null as
+ * "Small" and let them book anyway. Price is decided by band, so a
+ * banded dog can be quoted exactly as accurately as a weighed one.
+ */
+describe("pricing a dog that has a band and no weight", () => {
+  const BY_BAND = [
+    row({ id: 70, name: "Full Groom (Classic) - New Client - Small", weightBand: "0-10kg", priceAud: "145.00" }),
+    row({ id: 71, name: "Full Groom (Classic) - New Client - Giant", weightBand: "36-80kg", priceAud: "320.00" }),
+  ];
+
+  it("prices from the recorded band when there is no weight", () => {
+    expect(estimateOnlineBookingPrice({ serviceType: "classic_groom", sizeBand: "giant", catalogue: BY_BAND }))
+      .toMatchObject({ known: true, price: "320.00" });
+  });
+
+  it("still asks for a weight when there is no band either", () => {
+    const out = estimateOnlineBookingPrice({ serviceType: "classic_groom", catalogue: BY_BAND });
+    expect(out).toMatchObject({ known: false });
+    expect(out.known === false && out.reason).toContain("weight");
+  });
+
+  it("lets the scales beat a band somebody set by hand", () => {
+    // A band is the fallback, never an override — the same rule
+    // getAutoDurationMinutes applies to the same dogs.
+    expect(estimateOnlineBookingPrice({ serviceType: "classic_groom", weightKg: 8, sizeBand: "giant", catalogue: BY_BAND }))
+      .toMatchObject({ known: true, price: "145.00" });
+  });
+});
+
+describe("what the salon is told the dog weighs", () => {
+  it("never claims a weight nobody entered", () => {
+    // It used to read "Small (0–10 kg) (0kg, as entered)" for every
+    // unweighed dog, which is a Giant announced as small.
+    expect(describeBookedWeight(null, "giant")).toBe("Giant (36–80 kg) (recorded size, not weighed)");
+    expect(describeBookedWeight(0, "large")).toContain("recorded size, not weighed");
+    expect(describeBookedWeight(null, null)).toBe("no weight on file");
+    expect(describeBookedWeight(null)).toBe("no weight on file");
+  });
+
+  it("still reports a real weight as entered", () => {
+    expect(describeBookedWeight(8)).toContain("8kg, as entered");
+    expect(describeBookedWeight(8, "giant")).toContain("8kg, as entered");
+  });
+});
