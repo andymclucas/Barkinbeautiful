@@ -109,3 +109,57 @@ describe("DateTimeField — disabled", () => {
     expect(timeBox()).toBeDisabled();
   });
 });
+
+describe("DateTimeField — a fallback day", () => {
+  /*
+   * Lauren, 06/11/2026: "the ends date and time is annoying".
+   *
+   * Five of the salon's eight service types get no suggested duration —
+   * bath, deshed, nail trim, daycare, other — which is 205 of 1,295
+   * upcoming bookings. For those a booking's "Ends" opened with BOTH
+   * halves blank, so staff typed a full date and a time, and the date
+   * picker opened on today rather than on the booking: a January
+   * appointment meant paging forward three months to enter a date that
+   * was never going to differ from the start.
+   */
+  it("shows the fallback day while the field is empty", () => {
+    show("", { fallbackDate: "2027-01-19" });
+    expect(dateBox().value).toBe("19/01/2027");
+  });
+
+  it("saves NOTHING until a time is entered", () => {
+    /*
+     * The whole safety of it. A display default, not a value: a time
+     * implies a duration, and inventing one would put a wrong end on a
+     * groomer's afternoon — which is exactly why
+     * getAutoDurationMinutesForPets refuses to guess when a dog's size
+     * is unknown.
+     */
+    show("", { fallbackDate: "2027-01-19" });
+    expect(timeBox().value).toBe("");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("emits the whole value once the time is typed", async () => {
+    const user = setupUser();
+    show("", { fallbackDate: "2027-01-19" });
+    await user.type(timeBox(), "14:30");
+    expect(onChange).toHaveBeenLastCalledWith("2027-01-19T14:30");
+  });
+
+  it("never overrides a day somebody actually chose", () => {
+    show("2026-11-03T09:00", { fallbackDate: "2027-01-19" });
+    expect(dateBox().value).toBe("03/11/2026");
+    expect(timeBox().value).toBe("09:00");
+  });
+
+  it("still follows a value that arrives from elsewhere", () => {
+    // "Next available" fills these in; a fallback must not block it.
+    const { rerender } = show("", { fallbackDate: "2027-01-19" });
+    rerender(
+      <DateTimeField value="2026-12-02T10:15" onChange={onChange} aria-label="Starts" fallbackDate="2027-01-19" />,
+    );
+    expect(dateBox().value).toBe("02/12/2026");
+    expect(timeBox().value).toBe("10:15");
+  });
+});
