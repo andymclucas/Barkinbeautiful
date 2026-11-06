@@ -208,7 +208,7 @@ path forgets it. Two consequences worth knowing before you "fix" one:
   dog arrives. Add it to the advance-booking paths and anything that later
   reads these rows as stage entries would read three weeks "in scheduled" for
   a booking made three weeks out. Decide what the row means before adding it
-  in eight more places.
+  to the rest.
 
 Migrations: **do not run `pnpm run db:push`.** It is `generate && migrate`, and
 `generate` is broken here — see below. Migration `.sql` files live in
