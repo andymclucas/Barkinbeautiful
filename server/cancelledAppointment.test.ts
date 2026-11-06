@@ -73,17 +73,24 @@ describe("the rule has one copy", () => {
     const calendar = readFileSync(
       new URL("../client/src/pages/Calendar.tsx", import.meta.url), "utf8");
     expect(calendar).not.toMatch(/status === "cancelled" \|\|[^\n]*workflowState === "cancelled"/);
-    // Eight call sites: the appointment card, the day-grid cell, the
+    // Nine call sites: the appointment card, the day-grid cell, the
     // Unassigned strip under the board, the drag-and-drop clash check,
     // the two day-capacity counts (drag and edit), the Agenda row added
-    // on 04/11/2026, and the stack-picker row added on 05/11/2026. The
-    // strip was the one place a cancelled dog looked exactly like a
-    // live one, because it did not ask; the capacity counts are the
-    // places a cancelled dog would have eaten a groomer's day without
-    // being there; the agenda row and the picker row are two more lists
-    // a cancelled dog could have hidden in.
+    // on 04/11/2026, the stack-picker row added on 05/11/2026, and the
+    // "Recurring appt" control added on 06/11/2026. The strip was the
+    // one place a cancelled dog looked exactly like a live one, because
+    // it did not ask; the capacity counts are the places a cancelled
+    // dog would have eaten a groomer's day without being there; the
+    // agenda row and the picker row are two more lists a cancelled dog
+    // could have hidden in.
+    //
+    // The recurring control asks as WELL as reading
+    // preservesCancelledSchedule, which is about the Status dropdown
+    // rather than the stored row: part-way through reinstating a
+    // cancelled booking that flag goes false while the row is still
+    // cancelled, and the server would refuse the repeat.
     // The import carries no paren so it does not count.
-    expect(calendar.split("isCancelledAppointment(").length - 1).toBe(8);
+    expect(calendar.split("isCancelledAppointment(").length - 1).toBe(9);
     expect(calendar).toContain("preservesOriginalSchedule(editAppt, editForm.workflowState)");
   });
 });

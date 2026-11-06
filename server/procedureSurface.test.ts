@@ -142,6 +142,12 @@ const OPERATIONAL = [
   "bookingPricingRouter.catalogue",
   "bookingPricingRouter.context",
   "calendarRouter.addPetsToSharedAppointment",
+  /* Repeating a booking that already exists — Bronwyn Waegh, 06/11/2026.
+     Operational because turning a booking into a series is floor work:
+     the groomer standing with the client at the end of a groom is who
+     books the next six. It repeats a booking the caller can already
+     reach, through requireApprovedStaffAppointmentAccess. */
+  "calendarRouter.addRecurrenceToAppointment",
   "calendarRouter.appointmentsForClient",
   /*
    * Cancels every dog of a booking at once so the client gets ONE
@@ -404,12 +410,15 @@ describe("tRPC procedure surface", () => {
     // 391 since 06/11/2026: the salons router — mine, canAccess, grant
     // and revoke — for running more than one salon from one account.
     //
+    // 395 since 06/11/2026: calendar.addRecurrenceToAppointment, for
+    // turning a booking that already exists into a series.
+    //
     // 394 since 06/11/2026: salons.provisionPreview, salons.provision and
     // salons.eligibleOwners, for standing up The Pet Pad. All three are
     // adminProcedure — provisioning makes a new business on the platform
     // and hands somebody the keys, and eligibleOwners lists the
     // platform's accounts — so none appears in OPERATIONAL or PUBLIC.
-    expect(surface).toHaveLength(394);
+    expect(surface).toHaveLength(395);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -443,10 +452,15 @@ describe("tRPC procedure surface", () => {
      * feature, so protectedProcedure would have locked out everyone it
      * is for.
      *
+     * 141 since 06/11/2026: calendar.addRecurrenceToAppointment. Turning
+     * a booking into a series is floor work — the groomer standing with
+     * the client at the end of a groom is who books the next six — and it
+     * repeats a booking the caller can already reach.
+     *
      * 140 since 06/11/2026: salons.mine and salons.canAccess. Both read
      * only from the caller's own access list.
      */
-    expect(OPERATIONAL).toHaveLength(140);
+    expect(OPERATIONAL).toHaveLength(141);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

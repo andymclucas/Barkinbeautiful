@@ -79,6 +79,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
+import { parseBrisbaneLocalDateTime } from "@shared/localDateTime";
 import { DateTimeField } from "@/components/DateTimeField";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -132,6 +133,10 @@ import {
   wholeBookingCancellation, describeWholeBookingCancellation,
 } from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
+import {
+  describeRecurrence, recurrenceStarts,
+  MAX_FREQUENCY_WEEKS, MIN_FREQUENCY_WEEKS, type RecurrenceEnd,
+} from "@shared/recurrenceRule";
 import { overlapPlacement } from "@shared/appointmentCardOverlap";
 import { appointmentStack, MIN_DRAWN_MINUTES } from "@shared/appointmentStack";
 import { BASE_HOUR_HEIGHT } from "@shared/calendarZoom";
@@ -1383,6 +1388,19 @@ export default function Calendar() {
     collectByTime: "",
   });
   const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
+  /**
+   * Repeating a booking that ALREADY exists, from the edit dialog.
+   *
+   * Separate from repeatForm above, which belongs to the new-booking
+   * dialog. The two are never open together, but sharing one piece of
+   * state would mean a half-filled series on a new booking reappearing
+   * inside somebody else's edit — the class of bug the comment on
+   * closeEditDialog is about.
+   */
+  const [editRepeat, setEditRepeat] = useState<{
+    enabled: boolean; frequencyWeeks: string;
+    endKind: RecurrenceEnd["kind"]; sessions: string; untilDate: string;
+  }>({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
   /** The "+ New client" form, open inside the client picker. */
   const [addingClient, setAddingClient] = useState(false);
 
@@ -2572,6 +2590,66 @@ export default function Calendar() {
   });
 
   /**
+   * The series a person is about to create, worked out before anything
+   * is written.
+   *
+   * recurrenceStarts is the SAME function the server runs, so the count
+   * and the dates on screen are the ones that will be booked rather than
+   * an estimate of them. Lauren's "why does it say 12 February?" was
+   * exactly this gap: the series was decided server-side and the first
+   * she saw of it was a count.
+   */
+  const editRecurrenceRequest = useMemo(() => {
+    const end: RecurrenceEnd =
+      editRepeat.endKind === "count"
+        ? { kind: "count", sessions: Number(editRepeat.sessions) }
+        : editRepeat.endKind === "date"
+          ? { kind: "date", untilDate: editRepeat.untilDate }
+          : { kind: "ongoing" };
+    return {
+      firstStart: editForm.scheduledStart ?? "",
+      frequencyWeeks: Number(editRepeat.frequencyWeeks),
+      end,
+    };
+  }, [editForm.scheduledStart, editRepeat]);
+
+  const editRecurrencePlan = useMemo(
+    () => (editRepeat.enabled ? recurrenceStarts(editRecurrenceRequest) : null),
+    [editRepeat.enabled, editRecurrenceRequest],
+  );
+
+  const addRecurrenceMutation = trpc.calendar.addRecurrenceToAppointment.useMutation({
+    onSuccess: (r) => {
+      toast.success(
+        `${r.createdCount} more booking${r.createdCount === 1 ? "" : "s"} added`
+        + (r.petsPerOccurrence > 1 ? ` for all ${r.petsPerOccurrence} dogs` : ""),
+      );
+      /*
+       * The skipped dates BY NAME, same as the new-booking path. A count
+       * is not actionable — somebody has to go and rebook each one.
+       */
+      if (r.skipped.length > 0) {
+        const when = r.skipped
+          .map(x => formatAestDate(x.scheduledStart, { weekday: "short", day: "numeric", month: "short" }))
+          .join(", ");
+        toast.warning(
+          `Not booked — the groomer is already busy: ${when}. Rebook ${r.skipped.length === 1 ? "it" : "them"} at another time or with someone else.`,
+          { duration: 15000 },
+        );
+      }
+      if (r.truncated) {
+        toast.warning(
+          "That is as many as one go will create. Repeat it again from the last booking to carry on.",
+          { duration: 15000 },
+        );
+      }
+      setEditRepeat({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
+      refetch();
+    },
+    onError: (e) => toast.error(e.message, { duration: 10000 }),
+  });
+
+  /**
    * `force` skips the double-booking confirmation, and is only ever true
    * when it came from the confirmation itself.
    */
@@ -2692,6 +2770,7 @@ export default function Calendar() {
    */
   const closeEditDialog = () => {
     setEditAppt(null);
+    setEditRepeat({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
     setSelectedStylePetId(null);
     setSiblingGroomers({});
     setSiblingPrices({});
@@ -5276,6 +5355,142 @@ export default function Calendar() {
                 )}
                 {preservesCancelledSchedule && (
                   <p className="rounded-md border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs font-medium text-red-800 dark:text-red-300">Cancelled appointments stay at their original booked time for historical tracking. Create a new appointment if the client needs to be rebooked.</p>
+                )}
+                {/*
+                  * Turning THIS booking into a series.
+                  *
+                  * Andy, 06/11/2026, about Bronwyn Waegh: she has a booking
+                  * in January 2027 and wants the rest of the year. The only
+                  * recurring path builds a series from scratch, so the
+                  * alternative was deleting hers and rebooking it.
+                  *
+                  * It sits with the Start and End fields because whether
+                  * this is one visit or twelve is a question about WHEN —
+                  * the same reason the new-booking control was moved up
+                  * here on 03/11/2026 after Lauren never found it.
+                  *
+                  * Hidden on a cancelled booking: the server refuses one,
+                  * and a control that is going to be refused is worse than
+                  * no control.
+                  */}
+                {!preservesCancelledSchedule && !isCancelledAppointment(editAppt) && (
+                  <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={editRepeat.enabled}
+                        onChange={e => setEditRepeat(f => ({ ...f, enabled: e.target.checked }))}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      <span className="text-sm font-medium">Recurring appt</span>
+                    </label>
+                    {editRepeat.enabled && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label>Every</Label>
+                            <Select
+                              value={editRepeat.frequencyWeeks}
+                              onValueChange={v => setEditRepeat(f => ({ ...f, frequencyWeeks: v }))}
+                            >
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {Array.from(
+                                  { length: MAX_FREQUENCY_WEEKS - MIN_FREQUENCY_WEEKS + 1 },
+                                  (_, i) => i + MIN_FREQUENCY_WEEKS,
+                                ).map(w => (
+                                  <SelectItem key={w} value={String(w)}>
+                                    {w === 1 ? "1 week" : `${w} weeks`}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Ends</Label>
+                            <Select
+                              value={editRepeat.endKind}
+                              onValueChange={v => setEditRepeat(f => ({ ...f, endKind: v as RecurrenceEnd["kind"] }))}
+                            >
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="count">After a number of sessions</SelectItem>
+                                <SelectItem value="date">On a date</SelectItem>
+                                <SelectItem value="ongoing">Ongoing</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {editRepeat.endKind === "count" && (
+                            <div className="space-y-1.5">
+                              <Label htmlFor={`repeat-sessions-${editAppt.id}`}>How many more</Label>
+                              <Input
+                                id={`repeat-sessions-${editAppt.id}`}
+                                type="number" min={1} max={60} inputMode="numeric"
+                                value={editRepeat.sessions}
+                                onChange={e => setEditRepeat(f => ({ ...f, sessions: e.target.value }))}
+                              />
+                            </div>
+                          )}
+                          {editRepeat.endKind === "date" && (
+                            <div className="space-y-1.5">
+                              <Label>Up to</Label>
+                              <DateField
+                                value={editRepeat.untilDate}
+                                onChange={next => setEditRepeat(f => ({ ...f, untilDate: next }))}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* The dates themselves, not a count. This is the
+                            whole fix for "can you see why it's saying the
+                            12 Feb?" — the answer is on screen before the
+                            button is pressed. */}
+                        {editRecurrencePlan?.ok === false && (
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                            {editRecurrencePlan.reason}
+                          </p>
+                        )}
+                        {editRecurrencePlan?.ok && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-medium">
+                              {describeRecurrence(editRecurrenceRequest, editRecurrencePlan.starts.length)}
+                            </p>
+                            <p className="max-h-24 overflow-y-auto text-xs leading-5 text-muted-foreground">
+                              {editRecurrencePlan.starts
+                                .map(start => formatAestDate(
+                                  parseBrisbaneLocalDateTime(start),
+                                  { weekday: "short", day: "numeric", month: "short" },
+                                ))
+                                .join(" · ")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              This booking stays as it is — these are added after it, at the same
+                              time, with the same {editSiblings.length > 0 ? "dogs and groomers" : "groomer"}.
+                              If the groomer is already booked on one of these dates, that date is
+                              skipped and named, and the rest are still created.
+                            </p>
+                          </div>
+                        )}
+
+                        <Button
+                          type="button" size="sm" variant="outline"
+                          disabled={!editRecurrencePlan?.ok || addRecurrenceMutation.isPending}
+                          onClick={() => addRecurrenceMutation.mutate({
+                            appointmentId: editAppt.id,
+                            frequencyWeeks: Number(editRepeat.frequencyWeeks),
+                            end: editRecurrenceRequest.end,
+                          })}
+                        >
+                          {addRecurrenceMutation.isPending
+                            ? "Adding…"
+                            : editRecurrencePlan?.ok
+                              ? `Add ${editRecurrencePlan.starts.length} booking${editRecurrencePlan.starts.length === 1 ? "" : "s"}`
+                              : "Add bookings"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {(() => {
                   if (!editForm.scheduledStart) return null;

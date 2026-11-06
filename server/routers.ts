@@ -82,6 +82,9 @@ import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../sha
 import { groomQuotesRouter } from "./routers/groomQuotes";
 import { salonsRouter } from "./routers/salons";
 import { canQuoteInWorkflowState } from "@shared/groomQuote";
+import {
+  recurrenceStarts, MIN_FREQUENCY_WEEKS, MAX_FREQUENCY_WEEKS, MAX_OCCURRENCES,
+} from "@shared/recurrenceRule";
 import { loadApprovedQuoteExtras, approvedQuoteExtrasTotal } from "./groomQuoteExtras";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
@@ -92,7 +95,7 @@ import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignmen
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
-import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
 import { firstFreeSlot, describeNoSlot } from "../shared/nextAvailableSlot";
@@ -1720,6 +1723,169 @@ const calendarRouter = router({
         createdCount: created.length,
         skipped,
         hitSafetyCap: count >= maxOccurrences,
+      };
+    }),
+
+
+  /**
+   * Repeat a booking that already exists.
+   *
+   * Andy, 06/11/2026, about Bronwyn Waegh: tick "recurring appt" while
+   * editing a booking, pick 1-14 weeks, and end it after a number of
+   * sessions, on a date, or ongoing.
+   *
+   * ## It never touches the booking it repeats
+   *
+   * createRecurringAppointments builds a series from scratch and creates
+   * its first occurrence too. Here the first one already exists — it is
+   * the booking being edited — so this starts one interval later and
+   * leaves the original exactly as it is.
+   *
+   * That also removes the confusion that cost an hour this morning:
+   * Lauren built a series FROM 15 January, the 15th clashed with a
+   * groomer, it was skipped, the series began on 12 February, and she
+   * had no way to see why. There is no first occurrence left to lose.
+   *
+   * ## Every dog on the booking comes with it
+   *
+   * A two-dog family is two appointment rows at the same time, and a
+   * repeat that carried only the dog whose pencil was clicked would book
+   * one sibling for a year and not the other.
+   */
+  addRecurrenceToAppointment: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      appointmentId: z.number(),
+      frequencyWeeks: z.number().int().min(MIN_FREQUENCY_WEEKS).max(MAX_FREQUENCY_WEEKS),
+      end: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("count"), sessions: z.number().int().min(1).max(MAX_OCCURRENCES) }),
+        z.object({ kind: z.literal("date"), untilDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+        z.object({ kind: z.literal("ongoing") }),
+      ]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+
+      const [source] = await db.select().from(appointments)
+        .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, tenantId)))
+        .limit(1);
+      if (!source) throw new Error("That booking no longer exists");
+      if (source.status === "cancelled" || source.workflowState === "cancelled") {
+        throw new Error("That booking is cancelled — repeating it would book a series nobody asked for");
+      }
+
+      /* Every dog at that exact time for that client: a family booking is
+         several rows and they travel together. */
+      const booking = await db.select().from(appointments).where(and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.clientId, source.clientId),
+        eq(appointments.scheduledStart, source.scheduledStart),
+        ne(appointments.status, "cancelled"),
+        ne(appointments.workflowState, "cancelled"),
+      ));
+
+      /* A dog recorded as passed away must not be given a year of
+         bookings. The booking it is repeating already exists and stays,
+         so this refuses the repeat rather than touching history. */
+      const bookingPets = await db.select({ id: pets.id, name: pets.name, status: pets.status })
+        .from(pets).where(inArray(pets.id, booking.map((row: { petId: number }) => row.petId)));
+      const departedMessage = departedBookingMessage(bookingPets);
+      if (departedMessage) throw new Error(departedMessage);
+
+      /* The booking's own wall-clock time, as "YYYY-MM-DDTHH:mm".
+         brisbaneLocalInputValue is the exact inverse of the parse below, so
+         the series keeps the time the client was actually given. */
+      const firstStartLocal = brisbaneLocalInputValue(new Date(source.scheduledStart));
+
+      const plan = recurrenceStarts({
+        firstStart: firstStartLocal,
+        frequencyWeeks: input.frequencyWeeks,
+        end: input.end,
+      });
+      if (!plan.ok) throw new Error(plan.reason);
+
+      const durationMs = new Date(source.scheduledEnd).getTime() - new Date(source.scheduledStart).getTime();
+      const recurringGroupId = source.recurringGroupId ?? nanoid(24);
+      const groomerIds = Array.from(new Set(
+        booking.map((row: { staffId: number | null }) => row.staffId).filter((id): id is number => typeof id === "number"),
+      ));
+
+      const created: Date[] = [];
+      const skipped: { scheduledStart: Date; reason: string }[] = [];
+
+      for (const localStart of plan.starts) {
+        const occurrenceStart = parseBrisbaneLocalDateTime(localStart);
+        const occurrenceEnd = new Date(occurrenceStart.getTime() + durationMs);
+
+        /* A clash skips the WHOLE occurrence rather than booking some dogs
+           and not others — and the dates come back named, because "1
+           skipped" is not something anybody can act on. */
+        let clash = false;
+        for (const groomerId of groomerIds) {
+          const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
+            eq(appointments.staffId, groomerId),
+            eq(appointments.tenantId, tenantId),
+            ne(appointments.workflowState, "cancelled"),
+            ne(appointments.status, "cancelled"),
+            lt(appointments.scheduledStart, occurrenceEnd),
+            gt(appointments.scheduledEnd, occurrenceStart),
+          )).limit(1);
+          if (conflict) { clash = true; break; }
+        }
+        if (clash) {
+          skipped.push({ scheduledStart: occurrenceStart, reason: "Groomer already booked at this time" });
+          continue;
+        }
+
+        const sessionId = booking.length > 1 ? nanoid(16) : null;
+        for (const row of booking) {
+          await db.insert(appointments).values({
+            tenantId,
+            clientId: row.clientId,
+            petId: row.petId,
+            staffId: row.staffId,
+            serviceType: row.serviceType,
+            scheduledStart: occurrenceStart,
+            scheduledEnd: occurrenceEnd,
+            notes: row.notes,
+            price: row.price,
+            /* Membership coverage is NOT carried over. A membership runs
+               out, and stamping a year of bookings as covered today would
+               give away grooms the client stopped paying for. They are
+               priced as the booking was and coverage is decided when each
+               one is invoiced. */
+            membershipId: null,
+            trackerToken: nanoid(32),
+            sessionId,
+            workflowState: "scheduled",
+            status: "confirmed",
+            recurringGroupId,
+          });
+        }
+        created.push(occurrenceStart);
+      }
+
+      /* The source joins its own series, so the board and any later edit
+         can see the whole run together. */
+      if (!source.recurringGroupId && created.length > 0) {
+        await db.update(appointments)
+          .set({ recurringGroupId })
+          .where(and(
+            eq(appointments.tenantId, tenantId),
+            inArray(appointments.id, booking.map((row: { id: number }) => row.id)),
+          ));
+      }
+
+      return {
+        success: true,
+        recurringGroupId,
+        createdCount: created.length,
+        petsPerOccurrence: booking.length,
+        skipped,
+        truncated: plan.truncated,
       };
     }),
 
