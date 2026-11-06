@@ -403,7 +403,12 @@ describe("tRPC procedure surface", () => {
     //
     // 391 since 06/11/2026: the salons router — mine, canAccess, grant
     // and revoke — for running more than one salon from one account.
-    expect(surface).toHaveLength(391);
+    //
+    // 393 since 06/11/2026: salons.provisionPreview and salons.provision,
+    // for standing up The Pet Pad. Both adminProcedure — provisioning
+    // makes a new business on the platform and hands somebody the keys —
+    // so neither appears in OPERATIONAL or PUBLIC.
+    expect(surface).toHaveLength(393);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
