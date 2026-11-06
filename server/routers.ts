@@ -19,7 +19,7 @@ import { previewMerge, mergeClientInto } from "./clientMerge";
 import { forgetPetThumb } from "./petThumbCache";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
-import { needsPetAssignment, missingPetCount } from "@shared/membershipCoveredPets";
+import { needsPetAssignment, missingPetCount, planCoveredPetIds } from "@shared/membershipCoveredPets";
 import { missedCallSearchFilter } from "./missedCallSearchFilter";
 import { departedBookingMessage } from "@shared/petBookable";
 import { messageSearchFilter } from "./messageSearchFilter";
@@ -5919,6 +5919,43 @@ const clientsRouter = router({
         .leftJoin(pets, eq(memberships.petId, pets.id))
         .where(eq(memberships.clientId, input.clientId))
         .orderBy(desc(memberships.startedAt));
+      /*
+       * The dogs each plan covers, not just the dog it is filed under.
+       *
+       * `membership_pets` is how one plan covers a household's second
+       * dog, and reading `memberships.pet_id` alone made that dog
+       * invisible on this page: no tier colour on its card, and — the
+       * part that actually costs something — if it had died, staff were
+       * never offered the transfer-or-remove dialog for the plan paying
+       * for it, because that list is built from the same map.
+       *
+       * The booking path fixed its half of this already. See
+       * getAppointmentMembershipCoverage, whose own comment records that
+       * booking only the SECOND dog of an "x2" plan used to fetch no
+       * membership at all and priced the dog as though the client had
+       * no plan.
+       */
+      const coveredPlanIds = clientMemberships.map(m => m.id);
+      const assignedPetRows = coveredPlanIds.length === 0 ? [] : await db
+        .select({ membershipId: membershipPets.membershipId, petId: membershipPets.petId })
+        .from(membershipPets)
+        .where(and(
+          eq(membershipPets.tenantId, client.tenantId),
+          inArray(membershipPets.membershipId, coveredPlanIds),
+        ));
+      const assignedByMembership = new Map<number, number[]>();
+      for (const row of assignedPetRows) {
+        assignedByMembership.set(row.membershipId, [
+          ...(assignedByMembership.get(row.membershipId) ?? []), row.petId,
+        ]);
+      }
+      const clientMembershipsWithCover = clientMemberships.map(m => ({
+        ...m,
+        coveredPetIds: planCoveredPetIds({
+          petId: m.petId,
+          assignedPetIds: assignedByMembership.get(m.id),
+        }),
+      }));
       const clientPetMembershipEvents = await db
         .select({
           id: petMembershipEvents.id,
@@ -6029,7 +6066,7 @@ const clientsRouter = router({
           .orderBy(desc(membershipPayments.paidAt))
           .limit(50);
       }
-      return { client, contacts: additionalContacts, pets: clientPets, memberships: clientMemberships, appointments: clientAppointments, styleNotes: clientStyleNotes, payments, photos: clientPhotos, petMembershipEvents: clientPetMembershipEvents };
+      return { client, contacts: additionalContacts, pets: clientPets, memberships: clientMembershipsWithCover, appointments: clientAppointments, styleNotes: clientStyleNotes, payments, photos: clientPhotos, petMembershipEvents: clientPetMembershipEvents };
     }),
 
   /**
@@ -8088,9 +8125,13 @@ const membershipsRouter = router({
           ...row,
           // Until the backfill runs, a plan with no rows in the join
           // table still covers its own dog — reading the table alone
-          // would report every plan as covering nothing.
-          coveredPetIds: coveredBy.get(row.membershipId)
-            ?? (row.primaryPetId ? [row.primaryPetId] : []),
+          // would report every plan as covering nothing. Shared with
+          // the client record so the count staff are flagged on and the
+          // badge they see cannot drift apart.
+          coveredPetIds: planCoveredPetIds({
+            petId: row.primaryPetId,
+            assignedPetIds: coveredBy.get(row.membershipId),
+          }),
         }))
         .filter((row) => needsPetAssignment(row));
 

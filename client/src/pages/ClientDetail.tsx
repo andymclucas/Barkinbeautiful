@@ -16,6 +16,7 @@ import {
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { shouldActOnSignal } from "@shared/openOnSignal";
 import { parsePetCodes } from "@shared/petCodes";
+import { membershipsByCoveredPet } from "@shared/membershipCoveredPets";
 import { parseClientTags, clientTagTone } from "@shared/clientTags";
 import { describePetCode, petCodeMeaning } from "@shared/petCodeMeanings";
 import { canChargeOffSession } from "@shared/stripeBilling";
@@ -795,14 +796,18 @@ export default function ClientDetail() {
     });
   };
 
-  // Map petId -> memberships for that pet
-  const petMemberships: Record<number, typeof memberships> = {};
-  for (const m of memberships) {
-    if (m.petId) {
-      if (!petMemberships[m.petId]) petMemberships[m.petId] = [];
-      petMemberships[m.petId].push(m);
-    }
-  }
+  /*
+   * Every dog each plan covers, not just the dog it is filed under.
+   *
+   * `coveredPetIds` is the plan's own dog plus any added to it through
+   * Set covered pets, unioned on the server by `planCoveredPetIds`.
+   * Reading `m.petId` alone left a household's second dog with no tier
+   * colour on its card and — worse — no transfer-or-remove dialog if it
+   * died, because `manageableDepartedMemberships` below is built from
+   * this same map. The dog was covered and paid for, and this page
+   * could not see it.
+   */
+  const petMemberships = membershipsByCoveredPet(memberships);
   const photosByPet = (photos ?? []).reduce<Record<number, typeof photos>>((grouped, photo) => {
     (grouped[photo.petId] ??= []).push(photo);
     return grouped;

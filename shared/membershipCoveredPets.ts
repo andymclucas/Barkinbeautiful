@@ -50,6 +50,68 @@ export function needsPetAssignment(membership: MembershipCoverage): boolean {
   return membership.coveredPetIds.length < dogsNamedInPlan(membership.name);
 }
 
+/**
+ * Every dog a plan covers: the dog it is filed under, plus any added.
+ *
+ * A UNION, not a choice between the two, because that is what pricing
+ * does. `resolveAppointmentMembershipCoverage` claims each plan's
+ * PRIMARY dog in its first pass and the assigned dogs in its second, so
+ * a dog is covered if it is either. A badge reading "member" where the
+ * price said otherwise is worse than no badge at all.
+ *
+ * In ordinary data the two cannot disagree: `setCoveredPets` forces the
+ * primary dog into every write — "The primary dog is covered whether or
+ * not it is ticked" — so the join table already holds it, and this
+ * returns exactly what reading the table alone would. The union is for
+ * data that never went through that procedure. The MoeGo import wrote
+ * membership rows directly and nine households' plans turned out to be
+ * filed under a single dog, so "the join table is always complete" is
+ * not an assumption worth resting a dog's price on.
+ *
+ * Primary first, then the assigned dogs in the order given, de-duped.
+ * Order is stable so a caller can show the plan's own dog first.
+ */
+export function planCoveredPetIds(plan: {
+  petId?: number | null;
+  assignedPetIds?: readonly number[] | null;
+}): number[] {
+  const covered: number[] = [];
+  const add = (value: number | null | undefined) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return;
+    if (!covered.includes(value)) covered.push(value);
+  };
+  add(plan.petId);
+  for (const petId of plan.assignedPetIds ?? []) add(petId);
+  return covered;
+}
+
+/**
+ * Each dog, and the plans covering it.
+ *
+ * The client record draws a dog's tier colour from this, and builds the
+ * departed-dog transfer dialog from it too, so a dog missing from the
+ * map is a dog with no tier AND no way for staff to move or stop the
+ * plan paying for it. It used to be built from `memberships.pet_id`
+ * alone, which meant a household's second dog was absent from both.
+ *
+ * A plan appears against every dog it covers, so one plan can be the
+ * value for several dogs — that is the "x2" case, not a bug. Plans keep
+ * the order they were given, which is the caller's sort (newest first
+ * on the client record), so `find(active)` picks the newest active one.
+ */
+export function membershipsByCoveredPet<T extends { coveredPetIds?: readonly number[] | null }>(
+  plans: readonly T[],
+): Record<number, T[]> {
+  const byPet: Record<number, T[]> = {};
+  for (const plan of plans) {
+    for (const petId of plan.coveredPetIds ?? []) {
+      if (typeof petId !== "number" || !Number.isFinite(petId)) continue;
+      (byPet[petId] ??= []).push(plan);
+    }
+  }
+  return byPet;
+}
+
 /** How many more dogs the name implies, never below zero. */
 export function missingPetCount(membership: MembershipCoverage): number {
   return Math.max(0, dogsNamedInPlan(membership.name) - membership.coveredPetIds.length);
