@@ -79,7 +79,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
-import { parseBrisbaneLocalDateTime } from "@shared/localDateTime";
+import { brisbaneLocalInputValue, parseBrisbaneLocalDateTime } from "@shared/localDateTime";
 import { DateTimeField } from "@/components/DateTimeField";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -2607,11 +2607,31 @@ export default function Calendar() {
           ? { kind: "date", untilDate: editRepeat.untilDate }
           : { kind: "ongoing" };
     return {
-      firstStart: editForm.scheduledStart ?? "",
+      /*
+       * The SAVED start, not the Start field.
+       *
+       * The server repeats the booking as it is stored, so anchoring the
+       * preview on an edited-but-unsaved Start showed dates it would
+       * never create: change Fri 15 Jan to 22 Jan, tick the box, and the
+       * screen promised 19 Feb and 19 Mar while the server would make 12
+       * Feb and 12 Mar. The whole point of listing the dates is that they
+       * are the ones that will be booked.
+       *
+       * Editing the time is still fine — it is the preview that has to
+       * wait, and editRepeatStartDirty below says so on screen.
+       */
+      firstStart: editAppt ? brisbaneLocalInputValue(new Date(editAppt.scheduledStart)) : "",
       frequencyWeeks: Number(editRepeat.frequencyWeeks),
       end,
     };
-  }, [editForm.scheduledStart, editRepeat]);
+  }, [editAppt, editRepeat]);
+
+  /* Start has been changed and not saved, so the preview and the server
+     disagree about where the series begins. */
+  const editRepeatStartDirty = Boolean(
+    editAppt && editForm.scheduledStart
+    && editForm.scheduledStart !== brisbaneLocalInputValue(new Date(editAppt.scheduledStart)),
+  );
 
   const editRecurrencePlan = useMemo(
     () => (editRepeat.enabled ? recurrenceStarts(editRecurrenceRequest) : null),
@@ -2620,22 +2640,36 @@ export default function Calendar() {
 
   const addRecurrenceMutation = trpc.calendar.addRecurrenceToAppointment.useMutation({
     onSuccess: (r) => {
-      toast.success(
-        `${r.createdCount} more booking${r.createdCount === 1 ? "" : "s"} added`
-        + (r.petsPerOccurrence > 1 ? ` for all ${r.petsPerOccurrence} dogs` : ""),
-      );
+      /* Nothing created is not a success. Every date can be skipped —
+         a groomer on leave for the whole run, or a dog already booked
+         on every one of them — and a green "0 more bookings added"
+         reads like it worked. */
+      if (r.createdCount === 0) {
+        toast.warning("Nothing was added — every date was skipped. The reasons are below.", { duration: 15000 });
+      } else {
+        toast.success(
+          `${r.createdCount} more booking${r.createdCount === 1 ? "" : "s"} added`
+          + (r.petsPerOccurrence > 1 ? ` for all ${r.petsPerOccurrence} dogs` : ""),
+        );
+      }
       /*
        * The skipped dates BY NAME, same as the new-booking path. A count
        * is not actionable — somebody has to go and rebook each one.
        */
       if (r.skipped.length > 0) {
-        const when = r.skipped
-          .map(x => formatAestDate(x.scheduledStart, { weekday: "short", day: "numeric", month: "short" }))
-          .join(", ");
-        toast.warning(
-          `Not booked — the groomer is already busy: ${when}. Rebook ${r.skipped.length === 1 ? "it" : "them"} at another time or with someone else.`,
-          { duration: 15000 },
-        );
+        /* Grouped by the server's OWN reason. There are four now — the
+           groomer is booked, the groomer is away or the salon is shut,
+           the dog is already in that day, or the date has passed — and
+           printing "the groomer is already busy" over all of them sends
+           somebody looking at the wrong thing. */
+        const byReason = new Map<string, string[]>();
+        for (const x of r.skipped) {
+          const when = formatAestDate(x.scheduledStart, { weekday: "short", day: "numeric", month: "short" });
+          byReason.set(x.reason, [...(byReason.get(x.reason) ?? []), when]);
+        }
+        for (const [reason, dates] of byReason) {
+          toast.warning(`Not booked — ${reason.toLowerCase()}: ${dates.join(", ")}.`, { duration: 15000 });
+        }
       }
       if (r.truncated) {
         toast.warning(
@@ -2896,6 +2930,24 @@ export default function Calendar() {
     try {
       await Promise.all(promises);
       toast.success("Appointment updated");
+      /*
+       * "Recurring appt" is ticked and nobody pressed Add.
+       *
+       * Save Changes is the familiar button, so ticking the box and
+       * pressing it is the obvious thing to do — and it created nothing
+       * and said "Appointment updated", which reads like success.
+       * Nobody would find out for four weeks.
+       *
+       * Said after the save rather than blocking it: the edit itself is
+       * valid and has just been written. This is the series that has
+       * not been.
+       */
+      if (editRepeat.enabled) {
+        toast.warning(
+          "The repeat was NOT created — reopen the booking, tick Recurring appt and press Add bookings.",
+          { duration: 15000 },
+        );
+      }
       closeEditDialog();
       refetch();
     } catch { /* individual errors already toasted */ }
@@ -5427,7 +5479,14 @@ export default function Calendar() {
                                 id={`repeat-sessions-${editAppt.id}`}
                                 type="number" min={1} max={60} inputMode="numeric"
                                 value={editRepeat.sessions}
-                                onChange={e => setEditRepeat(f => ({ ...f, sessions: e.target.value }))}
+                                /* Whole numbers only, and capped where the
+                                   server caps. "2.5 sessions" enabled the
+                                   button and then failed on the server's own
+                                   zod, which is a worse way to find out. */
+                                onChange={e => setEditRepeat(f => ({
+                                  ...f,
+                                  sessions: e.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                }))}
                               />
                             </div>
                           )}
@@ -5446,6 +5505,12 @@ export default function Calendar() {
                             whole fix for "can you see why it's saying the
                             12 Feb?" — the answer is on screen before the
                             button is pressed. */}
+                        {editRepeatStartDirty && (
+                          <p className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-medium text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                            Save the new start time first. The repeat is built from the booking as it
+                            is saved, so these dates would not be the ones created.
+                          </p>
+                        )}
                         {editRecurrencePlan?.ok === false && (
                           <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
                             {editRecurrencePlan.reason}
@@ -5475,7 +5540,7 @@ export default function Calendar() {
 
                         <Button
                           type="button" size="sm" variant="outline"
-                          disabled={!editRecurrencePlan?.ok || addRecurrenceMutation.isPending}
+                          disabled={!editRecurrencePlan?.ok || editRepeatStartDirty || addRecurrenceMutation.isPending}
                           onClick={() => addRecurrenceMutation.mutate({
                             appointmentId: editAppt.id,
                             frequencyWeeks: Number(editRepeat.frequencyWeeks),

@@ -79,10 +79,28 @@ describe("appointment membership coverage", () => {
     // when a fourth path appears or an existing one stops delegating,
     // which is the drift that actually costs money.
     const router = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-    // Three: createAppointment, createRecurringAppointments and
-    // createMultiPetAppointment. The import carries no paren so it does
-    // not count.
-    expect(router.split("priceForCoveredAppointment(").length - 1).toBe(3);
+    /*
+     * Four: createAppointment, createRecurringAppointments,
+     * createMultiPetAppointment and addRecurrenceToAppointment. The
+     * import carries no paren so it does not count.
+     *
+     * The fourth arrived on 06/11/2026 and is why this count is worth
+     * keeping. addRecurrenceToAppointment shipped setting membershipId
+     * to null and copying the row's price, on the reasoning that
+     * coverage would be decided at invoicing. Nothing decides it at
+     * invoicing — decideAppointmentInvoice reads the row's own
+     * membershipId — so a part-covered family booking, which carries
+     * both a link and a price, was repeated as unlinked-and-priced and
+     * billed the member in full for a groom they had already paid for.
+     *
+     * This test stayed GREEN throughout, because three paths still
+     * delegated and the count was pinned at three. A count only fails
+     * when a path appears or stops delegating; it cannot tell you a new
+     * path was written that never delegated in the first place. That is
+     * the limit of the technique, and it is worth writing down beside
+     * the number.
+     */
+    expect(router.split("priceForCoveredAppointment(").length - 1).toBe(4);
     expect(router).not.toContain('coverage.fullyCovered ? "0.00"');
     expect(router).toContain("membershipId: coverage.membershipByPetId[petId]?.id ?? null");
     expect(router).toContain("getMembershipCoverage: operationalProcedure");

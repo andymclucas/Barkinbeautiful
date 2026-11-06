@@ -134,7 +134,11 @@ export function recurrenceStarts(request: RecurrenceRequest): RecurrenceResult {
   if (starts.length === 0) {
     return { ok: false, reason: "That gives no further bookings — check the dates" };
   }
-  return { ok: true, starts, truncated: starts.length === MAX_OCCURRENCES };
+  /* Truncated means "there were more and you cannot have them", not
+     "you asked for exactly the cap". Asking for 60 and getting 60 used
+     to raise a warning saying it had been cut short. */
+  const asked = request.end.kind === "count" ? Math.trunc(request.end.sessions) : Infinity;
+  return { ok: true, starts, truncated: starts.length === MAX_OCCURRENCES && asked > MAX_OCCURRENCES };
 }
 
 /** One line for the confirmation, before anything is written. */
@@ -150,4 +154,66 @@ export function describeRecurrence(request: RecurrenceRequest, count: number): s
     return `${count} more ${booking}, ${every}.`;
   }
   return `${count} more ${booking}, ${every}, up to ${request.end.untilDate}.`;
+}
+
+/**
+ * Whether a booking may be repeated, given what its memberships cover now.
+ *
+ * ## Why this is a rule and not an `if`
+ *
+ * The first version of the repeat carried each row's price forward and
+ * set `membershipId` to null, on the reasoning that coverage would be
+ * worked out at invoicing. Nothing works it out at invoicing:
+ * `decideAppointmentInvoice` reads the row's own `membershipId`, so an
+ * unlinked row with a price is billed for everything.
+ *
+ * That mattered because "covered" and "priced" are not opposites here.
+ * `fullyCovered` is true only when EVERY dog on a booking is covered, so
+ * a family where one dog is on a plan and the other is casual carries a
+ * membership link AND a price — as do MoeGo rows linked afterwards by
+ * the backfill script, which deliberately leaves price alone. Repeating
+ * one of those billed the member in full for a groom their weekly fee
+ * had already paid for.
+ *
+ * The repeat therefore RESOLVES coverage like any other booking path
+ * rather than copying it. This function is the one case resolving
+ * cannot answer on its own: a dog whose row is linked today but whose
+ * plan no longer covers it.
+ *
+ * ## Why a lapse stops the whole thing
+ *
+ * Two wrong answers are available and both cost money in opposite
+ * directions. Carry the link forward and a client whose payments are
+ * failing gets a year of free grooms, because `bookingSuspended` is
+ * checked by the resolver and by nothing else. Drop the link and keep
+ * the price and the member is charged twice.
+ *
+ * Which it should be is a conversation with the client — paused,
+ * cancelled, or a card that needs replacing — not something to guess at
+ * sixty times in a loop.
+ */
+export type BookingRowCoverage = {
+  petId: number;
+  petName?: string | null;
+  /** The membership this row is linked to today, or null. */
+  membershipId: number | null;
+  /** Whether that dog's plan still covers it, as the resolver sees it now. */
+  coveredNow: boolean;
+};
+
+export function lapsedCoverage(rows: readonly BookingRowCoverage[]): BookingRowCoverage[] {
+  return rows.filter((row) => row.membershipId !== null && !row.coveredNow);
+}
+
+export function lapsedCoverageMessage(rows: readonly BookingRowCoverage[]): string | null {
+  const gone = lapsedCoverage(rows);
+  if (gone.length === 0) return null;
+  const names = gone.map((r) => r.petName?.trim()).filter(Boolean) as string[];
+  const who = names.length === 0
+    ? "A membership on this booking"
+    : names.length === 1
+      ? `${names[0]}'s membership`
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}'s memberships`;
+  return `${who} no longer covers that booking — it may be paused, cancelled, or suspended for a `
+    + "failed payment. Sort the membership out before repeating the booking.";
 }
