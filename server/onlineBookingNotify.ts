@@ -31,6 +31,7 @@ import {
   formatEstimate,
 } from "../shared/onlineBookingConfirmation";
 import { describeBookedWeight } from "../shared/onlineBookingPrice";
+import { type DogSizeBand } from "../shared/dogSizeBand";
 
 /**
  * Brisbane, always. The salon's day is not the server's day, and
@@ -59,7 +60,10 @@ export type OnlineBookingNotifyInput = {
   appointmentId: number;
   serviceType: string;
   scheduledStart: Date;
-  weightKg: number;
+  /** Null for a dog the salon has on file but has never weighed. */
+  weightKg: number | null;
+  /** Its recorded band, which is all 4,478 such dogs have. */
+  sizeBand?: DogSizeBand | null;
   /** The stored estimate, exactly as written to appointments.price. */
   estimatePrice: string | null;
   /**
@@ -147,7 +151,7 @@ export async function notifyOnlineBooking(
       kind: "online_booking_received",
       clientId: input.clientId,
       detail: [
-        `${serviceLabel}, ${describeBookedWeight(input.weightKg)}`,
+        `${serviceLabel}, ${describeBookedWeight(input.weightKg, input.sizeBand)}`,
         estimate ? `estimated ${estimate}` : "no price estimate available",
         input.preview ? "(test booking)" : null,
       ].filter(Boolean).join(", ") + ".",
