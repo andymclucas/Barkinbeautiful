@@ -97,10 +97,12 @@ export async function accessibleSalons(user: User): Promise<number[]> {
    * They were together, and that made the merge order load-bearing in the
    * worst way. salon_access is created by migration 0157; merge this
    * before that runs and the first query throws, one catch swallows it,
-   * and the STAFF query never executes. Lauren has users.tenant_id NULL
-   * and her salon named only on her staff record — so she would resolve
-   * to no salon at all and be locked out of the business she owns, which
-   * is the exact person this feature is for.
+   * and the STAFF query never executes — so anybody whose salon is named
+   * ONLY on their staff record resolves to no salon at all.
+   *
+   * Nobody is in that position today (checked 06/11/2026), which is not
+   * the same as nobody ever being in it: The Pet Pad's staff are created
+   * before anything backfills users.tenant_id.
    *
    * Separated, a missing salon_access costs the grants and nothing else,
    * and every account behaves as it does today. The migration should
@@ -155,10 +157,17 @@ export async function activeTenantForUser(
  * One extra query per authenticated request, and only when the user row
  * does not already carry the answer.
  *
- * Lauren, the owner, has users.tenant_id NULL in production and her salon
- * is named only on her staff record — so resolving strictly from the user
- * row would lock her out of her own business. Backfilling that column is
- * worth doing, but the code must not depend on it having been done.
+ * The staff fallback exists because users.tenant_id has not always been
+ * populated. Checked against production on 06/11/2026: it now is. Every
+ * user with a salon carries it, Lauren included, and the only NULL
+ * belongs to an account with no staff row and no salon either — so the
+ * fallback currently rescues nobody.
+ *
+ * Kept, because a new salon's staff are created before anything
+ * backfills that column and The Pet Pad's will be. But do not repeat
+ * what the previous version of this comment caused: it asserted Lauren
+ * had a NULL tenant long after that stopped being true, and was then
+ * read as current fact when sizing a risk. Check the data.
  */
 export async function tenantForUser(user: User): Promise<number | null> {
   const fromUser = resolveTenantId({ userTenantId: user.tenantId });

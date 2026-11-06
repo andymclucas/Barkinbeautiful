@@ -50,6 +50,24 @@ export const tenants = mysqlTable("tenants", {
    * which is a different thing from a trial that has run out.
    */
   trialEndsAt: timestamp("trial_ends_at"),
+  /**
+   * Groomigo charging this salon for Groomigo — the OPPOSITE direction to
+   * stripeAccountId beside it.
+   *
+   * stripeAccountId is the salon's own connected account, where a dog
+   * owner's money lands. These two are the salon's customer and
+   * subscription on the PLATFORM account, where the salon's own money
+   * leaves. A Stripe customer belongs to the account it was created on,
+   * so the names carry `platform` to stop the next person reaching for
+   * the obvious one and billing the wrong party.
+   *
+   * Null for Barkin' Beautiful, which is Andy's own salon and does not
+   * pay. Null is also every salon still on trial.
+   */
+  platformStripeCustomerId: varchar("platform_stripe_customer_id", { length: 255 }),
+  platformStripeSubscriptionId: varchar("platform_stripe_subscription_id", { length: 255 }),
+  /** End of the period already paid for. A cancelled salon keeps access to it. */
+  subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
   onlineBookingEnabled: boolean("online_booking_enabled").default(false).notNull(),
   /** Separate from online booking: a link sent to one client, not an open diary. */
   membershipSignupEnabled: boolean("membership_signup_enabled").default(false).notNull(),

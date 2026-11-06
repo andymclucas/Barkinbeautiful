@@ -82,6 +82,7 @@ import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStat
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
 import { groomQuotesRouter } from "./routers/groomQuotes";
 import { salonsRouter } from "./routers/salons";
+import { platformBillingRouter } from "./routers/platformBilling";
 import { canQuoteInWorkflowState } from "@shared/groomQuote";
 import {
   recurrenceStarts, lapsedCoverageMessage,
@@ -15349,6 +15350,7 @@ export const appRouter = router({
   workflowReview: workflowReviewRouter,
   groomQuotes: groomQuotesRouter,
   salons: salonsRouter,
+  platformBilling: platformBillingRouter,
   petCodes: petCodesRouter,
   search: searchRouter,
   presence: presenceRouter,
