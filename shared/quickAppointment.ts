@@ -208,3 +208,46 @@ export function parseCounterPrice(value: string | null | undefined): {
   }
   return { ok: true, price: amount.toFixed(2) };
 }
+
+/**
+ * Which of these clients are walk-ins and nothing else yet.
+ *
+ * Andy, 06/11/2026, asked for walk-ins to be left out of marketing. A
+ * person who gave a phone number for a $25 nail clip at the counter did
+ * not sign up for the salon's texts, and a campaign is the fastest way
+ * to make that number worthless.
+ *
+ * ## Derived, not stored
+ *
+ * There is no "do not market" column and this deliberately does not add
+ * one. The question is not a property somebody has to remember to set —
+ * it is simply whether this client has ever had anything but a walk-in.
+ *
+ * That also makes it self-correcting in the right direction. The moment
+ * a walk-in books an actual groom they are a customer like any other
+ * and the campaigns include them, with nobody having to go and tick a
+ * box. A column would have had to be un-ticked by hand, and would not
+ * have been.
+ *
+ * ## Why it is a pure function over rows
+ *
+ * The obvious version is a NOT EXISTS subquery. The hermetic suite has
+ * no database, so a malformed one ships green and 500s the mass-text
+ * preview Lauren uses — which is exactly how calendar.nextAvailable
+ * and staff.closeSalon both shipped broken on 30/10/2026. Two plain
+ * queries and this rule cannot fail that way.
+ */
+export function walkInOnlyClientIds(
+  appointments: ReadonlyArray<{ clientId: number; isQuick: boolean | null }>,
+  candidateIds: ReadonlyArray<number>,
+): Set<number> {
+  const hasRealBooking = new Set<number>();
+  for (const row of appointments) {
+    if (!row.isQuick) hasRealBooking.add(row.clientId);
+  }
+  /* A client with NO appointments at all is not a walk-in — they were
+     added some other way, by the importer or by hand, and excluding
+     them from marketing would be a different decision nobody made. */
+  const seen = new Set(appointments.map((row) => row.clientId));
+  return new Set(candidateIds.filter((id) => seen.has(id) && !hasRealBooking.has(id)));
+}

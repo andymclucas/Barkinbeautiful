@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
-  QUICK_REQUIRED_FIELDS, QUICK_SERVICES, QUICK_WORKFLOW_STATES, isQuickService, isQuickWorkflowState, looksLikeAPhoneNumber, missingQuickFields, nextQuickWorkflowState, parseCounterPrice, quickBoardLabel, quickServiceLabel, quickWalkInError,
+  QUICK_REQUIRED_FIELDS, QUICK_SERVICES, QUICK_WORKFLOW_STATES, isQuickService, isQuickWorkflowState, looksLikeAPhoneNumber, missingQuickFields, nextQuickWorkflowState, parseCounterPrice, quickBoardLabel, quickServiceLabel, quickWalkInError, walkInOnlyClientIds,
 } from "../shared/quickAppointment";
 
 describe("a walk-in nail clip or quick bath", () => {
@@ -154,5 +155,88 @@ describe("a price typed at a counter", () => {
       expect(result.ok, bad).toBe(false);
       if (!result.ok) expect(result.reason).toContain("try something like");
     }
+  });
+});
+
+describe("keeping walk-ins out of marketing", () => {
+  /*
+   * Andy, 06/11/2026. Somebody who gave a number for a $25 nail clip at
+   * the counter did not sign up for the salon's campaigns, and a
+   * marketing text is the fastest way to make that number worthless.
+   *
+   * Derived rather than stored, so it self-corrects: the moment a
+   * walk-in books a real groom they are a customer like anyone else.
+   */
+  const quick = (clientId: number) => ({ clientId, isQuick: true });
+  const booked = (clientId: number) => ({ clientId, isQuick: false });
+
+  it("excludes a client whose only visit was a walk-in", () => {
+    expect(walkInOnlyClientIds([quick(1)], [1])).toEqual(new Set([1]));
+  });
+
+  it("includes them again once they book a real groom", () => {
+    // Nobody has to go and untick anything — which is the whole reason
+    // this is derived and not a column.
+    expect(walkInOnlyClientIds([quick(1), booked(1)], [1])).toEqual(new Set());
+  });
+
+  it("leaves a long-standing client alone when they pop in for a nail clip", () => {
+    expect(walkInOnlyClientIds([booked(7), booked(7), quick(7)], [7])).toEqual(new Set());
+  });
+
+  it("does not exclude a client with no appointments at all", () => {
+    /*
+     * An imported or hand-added client with nothing booked is not a
+     * walk-in. Treating "no evidence" as "walk-in" would quietly drop
+     * people out of every campaign for a reason nobody chose.
+     */
+    expect(walkInOnlyClientIds([], [42])).toEqual(new Set());
+    expect(walkInOnlyClientIds([quick(1)], [1, 42])).toEqual(new Set([1]));
+  });
+
+  it("handles a null flag as not-quick", () => {
+    // Belt and braces: the column is NOT NULL DEFAULT FALSE, but a row
+    // read through a looser type should never be mistaken for a walk-in.
+    expect(walkInOnlyClientIds([{ clientId: 3, isQuick: null }], [3])).toEqual(new Set());
+  });
+
+  it("keeps the two sides separate", () => {
+    const rows = [quick(1), quick(2), booked(2), quick(3)];
+    expect(walkInOnlyClientIds(rows, [1, 2, 3])).toEqual(new Set([1, 3]));
+  });
+});
+
+describe("every marketing audience asks the rule", () => {
+  /*
+   * Three places pick recipients: the mass text, the email campaign
+   * PREVIEW and the email campaign SEND. A preview that counts 47 and a
+   * send that reaches 44 is the drift this codebase keeps paying for —
+   * three copies of the restricted-staff route list, three copies of
+   * the covered-price rule — so this counts the delegations rather than
+   * spot-checking one.
+   *
+   * If a fourth audience appears, give it the helper; do not just raise
+   * the number.
+   */
+  const routers = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
+
+  it("routes all three through one helper", () => {
+    // The definition carries no `await`, so it does not count.
+    expect(routers.split("await withoutWalkIns(").length - 1).toBe(3);
+  });
+
+  it("asks the shared rule rather than carrying its own copy", () => {
+    // Once: inside withoutWalkIns. The import carries no paren, so it
+    // does not count — and a second use would mean a second copy of the
+    // rule, which is the thing being prevented.
+    const withoutComments = routers.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
+    expect(withoutComments.split("walkInOnlyClientIds(").length - 1).toBe(1);
+  });
+
+  it("selects the client id in the email preview, so it can filter at all", () => {
+    // It used to select only name and email, so the preview could not
+    // have excluded anybody even if it wanted to.
+    const preview = routers.slice(routers.indexOf("let rows: Array<{ id: number; firstName"));
+    expect(preview.slice(0, 600)).toContain("id: clients.id");
   });
 });

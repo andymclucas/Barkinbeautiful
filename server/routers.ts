@@ -102,7 +102,9 @@ import { calculateSmsCost } from "@shared/smsSegments";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
 import { firstFreeSlot, describeNoSlot } from "../shared/nextAvailableSlot";
-import { QUICK_DEFAULT_MINUTES, parseCounterPrice, quickWalkInError } from "@shared/quickAppointment";
+import {
+  QUICK_DEFAULT_MINUTES, parseCounterPrice, quickWalkInError, walkInOnlyClientIds,
+} from "@shared/quickAppointment";
 import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
 import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
@@ -11818,6 +11820,57 @@ const migrationRouter = router({
 });
 
 // ─── Email Campaigns ────────────────────────────────────────────────────────
+/**
+ * Drop walk-ins from a marketing audience.
+ *
+ * Andy, 06/11/2026. Somebody who gave a phone number or an email for a
+ * $25 nail clip at the counter did not sign up for the salon's
+ * campaigns. Marketing at them is the fastest way to make that contact
+ * detail worthless — and to earn a STOP reply or an unsubscribe, which
+ * then removes them from the messages that actually matter.
+ *
+ * ## One helper, three audiences
+ *
+ * The mass text, the email campaign PREVIEW and the email campaign SEND
+ * each pick their own recipients. A preview that counts 47 and a send
+ * that reaches 44 is the drift that this codebase keeps paying for, so
+ * all three ask this.
+ *
+ * ## Derived, so it undoes itself
+ *
+ * A walk-in who comes back and books a real groom is a customer like
+ * anybody else, and the campaigns include them again with nobody
+ * ticking a box. shared/quickAppointment.ts has the rule and its tests.
+ *
+ * Two plain queries rather than a NOT EXISTS subquery: the hermetic
+ * suite has no database, so a malformed one ships green and 500s the
+ * preview Lauren uses — which is exactly how calendar.nextAvailable and
+ * staff.closeSalon shipped broken on 30/10/2026.
+ */
+async function withoutWalkIns<T extends { id?: number; clientId?: number }>(
+  db: any, tenantId: number, rows: T[],
+): Promise<T[]> {
+  const idOf = (row: T) => (row.clientId ?? row.id) as number | undefined;
+  const candidateIds = Array.from(new Set(
+    rows.map(idOf).filter((id): id is number => typeof id === "number"),
+  ));
+  if (candidateIds.length === 0) return rows;
+
+  const history = await db.select({
+    clientId: appointments.clientId, isQuick: appointments.isQuick,
+  }).from(appointments).where(and(
+    eq(appointments.tenantId, tenantId),
+    inArray(appointments.clientId, candidateIds),
+  ));
+
+  const walkInsOnly = walkInOnlyClientIds(history, candidateIds);
+  if (walkInsOnly.size === 0) return rows;
+  return rows.filter((row) => {
+    const id = idOf(row);
+    return id === undefined || !walkInsOnly.has(id);
+  });
+}
+
 const emailCampaignsRouter = router({
   list: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
@@ -11958,11 +12011,15 @@ const emailCampaignsRouter = router({
       }
       // all_clients: no extra status filter
 
-      let rows: Array<{ firstName: string; lastName: string; email: string | null }>;
+      /* `id` is selected so this can exclude walk-ins the same way the
+         SEND does. Without it the preview counted people the send would
+         not reach, which is the drift the helper exists to stop. */
+      let rows: Array<{ id: number; firstName: string; lastName: string; email: string | null }>;
 
       if (filter.type === "membership_holders") {
         rows = await db
           .selectDistinct({
+            id: clients.id,
             firstName: clients.firstName,
             lastName: clients.lastName,
             email: clients.email,
@@ -11973,6 +12030,7 @@ const emailCampaignsRouter = router({
       } else {
         rows = await db
           .select({
+            id: clients.id,
             firstName: clients.firstName,
             lastName: clients.lastName,
             email: clients.email,
@@ -11982,7 +12040,8 @@ const emailCampaignsRouter = router({
       }
 
       // Filter out those without email or who have unsubscribed
-      const eligible = rows.filter(r => r.email && !unsubEmails.has(r.email.toLowerCase()));
+      const marketable = await withoutWalkIns(db, tenantOf(ctx, input), rows);
+      const eligible = marketable.filter(r => r.email && !unsubEmails.has(r.email.toLowerCase()));
       const sampleNames = eligible.slice(0, 5).map(r => `${r.firstName} ${r.lastName}`);
       return { count: eligible.length, sampleNames };
     }),
@@ -12061,8 +12120,9 @@ const emailCampaignsRouter = router({
           .where(eq(clients.tenantId, tenantOf(ctx, input)));
       }
 
-      // Filter out no-email and unsubscribed
-      const eligible = audienceRows.filter(r => r.email && !unsubEmails.has(r.email.toLowerCase()));
+      // Filter out walk-ins, no-email and unsubscribed
+      const marketable = await withoutWalkIns(db, tenantOf(ctx, input), audienceRows);
+      const eligible = marketable.filter(r => r.email && !unsubEmails.has(r.email.toLowerCase()));
 
       // Mark campaign as sending
       await db.update(emailCampaigns).set({
@@ -13754,6 +13814,27 @@ async function massTextRecipients(
         notInArray(appointments.status, ["cancelled", "no_show"]),
       ));
   }
+
+  /*
+   * Walk-ins are not a marketing audience.
+   *
+   * Andy, 06/11/2026. Somebody who gave a phone number for a $25 nail
+   * clip at the counter did not sign up for the salon's campaigns, and
+   * a marketing text is the fastest way to make that number worthless
+   * — and to earn a STOP reply, which then excludes them from the
+   * messages that actually matter.
+   *
+   * Applied here, after every audience branch, so a new audience kind
+   * cannot be added without it. Derived from the appointments rather
+   * than a column, so it undoes itself the moment the person books a
+   * real groom: see shared/quickAppointment.ts.
+   *
+   * A second plain query rather than a NOT EXISTS subquery, because the
+   * hermetic suite has no database and a malformed one would ship green
+   * and 500 the mass-text preview — which is how nextAvailable and
+   * closeSalon both shipped broken on 30/10/2026.
+   */
+  rows = await withoutWalkIns(db, tenantId, rows);
 
   // Dedupe by NUMBER, not by client: a couple with two client records and
   // one phone is one person holding one handset, and texting them twice is
