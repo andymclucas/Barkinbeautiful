@@ -882,6 +882,33 @@ textarea[data-slot="textarea"],
   background: color-mix(in oklch, var(--muted) 80%, var(--foreground) 5%);
 }
 /*
+ * A vertical rail is not a segmented control, and must not be a pill.
+ *
+ * Andy, 06/11/2026, with a photo of the client record: "Fix the
+ * alignment of this box - make it square so it doesn't cut off any
+ * text."
+ *
+ * The 9999px above is right for a tab BAR — short, wide, a segmented
+ * control — which is what every tab list in the app was when that rule
+ * was written on 05/11/2026. The client record's rail is the same
+ * component stood on its end: ten items, about 440px tall in a 192px
+ * column. A 9999px radius on a box that shape is not a pill, it is an
+ * ELLIPSE, and its curve closes over the first and last items. That is
+ * the text being cut off.
+ *
+ * The same thing happens on a phone, where the rail falls back to a
+ * block of wrapped chips several rows deep.
+ *
+ * A rail opts out BY NAME, the way .tabs-scroll does below, rather than
+ * the rule guessing from data-orientation: the call site says what it
+ * is, and the answer does not depend on which attributes Radix happens
+ * to emit.
+ */
+[data-slot="tabs-list"].tabs-rail {
+  border-radius: var(--radius);
+}
+
+/*
  * Keyed on role and aria-selected as well as the data attributes.
  *
  * Wrapping a TabsTrigger in a TooltipTrigger with `asChild` — which is
