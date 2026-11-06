@@ -198,10 +198,12 @@ true of the code:
 So it is a write-only audit trail today, and nothing breaks visibly when a
 path forgets it. Two consequences worth knowing before you "fix" one:
 
-- Of the eleven paths that create an appointment, only `rebook` and
-  `createQuickAppointment` write a `null → scheduled` creation row.
-  `createMultiPetAppointment` — the live booking path — does not. That is an
-  inconsistency, not a measured bug.
+- Of the **thirteen** paths that create an appointment — eleven in
+  `routers.ts`, plus one each in `routers/membershipSignup.ts` and
+  `routers/waitlist.ts` — only `rebook` and `createQuickAppointment` write a
+  `null → scheduled` creation row. `createMultiPetAppointment`, the live
+  booking path, does not, and neither of the two outside the monolith does.
+  That is an inconsistency, not a measured bug.
 - A `null → scheduled` row is written when the BOOKING is made, not when the
   dog arrives. Add it to the advance-booking paths and anything that later
   reads these rows as stage entries would read three weeks "in scheduled" for
