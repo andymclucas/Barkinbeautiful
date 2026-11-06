@@ -102,7 +102,7 @@ import { calculateSmsCost } from "@shared/smsSegments";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
 import { firstFreeSlot, describeNoSlot } from "../shared/nextAvailableSlot";
-import { QUICK_DEFAULT_MINUTES, quickWalkInError } from "@shared/quickAppointment";
+import { QUICK_DEFAULT_MINUTES, parseCounterPrice, quickWalkInError } from "@shared/quickAppointment";
 import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
 import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
@@ -1596,6 +1596,22 @@ const calendarRouter = router({
       if (!db) throw new Error("DB unavailable");
       const tenantId = tenantOf(ctx, input);
 
+      /* Validated BEFORE anything is written. The client and the dog are
+         created first, so a price the column would reject used to leave a
+         real person and a real dog on the books with no booking — and a
+         retry made another pair. */
+      const priced = parseCounterPrice(input.price);
+      if (!priced.ok) throw new Error(priced.reason);
+
+      /* A groomer from another salon must not end up on this booking.
+         clientId and petId are tenant-checked below; this was not, and a
+         second salon goes live on 23/11. */
+      if (input.staffId !== null) {
+        const [groomer] = await db.select({ id: staff.id }).from(staff)
+          .where(and(eq(staff.id, input.staffId), eq(staff.tenantId, tenantId))).limit(1);
+        if (!groomer) throw new Error("That groomer is not on this salon's roster");
+      }
+
       let clientId = input.clientId ?? null;
       let petId = input.petId ?? null;
 
@@ -1616,8 +1632,18 @@ const calendarRouter = router({
         if (problem) throw new Error(problem);
       }
 
+      /*
+       * One transaction for the four writes.
+       *
+       * A client, a dog, the appointment and its audit row. Any of them
+       * failing part-way leaves a person and a dog on the books with no
+       * booking, which somebody then has to find and clean up — and the
+       * obvious reaction at a counter is to press the button again,
+       * which makes a second pair.
+       */
+      return await db.transaction(async (tx: any) => {
       if (!clientId) {
-        const [created]: any = await db.insert(clients).values({
+        const [created]: any = await tx.insert(clients).values({
           tenantId,
           firstName: input.firstName,
           lastName: input.lastName,
@@ -1634,7 +1660,7 @@ const calendarRouter = router({
       }
 
       if (!petId) {
-        const [createdPet]: any = await db.insert(pets).values({
+        const [createdPet]: any = await tx.insert(pets).values({
           tenantId,
           clientId,
           name: input.petName,
@@ -1645,7 +1671,7 @@ const calendarRouter = router({
         petId = Number(createdPet?.insertId ?? 0);
         if (!petId) throw new Error("Could not create the dog");
       } else {
-        const [existingPet] = await db.select({ id: pets.id, status: pets.status, name: pets.name })
+        const [existingPet] = await tx.select({ id: pets.id, status: pets.status, name: pets.name })
           .from(pets)
           .where(and(eq(pets.id, petId), eq(pets.tenantId, tenantId), eq(pets.clientId, clientId)))
           .limit(1);
@@ -1657,7 +1683,7 @@ const calendarRouter = router({
       const start = new Date();
       const end = new Date(start.getTime() + QUICK_DEFAULT_MINUTES * 60_000);
 
-      const [bookedRow]: any = await db.insert(appointments).values({
+      const [bookedRow]: any = await tx.insert(appointments).values({
         tenantId,
         clientId,
         petId,
@@ -1665,7 +1691,7 @@ const calendarRouter = router({
         serviceType: input.serviceType,
         scheduledStart: start,
         scheduledEnd: end,
-        price: input.price?.trim() || null,
+        price: priced.price,
         notes: input.notes?.trim() || null,
         trackerToken: nanoid(32),
         /* The dog is here. `scheduled` would be a lie for the ten
@@ -1681,7 +1707,7 @@ const calendarRouter = router({
       /* The audit row. workflow_logs is what the Pet Tracker and the
          timing analytics read, and it is also the "and when" this
          feature exists for. */
-      await db.insert(workflowLogs).values({
+      await tx.insert(workflowLogs).values({
         appointmentId,
         fromState: null,
         toState: "checked_in",
@@ -1690,6 +1716,7 @@ const calendarRouter = router({
       });
 
       return { success: true, appointmentId, clientId, petId };
+      });
     }),
 
   nextAvailable: operationalProcedure

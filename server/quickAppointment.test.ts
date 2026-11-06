@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  QUICK_REQUIRED_FIELDS, QUICK_SERVICES, QUICK_WORKFLOW_STATES, isQuickService, isQuickWorkflowState, looksLikeAPhoneNumber, missingQuickFields, nextQuickWorkflowState, quickBoardLabel, quickServiceLabel, quickWalkInError,
+  QUICK_REQUIRED_FIELDS, QUICK_SERVICES, QUICK_WORKFLOW_STATES, isQuickService, isQuickWorkflowState, looksLikeAPhoneNumber, missingQuickFields, nextQuickWorkflowState, parseCounterPrice, quickBoardLabel, quickServiceLabel, quickWalkInError,
 } from "../shared/quickAppointment";
 
 describe("a walk-in nail clip or quick bath", () => {
@@ -117,5 +117,42 @@ describe("what a walk-in has to tell you", () => {
 
   it("asks for everything when given nothing", () => {
     expect(missingQuickFields({})).toEqual([...QUICK_REQUIRED_FIELDS]);
+  });
+});
+
+describe("a price typed at a counter", () => {
+  /*
+   * appointments.price is decimal(10,2), and under strict sql_mode "$25"
+   * fails the insert. The walk-in creates a client and a dog BEFORE the
+   * appointment, so before this existed a rejected price left a real
+   * person and a real dog on the books with no booking — and every retry
+   * made another pair.
+   */
+  it("takes the ways money actually gets typed", () => {
+    for (const [typed, expected] of [
+      ["25", "25.00"], ["$25", "25.00"], ["25.50", "25.50"], ["$25.50", "25.50"],
+      [" 25 ", "25.00"], ["$1,250", "1250.00"], ["0", "0.00"],
+    ] as const) {
+      const result = parseCounterPrice(typed);
+      expect(result, typed).toEqual({ ok: true, price: expected });
+    }
+  });
+
+  it("treats nothing typed as no price, not as zero", () => {
+    // A walk-in can genuinely be free, and "unpriced" and "free" are not
+    // the same thing — the same distinction priceForCoveredAppointment
+    // makes.
+    expect(parseCounterPrice("")).toEqual({ ok: true, price: null });
+    expect(parseCounterPrice("   ")).toEqual({ ok: true, price: null });
+    expect(parseCounterPrice(null)).toEqual({ ok: true, price: null });
+    expect(parseCounterPrice("0")).toEqual({ ok: true, price: "0.00" });
+  });
+
+  it("refuses what the column would refuse, and says so in English", () => {
+    for (const bad of ["free", "twenty five", "25.555", "-25", "$", "1e5"]) {
+      const result = parseCounterPrice(bad);
+      expect(result.ok, bad).toBe(false);
+      if (!result.ok) expect(result.reason).toContain("try something like");
+    }
   });
 });

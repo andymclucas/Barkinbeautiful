@@ -9,7 +9,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  QUICK_SERVICES, missingQuickFields, quickWalkInError,
+  QUICK_SERVICES, missingQuickFields, parseCounterPrice, quickWalkInError,
   type QuickService, type QuickRequiredField,
 } from "@shared/quickAppointment";
 
@@ -45,9 +45,26 @@ export function QuickAppointmentDialog({ onCreated }: { onCreated?: () => void }
   });
   const [known, setKnown] = useState<{ clientId: number; petId: number; label: string } | null>(null);
 
+  /*
+   * Only once a whole number has been typed, and only then.
+   *
+   * The lookup reads every client in the salon that has a phone and
+   * matches in JS, because the stored numbers are not normalised and no
+   * LIKE pattern finds "(07) 3123 4567" from "0731234567". At ~10,000
+   * clients that is not something to run on the sixth keystroke and
+   * then again on the seventh, eighth and ninth.
+   *
+   * Eight digits is the shortest real number here — a Brisbane landline
+   * without its area code — so nothing is lost by waiting for it.
+   */
+  const phoneDigits = form.phone.replace(/\D/g, "");
   const matches = trpc.calendar.walkInMatch.useQuery(
     { phone: form.phone },
-    { enabled: open && !known && form.phone.replace(/\D/g, "").length >= 6 },
+    {
+      enabled: open && !known && phoneDigits.length >= 8,
+      // The answer cannot change while somebody finishes typing a name.
+      staleTime: 60_000,
+    },
   );
 
   const create = trpc.calendar.createQuickAppointment.useMutation({
@@ -69,7 +86,9 @@ export function QuickAppointmentDialog({ onCreated }: { onCreated?: () => void }
   };
 
   const missing: QuickRequiredField[] = known ? [] : missingQuickFields(form);
-  const problem = known ? null : quickWalkInError(form);
+  const parsedPrice = parseCounterPrice(form.price);
+  const priceProblem = parsedPrice.ok ? null : parsedPrice.reason;
+  const problem = (known ? null : quickWalkInError(form)) ?? priceProblem;
   const short = (field: QuickRequiredField) => missing.includes(field);
 
   return (
@@ -199,7 +218,15 @@ export function QuickAppointmentDialog({ onCreated }: { onCreated?: () => void }
                 <Label htmlFor="quick-price">Price</Label>
                 <Input id="quick-price" inputMode="decimal" value={form.price}
                   onChange={(e) => setForm(f => ({ ...f, price: e.target.value }))}
-                  placeholder="$" />
+                  placeholder="$"
+                  className={priceProblem ? "border-destructive" : ""} />
+                {/* The column is decimal(10,2) and "$25" is what gets
+                    typed. parseCounterPrice is the same function the
+                    server runs, so the two cannot disagree about what
+                    counts as money. */}
+                {priceProblem && (
+                  <p className="text-[11px] leading-4 text-destructive">{priceProblem}</p>
+                )}
               </div>
             </div>
 

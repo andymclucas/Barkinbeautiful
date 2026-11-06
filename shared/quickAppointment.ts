@@ -172,3 +172,39 @@ export function quickWalkInError(details: Partial<QuickWalkInDetails>): string |
   // holding a dog and should not have to hunt for the red one.
   return `Still needed: ${list}.`;
 }
+
+/**
+ * A price typed at a counter, as a decimal the database will take.
+ *
+ * `appointments.price` is `decimal(10,2)`. Under strict sql_mode — the
+ * TiDB default — "$25" is not a number and the insert fails. That
+ * mattered more than it sounds: the walk-in creates a client and a dog
+ * BEFORE the appointment, so a rejected price left a real person and a
+ * real dog on the books with no booking, and every retry made another
+ * pair.
+ *
+ * The insert is a transaction now, so that cannot happen. This exists
+ * so it never gets as far as the transaction: "$25", "25.00 ", "$1,250"
+ * and "25" are all what somebody means by twenty-five dollars, and
+ * refusing them at a counter is the behaviour that gets a feature
+ * abandoned.
+ *
+ * Returns null for "no price", which is legitimate — a free nail clip
+ * for a regular is a thing that happens — and undefined is never
+ * returned so the caller cannot confuse "nothing typed" with "zero".
+ */
+export function parseCounterPrice(value: string | null | undefined): {
+  ok: true; price: string | null;
+} | { ok: false; reason: string } {
+  const raw = (value ?? "").trim();
+  if (raw === "") return { ok: true, price: null };
+  const cleaned = raw.replace(/[$\s,]/g, "");
+  if (!/^\d{1,8}(\.\d{1,2})?$/.test(cleaned)) {
+    return { ok: false, reason: `"${raw}" is not a price — try something like 25 or 25.50` };
+  }
+  const amount = Number(cleaned);
+  if (!Number.isFinite(amount)) {
+    return { ok: false, reason: `"${raw}" is not a price — try something like 25 or 25.50` };
+  }
+  return { ok: true, price: amount.toFixed(2) };
+}

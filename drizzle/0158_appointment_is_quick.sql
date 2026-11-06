@@ -15,21 +15,34 @@
 -- walk-in", which is this column. Reporting can still tell a $25 quick bath
 -- from a $70 booked one by reading it.
 --
--- Nullable with no default, so every existing row stays valid and old code
--- that never names the column keeps inserting.
+-- NOT NULL DEFAULT FALSE, not nullable. 0133_appointments_booked_online.sql is
+-- the precedent on this same table, 27 of the 28 boolean columns in schema.ts
+-- are NOT NULL, and the db-migration skill's rule is "nullable, OR with a
+-- default". A default is the better half of that here: this is a two-state
+-- fact, and a nullable boolean gives it three. Every existing row would be
+-- NULL rather than false, so `eq(isQuick, false)` would silently exclude all
+-- ~15,000 of them -- which breaks the reporting this column exists for, and
+-- breaks it quietly. On TiDB ADD COLUMN is metadata-only with or without a
+-- default, so the row count costs nothing.
 --
--- ON THE NUMBER. feat/platform-billing also wrote an 0158. Neither had been
--- applied, and the journal test forbids a gap in idx, so this one takes 158
--- and that one was renumbered to 0159 on its own branch with a later `when`.
--- Two migrations must never share a `when`: CLAUDE.md section 6 -- migrate
--- compares strictly, so the second is SKIPPED rather than rejected, the DDL
--- never runs, and schema.ts still names the column.
+-- Order safety is identical either way: old inserts that never name the
+-- column take the default.
+--
+-- ON THE NUMBER. feat/platform-billing also holds an 0158, unapplied. The
+-- journal test forbids a gap in idx, so two sibling branches can never both be
+-- gap-free and distinct -- they can only be sequenced when the second one
+-- rebases. This takes 158; the branch that merges second renumbers to 0159
+-- AND raises its `when` above this one, because migrate compares strictly
+-- against the ledger max and a lower `when` is SKIPPED rather than rejected:
+-- it exits 0, the DDL never runs, and schema.ts still names the column.
 --
 -- MIGRATE BEFORE THE CODE MERGES. Drizzle names every column declared in
 -- schema.ts in every bare select() and insert(), so the moment schema.ts
 -- carries this the app asks the database for it whether or not any code
--- mentions it by name. Shipping the code first breaks
--- requireApprovedStaffAppointmentAccess (17 procedures), updateWorkflowState
--- and every appointment insert -- no dog can be moved between stages and no
--- booking can be created.
-ALTER TABLE `appointments` ADD COLUMN `is_quick` BOOLEAN NULL;
+-- mentions it by name. Shipping the code first breaks every bare select and
+-- every insert on appointments: 13 insert sites across staff booking, public
+-- online booking, the waitlist, membership signup, rebook and repeat, plus
+-- updateWorkflowState and updateStage, which select before any access check
+-- and so fail for every role. No dog could be moved between stages and no
+-- booking could be created.
+ALTER TABLE `appointments` ADD COLUMN `is_quick` BOOLEAN NOT NULL DEFAULT FALSE;

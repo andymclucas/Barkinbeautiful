@@ -550,9 +550,13 @@ export const appointments = mysqlTable("appointments", {
    * this says it was a walk-in, so a $25 quick bath is still tellable
    * from a $70 booked one in reporting.
    *
-   * Nullable: every row that existed before 06/11/2026 is not one.
+   * NOT NULL with a default, like 27 of the 28 booleans here and like
+   * booked_online on this same table. Nullable would give a two-state
+   * fact three states: every pre-existing row would be NULL rather than
+   * false, and `eq(isQuick, false)` would silently drop all ~15,000 of
+   * them out of exactly the reporting this column exists for.
    */
-  isQuick: boolean("is_quick"),
+  isQuick: boolean("is_quick").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
   cageNumber: int("cage_number"),
