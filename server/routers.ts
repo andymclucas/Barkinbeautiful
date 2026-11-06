@@ -19,7 +19,7 @@ import { previewMerge, mergeClientInto } from "./clientMerge";
 import { forgetPetThumb } from "./petThumbCache";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
-import { needsPetAssignment, missingPetCount } from "@shared/membershipCoveredPets";
+import { needsPetAssignment, missingPetCount, planCoveredPetIds } from "@shared/membershipCoveredPets";
 import { missedCallSearchFilter } from "./missedCallSearchFilter";
 import { departedBookingMessage } from "@shared/petBookable";
 import { messageSearchFilter } from "./messageSearchFilter";
@@ -904,9 +904,48 @@ const calendarRouter = router({
       const departedMessage = departedBookingMessage(bookablePets);
       if (departedMessage) throw new TRPCError({ code: "BAD_REQUEST", message: departedMessage });
 
+      /*
+       * A rebook is a booking, so it prices like one.
+       *
+       * It copied `price` straight off the source row and never set
+       * `membership_id` at all. Both are wrong the moment coverage has
+       * changed since that row was written — and for a member they are
+       * wrong almost always, because 450 of 456 upcoming bookings are
+       * MoeGo imports carrying a MoeGo figure rather than "0.00". So
+       * rebooking a member's existing appointment charged them for a
+       * groom their weekly payment already covers. Pointing the other
+       * way, a lapsed member's "0.00" was copied forward into a free
+       * groom.
+       *
+       * `membership_id` left NULL also meant no gold VIP disc on the
+       * calendar for the new booking, since showsMembershipMark reads
+       * the booking's own column and not the client's plans.
+       *
+       * Resolved PER SERVICE TYPE: a booking can carry a different
+       * service per dog, and a classic plan does not cover a styled
+       * groom. Same shape as createRecurringAppointments, and
+       * `fullyCovered` is used exactly as the other insert paths use
+       * it so this does not become a third pricing rule.
+       */
+      const rebookServiceTypes = Array.from(new Set(
+        siblings.map((dog: any) => String(dog.serviceType)),
+      ));
+      const rebookCoverageByService = new Map<
+        string, Awaited<ReturnType<typeof getAppointmentMembershipCoverage>>
+      >();
+      for (const serviceType of rebookServiceTypes) {
+        rebookCoverageByService.set(serviceType, await getAppointmentMembershipCoverage(
+          db, tenantId, source.clientId,
+          siblings.map((dog: any) => dog.petId),
+          serviceType as AppointmentService,
+        ));
+      }
+
       const sessionId = siblings.length > 1 ? nanoid(16) : null;
       const created: number[] = [];
       for (const dog of siblings) {
+        const dogCoverage = rebookCoverageByService.get(String(dog.serviceType));
+        const coveredMembership = dogCoverage?.membershipByPetId[dog.petId] ?? null;
         const minutes = Math.max(15, Math.round(
           (new Date(dog.scheduledEnd).getTime() - new Date(dog.scheduledStart).getTime()) / 60000));
         const [res]: any = await db.insert(appointments).values({
@@ -939,7 +978,8 @@ const calendarRouter = router({
            * "Also they dont get a text with their next date."
            */
           status: "confirmed",
-          price: dog.price,
+          price: priceForCoveredAppointment(dogCoverage?.fullyCovered ?? false, dog.price),
+          membershipId: coveredMembership?.id ?? null,
           sessionId,
           // Booked here, so no MoeGo id. reminder_* stay NULL: this is a
           // real upcoming booking and should behave like any other.
@@ -2850,9 +2890,16 @@ const calendarRouter = router({
       await db.update(appointments)
         .set({ workflowState: "cancelled", status: "cancelled" })
         .where(inArray(appointments.id, ids));
-      // The audit trail, one row per dog. workflowLogs is what drives
-      // the Pet Tracker and the timing analytics; a bulk state change
-      // that skips it is a hole in both.
+      // The audit trail, one row per dog. A bulk state change that skips
+      // it leaves no record of who cancelled what.
+      //
+      // It does NOT drive the Pet Tracker or the timing analytics, which
+      // this comment used to claim: the tracker reads
+      // appointments.workflowState and the analytics read the row's own
+      // *At columns through workflowTiming.ts. workflowLogs is read in
+      // exactly one place, the deletion snapshot, so an undo can restore
+      // it. Write it anyway — but nothing queries it, so nothing will
+      // tell you when a new path forgets.
       await db.insert(workflowLogs).values(ids.map((id) => ({
         appointmentId: id,
         fromState: before.get(id) ?? "scheduled",
@@ -5920,6 +5967,43 @@ const clientsRouter = router({
         .leftJoin(pets, eq(memberships.petId, pets.id))
         .where(eq(memberships.clientId, input.clientId))
         .orderBy(desc(memberships.startedAt));
+      /*
+       * The dogs each plan covers, not just the dog it is filed under.
+       *
+       * `membership_pets` is how one plan covers a household's second
+       * dog, and reading `memberships.pet_id` alone made that dog
+       * invisible on this page: no tier colour on its card, and — the
+       * part that actually costs something — if it had died, staff were
+       * never offered the transfer-or-remove dialog for the plan paying
+       * for it, because that list is built from the same map.
+       *
+       * The booking path fixed its half of this already. See
+       * getAppointmentMembershipCoverage, whose own comment records that
+       * booking only the SECOND dog of an "x2" plan used to fetch no
+       * membership at all and priced the dog as though the client had
+       * no plan.
+       */
+      const coveredPlanIds = clientMemberships.map(m => m.id);
+      const assignedPetRows = coveredPlanIds.length === 0 ? [] : await db
+        .select({ membershipId: membershipPets.membershipId, petId: membershipPets.petId })
+        .from(membershipPets)
+        .where(and(
+          eq(membershipPets.tenantId, client.tenantId),
+          inArray(membershipPets.membershipId, coveredPlanIds),
+        ));
+      const assignedByMembership = new Map<number, number[]>();
+      for (const row of assignedPetRows) {
+        assignedByMembership.set(row.membershipId, [
+          ...(assignedByMembership.get(row.membershipId) ?? []), row.petId,
+        ]);
+      }
+      const clientMembershipsWithCover = clientMemberships.map(m => ({
+        ...m,
+        coveredPetIds: planCoveredPetIds({
+          petId: m.petId,
+          assignedPetIds: assignedByMembership.get(m.id),
+        }),
+      }));
       const clientPetMembershipEvents = await db
         .select({
           id: petMembershipEvents.id,
@@ -6030,7 +6114,7 @@ const clientsRouter = router({
           .orderBy(desc(membershipPayments.paidAt))
           .limit(50);
       }
-      return { client, contacts: additionalContacts, pets: clientPets, memberships: clientMemberships, appointments: clientAppointments, styleNotes: clientStyleNotes, payments, photos: clientPhotos, petMembershipEvents: clientPetMembershipEvents };
+      return { client, contacts: additionalContacts, pets: clientPets, memberships: clientMembershipsWithCover, appointments: clientAppointments, styleNotes: clientStyleNotes, payments, photos: clientPhotos, petMembershipEvents: clientPetMembershipEvents };
     }),
 
   /**
@@ -8089,9 +8173,13 @@ const membershipsRouter = router({
           ...row,
           // Until the backfill runs, a plan with no rows in the join
           // table still covers its own dog — reading the table alone
-          // would report every plan as covering nothing.
-          coveredPetIds: coveredBy.get(row.membershipId)
-            ?? (row.primaryPetId ? [row.primaryPetId] : []),
+          // would report every plan as covering nothing. Shared with
+          // the client record so the count staff are flagged on and the
+          // badge they see cannot drift apart.
+          coveredPetIds: planCoveredPetIds({
+            petId: row.primaryPetId,
+            assignedPetIds: coveredBy.get(row.membershipId),
+          }),
         }))
         .filter((row) => needsPetAssignment(row));
 
