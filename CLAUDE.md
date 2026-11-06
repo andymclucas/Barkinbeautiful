@@ -181,8 +181,32 @@ scheduled → checked_in → waiting_for_bath → bathing → waiting_for_dry �
           (+ cancelled, no_show)
 ```
 
-`workflowLogs` records every `fromState`/`toState` transition — it powers the Pet
-Tracker and the workflow timing analytics. Preserve that audit trail.
+`workflowLogs` records `fromState`/`toState` transitions. Keep writing it on
+every state change — but know what it is, because this file used to say it
+"powers the Pet Tracker and the workflow timing analytics" and that is not
+true of the code:
+
+- **Ten paths write it. Exactly one reads it** — the deletion snapshot at
+  `routers.ts` ~3358, so an undo can put the rows back. `grep "from(workflowLogs)"`
+  returns that one line.
+- The **Pet Tracker** reads `appointments.workflowState` and
+  `estimatedPickupAt`.
+- The **timing analytics** read the appointment's own `*At` columns
+  (`checkedInAt`, `bathingStartedAt`, `stageStartedAt`, …) through
+  `server/workflowTiming.ts`.
+
+So it is a write-only audit trail today, and nothing breaks visibly when a
+path forgets it. Two consequences worth knowing before you "fix" one:
+
+- Of the eleven paths that create an appointment, only `rebook` and
+  `createQuickAppointment` write a `null → scheduled` creation row.
+  `createMultiPetAppointment` — the live booking path — does not. That is an
+  inconsistency, not a measured bug.
+- A `null → scheduled` row is written when the BOOKING is made, not when the
+  dog arrives. Add it to the advance-booking paths and anything that later
+  reads these rows as stage entries would read three weeks "in scheduled" for
+  a booking made three weeks out. Decide what the row means before adding it
+  in eight more places.
 
 Migrations: **do not run `pnpm run db:push`.** It is `generate && migrate`, and
 `generate` is broken here — see below. Migration `.sql` files live in
