@@ -54,7 +54,13 @@
 import { brisbaneDateKey } from "./localDateTime";
 import { describePets } from "./pickupGroup";
 
-const DEFAULT_SALON = "Barkin' Beautiful";
+/**
+ * Exported so the other SMS builders use the SAME fallback rather than
+ * each carrying its own copy of the salon name. One literal to change
+ * when a second salon starts sending texts, which The Pet Pad does on
+ * 23/11/2026 — every caller can already pass salonName and should.
+ */
+export const DEFAULT_SALON = "Barkin' Beautiful";
 /** Nothing automated lands between these hours on the salon's clock. */
 const QUIET_FROM_HOUR = 8;
 const QUIET_UNTIL_HOUR = 20;

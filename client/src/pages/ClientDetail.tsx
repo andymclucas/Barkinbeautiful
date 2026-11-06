@@ -36,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel, ClientWaitlistPanel } from "@/components/client-record/ClientOverview";
+import { TextUpcomingDatesButton } from "@/components/TextUpcomingDatesButton";
 import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
 import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
 import { bookingBucket, countBookingBuckets, sortBookingsForBucket, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
@@ -1413,10 +1414,19 @@ export default function ClientDetail() {
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between gap-2 text-base">
                       Upcoming appointments
-                      <Button variant="ghost" size="sm" className="h-7 text-xs"
-                        onClick={() => setActiveClientTab("appointments")}>
-                        View all
-                      </Button>
+                      <span className="flex items-center gap-1">
+                        {/* Lauren, 06/11/2026, after setting a year of
+                            bookings: "I want to send her a list of all her
+                            dates in a sms too if possible." It belongs
+                            beside the list it is about. */}
+                        {upcomingBookings.length > 0 && (
+                          <TextUpcomingDatesButton clientId={clientId} />
+                        )}
+                        <Button variant="ghost" size="sm" className="h-7 text-xs"
+                          onClick={() => setActiveClientTab("appointments")}>
+                          View all
+                        </Button>
+                      </span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">

@@ -93,6 +93,8 @@ import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stri
 import { createCardSetupLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { buildUpcomingDatesSms, upcomingDatesShown } from "@shared/upcomingDatesSms";
+import { calculateSmsCost } from "@shared/smsSegments";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
 import { firstFreeSlot, describeNoSlot } from "../shared/nextAvailableSlot";
@@ -395,6 +397,70 @@ function cascadeFilter(stage: "checked_in" | "complete") {
   return stage === "checked_in"
     ? sql`${appointments.workflowState} = 'scheduled'`
     : sql`${appointments.workflowState} <> 'complete'`;
+}
+
+/**
+ * A client's upcoming bookings, as a text body ready for a person to read.
+ *
+ * Shared by the preview and the send so the two cannot drift: a composer
+ * showing one body and a send transmitting another is the worst version
+ * of this feature.
+ *
+ * Deliberate choices:
+ *
+ * - **Future only, and never cancelled.** A list that includes a date
+ *   the salon has already cancelled would have the client turn up.
+ * - **One entry per DATE, not per row.** A family booking is several
+ *   appointment rows at one time; "Fri 12 Feb, Fri 12 Feb, Fri 12 Feb"
+ *   is how Mellissa Luckman's three pickup texts read, in list form.
+ * - **The salon's own timezone**, via SALON_TIME_ZONE. A client reading
+ *   "Fri 12 Feb" means the salon's Friday, not the server's.
+ */
+async function buildUpcomingDatesForClient(db: any, tenantId: number, clientId: number) {
+  const [client] = await db.select({
+    firstName: clients.firstName, phone: clients.phone,
+  }).from(clients)
+    .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId)))
+    .limit(1);
+  if (!client) throw new Error("That client is not available to this salon");
+
+  const rows = await db.select({
+    scheduledStart: appointments.scheduledStart, petName: pets.name,
+  }).from(appointments)
+    .leftJoin(pets, eq(appointments.petId, pets.id))
+    .where(and(
+      eq(appointments.tenantId, tenantId),
+      eq(appointments.clientId, clientId),
+      gte(appointments.scheduledStart, new Date()),
+      ne(appointments.status, "cancelled"),
+      ne(appointments.workflowState, "cancelled"),
+    ))
+    .orderBy(asc(appointments.scheduledStart));
+
+  const formatter = new Intl.DateTimeFormat("en-AU", {
+    timeZone: SALON_TIME_ZONE, weekday: "short", day: "numeric", month: "short",
+  });
+  const seen = new Set<string>();
+  const dates: string[] = [];
+  const petNames: string[] = [];
+  for (const row of rows as Array<{ scheduledStart: Date; petName: string | null }>) {
+    const label = formatter.format(new Date(row.scheduledStart));
+    if (!seen.has(label)) { seen.add(label); dates.push(label); }
+    const name = row.petName?.trim();
+    if (name && !petNames.includes(name)) petNames.push(name);
+  }
+
+  const { shown, omitted } = upcomingDatesShown(dates);
+  return {
+    phone: client.phone as string | null,
+    body: buildUpcomingDatesSms({
+      clientFirstName: client.firstName ?? "",
+      petNames,
+      dates,
+    }),
+    datesShown: shown,
+    datesOmitted: omitted,
+  };
 }
 
 const calendarRouter = router({
@@ -11692,6 +11758,87 @@ const smsRouter = router({
         });
       }
       return result;
+    }),
+
+  /**
+   * Text a client the dates they are booked in for.
+   *
+   * Lauren, 06/11/2026, after setting a year of bookings for Bronwyn
+   * Waegh: "I want to send her a list of all her dates in a sms too if
+   * possible." Nobody reads thirteen dates back down the phone, and the
+   * client has nothing to put in a calendar.
+   *
+   * ## Two calls, because a person presses send
+   *
+   * `upcomingDatesPreview` builds the body and says what it will cost.
+   * `sendUpcomingDates` sends it. Separating them is what makes this a
+   * composed text rather than an automated one: it is NOT in the
+   * allow-list in shared/automatedSms.ts and must never be — Andy,
+   * 28/10/2026, "No automated text messages to go to clients other than
+   * when dogs are fully groomed and ready to be picked up."
+   *
+   * ## Dates are formatted here, in the salon's timezone
+   *
+   * The builder takes already-formatted strings on purpose. Formatting a
+   * date means choosing a timezone, and a client reading "Fri 12 Feb"
+   * means the salon's Friday — not the server's, and not the browser's.
+   */
+  upcomingDatesPreview: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const built = await buildUpcomingDatesForClient(db, tenantOf(ctx, input), input.clientId);
+      return {
+        body: built.body,
+        phone: built.phone,
+        datesShown: built.datesShown,
+        datesOmitted: built.datesOmitted,
+        cost: calculateSmsCost(built.body),
+      };
+    }),
+
+  sendUpcomingDates: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      clientId: z.number(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const built = await buildUpcomingDatesForClient(db, tenantId, input.clientId);
+      if (!built.phone) throw new Error("That client has no mobile number on file");
+      /*
+       * The body is BUILT, never passed in, and that is what lets this be
+       * operationalProcedure.
+       *
+       * sms.sendToClient — the free-text composer — is protectedProcedure
+       * and so refuses restricted staff: a staff member typing their own
+       * words to a client is owner surface. This sends a sentence made
+       * entirely from the client's own bookings, with nothing a caller
+       * can put into it, so the receptionist at the desk can use it
+       * without that boundary moving. An optional `body` override was
+       * written here first and removed for exactly that reason: it would
+       * have been a free-text send path for every groomer.
+       *
+       * The preview shows this same body, from this same function, so
+       * what is on screen is what goes out.
+       */
+      const body = built.body;
+
+      // trigger: "staff" — a person pressed Send. Not an automated send,
+      // so it needs no allow-list entry and no SMS_AUTOMATION_ENABLED.
+      const result = await sendSms(built.phone, body, { tenantId, trigger: "staff" });
+      /* smsLogs IS the Messages thread staff read, so a row goes in for
+         what was actually attempted — including a failure, which is a
+         thing somebody has to chase. */
+      await db.insert(smsLogs).values({
+        tenantId, clientId: input.clientId, toNumber: built.phone, body,
+        twilioSid: result.sid, status: result.success ? "sent" : "failed",
+        type: "custom", direction: "outbound", errorMessage: result.error,
+      });
+      return { ...result, body, datesShown: built.datesShown };
     }),
 
   sendToClient: protectedProcedure
