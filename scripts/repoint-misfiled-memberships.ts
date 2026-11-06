@@ -117,27 +117,40 @@ const CORRECTIONS: Correction[] = [
     why: "Lily is small-medium; Gracie is small and keeps the SML plan.",
   },
 
-  // ── Undecided. Fill in toPetId and re-run. ──────────────────────────
+  /*
+   * ── Undecided ──────────────────────────────────────────────────────
+   *
+   * TWO fields are open on these three, not one. The question is not
+   * only which dog the second plan belongs to, it is WHICH OF THE TWO
+   * PLANS moves — and `membershipId` below is a placeholder, not an
+   * answer. Each entry names the client's other plan so both can be
+   * weighed; set `membershipId` to whichever one moves and `toPetId` to
+   * the second dog, then re-run.
+   */
   {
     membershipId: 16, clientId: 38, fromPetId: 87, toPetId: null,
-    client: "Sonia Condon", plan: "Bronze VIP Classic - MED (14-16kg) $24.00",
-    why: "Harvey is pet 88. Both dogs are LARGE — Ella 17.0kg, Harvey 22.0kg — so"
-      + " MED (14-16kg) fits neither and the band cannot choose. Both dogs are"
-      + " classic-only, so service type cannot either. Needs MoeGo or Andy.",
+    client: "Sonia Condon", plan: "m16 Bronze Classic MED (14-16kg) $24.00 — or m15 LRG (17-25kg) $27.00",
+    why: "Harvey is pet 88. Both dogs read LARGE — Ella 17.0kg, Harvey 22.0kg — so"
+      + " MED (14-16kg) fits neither and the band cannot choose, and both are"
+      + " classic-only so service cannot either. On size alone Harvey at 22kg is"
+      + " the likelier LRG, which would mean moving m15 and leaving Ella on m16 —"
+      + " but that is a guess about $3/wk. Needs MoeGo or Andy.",
   },
   {
     membershipId: 21, clientId: 46, fromPetId: 103, toPetId: null,
-    client: "Selina Robson", plan: "Silver VIP Styled - SML (0-10kg) $22.00",
-    why: "Rocky is pet 104. Both dogs are small with no weight on file. The split"
-      + " should be by service, but Archie has 22 classic grooms to 1 styled and"
-      + " Rocky 3 to 1 — neither is a styled dog. Needs MoeGo or Andy.",
+    client: "Selina Robson", plan: "m21 Silver Styled SML (0-10kg) $22.00 — or m20 Classic Small $17.00",
+    why: "Rocky is pet 104. Both dogs are small with no weight on file, so the split"
+      + " has to be by service — and neither dog is a styled dog: Archie has 22"
+      + " classic grooms to 1 styled, Rocky 3 to 1. Whichever dog the Styled plan"
+      + " is really for takes m21. Needs MoeGo or Andy.",
   },
   {
     membershipId: 12, clientId: 28, fromPetId: 66, toPetId: null,
-    client: "Nicki Waldon", plan: "Gold VIP Styled - SML (0-10kg) $26.00",
+    client: "Nicki Waldon", plan: "m12 Gold Styled SML (0-10kg) $26.00 — or m11 Classic Small $22.00",
     why: "Snickers is pet 67. Chester 4.0kg and Snickers 5.0kg are both small, and"
-      + " NEITHER dog has ever had a styled groom, so the Styled plan matches no"
-      + " history at all. Needs MoeGo or Andy.",
+      + " NEITHER has ever had a styled groom — 29 classic + 3 fft for Chester, 3 +"
+      + " 3 for Snickers — so the Styled plan matches no history at all and the"
+      + " service split cannot be read off either dog. Needs MoeGo or Andy.",
   },
 ];
 
@@ -189,6 +202,26 @@ async function main() {
       WHERE mp.tenant_id=? AND mp.membership_id IN (${membershipIds.map(() => "?").join(",")})`,
     [TENANT, ...membershipIds]);
 
+  /**
+   * Bookings already pointing at a plan that is about to move.
+   *
+   * `showsMembershipMark` reads the booking's OWN `membership_id` and
+   * nothing else, so a groom left linked to a plan that has moved to a
+   * different dog wears the gold VIP disc while being uncovered — the
+   * "lie that costs money at the counter" that shared/membershipMark.ts
+   * warns about, and it would survive a re-run of the backfill because
+   * that only ever fills a NULL.
+   *
+   * All 192 appointments across the six decided clients were unlinked on
+   * 06/11/2026, so this fires only if the backfill is applied FIRST.
+   * That is the wrong order, and it is cheaper to refuse than to explain.
+   */
+  const [linkedRows] = await db.query<any[]>(
+    `SELECT a.id, a.membership_id, a.pet_id, p.name
+       FROM appointments a LEFT JOIN pets p ON p.id = a.pet_id
+      WHERE a.tenant_id=? AND a.membership_id IN (${membershipIds.map(() => "?").join(",")})`,
+    [TENANT, ...membershipIds]);
+
   const moves: { correction: Correction; membership: any; from: PetRow; to: PetRow }[] = [];
   const problems: string[] = [];
   let alreadyDone = 0;
@@ -232,8 +265,25 @@ async function main() {
       continue;
     }
 
+    // Only bookings for a dog the plan is LEAVING are a problem; one
+    // already on the target dog is simply right and stays right.
+    const stranded = linkedRows.filter((a) => a.membership_id === c.membershipId && a.pet_id !== c.toPetId);
+    if (stranded.length > 0) {
+      problems.push(`${c.client}: ${stranded.length} booking(s) already link to membership ${c.membershipId} for ${[...new Set(stranded.map((a) => a.name ?? a.pet_id))].join(", ")}`
+        + ` — moving the plan would leave them marked as covered when they are not.`
+        + ` Repoint BEFORE running the backfill, or clear appointments ${stranded.map((a) => a.id).join(", ")} first.`);
+      continue;
+    }
+
     moves.push({ correction: c, membership, from, to });
-    console.log(`${label} ${from.name} -> ${to.name}   ${c.plan}`);
+    /*
+     * The plan is named from the DATABASE row, never from the table
+     * above. On the undecided entries `membershipId` is a placeholder a
+     * human is expected to change, and a hand-written label left
+     * un-updated beside it would describe a move that is not the one
+     * about to happen — which is the one thing this output must not do.
+     */
+    console.log(`${label} ${from.name} -> ${to.name}   ${membership.name} $${membership.price_per_cycle}/cycle`);
     console.log(`${" ".repeat(30)}bands: ${from.name} ${bandOf(from)} | ${to.name} ${bandOf(to)}`);
     console.log(`${" ".repeat(30)}${c.why}`);
   }
