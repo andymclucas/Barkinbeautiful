@@ -36,6 +36,25 @@ export const ONLINE_BOOKING_SERVICE_LABELS: Record<OnlineBookingServiceType, str
   other: "Other service",
 };
 
+/**
+ * ⚠ `getPetWeightBand(null)` answers **Small**, not null.
+ *
+ * `Number(null)` is 0, the Small band starts at 0, and the guard above
+ * only catches an empty STRING — so a dog with no weight on file reads
+ * as a small dog. `undefined` and `""` correctly answer null; only
+ * `null` is wrong, and `null` is what the database returns.
+ *
+ * Left as it is on purpose, because 4,478 active dogs have a size band
+ * and no weight and this helper gates online booking
+ * (`isEligibleOnlineBookingService`). Correcting it here would make all
+ * of them ineligible at once on a public form — a decision for Andy,
+ * not a side effect. Today they pass the check and are then priced as a
+ * 0 kg dog, which is its own problem and the reason this is written
+ * down rather than left to be rediscovered.
+ *
+ * Any caller that must not treat "unweighed" as "small" has to say so
+ * itself. `shared/departedPetMembership.ts` does, and explains why.
+ */
 export function getPetWeightBand(weightKg: number | string | null | undefined): PetWeightBand | null {
   if (typeof weightKg === "string" && weightKg.trim() === "") return null;
   const numericWeight = typeof weightKg === "number" ? weightKg : Number(weightKg);

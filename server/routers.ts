@@ -8662,6 +8662,10 @@ const membershipsRouter = router({
           petStatus: pets.status,
           petWeightKg: pets.weightKg,
           petWeight: pets.weight,
+          // Most dogs here have a band and no weight, and without it the
+          // eligibility guard has nothing to compare. See
+          // getReplacementWeightBand.
+          petSizeBand: pets.sizeBand,
         })
         .from(memberships)
         .innerJoin(pets, eq(memberships.petId, pets.id))
@@ -8700,6 +8704,7 @@ const membershipsRouter = router({
           status: pets.status,
           weightKg: pets.weightKg,
           weight: pets.weight,
+          sizeBand: pets.sizeBand,
         })
         .from(pets)
         .where(and(eq(pets.id, input.replacementPetId), eq(pets.tenantId, tenantOf(ctx, input))))
@@ -8707,7 +8712,7 @@ const membershipsRouter = router({
       if (!replacementPet || replacementPet.clientId !== membership.clientId || replacementPet.status !== "active") {
         throw new Error("Choose an active pet belonging to the same client");
       }
-      const departedCandidate = { id: membership.petId, weightKg: membership.petWeightKg, weight: membership.petWeight, status: "departed" as const };
+      const departedCandidate = { id: membership.petId, weightKg: membership.petWeightKg, weight: membership.petWeight, sizeBand: membership.petSizeBand, status: "departed" as const };
       if (!isEligibleMembershipReplacement(departedCandidate, replacementPet)) {
         const membershipBand = getReplacementWeightBand(departedCandidate)?.label ?? "unrecorded";
         const replacementBand = getReplacementWeightBand(replacementPet)?.label ?? "unrecorded";
