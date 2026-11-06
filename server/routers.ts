@@ -2849,9 +2849,16 @@ const calendarRouter = router({
       await db.update(appointments)
         .set({ workflowState: "cancelled", status: "cancelled" })
         .where(inArray(appointments.id, ids));
-      // The audit trail, one row per dog. workflowLogs is what drives
-      // the Pet Tracker and the timing analytics; a bulk state change
-      // that skips it is a hole in both.
+      // The audit trail, one row per dog. A bulk state change that skips
+      // it leaves no record of who cancelled what.
+      //
+      // It does NOT drive the Pet Tracker or the timing analytics, which
+      // this comment used to claim: the tracker reads
+      // appointments.workflowState and the analytics read the row's own
+      // *At columns through workflowTiming.ts. workflowLogs is read in
+      // exactly one place, the deletion snapshot, so an undo can restore
+      // it. Write it anyway — but nothing queries it, so nothing will
+      // tell you when a new path forgets.
       await db.insert(workflowLogs).values(ids.map((id) => ({
         appointmentId: id,
         fromState: before.get(id) ?? "scheduled",
