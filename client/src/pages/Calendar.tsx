@@ -133,6 +133,7 @@ import {
   wholeBookingCancellation, describeWholeBookingCancellation,
 } from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
+import { QuickAppointmentDialog } from "@/components/QuickAppointmentDialog";
 import { toastBookingConfirmation } from "@/lib/confirmationToast";
 import { NextAvailablePanel } from "@/components/NextAvailablePanel";
 import {
@@ -3951,6 +3952,12 @@ export default function Calendar() {
                 setShowNewAppt(true);
               }}
             />
+            {/* Andy, 06/11/2026: a walk-in nail clip or quick bath, "as
+                these appts are usually done in 10-15 mins". Beside New
+                Appointment because it is the same moment — somebody has
+                walked in with a dog — and because the full booking
+                dialog is far too much form for a ten-minute job. */}
+            <QuickAppointmentDialog onCreated={() => refetch()} />
             <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
               <Plus className="h-4 w-4" /> New Appointment
             </Button>

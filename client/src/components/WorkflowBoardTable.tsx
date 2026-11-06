@@ -172,6 +172,7 @@ export { SERVICE_COLOUR, SERVICE_LABEL } from "@shared/serviceTypes";
 import {
   serviceColour, serviceLabel, serviceBoardLabel, isNotAFullGroom,
 } from "@shared/serviceTypes";
+import { quickBoardLabel } from "@shared/quickAppointment";
 
 export function stageColour(key: string) {
   return ALL_STAGE_OPTIONS.find(s => s.key === key)?.colour ?? "#94a3b8";
@@ -891,7 +892,15 @@ export function WorkflowBoardTable({
                         style={{ background: serviceColour(appt.serviceType) }}
                         title={serviceLabel(appt.serviceType)}
                       >
-                        {serviceBoardLabel(appt.serviceType)}
+                        {/* Andy, 06/11/2026, on walk-ins: "it will show
+                            on the workflow under 'Walk-In: then either
+                            the nail clip or quick bath and dry'". The
+                            prefix is what tells a groomer at a glance
+                            that this one is not part of the day's run
+                            and is not waiting for a bath. */}
+                        {(appt as { isQuick?: boolean | null }).isQuick
+                          ? quickBoardLabel(appt.serviceType)
+                          : serviceBoardLabel(appt.serviceType)}
                       </span>
                       {/* The extras, under the service, where Lauren asked
                           for them: "show any add-ons on the workflow so

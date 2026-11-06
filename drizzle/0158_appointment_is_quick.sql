@@ -1,0 +1,48 @@
+-- A walk-in nail clip or quick bath, marked as what it is.
+--
+-- Andy, 06/11/2026: a Quick Appointment button for a job "usually done in
+-- 10-15 mins", shown on the board as "Walk-In: Nail Clip" and deliberately
+-- outside the 12-state workflow -- a nail clip does not wait for a bath, get
+-- dried, then wait for a groom.
+--
+-- ONE BOOLEAN, NOT TWO NEW SERVICE TYPES. The obvious move is to add
+-- "quick_bath" and "nail_clip" to appointments.service_type, and it is the
+-- expensive one: that enum is named in 54 places across client, server and
+-- shared, and CLAUDE.md is explicit that adding a value means auditing every
+-- switch, map and exhaustive check over it or the UI silently renders
+-- nothing. The existing values already say what the WORK is -- nail_trim is a
+-- nail clip, bath_only is a bath. What was missing is "and it is a ten-minute
+-- walk-in", which is this column. Reporting can still tell a $25 quick bath
+-- from a $70 booked one by reading it.
+--
+-- NOT NULL DEFAULT FALSE, not nullable. 0133_appointments_booked_online.sql is
+-- the precedent on this same table, 27 of the 28 boolean columns in schema.ts
+-- are NOT NULL, and the db-migration skill's rule is "nullable, OR with a
+-- default". A default is the better half of that here: this is a two-state
+-- fact, and a nullable boolean gives it three. Every existing row would be
+-- NULL rather than false, so `eq(isQuick, false)` would silently exclude all
+-- ~15,000 of them -- which breaks the reporting this column exists for, and
+-- breaks it quietly. On TiDB ADD COLUMN is metadata-only with or without a
+-- default, so the row count costs nothing.
+--
+-- Order safety is identical either way: old inserts that never name the
+-- column take the default.
+--
+-- ON THE NUMBER. feat/platform-billing also holds an 0158, unapplied. The
+-- journal test forbids a gap in idx, so two sibling branches can never both be
+-- gap-free and distinct -- they can only be sequenced when the second one
+-- rebases. This takes 158; the branch that merges second renumbers to 0159
+-- AND raises its `when` above this one, because migrate compares strictly
+-- against the ledger max and a lower `when` is SKIPPED rather than rejected:
+-- it exits 0, the DDL never runs, and schema.ts still names the column.
+--
+-- MIGRATE BEFORE THE CODE MERGES. Drizzle names every column declared in
+-- schema.ts in every bare select() and insert(), so the moment schema.ts
+-- carries this the app asks the database for it whether or not any code
+-- mentions it by name. Shipping the code first breaks every bare select and
+-- every insert on appointments: 13 insert sites across staff booking, public
+-- online booking, the waitlist, membership signup, rebook and repeat, plus
+-- updateWorkflowState and updateStage, which select before any access check
+-- and so fail for every role. No dog could be moved between stages and no
+-- booking could be created.
+ALTER TABLE `appointments` ADD COLUMN `is_quick` BOOLEAN NOT NULL DEFAULT FALSE;
