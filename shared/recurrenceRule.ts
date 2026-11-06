@@ -134,7 +134,11 @@ export function recurrenceStarts(request: RecurrenceRequest): RecurrenceResult {
   if (starts.length === 0) {
     return { ok: false, reason: "That gives no further bookings — check the dates" };
   }
-  return { ok: true, starts, truncated: starts.length === MAX_OCCURRENCES };
+  /* Truncated means "there were more and you cannot have them", not
+     "you asked for exactly the cap". Asking for 60 and getting 60 used
+     to raise a warning saying it had been cut short. */
+  const asked = request.end.kind === "count" ? Math.trunc(request.end.sessions) : Infinity;
+  return { ok: true, starts, truncated: starts.length === MAX_OCCURRENCES && asked > MAX_OCCURRENCES };
 }
 
 /** One line for the confirmation, before anything is written. */

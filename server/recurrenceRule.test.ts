@@ -142,6 +142,17 @@ describe("what it refuses", () => {
     expect(result.starts).toHaveLength(MAX_OCCURRENCES);
     expect(result.truncated).toBe(true);
   });
+
+  it("does not claim it was capped when the cap is exactly what was asked for", () => {
+    // "That is as many as one go will create" on a run of exactly 60
+    // sent somebody looking for dates that were never missing.
+    const result = recurrenceStarts({
+      firstStart: BRONWYN, frequencyWeeks: 1, end: { kind: "count", sessions: MAX_OCCURRENCES },
+    });
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.starts).toHaveLength(MAX_OCCURRENCES);
+    expect(result.truncated).toBe(false);
+  });
 });
 
 describe("what the person is told before anything is written", () => {
