@@ -4947,6 +4947,81 @@ export default function Calendar() {
                   <PetCodeChips codes={editAppt.petMoegoCodeLabels} />
                   {editAppt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appointment:</span> {new Date(editAppt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>}
                 </div>
+                {/* Moved up from below the Notes field.
+
+                    Lauren, 06/11/2026: "maybe place it where the 'last
+                    appointment section' is further up on that page". It
+                    sat between Notes and Payments, so when the dog is
+                    next back — the thing you answer at the counter — was
+                    the last thing on the screen. It is context about the
+                    client rather than a form field, so it belongs above
+                    the form rather than buried in it. */}
+                {(() => {
+                  const rhythm = visitRhythm({
+                    last: editAppt.lastAppointmentDate ?? null,
+                    current: editAppt.scheduledStart,
+                    next: editAppt.nextAppointmentDate ?? null,
+                  });
+                  const when = (d: Date | string) => new Date(d).toLocaleDateString("en-AU", {
+                    timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric",
+                  });
+                  /*
+                   * Only call it a LAST visit if it is actually before
+                   * this one. `lastAppointmentDate` is the pet's newest
+                   * appointment already in the past, and for a dog in
+                   * the salon right now that is THIS booking — Oakley's
+                   * card read "Last visit: Wed, 4 Nov 2026" while she
+                   * was on the table. The rule above already returns
+                   * null for it; the display has to agree.
+                   */
+                  const showLast = rhythm.sinceLastWeeks !== null;
+                  if (!showLast && !editAppt.nextAppointmentDate) return null;
+                  return (
+                    <div className="rounded-xl border bg-muted/20 p-3">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold">
+                        <CalendarDays className="h-4 w-4 text-muted-foreground" /> Visits
+                        {rhythm.settled && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                            every {describeWeeks(rhythm.untilNextWeeks)}
+                          </span>
+                        )}
+                      </p>
+                      {/*
+                        Lauren, 06/11/2026: "the next appointment section can
+                        it be bold and easy to read."
+
+                        The two used to sit side by side at text-xs, equally
+                        weighted — so the one thing somebody opening a booking
+                        actually needs, when this dog is back, read exactly
+                        like the history beside it. The next booking is the
+                        headline now and the last visit is context under it.
+                      */}
+                      <p className="mt-2 text-base font-bold leading-tight">
+                        {editAppt.nextAppointmentDate ? (
+                          <>
+                            Next: {when(editAppt.nextAppointmentDate)}
+                            {describeWeeks(rhythm.untilNextWeeks) && (
+                              <span className="font-medium text-muted-foreground"> · in {describeWeeks(rhythm.untilNextWeeks)}</span>
+                            )}
+                          </>
+                        ) : (
+                          /* Bold too. "Nothing booked" is the one that needs
+                             acting on before the dog leaves, so it must not
+                             read quieter than a date. */
+                          <span className="text-amber-700 dark:text-amber-400">Nothing booked yet</span>
+                        )}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {showLast && editAppt.lastAppointmentDate ? (
+                          <>
+                            Last visit: {when(editAppt.lastAppointmentDate)}
+                            {describeWeeks(rhythm.sinceLastWeeks) && <> · {describeWeeks(rhythm.sinceLastWeeks)} ago</>}
+                          </>
+                        ) : "First visit on record"}
+                      </p>
+                    </div>
+                  );
+                })()}
                 {(() => {
                   const bookedPetIds = new Set([editAppt, ...editSiblings].map((appointment) => appointment.petId));
                   const availablePets = (editableAppointmentPets.data ?? []).filter((pet) => pet.status === "active" && !bookedPetIds.has(pet.id));
@@ -5320,63 +5395,6 @@ export default function Calendar() {
                   * — "same again in six weeks?" — so it belongs before
                   * the money, not under it.
                   */}
-                {(() => {
-                  const rhythm = visitRhythm({
-                    last: editAppt.lastAppointmentDate ?? null,
-                    current: editAppt.scheduledStart,
-                    next: editAppt.nextAppointmentDate ?? null,
-                  });
-                  const when = (d: Date | string) => new Date(d).toLocaleDateString("en-AU", {
-                    timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric",
-                  });
-                  /*
-                   * Only call it a LAST visit if it is actually before
-                   * this one. `lastAppointmentDate` is the pet's newest
-                   * appointment already in the past, and for a dog in
-                   * the salon right now that is THIS booking — Oakley's
-                   * card read "Last visit: Wed, 4 Nov 2026" while she
-                   * was on the table. The rule above already returns
-                   * null for it; the display has to agree.
-                   */
-                  const showLast = rhythm.sinceLastWeeks !== null;
-                  if (!showLast && !editAppt.nextAppointmentDate) return null;
-                  return (
-                    <div className="rounded-xl border bg-muted/20 p-3">
-                      <p className="flex items-center gap-1.5 text-sm font-semibold">
-                        <CalendarDays className="h-4 w-4 text-muted-foreground" /> Visits
-                        {rhythm.settled && (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                            every {describeWeeks(rhythm.untilNextWeeks)}
-                          </span>
-                        )}
-                      </p>
-                      <div className="mt-1.5 grid gap-1 text-xs sm:grid-cols-2">
-                        <div>
-                          <span className="text-muted-foreground">Last visit: </span>
-                          {showLast && editAppt.lastAppointmentDate ? (
-                            <>
-                              {when(editAppt.lastAppointmentDate)}
-                              {describeWeeks(rhythm.sinceLastWeeks) && (
-                                <span className="text-muted-foreground"> · {describeWeeks(rhythm.sinceLastWeeks)} ago</span>
-                              )}
-                            </>
-                          ) : <span className="text-muted-foreground">first visit on record</span>}
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Next booking: </span>
-                          {editAppt.nextAppointmentDate ? (
-                            <>
-                              {when(editAppt.nextAppointmentDate)}
-                              {describeWeeks(rhythm.untilNextWeeks) && (
-                                <span className="text-muted-foreground"> · in {describeWeeks(rhythm.untilNextWeeks)}</span>
-                              )}
-                            </>
-                          ) : <span className="text-amber-700 dark:text-amber-400">nothing booked</span>}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
 
                 {/* Money taken, as many transactions as it takes: part cash
                     part card, a deposit and a balance, or one dog each. */}
