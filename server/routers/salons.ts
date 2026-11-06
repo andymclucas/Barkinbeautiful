@@ -19,7 +19,7 @@
  * trail of who did it.
  */
 import { z } from "zod";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, like, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, operationalProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
@@ -130,6 +130,41 @@ export const salonsRouter = router({
         eq(salonAccess.tenantId, input.tenantId),
       ));
       return { success: true };
+    }),
+
+  /**
+   * People who could own a salon.
+   *
+   * A USER, not a staff record. Provisioning puts somebody into a second
+   * salon; it does not create a login, so the person has to have one
+   * already — and a staff row without a user cannot sign in to the salon
+   * it would own.
+   *
+   * adminProcedure, because it lists the platform's accounts. Capped and
+   * searched rather than returning everybody.
+   */
+  eligibleOwners: adminProcedure
+    .input(z.object({ query: z.string().trim().max(100).default("") }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const q = input.query.trim();
+      const rows = await db.select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        tenantId: users.tenantId,
+      }).from(users)
+        .where(q
+          ? or(like(users.name, `%${q}%`), like(users.email, `%${q}%`))
+          : undefined)
+        .limit(20);
+      return rows.map((r: { id: number; name: string | null; email: string | null; tenantId: number | null }) => ({
+        id: r.id,
+        name: (r.name || r.email || `User ${r.id}`).trim(),
+        email: r.email,
+        homeTenantId: r.tenantId,
+      }));
     }),
 
   /**

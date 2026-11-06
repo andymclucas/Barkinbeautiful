@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { SalonSetup } from "@/components/SalonSetup";
 import { SalonSmsNumber } from "@/components/SalonSmsNumber";
 import { StaffNotificationSetting } from "@/components/StaffNotificationSetting";
 import { SmsUsageCard } from "@/components/SmsUsageCard";
@@ -181,6 +182,12 @@ export default function Settings() {
             {/* Renders nothing for anyone but the salon owner — the server
                 decides, and the card simply does not appear. */}
             <SalonSmsNumber />
+
+            {/* Setting up ANOTHER salon. The Pet Pad opens 23/11/2026 and
+                is the first; it sits under Salon because that is where
+                somebody goes to configure a business. Admin only, and it
+                renders nothing for anybody else. */}
+            <SalonSetup />
           </TabsContent>
 
           <TabsContent value="branding" className="mt-4">
