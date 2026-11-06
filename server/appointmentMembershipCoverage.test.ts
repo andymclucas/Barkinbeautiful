@@ -80,9 +80,21 @@ describe("appointment membership coverage", () => {
     // which is the drift that actually costs money.
     const router = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
     /*
-     * Four: createAppointment, createRecurringAppointments,
-     * createMultiPetAppointment and addRecurrenceToAppointment. The
-     * import carries no paren so it does not count.
+     * Five: createAppointment, createRecurringAppointments,
+     * createMultiPetAppointment, addRecurrenceToAppointment and
+     * rebook. The import carries no paren so it does not count.
+     *
+     * The fifth arrived on 07/11/2026, and it is this test's documented
+     * limitation happening for the second time. `rebook` shipped on
+     * 03/11/2026 copying `price` off the source row and never setting
+     * membershipId, and the count sat at four without complaint for
+     * four days. For a member it was wrong almost every time: 450 of
+     * 456 upcoming bookings are MoeGo imports carrying a MoeGo figure
+     * rather than "0.00", so rebooking a member's own appointment
+     * billed them for a groom their weekly payment covers.
+     *
+     * membershipBookingCoverage.test.ts now names every insert site and
+     * its decision, which is the part a count cannot do.
      *
      * The fourth arrived on 06/11/2026 and is why this count is worth
      * keeping. addRecurrenceToAppointment shipped setting membershipId
@@ -100,7 +112,7 @@ describe("appointment membership coverage", () => {
      * the limit of the technique, and it is worth writing down beside
      * the number.
      */
-    expect(router.split("priceForCoveredAppointment(").length - 1).toBe(4);
+    expect(router.split("priceForCoveredAppointment(").length - 1).toBe(5);
     expect(router).not.toContain('coverage.fullyCovered ? "0.00"');
     expect(router).toContain("membershipId: coverage.membershipByPetId[petId]?.id ?? null");
     expect(router).toContain("getMembershipCoverage: operationalProcedure");

@@ -903,9 +903,48 @@ const calendarRouter = router({
       const departedMessage = departedBookingMessage(bookablePets);
       if (departedMessage) throw new TRPCError({ code: "BAD_REQUEST", message: departedMessage });
 
+      /*
+       * A rebook is a booking, so it prices like one.
+       *
+       * It copied `price` straight off the source row and never set
+       * `membership_id` at all. Both are wrong the moment coverage has
+       * changed since that row was written — and for a member they are
+       * wrong almost always, because 450 of 456 upcoming bookings are
+       * MoeGo imports carrying a MoeGo figure rather than "0.00". So
+       * rebooking a member's existing appointment charged them for a
+       * groom their weekly payment already covers. Pointing the other
+       * way, a lapsed member's "0.00" was copied forward into a free
+       * groom.
+       *
+       * `membership_id` left NULL also meant no gold VIP disc on the
+       * calendar for the new booking, since showsMembershipMark reads
+       * the booking's own column and not the client's plans.
+       *
+       * Resolved PER SERVICE TYPE: a booking can carry a different
+       * service per dog, and a classic plan does not cover a styled
+       * groom. Same shape as createRecurringAppointments, and
+       * `fullyCovered` is used exactly as the other insert paths use
+       * it so this does not become a third pricing rule.
+       */
+      const rebookServiceTypes = Array.from(new Set(
+        siblings.map((dog: any) => String(dog.serviceType)),
+      ));
+      const rebookCoverageByService = new Map<
+        string, Awaited<ReturnType<typeof getAppointmentMembershipCoverage>>
+      >();
+      for (const serviceType of rebookServiceTypes) {
+        rebookCoverageByService.set(serviceType, await getAppointmentMembershipCoverage(
+          db, tenantId, source.clientId,
+          siblings.map((dog: any) => dog.petId),
+          serviceType as AppointmentService,
+        ));
+      }
+
       const sessionId = siblings.length > 1 ? nanoid(16) : null;
       const created: number[] = [];
       for (const dog of siblings) {
+        const dogCoverage = rebookCoverageByService.get(String(dog.serviceType));
+        const coveredMembership = dogCoverage?.membershipByPetId[dog.petId] ?? null;
         const minutes = Math.max(15, Math.round(
           (new Date(dog.scheduledEnd).getTime() - new Date(dog.scheduledStart).getTime()) / 60000));
         const [res]: any = await db.insert(appointments).values({
@@ -938,7 +977,8 @@ const calendarRouter = router({
            * "Also they dont get a text with their next date."
            */
           status: "confirmed",
-          price: dog.price,
+          price: priceForCoveredAppointment(dogCoverage?.fullyCovered ?? false, dog.price),
+          membershipId: coveredMembership?.id ?? null,
           sessionId,
           // Booked here, so no MoeGo id. reminder_* stay NULL: this is a
           // real upcoming booking and should behave like any other.
