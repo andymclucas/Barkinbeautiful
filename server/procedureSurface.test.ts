@@ -142,7 +142,19 @@ const OPERATIONAL = [
   "bookingPricingRouter.catalogue",
   "bookingPricingRouter.context",
   "calendarRouter.addPetsToSharedAppointment",
+  /* Repeating a booking that already exists — Bronwyn Waegh, 06/11/2026.
+     Operational because turning a booking into a series is floor work:
+     the groomer standing with the client at the end of a groom is who
+     books the next six. It repeats a booking the caller can already
+     reach, through requireApprovedStaffAppointmentAccess. */
+  "calendarRouter.addRecurrenceToAppointment",
   "calendarRouter.appointmentsForClient",
+  /* Answering "when's your next available booking?" on the phone —
+     Lauren, 06/11/2026. Operational because it IS the phone: whoever
+     picks up is who needs it, and that is as often a receptionist as
+     the owner. It reads the diary's free gaps and returns no money and
+     no client details. */
+  "calendarRouter.availability",
   /*
    * Cancels every dog of a booking at once so the client gets ONE
    * text instead of one per dog. operationalProcedure like
@@ -156,6 +168,10 @@ const OPERATIONAL = [
   // One invoice for a whole booking, rather than one per dog.
   "calendarRouter.createCombinedSessionBill",
   "calendarRouter.createMultiPetAppointment",
+  /* A walk-in nail clip or quick bath, booked at the counter —
+     06/11/2026. Operational: whoever is on the desk when somebody walks
+     in with a dog is who uses it, and that is rarely the owner. */
+  "calendarRouter.createQuickAppointment",
   "calendarRouter.createRecurringAppointments",
   "calendarRouter.createSessionBills",
   "calendarRouter.deleteAppointment",
@@ -179,6 +195,9 @@ const OPERATIONAL = [
   "calendarRouter.undoDeleteAppointment",
   "calendarRouter.updateDetails",
   "calendarRouter.updateWorkflowState",
+  /* Finding a walk-in who has been in before, by their phone number, so
+     three visits do not become three records of the same person. */
+  "calendarRouter.walkInMatch",
   // Whoever is on the desk is the one who learns that somebody else
   // collects the dog. Tenant-checked against the session, not the client.
   // Asking a client for a photo and reading what they sent is salon-floor
@@ -314,6 +333,12 @@ const OPERATIONAL = [
   "smsRouter.getPickupRecipients",
   "smsRouter.myAssignments",
   "smsRouter.sendPickupMessage",
+  /* Texting a client the dates they are booked in for — Lauren,
+     06/11/2026. Operational, unlike sms.sendToClient beside it, because
+     the body is BUILT from the client's own bookings and nothing a
+     caller can put into it. The free-text composer stays owner-only. */
+  "smsRouter.sendUpcomingDates",
+  "smsRouter.upcomingDatesPreview",
   "smsUsageRouter.get",
   "staffRouter.createBlockout",
   "staffRouter.deleteBlockout",
@@ -404,11 +429,29 @@ describe("tRPC procedure surface", () => {
     // 391 since 06/11/2026: the salons router — mine, canAccess, grant
     // and revoke — for running more than one salon from one account.
     //
-    // 394 since 06/11/2026: platformBilling — the salon's own subscription
+    // 403 since 06/11/2026: platformBilling — the salon's own subscription
     // to Groomigo. None of the three appears in OPERATIONAL or PUBLIC,
     // which is the point: `status` is protectedProcedure and so rejects
     // restricted staff, and the two that reach Stripe are adminProcedure.
-    expect(surface).toHaveLength(394);
+    //
+    // 400 since 06/11/2026: calendar.createQuickAppointment and
+    // calendar.walkInMatch, for a walk-in nail clip at the counter.
+    //
+    // 398 since 06/11/2026: calendar.availability, the phone's answer to
+    // "when's your next available booking?".
+    //
+    // 397 since 06/11/2026: sms.upcomingDatesPreview and
+    // sms.sendUpcomingDates, for texting a client her list of dates.
+    //
+    // 395 since 06/11/2026: calendar.addRecurrenceToAppointment, for
+    // turning a booking that already exists into a series.
+    //
+    // 394 since 06/11/2026: salons.provisionPreview, salons.provision and
+    // salons.eligibleOwners, for standing up The Pet Pad. All three are
+    // adminProcedure — provisioning makes a new business on the platform
+    // and hands somebody the keys, and eligibleOwners lists the
+    // platform's accounts — so none appears in OPERATIONAL or PUBLIC.
+    expect(surface).toHaveLength(403);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -442,10 +485,26 @@ describe("tRPC procedure surface", () => {
      * feature, so protectedProcedure would have locked out everyone it
      * is for.
      *
+     * 146 since 06/11/2026: calendar.createQuickAppointment and
+     * calendar.walkInMatch. Whoever is on the desk when somebody walks
+     * in with a dog is who uses them.
+     *
+     * 144 since 06/11/2026: calendar.availability. Whoever answers the
+     * phone needs it, and that is as often a receptionist as the owner.
+     *
+     * 143 since 06/11/2026: sms.upcomingDatesPreview and
+     * sms.sendUpcomingDates. The receptionist at the desk is who reads a
+     * client her dates, and the body is built rather than typed.
+     *
+     * 141 since 06/11/2026: calendar.addRecurrenceToAppointment. Turning
+     * a booking into a series is floor work — the groomer standing with
+     * the client at the end of a groom is who books the next six — and it
+     * repeats a booking the caller can already reach.
+     *
      * 140 since 06/11/2026: salons.mine and salons.canAccess. Both read
      * only from the caller's own access list.
      */
-    expect(OPERATIONAL).toHaveLength(140);
+    expect(OPERATIONAL).toHaveLength(146);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

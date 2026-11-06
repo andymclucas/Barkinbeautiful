@@ -25,12 +25,15 @@
  * into saying different things about the same money.
  */
 
-import { getMembershipWeightBand } from "./membershipPackages";
+import { MEMBERSHIP_WEIGHT_BANDS, getMembershipWeightBand } from "./membershipPackages";
 import {
   groomPriceOptions, pickDefaultPriceOption, clientPriceTier,
   type PriceCatalogueItem, type PriceOption, type PriceTier,
 } from "./groomPricing";
 import { bandForWeight, type DogSizeBand } from "./dogSizeBand";
+
+/** Band id to the label staff read, for a dog that has a band and no weight. */
+const WEIGHT_LABEL_BY_BAND = new Map(MEMBERSHIP_WEIGHT_BANDS.map((band) => [band.id, band.label]));
 
 /** The sentence shown wherever an online price appears. */
 export const ESTIMATE_DISCLAIMER =
@@ -105,13 +108,23 @@ function sameTierCandidates(options: readonly PriceOption[], tier: PriceTier): P
  */
 export function estimateOnlineBookingPrice(input: {
   serviceType: string;
-  weightKg: number;
+  weightKg?: number;
+  /**
+   * The dog's recorded band, for a dog the salon knows but has never
+   * weighed. Price is decided by band anyway, so a banded dog can be
+   * quoted exactly as accurately as a weighed one — and it is the only
+   * way to quote the 4,478 dogs that have a band and no weight.
+   *
+   * A real weight still wins. This is the fallback, not an override.
+   */
+  sizeBand?: DogSizeBand | null;
   catalogue: readonly PriceCatalogueItem[];
 }): OnlineBookingEstimate {
-  if (!Number.isFinite(input.weightKg) || input.weightKg <= 0) {
+  const weighed = Number.isFinite(input.weightKg) && (input.weightKg ?? 0) > 0;
+  if (!weighed && !input.sizeBand) {
     return { known: false, reason: "We need your dog's weight to estimate a price." };
   }
-  const sizeBand = bandForWeight(input.weightKg);
+  const sizeBand = weighed ? bandForWeight(input.weightKg) : input.sizeBand ?? null;
   if (!sizeBand) {
     return { known: false, reason: "We'll confirm the price for your dog's size when we call." };
   }
@@ -168,7 +181,20 @@ export function estimateOnlineBookingPrice(input: {
  * because the two sets of bands are not the same and conflating them is
  * how a dog gets priced in one band and timed in another.
  */
-export function describeBookedWeight(weightKg: number): string {
+export function describeBookedWeight(weightKg: number | null | undefined, sizeBand?: DogSizeBand | null): string {
+  /*
+   * "as entered" has to stay true.
+   *
+   * An unweighed dog used to arrive here as 0 — Number(null) — and the
+   * staff notification read "Small (0–10 kg) (0kg, as entered)". Nobody
+   * entered 0, and a dog that might be a Giant was announced to the
+   * salon as small. A dog with only a recorded band says so instead.
+   */
+  const weighed = typeof weightKg === "number" && Number.isFinite(weightKg) && weightKg > 0;
+  if (!weighed) {
+    const band = sizeBand ? WEIGHT_LABEL_BY_BAND.get(sizeBand) : null;
+    return band ? `${band} (recorded size, not weighed)` : "no weight on file";
+  }
   const band = getMembershipWeightBand(weightKg);
   return band ? `${band.label} (${weightKg}kg, as entered)` : `${weightKg}kg, as entered`;
 }

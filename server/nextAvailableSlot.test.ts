@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  firstFreeSlot, dayIsBookable, describeNoSlot, tradingWeekdays,
+  firstFreeSlot, dayIsBookable, describeNoSlot, nextFreeSlots, summariseSearch,
+  tradingWeekdays, DEFAULT_SLOTS_PER_DAY,
   type DayAvailability,
 } from "../shared/nextAvailableSlot";
 import type { BusyInterval } from "../shared/groomerAvailability";
@@ -165,5 +166,101 @@ describe("tradingWeekdays", () => {
 
   it("copes with a single week of history", () => {
     expect([...tradingWeekdays({ 2: 1, 3: 1 }, 1)].sort()).toEqual([2, 3]);
+  });
+});
+
+describe("answering 'when's your next available booking' on the phone", () => {
+  /*
+   * Lauren, 06/11/2026: "I have no fucking idea off the top of my head
+   * unless I go through manually and check."
+   *
+   * firstFreeSlot answers a different question — it fills a date field
+   * in a booking already being made, where one answer is right. On the
+   * phone the client says "no, I work Tuesdays" and one answer leaves
+   * you scrolling again.
+   */
+  const threeDays = (): DayAvailability[] => ([
+    day({ dateKey: "2026-11-10" }),
+    day({ dateKey: "2026-11-11" }),
+    day({ dateKey: "2026-11-12" }),
+  ]);
+
+  it("gives several, soonest first, in diary order", () => {
+    const found = nextFreeSlots(threeDays(), opts(), 5);
+    expect(found).toHaveLength(5);
+    // Soonest first, and never going backwards.
+    const keys = found.map(f => `${f.dateKey} ${f.startMinutes}`);
+    expect(keys).toEqual([...keys].sort());
+    expect(found[0]!.dateKey).toBe("2026-11-10");
+    expect(found[0]!.daysAhead).toBe(0);
+  });
+
+  it("spreads across days rather than listing one quiet morning", () => {
+    /*
+     * A free Thursday has eleven half-hours in it. Reading out eleven
+     * times from one morning is one answer dressed up as eleven — the
+     * client wants to hear another DAY.
+     */
+    const found = nextFreeSlots(threeDays(), opts(), 6);
+    const byDay = new Map<string, number>();
+    for (const slot of found) byDay.set(slot.dateKey, (byDay.get(slot.dateKey) ?? 0) + 1);
+    expect(byDay.size).toBe(3);
+    for (const count of byDay.values()) expect(count).toBeLessThanOrEqual(DEFAULT_SLOTS_PER_DAY);
+  });
+
+  it("skips a day the salon is shut, and one the groomer is full", () => {
+    const days = [
+      day({ dateKey: "2026-11-07", closed: true }),
+      day({ dateKey: "2026-11-09", booked: 8, capacity: 8 }),
+      day({ dateKey: "2026-11-10" }),
+    ];
+    const found = nextFreeSlots(days, opts(), 3);
+    expect(found.every(f => f.dateKey === "2026-11-10")).toBe(true);
+    // daysAhead still counts from the start of the search, so the panel
+    // can say how far out it had to go.
+    expect(found[0]!.daysAhead).toBe(2);
+  });
+
+  it("will not offer a slot that runs past closing", () => {
+    // A three-hour groom at 4pm is not a slot, however empty 4pm looks.
+    const found = nextFreeSlots([day()], opts({ durationMinutes: 180 }), 20);
+    for (const slot of found) expect(slot.startMinutes + 180).toBeLessThanOrEqual(18 * 60);
+  });
+
+  it("respects leave the same way the single-slot search does", () => {
+    const morningOff = day({ busy: [leave(7 * 60, 12 * 60)] });
+    const found = nextFreeSlots([morningOff], opts(), 4);
+    for (const slot of found) expect(slot.startMinutes).toBeGreaterThanOrEqual(12 * 60);
+  });
+
+  it("returns nothing rather than something wrong when nothing fits", () => {
+    expect(nextFreeSlots([day({ closed: true })], opts(), 5)).toEqual([]);
+    expect(nextFreeSlots([], opts(), 5)).toEqual([]);
+    expect(nextFreeSlots([day()], opts(), 0)).toEqual([]);
+  });
+
+  it("agrees with firstFreeSlot about the first one", () => {
+    // Two functions answering the same question differently is the drift
+    // that put three copies of the staff route list out of step.
+    const days = [day({ dateKey: "2026-11-10", busy: [appt(7 * 60, 10 * 60)] }), day({ dateKey: "2026-11-11" })];
+    expect(nextFreeSlots(days, opts(), 1)[0]).toEqual(firstFreeSlot(days, opts()));
+  });
+});
+
+describe("saying why the first free day is so far out", () => {
+  it("counts the shut days and the full ones separately", () => {
+    // "The 20th" means something different when the four days before it
+    // were full than when the salon was shut.
+    const days = [
+      day({ dateKey: "2026-11-07", closed: true }),
+      day({ dateKey: "2026-11-08", closed: true }),
+      day({ dateKey: "2026-11-09", booked: 8, capacity: 8 }),
+      day({ dateKey: "2026-11-10" }),
+    ];
+    expect(summariseSearch(days)).toEqual({ searched: 4, closed: 2, full: 1 });
+  });
+
+  it("counts nothing when everything is open", () => {
+    expect(summariseSearch([day(), day()])).toEqual({ searched: 2, closed: 0, full: 0 });
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS } from "../shared/bookingBuckets";
+import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS, sortBookingsForBucket } from "../shared/bookingBuckets";
 
 const NOW = new Date("2026-10-03T04:00:00Z"); // 2pm Brisbane
 const future = "2026-12-10T02:00:00Z";
@@ -75,5 +75,52 @@ describe("countBookingBuckets", () => {
     expect(counts).toEqual({ upcoming: 2, history: 2, cancelled: 1, no_show: 1 });
     // The tab counts must add up to the list, or one pile hides a booking.
     expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(bookings.length);
+  });
+});
+
+describe("the order a bucket is read in", () => {
+  /*
+   * Lauren, 06/11/2026: "its back to front when viewing."
+   *
+   * The Bookings tab had no sort at all and inherited the server's
+   * newest-first order. On a 4-weekly series that printed 12 Mar, 12 Feb,
+   * 4 Dec — which reads as a series that skipped January, and was the
+   * reason she asked why hers started in February.
+   */
+  const d = (iso: string) => ({ scheduledStart: iso });
+  const series = [d("2027-03-12"), d("2026-12-04"), d("2027-02-12")];
+
+  it("puts the next booking first in Upcoming", () => {
+    // The top row is the one somebody acts on.
+    expect(sortBookingsForBucket(series, "upcoming").map(b => b.scheduledStart))
+      .toEqual(["2026-12-04", "2027-02-12", "2027-03-12"]);
+  });
+
+  it("puts the most recent first everywhere else", () => {
+    // The last groom, the last cancellation, the last no-show.
+    for (const bucket of ["history", "cancelled", "no_show"] as const) {
+      expect(sortBookingsForBucket(series, bucket).map(b => b.scheduledStart), bucket)
+        .toEqual(["2027-03-12", "2027-02-12", "2026-12-04"]);
+    }
+  });
+
+  it("does not mutate what it was given", () => {
+    const original = [...series];
+    sortBookingsForBucket(series, "upcoming");
+    expect(series).toEqual(original);
+  });
+
+  it("copes with Date objects and timestamps as well as strings", () => {
+    const mixed = [
+      { scheduledStart: new Date("2027-03-12") },
+      { scheduledStart: new Date("2026-12-04").getTime() },
+    ] as { scheduledStart: Date | string | number }[];
+    expect(sortBookingsForBucket(mixed, "upcoming")[0].scheduledStart)
+      .toEqual(new Date("2026-12-04").getTime());
+  });
+
+  it("is stable enough for an empty or single list", () => {
+    expect(sortBookingsForBucket([], "upcoming")).toEqual([]);
+    expect(sortBookingsForBucket([d("2027-01-15")], "history")).toEqual([d("2027-01-15")]);
   });
 });

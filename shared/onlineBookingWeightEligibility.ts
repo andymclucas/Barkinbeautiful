@@ -36,6 +36,25 @@ export const ONLINE_BOOKING_SERVICE_LABELS: Record<OnlineBookingServiceType, str
   other: "Other service",
 };
 
+/**
+ * ⚠ `getPetWeightBand(null)` answers **Small**, not null.
+ *
+ * `Number(null)` is 0, the Small band starts at 0, and the guard above
+ * only catches an empty STRING — so a dog with no weight on file reads
+ * as a small dog. `undefined` and `""` correctly answer null; only
+ * `null` is wrong, and `null` is what the database returns.
+ *
+ * Left as it is on purpose, because 4,478 active dogs have a size band
+ * and no weight and this helper gates online booking
+ * (`isEligibleOnlineBookingService`). Correcting it here would make all
+ * of them ineligible at once on a public form — a decision for Andy,
+ * not a side effect. Today they pass the check and are then priced as a
+ * 0 kg dog, which is its own problem and the reason this is written
+ * down rather than left to be rediscovered.
+ *
+ * Any caller that must not treat "unweighed" as "small" has to say so
+ * itself. `shared/departedPetMembership.ts` does, and explains why.
+ */
 export function getPetWeightBand(weightKg: number | string | null | undefined): PetWeightBand | null {
   if (typeof weightKg === "string" && weightKg.trim() === "") return null;
   const numericWeight = typeof weightKg === "number" ? weightKg : Number(weightKg);
@@ -45,6 +64,24 @@ export function getPetWeightBand(weightKg: number | string | null | undefined): 
 
 export function isEligibleOnlineBookingService(serviceType: string, weightKg: number | string | null | undefined): boolean {
   return Boolean(getPetWeightBand(weightKg)) && ONLINE_BOOKING_SERVICE_TYPES.includes(serviceType as OnlineBookingServiceType);
+}
+
+/**
+ * The same check for a dog the salon already has on file.
+ *
+ * The public form asks for a weight and gets one. The PORTAL books a
+ * dog the salon already knows, and most of those dogs have never been
+ * weighed — so asking the weight question there answers "Small" for
+ * every one of them (see getPetWeightBand above), which is how an
+ * unweighed dog passed a guard written to reject it.
+ *
+ * Takes a band instead, resolved by the caller from the weight when
+ * there is one and `pets.size_band` when there is not. A dog with
+ * neither is the only one refused, and the message already on that
+ * throw is the right one for it.
+ */
+export function isEligibleOnlineBookingServiceForBand(serviceType: string, sizeBand: string | null | undefined): boolean {
+  return Boolean(sizeBand) && ONLINE_BOOKING_SERVICE_TYPES.includes(serviceType as OnlineBookingServiceType);
 }
 
 export function getWeightBandDisplay(band: PetWeightBand): string {

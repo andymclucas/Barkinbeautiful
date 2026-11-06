@@ -36,9 +36,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel, ClientWaitlistPanel } from "@/components/client-record/ClientOverview";
+import { TextUpcomingDatesButton } from "@/components/TextUpcomingDatesButton";
+import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
 import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
-import { bookingBucket, countBookingBuckets, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
+import { bookingBucket, countBookingBuckets, sortBookingsForBucket, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
 import { ClientPetsAside } from "@/components/client-record/ClientPetsAside";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -59,7 +61,7 @@ import { Link } from "wouter";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { HeartCrack, History, Replace, Unlink } from "lucide-react";
-import { getDepartedMembershipBillingImpact, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
+import { getDepartedMembershipBillingImpact, getReplacementWeightBand, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
 import { resolveAppointmentMembershipCoverage } from "@shared/appointmentMembershipCoverage";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { BreedInput } from "@/components/BreedInput";
@@ -384,7 +386,7 @@ export default function ClientDetail() {
    * is not where you would look for it.
    */
   const [editAppt, setEditAppt] = useState<
-    { id: number; label: string; scheduledStart: string; scheduledEnd: string } | null
+    { id: number; petName: string | null; label: string; scheduledStart: string; scheduledEnd: string } | null
   >(null);
   const [bookingPage, setBookingPage] = useState(1);
   const [paymentFilter, setPaymentFilter] = useState("all");
@@ -827,9 +829,15 @@ export default function ClientDetail() {
     .slice()
     .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime())
     .slice(0, 5);
-  const bookingsInTab = appointments
-    .filter(a => bookingBucket(a) === bookingTab)
-    .filter(a => paymentFilter === "all" || (a.paymentStatus ?? "unpaid") === paymentFilter);
+  /* Soonest-first for Upcoming, most-recent-first for the rest — see
+     sortBookingsForBucket. This list had no sort at all and inherited the
+     server's newest-first order, which reads a 4-weekly series backwards. */
+  const bookingsInTab = sortBookingsForBucket(
+    appointments
+      .filter(a => bookingBucket(a) === bookingTab)
+      .filter(a => paymentFilter === "all" || (a.paymentStatus ?? "unpaid") === paymentFilter),
+    bookingTab,
+  );
   const bookingPageCount = Math.max(1, Math.ceil(bookingsInTab.length / BOOKINGS_PER_PAGE));
   // Deleting or filtering can strand you past the end; clamp on render
   // rather than leaving a blank table with no way back.
@@ -1352,7 +1360,18 @@ export default function ClientDetail() {
               the grid stretches it, so the divider runs the full length;
               the nav inside stays stuck to the top while you scroll. */}
           <div className="lg:h-full lg:border-r lg:border-border lg:pr-3">
-          <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:sticky lg:top-4 lg:flex-col lg:flex-nowrap">
+          {/* tabs-rail squares the corners. index.css paints every tab list
+              as a pill — right for a short, wide segmented control and an
+              ellipse on a rail ten items tall, which closed over Overview
+              at the top and History at the bottom.
+
+              That rule is UNLAYERED, so it beats Tailwind utilities
+              whatever their specificity: the `bg-transparent p-0` that
+              used to be here never applied, and reading it would tell you
+              the rail was unpainted when it was not. Removed rather than
+              left to mislead — the stylesheet owns the fill, the border
+              and the padding. */}
+          <TabsList className="tabs-rail flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 lg:sticky lg:top-4 lg:flex-col lg:flex-nowrap">
             {[
               { value: "overview", label: "Overview", icon: LayoutDashboard },
               { value: "pets", label: `Pets (${pets.length})`, icon: Dog },
@@ -1368,7 +1387,25 @@ export default function ClientDetail() {
               <TabsTrigger
                 key={item.value}
                 value={item.value}
-                className="w-full justify-start gap-2 rounded-lg px-3 py-2 text-sm data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+                /* flex-none and h-auto undo two things the shadcn TabsList
+                   base assumes, both of which are right for a single-row
+                   equal-width tab strip and wrong for this.
+
+                   `flex-1` gives every trigger flex-basis:0, so on a phone —
+                   where the rail falls back to a wrapped row — each row
+                   divided its width between however many items happened to
+                   fit. Three tabs on one line, two on the next, every row a
+                   different size, and the active pill stretched to whatever
+                   slot it landed in. The `w-full` that used to be here was
+                   meant to stop that and could not: flex-basis beats width.
+
+                   `h-[calc(100%-1px)]` is a percentage of a container that
+                   is h-auto, which has nothing to resolve against once the
+                   row wraps.
+
+                   So: natural-width chips that wrap on a phone, full-width
+                   rows in the lg column where the rail is a vertical list. */
+                className="h-auto flex-none w-auto justify-start gap-2 rounded-lg px-3 py-2 text-sm lg:w-full data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
               >
                 <item.icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{item.label}</span>
@@ -1389,10 +1426,19 @@ export default function ClientDetail() {
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center justify-between gap-2 text-base">
                       Upcoming appointments
-                      <Button variant="ghost" size="sm" className="h-7 text-xs"
-                        onClick={() => setActiveClientTab("appointments")}>
-                        View all
-                      </Button>
+                      <span className="flex items-center gap-1">
+                        {/* Lauren, 06/11/2026, after setting a year of
+                            bookings: "I want to send her a list of all her
+                            dates in a sms too if possible." It belongs
+                            beside the list it is about. */}
+                        {upcomingBookings.length > 0 && (
+                          <TextUpcomingDatesButton clientId={clientId} />
+                        )}
+                        <Button variant="ghost" size="sm" className="h-7 text-xs"
+                          onClick={() => setActiveClientTab("appointments")}>
+                          View all
+                        </Button>
+                      </span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
@@ -2032,10 +2078,11 @@ export default function ClientDetail() {
                         <td className="p-3 text-right whitespace-nowrap">
                           <button
                             className="rounded p-1 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                            title="Change this booking's time"
-                            aria-label={`Change the time of ${a.petName}'s booking`}
+                            title="Edit this booking"
+                            aria-label={`Edit ${a.petName}'s booking`}
                             onClick={() => setEditAppt({
                               id: a.id,
+                              petName: a.petName,
                               label: `${a.petName} — ${SERVICE_LABELS[a.serviceType] ?? a.serviceType}`,
                               scheduledStart: brisbaneLocalInputValue(new Date(a.scheduledStart)),
                               scheduledEnd: brisbaneLocalInputValue(new Date(a.scheduledEnd)),
@@ -2481,7 +2528,12 @@ export default function ClientDetail() {
                         {pets.filter(pet => pet.status === "active" && pet.id !== membershipAction?.petId).map(pet => {
                           const source = pets.find(item => item.id === membershipAction?.petId);
                           const eligible = source ? isEligibleMembershipReplacement(source, pet) : false;
-                          return <SelectItem key={pet.id} value={String(pet.id)} disabled={!eligible}>{pet.name} {pet.weightKg ? `· ${pet.weightKg}kg` : "· weight required"}{eligible ? "" : " · different band"}</SelectItem>;
+                          /* "weight required" was wrong for most of the salon: a dog
+                             with no weight but a recorded size band is eligible, and
+                             the label told staff to go and weigh a dead dog's sibling
+                             when the band was already on file. */
+                          const size = pet.weightKg ? `· ${pet.weightKg}kg` : getReplacementWeightBand(pet) ? `· ${getReplacementWeightBand(pet)?.label} (no weight)` : "· no weight or size on file";
+                          return <SelectItem key={pet.id} value={String(pet.id)} disabled={!eligible}>{pet.name} {size}{eligible ? "" : " · different band"}</SelectItem>;
                         })}
                       </SelectContent>
                     </Select>
@@ -2606,7 +2658,7 @@ export default function ClientDetail() {
       <Dialog open={!!editAppt} onOpenChange={open => { if (!open) setEditAppt(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Change booking time</DialogTitle>
+            <DialogTitle>Edit booking</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{editAppt?.label}</p>
           <div className="space-y-3 pt-1">
@@ -2643,6 +2695,28 @@ export default function ClientDetail() {
               />
             </div>
           </div>
+
+          {/*
+            * Extras on a booking that has not happened yet.
+            *
+            * Lauren, 06/11/2026: "I want to be able to edit future
+            * booking and put the add on in there." This dialog did one
+            * thing — the start and end — and its title said so, so the
+            * only way to put a nail paint on a January booking was to
+            * find the day in the diary and open it there.
+            *
+            * The same panel the calendar uses, so there is one place
+            * that knows what an extra costs and how it is charged. It
+            * saves on its own as each line is added rather than waiting
+            * for the button below, which is why it sits outside the
+            * footer: "Save time" means the time.
+            */}
+          {editAppt && (
+            <div className="border-t pt-3">
+              <AppointmentAddOns appointmentId={editAppt.id} petName={editAppt.petName} />
+            </div>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditAppt(null)}>Cancel</Button>
             <Button

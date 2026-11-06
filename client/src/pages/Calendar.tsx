@@ -67,7 +67,7 @@ import {
   type StyleNoteDraft,
 } from "@shared/styleNoteDraft";
 import { formatAestDate, formatAestDateTime, formatAestTime } from "@shared/auditTimestamp";
-import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
+import { getAutoDurationMinutesForPets, AUTO_DURATION_SERVICES } from "@shared/appointmentDuration";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -79,6 +79,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
+import { brisbaneLocalInputValue, parseBrisbaneLocalDateTime } from "@shared/localDateTime";
 import { DateTimeField } from "@/components/DateTimeField";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -132,6 +133,13 @@ import {
   wholeBookingCancellation, describeWholeBookingCancellation,
 } from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
+import { QuickAppointmentDialog } from "@/components/QuickAppointmentDialog";
+import { toastBookingConfirmation } from "@/lib/confirmationToast";
+import { NextAvailablePanel } from "@/components/NextAvailablePanel";
+import {
+  describeRecurrence, recurrenceStarts,
+  MAX_FREQUENCY_WEEKS, MIN_FREQUENCY_WEEKS, type RecurrenceEnd,
+} from "@shared/recurrenceRule";
 import { overlapPlacement } from "@shared/appointmentCardOverlap";
 import { appointmentStack, MIN_DRAWN_MINUTES } from "@shared/appointmentStack";
 import { BASE_HOUR_HEIGHT } from "@shared/calendarZoom";
@@ -1383,6 +1391,19 @@ export default function Calendar() {
     collectByTime: "",
   });
   const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
+  /**
+   * Repeating a booking that ALREADY exists, from the edit dialog.
+   *
+   * Separate from repeatForm above, which belongs to the new-booking
+   * dialog. The two are never open together, but sharing one piece of
+   * state would mean a half-filled series on a new booking reappearing
+   * inside somebody else's edit — the class of bug the comment on
+   * closeEditDialog is about.
+   */
+  const [editRepeat, setEditRepeat] = useState<{
+    enabled: boolean; frequencyWeeks: string;
+    endKind: RecurrenceEnd["kind"]; sessions: string; untilDate: string;
+  }>({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
   /** The "+ New client" form, open inside the client picker. */
   const [addingClient, setAddingClient] = useState(false);
 
@@ -1727,8 +1748,9 @@ export default function Calendar() {
   const { data: tenantInfo } = trpc.settings.getTenantInfo.useQuery({});
 
   const createMutation = trpc.calendar.createAppointment.useMutation({
-    onSuccess: () => {
+    onSuccess: (r) => {
       toast.success("Appointment created");
+      toastBookingConfirmation(r.confirmationSms);
       setShowNewAppt(false);
       setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
@@ -2529,6 +2551,7 @@ export default function Calendar() {
   const multiPetCreateMutation = trpc.calendar.createMultiPetAppointment.useMutation({
     onSuccess: (r) => {
       toast.success(`${r.created} appointment${r.created !== 1 ? "s" : ""} created`);
+      toastBookingConfirmation(r.confirmationSms);
       setShowNewAppt(false);
       setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setClientSearch("");
@@ -2539,8 +2562,29 @@ export default function Calendar() {
 
   const createRecurringMutation = trpc.calendar.createRecurringAppointments.useMutation({
     onSuccess: (r) => {
-      const skippedMsg = r.skipped.length > 0 ? ` (${r.skipped.length} skipped due to a groomer clash)` : "";
-      toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created${skippedMsg}`);
+      toast.success(`${r.createdCount} recurring appointment${r.createdCount !== 1 ? "s" : ""} created`);
+      /*
+       * The skipped dates by NAME, as their own message that stays up.
+       *
+       * This used to be "(1 skipped due to a groomer clash)" tacked onto
+       * the success toast. A count is not actionable: Lauren set a
+       * 4-weekly series from 15 January, the first occurrence clashed
+       * with two dogs already booked on that groomer at 8am, it was
+       * dropped, and the series began on 12 February. She had no way to
+       * know WHICH one was missing and asked why it said 12 February.
+       *
+       * Separate toast rather than appended, because a skipped booking
+       * is not part of a success — somebody has to go and rebook it.
+       */
+      if (r.skipped.length > 0) {
+        const when = r.skipped
+          .map(s => formatAestDate(s.scheduledStart, { weekday: "short", day: "numeric", month: "short" }))
+          .join(", ");
+        toast.warning(
+          `Not booked — the groomer is already busy: ${when}. Rebook ${r.skipped.length === 1 ? "it" : "them"} at another time or with someone else.`,
+          { duration: 15000 },
+        );
+      }
       setShowNewAppt(false);
       setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
       setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });
@@ -2548,6 +2592,100 @@ export default function Calendar() {
       refetch();
     },
     onError: (e) => toast.error(e.message),
+  });
+
+  /**
+   * The series a person is about to create, worked out before anything
+   * is written.
+   *
+   * recurrenceStarts is the SAME function the server runs, so the count
+   * and the dates on screen are the ones that will be booked rather than
+   * an estimate of them. Lauren's "why does it say 12 February?" was
+   * exactly this gap: the series was decided server-side and the first
+   * she saw of it was a count.
+   */
+  const editRecurrenceRequest = useMemo(() => {
+    const end: RecurrenceEnd =
+      editRepeat.endKind === "count"
+        ? { kind: "count", sessions: Number(editRepeat.sessions) }
+        : editRepeat.endKind === "date"
+          ? { kind: "date", untilDate: editRepeat.untilDate }
+          : { kind: "ongoing" };
+    return {
+      /*
+       * The SAVED start, not the Start field.
+       *
+       * The server repeats the booking as it is stored, so anchoring the
+       * preview on an edited-but-unsaved Start showed dates it would
+       * never create: change Fri 15 Jan to 22 Jan, tick the box, and the
+       * screen promised 19 Feb and 19 Mar while the server would make 12
+       * Feb and 12 Mar. The whole point of listing the dates is that they
+       * are the ones that will be booked.
+       *
+       * Editing the time is still fine — it is the preview that has to
+       * wait, and editRepeatStartDirty below says so on screen.
+       */
+      firstStart: editAppt ? brisbaneLocalInputValue(new Date(editAppt.scheduledStart)) : "",
+      frequencyWeeks: Number(editRepeat.frequencyWeeks),
+      end,
+    };
+  }, [editAppt, editRepeat]);
+
+  /* Start has been changed and not saved, so the preview and the server
+     disagree about where the series begins. */
+  const editRepeatStartDirty = Boolean(
+    editAppt && editForm.scheduledStart
+    && editForm.scheduledStart !== brisbaneLocalInputValue(new Date(editAppt.scheduledStart)),
+  );
+
+  const editRecurrencePlan = useMemo(
+    () => (editRepeat.enabled ? recurrenceStarts(editRecurrenceRequest) : null),
+    [editRepeat.enabled, editRecurrenceRequest],
+  );
+
+  const addRecurrenceMutation = trpc.calendar.addRecurrenceToAppointment.useMutation({
+    onSuccess: (r) => {
+      /* Nothing created is not a success. Every date can be skipped —
+         a groomer on leave for the whole run, or a dog already booked
+         on every one of them — and a green "0 more bookings added"
+         reads like it worked. */
+      if (r.createdCount === 0) {
+        toast.warning("Nothing was added — every date was skipped. The reasons are below.", { duration: 15000 });
+      } else {
+        toast.success(
+          `${r.createdCount} more booking${r.createdCount === 1 ? "" : "s"} added`
+          + (r.petsPerOccurrence > 1 ? ` for all ${r.petsPerOccurrence} dogs` : ""),
+        );
+      }
+      /*
+       * The skipped dates BY NAME, same as the new-booking path. A count
+       * is not actionable — somebody has to go and rebook each one.
+       */
+      if (r.skipped.length > 0) {
+        /* Grouped by the server's OWN reason. There are four now — the
+           groomer is booked, the groomer is away or the salon is shut,
+           the dog is already in that day, or the date has passed — and
+           printing "the groomer is already busy" over all of them sends
+           somebody looking at the wrong thing. */
+        const byReason = new Map<string, string[]>();
+        for (const x of r.skipped) {
+          const when = formatAestDate(x.scheduledStart, { weekday: "short", day: "numeric", month: "short" });
+          byReason.set(x.reason, [...(byReason.get(x.reason) ?? []), when]);
+        }
+        for (const [reason, dates] of byReason) {
+          toast.warning(`Not booked — ${reason.toLowerCase()}: ${dates.join(", ")}.`, { duration: 15000 });
+        }
+      }
+      if (r.truncated) {
+        toast.warning(
+          "That is as many as one go will create. Repeat it again from the last booking to carry on.",
+          { duration: 15000 },
+        );
+      }
+      setEditRepeat({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
+      refetch();
+    },
+    onError: (e) => toast.error(e.message, { duration: 10000 }),
   });
 
   /**
@@ -2671,6 +2809,7 @@ export default function Calendar() {
    */
   const closeEditDialog = () => {
     setEditAppt(null);
+    setEditRepeat({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
     setSelectedStylePetId(null);
     setSiblingGroomers({});
     setSiblingPrices({});
@@ -2796,6 +2935,24 @@ export default function Calendar() {
     try {
       await Promise.all(promises);
       toast.success("Appointment updated");
+      /*
+       * "Recurring appt" is ticked and nobody pressed Add.
+       *
+       * Save Changes is the familiar button, so ticking the box and
+       * pressing it is the obvious thing to do — and it created nothing
+       * and said "Appointment updated", which reads like success.
+       * Nobody would find out for four weeks.
+       *
+       * Said after the save rather than blocking it: the edit itself is
+       * valid and has just been written. This is the series that has
+       * not been.
+       */
+      if (editRepeat.enabled) {
+        toast.warning(
+          "The repeat was NOT created — reopen the booking, tick Recurring appt and press Add bookings.",
+          { duration: 15000 },
+        );
+      }
       closeEditDialog();
       refetch();
     } catch { /* individual errors already toasted */ }
@@ -3777,6 +3934,30 @@ export default function Calendar() {
                 </span>
               )}
             </Button>
+            {/* Lauren, 06/11/2026: "if someone rang up and asks when's
+                your next available booking... I have no fucking idea off
+                the top of my head unless I go through manually and
+                check."
+
+                Here, next to New Appointment, rather than inside it. The
+                same search has existed for a while as a button within
+                that dialog, which means starting a booking and picking a
+                client and a dog before seeing a date — not something
+                anyone does with a client on the phone. Picking a slot
+                here opens the booking dialog on it, so the answer can
+                still become a booking in one more press. */}
+            <NextAvailablePanel
+              onPick={(date, time) => {
+                setNewAppt(p => ({ ...p, scheduledStart: joinLocalDateTime(date, time) }));
+                setShowNewAppt(true);
+              }}
+            />
+            {/* Andy, 06/11/2026: a walk-in nail clip or quick bath, "as
+                these appts are usually done in 10-15 mins". Beside New
+                Appointment because it is the same moment — somebody has
+                walked in with a dog — and because the full booking
+                dialog is far too much form for a ten-minute job. */}
+            <QuickAppointmentDialog onCreated={() => refetch()} />
             <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
               <Plus className="h-4 w-4" /> New Appointment
             </Button>
@@ -4385,8 +4566,26 @@ export default function Calendar() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Ends</Label>
-                <DateTimeField aria-label="Ends" value={newAppt.scheduledEnd} onChange={next => setNewAppt(p => ({ ...p, scheduledEnd: next }))} />
-                <p className="text-[11px] text-muted-foreground">Suggested from the dogs' size — change it for a known-quick or a difficult groom.</p>
+                {/* fallbackDate, so the day is already there and only a time
+                    has to be typed. Five of eight service types get no
+                    suggested duration, and for those both halves were blank
+                    and the picker opened on today — a January booking meant
+                    paging forward three months to re-enter a date that was
+                    never going to differ from the start. */}
+                <DateTimeField
+                  aria-label="Ends"
+                  value={newAppt.scheduledEnd}
+                  fallbackDate={newAppt.scheduledStart.slice(0, 10)}
+                  onChange={next => setNewAppt(p => ({ ...p, scheduledEnd: next }))}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {AUTO_DURATION_SERVICES.has(newAppt.serviceType)
+                    ? "Suggested from the dogs' size — change it for a known-quick or a difficult groom."
+                    /* Honest for the other five. Claiming a suggestion that
+                       never comes is what made the empty field puzzling as
+                       well as tedious. */
+                    : "No suggested length for this service — set the finish time."}
+                </p>
               </div>
             </div>
             {blockingClashes(bookingClashes).length > 0 && (
@@ -4908,6 +5107,81 @@ export default function Calendar() {
                   <PetCodeChips codes={editAppt.petMoegoCodeLabels} />
                   {editAppt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appointment:</span> {new Date(editAppt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>}
                 </div>
+                {/* Moved up from below the Notes field.
+
+                    Lauren, 06/11/2026: "maybe place it where the 'last
+                    appointment section' is further up on that page". It
+                    sat between Notes and Payments, so when the dog is
+                    next back — the thing you answer at the counter — was
+                    the last thing on the screen. It is context about the
+                    client rather than a form field, so it belongs above
+                    the form rather than buried in it. */}
+                {(() => {
+                  const rhythm = visitRhythm({
+                    last: editAppt.lastAppointmentDate ?? null,
+                    current: editAppt.scheduledStart,
+                    next: editAppt.nextAppointmentDate ?? null,
+                  });
+                  const when = (d: Date | string) => new Date(d).toLocaleDateString("en-AU", {
+                    timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric",
+                  });
+                  /*
+                   * Only call it a LAST visit if it is actually before
+                   * this one. `lastAppointmentDate` is the pet's newest
+                   * appointment already in the past, and for a dog in
+                   * the salon right now that is THIS booking — Oakley's
+                   * card read "Last visit: Wed, 4 Nov 2026" while she
+                   * was on the table. The rule above already returns
+                   * null for it; the display has to agree.
+                   */
+                  const showLast = rhythm.sinceLastWeeks !== null;
+                  if (!showLast && !editAppt.nextAppointmentDate) return null;
+                  return (
+                    <div className="rounded-xl border bg-muted/20 p-3">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold">
+                        <CalendarDays className="h-4 w-4 text-muted-foreground" /> Visits
+                        {rhythm.settled && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                            every {describeWeeks(rhythm.untilNextWeeks)}
+                          </span>
+                        )}
+                      </p>
+                      {/*
+                        Lauren, 06/11/2026: "the next appointment section can
+                        it be bold and easy to read."
+
+                        The two used to sit side by side at text-xs, equally
+                        weighted — so the one thing somebody opening a booking
+                        actually needs, when this dog is back, read exactly
+                        like the history beside it. The next booking is the
+                        headline now and the last visit is context under it.
+                      */}
+                      <p className="mt-2 text-base font-bold leading-tight">
+                        {editAppt.nextAppointmentDate ? (
+                          <>
+                            Next: {when(editAppt.nextAppointmentDate)}
+                            {describeWeeks(rhythm.untilNextWeeks) && (
+                              <span className="font-medium text-muted-foreground"> · in {describeWeeks(rhythm.untilNextWeeks)}</span>
+                            )}
+                          </>
+                        ) : (
+                          /* Bold too. "Nothing booked" is the one that needs
+                             acting on before the dog leaves, so it must not
+                             read quieter than a date. */
+                          <span className="text-amber-700 dark:text-amber-400">Nothing booked yet</span>
+                        )}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {showLast && editAppt.lastAppointmentDate ? (
+                          <>
+                            Last visit: {when(editAppt.lastAppointmentDate)}
+                            {describeWeeks(rhythm.sinceLastWeeks) && <> · {describeWeeks(rhythm.sinceLastWeeks)} ago</>}
+                          </>
+                        ) : "First visit on record"}
+                      </p>
+                    </div>
+                  );
+                })()}
                 {(() => {
                   const bookedPetIds = new Set([editAppt, ...editSiblings].map((appointment) => appointment.petId));
                   const availablePets = (editableAppointmentPets.data ?? []).filter((pet) => pet.status === "active" && !bookedPetIds.has(pet.id));
@@ -5148,7 +5422,7 @@ export default function Calendar() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>End</Label>
-                    <DateTimeField aria-label="Ends" value={editForm.scheduledEnd} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledEnd: next }))} />
+                    <DateTimeField aria-label="Ends" value={editForm.scheduledEnd} fallbackDate={editForm.scheduledStart?.slice(0, 10)} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledEnd: next }))} />
                   </div>
                 </div>
                 {(blockingClashes(editClashes).length > 0 || editMoveCapacityWarning) && (
@@ -5162,6 +5436,155 @@ export default function Calendar() {
                 )}
                 {preservesCancelledSchedule && (
                   <p className="rounded-md border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs font-medium text-red-800 dark:text-red-300">Cancelled appointments stay at their original booked time for historical tracking. Create a new appointment if the client needs to be rebooked.</p>
+                )}
+                {/*
+                  * Turning THIS booking into a series.
+                  *
+                  * Andy, 06/11/2026, about Bronwyn Waegh: she has a booking
+                  * in January 2027 and wants the rest of the year. The only
+                  * recurring path builds a series from scratch, so the
+                  * alternative was deleting hers and rebooking it.
+                  *
+                  * It sits with the Start and End fields because whether
+                  * this is one visit or twelve is a question about WHEN —
+                  * the same reason the new-booking control was moved up
+                  * here on 03/11/2026 after Lauren never found it.
+                  *
+                  * Hidden on a cancelled booking: the server refuses one,
+                  * and a control that is going to be refused is worse than
+                  * no control.
+                  */}
+                {!preservesCancelledSchedule && !isCancelledAppointment(editAppt) && (
+                  <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={editRepeat.enabled}
+                        onChange={e => setEditRepeat(f => ({ ...f, enabled: e.target.checked }))}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      <span className="text-sm font-medium">Recurring appt</span>
+                    </label>
+                    {editRepeat.enabled && (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label>Every</Label>
+                            <Select
+                              value={editRepeat.frequencyWeeks}
+                              onValueChange={v => setEditRepeat(f => ({ ...f, frequencyWeeks: v }))}
+                            >
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {Array.from(
+                                  { length: MAX_FREQUENCY_WEEKS - MIN_FREQUENCY_WEEKS + 1 },
+                                  (_, i) => i + MIN_FREQUENCY_WEEKS,
+                                ).map(w => (
+                                  <SelectItem key={w} value={String(w)}>
+                                    {w === 1 ? "1 week" : `${w} weeks`}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label>Ends</Label>
+                            <Select
+                              value={editRepeat.endKind}
+                              onValueChange={v => setEditRepeat(f => ({ ...f, endKind: v as RecurrenceEnd["kind"] }))}
+                            >
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="count">After a number of sessions</SelectItem>
+                                <SelectItem value="date">On a date</SelectItem>
+                                <SelectItem value="ongoing">Ongoing</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {editRepeat.endKind === "count" && (
+                            <div className="space-y-1.5">
+                              <Label htmlFor={`repeat-sessions-${editAppt.id}`}>How many more</Label>
+                              <Input
+                                id={`repeat-sessions-${editAppt.id}`}
+                                type="number" min={1} max={60} inputMode="numeric"
+                                value={editRepeat.sessions}
+                                /* Whole numbers only, and capped where the
+                                   server caps. "2.5 sessions" enabled the
+                                   button and then failed on the server's own
+                                   zod, which is a worse way to find out. */
+                                onChange={e => setEditRepeat(f => ({
+                                  ...f,
+                                  sessions: e.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                }))}
+                              />
+                            </div>
+                          )}
+                          {editRepeat.endKind === "date" && (
+                            <div className="space-y-1.5">
+                              <Label>Up to</Label>
+                              <DateField
+                                value={editRepeat.untilDate}
+                                onChange={next => setEditRepeat(f => ({ ...f, untilDate: next }))}
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* The dates themselves, not a count. This is the
+                            whole fix for "can you see why it's saying the
+                            12 Feb?" — the answer is on screen before the
+                            button is pressed. */}
+                        {editRepeatStartDirty && (
+                          <p className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs font-medium text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                            Save the new start time first. The repeat is built from the booking as it
+                            is saved, so these dates would not be the ones created.
+                          </p>
+                        )}
+                        {editRecurrencePlan?.ok === false && (
+                          <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                            {editRecurrencePlan.reason}
+                          </p>
+                        )}
+                        {editRecurrencePlan?.ok && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-medium">
+                              {describeRecurrence(editRecurrenceRequest, editRecurrencePlan.starts.length)}
+                            </p>
+                            <p className="max-h-24 overflow-y-auto text-xs leading-5 text-muted-foreground">
+                              {editRecurrencePlan.starts
+                                .map(start => formatAestDate(
+                                  parseBrisbaneLocalDateTime(start),
+                                  { weekday: "short", day: "numeric", month: "short" },
+                                ))
+                                .join(" · ")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              This booking stays as it is — these are added after it, at the same
+                              time, with the same {editSiblings.length > 0 ? "dogs and groomers" : "groomer"}.
+                              If the groomer is already booked on one of these dates, that date is
+                              skipped and named, and the rest are still created.
+                            </p>
+                          </div>
+                        )}
+
+                        <Button
+                          type="button" size="sm" variant="outline"
+                          disabled={!editRecurrencePlan?.ok || editRepeatStartDirty || addRecurrenceMutation.isPending}
+                          onClick={() => addRecurrenceMutation.mutate({
+                            appointmentId: editAppt.id,
+                            frequencyWeeks: Number(editRepeat.frequencyWeeks),
+                            end: editRecurrenceRequest.end,
+                          })}
+                        >
+                          {addRecurrenceMutation.isPending
+                            ? "Adding…"
+                            : editRecurrencePlan?.ok
+                              ? `Add ${editRecurrencePlan.starts.length} booking${editRecurrencePlan.starts.length === 1 ? "" : "s"}`
+                              : "Add bookings"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {(() => {
                   if (!editForm.scheduledStart) return null;
@@ -5281,63 +5704,6 @@ export default function Calendar() {
                   * — "same again in six weeks?" — so it belongs before
                   * the money, not under it.
                   */}
-                {(() => {
-                  const rhythm = visitRhythm({
-                    last: editAppt.lastAppointmentDate ?? null,
-                    current: editAppt.scheduledStart,
-                    next: editAppt.nextAppointmentDate ?? null,
-                  });
-                  const when = (d: Date | string) => new Date(d).toLocaleDateString("en-AU", {
-                    timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric",
-                  });
-                  /*
-                   * Only call it a LAST visit if it is actually before
-                   * this one. `lastAppointmentDate` is the pet's newest
-                   * appointment already in the past, and for a dog in
-                   * the salon right now that is THIS booking — Oakley's
-                   * card read "Last visit: Wed, 4 Nov 2026" while she
-                   * was on the table. The rule above already returns
-                   * null for it; the display has to agree.
-                   */
-                  const showLast = rhythm.sinceLastWeeks !== null;
-                  if (!showLast && !editAppt.nextAppointmentDate) return null;
-                  return (
-                    <div className="rounded-xl border bg-muted/20 p-3">
-                      <p className="flex items-center gap-1.5 text-sm font-semibold">
-                        <CalendarDays className="h-4 w-4 text-muted-foreground" /> Visits
-                        {rhythm.settled && (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
-                            every {describeWeeks(rhythm.untilNextWeeks)}
-                          </span>
-                        )}
-                      </p>
-                      <div className="mt-1.5 grid gap-1 text-xs sm:grid-cols-2">
-                        <div>
-                          <span className="text-muted-foreground">Last visit: </span>
-                          {showLast && editAppt.lastAppointmentDate ? (
-                            <>
-                              {when(editAppt.lastAppointmentDate)}
-                              {describeWeeks(rhythm.sinceLastWeeks) && (
-                                <span className="text-muted-foreground"> · {describeWeeks(rhythm.sinceLastWeeks)} ago</span>
-                              )}
-                            </>
-                          ) : <span className="text-muted-foreground">first visit on record</span>}
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Next booking: </span>
-                          {editAppt.nextAppointmentDate ? (
-                            <>
-                              {when(editAppt.nextAppointmentDate)}
-                              {describeWeeks(rhythm.untilNextWeeks) && (
-                                <span className="text-muted-foreground"> · in {describeWeeks(rhythm.untilNextWeeks)}</span>
-                              )}
-                            </>
-                          ) : <span className="text-amber-700 dark:text-amber-400">nothing booked</span>}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
 
                 {/* Money taken, as many transactions as it takes: part cash
                     part card, a deposit and a balance, or one dog each. */}

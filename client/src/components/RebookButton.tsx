@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { CalendarPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { toastBookingConfirmation } from "@/lib/confirmationToast";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -131,6 +132,8 @@ export function RebookButton({ appointmentId, onRebooked }: {
   const rebook = trpc.calendar.rebook.useMutation({
     onSuccess: (r) => {
       toast.success(r.dogs > 1 ? `Rebooked ${r.dogs} dogs` : "Rebooked");
+      // Whether the client was told, and if not why — see confirmationToast.
+      toastBookingConfirmation(r.confirmationSms);
       setOpen(false);
       setWhen("");
       setWeeksOverride(null);

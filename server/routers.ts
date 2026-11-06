@@ -49,7 +49,8 @@ import { BATH_RESOURCE_MINUTES, countOverlappingBookings, countSharedBathResourc
 import { onlineDailyCapacityVerdict } from "../shared/onlineBookingCapacity";
 import { ESTIMATE_DISCLAIMER, estimateOnlineBookingPrice } from "../shared/onlineBookingPrice";
 import { notifyOnlineBooking } from "./onlineBookingNotify";
-import { getPetWeightBand, isEligibleOnlineBookingService } from "../shared/onlineBookingWeightEligibility";
+import { getPetWeightBand, isEligibleOnlineBookingService, isEligibleOnlineBookingServiceForBand } from "../shared/onlineBookingWeightEligibility";
+import { bandForWeight, type DogSizeBand } from "../shared/dogSizeBand";
 import { buildOnlineBookingNotes } from "../shared/onlineBookingPreview";
 import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
 import { planMembershipSeries } from "../shared/membershipSeries";
@@ -83,6 +84,10 @@ import { groomQuotesRouter } from "./routers/groomQuotes";
 import { salonsRouter } from "./routers/salons";
 import { platformBillingRouter } from "./routers/platformBilling";
 import { canQuoteInWorkflowState } from "@shared/groomQuote";
+import {
+  recurrenceStarts, lapsedCoverageMessage,
+  MIN_FREQUENCY_WEEKS, MAX_FREQUENCY_WEEKS, MAX_OCCURRENCES,
+} from "@shared/recurrenceRule";
 import { loadApprovedQuoteExtras, approvedQuoteExtrasTotal } from "./groomQuoteExtras";
 import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
@@ -93,10 +98,19 @@ import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignmen
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
-import { brisbaneExplicitRange, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { buildUpcomingDatesSms, upcomingDatesShown } from "@shared/upcomingDatesSms";
+import { calculateSmsCost } from "@shared/smsSegments";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
-import { firstFreeSlot, describeNoSlot } from "../shared/nextAvailableSlot";
+import {
+  firstFreeSlot, describeNoSlot, nextFreeSlots, summariseSearch, DEFAULT_SLOT_OPTIONS,
+} from "../shared/nextAvailableSlot";
+import { getAutoDurationMinutes } from "@shared/appointmentDuration";
+import {
+  QUICK_DEFAULT_MINUTES, parseCounterPrice, quickWalkInError, walkInOnlyClientIds,
+} from "@shared/quickAppointment";
+import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
 import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
 import { buildTimeSlots, minutesToTimeValue } from "../shared/bookingTimeSlots";
@@ -396,6 +410,70 @@ function cascadeFilter(stage: "checked_in" | "complete") {
   return stage === "checked_in"
     ? sql`${appointments.workflowState} = 'scheduled'`
     : sql`${appointments.workflowState} <> 'complete'`;
+}
+
+/**
+ * A client's upcoming bookings, as a text body ready for a person to read.
+ *
+ * Shared by the preview and the send so the two cannot drift: a composer
+ * showing one body and a send transmitting another is the worst version
+ * of this feature.
+ *
+ * Deliberate choices:
+ *
+ * - **Future only, and never cancelled.** A list that includes a date
+ *   the salon has already cancelled would have the client turn up.
+ * - **One entry per DATE, not per row.** A family booking is several
+ *   appointment rows at one time; "Fri 12 Feb, Fri 12 Feb, Fri 12 Feb"
+ *   is how Mellissa Luckman's three pickup texts read, in list form.
+ * - **The salon's own timezone**, via SALON_TIME_ZONE. A client reading
+ *   "Fri 12 Feb" means the salon's Friday, not the server's.
+ */
+async function buildUpcomingDatesForClient(db: any, tenantId: number, clientId: number) {
+  const [client] = await db.select({
+    firstName: clients.firstName, phone: clients.phone,
+  }).from(clients)
+    .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId)))
+    .limit(1);
+  if (!client) throw new Error("That client is not available to this salon");
+
+  const rows = await db.select({
+    scheduledStart: appointments.scheduledStart, petName: pets.name,
+  }).from(appointments)
+    .leftJoin(pets, eq(appointments.petId, pets.id))
+    .where(and(
+      eq(appointments.tenantId, tenantId),
+      eq(appointments.clientId, clientId),
+      gte(appointments.scheduledStart, new Date()),
+      ne(appointments.status, "cancelled"),
+      ne(appointments.workflowState, "cancelled"),
+    ))
+    .orderBy(asc(appointments.scheduledStart));
+
+  const formatter = new Intl.DateTimeFormat("en-AU", {
+    timeZone: SALON_TIME_ZONE, weekday: "short", day: "numeric", month: "short",
+  });
+  const seen = new Set<string>();
+  const dates: string[] = [];
+  const petNames: string[] = [];
+  for (const row of rows as Array<{ scheduledStart: Date; petName: string | null }>) {
+    const label = formatter.format(new Date(row.scheduledStart));
+    if (!seen.has(label)) { seen.add(label); dates.push(label); }
+    const name = row.petName?.trim();
+    if (name && !petNames.includes(name)) petNames.push(name);
+  }
+
+  const { shown, omitted } = upcomingDatesShown(dates);
+  return {
+    phone: client.phone as string | null,
+    body: buildUpcomingDatesSms({
+      clientFirstName: client.firstName ?? "",
+      petNames,
+      dates,
+    }),
+    datesShown: shown,
+    datesOmitted: omitted,
+  };
 }
 
 const calendarRouter = router({
@@ -840,7 +918,27 @@ const calendarRouter = router({
           scheduledStart: start,
           scheduledEnd: new Date(start.getTime() + minutes * 60000),
           workflowState: "scheduled",
-          status: "pending",
+          /*
+           * CONFIRMED, not pending — changed 06/11/2026.
+           *
+           * It was pending, and `status` does not mean what that
+           * suggests. shared/reminderDecision.ts had to work this out
+           * the hard way: every booking created in Groomigo is born
+           * "confirmed" before any client has confirmed anything, and
+           * every MoeGo import lands "pending", so the field records
+           * where a booking came from rather than whether anyone agreed
+           * to it. shared/bookingBuckets.ts has the count — 1,023 of
+           * 1,025 future bookings read "pending".
+           *
+           * It mattered here because the confirmation gate DOES read it,
+           * and correctly so for an online request nobody has approved.
+           * A rebook is the opposite: a staff member at the counter
+           * pressing "book the next visit" with the client in front of
+           * them. Born pending, it was refused "not_confirmed" and the
+           * client was never told their next date — Lauren, 06/11/2026:
+           * "Also they dont get a text with their next date."
+           */
+          status: "confirmed",
           price: dog.price,
           sessionId,
           // Booked here, so no MoeGo id. reminder_* stay NULL: this is a
@@ -857,7 +955,20 @@ const calendarRouter = router({
         });
       }
 
-      return { success: true, created, sessionId, dogs: siblings.length };
+      /*
+       * One text for the whole booking, through the same gate every
+       * other confirmation goes through — so a client who replied STOP,
+       * a booking inside the lead time, and the quiet hours are all
+       * honoured without this path knowing about any of them.
+       *
+       * After the inserts and never throwing: the dogs are booked and
+       * the staff member has seen it succeed, so a Twilio outage must
+       * not surface as a failed rebook. The reason comes back instead,
+       * and the screen shows it.
+       */
+      const confirmationSms = await sendBookingConfirmation(db, created);
+
+      return { success: true, created, sessionId, dogs: siblings.length, confirmationSms };
     }),
 
   searchAppointments: operationalProcedure
@@ -1383,6 +1494,362 @@ const calendarRouter = router({
    * board could not see. A groomer with eight of eight clips booked
    * has no room at 2pm however empty 2pm looks.
    */
+  /**
+   * A walk-in who is already on the books, found by their number.
+   *
+   * Typed into the Quick Appointment form as the phone goes in, so a
+   * client who has walked in before is one tap rather than four fields
+   * retyped — and so three visits do not become three Jo Gerards.
+   *
+   * Matched on the last nine digits via phoneMatchKey, the same rule the
+   * MoeGo importer uses, because a number gets written down five ways
+   * at a counter and "(07) 3123 4567" and "0731234567" are one client.
+   */
+  walkInMatch: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), phone: z.string().min(4) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return { clients: [] };
+      const tenantId = tenantOf(ctx, input);
+      const key = phoneMatchKey(input.phone);
+      if (!key) return { clients: [] };
+
+      /* Fetched by tenant and matched in JS rather than in SQL: the
+         stored numbers are not normalised, so no LIKE pattern finds
+         "(07) 3123 4567" from "0731234567". */
+      const rows = await db.select({
+        id: clients.id, firstName: clients.firstName, lastName: clients.lastName,
+        phone: clients.phone, email: clients.email,
+      }).from(clients).where(and(
+        eq(clients.tenantId, tenantId),
+        isNotNull(clients.phone),
+        ne(clients.status, "blocked"),
+      ));
+
+      const matched = rows
+        .filter((row: { phone: string | null }) => phoneMatchKey(row.phone) === key)
+        .slice(0, 5);
+      if (matched.length === 0) return { clients: [] };
+
+      const dogs = await db.select({
+        id: pets.id, name: pets.name, breed: pets.breed, clientId: pets.clientId,
+      }).from(pets).where(and(
+        eq(pets.tenantId, tenantId),
+        inArray(pets.clientId, matched.map((c: { id: number }) => c.id)),
+        eq(pets.status, "active"),
+      ));
+
+      return {
+        clients: matched.map((client: { id: number }) => ({
+          ...client,
+          pets: dogs.filter((dog: { clientId: number }) => dog.clientId === client.id),
+        })),
+      };
+    }),
+
+  /**
+   * A walk-in nail clip or quick bath, booked at the counter.
+   *
+   * Andy, 06/11/2026: a Quick Appointment with a two-item service list,
+   * free pricing, shown on the board as "Walk-In: Nail Clip", outside
+   * the normal stages because the job takes ten minutes.
+   *
+   * ## It creates a REAL client and dog, not a placeholder
+   *
+   * The first design filed walk-ins under one shared "Walk-in" client.
+   * Andy asked for mandatory details the same day — "just in case
+   * anything goes wrong, they have a record of who came in and when" —
+   * and that makes the better version possible: a real client and a
+   * real pet, searchable for ever, with paperwork able to hang off the
+   * dog and the second visit one tap instead of four fields.
+   *
+   * Four fields are enforced and two are not. shared/quickAppointment.ts
+   * has the reasoning; the short version is that a mandatory email at a
+   * counter produces `a@a.com`, and a record that looks like it has
+   * contact details and does not is worse than an honest blank.
+   *
+   * ## It does not text them
+   *
+   * Confirmations are live in the allow-list since 04/11, and texting a
+   * booking confirmation to somebody standing in front of you is noise.
+   * sendBookingConfirmation is simply never called here, which is the
+   * honest way to mean it rather than relying on a gate to refuse.
+   *
+   * ## And it records when
+   *
+   * `scheduled` is skipped: the dog is here. workflow_logs gets the
+   * check-in, and a second row when staff press done — which is the
+   * "and when" half of what this feature is for.
+   */
+  createQuickAppointment: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** An existing client, when the phone matched one. */
+      clientId: z.number().int().positive().optional(),
+      petId: z.number().int().positive().optional(),
+      firstName: z.string().trim().max(100).default(""),
+      lastName: z.string().trim().max(100).default(""),
+      petName: z.string().trim().max(100).default(""),
+      phone: z.string().trim().max(30).default(""),
+      breed: z.string().trim().max(100).optional(),
+      email: z.string().trim().max(320).optional(),
+      serviceType: z.enum(["nail_trim", "bath_only"]),
+      price: z.string().trim().max(12).optional(),
+      staffId: z.number().int().positive().nullable().default(null),
+      notes: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+
+      /* Validated BEFORE anything is written. The client and the dog are
+         created first, so a price the column would reject used to leave a
+         real person and a real dog on the books with no booking — and a
+         retry made another pair. */
+      const priced = parseCounterPrice(input.price);
+      if (!priced.ok) throw new Error(priced.reason);
+
+      /* A groomer from another salon must not end up on this booking.
+         clientId and petId are tenant-checked below; this was not, and a
+         second salon goes live on 23/11. */
+      if (input.staffId !== null) {
+        const [groomer] = await db.select({ id: staff.id }).from(staff)
+          .where(and(eq(staff.id, input.staffId), eq(staff.tenantId, tenantId))).limit(1);
+        if (!groomer) throw new Error("That groomer is not on this salon's roster");
+      }
+
+      let clientId = input.clientId ?? null;
+      let petId = input.petId ?? null;
+
+      if (clientId) {
+        const [existing] = await db.select({ id: clients.id }).from(clients)
+          .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId))).limit(1);
+        if (!existing) throw new Error("That client is not on this salon's books");
+      }
+
+      if (!clientId || !petId) {
+        /* Checked here as well as on the form. The form is not the only
+           way in, and this is the record that has to exist if something
+           goes wrong. */
+        const problem = quickWalkInError({
+          firstName: input.firstName, lastName: input.lastName,
+          petName: input.petName, phone: input.phone,
+        });
+        if (problem) throw new Error(problem);
+      }
+
+      /*
+       * One transaction for the four writes.
+       *
+       * A client, a dog, the appointment and its audit row. Any of them
+       * failing part-way leaves a person and a dog on the books with no
+       * booking, which somebody then has to find and clean up — and the
+       * obvious reaction at a counter is to press the button again,
+       * which makes a second pair.
+       */
+      return await db.transaction(async (tx: any) => {
+      if (!clientId) {
+        const [created]: any = await tx.insert(clients).values({
+          tenantId,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          phone: input.phone,
+          email: input.email?.trim() || null,
+          status: "active",
+          /* Said out loud on the record rather than inferred later from
+             the booking: somebody reading this client in six months
+             should know they walked in rather than booked. */
+          notes: "Walk-in, added at the counter.",
+        });
+        clientId = Number(created?.insertId ?? 0);
+        if (!clientId) throw new Error("Could not create the client");
+      }
+
+      if (!petId) {
+        const [createdPet]: any = await tx.insert(pets).values({
+          tenantId,
+          clientId,
+          name: input.petName,
+          breed: input.breed?.trim() || null,
+          species: "dog",
+          status: "active",
+        });
+        petId = Number(createdPet?.insertId ?? 0);
+        if (!petId) throw new Error("Could not create the dog");
+      } else {
+        const [existingPet] = await tx.select({ id: pets.id, status: pets.status, name: pets.name })
+          .from(pets)
+          .where(and(eq(pets.id, petId), eq(pets.tenantId, tenantId), eq(pets.clientId, clientId)))
+          .limit(1);
+        if (!existingPet) throw new Error("That dog is not on this client's record");
+        const departed = departedBookingMessage([existingPet]);
+        if (departed) throw new Error(departed);
+      }
+
+      const start = new Date();
+      const end = new Date(start.getTime() + QUICK_DEFAULT_MINUTES * 60_000);
+
+      const [bookedRow]: any = await tx.insert(appointments).values({
+        tenantId,
+        clientId,
+        petId,
+        staffId: input.staffId,
+        serviceType: input.serviceType,
+        scheduledStart: start,
+        scheduledEnd: end,
+        price: priced.price,
+        notes: input.notes?.trim() || null,
+        trackerToken: nanoid(32),
+        /* The dog is here. `scheduled` would be a lie for the ten
+           seconds before somebody pressed check-in, and the board would
+           show a walk-in as not yet arrived. */
+        workflowState: "checked_in",
+        status: "confirmed",
+        isQuick: true,
+      });
+      const appointmentId = Number(bookedRow?.insertId ?? 0);
+      if (!appointmentId) throw new Error("Could not create the appointment");
+
+      /* The audit row. workflow_logs is what the Pet Tracker and the
+         timing analytics read, and it is also the "and when" this
+         feature exists for. */
+      await tx.insert(workflowLogs).values({
+        appointmentId,
+        fromState: null,
+        toState: "checked_in",
+        changedAt: start,
+        notes: "Walk-in, arrived at the counter.",
+      });
+
+      return { success: true, appointmentId, clientId, petId };
+      });
+    }),
+
+  availability: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** The dog, when the caller named one. Fills in the rest. */
+      petId: z.number().int().positive().optional(),
+      /** Used when there is no dog — the duration chips. */
+      durationMinutes: z.number().int().min(15).max(600).optional(),
+      staffIds: z.array(z.number().int().positive()).max(12).default([]),
+      fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      days: z.number().int().min(1).max(90).default(60),
+      limit: z.number().int().min(1).max(10).default(DEFAULT_SLOT_OPTIONS),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      if (ctx.user.role === "staff") {
+        const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+        if (portalStaff && portalStaff.tenantId !== tenantId) {
+          throw new Error("This calendar is not available to your salon staff profile");
+        }
+      }
+
+      /* The dog, when one was named. Weight and size band give the
+         length; preferred_groomer_id is who usually does it. */
+      let pet: {
+        id: number; name: string | null; weightKg: string | null;
+        sizeBand: string | null; preferredGroomerId: number | null;
+      } | null = null;
+      if (input.petId) {
+        const [row] = await db.select({
+          id: pets.id, name: pets.name, weightKg: pets.weightKg,
+          sizeBand: pets.sizeBand, preferredGroomerId: pets.preferredGroomerId,
+        }).from(pets)
+          .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantId)))
+          .limit(1);
+        pet = row ?? null;
+        if (!pet) throw new Error("That dog is not on this salon's books");
+      }
+
+      /* The dog's usual service, so the length is the one it actually
+         gets rather than a default nobody chose. */
+      let serviceType = "classic_groom";
+      if (pet) {
+        const [last] = await db.select({ serviceType: appointments.serviceType })
+          .from(appointments)
+          .where(and(eq(appointments.tenantId, tenantId), eq(appointments.petId, pet.id)))
+          .orderBy(desc(appointments.scheduledStart)).limit(1);
+        if (last?.serviceType) serviceType = last.serviceType;
+      }
+
+      const derivedMinutes = pet
+        ? getAutoDurationMinutes(serviceType, pet.weightKg, pet.sizeBand)
+        : null;
+      /* The dog decides when it can; the chips otherwise; and an hour
+         when neither — never a silent zero, which would match every
+         slot and offer times nothing fits in. */
+      const durationMinutes = derivedMinutes ?? input.durationMinutes ?? 60;
+
+      const fromDate = input.fromDate ?? brisbaneDateKey(new Date());
+      const todayKey = brisbaneDateKey(new Date());
+
+      const search = async (staffIds: number[]) => {
+        const { days, minutesInSalonDay, error } = await buildDayAvailability(db, tenantId, {
+          staffIds, fromDate, days: input.days,
+        });
+        if (error) return { slots: [], summary: { searched: 0, closed: 0, full: 0 }, message: error };
+        const opts = {
+          durationMinutes,
+          slotStartsFor: () => STAFF_SLOT_STARTS,
+          todayKey, nowMinutes: minutesInSalonDay(new Date()),
+        };
+        const slots = nextFreeSlots(days, opts, input.limit);
+        return {
+          slots: slots.map((slot) => ({
+            date: slot.dateKey,
+            time: minutesToTimeValue(slot.startMinutes),
+            daysAhead: slot.daysAhead,
+          })),
+          summary: summariseSearch(days),
+          message: slots.length === 0 ? describeNoSlot(days) : "",
+        };
+      };
+
+      const anyone = await search(input.staffIds);
+
+      /*
+       * The usual groomer, as a SECOND answer rather than a filter.
+       *
+       * "Next with Charlotte is the 18th, next with anyone is the 13th"
+       * lets the person on the phone offer both. Filtering to Charlotte
+       * would hide the 13th; not searching her at all would hide the
+       * reason the client rang.
+       *
+       * Skipped when the caller already named staff, because then they
+       * have asked a narrower question and this would answer a
+       * different one.
+       */
+      let withUsual: { staffId: number; staffName: string | null; slots: typeof anyone.slots } | null = null;
+      if (pet?.preferredGroomerId && input.staffIds.length === 0) {
+        const [usual] = await db.select({ id: staff.id, name: staff.name })
+          .from(staff)
+          .where(and(eq(staff.id, pet.preferredGroomerId), eq(staff.tenantId, tenantId)))
+          .limit(1);
+        if (usual) {
+          const mine = await search([usual.id]);
+          withUsual = { staffId: usual.id, staffName: usual.name, slots: mine.slots };
+        }
+      }
+
+      return {
+        durationMinutes,
+        /* Where the length came from, so the panel can say "60 min
+           (Bella's usual)" rather than a number nobody can check. */
+        durationSource: derivedMinutes ? ("pet" as const)
+          : input.durationMinutes ? ("chosen" as const) : ("default" as const),
+        serviceType,
+        petName: pet?.name ?? null,
+        fromDate,
+        anyone,
+        withUsual,
+      };
+    }),
+
   nextAvailable: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -1721,6 +2188,324 @@ const calendarRouter = router({
         createdCount: created.length,
         skipped,
         hitSafetyCap: count >= maxOccurrences,
+      };
+    }),
+
+
+  /**
+   * Repeat a booking that already exists.
+   *
+   * Andy, 06/11/2026, about Bronwyn Waegh: tick "recurring appt" while
+   * editing a booking, pick 1-14 weeks, and end it after a number of
+   * sessions, on a date, or ongoing.
+   *
+   * ## It never touches the booking it repeats
+   *
+   * createRecurringAppointments builds a series from scratch and creates
+   * its first occurrence too. Here the first one already exists — it is
+   * the booking being edited — so this starts one interval later and
+   * leaves the original exactly as it is.
+   *
+   * That also removes the confusion that cost an hour this morning:
+   * Lauren built a series FROM 15 January, the 15th clashed with a
+   * groomer, it was skipped, the series began on 12 February, and she
+   * had no way to see why. There is no first occurrence left to lose.
+   *
+   * ## Every dog on the booking comes with it
+   *
+   * A two-dog family is two appointment rows at the same time, and a
+   * repeat that carried only the dog whose pencil was clicked would book
+   * one sibling for a year and not the other.
+   */
+  addRecurrenceToAppointment: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      appointmentId: z.number(),
+      frequencyWeeks: z.number().int().min(MIN_FREQUENCY_WEEKS).max(MAX_FREQUENCY_WEEKS),
+      end: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("count"), sessions: z.number().int().min(1).max(MAX_OCCURRENCES) }),
+        z.object({ kind: z.literal("date"), untilDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+        z.object({ kind: z.literal("ongoing") }),
+      ]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+
+      const [source] = await db.select().from(appointments)
+        .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, tenantId)))
+        .limit(1);
+      if (!source) throw new Error("That booking no longer exists");
+      if (source.status === "cancelled" || source.workflowState === "cancelled") {
+        throw new Error("That booking is cancelled — repeating it would book a series nobody asked for");
+      }
+      /* A booking nobody has agreed to yet, or one the dog never turned
+         up for, is not a pattern to repeat for a year. Every row this
+         creates is `confirmed`, so repeating an unapproved online
+         request would confirm a year of them on its behalf. */
+      if (source.status === "pending") {
+        throw new Error("That booking has not been accepted yet — approve it before repeating it");
+      }
+      if (source.status === "no_show" || source.workflowState === "no_show") {
+        throw new Error("That dog did not turn up for this booking — repeating it would book a year from a no-show");
+      }
+
+      /*
+       * Every dog at that exact time for that client: a family booking is
+       * several rows and they travel together. Matched on client and start
+       * rather than session_id, because session_id is NULL on every MoeGo
+       * import — the same reason cancelWholeBooking matches this way.
+       *
+       * no_show is excluded alongside cancelled. shared/sharedBookingAttendance
+       * treats both as "not coming this time", and a dog that did not turn
+       * up is not one to book for the next year.
+       */
+      const bookingRows = await db.select().from(appointments).where(and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.clientId, source.clientId),
+        eq(appointments.scheduledStart, source.scheduledStart),
+        ne(appointments.status, "cancelled"),
+        ne(appointments.workflowState, "cancelled"),
+        ne(appointments.status, "no_show"),
+        ne(appointments.workflowState, "no_show"),
+      ));
+      /* One row per dog. A duplicate row on the source booking would
+         otherwise be replicated into every single occurrence. */
+      const booking = bookingRows.filter(
+        (row: { petId: number }, i: number) =>
+          bookingRows.findIndex((other: { petId: number }) => other.petId === row.petId) === i,
+      );
+      if (booking.length === 0) throw new Error("There is nothing on that booking to repeat");
+
+      /* A dog recorded as passed away must not be given a year of
+         bookings. The booking it is repeating already exists and stays,
+         so this refuses the repeat rather than touching history. */
+      const bookingPets = await db.select({ id: pets.id, name: pets.name, status: pets.status })
+        .from(pets).where(inArray(pets.id, booking.map((row: { petId: number }) => row.petId)));
+      const departedMessage = departedBookingMessage(bookingPets);
+      if (departedMessage) throw new Error(departedMessage);
+
+      /* The booking's own wall-clock time, as "YYYY-MM-DDTHH:mm".
+         brisbaneLocalInputValue is the exact inverse of the parse below, so
+         the series keeps the time the client was actually given. */
+      const firstStartLocal = brisbaneLocalInputValue(new Date(source.scheduledStart));
+
+      const plan = recurrenceStarts({
+        firstStart: firstStartLocal,
+        frequencyWeeks: input.frequencyWeeks,
+        end: input.end,
+      });
+      if (!plan.ok) throw new Error(plan.reason);
+
+      const recurringGroupId = source.recurringGroupId ?? nanoid(24);
+      const groomerIds = Array.from(new Set(
+        booking.map((row: { staffId: number | null }) => row.staffId).filter((id): id is number => typeof id === "number"),
+      ));
+
+      /*
+       * Membership coverage is RESOLVED for the series, not carried over.
+       *
+       * The first version of this set membershipId to null on every
+       * occurrence and copied the row's price, on the reasoning that
+       * coverage should be decided at invoicing. Nothing decides it at
+       * invoicing: decideAppointmentInvoice reads the row's OWN
+       * membershipId, and with that null a copied price bills
+       * "everything".
+       *
+       * That is not a theoretical row. fullyCovered is true only when
+       * EVERY dog on a booking is covered, so a family where one dog is
+       * on a plan and the other is casual legitimately carries both a
+       * membership link and a price — as do MoeGo rows linked afterwards
+       * by scripts/backfill-appointment-memberships.ts, which
+       * deliberately leaves price alone. Repeating one of those invoiced
+       * the member in full for a groom their weekly fee had paid for.
+       *
+       * Resolving instead of copying also closes the opposite hole: a
+       * copied "0.00" with no link would have given a year of free
+       * grooms to a client whose payments are failing, because
+       * bookingSuspended is checked by the resolver and by nothing else.
+       */
+      const serviceTypes = Array.from(new Set(
+        booking.map((row: { serviceType: string }) => row.serviceType),
+      ));
+      const petIdsOnBooking = booking.map((row: { petId: number }) => row.petId);
+      const coverageByService = new Map<string, Awaited<ReturnType<typeof getAppointmentMembershipCoverage>>>();
+      for (const serviceType of serviceTypes) {
+        coverageByService.set(serviceType, await getAppointmentMembershipCoverage(
+          db, tenantId, source.clientId, petIdsOnBooking, serviceType as AppointmentService,
+        ));
+      }
+
+      /*
+       * A dog whose row is linked today but whose plan no longer covers
+       * it — paused, suspended for failed payment, or cancelled — stops
+       * the whole repeat rather than being quietly re-priced or given
+       * away. Which of those it is, and what to do about it, is a
+       * conversation with the client, not something to guess at sixty
+       * times.
+       */
+      const petNameById = new Map(
+        bookingPets.map((pet: { id: number; name: string | null }) => [pet.id, pet.name]),
+      );
+      const lapsedMessage = lapsedCoverageMessage(booking.map(
+        (row: { petId: number; serviceType: string; membershipId: number | null }) => ({
+          petId: row.petId,
+          petName: petNameById.get(row.petId) ?? null,
+          membershipId: row.membershipId,
+          coveredNow: Boolean(coverageByService.get(row.serviceType)?.membershipByPetId[row.petId]),
+        }),
+      ));
+      if (lapsedMessage) throw new Error(lapsedMessage);
+
+      /*
+       * Where the series may be placed at all.
+       *
+       * Past dates are refused: an occurrence before today is a phantom
+       * booking nobody attended, and an "ongoing" series from an old
+       * booking would manufacture a year of them.
+       */
+      const notBefore = Date.now();
+
+      /*
+       * Annual leave, public holidays and "salon closed", once for the
+       * whole window rather than per occurrence.
+       *
+       * busyForStaff is what rebook and membership sign-up already ask,
+       * and its own header says two copies of this is how features end
+       * up disagreeing about leave. Without it a fortnightly series from
+       * January 2027 books Good Friday and New Year's Eve, and the dogs
+       * get reminder texts for days nobody is in.
+       */
+      const windowFrom = parseBrisbaneLocalDateTime(plan.starts[0]!);
+      const windowTo = new Date(parseBrisbaneLocalDateTime(plan.starts[plan.starts.length - 1]!).getTime() + 86_400_000);
+      /* BusyInterval carries start and end only — not WHY. Naming the
+         reason would mean a second query over staff_blockouts, which is
+         the duplication staffBusy.ts exists to prevent, so the skipped
+         date says "away or closed" and the diary shows which. */
+      const busyByGroomer = new Map<number, Array<{ start: Date | string; end: Date | string }>>();
+      for (const groomerId of groomerIds) {
+        busyByGroomer.set(groomerId, await busyForStaff(db, tenantId, groomerId, windowFrom, windowTo));
+      }
+
+      const created: Date[] = [];
+      const skipped: { scheduledStart: Date; reason: string }[] = [];
+
+      for (const localStart of plan.starts) {
+        const occurrenceStart = parseBrisbaneLocalDateTime(localStart);
+        /* Each dog keeps its OWN length. Siblings usually share an end
+           time, but once one dog's end has been edited they do not, and
+           cloning the clicked dog's length onto a giant sibling is the
+           mistake the MoeGo importer had to be taught not to make. */
+        const endFor = (row: { scheduledStart: Date | string; scheduledEnd: Date | string }) => {
+          const ms = new Date(row.scheduledEnd).getTime() - new Date(row.scheduledStart).getTime();
+          // A zero-length booking is invisible to the overlap query below.
+          return new Date(occurrenceStart.getTime() + Math.max(ms, 15 * 60_000));
+        };
+        const occurrenceEnd = new Date(Math.max(...booking.map((row: any) => endFor(row).getTime())));
+
+        if (occurrenceStart.getTime() < notBefore) {
+          skipped.push({ scheduledStart: occurrenceStart, reason: "That date has already passed" });
+          continue;
+        }
+
+        /*
+         * A clash skips the WHOLE occurrence rather than booking some dogs
+         * and not others — and the dates come back named, because "1
+         * skipped" is not something anybody can act on.
+         *
+         * Three questions, not one. The groomer's other appointments; the
+         * groomer being away or the salon shut; and the DOG's own day,
+         * which is the one that matters most. Duplicating a dog is the
+         * worst thing this can do, staff work from that board, and with
+         * no groomer assigned the first check asks nothing at all — so a
+         * second press would otherwise clone the entire series.
+         */
+        let clashReason: string | null = null;
+        for (const groomerId of groomerIds) {
+          const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
+            eq(appointments.staffId, groomerId),
+            eq(appointments.tenantId, tenantId),
+            ne(appointments.workflowState, "cancelled"),
+            ne(appointments.status, "cancelled"),
+            lt(appointments.scheduledStart, occurrenceEnd),
+            gt(appointments.scheduledEnd, occurrenceStart),
+          )).limit(1);
+          if (conflict) { clashReason = "Groomer already booked at this time"; break; }
+          const away = (busyByGroomer.get(groomerId) ?? []).find(b =>
+            new Date(b.start).getTime() < occurrenceEnd.getTime()
+            && new Date(b.end).getTime() > occurrenceStart.getTime());
+          if (away) { clashReason = "Groomer is away or the salon is closed"; break; }
+        }
+
+        if (!clashReason) {
+          /* Nothing else for these dogs that day, whatever state it is
+             in — the same guard rebook carries, written after a dog was
+             duplicated onto a live board twice on 29/09. */
+          const dayStart = new Date(Date.UTC(
+            occurrenceStart.getUTCFullYear(), occurrenceStart.getUTCMonth(), occurrenceStart.getUTCDate(),
+          ) - 10 * 3_600_000);
+          const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+          const [dogBusy] = await db.select({ petId: appointments.petId }).from(appointments).where(and(
+            eq(appointments.tenantId, tenantId),
+            inArray(appointments.petId, petIdsOnBooking),
+            gte(appointments.scheduledStart, dayStart),
+            lt(appointments.scheduledStart, dayEnd),
+            ne(appointments.status, "cancelled"),
+            ne(appointments.workflowState, "cancelled"),
+          )).limit(1);
+          if (dogBusy) clashReason = "That dog is already booked in that day";
+        }
+
+        if (clashReason) {
+          skipped.push({ scheduledStart: occurrenceStart, reason: clashReason });
+          continue;
+        }
+
+        const sessionId = booking.length > 1 ? nanoid(16) : null;
+        for (const row of booking) {
+          const coverage = coverageByService.get(row.serviceType)!;
+          await db.insert(appointments).values({
+            tenantId,
+            clientId: row.clientId,
+            petId: row.petId,
+            staffId: row.staffId,
+            serviceType: row.serviceType,
+            scheduledStart: occurrenceStart,
+            scheduledEnd: endFor(row),
+            notes: row.notes,
+            /* Resolved, never copied — see the note above the resolver. */
+            price: priceForCoveredAppointment(coverage.fullyCovered, row.price),
+            membershipId: coverage.membershipByPetId[row.petId]?.id ?? null,
+            trackerToken: nanoid(32),
+            sessionId,
+            workflowState: "scheduled",
+            status: "confirmed",
+            recurringGroupId,
+          });
+        }
+        created.push(occurrenceStart);
+      }
+
+      /* The source joins its own series, so the board and any later edit
+         can see the whole run together. */
+      if (!source.recurringGroupId && created.length > 0) {
+        await db.update(appointments)
+          .set({ recurringGroupId })
+          .where(and(
+            eq(appointments.tenantId, tenantId),
+            inArray(appointments.id, booking.map((row: { id: number }) => row.id)),
+          ));
+      }
+
+      return {
+        success: true,
+        recurringGroupId,
+        createdCount: created.length,
+        petsPerOccurrence: booking.length,
+        skipped,
+        truncated: plan.truncated,
       };
     }),
 
@@ -2946,6 +3731,10 @@ const workflowRouter = router({
           scheduledEnd: appointments.scheduledEnd,
           workflowState: appointments.workflowState,
           serviceType: appointments.serviceType,
+          /* Tells the board to draw "Walk-In: Nail Clip" rather than
+             "NAIL", and tells a groomer this one is not part of the
+             day's run. */
+          isQuick: appointments.isQuick,
           price: appointments.price,
           status: appointments.status,
           notes: appointments.notes,
@@ -7875,6 +8664,10 @@ const membershipsRouter = router({
           petStatus: pets.status,
           petWeightKg: pets.weightKg,
           petWeight: pets.weight,
+          // Most dogs here have a band and no weight, and without it the
+          // eligibility guard has nothing to compare. See
+          // getReplacementWeightBand.
+          petSizeBand: pets.sizeBand,
         })
         .from(memberships)
         .innerJoin(pets, eq(memberships.petId, pets.id))
@@ -7913,6 +8706,7 @@ const membershipsRouter = router({
           status: pets.status,
           weightKg: pets.weightKg,
           weight: pets.weight,
+          sizeBand: pets.sizeBand,
         })
         .from(pets)
         .where(and(eq(pets.id, input.replacementPetId), eq(pets.tenantId, tenantOf(ctx, input))))
@@ -7920,7 +8714,7 @@ const membershipsRouter = router({
       if (!replacementPet || replacementPet.clientId !== membership.clientId || replacementPet.status !== "active") {
         throw new Error("Choose an active pet belonging to the same client");
       }
-      const departedCandidate = { id: membership.petId, weightKg: membership.petWeightKg, weight: membership.petWeight, status: "departed" as const };
+      const departedCandidate = { id: membership.petId, weightKg: membership.petWeightKg, weight: membership.petWeight, sizeBand: membership.petSizeBand, status: "departed" as const };
       if (!isEligibleMembershipReplacement(departedCandidate, replacementPet)) {
         const membershipBand = getReplacementWeightBand(departedCandidate)?.label ?? "unrecorded";
         const replacementBand = getReplacementWeightBand(replacementPet)?.label ?? "unrecorded";
@@ -10809,7 +11603,7 @@ async function listRescheduleSlots(input: { tenantId: number; staffId: number; s
  * figure, which is the honest outcome: an invented number becomes a
  * figure somebody was quoted.
  */
-async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg: number }) {
+async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg?: number; sizeBand?: DogSizeBand | null }) {
   const db = await getDb();
   if (!db) return null;
   try {
@@ -10829,6 +11623,7 @@ async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceT
     return estimateOnlineBookingPrice({
       serviceType: input.serviceType,
       weightKg: input.weightKg,
+      sizeBand: input.sizeBand,
       catalogue,
     });
   } catch (err) {
@@ -10840,7 +11635,7 @@ async function estimateOnlineBookingPriceFor(input: { tenantId: number; serviceT
 }
 
 /** Just the figure, for the column on the appointment row. */
-async function onlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg: number }) {
+async function onlineBookingPriceFor(input: { tenantId: number; serviceType: string; weightKg?: number; sizeBand?: DogSizeBand | null }) {
   const estimate = await estimateOnlineBookingPriceFor(input);
   return estimate?.known ? estimate.price : null;
 }
@@ -10928,7 +11723,7 @@ const onlineBookingRouter = router({
   }),
   create: publicProcedure.input(z.object({ tenantId: z.number().default(1), clientId: z.number(), petId: z.number(), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), scheduledStart: z.coerce.date(), notes: z.string().max(1000).optional() })).mutation(async ({ input, ctx }) => {
     const db = await getDb(); if (!db) throw new Error("DB unavailable");
-    const [pet] = await db.select({ id: pets.id, name: pets.name, status: pets.status, weightKg: pets.weightKg, weight: pets.weight }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
+    const [pet] = await db.select({ id: pets.id, name: pets.name, status: pets.status, weightKg: pets.weightKg, weight: pets.weight, sizeBand: pets.sizeBand }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
     if (!pet) throw new Error("Pet does not belong to the selected client");
     /* The staff booking paths have refused a departed dog since
        19/10/2026; this one never did, and it is the PUBLIC one — a
@@ -10937,13 +11732,30 @@ const onlineBookingRouter = router({
     const onlineDeparted = departedBookingMessage([pet]);
     if (onlineDeparted) throw new Error(onlineDeparted);
     const petWeight = pet.weightKg ?? pet.weight;
-    if (!isEligibleOnlineBookingService(input.serviceType, petWeight)) throw new Error("This pet needs a recorded weight between 0 and 80kg before online booking");
-    const capacity = await checkOnlineCapacity({ ...input, petWeightKg: Number(petWeight) }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
+    /*
+     * The dog's band, from the scales if it has been weighed and from
+     * `pets.size_band` if it has not.
+     *
+     * This used to ask isEligibleOnlineBookingService for the WEIGHT,
+     * and a dog with no weight on file reaches that as null, which
+     * getPetWeightBand answers "Small" — so every unweighed dog passed
+     * a guard whose own message says it should not, was then carried
+     * through as Number(null) = 0, and was announced to the salon as
+     * "Small (0–10 kg) (0kg, as entered)". A dog that might be a Giant.
+     *
+     * Asking for the band instead refuses only a dog with neither a
+     * weight nor a size, which is what the message below describes, and
+     * lets the 4,478 dogs that have a band book and be priced properly.
+     */
+    const bookingBand = bandForWeight(petWeight) ?? (pet.sizeBand as DogSizeBand | null) ?? null;
+    if (!isEligibleOnlineBookingServiceForBand(input.serviceType, bookingBand)) throw new Error("This pet needs a recorded weight or size before online booking");
+    const weighedKg = bandForWeight(petWeight) ? Number(petWeight) : null;
+    const capacity = await checkOnlineCapacity({ ...input, petWeightKg: weighedKg ?? undefined }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
     const tenantId = tenantOf(ctx, input);
-    const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: Number(petWeight) });
+    const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: weighedKg ?? undefined, sizeBand: bookingBand });
     const [result] = await db.insert(appointments).values({ tenantId, clientId: input.clientId, petId: input.petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes: input.notes ?? null, price: estimatePrice, status: "pending", workflowState: "scheduled", bookedOnline: true });
     const appointmentId = (result as any).insertId as number;
-    const delivery = await notifyOnlineBooking({ tenantId, clientId: input.clientId, petId: input.petId, appointmentId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, weightKg: Number(petWeight), estimatePrice });
+    const delivery = await notifyOnlineBooking({ tenantId, clientId: input.clientId, petId: input.petId, appointmentId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, weightKg: weighedKg, sizeBand: bookingBand, estimatePrice });
     return { success: true, appointmentId, estimatePrice, disclaimer: estimatePrice ? ESTIMATE_DISCLAIMER : null, delivery };
   }),
   createGuest: publicProcedure.input(z.object({
@@ -11160,6 +11972,57 @@ const migrationRouter = router({
 });
 
 // ─── Email Campaigns ────────────────────────────────────────────────────────
+/**
+ * Drop walk-ins from a marketing audience.
+ *
+ * Andy, 06/11/2026. Somebody who gave a phone number or an email for a
+ * $25 nail clip at the counter did not sign up for the salon's
+ * campaigns. Marketing at them is the fastest way to make that contact
+ * detail worthless — and to earn a STOP reply or an unsubscribe, which
+ * then removes them from the messages that actually matter.
+ *
+ * ## One helper, three audiences
+ *
+ * The mass text, the email campaign PREVIEW and the email campaign SEND
+ * each pick their own recipients. A preview that counts 47 and a send
+ * that reaches 44 is the drift that this codebase keeps paying for, so
+ * all three ask this.
+ *
+ * ## Derived, so it undoes itself
+ *
+ * A walk-in who comes back and books a real groom is a customer like
+ * anybody else, and the campaigns include them again with nobody
+ * ticking a box. shared/quickAppointment.ts has the rule and its tests.
+ *
+ * Two plain queries rather than a NOT EXISTS subquery: the hermetic
+ * suite has no database, so a malformed one ships green and 500s the
+ * preview Lauren uses — which is exactly how calendar.nextAvailable and
+ * staff.closeSalon shipped broken on 30/10/2026.
+ */
+async function withoutWalkIns<T extends { id?: number; clientId?: number }>(
+  db: any, tenantId: number, rows: T[],
+): Promise<T[]> {
+  const idOf = (row: T) => (row.clientId ?? row.id) as number | undefined;
+  const candidateIds = Array.from(new Set(
+    rows.map(idOf).filter((id): id is number => typeof id === "number"),
+  ));
+  if (candidateIds.length === 0) return rows;
+
+  const history = await db.select({
+    clientId: appointments.clientId, isQuick: appointments.isQuick,
+  }).from(appointments).where(and(
+    eq(appointments.tenantId, tenantId),
+    inArray(appointments.clientId, candidateIds),
+  ));
+
+  const walkInsOnly = walkInOnlyClientIds(history, candidateIds);
+  if (walkInsOnly.size === 0) return rows;
+  return rows.filter((row) => {
+    const id = idOf(row);
+    return id === undefined || !walkInsOnly.has(id);
+  });
+}
+
 const emailCampaignsRouter = router({
   list: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1) }))
@@ -11300,11 +12163,15 @@ const emailCampaignsRouter = router({
       }
       // all_clients: no extra status filter
 
-      let rows: Array<{ firstName: string; lastName: string; email: string | null }>;
+      /* `id` is selected so this can exclude walk-ins the same way the
+         SEND does. Without it the preview counted people the send would
+         not reach, which is the drift the helper exists to stop. */
+      let rows: Array<{ id: number; firstName: string; lastName: string; email: string | null }>;
 
       if (filter.type === "membership_holders") {
         rows = await db
           .selectDistinct({
+            id: clients.id,
             firstName: clients.firstName,
             lastName: clients.lastName,
             email: clients.email,
@@ -11315,6 +12182,7 @@ const emailCampaignsRouter = router({
       } else {
         rows = await db
           .select({
+            id: clients.id,
             firstName: clients.firstName,
             lastName: clients.lastName,
             email: clients.email,
@@ -11324,7 +12192,8 @@ const emailCampaignsRouter = router({
       }
 
       // Filter out those without email or who have unsubscribed
-      const eligible = rows.filter(r => r.email && !unsubEmails.has(r.email.toLowerCase()));
+      const marketable = await withoutWalkIns(db, tenantOf(ctx, input), rows);
+      const eligible = marketable.filter(r => r.email && !unsubEmails.has(r.email.toLowerCase()));
       const sampleNames = eligible.slice(0, 5).map(r => `${r.firstName} ${r.lastName}`);
       return { count: eligible.length, sampleNames };
     }),
@@ -11403,8 +12272,9 @@ const emailCampaignsRouter = router({
           .where(eq(clients.tenantId, tenantOf(ctx, input)));
       }
 
-      // Filter out no-email and unsubscribed
-      const eligible = audienceRows.filter(r => r.email && !unsubEmails.has(r.email.toLowerCase()));
+      // Filter out walk-ins, no-email and unsubscribed
+      const marketable = await withoutWalkIns(db, tenantOf(ctx, input), audienceRows);
+      const eligible = marketable.filter(r => r.email && !unsubEmails.has(r.email.toLowerCase()));
 
       // Mark campaign as sending
       await db.update(emailCampaigns).set({
@@ -11693,6 +12563,89 @@ const smsRouter = router({
         });
       }
       return result;
+    }),
+
+  /**
+   * Text a client the dates they are booked in for.
+   *
+   * Lauren, 06/11/2026, after setting a year of bookings for Bronwyn
+   * Waegh: "I want to send her a list of all her dates in a sms too if
+   * possible." Nobody reads thirteen dates back down the phone, and the
+   * client has nothing to put in a calendar.
+   *
+   * ## Two calls, because a person presses send
+   *
+   * `upcomingDatesPreview` builds the body and says what it will cost.
+   * `sendUpcomingDates` sends it. Separating them is what makes this a
+   * composed text rather than an automated one, so it goes with
+   * trigger: "staff" and needs no entry in shared/automatedSms.ts.
+   *
+   * Not because automated sends are forbidden — six types are allowed
+   * there since 04/11/2026. This one is not among them because nothing
+   * should decide on its own that a client wants a list of dates.
+   *
+   * ## Dates are formatted here, in the salon's timezone
+   *
+   * The builder takes already-formatted strings on purpose. Formatting a
+   * date means choosing a timezone, and a client reading "Fri 12 Feb"
+   * means the salon's Friday — not the server's, and not the browser's.
+   */
+  upcomingDatesPreview: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const built = await buildUpcomingDatesForClient(db, tenantOf(ctx, input), input.clientId);
+      return {
+        body: built.body,
+        phone: built.phone,
+        datesShown: built.datesShown,
+        datesOmitted: built.datesOmitted,
+        cost: calculateSmsCost(built.body),
+      };
+    }),
+
+  sendUpcomingDates: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      clientId: z.number(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const built = await buildUpcomingDatesForClient(db, tenantId, input.clientId);
+      if (!built.phone) throw new Error("That client has no mobile number on file");
+      /*
+       * The body is BUILT, never passed in, and that is what lets this be
+       * operationalProcedure.
+       *
+       * sms.sendToClient — the free-text composer — is protectedProcedure
+       * and so refuses restricted staff: a staff member typing their own
+       * words to a client is owner surface. This sends a sentence made
+       * entirely from the client's own bookings, with nothing a caller
+       * can put into it, so the receptionist at the desk can use it
+       * without that boundary moving. An optional `body` override was
+       * written here first and removed for exactly that reason: it would
+       * have been a free-text send path for every groomer.
+       *
+       * The preview shows this same body, from this same function, so
+       * what is on screen is what goes out.
+       */
+      const body = built.body;
+
+      // trigger: "staff" — a person pressed Send. Not an automated send,
+      // so it needs no allow-list entry and no SMS_AUTOMATION_ENABLED.
+      const result = await sendSms(built.phone, body, { tenantId, trigger: "staff" });
+      /* smsLogs IS the Messages thread staff read, so a row goes in for
+         what was actually attempted — including a failure, which is a
+         thing somebody has to chase. */
+      await db.insert(smsLogs).values({
+        tenantId, clientId: input.clientId, toNumber: built.phone, body,
+        twilioSid: result.sid, status: result.success ? "sent" : "failed",
+        type: "custom", direction: "outbound", errorMessage: result.error,
+      });
+      return { ...result, body, datesShown: built.datesShown };
     }),
 
   sendToClient: protectedProcedure
@@ -13013,6 +13966,27 @@ async function massTextRecipients(
         notInArray(appointments.status, ["cancelled", "no_show"]),
       ));
   }
+
+  /*
+   * Walk-ins are not a marketing audience.
+   *
+   * Andy, 06/11/2026. Somebody who gave a phone number for a $25 nail
+   * clip at the counter did not sign up for the salon's campaigns, and
+   * a marketing text is the fastest way to make that number worthless
+   * — and to earn a STOP reply, which then excludes them from the
+   * messages that actually matter.
+   *
+   * Applied here, after every audience branch, so a new audience kind
+   * cannot be added without it. Derived from the appointments rather
+   * than a column, so it undoes itself the moment the person books a
+   * real groom: see shared/quickAppointment.ts.
+   *
+   * A second plain query rather than a NOT EXISTS subquery, because the
+   * hermetic suite has no database and a malformed one would ship green
+   * and 500 the mass-text preview — which is how nextAvailable and
+   * closeSalon both shipped broken on 30/10/2026.
+   */
+  rows = await withoutWalkIns(db, tenantId, rows);
 
   // Dedupe by NUMBER, not by client: a couple with two client records and
   // one phone is one person holding one handset, and texting them twice is

@@ -24,6 +24,18 @@ import { DateField } from "@/components/DateField";
 import { cn } from "@/lib/utils";
 import { joinLocalDateTime, splitLocalDateTime } from "@shared/bookingTimeSlots";
 
+/**
+ * Show the fallback day only while the date half is genuinely empty.
+ *
+ * Never overrides a date somebody typed, and never supplies a TIME —
+ * a time is a duration, and guessing one would put a wrong end on a
+ * groomer's afternoon.
+ */
+function withFallback(parts: { date: string; time: string }, fallbackDate?: string) {
+  if (parts.date || !fallbackDate) return parts;
+  return { date: fallbackDate, time: parts.time };
+}
+
 export function DateTimeField({
   value,
   onChange,
@@ -33,6 +45,7 @@ export function DateTimeField({
   min,
   max,
   disabled,
+  fallbackDate,
   "aria-label": ariaLabel,
 }: {
   /** "2026-11-03T09:00", or "" for empty. */
@@ -46,6 +59,24 @@ export function DateTimeField({
   min?: string;
   max?: string;
   disabled?: boolean;
+  /**
+   * The day to show in the DATE half while the field is still empty.
+   *
+   * A booking's "Ends" is the case this exists for. Five of the salon's
+   * eight service types get no suggested duration — bath, deshed, nail
+   * trim, daycare, other — which is 205 of 1,295 upcoming bookings, so
+   * about one in six is booked with both halves blank. Staff then type a
+   * full date AND a time, and the date picker opened on today rather
+   * than on the booking, so a January appointment meant paging forward
+   * three months. Lauren, 06/11/2026: "the ends date and time is
+   * annoying".
+   *
+   * It is a DISPLAY default, not a value: joinLocalDateTime still
+   * returns "" until a time is entered, so nothing is saved and no
+   * duration is invented on the salon's behalf. All it removes is the
+   * typing of a date that was never going to differ from the start.
+   */
+  fallbackDate?: string;
   "aria-label"?: string;
 }) {
   /*
@@ -57,17 +88,17 @@ export function DateTimeField({
    * Clearing the date would have wiped the time off the screen as well, and
    * the person would have had to retype something they never touched.
    */
-  const [parts, setParts] = useState(() => splitLocalDateTime(value));
+  const [parts, setParts] = useState(() => withFallback(splitLocalDateTime(value), fallbackDate));
 
   // Follow the parent when it sets a value from elsewhere - "Next
   // available" fills these in - but not when the change is the one just
   // emitted from here, or a half-typed entry would be snapped back.
   useEffect(() => {
     if (joinLocalDateTime(parts.date, parts.time) === value) return;
-    setParts(splitLocalDateTime(value));
+    setParts(withFallback(splitLocalDateTime(value), fallbackDate));
     // Only on an external change; `parts` is deliberately not a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }, [value, fallbackDate]);
 
   const { date, time } = parts;
 

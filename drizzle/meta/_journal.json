@@ -1111,8 +1111,15 @@
     {
       "idx": 158,
       "version": "5",
-      "when": 1793920400000,
-      "tag": "0158_tenant_platform_billing",
+      "when": 1793940000000,
+      "tag": "0158_appointment_is_quick",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "5",
+      "when": 1793990000000,
+      "tag": "0159_tenant_platform_billing",
       "breakpoints": true
     }
   ]

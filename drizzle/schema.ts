@@ -559,6 +559,22 @@ export const appointments = mysqlTable("appointments", {
   bookedOnline: boolean("booked_online").default(false).notNull(),
   sessionId: varchar("session_id", { length: 64 }),
   recurringGroupId: varchar("recurring_group_id", { length: 64 }),
+  /**
+   * A walk-in nail clip or quick bath, in and out in ten minutes.
+   *
+   * One boolean rather than two new service_type values: that enum is
+   * named in 54 places and adding to it means auditing every switch and
+   * map over it. nail_trim and bath_only already say what the WORK is;
+   * this says it was a walk-in, so a $25 quick bath is still tellable
+   * from a $70 booked one in reporting.
+   *
+   * NOT NULL with a default, like 27 of the 28 booleans here and like
+   * booked_online on this same table. Nullable would give a two-state
+   * fact three states: every pre-existing row would be NULL rather than
+   * false, and `eq(isQuick, false)` would silently drop all ~15,000 of
+   * them out of exactly the reporting this column exists for.
+   */
+  isQuick: boolean("is_quick").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
   cageNumber: int("cage_number"),
