@@ -11772,10 +11772,12 @@ const smsRouter = router({
    *
    * `upcomingDatesPreview` builds the body and says what it will cost.
    * `sendUpcomingDates` sends it. Separating them is what makes this a
-   * composed text rather than an automated one: it is NOT in the
-   * allow-list in shared/automatedSms.ts and must never be — Andy,
-   * 28/10/2026, "No automated text messages to go to clients other than
-   * when dogs are fully groomed and ready to be picked up."
+   * composed text rather than an automated one, so it goes with
+   * trigger: "staff" and needs no entry in shared/automatedSms.ts.
+   *
+   * Not because automated sends are forbidden — six types are allowed
+   * there since 04/11/2026. This one is not among them because nothing
+   * should decide on its own that a client wants a list of dates.
    *
    * ## Dates are formatted here, in the salon's timezone
    *

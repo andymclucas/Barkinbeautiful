@@ -25,11 +25,16 @@ import { DEFAULT_SALON } from "./appointmentChangeSms";
  *
  * ## A person presses send
  *
- * This builds a body and nothing more. It is not in the allow-list in
- * shared/automatedSms.ts and must never be: Andy, 28/10/2026, "No
- * automated text messages to go to clients other than when dogs are
- * fully groomed and ready to be picked up." Staff read it and press
- * Send, the same as any other composed text.
+ * This builds a body and nothing more. Nothing here is automated: staff
+ * read it and press Send, the same as any other composed text, so it
+ * goes out with trigger: "staff" and needs no entry in the allow-list
+ * in shared/automatedSms.ts.
+ *
+ * Not because automated sends are forbidden — six types are allowed
+ * there as of 04/11/2026, when Andy turned the confirmation, the
+ * reminders, the cancellation and the reschedule back on. This one is
+ * not among them because nothing should decide on its own that a
+ * client wants a list of dates; somebody asks for it.
  */
 
 /** How many dates one text will name before it says there are more. */
