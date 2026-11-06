@@ -101,7 +101,10 @@ import { buildUpcomingDatesSms, upcomingDatesShown } from "@shared/upcomingDates
 import { calculateSmsCost } from "@shared/smsSegments";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
 import { dayCapacity, capacityState, describeCapacity } from "../shared/dayCapacity";
-import { firstFreeSlot, describeNoSlot } from "../shared/nextAvailableSlot";
+import {
+  firstFreeSlot, describeNoSlot, nextFreeSlots, summariseSearch, DEFAULT_SLOT_OPTIONS,
+} from "../shared/nextAvailableSlot";
+import { getAutoDurationMinutes } from "@shared/appointmentDuration";
 import { buildDayAvailability } from "./dayAvailability";
 import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
 import { buildTimeSlots, minutesToTimeValue } from "../shared/bookingTimeSlots";
@@ -1485,6 +1488,162 @@ const calendarRouter = router({
    * board could not see. A groomer with eight of eight clips booked
    * has no room at 2pm however empty 2pm looks.
    */
+  /**
+   * "When's your next available booking?" — answered while the phone
+   * is still in somebody's hand.
+   *
+   * Lauren, 06/11/2026: "what's your idea for if someone rang up and
+   * asks when's your next available booking... cause I have no fucking
+   * idea off the top of my head unless I go through manually and
+   * check." Andy sent MoeGo's Smart Scheduling dialog as the thing to
+   * beat.
+   *
+   * ## What it does that MoeGo's cannot
+   *
+   * MoeGo asks the person to GUESS a duration on a slider, because in
+   * that dialog it does not know the dog. Give this a petId and it
+   * works the length out from the dog's own weight band and the service
+   * it usually has, and it searches that dog's usual groomer as well as
+   * everybody — so the answer is "next with Charlotte is Tuesday the
+   * 18th, next with anyone is Thursday the 13th", which is the question
+   * the client actually asked.
+   *
+   * It also refuses a slot the diary would happily draw. A groomer can
+   * be free at 2pm and have no room — eight of eight clips — and
+   * buildDayAvailability already knows that. A gap-finder that does not
+   * check capacity offers that 2pm and the booking fails at the counter.
+   *
+   * ## Why it reuses nextAvailable's helper rather than its own
+   *
+   * One availability picture. The moment this had its own idea of
+   * trading days, leave and capacity, it would drift from the dialog
+   * that actually takes the booking, and the slot offered on the phone
+   * would not be bookable when somebody tried.
+   */
+  availability: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** The dog, when the caller named one. Fills in the rest. */
+      petId: z.number().int().positive().optional(),
+      /** Used when there is no dog — the duration chips. */
+      durationMinutes: z.number().int().min(15).max(600).optional(),
+      staffIds: z.array(z.number().int().positive()).max(12).default([]),
+      fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      days: z.number().int().min(1).max(90).default(60),
+      limit: z.number().int().min(1).max(10).default(DEFAULT_SLOT_OPTIONS),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      if (ctx.user.role === "staff") {
+        const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+        if (portalStaff && portalStaff.tenantId !== tenantId) {
+          throw new Error("This calendar is not available to your salon staff profile");
+        }
+      }
+
+      /* The dog, when one was named. Weight and size band give the
+         length; preferred_groomer_id is who usually does it. */
+      let pet: {
+        id: number; name: string | null; weightKg: string | null;
+        sizeBand: string | null; preferredGroomerId: number | null;
+      } | null = null;
+      if (input.petId) {
+        const [row] = await db.select({
+          id: pets.id, name: pets.name, weightKg: pets.weightKg,
+          sizeBand: pets.sizeBand, preferredGroomerId: pets.preferredGroomerId,
+        }).from(pets)
+          .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantId)))
+          .limit(1);
+        pet = row ?? null;
+        if (!pet) throw new Error("That dog is not on this salon's books");
+      }
+
+      /* The dog's usual service, so the length is the one it actually
+         gets rather than a default nobody chose. */
+      let serviceType = "classic_groom";
+      if (pet) {
+        const [last] = await db.select({ serviceType: appointments.serviceType })
+          .from(appointments)
+          .where(and(eq(appointments.tenantId, tenantId), eq(appointments.petId, pet.id)))
+          .orderBy(desc(appointments.scheduledStart)).limit(1);
+        if (last?.serviceType) serviceType = last.serviceType;
+      }
+
+      const derivedMinutes = pet
+        ? getAutoDurationMinutes(serviceType, pet.weightKg, pet.sizeBand)
+        : null;
+      /* The dog decides when it can; the chips otherwise; and an hour
+         when neither — never a silent zero, which would match every
+         slot and offer times nothing fits in. */
+      const durationMinutes = derivedMinutes ?? input.durationMinutes ?? 60;
+
+      const fromDate = input.fromDate ?? brisbaneDateKey(new Date());
+      const todayKey = brisbaneDateKey(new Date());
+
+      const search = async (staffIds: number[]) => {
+        const { days, minutesInSalonDay, error } = await buildDayAvailability(db, tenantId, {
+          staffIds, fromDate, days: input.days,
+        });
+        if (error) return { slots: [], summary: { searched: 0, closed: 0, full: 0 }, message: error };
+        const opts = {
+          durationMinutes,
+          slotStartsFor: () => STAFF_SLOT_STARTS,
+          todayKey, nowMinutes: minutesInSalonDay(new Date()),
+        };
+        const slots = nextFreeSlots(days, opts, input.limit);
+        return {
+          slots: slots.map((slot) => ({
+            date: slot.dateKey,
+            time: minutesToTimeValue(slot.startMinutes),
+            daysAhead: slot.daysAhead,
+          })),
+          summary: summariseSearch(days),
+          message: slots.length === 0 ? describeNoSlot(days) : "",
+        };
+      };
+
+      const anyone = await search(input.staffIds);
+
+      /*
+       * The usual groomer, as a SECOND answer rather than a filter.
+       *
+       * "Next with Charlotte is the 18th, next with anyone is the 13th"
+       * lets the person on the phone offer both. Filtering to Charlotte
+       * would hide the 13th; not searching her at all would hide the
+       * reason the client rang.
+       *
+       * Skipped when the caller already named staff, because then they
+       * have asked a narrower question and this would answer a
+       * different one.
+       */
+      let withUsual: { staffId: number; staffName: string | null; slots: typeof anyone.slots } | null = null;
+      if (pet?.preferredGroomerId && input.staffIds.length === 0) {
+        const [usual] = await db.select({ id: staff.id, name: staff.name })
+          .from(staff)
+          .where(and(eq(staff.id, pet.preferredGroomerId), eq(staff.tenantId, tenantId)))
+          .limit(1);
+        if (usual) {
+          const mine = await search([usual.id]);
+          withUsual = { staffId: usual.id, staffName: usual.name, slots: mine.slots };
+        }
+      }
+
+      return {
+        durationMinutes,
+        /* Where the length came from, so the panel can say "60 min
+           (Bella's usual)" rather than a number nobody can check. */
+        durationSource: derivedMinutes ? ("pet" as const)
+          : input.durationMinutes ? ("chosen" as const) : ("default" as const),
+        serviceType,
+        petName: pet?.name ?? null,
+        fromDate,
+        anyone,
+        withUsual,
+      };
+    }),
+
   nextAvailable: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),

@@ -149,6 +149,12 @@ const OPERATIONAL = [
      reach, through requireApprovedStaffAppointmentAccess. */
   "calendarRouter.addRecurrenceToAppointment",
   "calendarRouter.appointmentsForClient",
+  /* Answering "when's your next available booking?" on the phone —
+     Lauren, 06/11/2026. Operational because it IS the phone: whoever
+     picks up is who needs it, and that is as often a receptionist as
+     the owner. It reads the diary's free gaps and returns no money and
+     no client details. */
+  "calendarRouter.availability",
   /*
    * Cancels every dog of a booking at once so the client gets ONE
    * text instead of one per dog. operationalProcedure like
@@ -416,6 +422,9 @@ describe("tRPC procedure surface", () => {
     // 391 since 06/11/2026: the salons router — mine, canAccess, grant
     // and revoke — for running more than one salon from one account.
     //
+    // 398 since 06/11/2026: calendar.availability, the phone's answer to
+    // "when's your next available booking?".
+    //
     // 397 since 06/11/2026: sms.upcomingDatesPreview and
     // sms.sendUpcomingDates, for texting a client her list of dates.
     //
@@ -427,7 +436,7 @@ describe("tRPC procedure surface", () => {
     // adminProcedure — provisioning makes a new business on the platform
     // and hands somebody the keys, and eligibleOwners lists the
     // platform's accounts — so none appears in OPERATIONAL or PUBLIC.
-    expect(surface).toHaveLength(397);
+    expect(surface).toHaveLength(398);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -461,6 +470,9 @@ describe("tRPC procedure surface", () => {
      * feature, so protectedProcedure would have locked out everyone it
      * is for.
      *
+     * 144 since 06/11/2026: calendar.availability. Whoever answers the
+     * phone needs it, and that is as often a receptionist as the owner.
+     *
      * 143 since 06/11/2026: sms.upcomingDatesPreview and
      * sms.sendUpcomingDates. The receptionist at the desk is who reads a
      * client her dates, and the body is built rather than typed.
@@ -473,7 +485,7 @@ describe("tRPC procedure surface", () => {
      * 140 since 06/11/2026: salons.mine and salons.canAccess. Both read
      * only from the caller's own access list.
      */
-    expect(OPERATIONAL).toHaveLength(143);
+    expect(OPERATIONAL).toHaveLength(144);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

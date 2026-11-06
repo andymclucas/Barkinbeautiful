@@ -134,6 +134,7 @@ import {
 } from "@shared/sharedBookingAttendance";
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
 import { toastBookingConfirmation } from "@/lib/confirmationToast";
+import { NextAvailablePanel } from "@/components/NextAvailablePanel";
 import {
   describeRecurrence, recurrenceStarts,
   MAX_FREQUENCY_WEEKS, MIN_FREQUENCY_WEEKS, type RecurrenceEnd,
@@ -3932,6 +3933,24 @@ export default function Calendar() {
                 </span>
               )}
             </Button>
+            {/* Lauren, 06/11/2026: "if someone rang up and asks when's
+                your next available booking... I have no fucking idea off
+                the top of my head unless I go through manually and
+                check."
+
+                Here, next to New Appointment, rather than inside it. The
+                same search has existed for a while as a button within
+                that dialog, which means starting a booking and picking a
+                client and a dog before seeing a date — not something
+                anyone does with a client on the phone. Picking a slot
+                here opens the booking dialog on it, so the answer can
+                still become a booking in one more press. */}
+            <NextAvailablePanel
+              onPick={(date, time) => {
+                setNewAppt(p => ({ ...p, scheduledStart: joinLocalDateTime(date, time) }));
+                setShowNewAppt(true);
+              }}
+            />
             <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
               <Plus className="h-4 w-4" /> New Appointment
             </Button>
