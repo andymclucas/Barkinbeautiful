@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Loader2, Zap } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -37,7 +37,35 @@ import {
  * which is the difference between four fields and one tap — and it is
  * what stops three visits becoming three records of the same person.
  */
-export function QuickAppointmentDialog({ onCreated }: { onCreated?: () => void }) {
+export function QuickAppointmentDialog({
+  onCreated,
+  triggerLabel = "Quick Appointment",
+  triggerVariant = "outline",
+  triggerClassName = "brand-lift gap-1.5 bg-card/80",
+  triggerIcon = <Zap className="h-4 w-4" />,
+}: {
+  onCreated?: () => void;
+  /*
+   * The trigger varies, the dialog does not.
+   *
+   * The Workflow board wants this prominent and in its own words,
+   * because that is where somebody is standing when a dog walks in.
+   * The Calendar wants it quiet beside its other controls. Sharing the
+   * dialog is the point: a walk-in taken at the board and one taken at
+   * the calendar cannot collect different things, which is exactly what
+   * the board's own hand-rolled version did until 07/11/2026 — it
+   * collected six fields and wrote none of them.
+   */
+  triggerLabel?: string;
+  triggerVariant?: "outline" | "default";
+  triggerClassName?: string;
+  /*
+   * The board keeps its person-plus. A groomer reading the control row
+   * mid-groom is better served by the icon that was already there than
+   * by consistency with a screen she is not looking at.
+   */
+  triggerIcon?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     phone: "", firstName: "", lastName: "", petName: "", breed: "", email: "",
@@ -93,9 +121,9 @@ export function QuickAppointmentDialog({ onCreated }: { onCreated?: () => void }
 
   return (
     <>
-      <Button variant="outline" size="sm" className="brand-lift gap-1.5 bg-card/80"
+      <Button variant={triggerVariant} size="sm" className={triggerClassName}
         onClick={() => setOpen(true)}>
-        <Zap className="h-4 w-4" /> Quick Appointment
+        {triggerIcon} {triggerLabel}
       </Button>
 
       <Dialog open={open} onOpenChange={(v) => { if (!v) close(); else setOpen(true); }}>
