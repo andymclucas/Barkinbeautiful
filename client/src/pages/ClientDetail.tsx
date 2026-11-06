@@ -1368,7 +1368,25 @@ export default function ClientDetail() {
               <TabsTrigger
                 key={item.value}
                 value={item.value}
-                className="w-full justify-start gap-2 rounded-lg px-3 py-2 text-sm data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+                /* flex-none and h-auto undo two things the shadcn TabsList
+                   base assumes, both of which are right for a single-row
+                   equal-width tab strip and wrong for this.
+
+                   `flex-1` gives every trigger flex-basis:0, so on a phone —
+                   where the rail falls back to a wrapped row — each row
+                   divided its width between however many items happened to
+                   fit. Three tabs on one line, two on the next, every row a
+                   different size, and the active pill stretched to whatever
+                   slot it landed in. The `w-full` that used to be here was
+                   meant to stop that and could not: flex-basis beats width.
+
+                   `h-[calc(100%-1px)]` is a percentage of a container that
+                   is h-auto, which has nothing to resolve against once the
+                   row wraps.
+
+                   So: natural-width chips that wrap on a phone, full-width
+                   rows in the lg column where the rail is a vertical list. */
+                className="h-auto flex-none w-auto justify-start gap-2 rounded-lg px-3 py-2 text-sm lg:w-full data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
               >
                 <item.icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{item.label}</span>
