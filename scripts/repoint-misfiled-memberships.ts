@@ -194,12 +194,14 @@ const CORRECTIONS: Correction[] = [
     client: "Selina Robson", options: "m20 Silver Classic Small $17.00 | m21 Styled SML (0-10kg) $22.00",
   },
   {
-    membershipId: null, clientId: 28, fromPetId: 66, toPetId: null, decision: null,
+    membershipId: 12, clientId: 28, fromPetId: 66, toPetId: 67,
+    decision: "Andy, 07/11/2026: the Styled plan is Snickers's. m12 Gold Styled SML"
+      + " (0-10kg, $26.00/wk) moves from Chester to Snickers, and Chester keeps m11"
+      + " Classic Small ($22.00/wk). Recorded as Andy's call rather than a reading"
+      + " of the history, because the history supports neither dog: NEITHER has"
+      + " ever had a styled groom — 29 classic + 3 fft for Chester, 3 + 3 for"
+      + " Snickers — and at 4.0kg and 5.0kg the band cannot separate them either.",
     client: "Nicki Waldon", options: "m11 Gold Classic Small $22.00 | m12 Styled SML (0-10kg) $26.00",
-    openQuestion: "Snickers is pet 67. Chester 4.0kg and Snickers 5.0kg are both small, and"
-      + " NEITHER has ever had a styled groom — 29 classic + 3 fft for Chester, 3 +"
-      + " 3 for Snickers — so the Styled plan matches no history at all and the"
-      + " service split cannot be read off either dog. Needs MoeGo or Andy.",
   },
 ];
 
