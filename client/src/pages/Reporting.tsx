@@ -112,7 +112,21 @@ export default function Reporting() {
    *
    * A report nobody is looking at should cost nothing.
    */
-  const [reportTab, setReportTab] = useState("staff");
+  /*
+   * Opened on a given tab when something links straight to a report —
+   * the Clients page's "Lapsed" filter sends you to /reporting?tab=clients
+   * rather than filtering a column nothing maintains.
+   *
+   * Read once, for the INITIAL value only, and validated against
+   * REPORT_TABS so a junk parameter cannot leave every query disabled on
+   * a tab that does not exist. This does not weaken the gating above:
+   * exactly one tab is ever active, so still only one tab's queries run.
+   */
+  const [reportTab, setReportTab] = useState(() => {
+    if (typeof window === "undefined") return "staff";
+    const asked = new URLSearchParams(window.location.search).get("tab");
+    return REPORT_TABS.some((t) => t.value === asked) ? (asked as string) : "staff";
+  });
 
   const { data: retention, isLoading: loadingRetention } = trpc.clients.clientRetention.useQuery(
     { limit: 500 },

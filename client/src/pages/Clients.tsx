@@ -19,7 +19,7 @@ import {
   ChevronLeft, ChevronRight, Download, Dog, Calendar,
   Merge,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import { AddOnPicker, type StagedAddOn } from "@/components/BookingPetPricing";
 import { stagePendingBooking } from "@/lib/pendingBooking";
@@ -30,6 +30,12 @@ import { toast } from "sonner";
 import { getClientPreviewSide } from "../lib/clientPreviewPosition";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { clientSince, describeClientSince } from "@shared/clientSince";
+import {
+  CLIENT_STATUS_COPY, CLIENT_STATUS_BULK_MAX, SETTABLE_CLIENT_STATUSES,
+  type SettableClientStatus,
+} from "@shared/clientStatus";
+import { CLIENT_LIST_PAGE_SIZES, type ClientListPageSize } from "@shared/clientList";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { ClientListCard } from "@/components/ClientListCard";
 import { ClientPetList } from "@/components/ClientPetList";
 import { BreedInput } from "@/components/BreedInput";
@@ -61,10 +67,12 @@ const SERVICE_LABELS: Record<string, string> = {
 
 type SortBy = "firstName" | "lastName" | "email" | "phone" | "status" | "createdAt";
 type SortDir = "asc" | "desc";
-type StatusFilter = "active" | "inactive" | "lapsed" | "blocked" | "all";
+// No "lapsed": choosing it navigates to the report instead of ever
+// becoming a filter, so the state cannot hold it.
+type StatusFilter = "active" | "inactive" | "blocked" | "all";
 
-const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const;
-type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
+const PAGE_SIZE_OPTIONS = CLIENT_LIST_PAGE_SIZES;
+type PageSizeOption = ClientListPageSize;
 
 function SortIcon({ col, sortBy, sortDir }: { col: SortBy; sortBy: SortBy; sortDir: SortDir }) {
   if (col !== sortBy) return <ChevronsUpDown className="h-3.5 w-3.5 ml-1 opacity-40" />;
@@ -259,6 +267,71 @@ export default function Clients() {
 
   const { data, refetch, isLoading } = trpc.clients.list.useQuery(queryParams);
 
+  /*
+   * Which rows are ticked, for a bulk status change.
+   *
+   * Keyed on id rather than row index, and deliberately CLEARED whenever
+   * the visible set changes (below). Carrying a selection across a page
+   * or filter change would let somebody tick thirty rows, change the
+   * filter, and mark clients they can no longer see — and the previous
+   * status is recorded nowhere, so there is no reading it back.
+   */
+  /*
+   * Bulk restatusing is owner/admin only — clients.setStatusBulk is
+   * protectedProcedure, which rejects restricted staff. Mirrored here so
+   * the tick column and the bar are simply absent for them rather than
+   * present and 403ing, which is the dead-control problem the Workflow
+   * board's "Add Walk-in" button cost us. They keep the per-client
+   * status control on the client record, which is operational.
+   */
+  const { user } = useAuth();
+  const canBulkEdit = user?.role !== "staff";
+
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  /** The status awaiting confirmation, or null when nothing is pending. */
+  const [pendingBulkStatus, setPendingBulkStatus] = useState<SettableClientStatus | null>(null);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+
+  const setStatusBulk = trpc.clients.setStatusBulk.useMutation({
+    onSuccess: (res) => {
+      toast.success(
+        `${res.requested} ${res.requested === 1 ? "client" : "clients"} updated`,
+      );
+      clearSelection();
+      setPendingBulkStatus(null);
+      void refetch();
+    },
+    onError: (e) => {
+      toast.error("Could not update", { description: e.message });
+      setPendingBulkStatus(null);
+    },
+  });
+
+  const pageIds: number[] = (data?.clients ?? []).map((c: any) => c.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+
+  const toggleOne = (id: number) =>
+    setSelected((curr) => {
+      const next = new Set(curr);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  /* Select-all means THIS PAGE, not the whole filtered set. Ticking a
+     header box and silently selecting 10,101 clients is the mistake the
+     cap exists to bound; keeping it to the page makes the count on the
+     bar match what is on screen. */
+  const togglePage = () =>
+    setSelected(allPageSelected ? new Set() : new Set(pageIds));
+
+  /* The selection belongs to the rows currently on screen. Changing page,
+     filter, search, sort or page size changes which rows those are, so the
+     ticks go with them rather than quietly following you. */
+  useEffect(() => {
+    clearSelection();
+  }, [page, pageSize, statusFilter, debouncedSearch, sortBy, sortDir, clearSelection]);
+
   // CSV export — fetches all matching rows then triggers download
   const exportQuery = trpc.clients.exportCsv.useQuery(
     { search: debouncedSearch || undefined, status: statusFilter !== "all" ? statusFilter : undefined, sortBy, sortDir },
@@ -416,7 +489,10 @@ export default function Clients() {
           {/* Status filter */}
           <Select
             value={statusFilter}
-            onValueChange={v => { setStatusFilter(v as StatusFilter); setPage(1); }}
+            onValueChange={v => {
+              if (v === "lapsed") { navigate("/reporting?tab=clients"); return; }
+              setStatusFilter(v as StatusFilter); setPage(1);
+            }}
           >
             <SelectTrigger className="w-full sm:w-36">
               <SelectValue placeholder="All statuses" />
@@ -425,8 +501,16 @@ export default function Clients() {
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="inactive">Inactive</SelectItem>
-              <SelectItem value="lapsed">Lapsed</SelectItem>
               <SelectItem value="blocked">Blocked</SelectItem>
+              {/* Not a filter. "Who has stopped coming" is computed from
+                  visit history against each household's own rhythm, on
+                  Reporting -> Clients; filtering clients.status = "lapsed"
+                  returned nothing, because nothing ever writes it and a
+                  column could not express that rule anyway. Kept in the
+                  menu because it is the word people look for, and it now
+                  takes them to the answer instead of an empty table.
+                  shared/clientStatus.ts has the reasoning. */}
+              <SelectItem value="lapsed">Lapsed (opens report)</SelectItem>
             </SelectContent>
           </Select>
 
@@ -439,6 +523,89 @@ export default function Clients() {
         </div>
 
         {/* Table */}
+        {/* Bulk status bar. Appears only with something ticked, so it
+            costs nothing the rest of the time. Desktop only, like the
+            checkboxes: tidying the books is a sit-down job, and a phone
+            shows the card list where there is no room for a tick column. */}
+        {canBulkEdit && selected.size > 0 && (
+          <div className="mb-3 hidden sm:flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+            <p className="text-sm font-medium">
+              {selected.size} {selected.size === 1 ? "client" : "clients"} selected
+            </p>
+            <span className="text-xs text-muted-foreground">Set status to</span>
+            <div className="flex flex-wrap gap-2">
+              {SETTABLE_CLIENT_STATUSES.map((status) => (
+                <Button
+                  key={status}
+                  size="sm"
+                  variant={status === "blocked" ? "destructive" : "outline"}
+                  disabled={setStatusBulk.isPending}
+                  onClick={() => setPendingBulkStatus(status)}
+                >
+                  {CLIENT_STATUS_COPY[status].label}
+                </Button>
+              ))}
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto"
+              onClick={clearSelection}
+              disabled={setStatusBulk.isPending}
+            >
+              Clear
+            </Button>
+          </div>
+        )}
+
+        {/* Confirmation. Not ceremony: the previous status is recorded
+            nowhere, so this cannot be undone by reading anything back —
+            the only way to reverse a mistake is to remember who was in
+            the selection. The count and the meaning are both repeated
+            here because the bar above is easy to click through. */}
+        <Dialog
+          open={pendingBulkStatus !== null}
+          onOpenChange={(open) => { if (!open) setPendingBulkStatus(null); }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Mark {selected.size} {selected.size === 1 ? "client" : "clients"} as{" "}
+                {pendingBulkStatus ? CLIENT_STATUS_COPY[pendingBulkStatus].label : ""}?
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                {pendingBulkStatus ? CLIENT_STATUS_COPY[pendingBulkStatus].meaning : ""}
+              </p>
+              <p className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+                Their previous status is not kept, so this cannot be undone automatically.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setPendingBulkStatus(null)}
+                disabled={setStatusBulk.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={setStatusBulk.isPending || selected.size === 0}
+                onClick={() => {
+                  if (!pendingBulkStatus) return;
+                  setStatusBulk.mutate({
+                    clientIds: [...selected].slice(0, CLIENT_STATUS_BULK_MAX),
+                    status: pendingBulkStatus,
+                  });
+                }}
+              >
+                {setStatusBulk.isPending ? "Saving…" : "Yes, update them"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <div className="bg-card rounded-xl border overflow-auto flex-1 min-h-0">
           {/* Cards on a phone, the table from sm up. Seven columns cannot
               fit 375px, so every column past the surname was hidden and a
@@ -467,6 +634,17 @@ export default function Clients() {
           <table className="hidden w-full text-sm sm:table">
             <thead className="bg-muted/50 border-b sticky top-0 z-10">
               <tr>
+                {canBulkEdit && (
+                  <th className="w-10 p-3">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-primary cursor-pointer"
+                      checked={allPageSelected}
+                      onChange={togglePage}
+                      aria-label="Select every client on this page"
+                    />
+                  </th>
+                )}
                 <SortTh col="firstName" label="First Name" />
                 <SortTh col="lastName" label="Last Name" />
                 <th className="text-left p-3 font-medium text-muted-foreground">Dogs</th>
@@ -482,16 +660,27 @@ export default function Clients() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-muted-foreground">Loading clients…</td>
+                  <td colSpan={canBulkEdit ? 8 : 7} className="text-center py-12 text-muted-foreground">Loading clients…</td>
                 </tr>
               )}
               {!isLoading && data?.clients.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-muted-foreground">No clients found.</td>
+                  <td colSpan={canBulkEdit ? 8 : 7} className="text-center py-12 text-muted-foreground">No clients found.</td>
                 </tr>
               )}
               {data?.clients.map(c => (
                 <tr key={c.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                  {canBulkEdit && (
+                    <td className="w-10 p-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary cursor-pointer"
+                        checked={selected.has(c.id)}
+                        onChange={() => toggleOne(c.id)}
+                        aria-label={`Select ${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()}
+                      />
+                    </td>
+                  )}
                   {/* First name with hover card */}
                   <td className="p-3">
                     <ClientHoverCard clientId={c.id} client={{ fullName: `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim(), email: c.email, phone: c.phone }}>

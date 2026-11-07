@@ -133,6 +133,7 @@ import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMe
 import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
+import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
@@ -5557,6 +5558,28 @@ const clientsRouter = router({
        * writes, so the two cannot disagree.
        */
       smsOptedOut: z.boolean().optional(),
+      /**
+       * Active, inactive or blocked.
+       *
+       * Andy, 07/11/2026: "Have you sorted active, inactive etc clients
+       * so they can be filtered yet?" The Clients page had filtered and
+       * sorted on this column for months, but nothing could WRITE it —
+       * no setter here, no control on the client record, and the MoeGo
+       * import never touched it. All ~10,000 clients sat on the `active`
+       * default, so three of the four filter options could not match a
+       * single row.
+       *
+       * `lapsed` is deliberately not accepted. It is computed from visit
+       * history in shared/lapsedClients.ts and shown on the Reporting
+       * page; letting it be typed as well would give one question two
+       * disagreeing answers. shared/clientStatus.ts has the reasoning.
+       *
+       * operationalProcedure like the rest of this mutation: a
+       * receptionist marking somebody who has moved away is exactly who
+       * does this, and it is less consequential than the phone number
+       * and the SMS opt-out already here.
+       */
+      status: z.enum(SETTABLE_CLIENT_STATUSES).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -5570,6 +5593,7 @@ const clientsRouter = router({
       if (input.address !== undefined) updates.address = input.address;
       if (input.notes !== undefined) updates.notes = input.notes;
       if (input.referralSource !== undefined) updates.referralSource = input.referralSource;
+      if (input.status !== undefined) updates.status = input.status;
       if (input.smsOptedOut !== undefined) {
         // The rule - and the trap about not restamping somebody who was
         // already opted out - lives in shared/smsOptOut.ts with its tests.
@@ -5591,6 +5615,61 @@ const clientsRouter = router({
         .set(updates)
         .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, tenantId)));
       return { success: true };
+    }),
+
+  /**
+   * Mark several clients at once.
+   *
+   * The setter on updateDetails made the Clients filter correct; it did
+   * not make it useful. Every one of the salon's ~10,000 clients is on
+   * the `active` default, and nobody is going to open ten thousand
+   * records one at a time, so the filter would have gone on returning an
+   * empty table for Inactive and Blocked indefinitely.
+   *
+   * Capped at CLIENT_STATUS_BULK_MAX, and the cap is the point rather
+   * than a formality: **the previous status is not recorded anywhere**,
+   * so selecting more than you meant to cannot be undone by reading
+   * anything back. There is no audit table for this column and inventing
+   * one here would be a migration nobody asked for — the cap plus the
+   * confirmation step on the page is the protection instead.
+   *
+   * `lapsed` is refused by the same shared list the single setter uses,
+   * so a bulk call cannot write a value that is meant to be computed.
+   *
+   * **protectedProcedure, NOT operationalProcedure** — deliberately
+   * narrower than the single setter on updateDetails, which restricted
+   * staff may call.
+   *
+   * The difference is magnitude and reversibility. One client at a time
+   * is floor work a receptionist does all day. Five hundred in one click,
+   * with no previous status kept and no audit row, is a management action
+   * that cannot be read back if it goes wrong. Restricted staff are
+   * confined to their own appointments and workflow; they keep the
+   * per-client control and lose only the bulk one, and the Clients page
+   * hides the tick column from them so there is no button that 403s.
+   */
+  setStatusBulk: protectedProcedure
+    .input(z.object({
+      clientIds: z.array(z.number().int().positive())
+        .min(1)
+        .max(CLIENT_STATUS_BULK_MAX),
+      status: z.enum(SETTABLE_CLIENT_STATUSES),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      // Tenant from the session, never the request: the ids come from the
+      // browser, so without this filter a caller could pass another
+      // salon's client ids and restatus them.
+      const tenantId = tenantOf(ctx);
+      const ids = [...new Set(input.clientIds)];
+      await db.update(clients)
+        .set({ status: input.status, updatedAt: new Date() })
+        .where(and(inArray(clients.id, ids), eq(clients.tenantId, tenantId)));
+      /* Counted from the ids asked for rather than from affectedRows:
+         MySQL reports 0 changed rows for a client already on that status,
+         which is a no-op and not a failure worth reporting as one. */
+      return { success: true, requested: ids.length };
     }),
 
   /**
