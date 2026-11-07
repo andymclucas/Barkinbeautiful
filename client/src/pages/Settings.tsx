@@ -4,6 +4,7 @@ import { SalonSmsNumber } from "@/components/SalonSmsNumber";
 import { StaffNotificationSetting } from "@/components/StaffNotificationSetting";
 import { SmsUsageCard } from "@/components/SmsUsageCard";
 import { StripeConnectCard } from "@/components/StripeConnectCard";
+import { ClientMessagingCard } from "@/components/ClientMessagingCard";
 import { SalonBillingCard } from "@/components/SalonBillingCard";
 import { RebookReminderCard } from "@/components/RebookReminderCard";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Bell, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck, Clock3, RotateCcw, Star, Receipt } from "lucide-react";
+import { Building2, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck, Clock3, RotateCcw, Star, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { applyBrandTheme, readLogoColours, readLogoColoursFromUrl } from "@/lib/brandTheme";
@@ -387,29 +388,13 @@ export default function Settings() {
 
             <SmsUsageCard />
             <RebookReminderCard />
-            <Card>
-              <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Bell className="h-5 w-5 text-primary" /> Client messaging
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 space-y-3 text-sm">
-                {[
-                  { label: "Send Pet Tracker SMS on check-in", desc: "OFF — automated texts to clients are switched off; only \u201cready for pickup\u201d goes out, and staff send it" },
-                  { label: "Failed payment alerts", desc: "Notify staff when a membership payment fails" },
-                  { label: "Appointment reminders", desc: "OFF — automated texts to clients are switched off" },
-                  { label: "Low stock alerts", desc: "Alert when retail products reach the reorder threshold" },
-                ].map(n => (
-                  <div key={n.label} className="flex items-start justify-between gap-4 py-2 border-b last:border-0">
-                    <div>
-                      <p className="font-medium">{n.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{n.desc}</p>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => toast.info("Feature coming soon")}>Configure</Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            {/* Was four hand-written rows, two of them staff alerts rather
+                than client texts, and four "Configure" buttons that only
+                raised "Feature coming soon". Its copy still said automated
+                texts were switched off three days after Andy switched them
+                on, because the sentence was copy rather than a reading of
+                the allow-list. It renders from the allow-list itself now. */}
+            <ClientMessagingCard />
             </section>
           </TabsContent>
 
