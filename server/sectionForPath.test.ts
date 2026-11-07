@@ -45,6 +45,12 @@ describe("every namespace is classified on purpose", () => {
       "platformBilling",
       // Read-only surfaces: there is nothing to change.
       "analytics", "analyticsExt",
+      // Which automated texts the salon sends, 07/11/2026. One query, no
+      // mutations — the allow-list it reports is a code change, not a
+      // setting, so there is nothing here a permission could withhold.
+      // `protectedProcedure` already rejects restricted staff, and
+      // /settings is closed to them by isStaffOperationRoute anyway.
+      "automatedMessages",
     ];
     const unclassified = appRouterNamespaces().filter((ns) =>
       !(ns in SECTION_BY_NAMESPACE)

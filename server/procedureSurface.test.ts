@@ -429,6 +429,11 @@ describe("tRPC procedure surface", () => {
     // 391 since 06/11/2026: the salons router — mine, canAccess, grant
     // and revoke — for running more than one salon from one account.
     //
+    // 404 since 07/11/2026: automatedMessages.list, which reports which
+    // automated texts can actually reach a client. protectedProcedure, so
+    // it appears in neither OPERATIONAL nor PUBLIC: it is owner-facing
+    // settings, and restricted staff are already off /settings.
+    //
     // 403 since 06/11/2026: platformBilling — the salon's own subscription
     // to Groomigo. None of the three appears in OPERATIONAL or PUBLIC,
     // which is the point: `status` is protectedProcedure and so rejects
@@ -451,7 +456,7 @@ describe("tRPC procedure surface", () => {
     // adminProcedure — provisioning makes a new business on the platform
     // and hands somebody the keys, and eligibleOwners lists the
     // platform's accounts — so none appears in OPERATIONAL or PUBLIC.
-    expect(surface).toHaveLength(403);
+    expect(surface).toHaveLength(404);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

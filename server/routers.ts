@@ -153,6 +153,7 @@ import {
   findBlockingBlockout, MAX_BLOCKOUT_DAYS,
 } from "../shared/staffBlockouts";
 import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
+import { automatedMessagesRouter } from "./routers/automatedMessages";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { countInvoicesCovering } from "./invoiceCoverage";
@@ -15341,6 +15342,7 @@ export const appRouter = router({
   portalChat: portalChatRouter,
   sidebarCounts: sidebarCountsRouter,
   smsUsage: smsUsageRouter,
+  automatedMessages: automatedMessagesRouter,
   pushSubscriptions: pushSubscriptionsRouter,
   appointmentAddOns: appointmentAddOnsRouter,
   stripeConnect: stripeConnectRouter,
