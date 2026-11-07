@@ -16,6 +16,7 @@ import {
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { shouldActOnSignal } from "@shared/openOnSignal";
 import { parsePetCodes } from "@shared/petCodes";
+import { membershipsByCoveredPet } from "@shared/membershipCoveredPets";
 import { parseClientTags, clientTagTone } from "@shared/clientTags";
 import { describePetCode, petCodeMeaning } from "@shared/petCodeMeanings";
 import { canChargeOffSession } from "@shared/stripeBilling";
@@ -61,7 +62,7 @@ import { Link } from "wouter";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { HeartCrack, History, Replace, Unlink } from "lucide-react";
-import { getDepartedMembershipBillingImpact, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
+import { getDepartedMembershipBillingImpact, getReplacementWeightBand, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
 import { resolveAppointmentMembershipCoverage } from "@shared/appointmentMembershipCoverage";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { BreedInput } from "@/components/BreedInput";
@@ -795,14 +796,18 @@ export default function ClientDetail() {
     });
   };
 
-  // Map petId -> memberships for that pet
-  const petMemberships: Record<number, typeof memberships> = {};
-  for (const m of memberships) {
-    if (m.petId) {
-      if (!petMemberships[m.petId]) petMemberships[m.petId] = [];
-      petMemberships[m.petId].push(m);
-    }
-  }
+  /*
+   * Every dog each plan covers, not just the dog it is filed under.
+   *
+   * `coveredPetIds` is the plan's own dog plus any added to it through
+   * Set covered pets, unioned on the server by `planCoveredPetIds`.
+   * Reading `m.petId` alone left a household's second dog with no tier
+   * colour on its card and — worse — no transfer-or-remove dialog if it
+   * died, because `manageableDepartedMemberships` below is built from
+   * this same map. The dog was covered and paid for, and this page
+   * could not see it.
+   */
+  const petMemberships = membershipsByCoveredPet(memberships);
   const photosByPet = (photos ?? []).reduce<Record<number, typeof photos>>((grouped, photo) => {
     (grouped[photo.petId] ??= []).push(photo);
     return grouped;
@@ -2528,7 +2533,12 @@ export default function ClientDetail() {
                         {pets.filter(pet => pet.status === "active" && pet.id !== membershipAction?.petId).map(pet => {
                           const source = pets.find(item => item.id === membershipAction?.petId);
                           const eligible = source ? isEligibleMembershipReplacement(source, pet) : false;
-                          return <SelectItem key={pet.id} value={String(pet.id)} disabled={!eligible}>{pet.name} {pet.weightKg ? `· ${pet.weightKg}kg` : "· weight required"}{eligible ? "" : " · different band"}</SelectItem>;
+                          /* "weight required" was wrong for most of the salon: a dog
+                             with no weight but a recorded size band is eligible, and
+                             the label told staff to go and weigh a dead dog's sibling
+                             when the band was already on file. */
+                          const size = pet.weightKg ? `· ${pet.weightKg}kg` : getReplacementWeightBand(pet) ? `· ${getReplacementWeightBand(pet)?.label} (no weight)` : "· no weight or size on file";
+                          return <SelectItem key={pet.id} value={String(pet.id)} disabled={!eligible}>{pet.name} {size}{eligible ? "" : " · different band"}</SelectItem>;
                         })}
                       </SelectContent>
                     </Select>

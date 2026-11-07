@@ -35,7 +35,8 @@ export type AutomatedSmsType =
   | "missed_call"
   | "online_booking_request"
   | "photo_link"
-  | "payment_failed";
+  | "payment_failed"
+  | "rebook";
 
 /**
  * The automated texts a client may receive. Nothing else.
@@ -113,6 +114,28 @@ export const ALLOWED_AUTOMATED_SMS: ReadonlySet<AutomatedSmsType> = new Set<Auto
   // and texting on every save would be worse than not having it. Andy
   // chose the day rule on 04/11/2026 when asked.
   "reschedule",
+
+  // Andy, 07/11/2026, showing MoeGo's "Rebook reminder" screen: "Build
+  // this into the text message workflow — something along these lines."
+  //
+  // The only entry here that texts a client who has NO appointment. Every
+  // other one is about a booking that exists, which bounds it; this one's
+  // audience is "everybody due soon who has not rebooked", and that is
+  // most of the book if the window is wrong.
+  //
+  // So it carries three guards the others do not need, all in
+  // shared/rebookReminder.ts: a narrow trailing window rather than a
+  // three-week band, so the first run cannot sweep a backlog; a cap per
+  // run; and a claim keyed on the client and the expected day, so a
+  // household gets one text per cycle rather than one per dog.
+  //
+  // It is allowed HERE and still off IN PRACTICE: tenants
+  // .rebook_reminder_enabled defaults to false, so nothing sends until
+  // somebody switches it on in Settings. It is on the list so that
+  // switch is honest — a toggle that silently does nothing is worse than
+  // no toggle, which the Workflow board's dead "Add Walk-in" button cost
+  // us earlier the same day.
+  "rebook",
 ]);
 
 export function automatedSmsAllowed(type: AutomatedSmsType): boolean {

@@ -50,6 +50,24 @@ export const tenants = mysqlTable("tenants", {
    * which is a different thing from a trial that has run out.
    */
   trialEndsAt: timestamp("trial_ends_at"),
+  /**
+   * Groomigo charging this salon for Groomigo — the OPPOSITE direction to
+   * stripeAccountId beside it.
+   *
+   * stripeAccountId is the salon's own connected account, where a dog
+   * owner's money lands. These two are the salon's customer and
+   * subscription on the PLATFORM account, where the salon's own money
+   * leaves. A Stripe customer belongs to the account it was created on,
+   * so the names carry `platform` to stop the next person reaching for
+   * the obvious one and billing the wrong party.
+   *
+   * Null for Barkin' Beautiful, which is Andy's own salon and does not
+   * pay. Null is also every salon still on trial.
+   */
+  platformStripeCustomerId: varchar("platform_stripe_customer_id", { length: 255 }),
+  platformStripeSubscriptionId: varchar("platform_stripe_subscription_id", { length: 255 }),
+  /** End of the period already paid for. A cancelled salon keeps access to it. */
+  subscriptionCurrentPeriodEnd: timestamp("subscription_current_period_end"),
   onlineBookingEnabled: boolean("online_booking_enabled").default(false).notNull(),
   /** Separate from online booking: a link sent to one client, not an open diary. */
   membershipSignupEnabled: boolean("membership_signup_enabled").default(false).notNull(),
@@ -105,6 +123,16 @@ export const tenants = mysqlTable("tenants", {
    * NULL means undecided; zero means deliberately nothing.
    */
   platformFeeBps: int("platform_fee_bps"),
+  /**
+   * The rebook nudge, off until somebody turns it on.
+   *
+   * False by default and deliberately: it is the only automated text
+   * whose audience is clients with NO appointment, so switching it on is
+   * a decision about who gets contacted rather than a setting.
+   */
+  rebookReminderEnabled: boolean("rebook_reminder_enabled").default(false).notNull(),
+  /** How far before the expected date it lands. Three weeks, as MoeGo's was. */
+  rebookReminderWeeksBefore: int("rebook_reminder_weeks_before").default(3).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 });
@@ -293,6 +321,28 @@ export const clients = mysqlTable("clients", {
   referralSource: varchar("referral_source", { length: 100 }),
   /** When they told us to stop texting. Set from an inbound STOP reply. */
   smsOptedOutAt: timestamp("sms_opted_out_at"),
+  /**
+   * The rebook nudge's claim, keyed on the CLIENT rather than a dog.
+   *
+   * A two-dog household makes one trip and must get one text, so the
+   * thing that is spent is the household's. `rebook_reminder_for` holds
+   * the expected day the text was about; that day only moves when they
+   * come in again, so comparing against it gives exactly one reminder
+   * per cycle and a new one next cycle.
+   *
+   * Claimed BEFORE the send, like the missed-call ledger: a claim spent
+   * on a text that was then blocked would disqualify somebody who was
+   * never contacted.
+   */
+  rebookReminderSentAt: timestamp("rebook_reminder_sent_at"),
+  /*
+   * `mode: "string"` for the same reason rescheduleSmsSentFor has it: as
+   * a Date, mysql2 converts using the MACHINE clock and the column lands
+   * a day out whenever the server is not on Brisbane time — the shape of
+   * the bug e6a4662 fixed. decideRebookReminder compares calendar-day
+   * strings from dayInZone, so a string is also what it wants back.
+   */
+  rebookReminderFor: date("rebook_reminder_for", { mode: "string" }),
   portalPasswordHash: text("portal_password_hash"),
   portalLoginEmail: varchar("portal_login_email", { length: 320 }),
   portalAccountStatus: mysqlEnum("portal_account_status", ["not_enabled", "setup_pending", "active", "revoked"]).default("not_enabled").notNull(),
@@ -1275,7 +1325,16 @@ export const smsLogs = mysqlTable("sms_logs", {
   status: mysqlEnum("status", ["sent", "delivered", "failed", "pending", "received"]).default("pending").notNull(),
   // Appended, never reordered: MySQL stores an enum by ORDINAL, so
   // moving a value silently relabels every existing row.
-  type: mysqlEnum("type", ["reminder", "confirmation", "ready_pickup", "payment_failed", "tracker", "custom", "campaign", "inbound", "cancellation", "reschedule"]).default("custom").notNull(),
+  /*
+   * "rebook" is APPENDED, and that is not cosmetic: MySQL stores an enum
+   * by its index, so inserting a value in the middle would silently
+   * re-map every existing row to the neighbouring label. Added 07/11/2026
+   * with migration 0162. Logging these as "custom" instead would have
+   * been cheaper and wrong — smsLogs IS the Messages thread staff read,
+   * and an automated nudge must not be indistinguishable from a message
+   * a person typed.
+   */
+  type: mysqlEnum("type", ["reminder", "confirmation", "ready_pickup", "payment_failed", "tracker", "custom", "campaign", "inbound", "cancellation", "reschedule", "rebook"]).default("custom").notNull(),
   direction: mysqlEnum("direction", ["outbound", "inbound"]).default("outbound").notNull(),
   replyIntent: mysqlEnum("reply_intent", ["confirm", "cancel", "unknown"]),
   processedAt: timestamp("processed_at"),

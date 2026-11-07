@@ -12,6 +12,7 @@ import { getAppBaseUrl, logAppUrlConfiguration } from "../appUrl";
 import { startPushFanout } from "../pushFanout";
 import { tenantIdForWebhook } from "../tenantByNumber";
 import { paymentRetryHandler, appointmentReminderHandler } from "../scheduledHandlers";
+import { rebookReminderHandler } from "../rebookReminders";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -153,6 +154,12 @@ async function startServer() {
   // Scheduled / Heartbeat handlers
   app.post("/api/scheduled/payment-retry", paymentRetryHandler);
   app.post("/api/scheduled/appointment-reminders", appointmentReminderHandler);
+  /* The rebook nudge. Daily is enough — the window it sends in is seven
+     days wide so a missed run catches up, and running it hourly would
+     only mean more chances to text somebody at the wrong hour.
+     CRON_SECRET must be set on the cron service as well as the web one,
+     or every run 403s silently. */
+  app.post("/api/scheduled/rebook-reminders", rebookReminderHandler);
 
   // One-off admin utility: given a MoeGo pet ID and its photo URL (from the
   // old platform we're migrating away from), download the image server-side
