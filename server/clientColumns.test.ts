@@ -55,6 +55,11 @@ describe("CLIENT_PUBLIC_COLUMNS", () => {
       "portalPasswordHash",
       "portalSessionVersion",
       "portalSetupTokenHash",
+      // The rebook nudge's bookkeeping, 07/11/2026. Deliberately out:
+      // it is our record of when we last chased somebody, and a client
+      // reading their own portal has no business being shown it.
+      "rebookReminderSentAt",
+      "rebookReminderFor",
     ].sort());
   });
 });
