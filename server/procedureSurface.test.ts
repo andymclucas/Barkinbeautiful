@@ -86,7 +86,6 @@ const PUBLIC = [
   "membershipSignupRouter.packagesForWeight",
   "membershipSignupRouter.quote",
   "membershipSignupRouter.submit",
-  "onlineBookingRouter.create",
   "onlineBookingRouter.createGuest",
   "onlineBookingRouter.listAvailableSlots",
   "onlineBookingRouter.listGroomerProfiles",
@@ -429,6 +428,10 @@ describe("tRPC procedure surface", () => {
     // 391 since 06/11/2026: the salons router — mine, canAccess, grant
     // and revoke — for running more than one salon from one account.
     //
+    // 404 since 07/11/2026: onlineBooking.create REMOVED. An
+    // unauthenticated publicProcedure that inserted an appointment from
+    // a caller-supplied clientId and petId, with no caller anywhere.
+    //
     // 405 since 07/11/2026: clients.setStatusBulk, for marking several
     // clients active/inactive/blocked at once, and automatedMessages
     // .list, which reports which automated texts can actually reach a
@@ -462,7 +465,7 @@ describe("tRPC procedure surface", () => {
     // adminProcedure — provisioning makes a new business on the platform
     // and hands somebody the keys, and eligibleOwners lists the
     // platform's accounts — so none appears in OPERATIONAL or PUBLIC.
-    expect(surface).toHaveLength(405);
+    expect(surface).toHaveLength(404);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -471,7 +474,7 @@ describe("tRPC procedure surface", () => {
     // 53 since 06/11/2026: groomQuotes getByToken and answerByToken, the
     // owner's end of a mid-groom quote. Unauthenticated by design — the
     // note beside them in PUBLIC says what bounds them.
-    expect(PUBLIC).toHaveLength(53);
+    expect(PUBLIC).toHaveLength(52);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

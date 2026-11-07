@@ -48,7 +48,6 @@ const EXEMPT = {
   undoDeleteAppointment: "restores, does not book",
   // No caller; createGuest and createPreviewGuest are the live paths.
   // Worth wiring if it is ever used, as createAppointment was.
-  create: "unreachable online path",
   // Both create the client in the same call, so no plan exists yet.
   createGuest: "creates the client, so there is no plan",
   createPreviewGuest: "creates the client, so there is no plan",
@@ -102,10 +101,14 @@ describe("every groom-creating path has a recorded pricing decision", () => {
      * coverage is known by construction rather than resolved.
      *
      * waitlist deliberately leaves the price unset for staff to fill —
-     * its own comment says so. It does NOT set membershipId, so a
-     * member's waitlist booking carries no gold VIP disc. A real gap,
-     * smaller than rebook's, recorded here rather than left to be
-     * rediscovered.
+     * its own comment says so, and that is the safe direction: nobody is
+     * overcharged.
+     *
+     * It also used to set no membershipId, which this test recorded as
+     * "a real gap, recorded here rather than left to be rediscovered".
+     * Fixed 07/11/2026: the booking now links to the covering plan, so a
+     * member's waitlist groom is counted against it. The assertion below
+     * flipped from 0 to 1 and is what keeps it that way.
      */
     const signup = read("server/routers/membershipSignup.ts");
     expect(signup).toMatch(/price: "0\.00"/);
@@ -113,7 +116,7 @@ describe("every groom-creating path has a recorded pricing decision", () => {
 
     const waitlist = read("server/routers/waitlist.ts");
     expect((waitlist.match(/insert\(appointments\)/g) ?? []).length).toBe(1);
-    expect((waitlist.match(/membershipId:/g) ?? []).length).toBe(0);
+    expect((waitlist.match(/membershipId:/g) ?? []).length).toBe(1);
   });
 
   it("links the row to the plan, not only the price", () => {

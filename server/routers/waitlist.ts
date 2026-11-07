@@ -31,6 +31,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, publicProcedure, operationalProcedure, tenantOf } from "../_core/trpc";
+import { getAppointmentMembershipCoverage } from "../appointmentCoverage";
 import { getDb } from "../db";
 import {
   clients, pets, staff, tenants, appointments,
@@ -710,6 +711,26 @@ export const waitlistRouter = router({
       const offerDeparted = offerPet ? departedBookingMessage([offerPet]) : null;
       if (offerDeparted) throw new TRPCError({ code: "BAD_REQUEST", message: offerDeparted });
 
+      /*
+       * Link the booking to the plan that covers it, 07/11/2026.
+       *
+       * This was the one appointment-insert path that set no
+       * membershipId. Nobody was overcharged — the price is left unset
+       * below, which is the safe direction — but the groom was invisible
+       * to everything that counts work against a plan, because those
+       * queries filter on membership_id being present. A member booked
+       * off the waitlist simply did not appear to have been groomed
+       * under their membership.
+       *
+       * Same helper the calendar and rebook paths use, so the three
+       * agree on which dogs a plan covers — including the second dog of
+       * an "x2" plan, which is the case that has caught this out before.
+       */
+      const coverage = await getAppointmentMembershipCoverage(
+        db, tenantId, offer.clientId, [offer.petId],
+        (offer.serviceType ?? "classic_groom") as any,
+      );
+
       const [created] = await db.insert(appointments).values({
         tenantId, clientId: offer.clientId, petId: offer.petId,
         staffId: offer.staffId,
@@ -717,9 +738,11 @@ export const waitlistRouter = router({
         scheduledStart: start, scheduledEnd: end,
         trackerToken: nanoid(32),
         workflowState: "scheduled", status: "confirmed",
+        membershipId: coverage.membershipByPetId[offer.petId]?.id ?? null,
         // Price deliberately unset: a membership dog's groom carries none
         // and a casual one is priced at booking. Staff set it on the card
-        // rather than this guessing.
+        // rather than this guessing. Unchanged — only the LINK to the
+        // plan was missing, not the pricing.
       });
       const appointmentId = (created as any).insertId as number;
 
