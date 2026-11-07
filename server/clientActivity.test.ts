@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   INACTIVE_AFTER_MONTHS,
   LIVE_MEMBERSHIP_STATUSES,
+  NON_VISIT_STATES,
   decideInactive,
   inactiveCutoffDay,
 } from "@shared/clientActivity";
-import { memberships } from "../drizzle/schema";
+import { appointments, memberships } from "../drizzle/schema";
 import { getTableColumns } from "drizzle-orm";
 
 const BRISBANE = "Australia/Brisbane";
@@ -16,7 +17,6 @@ const gone = {
   lastVisitDay: "2025-01-05",
   hasFutureBooking: false,
   hasLiveMembership: false,
-  createdDay: "2023-04-01",
   cutoffDay: "2025-11-07",
 };
 
@@ -33,8 +33,14 @@ describe("decideInactive", () => {
     expect(d.markInactive).toBe(true);
   });
 
-  it("marks one who has never visited at all", () => {
-    expect(decideInactive({ ...gone, lastVisitDay: null }).markInactive).toBe(true);
+  it("leaves alone anyone with no visit on record, unless asked", () => {
+    // 8,319 clients are in this cohort and the data cannot tell "left
+    // before the imported history starts in July 2024" from "enquired
+    // once and never booked". Marking them is a decision, not a default.
+    expect(decideInactive({ ...gone, lastVisitDay: null }))
+      .toEqual({ markInactive: false, reason: "never_visited" });
+    expect(decideInactive({ ...gone, lastVisitDay: null, includeNeverVisited: true }))
+      .toEqual({ markInactive: true, lastVisitDay: null });
   });
 
   it("never marks a paying member", () => {
@@ -52,12 +58,14 @@ describe("decideInactive", () => {
     expect(d).toEqual({ markInactive: false, reason: "has_future_booking" });
   });
 
-  it("never marks a client added inside the window", () => {
-    // "Zero visits in 12 months" is literally true of somebody added two
-    // months ago who has not had their first groom. They are new, not
-    // inactive, and the rule has nothing to say about them yet.
-    const d = decideInactive({ ...gone, lastVisitDay: null, createdDay: "2026-09-01" });
-    expect(d).toEqual({ markInactive: false, reason: "created_inside_window" });
+  it("does not use created_at to judge newness", () => {
+    // The first version skipped anyone created inside the window. That
+    // column is 3 August 2026 for 10,075 of 10,114 rows — the MoeGo
+    // merge date — so it skipped 9,150 clients and the pass marked
+    // nobody. The decision must not depend on it, and now cannot:
+    // there is no field for it to read.
+    const d = decideInactive(gone);
+    expect(d.markInactive).toBe(true);
   });
 
   it("never overwrites a status somebody chose by hand", () => {
@@ -84,6 +92,22 @@ describe("decideInactive", () => {
       ...gone, status: "blocked", hasLiveMembership: true, hasFutureBooking: true,
     });
     expect(d).toEqual({ markInactive: false, reason: "not_active_status" });
+  });
+});
+
+describe("NON_VISIT_STATES", () => {
+  it("counts a past scheduled booking as a visit", () => {
+    // The whole correction. 7,189 appointments sit in `scheduled` with
+    // past dates — imported MoeGo grooms the workflow never walked. Only
+    // cancelled and no-show mean the dog did not come.
+    expect(NON_VISIT_STATES).toEqual(["cancelled", "no_show"]);
+    expect(NON_VISIT_STATES).not.toContain("scheduled");
+    expect(NON_VISIT_STATES).not.toContain("complete");
+  });
+
+  it("names only states the column accepts", () => {
+    const allowed = getTableColumns(appointments).workflowState.enumValues ?? [];
+    for (const state of NON_VISIT_STATES) expect(allowed).toContain(state);
   });
 });
 

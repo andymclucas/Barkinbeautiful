@@ -40,22 +40,41 @@ import {
   INACTIVE_AFTER_MONTHS,
   INACTIVE_SKIP_LABEL,
   LIVE_MEMBERSHIP_STATUSES,
+  NON_VISIT_STATES,
   decideInactive,
   inactiveCutoffDay,
   type InactiveSkipReason,
 } from "../shared/clientActivity";
 
 const APPLY = process.argv.includes("--apply");
+/**
+ * Also mark the clients with no visit on record at all.
+ *
+ * That cohort is 8,319 people, and the data cannot tell "stopped coming
+ * before the imported history starts in July 2024" from "enquired once
+ * and never booked". Off unless asked for, explicitly, on the command
+ * line — it is a different act from marking the 772 who demonstrably
+ * came and then stopped.
+ */
+const INCLUDE_NEVER = process.argv.includes("--include-never-visited");
 const TENANT = 1;
 const ZONE = "Australia/Brisbane";
 
 /**
- * Refuse to apply if more than this share of clients have never had a
- * completed appointment. On a real book most clients have been groomed;
- * a figure near 1 means `complete` is not what marks a finished groom
- * here, not that the salon has no customers.
+ * Refuse to apply if the pass would restatus more than this share of the
+ * active client book.
+ *
+ * The first version gated on "how many clients have never had a
+ * completed appointment", which turned out to measure the wrong thing:
+ * on this data that figure is high for a legitimate reason — imported
+ * history only reaches July 2024 — so the gate would have refused a
+ * correct run while saying nothing about a wrong one.
+ *
+ * Bounding the BLAST RADIUS works whatever the cause. Half the book is
+ * not a tidy-up, it is a migration, and it should not happen because
+ * somebody ran a script twice.
  */
-const MAX_NEVER_VISITED_SHARE = 0.6;
+const MAX_SHARE_OF_ACTIVE = 0.5;
 
 /** Written in one statement per chunk, so a failure is partial, not total. */
 const WRITE_CHUNK = 200;
@@ -110,16 +129,17 @@ async function main() {
    */
 
   const liveStatusPlaceholders = LIVE_MEMBERSHIP_STATUSES.map(() => "?").join(",");
+  const nonVisitPlaceholders = NON_VISIT_STATES.map(() => "?").join(",");
   const [clients]: any = await db.query(
     `SELECT c.id,
             c.first_name AS firstName,
             c.last_name  AS lastName,
             c.status,
-            DATE_FORMAT(CONVERT_TZ(c.created_at, '+00:00', '+10:00'), '%Y-%m-%d') AS createdDay,
             (SELECT DATE_FORMAT(CONVERT_TZ(MAX(a.scheduled_start), '+00:00', '+10:00'), '%Y-%m-%d')
                FROM appointments a
               WHERE a.client_id = c.id AND a.tenant_id = c.tenant_id
-                AND a.workflow_state = 'complete')                       AS lastVisitDay,
+                AND a.scheduled_start < UTC_TIMESTAMP()
+                AND a.workflow_state NOT IN (${nonVisitPlaceholders}))   AS lastVisitDay,
             EXISTS (SELECT 1 FROM appointments f
                      WHERE f.client_id = c.id AND f.tenant_id = c.tenant_id
                        AND f.scheduled_start >= UTC_TIMESTAMP()
@@ -129,20 +149,22 @@ async function main() {
                        AND m.status IN (${liveStatusPlaceholders}))     AS hasLiveMembership
        FROM clients c
       WHERE c.tenant_id = ?`,
-    [...LIVE_MEMBERSHIP_STATUSES, TENANT]);
+    [...NON_VISIT_STATES, ...LIVE_MEMBERSHIP_STATUSES, TENANT]);
 
   const neverVisited = clients.filter((c: any) => !c.lastVisitDay).length;
-  const share = clients.length ? neverVisited / clients.length : 0;
-  console.log(`\nClients: ${clients.length}`);
-  console.log(`  never had a completed appointment: ${neverVisited}`
-    + ` (${(share * 100).toFixed(1)}%)`);
+  const activeCount = clients.filter((c: any) => String(c.status) === "active").length;
+  console.log(`\nClients: ${clients.length}  (active: ${activeCount})`);
+  console.log(`  no past visit on record at all: ${neverVisited}`);
+  console.log(`  ${INCLUDE_NEVER ? "INCLUDED" : "excluded"}`
+    + ` — imported history only reaches July 2024, so this cohort mixes`);
+  console.log(`  "left years ago" with "never booked".`);
 
   /* ---------- decide ---------- */
 
   const toMark: Array<{ id: number; name: string; status: string; lastVisitDay: string | null }> = [];
   const skipped: Record<InactiveSkipReason, number> = {
     not_active_status: 0, has_future_booking: 0, has_live_membership: 0,
-    created_inside_window: 0, visited_inside_window: 0,
+    never_visited: 0, visited_inside_window: 0,
   };
 
   for (const c of clients) {
@@ -152,8 +174,8 @@ async function main() {
       // mysql2 returns EXISTS as 1/0.
       hasFutureBooking: Boolean(Number(c.hasFutureBooking)),
       hasLiveMembership: Boolean(Number(c.hasLiveMembership)),
-      createdDay: c.createdDay ?? null,
       cutoffDay,
+      includeNeverVisited: INCLUDE_NEVER,
     });
     if (decision.markInactive) {
       toMark.push({
@@ -185,23 +207,26 @@ async function main() {
     }
   }
 
-  if (toMark.length === 0) {
-    console.log("\nNothing to do.");
+  /* ---------- the blast-radius gate, checked before anything else ---------- */
+
+  const shareOfActive = activeCount ? toMark.length / activeCount : 0;
+  console.log(`That is ${(shareOfActive * 100).toFixed(1)}% of the active book.`);
+
+  if (shareOfActive > MAX_SHARE_OF_ACTIVE) {
+    console.log(`\n*** REFUSING TO APPLY ***`);
+    console.log(`${(shareOfActive * 100).toFixed(1)}% is above the`
+      + ` ${(MAX_SHARE_OF_ACTIVE * 100).toFixed(0)}% ceiling.`);
+    console.log(`Restatusing half the client book is a migration, not a tidy-up.`);
+    console.log(`If that is genuinely what you want, raise MAX_SHARE_OF_ACTIVE`);
+    console.log(`deliberately and say so in the commit — do not pass a flag.`);
     await db.end();
+    process.exitCode = 1;
     return;
   }
 
-  /* ---------- the premise gate ---------- */
-
-  if (share > MAX_NEVER_VISITED_SHARE) {
-    console.log(`\n*** REFUSING TO APPLY ***`);
-    console.log(`${(share * 100).toFixed(1)}% of clients have no completed appointment at all.`);
-    console.log(`That is above the ${(MAX_NEVER_VISITED_SHARE * 100).toFixed(0)}% ceiling, and`);
-    console.log(`almost certainly means a finished groom is not recorded as`);
-    console.log(`workflow_state = 'complete' in this database — look at the state`);
-    console.log(`spread above. Marking on that basis would restatus the whole book.`);
+  if (toMark.length === 0) {
+    console.log("\nNothing to do.");
     await db.end();
-    process.exitCode = 1;
     return;
   }
 

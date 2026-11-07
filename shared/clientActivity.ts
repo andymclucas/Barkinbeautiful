@@ -5,47 +5,49 @@ import { dayInZone } from "./calendarDay";
  *
  * Andy, 07/11/2026: "Zero visits in 12 months is inactive."
  *
- * This is the rule behind the one-off pass in
- * scripts/mark-inactive-clients.ts. It is a pure function, separate from
- * the script, because it decides the status of several thousand real
- * client records and the previous value is recorded nowhere — so it had
- * better be testable without a database.
+ * ## The first version of this was wrong twice, and the dry run caught it
+ *
+ * Worth recording, because both mistakes look reasonable in the code and
+ * are only visible against the real data.
+ *
+ * **A visit is not `workflow_state = "complete"` here.** That is what
+ * shared/lapsedClients.ts uses, so copying it looked like consistency.
+ * But 7,189 appointments sit in `scheduled` with dates in the PAST,
+ * back to July 2024 — imported MoeGo history that the workflow never
+ * walked, because nobody checked those dogs in through Groomigo. They
+ * are real grooms. Counting only `complete` rows read 8,946 of 10,114
+ * clients as having never been in.
+ *
+ * So a visit is **an appointment in the past that was not cancelled or
+ * no-showed**. That captures the completed ones and the imported ones
+ * together, which is the only definition this data supports.
+ *
+ * **`clients.created_at` is not when somebody became a client.** It is
+ * 3 August 2026 for 10,075 of 10,114 rows — the day the MoeGo merge ran.
+ * The first version skipped anyone created inside the window, reasoning
+ * that a new client has not had twelve months in which to visit. Against
+ * this data that skipped 9,150 clients and the pass marked nobody at
+ * all. shared/clientSince.ts had already worked this out and says so.
+ *
+ * The two errors cancelled into a harmless "0 to mark", which is luck
+ * rather than correctness: fixing only the second would have marked
+ * thousands of clients who have been coming for years.
  *
  * ## It is not the same question as "lapsed"
  *
  * shared/lapsedClients.ts answers "who should I ring" and measures each
- * household against its OWN rhythm: a fortnightly bath and a ten-weekly
- * styled groom are both on time at completely different intervals. That
- * is the better question and it already has a screen.
+ * household against its OWN rhythm. A client six weeks overdue on a
+ * six-week cycle is lapsed and nowhere near inactive. This answers the
+ * blunter "is this still a client at all", on one flat cutoff.
  *
- * This answers something blunter and more administrative — "is this
- * still a client at all" — with one flat cutoff Andy chose. The two are
- * allowed to disagree: a client six weeks overdue on a six-week rhythm is
- * lapsed and worth ringing, and is nowhere near inactive.
+ * ## Never been in at all is a separate question, and a big one
  *
- * ## A visit means a COMPLETED appointment
- *
- * Same definition the lapsed report uses, deliberately, so the two cannot
- * drift: `workflowState = "complete"`. A cancellation is not a visit, and
- * nor is a booking that no-showed.
- *
- * ## Four things stop a client being marked, and each has bitten something
- *
- * - **A future booking.** Somebody whose last groom was thirteen months
- *   ago but who is in the diary for Thursday is plainly a client. Counted
- *   the same way the lapsed report counts it: anything ahead of now that
- *   is not cancelled or no-show.
- * - **A live membership.** They are paying weekly. Marking a paying member
- *   inactive would be the worst single outcome of this pass, and a
- *   membership that is merely `paused` is still a member — only cancelled
- *   and expired are not.
- * - **Being new.** A client added two months ago who has not had their
- *   first groom yet has "zero visits in 12 months" on a literal reading.
- *   They are not inactive, they are new. Anyone created inside the window
- *   is left alone.
- * - **Already having a status somebody chose.** `blocked` is a decision a
- *   person made; overwriting it with `inactive` would throw that away and
- *   it is not recoverable. Only `active` rows are touched.
+ * 8,319 clients have no past appointment in Groomigo whatsoever. That
+ * does NOT mean they never came: imported history only reaches July
+ * 2024, so anyone whose last groom was before that reads the same as
+ * somebody who enquired once and never booked. Marking 8,319 people on
+ * absent data is a different act from marking the 772 who demonstrably
+ * came and then stopped, so it is OFF unless explicitly asked for.
  */
 
 /** Andy's cutoff, 07/11/2026. */
@@ -55,7 +57,7 @@ export type InactiveSkipReason =
   | "not_active_status"
   | "has_future_booking"
   | "has_live_membership"
-  | "created_inside_window"
+  | "never_visited"
   | "visited_inside_window";
 
 export type InactiveDecision =
@@ -63,10 +65,10 @@ export type InactiveDecision =
   | { markInactive: false; reason: InactiveSkipReason };
 
 export const INACTIVE_SKIP_LABEL: Record<InactiveSkipReason, string> = {
-  not_active_status: "status was already set by hand",
+  not_active_status: "status was already set by hand or by the import",
   has_future_booking: "has a booking in the diary",
   has_live_membership: "has a live membership",
-  created_inside_window: "added too recently to judge",
+  never_visited: "never been in at all (not counted unless asked for)",
   visited_inside_window: "visited inside the window",
 };
 
@@ -74,44 +76,62 @@ export const INACTIVE_SKIP_LABEL: Record<InactiveSkipReason, string> = {
 export const LIVE_MEMBERSHIP_STATUSES = ["active", "paused", "pending_payment"] as const;
 
 /**
+ * Workflow states that mean a booking did NOT happen.
+ *
+ * Everything else in the past counts as a visit, including `scheduled` —
+ * see the note above on the 7,189 imported rows.
+ */
+export const NON_VISIT_STATES = ["cancelled", "no_show"] as const;
+
+/**
  * The first day that still counts as a recent visit.
  *
  * Computed in the salon's zone, not the host's. `CURDATE()` is UTC here
  * and a query run before 10am Brisbane reads the previous day, which has
- * already faked 31 missing dogs once on 06/11/2026. A one-day error at
- * the edge of a twelve-month window is small, but it is free to avoid.
+ * already faked 31 missing dogs once on 06/11/2026.
  */
 export function inactiveCutoffDay(now: Date, timeZone: string): string | null {
   const today = dayInZone(now, timeZone);
   if (!today) return null;
   const [y, m, d] = today.split("-").map(Number);
-  // Date arithmetic on the calendar day itself, so the answer does not
-  // depend on the time of day the pass happens to run.
+  // Arithmetic on the calendar day itself, so the answer does not depend
+  // on the time of day the pass happens to run.
   const shifted = new Date(Date.UTC(y, m - 1 - INACTIVE_AFTER_MONTHS, d));
   return dayInZone(shifted, "UTC");
 }
 
 export function decideInactive(input: {
   status: string;
-  /** Day of their most recent COMPLETED appointment, or null for never. */
+  /**
+   * Day of their most recent PAST appointment that was not cancelled or
+   * no-showed, or null if Groomigo has no record of them ever coming in.
+   */
   lastVisitDay: string | null;
   hasFutureBooking: boolean;
   hasLiveMembership: boolean;
-  /** When the client record was created, in the salon's zone. */
-  createdDay: string | null;
   cutoffDay: string;
+  /**
+   * Whether to also mark the clients with no visit on record at all.
+   * Off by default: that cohort is 8,319 people and the data cannot tell
+   * "left before July 2024" from "never booked".
+   */
+  includeNeverVisited?: boolean;
 }): InactiveDecision {
-  // Ordered so the most important refusals come first and a client can
-  // only ever be marked for one reason: there is nothing to say.
+  // Ordered so a client can only ever be refused for one reason, and the
+  // most important refusal wins — the dry run's counts then add up to
+  // the number of clients considered.
   if (input.status !== "active") return { markInactive: false, reason: "not_active_status" };
   if (input.hasLiveMembership) return { markInactive: false, reason: "has_live_membership" };
   if (input.hasFutureBooking) return { markInactive: false, reason: "has_future_booking" };
-  // A client created inside the window has not had twelve months in which
-  // to visit, so the rule cannot say anything about them yet.
-  if (input.createdDay && input.createdDay >= input.cutoffDay) {
-    return { markInactive: false, reason: "created_inside_window" };
+  if (!input.lastVisitDay) {
+    return input.includeNeverVisited
+      ? { markInactive: true, lastVisitDay: null }
+      : { markInactive: false, reason: "never_visited" };
   }
-  if (input.lastVisitDay && input.lastVisitDay >= input.cutoffDay) {
+  // Inclusive on the boundary: a visit ON the cutoff day is inside the
+  // window. Off by one here marks somebody on the strength of a groom
+  // they actually had.
+  if (input.lastVisitDay >= input.cutoffDay) {
     return { markInactive: false, reason: "visited_inside_window" };
   }
   return { markInactive: true, lastVisitDay: input.lastVisitDay };
