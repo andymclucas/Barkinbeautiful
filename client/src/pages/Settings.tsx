@@ -4,6 +4,7 @@ import { SalonSmsNumber } from "@/components/SalonSmsNumber";
 import { StaffNotificationSetting } from "@/components/StaffNotificationSetting";
 import { SmsUsageCard } from "@/components/SmsUsageCard";
 import { StripeConnectCard } from "@/components/StripeConnectCard";
+import { RebookReminderCard } from "@/components/RebookReminderCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -373,6 +374,7 @@ export default function Settings() {
               </div>
 
             <SmsUsageCard />
+            <RebookReminderCard />
             <Card>
               <CardHeader className="pb-2 pt-4 px-4">
                 <CardTitle className="text-base flex items-center gap-2">
