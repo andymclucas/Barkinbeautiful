@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import { getTableColumns } from "drizzle-orm";
 import { clients } from "../drizzle/schema";
 import {
+  CLIENT_LIST_MAX_PAGE_SIZE, CLIENT_LIST_PAGE_SIZES,
+} from "@shared/clientList";
+import {
   CLIENT_STATUSES,
+  CLIENT_STATUS_BULK_MAX,
   CLIENT_STATUS_COPY,
   SETTABLE_CLIENT_STATUSES,
   isSettableClientStatus,
@@ -62,6 +66,19 @@ describe("client status", () => {
     // to carry the limit, because "Blocked" on its own reads like a
     // do-not-book and a groomer would trust it.
     expect(CLIENT_STATUS_COPY.blocked.meaning).toMatch(/does NOT stop a booking/i);
+  });
+
+  it("caps a bulk change at no less than one full page of the list", () => {
+    // The invariant, not the number. Ticking the header checkbox selects
+    // a whole page, so a page larger than the cap would build a selection
+    // the server refuses outright — the change would fail as a whole
+    // rather than part-applying. Adding a bigger page size therefore has
+    // to fail here until the cap is reconsidered.
+    expect(CLIENT_STATUS_BULK_MAX).toBeGreaterThanOrEqual(CLIENT_LIST_MAX_PAGE_SIZE);
+    for (const size of CLIENT_LIST_PAGE_SIZES) {
+      expect(size, "a page size must be selectable in one bulk call")
+        .toBeLessThanOrEqual(CLIENT_STATUS_BULK_MAX);
+    }
   });
 
   it("rejects anything that is not a status", () => {

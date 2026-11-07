@@ -1,3 +1,5 @@
+import { CLIENT_LIST_MAX_PAGE_SIZE } from "./clientList";
+
 /**
  * What a client's status means, and which of them a person may choose.
  *
@@ -43,6 +45,20 @@ export type ClientStatus = (typeof CLIENT_STATUSES)[number];
  */
 export const SETTABLE_CLIENT_STATUSES = ["active", "inactive", "blocked"] as const;
 export type SettableClientStatus = (typeof SETTABLE_CLIENT_STATUSES)[number];
+
+/**
+ * Most clients one bulk status change may touch.
+ *
+ * Sized from the largest page on the Clients list, so "select this page,
+ * mark them inactive" always fits in one call and nothing larger can be
+ * attempted. Derived rather than written as 500, because a bigger page
+ * size added later would otherwise build a selection the server refuses
+ * and the change would fail as a whole. The cap matters more than it looks:
+ * the salon has ~10,000 clients and the realistic mistake is selecting
+ * far more than you meant to, which is unpickable afterwards because the
+ * previous value is not recorded anywhere.
+ */
+export const CLIENT_STATUS_BULK_MAX = CLIENT_LIST_MAX_PAGE_SIZE;
 
 export function isSettableClientStatus(value: unknown): value is SettableClientStatus {
   return typeof value === "string"
