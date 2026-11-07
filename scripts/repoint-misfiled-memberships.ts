@@ -175,20 +175,23 @@ const CORRECTIONS: Correction[] = [
    * a half-filled entry cannot execute.
    */
   {
-    membershipId: null, clientId: 38, fromPetId: 87, toPetId: null, decision: null,
+    membershipId: 15, clientId: 38, fromPetId: 87, toPetId: 88,
+    decision: "Andy, 07/11/2026: the LRG plan is Harvey's. m15 Bronze Classic LRG"
+      + " (17-25kg, $27.00/wk) moves from Ella to Harvey, and Ella keeps m16 MED"
+      + " ($24.00/wk). Harvey is 22.0kg and Ella 17.0kg, so this is also what size"
+      + " suggested — but MED (14-16kg) fits neither dog and both are classic-only,"
+      + " so the band could not have decided it on its own.",
     client: "Sonia Condon", options: "m15 Bronze Classic LRG (17-25kg) $27.00 | m16 MED (14-16kg) $24.00",
-    openQuestion: "Harvey is pet 88. Both dogs read LARGE — Ella 17.0kg, Harvey 22.0kg — so"
-      + " MED (14-16kg) fits neither and the band cannot choose, and both are"
-      + " classic-only so service cannot either. On size alone Harvey at 22kg is"
-      + " the likelier LRG, which would mean moving m15 and leaving Ella on m16 —"
-      + " but that is a guess about $3/wk. Needs MoeGo or Andy.",
   },
   {
-    membershipId: null, clientId: 46, fromPetId: 103, toPetId: null, decision: null,
+    membershipId: 21, clientId: 46, fromPetId: 103, toPetId: 104,
+    decision: "Andy, 07/11/2026: the Styled plan is Rocky's. m21 Silver Styled SML"
+      + " (0-10kg, $22.00/wk) moves from Archie to Rocky, and Archie keeps m20"
+      + " Classic Small ($17.00/wk). Recorded as Andy's call rather than a reading"
+      + " of the history, because the history does not support it either way:"
+      + " neither dog is a styled dog — Archie 22 classic grooms to 1 styled, Rocky"
+      + " 3 to 1 — and both are small with no weight on file.",
     client: "Selina Robson", options: "m20 Silver Classic Small $17.00 | m21 Styled SML (0-10kg) $22.00",
-    openQuestion: "Rocky is pet 104. Both dogs are small with no weight on file, so the split"
-      + " has to be by service — and neither dog is a styled dog: Archie has 22"
-      + " classic grooms to 1 styled, Rocky 3 to 1. Needs MoeGo or Andy.",
   },
   {
     membershipId: null, clientId: 28, fromPetId: 66, toPetId: null, decision: null,
