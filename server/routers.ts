@@ -133,6 +133,7 @@ import { canSendPickupMessage, PICKUP_MESSAGE_TOO_EARLY } from "@shared/pickupMe
 import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
+import { SETTABLE_CLIENT_STATUSES } from "@shared/clientStatus";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
@@ -5557,6 +5558,28 @@ const clientsRouter = router({
        * writes, so the two cannot disagree.
        */
       smsOptedOut: z.boolean().optional(),
+      /**
+       * Active, inactive or blocked.
+       *
+       * Andy, 07/11/2026: "Have you sorted active, inactive etc clients
+       * so they can be filtered yet?" The Clients page had filtered and
+       * sorted on this column for months, but nothing could WRITE it —
+       * no setter here, no control on the client record, and the MoeGo
+       * import never touched it. All ~10,000 clients sat on the `active`
+       * default, so three of the four filter options could not match a
+       * single row.
+       *
+       * `lapsed` is deliberately not accepted. It is computed from visit
+       * history in shared/lapsedClients.ts and shown on the Reporting
+       * page; letting it be typed as well would give one question two
+       * disagreeing answers. shared/clientStatus.ts has the reasoning.
+       *
+       * operationalProcedure like the rest of this mutation: a
+       * receptionist marking somebody who has moved away is exactly who
+       * does this, and it is less consequential than the phone number
+       * and the SMS opt-out already here.
+       */
+      status: z.enum(SETTABLE_CLIENT_STATUSES).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -5570,6 +5593,7 @@ const clientsRouter = router({
       if (input.address !== undefined) updates.address = input.address;
       if (input.notes !== undefined) updates.notes = input.notes;
       if (input.referralSource !== undefined) updates.referralSource = input.referralSource;
+      if (input.status !== undefined) updates.status = input.status;
       if (input.smsOptedOut !== undefined) {
         // The rule - and the trap about not restamping somebody who was
         // already opted out - lives in shared/smsOptOut.ts with its tests.

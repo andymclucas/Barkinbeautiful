@@ -47,6 +47,9 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { brisbaneLocalInputValue, parseBrisbaneLocalDateTime } from "@shared/localDateTime";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  CLIENT_STATUS_COPY, SETTABLE_CLIENT_STATUSES, isSettableClientStatus,
+} from "@shared/clientStatus";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
 import { DateTimeField } from "@/components/DateTimeField";
@@ -412,7 +415,7 @@ export default function ClientDetail() {
   const [portalAccountRevokeConfirm, setPortalAccountRevokeConfirm] = useState(false);
   const [contactForm, setContactForm] = useState({ name: "", phone: "", email: "", relationship: "" });
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
-  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false });
+  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false, status: "active" as string });
   const updateClientDetails = trpc.clients.updateDetails.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -1110,6 +1113,7 @@ export default function ClientDetail() {
                       notes: client.notes ?? "",
                       referralSource: client.referralSource ?? "",
                       smsOptedOut: Boolean(client.smsOptedOutAt),
+                      status: client.status ?? "active",
                     });
                     setEditDetailsOpen(true);
                   }}
@@ -1154,6 +1158,21 @@ export default function ClientDetail() {
                 </p>
               )}
 
+              {client.status && client.status !== "active" && (
+                /* Only when it is not the default: a badge on every one of
+                   the salon's ~10,000 active clients would be noise, and
+                   the whole point is that the exceptions stand out. */
+                <div className="mt-1.5">
+                  <Badge
+                    variant={client.status === "blocked" ? "destructive" : "secondary"}
+                    className="text-xs"
+                  >
+                    {CLIENT_STATUS_COPY[client.status as keyof typeof CLIENT_STATUS_COPY]?.label
+                      ?? client.status}
+                  </Badge>
+                </div>
+              )}
+
               {client.referralSource && (
                 <p className="text-xs text-muted-foreground mt-1.5">Referred via: {client.referralSource}</p>
               )}
@@ -1193,6 +1212,7 @@ export default function ClientDetail() {
                     notes: client.notes ?? "",
                     referralSource: client.referralSource ?? "",
                     smsOptedOut: Boolean(client.smsOptedOutAt),
+                    status: client.status ?? "active",
                   });
                   setEditDetailsOpen(true);
                 }}
@@ -1258,6 +1278,45 @@ export default function ClientDetail() {
                 <Input value={editDetailsForm.referralSource} onChange={e => setEditDetailsForm(f => ({ ...f, referralSource: e.target.value }))} placeholder="e.g. Instagram, word of mouth" />
               </div>
               {/*
+                * Andy, 07/11/2026: "Have you sorted active, inactive etc
+                * clients so they can be filtered yet?" The Clients page
+                * had filtered and sorted on this column for months while
+                * nothing could set it, so every client sat on the
+                * `active` default and three of the four filter options
+                * matched nothing. This is the missing half.
+                *
+                * Three options, not four. `lapsed` is computed from visit
+                * history on the Reporting page, and a hand-set copy would
+                * be a second answer that disagrees — see
+                * shared/clientStatus.ts. A client already recorded as
+                * lapsed still shows it, and is left alone unless somebody
+                * actively picks something else.
+                */}
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={editDetailsForm.status}
+                  onValueChange={v => setEditDetailsForm(f => ({ ...f, status: v }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {SETTABLE_CLIENT_STATUSES.map(status => (
+                      <SelectItem key={status} value={status}>
+                        {CLIENT_STATUS_COPY[status].label}
+                      </SelectItem>
+                    ))}
+                    {!isSettableClientStatus(editDetailsForm.status) && (
+                      <SelectItem value={editDetailsForm.status} disabled>
+                        {CLIENT_STATUS_COPY.lapsed.label}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  {CLIENT_STATUS_COPY[editDetailsForm.status as keyof typeof CLIENT_STATUS_COPY]?.meaning}
+                </p>
+              </div>
+              {/*
                 * Chris Roulstone, via Lauren, 03/11/2026: "he asked if he
                 * is on a reoccurring booking can he NOT get reminder
                 * texts. How do I turn off any texts to him."
@@ -1310,7 +1369,14 @@ export default function ClientDetail() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditDetailsOpen(false)} disabled={updateClientDetails.isPending}>Cancel</Button>
               <Button
-                onClick={() => updateClientDetails.mutate({ clientId, ...editDetailsForm })}
+                onClick={() => {
+                  const { status, ...rest } = editDetailsForm;
+                  updateClientDetails.mutate({
+                    clientId,
+                    ...rest,
+                    ...(isSettableClientStatus(status) ? { status } : {}),
+                  });
+                }}
                 disabled={updateClientDetails.isPending}
               >
                 {updateClientDetails.isPending ? "Saving…" : "Save changes"}

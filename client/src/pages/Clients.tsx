@@ -61,7 +61,9 @@ const SERVICE_LABELS: Record<string, string> = {
 
 type SortBy = "firstName" | "lastName" | "email" | "phone" | "status" | "createdAt";
 type SortDir = "asc" | "desc";
-type StatusFilter = "active" | "inactive" | "lapsed" | "blocked" | "all";
+// No "lapsed": choosing it navigates to the report instead of ever
+// becoming a filter, so the state cannot hold it.
+type StatusFilter = "active" | "inactive" | "blocked" | "all";
 
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 500] as const;
 type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
@@ -416,7 +418,10 @@ export default function Clients() {
           {/* Status filter */}
           <Select
             value={statusFilter}
-            onValueChange={v => { setStatusFilter(v as StatusFilter); setPage(1); }}
+            onValueChange={v => {
+              if (v === "lapsed") { navigate("/reporting?tab=clients"); return; }
+              setStatusFilter(v as StatusFilter); setPage(1);
+            }}
           >
             <SelectTrigger className="w-full sm:w-36">
               <SelectValue placeholder="All statuses" />
@@ -425,8 +430,16 @@ export default function Clients() {
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="inactive">Inactive</SelectItem>
-              <SelectItem value="lapsed">Lapsed</SelectItem>
               <SelectItem value="blocked">Blocked</SelectItem>
+              {/* Not a filter. "Who has stopped coming" is computed from
+                  visit history against each household's own rhythm, on
+                  Reporting -> Clients; filtering clients.status = "lapsed"
+                  returned nothing, because nothing ever writes it and a
+                  column could not express that rule anyway. Kept in the
+                  menu because it is the word people look for, and it now
+                  takes them to the answer instead of an empty table.
+                  shared/clientStatus.ts has the reasoning. */}
+              <SelectItem value="lapsed">Lapsed (opens report)</SelectItem>
             </SelectContent>
           </Select>
 
