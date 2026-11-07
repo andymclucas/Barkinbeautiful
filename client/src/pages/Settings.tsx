@@ -4,6 +4,7 @@ import { SalonSmsNumber } from "@/components/SalonSmsNumber";
 import { StaffNotificationSetting } from "@/components/StaffNotificationSetting";
 import { SmsUsageCard } from "@/components/SmsUsageCard";
 import { StripeConnectCard } from "@/components/StripeConnectCard";
+import { SalonBillingCard } from "@/components/SalonBillingCard";
 import { RebookReminderCard } from "@/components/RebookReminderCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -154,6 +155,7 @@ export default function Settings() {
               right edge and took the page with them. Scroll instead. */}
           <TabsList className="max-w-full justify-start overflow-x-auto">
             <TabsTrigger value="salon">Salon</TabsTrigger>
+            <TabsTrigger value="billing">Billing</TabsTrigger>
             <TabsTrigger value="branding">Branding</TabsTrigger>
             <TabsTrigger value="timing">Timing reviews</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
@@ -189,6 +191,16 @@ export default function Settings() {
                 somebody goes to configure a business. Admin only, and it
                 renders nothing for anybody else. */}
             <SalonSetup />
+          </TabsContent>
+
+          {/* The salon's own bill for using Groomigo. Its own tab rather
+              than sharing Integrations with Payouts: that tab is mostly
+              "coming soon" placeholders, and an owner's actual invoice
+              does not belong beside them. The card says in words that
+              this is the opposite direction of money from Payouts,
+              because the two get confused constantly. */}
+          <TabsContent value="billing" className="mt-4 space-y-4">
+            <SalonBillingCard />
           </TabsContent>
 
           <TabsContent value="branding" className="mt-4">
