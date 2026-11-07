@@ -39,10 +39,20 @@ describe("automatedSmsAllowed", () => {
    * session that afternoon. Every one of those was Andy asking for it
    * by name, and this assertion failing is what makes somebody say so.
    */
-  it("holds exactly these six messages", () => {
+  /*
+   * Seven since 07/11/2026. Andy, shown MoeGo's "Rebook reminder"
+   * screen: "Build this into the text message workflow."
+   *
+   * The only one whose audience is clients with NO appointment — every
+   * other entry is bounded by a booking that exists. It is allowed here
+   * and still off in practice: tenants.rebook_reminder_enabled defaults
+   * to false, so this entry makes the Settings switch honest rather
+   * than switching anything on.
+   */
+  it("holds exactly these seven messages", () => {
     expect([...ALLOWED_AUTOMATED_SMS]).toEqual([
       "ready_pickup", "missed_call", "confirmation", "reminder",
-      "cancellation", "reschedule",
+      "cancellation", "reschedule", "rebook",
     ]);
   });
 
