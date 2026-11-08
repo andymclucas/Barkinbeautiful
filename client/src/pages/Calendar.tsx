@@ -93,6 +93,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { CalendarSidebar } from "@/components/CalendarSidebar";
 import { PetPhotoQuickAdd } from "@/components/PetPhotoQuickAdd";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
+import { ApptPanelFooter } from "@/components/ApptPanelFooter";
 import { describeWeeks, visitRhythm } from "@shared/visitRhythm";
 import { PetCodesPanel } from "@/components/PetCodesPanel";
 import { RebookButton } from "@/components/RebookButton";
@@ -1266,6 +1267,15 @@ export default function Calendar() {
   const [weekStart, setWeekStart]   = useState(() => getWeekStart(getTodayAEST()));
   const [showNewAppt, setShowNewAppt] = useState(false);
   const [editAppt, setEditAppt]     = useState<Appt | null>(null);
+  /*
+   * Which tab the appointment panel is on.
+   *
+   * Controlled since 09/11/2026 so the pinned "Take payment" button can
+   * bring the payment panel into view from whichever tab you are
+   * reading — it lives inside Details, and a button that silently does
+   * nothing because you were on Grooming Report is worse than no button.
+   */
+  const [editTab, setEditTab] = useState("details");
   const [copySnap, setCopySnap]     = useState<ReportSnapshot | null>(null);
   const [viewMode, setViewMode]     = useState<"week" | "day" | "agenda">("day");
   const [dayDate, setDayDate]       = useState(() => getTodayAEST());
@@ -2809,6 +2819,9 @@ export default function Calendar() {
    */
   const closeEditDialog = () => {
     setEditAppt(null);
+    // Back to Details, so the next dog opens where staff expect rather
+    // than on whichever tab the last one was left on.
+    setEditTab("details");
     setEditRepeat({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
     setSelectedStylePetId(null);
     setSiblingGroomers({});
@@ -4888,7 +4901,8 @@ export default function Calendar() {
           {editAppt && (() => {
             const editSiblings = getSiblings(editAppt);
             return (
-            <Tabs defaultValue="details">
+            <>
+            <Tabs value={editTab} onValueChange={setEditTab}>
               <TabsList className="w-full">
                 <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
                 <TabsTrigger value="codes" className="flex-1">Pet Codes</TabsTrigger>
@@ -5716,7 +5730,9 @@ export default function Calendar() {
 
                 {/* Money taken, as many transactions as it takes: part cash
                     part card, a deposit and a balance, or one dog each. */}
-                <SplitPaymentPanel appointmentId={editAppt.id} />
+                <div id="appt-payment-panel">
+                  <SplitPaymentPanel appointmentId={editAppt.id} />
+                </div>
                 <DialogFooter className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <Button
                     variant="outline"
@@ -6093,6 +6109,44 @@ export default function Calendar() {
               </TabsContent>
 
             </Tabs>
+
+            {/*
+              The two things staff need on every tab, pinned.
+
+              Andy, 09/11/2026, with MoeGo's panel open: "Show the total
+              'estimated price' in Groomigo when an appt is clicked on and
+              also the option to be able to 'Take Payment' as the two
+              default buttons."
+
+              Both already existed — SplitPaymentPanel carries the totals
+              and the button — but they sit at the BOTTOM of the Details
+              tab, so taking a payment meant scrolling past the groomer,
+              the times, the discount and the notes, and from the other
+              three tabs they were not visible at all.
+
+              `sticky bottom-0` rather than a fixed footer, mirroring the
+              sticky close button at the top of this same panel: the
+              content is what scrolls, so anything pinned has to ride the
+              scroll container or it slides out of view. `-mx-6 px-6`
+              takes it back out to the panel's edges, under the p-6.
+
+              It reads payments.forBooking — the same query the panel
+              below uses, so TanStack serves both from one fetch and the
+              two cannot disagree about the number.
+            */}
+            <ApptPanelFooter
+              appointmentId={editAppt.id}
+              onTakePayment={() => {
+                setEditTab("details");
+                // After the tab has rendered: the payment panel is not in
+                // the DOM while another tab is showing.
+                requestAnimationFrame(() => {
+                  document.getElementById("appt-payment-panel")
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                });
+              }}
+            />
+            </>
             );
           })()}
         </DialogContent>

@@ -95,7 +95,18 @@ function readRows(file: string): Row[] {
 
   const unzip = (entry: string) =>
     execFileSync("unzip", ["-p", file, entry], { maxBuffer: 4e8 }).toString("utf8");
-  const sheet = parseSheet(unzip("xl/worksheets/sheet1.xml"), parseSharedStrings(unzip("xl/sharedStrings.xml")));
+  /*
+   * sharedStrings.xml is OPTIONAL.
+   *
+   * An xlsx may keep its text in a shared-strings table or inline in the
+   * sheet, and MoeGo's export does the latter — there is no
+   * xl/sharedStrings.xml in it at all, so unzipping it unconditionally
+   * fails the whole run before a single row is read. parseSheet already
+   * reads both shapes; it just needs an empty table when there is none.
+   */
+  let shared: string[] = [];
+  try { shared = parseSharedStrings(unzip("xl/sharedStrings.xml")); } catch { shared = []; }
+  const sheet = parseSheet(unzip("xl/worksheets/sheet1.xml"), shared);
   const header = (sheet[0] ?? []).map((h) => (h ?? "").trim());
   const at = (name: string) => {
     const i = header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
