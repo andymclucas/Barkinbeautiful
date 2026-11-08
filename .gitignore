@@ -132,3 +132,8 @@ package-lock.json
 # the file from a path outside the repo for the same reason.
 *.tsv
 scripts/moego-*.tsv
+
+# Reversal files written by the one-off apply scripts. Operational output
+# with client and appointment ids in it, regenerated on every run — it
+# belongs on the machine that ran the script, not in the repo.
+scripts/out/
