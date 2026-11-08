@@ -13,6 +13,20 @@ export const MASS_TEXT_AUDIENCES = [
   { key: "membership_tier", label: "Members on a tier" },
   { key: "hand_picked", label: "Hand-picked clients" },
   { key: "all_active", label: "Every active client" },
+  /*
+   * The MoeGo cutover audience, 08/11/2026.
+   *
+   * MoeGo's saved cards cannot be transferred — its tokens belong to its
+   * processor — so every member has to put a card on file again before
+   * Groomigo can bill them. On the day this was added that was 142 of
+   * 143 members, carrying $4,055 a week between them, and it is the only
+   * thing keeping the salon on MoeGo at all.
+   *
+   * It is an audience rather than a one-off script so it stays correct
+   * as cards come in: re-running it reaches whoever is still outstanding
+   * and nobody who has already done it.
+   */
+  { key: "members_without_card", label: "Members with no card on file" },
 ] as const;
 
 export type MassTextAudienceKey = (typeof MASS_TEXT_AUDIENCES)[number]["key"];
@@ -21,7 +35,8 @@ export type MassTextAudience =
   | { kind: "booked_between"; from: string; to: string }
   | { kind: "membership_tier"; tier: string }
   | { kind: "hand_picked"; clientIds: number[] }
-  | { kind: "all_active" };
+  | { kind: "all_active" }
+  | { kind: "members_without_card" };
 
 /** Above this, the sender types the number to confirm. */
 export const TYPED_CONFIRM_THRESHOLD = 25;
@@ -75,6 +90,8 @@ export function validateAudience(input: unknown): AudienceValidation {
     }
     case "all_active":
       return { ok: true, audience: { kind: "all_active" } };
+    case "members_without_card":
+      return { ok: true, audience: { kind: "members_without_card" } };
     default:
       return { ok: false, error: "Choose who this goes to." };
   }
@@ -91,6 +108,8 @@ export function describeAudience(audience: MassTextAudience): string {
       return `${audience.clientIds.length} hand-picked client${audience.clientIds.length === 1 ? "" : "s"}`;
     case "all_active":
       return "Every active client";
+    case "members_without_card":
+      return "Members with no card on file";
   }
 }
 

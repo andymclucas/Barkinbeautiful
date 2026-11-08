@@ -147,6 +147,7 @@ import { actualEndFor } from "@shared/appointmentActualTimes";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { OWNER_ROLE, isStaffRole, defaultEditSections, defaultViewSections } from "@shared/staffRoleDefaults";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
+import { usesCardLink, renderMassTextBody } from "@shared/massTextMerge";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
 import { randomUUID } from "node:crypto";
@@ -13190,8 +13191,43 @@ const smsRouter = router({
 
       let sent = 0;
       let failed = 0;
+      /*
+       * `{card_link}` is filled in per recipient — one Stripe Checkout
+       * session each, because a setup link belongs to one customer and
+       * the same URL sent to 142 people would be one person's session.
+       *
+       * Minting happens inside the loop, one client at a time, for the
+       * same reason the sending does: a client whose link cannot be
+       * created fails that ROW and nobody after them is affected. The
+       * batch resumes on requestId, so a run that dies half way picks up
+       * the rows still pending rather than texting the first half twice.
+       */
+      const needsCardLink = usesCardLink(body);
       for (const row of pending) {
-        const result = await sendSms(row.phone, body, { tenantId: tenantOf(ctx, input), trigger: "staff" });
+        let perRecipient = body;
+        let renderError: string | null = null;
+        if (needsCardLink && row.clientId === null) {
+          // Every audience that can carry this token selects FROM clients,
+          // so a null id should be unreachable. Refusing the row rather
+          // than asserting keeps one odd row from stopping the batch.
+          renderError = "No client on this recipient row, so no card link could be made";
+        } else if (needsCardLink) {
+          try {
+            const link = await createCardSetupLink(row.clientId as number);
+            const rendered = renderMassTextBody(body, { cardLink: link.url });
+            if (rendered.ok) perRecipient = rendered.body;
+            else renderError = rendered.error;
+          } catch (error) {
+            renderError = `Card link failed: ${(error as Error).message}`;
+          }
+        }
+
+        // No link means no message. Sending the sentence without the URL
+        // after it would read as a broken text from the salon, and the
+        // row would look delivered.
+        const result = renderError
+          ? { success: false as const, error: renderError, sid: undefined }
+          : await sendSms(row.phone, perRecipient, { tenantId: tenantOf(ctx, input), trigger: "staff" });
         if (result.success) sent += 1; else failed += 1;
 
         await db.update(massTextRecipientRows).set({
@@ -13206,7 +13242,9 @@ const smsRouter = router({
             tenantId: tenantOf(ctx, input),
             clientId: row.clientId,
             toNumber: row.phone,
-            body,
+            // What this client actually received, not the template: the
+            // Messages thread is the record of what was said to them.
+            body: perRecipient,
             twilioSid: result.sid,
             status: result.success ? "sent" : "failed",
             type: "custom",
@@ -14046,6 +14084,28 @@ async function massTextRecipients(
   } else if (audience.kind === "hand_picked") {
     rows = await db.select({ clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
       .from(clients).where(and(...base, inArray(clients.id, audience.clientIds)));
+  } else if (audience.kind === "members_without_card") {
+    /*
+     * Members Groomigo still cannot bill, 08/11/2026.
+     *
+     * `stripe_default_payment_method_id IS NULL` is the whole test: that
+     * column is what chargeCardOnFile and the weekly subscription read,
+     * so a client without it is one MoeGo is still collecting from.
+     *
+     * Paused and pending_payment count as members — they are still on a
+     * plan and still need a card before the salon can leave MoeGo. Test
+     * plans do not, or Andy's own record joins the campaign.
+     */
+    rows = await db.selectDistinct({ clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
+      .from(clients)
+      .innerJoin(memberships, eq(memberships.clientId, clients.id))
+      .where(and(
+        ...base,
+        isNull(clients.stripeDefaultPaymentMethodId),
+        eq(memberships.tenantId, tenantId),
+        inArray(memberships.status, ["active", "paused", "pending_payment"]),
+        eq(memberships.isTest, false),
+      ));
   } else if (audience.kind === "membership_tier") {
     rows = await db.selectDistinct({ clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
       .from(clients)
