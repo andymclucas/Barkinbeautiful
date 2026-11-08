@@ -134,6 +134,7 @@ import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
 import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
+import { getAppointmentMembershipCoverage } from "./appointmentCoverage";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
@@ -327,49 +328,6 @@ async function recordStaffAccessEvent(db: any, event: Omit<typeof staffAccessEve
   return occurredAtMs;
 }
 
-async function getAppointmentMembershipCoverage(db: any, tenantId: number, clientId: number, petIds: number[], serviceType: AppointmentService) {
-  /**
-   * EVERY plan on this client, not just the ones whose primary dog is in
-   * this booking.
-   *
-   * The old `inArray(memberships.petId, petIds)` meant booking only the
-   * SECOND dog of an "x2" plan fetched no membership at all, so the dog
-   * was priced as though the client had no plan. A client has a handful
-   * of plans, so dropping the filter costs nothing and the resolver
-   * decides which dogs each one covers.
-   */
-  const activeMemberships = await db.select({
-    id: memberships.id,
-    petId: memberships.petId,
-    name: memberships.name,
-    tier: memberships.tier,
-    serviceType: memberships.serviceType,
-    status: memberships.status,
-    bookingSuspended: memberships.bookingSuspended,
-  }).from(memberships).where(and(
-    eq(memberships.tenantId, tenantId),
-    eq(memberships.clientId, clientId),
-  )).orderBy(asc(memberships.id));
-  if (activeMemberships.length === 0) {
-    return resolveAppointmentMembershipCoverage(petIds, serviceType, []);
-  }
-  const assigned = await db.select({
-    membershipId: membershipPets.membershipId,
-    petId: membershipPets.petId,
-  }).from(membershipPets).where(and(
-    eq(membershipPets.tenantId, tenantId),
-    inArray(membershipPets.membershipId, activeMemberships.map((m: { id: number }) => m.id)),
-  ));
-  const coveredByMembership = new Map<number, number[]>();
-  for (const row of assigned) {
-    const list = coveredByMembership.get(row.membershipId) ?? [];
-    list.push(row.petId);
-    coveredByMembership.set(row.membershipId, list);
-  }
-  return resolveAppointmentMembershipCoverage(petIds, serviceType, activeMemberships.map(
-    (m: { id: number }) => ({ ...m, coveredPetIds: coveredByMembership.get(m.id) ?? [] }),
-  ));
-}
 
 // ─── Calendar / Appointments ──────────────────────────────────────────────────
 /**
@@ -11889,43 +11847,24 @@ const onlineBookingRouter = router({
     if (!isEligibleOnlineBookingService(input.serviceType, input.petWeightKg)) throw new Error("Select a valid dog weight to see eligible booking services");
     return checkOnlineCapacity(input, { preview: true });
   }),
-  create: publicProcedure.input(z.object({ tenantId: z.number().default(1), clientId: z.number(), petId: z.number(), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), scheduledStart: z.coerce.date(), notes: z.string().max(1000).optional() })).mutation(async ({ input, ctx }) => {
-    const db = await getDb(); if (!db) throw new Error("DB unavailable");
-    const [pet] = await db.select({ id: pets.id, name: pets.name, status: pets.status, weightKg: pets.weightKg, weight: pets.weight, sizeBand: pets.sizeBand }).from(pets).where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantOf(ctx, input)))).limit(1);
-    if (!pet) throw new Error("Pet does not belong to the selected client");
-    /* The staff booking paths have refused a departed dog since
-       19/10/2026; this one never did, and it is the PUBLIC one — a
-       family could book the dog they had just lost, from the portal,
-       with nothing in the way. */
-    const onlineDeparted = departedBookingMessage([pet]);
-    if (onlineDeparted) throw new Error(onlineDeparted);
-    const petWeight = pet.weightKg ?? pet.weight;
-    /*
-     * The dog's band, from the scales if it has been weighed and from
-     * `pets.size_band` if it has not.
-     *
-     * This used to ask isEligibleOnlineBookingService for the WEIGHT,
-     * and a dog with no weight on file reaches that as null, which
-     * getPetWeightBand answers "Small" — so every unweighed dog passed
-     * a guard whose own message says it should not, was then carried
-     * through as Number(null) = 0, and was announced to the salon as
-     * "Small (0–10 kg) (0kg, as entered)". A dog that might be a Giant.
-     *
-     * Asking for the band instead refuses only a dog with neither a
-     * weight nor a size, which is what the message below describes, and
-     * lets the 4,478 dogs that have a band book and be priced properly.
-     */
-    const bookingBand = bandForWeight(petWeight) ?? (pet.sizeBand as DogSizeBand | null) ?? null;
-    if (!isEligibleOnlineBookingServiceForBand(input.serviceType, bookingBand)) throw new Error("This pet needs a recorded weight or size before online booking");
-    const weighedKg = bandForWeight(petWeight) ? Number(petWeight) : null;
-    const capacity = await checkOnlineCapacity({ ...input, petWeightKg: weighedKg ?? undefined }); if (!capacity.available || !capacity.scheduledEnd) throw new Error(capacity.reason ?? "The selected slot is unavailable");
-    const tenantId = tenantOf(ctx, input);
-    const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: weighedKg ?? undefined, sizeBand: bookingBand });
-    const [result] = await db.insert(appointments).values({ tenantId, clientId: input.clientId, petId: input.petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes: input.notes ?? null, price: estimatePrice, status: "pending", workflowState: "scheduled", bookedOnline: true });
-    const appointmentId = (result as any).insertId as number;
-    const delivery = await notifyOnlineBooking({ tenantId, clientId: input.clientId, petId: input.petId, appointmentId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, weightKg: weighedKg, sizeBand: bookingBand, estimatePrice });
-    return { success: true, appointmentId, estimatePrice, disclaimer: estimatePrice ? ESTIMATE_DISCLAIMER : null, delivery };
-  }),
+  /*
+   * `create` was removed on 07/11/2026. It was a publicProcedure —
+   * unauthenticated — that took a caller-supplied clientId, petId,
+   * staffId and tenantId and inserted an appointment. It verified the
+   * pet belonged to the client, but nothing proved the CALLER was that
+   * client, and both ids are sequential integers. Anyone on the
+   * internet could put bookings into the salon's diary for real
+   * clients and real dogs.
+   *
+   * It had no caller. The booking page uses `createGuest`, and the
+   * staff preview uses `createPreviewGuest`. So it was attack surface
+   * with no benefit, and deleting it is the fix rather than narrowing
+   * it — an endpoint nobody calls should not exist.
+   *
+   * Bookings it would have made were born `status: "pending"`, so the
+   * confirmation text never fired on them; the exposure was the diary,
+   * not messages to clients.
+   */
   createGuest: publicProcedure.input(z.object({
     tenantId: z.number().default(1),
     firstName: z.string().trim().min(1).max(100),

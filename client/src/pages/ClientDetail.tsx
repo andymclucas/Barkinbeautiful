@@ -683,10 +683,6 @@ export default function ClientDetail() {
     onError: (e) => toast.error(e.message),
   });
   // Walk-in client search state
-  const [walkInClientSearch, setWalkInClientSearch] = useState("");
-  const { data: walkInClientResults } = trpc.memberships.searchClients.useQuery({ search: walkInClientSearch },
-    { enabled: walkInClientSearch.length >= 2 }
-  );
 
   // Book Appointment state and data hooks must run before every early return.
   const [bookOpen, setBookOpen] = useState(false);

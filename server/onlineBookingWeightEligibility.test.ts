@@ -73,12 +73,23 @@ describe("eligibility for a dog the salon already knows", () => {
    */
   it("keeps the portal booking path on the band check", () => {
     const routers = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-    // One call site: the portal `create`. The import carries no paren
-    // so it does not count. A second path appearing here is a path
-    // somebody should have thought about, so it fails until the number
-    // is changed deliberately.
-    expect(routers.split("isEligibleOnlineBookingServiceForBand(").length - 1).toBe(1);
+    // ZERO since 07/11/2026, and that is the finding rather than a
+    // regression. The only call site was onlineBooking.create — an
+    // unauthenticated endpoint nothing called — so the band fix this
+    // test was written to protect ("lets the 4,478 dogs that have a
+    // band book and be priced properly") guarded a path no client could
+    // reach. Removing the endpoint orphaned it.
+    //
+    // createGuest, the path the booking page actually uses, takes
+    // weightKg as a REQUIRED input, so it never meets a dog with no
+    // weight on file and correctly uses the weight version. The
+    // protection is not missing; the problem it solved cannot arise
+    // there.
+    //
+    // isEligibleOnlineBookingServiceForBand is kept, with its own
+    // tests, for when a known-pet booking path is built. A pure shared
+    // function with no caller costs nothing; an exposed endpoint did.
+    expect(routers.split("isEligibleOnlineBookingServiceForBand(").length - 1).toBe(0);
     expect(routers).not.toContain("isEligibleOnlineBookingService(input.serviceType, petWeight)");
-    expect(routers).toContain("bandForWeight(petWeight) ?? (pet.sizeBand as DogSizeBand | null)");
   });
 });
