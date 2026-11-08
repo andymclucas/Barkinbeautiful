@@ -50,8 +50,10 @@ export type ReplyActionDecision =
   | { act: false; reason: ReplyActionRefusal };
 
 export type ReplyActionRefusal =
-  /** Y, or anything we did not recognise. Only N acts by itself. */
+  /** Y, or anything we did not recognise. Only N cancels by itself. */
   | "not_a_cancellation"
+  /** N, or anything we did not recognise, where a confirm was expected. */
+  | "not_a_confirmation"
   /** No outbound reminder or confirmation to tie the reply to. */
   | "no_matching_message"
   /** The reply came long after the text it would be answering. */
@@ -114,10 +116,76 @@ export function decideReplyAction(input: {
   return { act: true, appointmentIds: live.map((a) => a.id) };
 }
 
+/**
+ * Whether a client's "Y" may mark the booking confirmed on its own.
+ *
+ * Andy, 06/11/2026, set this up so only an N acted by itself, on the
+ * reasoning written at the top of this file: "a confirmation changes
+ * nothing operationally — the booking already exists and is already
+ * going ahead". That was true while MoeGo held the diary and Groomigo's
+ * badge was decoration.
+ *
+ * Andy, 09/11/2026, the night before the salon runs entirely on
+ * Groomigo: "Do a current scan of all the texts that have come back for
+ * ones that have been accepted and mark them as so." From tomorrow the
+ * badge is how staff know who is actually coming, which is the job
+ * MoeGo's Confirmed badge was doing. So a Y now acts.
+ *
+ * ## It confirms the whole booking, not the row the text was logged against
+ *
+ * The same reasoning the cancel path already carries, and it matters
+ * more here than it looks: one reminder covers a family booking, smsLogs
+ * stores only the LEAD appointment's id, and confirming that alone
+ * leaves the second dog pending. On the backlog this was 19 dogs of 102.
+ *
+ * ## Safer than the cancel it mirrors
+ *
+ * Confirming adds information and removes nobody from the board, so the
+ * refusals here exist to keep the badge TRUE rather than to prevent
+ * harm: a booking already cancelled, already past, or with the dog
+ * already at the salon is not something a "Y" should restate.
+ */
+export function decideConfirmAction(input: {
+  intent: ReplyIntent;
+  matchedMessageSentAt: Date | null;
+  bookingAppointments: readonly ReplyCandidate[];
+  receivedAt: Date;
+}): ReplyActionDecision {
+  if (input.intent !== "confirm") return { act: false, reason: "not_a_confirmation" };
+  if (!input.matchedMessageSentAt || input.bookingAppointments.length === 0) {
+    return { act: false, reason: "no_matching_message" };
+  }
+
+  const ageDays =
+    (input.receivedAt.getTime() - input.matchedMessageSentAt.getTime()) / 86_400_000;
+  if (ageDays > REPLY_MATCH_WINDOW_DAYS) return { act: false, reason: "message_too_old" };
+
+  const live = input.bookingAppointments.filter(
+    (a) => a.status !== "cancelled" && a.status !== "no_show",
+  );
+  if (live.length === 0) return { act: false, reason: "already_cancelled" };
+
+  // Still ahead of us, and still only booked. Confirming a dog that has
+  // already arrived says nothing, and confirming yesterday says less.
+  if (live.some((a) => a.scheduledStart.getTime() <= input.receivedAt.getTime())) {
+    return { act: false, reason: "not_upcoming" };
+  }
+  if (live.some((a) => a.workflowState !== "scheduled")) {
+    return { act: false, reason: "already_arrived" };
+  }
+
+  // Already-confirmed rows are not an error; they simply need no write.
+  const toConfirm = live.filter((a) => a.status !== "confirmed");
+  if (toConfirm.length === 0) return { act: false, reason: "already_cancelled" };
+
+  return { act: true, appointmentIds: toConfirm.map((a) => a.id) };
+}
+
 /** One line for the staff notification and the audit row. */
 export function describeReplyRefusal(reason: ReplyActionRefusal): string {
   switch (reason) {
     case "not_a_cancellation": return "Needs a staff tap";
+    case "not_a_confirmation": return "Not a confirmation";
     case "no_matching_message": return "Could not tell which booking this is about";
     case "message_too_old": return "Reply came too long after the text it answers";
     case "already_cancelled": return "That booking was already cancelled";
