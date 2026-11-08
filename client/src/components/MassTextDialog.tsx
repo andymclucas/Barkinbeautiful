@@ -13,6 +13,7 @@ import {
   MASS_TEXT_AUDIENCES, MAX_BODY_LENGTH, needsTypedConfirmation,
   type MassTextAudienceKey,
 } from "@shared/massTextRecipients";
+import { CARD_LINK_TOKEN, estimatedRenderedLength, usesCardLink } from "@shared/massTextMerge";
 
 const TIERS = ["diamond", "platinum", "gold", "silver", "bronze"] as const;
 
@@ -41,6 +42,7 @@ export function MassTextDialog() {
     kind === "booked_between" ? { kind, from, to }
     : kind === "membership_tier" ? { kind, tier }
     : kind === "hand_picked" ? { kind, clientIds: [] as number[] }
+    : kind === "members_without_card" ? { kind: "members_without_card" as const }
     : { kind: "all_active" as const };
 
   const preview = trpc.sms.previewMassText.useQuery(
@@ -131,6 +133,40 @@ export function MassTextDialog() {
                 onChange={(e) => setBody(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">{body.length}/{MAX_BODY_LENGTH} characters</p>
+
+              {/* The card-setup link, 08/11/2026.
+
+                  One button rather than a general merge-field UI: there
+                  is exactly one token, and it exists because the MoeGo
+                  cutover needs 142 members to put a card on file. Each
+                  recipient gets their own Stripe session; the same URL
+                  sent to everybody would be one person's. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBody((b) => `${b}${b && !b.endsWith(" ") ? " " : ""}${CARD_LINK_TOKEN}`)}
+                >
+                  Insert card setup link
+                </Button>
+                {usesCardLink(body) && (
+                  <span className="text-xs text-muted-foreground">
+                    Each client gets their own link.
+                  </span>
+                )}
+              </div>
+
+              {/* The typed limit is checked against the TEMPLATE, so an
+                  11-character token hiding a ~100-character Stripe URL
+                  means the real message is much longer than the counter
+                  above says — and longer messages cost more segments. */}
+              {usesCardLink(body) && (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  With the link filled in this sends about{" "}
+                  {estimatedRenderedLength(body)} characters per message.
+                </p>
+              )}
             </div>
 
             <div className={`rounded-lg border px-3 py-2.5 text-sm ${count > 0 ? "border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30" : "bg-muted/40"}`}>
