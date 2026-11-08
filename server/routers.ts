@@ -108,7 +108,8 @@ import {
 } from "../shared/nextAvailableSlot";
 import { getAutoDurationMinutes } from "@shared/appointmentDuration";
 import {
-  QUICK_DEFAULT_MINUTES, parseCounterPrice, quickWalkInError, walkInOnlyClientIds,
+  QUICK_DEFAULT_MINUTES, QUICK_MAX_DOGS, quickDurationMinutes,
+  parseCounterPrice, quickWalkInError, walkInOnlyClientIds,
 } from "@shared/quickAppointment";
 import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
@@ -1594,6 +1595,24 @@ const calendarRouter = router({
       phone: z.string().trim().max(30).default(""),
       breed: z.string().trim().max(100).optional(),
       email: z.string().trim().max(320).optional(),
+      /**
+       * The rest of the family, when more than one dog came in together.
+       *
+       * Lauren, 09/11/2026: "2 dogs for nails same family. Same invoice.
+       * One lady has 4 x dogs having nails." The first dog still arrives
+       * as petName/petId so nothing else had to change; these are the
+       * ones after it.
+       *
+       * `price` is per dog, not a total to divide: appointments.price is
+       * per row and the invoice sums it, so splitting a typed total
+       * across four dogs would write four prices that are each wrong and
+       * only right added up.
+       */
+      extraDogs: z.array(z.object({
+        name: z.string().trim().min(1).max(100),
+        breed: z.string().trim().max(100).optional(),
+        petId: z.number().int().positive().optional(),
+      })).max(QUICK_MAX_DOGS - 1).default([]),
       serviceType: z.enum(["nail_trim", "bath_only"]),
       price: z.string().trim().max(12).optional(),
       staffId: z.number().int().positive().nullable().default(null),
@@ -1689,41 +1708,92 @@ const calendarRouter = router({
       }
 
       const start = new Date();
-      const end = new Date(start.getTime() + QUICK_DEFAULT_MINUTES * 60_000);
+      // Fifteen for the first dog, five for each after it — the greeting,
+      // the lead and the payment do not repeat. Lauren's four-dog family
+      // is half an hour, not the hour a flat 15 each would block out.
+      const dogCount = 1 + input.extraDogs.length;
+      const end = new Date(start.getTime() + quickDurationMinutes(dogCount) * 60_000);
 
-      const [bookedRow]: any = await tx.insert(appointments).values({
-        tenantId,
-        clientId,
-        petId,
-        staffId: input.staffId,
-        serviceType: input.serviceType,
-        scheduledStart: start,
-        scheduledEnd: end,
-        price: priced.price,
-        notes: input.notes?.trim() || null,
-        trackerToken: nanoid(32),
-        /* The dog is here. `scheduled` would be a lie for the ten
-           seconds before somebody pressed check-in, and the board would
-           show a walk-in as not yet arrived. */
-        workflowState: "checked_in",
-        status: "confirmed",
-        isQuick: true,
-      });
-      const appointmentId = Number(bookedRow?.insertId ?? 0);
-      if (!appointmentId) throw new Error("Could not create the appointment");
+      /*
+       * One sessionId across the dogs is what makes it ONE invoice.
+       *
+       * payments.forBooking groups by sessionId, so without it Lauren's
+       * four nail clips are four separate bookings to take payment on,
+       * four times at the counter, which is the opposite of what she
+       * asked for. Null for a single dog, matching
+       * createMultiPetAppointment.
+       */
+      const sessionId = dogCount > 1 ? nanoid(16) : null;
 
-      /* The audit row. workflow_logs is what the Pet Tracker and the
-         timing analytics read, and it is also the "and when" this
-         feature exists for. */
-      await tx.insert(workflowLogs).values({
-        appointmentId,
-        fromState: null,
-        toState: "checked_in",
-        changedAt: start,
-        notes: "Walk-in, arrived at the counter.",
-      });
+      /*
+       * Every dog on the walk-in, the first one included, so the row is
+       * written the same way whether a family brought one or four.
+       */
+      const dogIds: number[] = [petId];
+      for (const extra of input.extraDogs) {
+        if (extra.petId) {
+          const [onFile] = await tx.select({ id: pets.id, status: pets.status, name: pets.name })
+            .from(pets)
+            .where(and(eq(pets.id, extra.petId), eq(pets.tenantId, tenantId), eq(pets.clientId, clientId)))
+            .limit(1);
+          if (!onFile) throw new Error(`${extra.name} is not on this client's record`);
+          const departed = departedBookingMessage([onFile]);
+          if (departed) throw new Error(departed);
+          dogIds.push(onFile.id);
+          continue;
+        }
+        const [madePet]: any = await tx.insert(pets).values({
+          tenantId, clientId, name: extra.name,
+          breed: extra.breed?.trim() || null,
+          species: "dog", status: "active",
+        });
+        const madeId = Number(madePet?.insertId ?? 0);
+        if (!madeId) throw new Error(`Could not create ${extra.name}`);
+        dogIds.push(madeId);
+      }
 
-      return { success: true, appointmentId, clientId, petId };
+      const appointmentIds: number[] = [];
+      for (const dog of dogIds) {
+        const [bookedRow]: any = await tx.insert(appointments).values({
+          tenantId,
+          clientId,
+          petId: dog,
+          staffId: input.staffId,
+          serviceType: input.serviceType,
+          scheduledStart: start,
+          scheduledEnd: end,
+          sessionId,
+          // Per dog, not a total split between them: the invoice sums
+          // these, so a divided total writes prices that are each wrong.
+          price: priced.price,
+          notes: input.notes?.trim() || null,
+          trackerToken: nanoid(32),
+          /* The dog is here. `scheduled` would be a lie for the ten
+             seconds before somebody pressed check-in, and the board would
+             show a walk-in as not yet arrived. */
+          workflowState: "checked_in",
+          status: "confirmed",
+          isQuick: true,
+        });
+        const id = Number(bookedRow?.insertId ?? 0);
+        if (!id) throw new Error("Could not create the appointment");
+        appointmentIds.push(id);
+
+        /* The audit row. workflow_logs is what the Pet Tracker and the
+           timing analytics read, and it is also the "and when" this
+           feature exists for. One per dog: a family arriving together is
+           still four dogs that were each here. */
+        await tx.insert(workflowLogs).values({
+          appointmentId: id,
+          fromState: null,
+          toState: "checked_in",
+          changedAt: start,
+          notes: "Walk-in, arrived at the counter.",
+        });
+      }
+
+      const appointmentId = appointmentIds[0];
+      return { success: true, appointmentId, appointmentIds, clientId, petId, dogCount };
       });
     }),
 

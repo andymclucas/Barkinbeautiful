@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Loader2, Zap } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -9,7 +9,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  QUICK_SERVICES, missingQuickFields, parseCounterPrice, quickWalkInError,
+  QUICK_MAX_DOGS, QUICK_SERVICES, missingQuickFields, parseCounterPrice,
+  quickDurationMinutes, quickWalkInError, usableQuickDogs,
   type QuickService, type QuickRequiredField,
 } from "@shared/quickAppointment";
 
@@ -71,6 +72,15 @@ export function QuickAppointmentDialog({
     phone: "", firstName: "", lastName: "", petName: "", breed: "", email: "",
     serviceType: "nail_trim" as QuickService, price: "", notes: "",
   });
+  /*
+   * The dogs after the first.
+   *
+   * Lauren, 09/11/2026: "2 dogs for nails same family. Same invoice. One
+   * lady has 4 x dogs having nails." Kept separate from `form.petName`
+   * so the single-dog path — which is most walk-ins — looks and behaves
+   * exactly as it did.
+   */
+  const [extraDogs, setExtraDogs] = useState<{ name: string; breed: string }[]>([]);
   const [known, setKnown] = useState<{ clientId: number; petId: number; label: string } | null>(null);
 
   /*
@@ -116,6 +126,15 @@ export function QuickAppointmentDialog({
   const missing: QuickRequiredField[] = known ? [] : missingQuickFields(form);
   const parsedPrice = parseCounterPrice(form.price);
   const priceProblem = parsedPrice.ok ? null : parsedPrice.reason;
+
+  /* Named dogs only: an empty row somebody added and changed their mind
+     about is not an error, it is just not a dog. */
+  const namedExtras = usableQuickDogs(extraDogs.map(d => ({ name: d.name, breed: d.breed })));
+  const dogCount = 1 + namedExtras.length;
+  const minutes = quickDurationMinutes(dogCount);
+  const perDog = parsedPrice.ok ? parsedPrice.price : null;
+  const total = perDog === null ? null : (Number(perDog) * dogCount).toFixed(2);
+
   const problem = (known ? null : quickWalkInError(form)) ?? priceProblem;
   const short = (field: QuickRequiredField) => missing.includes(field);
 
@@ -211,6 +230,40 @@ export function QuickAppointmentDialog({
                       onChange={(e) => setForm(f => ({ ...f, breed: e.target.value }))}
                       placeholder="or a description" />
                   </div>
+
+                  {/* The rest of the family. A row appears only when it is
+                      asked for, so the common single-dog walk-in is the
+                      same three fields it has always been. */}
+                  {extraDogs.map((dog, i) => (
+                    <Fragment key={i}>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`quick-dog-${i}`}>Dog {i + 2}&apos;s name</Label>
+                        <Input id={`quick-dog-${i}`} value={dog.name}
+                          onChange={(e) => setExtraDogs(ds => ds.map((d, j) => j === i ? { ...d, name: e.target.value } : d))} />
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <Label htmlFor={`quick-breed-${i}`}>Breed</Label>
+                          <Input id={`quick-breed-${i}`} value={dog.breed}
+                            onChange={(e) => setExtraDogs(ds => ds.map((d, j) => j === i ? { ...d, breed: e.target.value } : d))}
+                            placeholder="or a description" />
+                        </div>
+                        <Button type="button" variant="ghost" size="sm" className="mb-0.5 shrink-0"
+                          onClick={() => setExtraDogs(ds => ds.filter((_, j) => j !== i))}>
+                          Remove
+                        </Button>
+                      </div>
+                    </Fragment>
+                  ))}
+
+                  {dogCount < QUICK_MAX_DOGS && (
+                    <div className="col-span-2">
+                      <Button type="button" variant="outline" size="sm"
+                        onClick={() => setExtraDogs(ds => [...ds, { name: "", breed: "" }])}>
+                        + Another dog
+                      </Button>
+                    </div>
+                  )}
                   <div className="col-span-2 space-y-1.5">
                     <Label htmlFor="quick-email">Email</Label>
                     <Input id="quick-email" type="email" value={form.email}
@@ -243,7 +296,9 @@ export function QuickAppointmentDialog({
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="quick-price">Price</Label>
+                <Label htmlFor="quick-price">
+                  {dogCount > 1 ? "Price each" : "Price"}
+                </Label>
                 <Input id="quick-price" inputMode="decimal" value={form.price}
                   onChange={(e) => setForm(f => ({ ...f, price: e.target.value }))}
                   placeholder="$"
@@ -255,6 +310,16 @@ export function QuickAppointmentDialog({
                 {priceProblem && (
                   <p className="text-[11px] leading-4 text-destructive">{priceProblem}</p>
                 )}
+                {/* Per dog, because appointments.price is per row and the
+                    invoice sums them — a typed total divided four ways
+                    writes four prices that are each wrong. The total is
+                    shown so nobody has to do it in their head at a
+                    counter. */}
+                {!priceProblem && dogCount > 1 && total !== null && (
+                  <p className="text-[11px] leading-4 text-muted-foreground">
+                    {dogCount} dogs &middot; <strong>${total}</strong> total, one invoice
+                  </p>
+                )}
               </div>
             </div>
 
@@ -264,6 +329,7 @@ export function QuickAppointmentDialog({
             <p className="text-[11px] leading-4 text-muted-foreground">
               The name and number are so there is a record of who came in and when if
               anything goes wrong. No text is sent — they are standing right here.
+              {dogCount > 1 && ` All ${dogCount} dogs go on one invoice, blocking ${minutes} minutes.`}
             </p>
           </div>
 
@@ -283,6 +349,10 @@ export function QuickAppointmentDialog({
                 serviceType: form.serviceType,
                 price: form.price.trim() || undefined,
                 notes: form.notes.trim() || undefined,
+                extraDogs: namedExtras.map(d => ({
+                  name: d.name,
+                  breed: (d.breed ?? "").trim() || undefined,
+                })),
               })}
             >
               {create.isPending
