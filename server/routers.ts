@@ -12850,7 +12850,7 @@ const smsRouter = router({
       } else if (input.templateType === "custom" && input.customMessage) {
         body = buildCustomSms({ clientFirstName: client.firstName ?? "there", petName, message: input.customMessage });
       } else if (input.templateType === "reminder") {
-        body = buildAppointmentReminderSms({ clientFirstName: client.firstName ?? "there", petNames: [petName], date: "your upcoming appointment", time: "", groomer: "our team" });
+        body = buildAppointmentReminderSms({ clientFirstName: client.firstName ?? "there", petNames: [petName], date: "your upcoming appointment", time: "" });
       } else {
         body = input.customMessage ?? "";
       }

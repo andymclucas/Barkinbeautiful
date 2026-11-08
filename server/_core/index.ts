@@ -1,5 +1,5 @@
 import { automatedSmsPermitted } from "@shared/automatedSms";
-import { decideReplyAction, describeReplyRefusal } from "@shared/inboundReplyAction";
+import { decideConfirmAction, decideReplyAction, describeReplyRefusal } from "@shared/inboundReplyAction";
 import "dotenv/config";
 import { startPresenceSweeper } from "../presenceRegistry";
 import express from "express";
@@ -252,6 +252,8 @@ async function startServer() {
     let appointmentId: number | undefined;
     /** Set when the client's N cancelled the booking without a staff tap. */
     let autoCancelled: number[] = [];
+    /** Set when the client's Y marked the booking confirmed by itself. */
+    let autoConfirmed: number[] = [];
 
     if (db && From) {
       const inboundNumber = normaliseAustralianMobile(From);
@@ -368,6 +370,56 @@ async function startServer() {
                 + ` ${describeReplyRefusal(decision.reason)}`,
               );
             }
+
+            /*
+             * And a Y marks the booking confirmed.
+             *
+             * This is the ongoing half of what Andy asked for on the
+             * morning of 09/11/2026 — "do a current scan of all the
+             * texts that have come back for ones that have been
+             * accepted and mark them as so". The scan cleared the
+             * backlog; without this, every Y from tomorrow would need
+             * a staff tap to reach the board, which is the job the
+             * badge exists to save.
+             *
+             * decideConfirmAction has been written and unit-tested
+             * since that scan and had NO caller in the app — the dead
+             * router shape CLAUDE.md flags, where the logic exists and
+             * nothing reaches it.
+             *
+             * `status` only, never workflow_state: the dog has not
+             * arrived, and the 12-state machine is about where it is on
+             * the floor. Confirming adds information and takes nobody
+             * off the board, which is why it can act where the cancel
+             * path has to be careful.
+             */
+            const confirmDecision = decideConfirmAction({
+              intent,
+              matchedMessageSentAt: matched.sentAt ?? null,
+              bookingAppointments: booking,
+              receivedAt: new Date(),
+            });
+
+            if (confirmDecision.act) {
+              await db.update(appointments)
+                .set({ status: "confirmed", updatedAt: new Date() })
+                .where(and(
+                  inArray(appointments.id, confirmDecision.appointmentIds),
+                  // Still re-stated: a booking cancelled between the
+                  // read and the write must not be revived by a Y.
+                  eq(appointments.workflowState, "scheduled")
+                ));
+              autoConfirmed = confirmDecision.appointmentIds;
+              console.log(
+                `[SMS] ${inboundNumber} replied Y - confirmed ${confirmDecision.appointmentIds.length}`
+                + ` appointment(s): ${confirmDecision.appointmentIds.join(", ")}`,
+              );
+            } else if (intent === "confirm") {
+              console.log(
+                `[SMS] ${inboundNumber} replied Y but it was left for staff:`
+                + ` ${describeReplyRefusal(confirmDecision.reason)}`,
+              );
+            }
           }
         }
       }
@@ -404,7 +456,9 @@ async function startServer() {
            one a person actioned. */
         ...(autoCancelled.length > 0
           ? { processedAt: new Date(), reviewAction: "cancel" as const }
-          : {}),
+          : autoConfirmed.length > 0
+            ? { processedAt: new Date(), reviewAction: "confirm" as const }
+            : {}),
       }).$returningId();
       emitNewMessage(tenantId, {
         id: insertedMessage.id,

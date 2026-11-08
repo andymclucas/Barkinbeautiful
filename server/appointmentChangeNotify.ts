@@ -320,7 +320,6 @@ export async function sendRescheduleNotice(
       clientFirstName: first.clientFirstName ?? "",
       petNames: live.map((r: any) => r.petName).filter(Boolean),
       date, time,
-      groomer: first.groomer,
       salonName: first.salonName,
     });
 

@@ -136,7 +136,6 @@ export async function sendBookingConfirmation(
       clientFirstName: first.clientFirstName ?? "",
       petNames: rows.map((r: any) => r.petName).filter(Boolean),
       date, time,
-      groomer: first.groomer,
       salonName: first.salonName,
     });
 

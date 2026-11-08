@@ -29,10 +29,9 @@ describe("buildBookingConfirmationSms", () => {
     // sending both wordings for one appointment contradicts itself.
     const sms = buildBookingConfirmationSms({
       clientFirstName: "Annie", petNames: ["Agnes"],
-      date: "Friday 30 October", time: "9:00 am", groomer: "Megs",
+      date: "Friday 30 October", time: "9:00 am",
     });
     expect(sms).toContain("is booked for Friday 30 October at 9:00 am");
-    expect(sms).toContain("with Megs");
     /*
      * Narrowed 06/11/2026. This was a blanket ban on the word "confirm",
      * which caught the Y/N prompt added that day — "Reply Y to confirm"
@@ -44,12 +43,19 @@ describe("buildBookingConfirmationSms", () => {
     expect(sms).not.toMatch(/we'?ll confirm|we will confirm|to be confirmed|once confirmed/i);
   });
 
-  it("reads properly with nobody assigned yet", () => {
+  /*
+   * Lauren, 09/11/2026: "Can we also please remove the groomers name -
+   * thanks." This test used to cover "nobody assigned yet", because the
+   * text named the groomer when there was one. Now nothing names one,
+   * so the assignment makes no difference to the message at all — which
+   * is the stronger statement and the one worth pinning.
+   */
+  it("never names the groomer", () => {
     const sms = buildBookingConfirmationSms({
       clientFirstName: "Annie", petNames: ["Agnes"],
-      date: "Friday 30 October", time: "9:00 am", groomer: null,
+      date: "Friday 30 October", time: "9:00 am",
     });
-    expect(sms).not.toContain("with ");
+    expect(sms).not.toMatch(/ with /);
     expect(sms).toContain("Agnes's grooming appointment");
   });
 
@@ -64,7 +70,7 @@ describe("buildBookingConfirmationSms", () => {
     // Longer than 160 chars splits into two billed messages.
     const sms = buildBookingConfirmationSms({
       clientFirstName: "Annie", petNames: ["Agnes"],
-      date: "Friday 30 October", time: "9:00 am", groomer: "Megs",
+      date: "Friday 30 October", time: "9:00 am",
     });
     // 160 is the GSM-7 limit. This message carries an emoji so it
     // encodes as UCS-2 and bills as 2 segments — the reminders do the
@@ -154,7 +160,7 @@ describe("one booking, one text", () => {
     // rule for the pickup message, 13/10/2026, and the same reasoning.
     const sms = buildBookingConfirmationSms({
       clientFirstName: "Annie", petNames: ["Agnes", "Shirley"],
-      date: "Friday 30 October", time: "9:00 am", groomer: "Megs",
+      date: "Friday 30 October", time: "9:00 am",
     });
     expect(sms).toContain("Agnes and Shirley");
     expect(sms.match(/booked/g)).toHaveLength(1);
@@ -167,7 +173,7 @@ describe("one booking, one text", () => {
      */
     expect(sms).toBe(
       "Hi Annie! Agnes and Shirley's grooming appointment at Barkin' Beautiful "
-      + "is booked for Friday 30 October at 9:00 am with Megs. Reply Y to confirm or N to cancel.",
+      + "is booked for Friday 30 October at 9:00 am. Reply Y to confirm or N to cancel.",
     );
   });
 

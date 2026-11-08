@@ -49,6 +49,7 @@ import { appointments, staff } from "../drizzle/schema";
 import { gte, inArray, isNotNull, isNull, lt, notInArray } from "drizzle-orm";
 import { decideAppointmentReminder, REMINDER_SKIP_LABEL } from "@shared/reminderDecision";
 import { groupRemindersByBooking } from "@shared/reminderGrouping";
+import { bookingKey, confirmedBookingKeys } from "@shared/confirmedBookings";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 
 
@@ -754,6 +755,41 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
           )
         );
 
+      /*
+       * Who has already answered Y about a booking in this window.
+       *
+       * Andy, 09/11/2026: "once the client responds with Y, then just a
+       * reminder only goes out. Does not need another confirmation."
+       *
+       * Read from the replies rather than from a column on the
+       * appointment — see shared/confirmedBookings.ts for why, and for
+       * why a Y that predates a day change does not count.
+       *
+       * Scoped to the SAME window as the rows above, so this is a
+       * handful of rows, not the whole year of inbound traffic. A plain
+       * join with no GROUP BY: CLAUDE.md §6 is clear that the hermetic
+       * suite cannot catch a bad GROUP BY, and this runs unattended at
+       * 6:30am with nobody watching it fail.
+       */
+      const confirmReplies = await db
+        .select({
+          clientId: appointments.clientId,
+          scheduledStart: appointments.scheduledStart,
+          repliedAt: smsLogs.sentAt,
+          rescheduleSmsSentAt: appointments.rescheduleSmsSentAt,
+        })
+        .from(smsLogs)
+        .innerJoin(appointments, eq(appointments.id, smsLogs.appointmentId))
+        .where(
+          and(
+            eq(smsLogs.direction, "inbound"),
+            eq(smsLogs.replyIntent, "confirm"),
+            gte(appointments.scheduledStart, start),
+            lt(appointments.scheduledStart, end),
+          )
+        );
+      const confirmedBookings = confirmedBookingKeys(confirmReplies);
+
       let stageSent = 0;
       /*
        * Grouped before sending: Groomigo stores one appointment row per
@@ -803,8 +839,14 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
           petNames: group.petNames.length > 0 ? group.petNames : ["your dog"],
           date: apptDate,
           time: apptTime,
-          groomer: row.staffName ?? "our team",
           stage: stage.key,
+          /* Asked on the whole booking, not just the lead row: the Y
+             was logged against whichever dog the outbound text named,
+             and it spoke for the family either way. */
+          alreadyConfirmed: group.appointments.some(
+            (a) => a.clientId !== null && a.scheduledStart !== null
+              && confirmedBookings.has(bookingKey(a.clientId, a.scheduledStart)),
+          ),
         });
 
         const result = await sendSms(phone, body, { tenantId: row.tenantId, trigger: "automated", type: "reminder" });

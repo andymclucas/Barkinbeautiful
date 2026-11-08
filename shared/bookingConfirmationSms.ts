@@ -26,7 +26,6 @@ export type BookingConfirmationInput = {
   date: string;
   /** "9:00 am" — already in the salon's zone. */
   time: string;
-  groomer?: string | null;
   salonName?: string | null;
 };
 
@@ -52,7 +51,6 @@ export const QUIET_UNTIL_HOUR = 19;
  */
 export function buildBookingConfirmationSms(input: BookingConfirmationInput): string {
   const salon = input.salonName?.trim() || DEFAULT_SALON;
-  const withGroomer = input.groomer?.trim() ? ` with ${input.groomer.trim()}` : "";
   // "there" rather than an empty name: a client with no first name on
   // file otherwise reads "Hi !".
   const who = input.clientFirstName?.trim() || "there";
@@ -74,7 +72,7 @@ export function buildBookingConfirmationSms(input: BookingConfirmationInput): st
    * mistake from the other end. The test that covered this asserted
    * `toContain("are booked for")` and so pinned it.
    */
-  return `Hi ${who}! ${subject}'s grooming appointment at ${salon} is booked for ${input.date} at ${input.time}${withGroomer}. ${REPLY_PROMPT}`;
+  return `Hi ${who}! ${subject}'s grooming appointment at ${salon} is booked for ${input.date} at ${input.time}. ${REPLY_PROMPT}`;
 }
 
 export type ConfirmationSkipReason =
