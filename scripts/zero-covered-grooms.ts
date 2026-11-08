@@ -115,7 +115,7 @@ async function main() {
       } as any],
     );
 
-    if (coverage.membershipByPetId[r.petId]) toZero.push({ ...r, price });
+    if (coverage.membershipByPetId[r.petId]) toZero.push({ ...r, price, paymentStatus: r.paymentStatus ?? null });
     else note(`${r.service} — this plan does not cover it`, price);
   }
 
@@ -149,22 +149,39 @@ async function main() {
   await db.beginTransaction();
   try {
     let done = 0;
+    const skipped: typeof toZero = [];
     for (const r of toZero) {
-      // The price is in the WHERE as well: a booking somebody repriced
-      // since it was read is left alone rather than zeroed on stale
-      // information.
+      /*
+       * The WHERE re-checks only that NOTHING CHANGED since the read.
+       * It does not restate the rule.
+       *
+       * It used to carry `payment_status NOT IN ('paid','partial')` as
+       * well — a second copy of a decision the loop above has already
+       * made in JS. The two then disagreed, because in SQL
+       * `NULL NOT IN (...)` is NULL rather than true: on 09/11/2026 the
+       * 16 rows reading 'unpaid' were zeroed and the 2 whose
+       * payment_status was NULL were silently passed over, while the dry
+       * run — doing the same test in JS, where null is simply not "paid"
+       * — had promised all 18.
+       *
+       * `<=>` is NULL-safe equality, so this now asks the only question
+       * that belongs here: is the row still as I read it.
+       */
       const [res]: any = await db.query(
         `UPDATE appointments SET price = '0.00', updated_at = UTC_TIMESTAMP()
-          WHERE id = ? AND tenant_id = ? AND price = ?
-            AND payment_status NOT IN ('paid','partial')`,
-        [r.id, TENANT, r.price.toFixed(2)]);
-      done += res.affectedRows;
+          WHERE id = ? AND tenant_id = ? AND price = ? AND payment_status <=> ?`,
+        [r.id, TENANT, r.price.toFixed(2), r.paymentStatus]);
+      if (res.affectedRows === 1) done += 1;
+      else skipped.push(r);
     }
     if (done > toZero.length) throw new Error(`zeroed ${done} for ${toZero.length} — rolling back`);
     await db.commit();
     console.log(`\nZeroed ${done} booking(s).`);
-    if (done < toZero.length) {
-      console.log(`${toZero.length - done} were skipped because they had changed since being read.`);
+    /* Named, not counted. A bare number is how a partial run reads as a
+       success, which is exactly what it did on 09/11/2026. */
+    for (const r of skipped) {
+      console.log(`  SKIPPED ${r.id}  ${r.client} / ${r.dog}  $${r.price.toFixed(2)}`
+        + ` — changed since it was read; re-run to pick it up`);
     }
   } catch (error) {
     await db.rollback();
