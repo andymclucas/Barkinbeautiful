@@ -86,6 +86,36 @@ export function nextQuickWorkflowState(current: string): string | null {
 export const QUICK_DEFAULT_MINUTES = 15;
 
 /**
+ * Each extra dog on the same walk-in.
+ *
+ * Lauren, 09/11/2026, asked what happens when a family brings more than
+ * one: "2 dogs for nails same family. Same invoice. One lady has 4 x
+ * dogs having nails... takes like 5 min for each dog."
+ *
+ * So the first dog keeps the full fifteen — that slot is the greeting,
+ * the lead off, the payment, and none of it repeats — and each dog after
+ * it adds her five. Four dogs is half an hour, which is what she
+ * described, rather than the hour a flat 15 each would block out on a
+ * board other people are trying to book into.
+ */
+export const QUICK_EXTRA_DOG_MINUTES = 5;
+
+/**
+ * How many dogs one walk-in may carry.
+ *
+ * Lauren's largest is four. Six leaves room without the field becoming a
+ * way to book the morning: past that it is a booking, with a groomer and
+ * a slot, not somebody standing at the counter.
+ */
+export const QUICK_MAX_DOGS = 6;
+
+/** Minutes to block out for a walk-in with this many dogs. */
+export function quickDurationMinutes(dogCount: number): number {
+  const dogs = Math.max(1, Math.floor(dogCount));
+  return QUICK_DEFAULT_MINUTES + (dogs - 1) * QUICK_EXTRA_DOG_MINUTES;
+}
+
+/**
  * What a walk-in has to tell you before the dog goes on the table.
  *
  * ## It changed, and why
@@ -127,6 +157,30 @@ export type QuickWalkInDetails = {
   breed?: string | null;
   email?: string | null;
 };
+
+/** One dog on a walk-in. `petId` is set when the dog is already on file. */
+export type QuickDog = {
+  name: string;
+  breed?: string | null;
+  petId?: number | null;
+};
+
+/** The dogs actually being booked: named ones, in order, deduped by name. */
+export function usableQuickDogs(dogs: readonly QuickDog[]): QuickDog[] {
+  const seen = new Set<string>();
+  const out: QuickDog[] = [];
+  for (const d of dogs) {
+    const name = (d.name ?? "").trim();
+    if (!name) continue;
+    // Two rows with the same dog's name is a slip at a counter, not a
+    // second dog, and it would put the same animal on the board twice.
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...d, name });
+  }
+  return out.slice(0, QUICK_MAX_DOGS);
+}
 
 export const QUICK_REQUIRED_FIELDS = ["firstName", "lastName", "petName", "phone"] as const;
 export type QuickRequiredField = (typeof QUICK_REQUIRED_FIELDS)[number];
