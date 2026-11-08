@@ -91,11 +91,37 @@
  */
 import "dotenv/config";
 import mysql, { type RowDataPacket } from "mysql2/promise";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { getMembershipWeightBand } from "../shared/membershipPackages";
 import { resolveAppointmentMembershipCoverage, type ActivePetMembership }
   from "../shared/appointmentMembershipCoverage";
 
 const APPLY = process.argv.includes("--apply");
+/**
+ * Clear the booking links that are blocking the move, and do nothing else.
+ *
+ * Four households are refused below because bookings already point at the
+ * plan that is about to move: Adams 22, Taylor 16, Condon 15, Robson 1.
+ * The backfill was run before the repoint, so it linked those grooms to
+ * the plan as it was then filed. Move the plan now and they read as
+ * covered by a plan that is no longer their dog's.
+ *
+ * The fix is to put those links back to NULL, do the move, then re-run
+ * scripts/backfill-appointment-memberships.ts — which only ever FILLS a
+ * null and never repoints an existing link, so it will relink them from
+ * the corrected plan assignments. It does not touch price, so nothing
+ * about what the salon billed changes; only which plan is recorded as
+ * covering the groom.
+ *
+ * This lives here rather than in a script of its own so the set being
+ * cleared is, by construction, exactly the set the guard objects to.
+ * A second script would have had to restate the rule and could drift
+ * from it.
+ *
+ * It refuses to move anything in the same run. Clear, read the output,
+ * then run the move.
+ */
+const CLEAR_STRANDED = process.argv.includes("--clear-stranded");
 const TENANT = 1;
 
 type Correction = {
@@ -320,6 +346,8 @@ async function main() {
 
   const moves: { correction: Correction; membership: MembershipRow; from: PetRow; to: PetRow }[] = [];
   const problems: string[] = [];
+  /** Appointment ids blocking a move, per household, for --clear-stranded. */
+  const strandedByClient: { client: string; membershipId: number; ids: number[] }[] = [];
   const warnings: string[] = [];
   let alreadyDone = 0;
   let undecided = 0;
@@ -375,6 +403,7 @@ async function main() {
     // already on the target dog is simply right and stays right.
     const stranded = linkedRows.filter((a) => a.membership_id === c.membershipId && a.pet_id !== c.toPetId);
     if (stranded.length > 0) {
+      strandedByClient.push({ client: c.client, membershipId: c.membershipId, ids: stranded.map((a) => a.id) });
       problems.push(`${c.client}: ${stranded.length} booking(s) already link to membership ${c.membershipId} for ${[...new Set(stranded.map((a) => a.name ?? a.pet_id))].join(", ")}`
         + ` — moving the plan would leave them marked as covered when they are not.`
         + ` The backfill was run too early; clear appointments ${stranded.map((a) => a.id).join(", ")} first.`);
@@ -412,6 +441,74 @@ async function main() {
   console.log(`\n  ${moves.length} to move · ${alreadyDone} already done · ${undecided} undecided · ${problems.length} problems`);
 
   for (const w of warnings) console.log(`  WARNING  ${w}`);
+
+  /* ---------- --clear-stranded: unblock the move, and stop ---------- */
+
+  if (CLEAR_STRANDED) {
+    const allIds = strandedByClient.flatMap((r) => r.ids);
+    if (allIds.length === 0) {
+      console.log("\nNothing stranded — no booking links are blocking a move.");
+      await db.end();
+      return;
+    }
+
+    console.log(`\nCLEARING BOOKING LINKS — ${allIds.length} appointment(s)`);
+    for (const r of strandedByClient) {
+      console.log(`  ${r.client.padEnd(22)} membership ${r.membershipId}: ${r.ids.length} booking(s)`);
+      console.log(`    ${r.ids.join(", ")}`);
+    }
+    console.log("\nThis sets appointments.membership_id = NULL on those rows and");
+    console.log("nothing else. Price is untouched, so what the salon billed does");
+    console.log("not change. Re-run the backfill afterwards and it will relink");
+    console.log("them from the corrected plan assignments.");
+
+    if (!APPLY) {
+      console.log("\nDry run. Add --apply to clear them.");
+      await db.end();
+      return;
+    }
+
+    // The way back, written before anything is cleared: which membership
+    // each appointment pointed at. Nothing else records it.
+    mkdirSync("scripts/out", { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const reversal = `scripts/out/cleared-links-${stamp}.json`;
+    writeFileSync(reversal, JSON.stringify({
+      ranAt: new Date().toISOString(),
+      note: "appointment id -> the membership_id it held before being cleared.",
+      cleared: strandedByClient.flatMap((r) =>
+        r.ids.map((id) => ({ appointmentId: id, membershipId: r.membershipId }))),
+    }, null, 2));
+    console.log(`\nReversal written to ${reversal}`);
+
+    await db.beginTransaction();
+    try {
+      let cleared = 0;
+      for (const r of strandedByClient) {
+        // membership_id in the WHERE as well as the id list: a row that
+        // has been repointed since it was read is left alone rather than
+        // cleared on stale information.
+        const [res]: any = await db.query(
+          `UPDATE appointments SET membership_id = NULL
+            WHERE membership_id = ? AND id IN (${r.ids.map(() => "?").join(",")})`,
+          [r.membershipId, ...r.ids]);
+        cleared += res.affectedRows;
+      }
+      if (cleared !== allIds.length) {
+        throw new Error(`cleared ${cleared} of ${allIds.length} — rolling back`);
+      }
+      await db.commit();
+      console.log(`Cleared ${cleared} booking links.`);
+      console.log("\nNow run the move:");
+      console.log("  node --import tsx scripts/repoint-misfiled-memberships.ts --apply");
+    } catch (error) {
+      await db.rollback();
+      console.error("Rolled back:", (error as Error).message);
+      process.exitCode = 1;
+    }
+    await db.end();
+    return;
+  }
 
   if (problems.length > 0) {
     console.error("\nSTOPPING — nothing written:");
