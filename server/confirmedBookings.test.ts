@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bookingKey, confirmedBookingKeys } from "./confirmedBookings";
+import { bookingKey, confirmedBookingKeys } from "@shared/confirmedBookings";
 
 const at = (iso: string) => new Date(iso);
 
