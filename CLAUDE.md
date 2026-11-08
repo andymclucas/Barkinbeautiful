@@ -93,14 +93,14 @@ client/src/
   contexts/ hooks/ lib/
   _core/            platform scaffolding — see §8
 server/
-  routers.ts        ~7,900 lines: MOST tRPC routers (see §5)
-  routers/*.ts      auth, clientRecord, payments, stripeCards — kept separate
+  routers.ts        ~15,400 lines: MOST tRPC routers (see §5)
+  routers/*.ts      22 files kept separate — see §5
   _core/            platform scaffolding: index.ts (Express boot), trpc.ts, sdk.ts, env.ts
   *.ts              domain logic (workflowTiming, groomInterval, stripePayments, sms, email, …)
-  *.test.ts         104 test files — all tests live here (see §7)
+  *.test.ts         319 files — most tests live here (see §7)
 shared/             pure logic + types imported by BOTH client and server
 drizzle/
-  schema.ts         51 tables
+  schema.ts         72 tables
   migrations/       generated SQL — never hand-edit applied migrations
 docs/               ~50 dated engineering/QA notes (see docs/README.md)
 scripts/            one-off operational scripts (Stripe checks, seeding, verification)
@@ -117,27 +117,32 @@ rules here, not inline in a router or a component.**
 
 ## 5. The `routers.ts` monolith
 
-`server/routers.ts` is ~7,900 lines, and the `appRouter` composition block at
-the bottom (~line 7850) wires up 33 namespaces. Seven of those live in
-`server/routers/` rather than the monolith:
+`server/routers.ts` is ~15,400 lines, and the `appRouter` composition block
+at the bottom (~line 15,330) wires up 53 namespaces:
 
 `system, auth, calendar, workflow, tracker, clients, agreements, clientReviews,
 packages, petPaperwork, clientNotes, pets, staff, memberships, groomNotes,
 groomingReports, groomStylePresets, pricing, storeCredit, retail, analytics,
 analyticsExt, migration, settings, stripeBilling, onlineBooking, campaigns,
-family, sms, clientPortal, workflowReview, payments, stripeCards`
+family, sms, clientPortal, portalChat, sidebarCounts, smsUsage,
+automatedMessages, pushSubscriptions, appointmentAddOns, stripeConnect,
+salonSignup, trial, revenueTargets, workflowReview, groomQuotes, salons,
+platformBilling, petCodes, search, presence, payments, stripeCards,
+membershipSignup, clientPhotos, waitlist, bookingPricing`
 
-Defined outside `routers.ts`: `auth` (`routers/auth.ts`); `agreements`,
-`clientReviews`, `packages`, `petPaperwork` and `clientNotes`
-(`routers/clientRecord.ts`); `payments` (`routers/payments.ts`); `stripeCards`
-(`routers/stripeCards.ts`). They are still composed into `appRouter` at the
-bottom of `routers.ts` — a router defined in its own file but never added
-there is dead code, which is exactly what commit `45253c5` had to fix.
+**22 of them now live in `server/routers/` rather than the monolith** — every
+file in that directory, one namespace each, except `clientRecord.ts`, which
+holds five (`agreements`, `clientReviews`, `packages`, `petPaperwork`,
+`clientNotes`). They are still composed into `appRouter` at the bottom of
+`routers.ts` — a router defined in its own file but never added there is dead
+code, which is exactly what commit `45253c5` had to fix.
 
 Do not read the whole file. Find the namespace at the composition block, then
 jump to its definition. Prefer extracting genuinely new surface into
-`server/routers/<name>.ts`, as the four files above do, over growing this file
-— it has put on ~1,300 lines since this note first said ~6,600.
+`server/routers/<name>.ts`, as those 22 files do, over growing this file — it
+has roughly doubled since this note first said ~6,600, and every figure in
+this section was stale by a factor of two before 08/11/2026. Re-measure rather
+than trusting the numbers here; `wc -l` and the composition block are cheap.
 
 ### Procedure types — the naming is counter-intuitive, read carefully
 
@@ -167,7 +172,7 @@ Two distinct role systems exist and must not be conflated:
 
 ## 6. Database
 
-51 tables in `drizzle/schema.ts`. Central chain:
+72 tables in `drizzle/schema.ts`. Central chain:
 `tenants → clients → pets → appointments → workflowLogs`, with `memberships`,
 `invoices`, `membershipLedgerEntries`, `familyGroups`, `smsLogs`, `petPhotos`
 hanging off it. Multi-tenant: most tables carry `tenantId`, and **queries must
@@ -366,8 +371,8 @@ Until then, treat `generate` as unavailable.
 corepack pnpm test
 ```
 
-170 files, 1,533 tests, in about 6 seconds. (One further integration test is
-excluded from the default run — see below.) **The suite is fully green and
+360 files, 4,323 tests, in about 15 seconds. (One further integration test
+is excluded from the default run — see below.) **The suite is fully green and
 must stay that way.** It is hermetic: no secrets, no network, no database. A
 failure is a real failure.
 
@@ -504,7 +509,8 @@ Required for the app to work: `DATABASE_URL`, `JWT_SECRET`, `VITE_APP_URL`,
 Integrations: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `STRIPE_SECRET_KEY`,
 `STRIPE_WEBHOOK_SECRET`, `CRON_SECRET`.
-Push notifications: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
+Push notifications: `VAPID_PRIVATE_KEY` (the only required one),
+`VAPID_SUBJECT`, and optionally `VAPID_PUBLIC_KEY` as a cross-check.
 Legacy/Manus, safe to leave unset: `VITE_APP_ID`, `OAUTH_SERVER_URL`,
 `OWNER_OPEN_ID`, `BUILT_IN_FORGE_API_URL`, `BUILT_IN_FORGE_API_KEY`.
 
@@ -547,14 +553,24 @@ Two traps, both already paid for:
   permanently disqualifies a caller who was never texted. `confirmationSmsSentAt`
   is the same shape. Both now decide before claiming.
 
-### Push notifications need VAPID keys set, or nothing is delivered
+### Push notifications need VAPID_PRIVATE_KEY, or nothing is delivered
 
-`VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` are a keypair generated by
-`web-push`; `VAPID_SUBJECT` is a `mailto:` the push services can contact.
-**Unset, `server/webPush.ts` logs an error at boot and sends nothing** — the
-in-page alerts carry on, so the only symptom is phones staying silent. It
-warns rather than throws on purpose: a missing key must not take the salon
-offline, same reasoning as `getAppBaseUrl()`.
+**`VAPID_PRIVATE_KEY` is the one that matters.** Unset, `server/webPush.ts`
+logs an error at boot and sends nothing — the in-page alerts carry on, so the
+only symptom is phones staying silent. It warns rather than throws on purpose:
+a missing key must not take the salon offline, same reasoning as
+`getAppBaseUrl()`.
+
+`VAPID_SUBJECT` is a `mailto:` the push services can contact, and defaults to
+`mailto:info@barkinbeautiful.com.au` when unset.
+
+**`VAPID_PUBLIC_KEY` is optional.** `webPush.ts` DERIVES the public key from
+the private one and reads the variable only as a cross-check, warning if the
+two disagree and using the derived value regardless. An earlier version of
+this note said the pair were both required and that unset meant nothing was
+delivered; that is wrong, and it sent one session hunting a push outage that
+did not exist on 08/11/2026. Production has the private key and the subject
+set and no public key, which is a correct, working configuration.
 
 The public key is served to the browser at runtime by
 `pushSubscriptions.publicKey`, deliberately NOT baked in with a `VITE_`
