@@ -4843,7 +4843,16 @@ export default function Calendar() {
 
       {/* ── Edit Appointment Dialog ── */}
       <Dialog open={!!editAppt} onOpenChange={open => { if (!open) closeEditDialog(); }}>
-        <DialogContent className="max-w-lg">
+        {/* Slides in from the right rather than opening centred. Andy,
+            08/11/2026, with MoeGo's booking panel open: "can we have an
+            option like this where the details for the appointment scroll
+            in from the side".
+
+            No width class here on purpose: the variant is full-width on a
+            phone and 512px from sm up, which is what this content was laid
+            out for. Passing max-w-lg would win on mobile too and leave a
+            narrow strip with the calendar showing beside it. */}
+        <DialogContent side="right">
           <DialogHeader>
             {/* The dog and the owner carry the heading. "Edit appointment"
                 is the one thing on this screen a groomer already knows, and

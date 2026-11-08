@@ -94,9 +94,30 @@ function DialogContent({
   children,
   showCloseButton = true,
   onEscapeKeyDown,
+  side = "center",
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  /**
+   * Where the dialog comes from.
+   *
+   * "center" is the default and what every other dialog in the app uses.
+   *
+   * "right" slides a full-height panel in from the edge instead, the way
+   * MoeGo shows a booking. Andy, 08/11/2026, with MoeGo's panel open:
+   * "can we have an option like this where the details for the
+   * appointment scroll in from the side".
+   *
+   * It is a variant HERE rather than a switch to components/ui/sheet
+   * because the appointment panel is full of Input and Textarea, and
+   * those report IME composition state into DialogCompositionContext so
+   * that Escape cannot close the dialog mid-composition and lose the
+   * edit. Sheet has no such context, so moving the panel onto it would
+   * have quietly dropped that protection from the longest form in the
+   * app. Everything else here — the sticky close button, the scrolling,
+   * the composition handling — is shared by construction.
+   */
+  side?: "center" | "right";
 }) {
   const { isComposing } = useDialogComposition();
 
@@ -134,7 +155,14 @@ function DialogContent({
           // with max-h-[90vh]; the other 35 had not.
           // dvh, not vh: iOS Safari's vh excludes the browser chrome, so 90vh
           // still overflows the visible area on a phone.
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg",
+          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed z-50 grid gap-4 overflow-y-auto overscroll-contain p-6 shadow-lg",
+          side === "center" &&
+            "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 top-[50%] left-[50%] max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] rounded-lg border duration-200 sm:max-w-lg",
+          // Full height against the right edge. `content-start` because a
+          // grid stretched to h-full would otherwise space its rows out
+          // down the panel when the content is shorter than the screen.
+          side === "right" &&
+            "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-full max-w-full content-start rounded-none border-l data-[state=closed]:duration-200 data-[state=open]:duration-300 sm:max-w-lg",
           className
         )}
         onEscapeKeyDown={handleEscapeKeyDown}
