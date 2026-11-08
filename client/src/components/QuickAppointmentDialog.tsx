@@ -9,8 +9,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  QUICK_MAX_DOGS, QUICK_SERVICES, missingQuickFields, parseCounterPrice,
-  quickDurationMinutes, quickWalkInError, usableQuickDogs,
+  QUICK_MAX_DOGS, QUICK_SERVICES, missingQuickFields,
+  quickDogLines, quickDurationMinutes, quickWalkInError, quickWalkInTotal,
   type QuickService, type QuickRequiredField,
 } from "@shared/quickAppointment";
 
@@ -38,6 +38,67 @@ import {
  * which is the difference between four fields and one tap — and it is
  * what stops three visits becoming three records of the same person.
  */
+/**
+ * One dog's service and price, side by side.
+ *
+ * Andy, 09/11/2026: "I think these dogs need to have services linked
+ * individually." It used to be one picker and one "Price each" for the
+ * whole walk-in, which forced a family bringing a nail clip and a quick
+ * bath to be taken twice, or to be recorded as something they were not.
+ *
+ * A component rather than copied markup because it now appears once per
+ * dog, up to six times, and two of those drifting apart is how a price
+ * box ends up meaning something different on the fourth row.
+ */
+function ServiceAndPrice({
+  idPrefix, serviceType, price, onServiceType, onPrice, invalid, inheritNote,
+}: {
+  idPrefix: string;
+  serviceType: QuickService;
+  price: string;
+  onServiceType: (value: QuickService) => void;
+  onPrice: (value: string) => void;
+  invalid?: boolean;
+  /** Shown on a dog still following the first one's price. */
+  inheritNote?: string | null;
+}) {
+  return (
+    <div className="col-span-2 grid grid-cols-2 gap-3 rounded-lg bg-muted/40 p-2">
+      <div className="space-y-1.5">
+        <Label>Service</Label>
+        {/* Two, as asked. Not the full service list: a walk-in is a nail
+            clip or a quick bath, and offering a styled groom here
+            invites one onto a ten-minute slot. */}
+        <div className="flex flex-wrap gap-2">
+          {QUICK_SERVICES.map((service) => (
+            <button
+              key={service.value} type="button"
+              onClick={() => onServiceType(service.value)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                serviceType === service.value
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border hover:bg-muted"
+              }`}
+            >
+              {service.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${idPrefix}-price`}>Price</Label>
+        <Input id={`${idPrefix}-price`} inputMode="decimal" value={price}
+          onChange={(e) => onPrice(e.target.value)}
+          placeholder="$"
+          className={invalid ? "border-destructive" : ""} />
+        {inheritNote && (
+          <p className="text-[11px] leading-4 text-muted-foreground">{inheritNote}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function QuickAppointmentDialog({
   onCreated,
   triggerLabel = "Quick Appointment",
@@ -80,7 +141,9 @@ export function QuickAppointmentDialog({
    * so the single-dog path — which is most walk-ins — looks and behaves
    * exactly as it did.
    */
-  const [extraDogs, setExtraDogs] = useState<{ name: string; breed: string }[]>([]);
+  const [extraDogs, setExtraDogs] = useState<
+    { name: string; breed: string; serviceType: QuickService | null; price: string | null }[]
+  >([]);
   const [known, setKnown] = useState<{ clientId: number; petId: number; label: string } | null>(null);
 
   /*
@@ -124,16 +187,29 @@ export function QuickAppointmentDialog({
   };
 
   const missing: QuickRequiredField[] = known ? [] : missingQuickFields(form);
-  const parsedPrice = parseCounterPrice(form.price);
-  const priceProblem = parsedPrice.ok ? null : parsedPrice.reason;
 
-  /* Named dogs only: an empty row somebody added and changed their mind
-     about is not an error, it is just not a dog. */
-  const namedExtras = usableQuickDogs(extraDogs.map(d => ({ name: d.name, breed: d.breed })));
-  const dogCount = 1 + namedExtras.length;
+  /*
+   * One list, first dog included, each with its own service and price.
+   *
+   * Named dogs only: an empty row somebody added and changed their mind
+   * about is not an error, it is just not a dog. The same function the
+   * server runs, so the counter and the database cannot disagree about
+   * which dogs are being booked or what each one costs.
+   */
+  const lines = quickDogLines(
+    {
+      name: known ? known.label : form.petName,
+      breed: form.breed,
+      serviceType: form.serviceType,
+      price: form.price,
+    },
+    extraDogs,
+  );
+  const dogCount = lines.length;
   const minutes = quickDurationMinutes(dogCount);
-  const perDog = parsedPrice.ok ? parsedPrice.price : null;
-  const total = perDog === null ? null : (Number(perDog) * dogCount).toFixed(2);
+  const totals = quickWalkInTotal(lines);
+  const priceProblem = totals.ok ? null : totals.reason;
+  const total = totals.ok ? totals.total : null;
 
   const problem = (known ? null : quickWalkInError(form)) ?? priceProblem;
   const short = (field: QuickRequiredField) => missing.includes(field);
@@ -231,6 +307,18 @@ export function QuickAppointmentDialog({
                       placeholder="or a description" />
                   </div>
 
+                  {/* This dog's own service and price, under this dog's
+                      own name, so there is never a question about which
+                      one a picker belongs to. */}
+                  <ServiceAndPrice
+                    idPrefix="quick"
+                    serviceType={form.serviceType}
+                    price={form.price}
+                    onServiceType={(v) => setForm(f => ({ ...f, serviceType: v }))}
+                    onPrice={(v) => setForm(f => ({ ...f, price: v }))}
+                    invalid={Boolean(priceProblem)}
+                  />
+
                   {/* The rest of the family. A row appears only when it is
                       asked for, so the common single-dog walk-in is the
                       same three fields it has always been. */}
@@ -253,13 +341,26 @@ export function QuickAppointmentDialog({
                           Remove
                         </Button>
                       </div>
+                      <ServiceAndPrice
+                        idPrefix={`quick-dog-${i}`}
+                        /* null means "whatever the first dog is", so a
+                           price typed once at the end reaches every dog
+                           — which is the order a counter works in. */
+                        serviceType={dog.serviceType ?? form.serviceType}
+                        price={dog.price ?? form.price}
+                        onServiceType={(v) => setExtraDogs(ds => ds.map((d, j) => j === i ? { ...d, serviceType: v } : d))}
+                        onPrice={(v) => setExtraDogs(ds => ds.map((d, j) => j === i ? { ...d, price: v } : d))}
+                        invalid={Boolean(priceProblem)}
+                        inheritNote={dog.price === null && form.price.trim() !== ""
+                          ? "Same as the first dog" : null}
+                      />
                     </Fragment>
                   ))}
 
                   {dogCount < QUICK_MAX_DOGS && (
                     <div className="col-span-2">
                       <Button type="button" variant="outline" size="sm"
-                        onClick={() => setExtraDogs(ds => [...ds, { name: "", breed: "" }])}>
+                        onClick={() => setExtraDogs(ds => [...ds, { name: "", breed: "", serviceType: null, price: null }])}>
                         + Another dog
                       </Button>
                     </div>
@@ -273,55 +374,41 @@ export function QuickAppointmentDialog({
               </>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Service</Label>
-                {/* Two, as asked. Not the full service list: a walk-in
-                    is a nail clip or a quick bath, and offering a styled
-                    groom here invites one onto a ten-minute slot. */}
-                <div className="flex flex-wrap gap-2">
-                  {QUICK_SERVICES.map((service) => (
-                    <button
-                      key={service.value} type="button"
-                      onClick={() => setForm(f => ({ ...f, serviceType: service.value }))}
-                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                        form.serviceType === service.value
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border hover:bg-muted"
-                      }`}
-                    >
-                      {service.label}
-                    </button>
-                  ))}
-                </div>
+            {/* A recognised client has no name fields above, so this is
+                where their one dog's service and price live. The form
+                for a new walk-in carries one of these per dog instead. */}
+            {known && (
+              <div className="grid grid-cols-2 gap-3">
+                <ServiceAndPrice
+                  idPrefix="quick"
+                  serviceType={form.serviceType}
+                  price={form.price}
+                  onServiceType={(v) => setForm(f => ({ ...f, serviceType: v }))}
+                  onPrice={(v) => setForm(f => ({ ...f, price: v }))}
+                  invalid={Boolean(priceProblem)}
+                />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="quick-price">
-                  {dogCount > 1 ? "Price each" : "Price"}
-                </Label>
-                <Input id="quick-price" inputMode="decimal" value={form.price}
-                  onChange={(e) => setForm(f => ({ ...f, price: e.target.value }))}
-                  placeholder="$"
-                  className={priceProblem ? "border-destructive" : ""} />
-                {/* The column is decimal(10,2) and "$25" is what gets
-                    typed. parseCounterPrice is the same function the
-                    server runs, so the two cannot disagree about what
-                    counts as money. */}
-                {priceProblem && (
-                  <p className="text-[11px] leading-4 text-destructive">{priceProblem}</p>
-                )}
-                {/* Per dog, because appointments.price is per row and the
-                    invoice sums them — a typed total divided four ways
-                    writes four prices that are each wrong. The total is
-                    shown so nobody has to do it in their head at a
-                    counter. */}
-                {!priceProblem && dogCount > 1 && total !== null && (
-                  <p className="text-[11px] leading-4 text-muted-foreground">
-                    {dogCount} dogs &middot; <strong>${total}</strong> total, one invoice
-                  </p>
-                )}
-              </div>
-            </div>
+            )}
+
+            {/* Named rather than counted, because with a service each
+                the total is no longer something anybody can check in
+                their head. parseCounterPrice is the same function the
+                server runs, so the two cannot disagree about what
+                counts as money. */}
+            {priceProblem && (
+              <p className="text-[11px] leading-4 text-destructive">{priceProblem}</p>
+            )}
+            {!priceProblem && dogCount > 1 && total !== null && (
+              <p className="text-[11px] leading-4 text-muted-foreground">
+                {lines.map((line, i) => (
+                  <Fragment key={i}>
+                    {i > 0 && " + "}
+                    {line.name || `Dog ${i + 1}`} ${Number(line.rawPrice || 0).toFixed(2)}
+                  </Fragment>
+                ))}
+                {" = "}<strong>${total}</strong> total, one invoice
+              </p>
+            )}
 
             {problem && (
               <p className="text-xs font-medium text-amber-700 dark:text-amber-400">{problem}</p>
@@ -349,9 +436,16 @@ export function QuickAppointmentDialog({
                 serviceType: form.serviceType,
                 price: form.price.trim() || undefined,
                 notes: form.notes.trim() || undefined,
-                extraDogs: namedExtras.map(d => ({
+                /* Resolved, not raw: a dog still following the first
+                   one is sent the service and price it is actually
+                   being booked at, so the row in the database says what
+                   the counter said rather than relying on the server
+                   re-deriving it. */
+                extraDogs: lines.slice(1).map(d => ({
                   name: d.name,
                   breed: (d.breed ?? "").trim() || undefined,
+                  serviceType: d.serviceType,
+                  price: d.rawPrice.trim() || undefined,
                 })),
               })}
             >

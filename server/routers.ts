@@ -108,8 +108,9 @@ import {
 } from "../shared/nextAvailableSlot";
 import { getAutoDurationMinutes } from "@shared/appointmentDuration";
 import {
-  QUICK_DEFAULT_MINUTES, QUICK_MAX_DOGS, quickDurationMinutes,
-  parseCounterPrice, quickWalkInError, walkInOnlyClientIds,
+  QUICK_DEFAULT_MINUTES, QUICK_MAX_DOGS, quickDogLines, quickDurationMinutes,
+  parseCounterPrice, quickWalkInError, quickWalkInTotal, walkInOnlyClientIds,
+  type QuickService,
 } from "@shared/quickAppointment";
 import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
@@ -1612,7 +1613,18 @@ const calendarRouter = router({
         name: z.string().trim().min(1).max(100),
         breed: z.string().trim().max(100).optional(),
         petId: z.number().int().positive().optional(),
+        /**
+         * This dog's own service and price. Absent means "same as the
+         * first dog" — see QuickDog in shared/quickAppointment.ts.
+         *
+         * Andy, 09/11/2026: "I think these dogs need to have services
+         * linked individually." Two dogs in together is routinely one
+         * nail clip and one quick bath.
+         */
+        serviceType: z.enum(["nail_trim", "bath_only"]).nullish(),
+        price: z.string().trim().max(12).nullish(),
       })).max(QUICK_MAX_DOGS - 1).default([]),
+      /** The FIRST dog's service, and the default for any that follow. */
       serviceType: z.enum(["nail_trim", "bath_only"]),
       price: z.string().trim().max(12).optional(),
       staffId: z.number().int().positive().nullable().default(null),
@@ -1623,12 +1635,43 @@ const calendarRouter = router({
       if (!db) throw new Error("DB unavailable");
       const tenantId = tenantOf(ctx, input);
 
-      /* Validated BEFORE anything is written. The client and the dog are
-         created first, so a price the column would reject used to leave a
-         real person and a real dog on the books with no booking — and a
-         retry made another pair. */
-      const priced = parseCounterPrice(input.price);
-      if (!priced.ok) throw new Error(priced.reason);
+      /*
+       * Every dog's service and price, resolved and validated BEFORE
+       * anything is written.
+       *
+       * The client and the dogs are created first, so a price the
+       * column would reject used to leave a real person and a real dog
+       * on the books with no booking — and a retry made another pair.
+       * Now that each dog carries its own price, the FOURTH one being
+       * unreadable has to stop the run before the first row is written,
+       * not after three.
+       */
+      const lines = quickDogLines(
+        {
+          name: input.petName,
+          breed: input.breed,
+          petId: input.petId,
+          serviceType: input.serviceType,
+          price: input.price,
+        },
+        input.extraDogs.map((d) => ({
+          name: d.name,
+          breed: d.breed,
+          petId: d.petId,
+          serviceType: d.serviceType ?? null,
+          price: d.price ?? null,
+        })),
+      );
+      /* One call, so the server's wording and the counter's are the
+         same string from the same function — it names the dog whose
+         price it cannot read, which matters once there are four boxes. */
+      const totals = quickWalkInTotal(lines);
+      if (!totals.ok) throw new Error(totals.reason);
+      const linePrices = lines.map((line) => {
+        const parsed = parseCounterPrice(line.rawPrice);
+        // Unreachable: quickWalkInTotal above parsed every one of them.
+        return parsed.ok ? parsed.price : null;
+      });
 
       /* A groomer from another salon must not end up on this booking.
          clientId and petId are tenant-checked below; this was not, and a
@@ -1711,7 +1754,11 @@ const calendarRouter = router({
       // Fifteen for the first dog, five for each after it — the greeting,
       // the lead and the payment do not repeat. Lauren's four-dog family
       // is half an hour, not the hour a flat 15 each would block out.
-      const dogCount = 1 + input.extraDogs.length;
+      //
+      // Counted off `lines`, not off the raw input: usableQuickDogs
+      // drops a blank row and a repeated name, and billing a slot for a
+      // dog that is not being booked blocks the board for nothing.
+      const dogCount = lines.length;
       const end = new Date(start.getTime() + quickDurationMinutes(dogCount) * 60_000);
 
       /*
@@ -1729,8 +1776,23 @@ const calendarRouter = router({
        * Every dog on the walk-in, the first one included, so the row is
        * written the same way whether a family brought one or four.
        */
-      const dogIds: number[] = [petId];
-      for (const extra of input.extraDogs) {
+      /*
+       * The dog ROW for each line, in the same order as `lines`, so the
+       * service and price that came off the form stay with the dog they
+       * were typed against. Indexing two parallel arrays by position is
+       * exactly how the MoeGo import mis-assigned groomers (Trap 3); it
+       * is safe here only because `lines` is the thing being walked and
+       * each entry carries its own.
+       */
+      const dogRows: { petId: number; serviceType: QuickService; price: string | null }[] = [
+        { petId, serviceType: lines[0].serviceType, price: linePrices[0] },
+      ];
+      for (const [index, extra] of input.extraDogs.entries()) {
+        const line = lines[index + 1];
+        /* A row usableQuickDogs dropped — blank or a duplicate name —
+           has no line, and must not be booked. */
+        if (!line) continue;
+        const resolved = { serviceType: line.serviceType, price: linePrices[index + 1] };
         if (extra.petId) {
           const [onFile] = await tx.select({ id: pets.id, status: pets.status, name: pets.name })
             .from(pets)
@@ -1739,7 +1801,7 @@ const calendarRouter = router({
           if (!onFile) throw new Error(`${extra.name} is not on this client's record`);
           const departed = departedBookingMessage([onFile]);
           if (departed) throw new Error(departed);
-          dogIds.push(onFile.id);
+          dogRows.push({ petId: onFile.id, ...resolved });
           continue;
         }
         const [madePet]: any = await tx.insert(pets).values({
@@ -1749,23 +1811,25 @@ const calendarRouter = router({
         });
         const madeId = Number(madePet?.insertId ?? 0);
         if (!madeId) throw new Error(`Could not create ${extra.name}`);
-        dogIds.push(madeId);
+        dogRows.push({ petId: madeId, ...resolved });
       }
 
       const appointmentIds: number[] = [];
-      for (const dog of dogIds) {
+      for (const dog of dogRows) {
         const [bookedRow]: any = await tx.insert(appointments).values({
           tenantId,
           clientId,
-          petId: dog,
+          petId: dog.petId,
           staffId: input.staffId,
-          serviceType: input.serviceType,
+          // This dog's own, which is the whole point: two dogs in
+          // together is routinely one nail clip and one quick bath.
+          serviceType: dog.serviceType,
           scheduledStart: start,
           scheduledEnd: end,
           sessionId,
           // Per dog, not a total split between them: the invoice sums
           // these, so a divided total writes prices that are each wrong.
-          price: priced.price,
+          price: dog.price,
           notes: input.notes?.trim() || null,
           trackerToken: nanoid(32),
           /* The dog is here. `scheduled` would be a lie for the ten
