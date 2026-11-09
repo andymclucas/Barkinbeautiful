@@ -110,7 +110,7 @@ import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
   FileDown, Check, CheckCircle2, ImagePlus, Mail, ChevronDown, ChevronUp, Clock, ExternalLink,
-  Clock3, Minus, Layers,
+  Clock3, Minus, Layers, Megaphone,
 } from "lucide-react";
 import { WaitlistPanel } from "@/components/WaitlistPanel";
 import { AppointmentStackPicker } from "@/components/AppointmentStackPicker";
@@ -119,7 +119,9 @@ import { petHasPassedAway, PET_CANNOT_BE_SELECTED } from "@shared/petBookable";
 import { useState, useMemo, useRef, useEffect, useCallback, useContext, createContext } from "react";
 import { toast } from "sonner";
 import { Link, useLocation, useSearch } from "wouter";
+import { MassTextDialog } from "@/components/MassTextDialog";
 import { calendarDateFromSearch } from "@shared/calendarDeepLink";
+import { calendarTextLabel, calendarTextRange, canSendMassText } from "@shared/calendarMassText";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
 import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPricing";
@@ -1265,6 +1267,22 @@ export default function Calendar() {
   // by the dashboard shell, so this costs nothing.
   const { user } = useAuth();
   const utils = trpc.useUtils();
+  /*
+   * Whether to offer "Text the day" at all.
+   *
+   * The same rule Messages uses, from shared/calendarMassText.ts. The
+   * server checks again on every call — this only decides whether to
+   * offer a button that would be refused, because a button that errors
+   * when pressed teaches staff to distrust the screen.
+   *
+   * `retry: false` because a groomer has no staff profile to fetch and
+   * retrying a 404 three times on every calendar load is noise.
+   */
+  const { data: myStaffProfile } = trpc.staff.getMyProfile.useQuery(undefined, { retry: false });
+  const mayMassText = canSendMassText(
+    user ? { id: user.id, email: user.email } : null,
+    myStaffProfile ?? null,
+  );
   const [weekStart, setWeekStart]   = useState(
     () => getWeekStart(
       calendarDateFromSearch(typeof window === "undefined" ? "" : window.location.search)
@@ -3998,6 +4016,36 @@ export default function Calendar() {
                 </span>
               )}
             </Button>
+            {/* Lauren, 09/11/2026, with the diary on Friday 13 November:
+                "Is there a way to text this days clients to let them
+                know we are closing at 12:30pm early that day... or do I
+                need to do it manually to each one?" And: "would be
+                handy - I had to do this when we had the cyclone.. bulk
+                text for random days."
+
+                She could already, from Messages — booked_between with
+                one day in both boxes. Four steps away from the day she
+                was standing on is the same as not having it, which is
+                why she was asking whether to text 24 people by hand.
+
+                Beside Block Out and Waitlist because it belongs to the
+                same moment: something has changed about THIS day and
+                the people booked on it need to know. */}
+            {mayMassText && (() => {
+              const range = calendarTextRange({
+                viewMode,
+                dayKey: dayDateKey(dayDate),
+                weekStartKey: dayDateKey(weekStart),
+              });
+              return (
+                <MassTextDialog
+                  defaultRange={range}
+                  triggerLabel={calendarTextLabel(viewMode)}
+                  triggerIcon={<Megaphone className="h-4 w-4" />}
+                  triggerClassName="brand-lift gap-1.5 bg-card/80"
+                />
+              );
+            })()}
             {/* Lauren, 06/11/2026: "if someone rang up and asks when's
                 your next available booking... I have no fucking idea off
                 the top of my head unless I go through manually and
