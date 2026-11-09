@@ -105,7 +105,7 @@ import { PaymentStamp } from "@/components/PaymentStamp";
 import { VipMark } from "@/components/VipMark";
 import { showsMembershipMark } from "@shared/membershipMark";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
-import { liveSiblings } from "@shared/bookingSiblings";
+import { liveSiblings, bookingCardKey } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
@@ -3539,15 +3539,31 @@ export default function Calendar() {
                       </div>
                     );
                   })}
-                  {/* Appointments — for sessions with multiple pets, show only the first card (lowest id) with siblings listed inside */}
+                  {/* Appointments — the dogs of one booking sharing one
+                      start time draw a single card (lowest id) with the
+                      others named inside.
+
+                      Keyed on bookingCardKey, which is the session AND the
+                      start, not the session alone. Andy, 09/11/2026: "I did
+                      move both appointments last week to 12pm... Don't know
+                      why it's saying 8am & 12pm." Only one of Kate Condon's
+                      two dogs had actually moved; the session collapsed to
+                      the lowest id, which was the 12:00 row, and the dog
+                      still at 08:00 was filtered out of the board
+                      completely. She was due at the salon and on nobody's
+                      column.
+
+                      The key has to match the one liveSiblings uses, or a
+                      row is drawn twice or not at all. */}
                   {(() => {
-                    // Determine which appts to show: for sessions, show only the primary (lowest id)
+                    // Determine which appts to show: one per (session, start)
                     const shownIds = new Set<number>();
                     const sessionPrimary = new Map<string, Appt>();
                     for (const a of colAppts) {
                       if (a.sessionId) {
-                        const existing = sessionPrimary.get(a.sessionId);
-                        if (!existing || a.id < existing.id) sessionPrimary.set(a.sessionId, a as Appt);
+                        const key = bookingCardKey(a as Appt);
+                        const existing = sessionPrimary.get(key);
+                        if (!existing || a.id < existing.id) sessionPrimary.set(key, a as Appt);
                       }
                     }
                     Array.from(sessionPrimary.values()).forEach(primary => shownIds.add(primary.id));
