@@ -216,10 +216,32 @@ export function buildAppointmentReminderSms(opts: {
   // Always "'s". A trailing apostrophe is for a plural noun ending in s,
   // not a list of names: "Albert and Eddy's", never "Albert and Eddy'".
   const possessive = `${subject}'s`;
-  /* Built as a SUFFIX rather than interpolating REPLY_PROMPT directly,
-     so dropping it takes its leading space with it. Interpolating ""
-     leaves "12:30 pm. " — a trailing space on a real text message. */
-  const ask = opts.alreadyConfirmed ? "" : ` ${REPLY_PROMPT}`;
+  /*
+   * The LAST reminder never asks, whether or not they answered the
+   * first one.
+   *
+   * Andy, 10/11/2026: "Only one confirmation text to go out." Lauren,
+   * with a client's thread open showing three texts about one booking
+   * and two of them asking her to reply: "just want to confirm to 1
+   * message and not receive the one 2 days before."
+   *
+   * Retiring the 2-day stage was most of that, but not all of it: a
+   * client who never answered the four-day text would still have been
+   * asked again the day before, which is the second ask Andy ruled
+   * out. So the day-before text is now a statement at every stage of
+   * the conversation, and the question is asked once, four days out.
+   *
+   * The consequence is deliberate and worth knowing: a booking whose
+   * client ignores the first text is never chased, and stays
+   * unconfirmed. Bringing the chase back means putting "2d" back in
+   * REMINDER_STAGES, not putting the prompt back here.
+   *
+   * Built as a SUFFIX rather than interpolating REPLY_PROMPT directly,
+   * so dropping it takes its leading space with it. Interpolating ""
+   * leaves "12:30 pm. " — a trailing space on a real text message.
+   */
+  const asksToConfirm = !opts.alreadyConfirmed && opts.stage !== "day_before";
+  const ask = asksToConfirm ? ` ${REPLY_PROMPT}` : "";
   if (opts.stage === "4d") {
     return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time}.${ask}`;
   }

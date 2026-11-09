@@ -1,4 +1,9 @@
 import { petPhotoDeletionVerdict } from "@shared/petPhotoDeletion";
+import { duplicateBookingMessage } from "@shared/duplicateBooking";
+import {
+  assertDogsNotAlreadyBookedThatDay,
+  findDogsAlreadyBookedThatDay,
+} from "./duplicateBooking";
 import { vipPetIds } from "@shared/vipPetIds";
 import { dogsNamedInPlan } from "@shared/membershipCoveredPets";
 import { buildRescheduleUpdate } from "@shared/rescheduleUpdate";
@@ -115,13 +120,29 @@ import {
 import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
 import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
-import { buildTimeSlots, minutesToTimeValue } from "../shared/bookingTimeSlots";
+import { minutesToTimeValue, salonBookingStarts } from "../shared/bookingTimeSlots";
 
-/** The staff dialog's own grid, so the button cannot offer a time the
-    dropdown does not have. */
-const STAFF_SLOT_STARTS = buildTimeSlots()
-  .map((slot) => timeValueToMinutes(slot.value))
-  .filter((m): m is number => m !== null);
+/**
+ * Every start time the app may OFFER — down the phone, in Next
+ * available, or in the rebook dialog.
+ *
+ * Lauren, 10/11/2026, with Next available showing 7am slots: "can we
+ * adjust the times to our work hours, first dogs 7:30, last booking come
+ * in at 1pm".
+ *
+ * It used to be the staff dropdown's grid, 07:00 to 18:00, on the
+ * reasoning that the button must not offer a time the dropdown cannot
+ * express. That is the right constraint pointed the wrong way: the
+ * dropdown is deliberately WIDER than the working day so staff can
+ * record the odd 13:30 or 14:00 booking — 41 of them in the last six
+ * months — and inheriting its width made the phone tool read 7am slots
+ * out to clients for a salon whose first dog is 7:30.
+ *
+ * So the dropdown keeps its range and this is the salon's own. Every
+ * time here is still on the dropdown's half-hour grid, so the original
+ * constraint holds.
+ */
+const OFFERABLE_SLOT_STARTS = salonBookingStarts();
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl, getPortalBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
@@ -161,6 +182,7 @@ import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { automatedMessagesRouter } from "./routers/automatedMessages";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
+import { counterSaleRouter } from "./routers/counterSale";
 import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
 import { priceForPet } from "../shared/multiPetPricing";
@@ -826,29 +848,25 @@ const calendarRouter = router({
       }
 
       /*
-       * Nothing else for these dogs that day, whatever state it is in.
-       * Duplicating a dog is the worst thing this can do — staff work
-       * from that board — and matching on the booking id alone is what
-       * let it happen twice on 29/09.
+       * Nothing else live for these dogs that day. Duplicating a dog is
+       * the worst thing this can do — staff work from that board — and
+       * matching on the booking id alone is what let it happen twice on
+       * 29/09.
+       *
+       * Through the shared guard since 09/11/2026. The copy that used to
+       * live here computed the day from the UTC date and shifted it,
+       * which named the day BEFORE for anything in the Brisbane
+       * 00:00–10:00 band — so a 07:30 or 08:00 rebook, the salon's
+       * busiest slots, was checked against the wrong 24 hours. It also
+       * counted cancelled rows, so a client who cancelled in the
+       * morning was told to "pick another date" for an afternoon that
+       * was in fact free.
        */
-      const dayStart = new Date(Date.UTC(
-        start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()) - 10 * 3600_000);
-      const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-      const clashes = await db
-        .select({ petId: appointments.petId })
-        .from(appointments)
-        .where(and(
-          eq(appointments.tenantId, tenantId),
-          inArray(appointments.petId, siblings.map((s: any) => s.petId)),
-          gte(appointments.scheduledStart, dayStart),
-          lt(appointments.scheduledStart, dayEnd),
-        ));
-      if (clashes.length > 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "One of these dogs is already booked that day — pick another date",
-        });
-      }
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId,
+        petIds: siblings.map((s: any) => s.petId),
+        at: start,
+      });
 
       /*
        * A dog recorded as passed away stays on the record and stays
@@ -1930,7 +1948,7 @@ const calendarRouter = router({
         if (error) return { slots: [], summary: { searched: 0, closed: 0, full: 0 }, message: error };
         const opts = {
           durationMinutes,
-          slotStartsFor: () => STAFF_SLOT_STARTS,
+          slotStartsFor: () => OFFERABLE_SLOT_STARTS,
           todayKey, nowMinutes: minutesInSalonDay(new Date()),
         };
         const slots = nextFreeSlots(days, opts, input.limit);
@@ -2020,7 +2038,7 @@ const calendarRouter = router({
       const nowMinutes = minutesInSalonDay(new Date());
       const found = firstFreeSlot(days, {
         durationMinutes: input.durationMinutes,
-        slotStartsFor: () => STAFF_SLOT_STARTS,
+        slotStartsFor: () => OFFERABLE_SLOT_STARTS,
         todayKey, nowMinutes,
       });
 
@@ -2103,7 +2121,7 @@ const calendarRouter = router({
 
       const around = slotsAroundTarget(days, input.targetDate, {
         durationMinutes: input.durationMinutes,
-        slotStartsFor: () => STAFF_SLOT_STARTS,
+        slotStartsFor: () => OFFERABLE_SLOT_STARTS,
         todayKey,
         nowMinutes: minutesInSalonDay(new Date()),
         maxDistanceDays: input.windowDays,
@@ -2164,6 +2182,18 @@ const calendarRouter = router({
       }
       const departedMessage = departedBookingMessage([pet]);
       if (departedMessage) throw new Error(departedMessage);
+      /*
+       * One booking per dog per day. Tanya Leek's Bonnie and Chester
+       * were booked at 12:30 on 6 November and again at 11:30 on the
+       * 8th by somebody who meant to MOVE the first booking; both
+       * confirmations went out and she agreed to both. See
+       * shared/duplicateBooking.ts.
+       */
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId: tenantOf(ctx, input),
+        petIds: [input.petId],
+        at: parseBrisbaneLocalDateTime(input.scheduledStart),
+      });
       const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, [input.petId], input.serviceType);
       const coveredMembership = coverage.membershipByPetId[input.petId] ?? null;
       const token = nanoid(32);
@@ -2286,8 +2316,24 @@ const calendarRouter = router({
           )).limit(1);
           if (conflict) { clash = true; break; }
         }
-        if (clash) {
-          skipped.push({ scheduledStart: occurrenceStart, reason: "Groomer already booked at this time" });
+        /*
+         * And nothing else live for these dogs that day.
+         * addRecurrenceToAppointment — the path that EXTENDS a series —
+         * has carried this since it was written; this one, which creates
+         * the series, did not. A skip rather than a throw, so the rest of
+         * the series still books and the report says which dates did not.
+         */
+        let clashReason: string | null = clash ? "Groomer already booked at this time" : null;
+        if (!clashReason) {
+          const dogsBusy = await findDogsAlreadyBookedThatDay(db, {
+            tenantId: tenantOf(ctx, input),
+            petIds,
+            at: occurrenceStart,
+          });
+          if (dogsBusy.length > 0) clashReason = duplicateBookingMessage(dogsBusy);
+        }
+        if (clashReason) {
+          skipped.push({ scheduledStart: occurrenceStart, reason: clashReason });
           occurrenceStart = new Date(occurrenceStart.getTime() + stepMs);
           continue;
         }
@@ -2575,22 +2621,17 @@ const calendarRouter = router({
         }
 
         if (!clashReason) {
-          /* Nothing else for these dogs that day, whatever state it is
-             in — the same guard rebook carries, written after a dog was
-             duplicated onto a live board twice on 29/09. */
-          const dayStart = new Date(Date.UTC(
-            occurrenceStart.getUTCFullYear(), occurrenceStart.getUTCMonth(), occurrenceStart.getUTCDate(),
-          ) - 10 * 3_600_000);
-          const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-          const [dogBusy] = await db.select({ petId: appointments.petId }).from(appointments).where(and(
-            eq(appointments.tenantId, tenantId),
-            inArray(appointments.petId, petIdsOnBooking),
-            gte(appointments.scheduledStart, dayStart),
-            lt(appointments.scheduledStart, dayEnd),
-            ne(appointments.status, "cancelled"),
-            ne(appointments.workflowState, "cancelled"),
-          )).limit(1);
-          if (dogBusy) clashReason = "That dog is already booked in that day";
+          /* Nothing else live for these dogs that day — the same guard
+             rebook carries, written after a dog was duplicated onto a
+             live board twice on 29/09, and shared since 09/11/2026. The
+             copy that was here read the UTC date, so a 07:30 occurrence
+             was checked against the previous day. */
+          const dogsBusy = await findDogsAlreadyBookedThatDay(db, {
+            tenantId,
+            petIds: petIdsOnBooking,
+            at: occurrenceStart,
+          });
+          if (dogsBusy.length > 0) clashReason = duplicateBookingMessage(dogsBusy);
         }
 
         if (clashReason) {
@@ -2714,6 +2755,18 @@ const calendarRouter = router({
       // dialog, because the dialog is not the only way in.
       const departedMessage = departedBookingMessage(selectedPets);
       if (departedMessage) throw new Error(departedMessage);
+      /*
+       * One booking per dog per day. Tanya Leek's Bonnie and Chester
+       * were booked at 12:30 on 6 November and again at 11:30 on the
+       * 8th by somebody who meant to MOVE the first booking; both
+       * confirmations went out and she agreed to both. See
+       * shared/duplicateBooking.ts.
+       */
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId: tenantOf(ctx, input),
+        petIds,
+        at: parseBrisbaneLocalDateTime(input.scheduledStart),
+      });
       const groomerForPet = await resolveGroomerPerPet(db, tenantOf(ctx, input), petIds, input.staffId, input.staffByPetId);
       const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
       // Assign a shared sessionId when booking multiple pets together
@@ -3045,6 +3098,16 @@ const calendarRouter = router({
         requestedPetIds,
       );
       if (petIdsToAdd.length === 0) return { success: true, added: 0 };
+      /*
+       * A dog joining this booking must not already be in that day on
+       * another one. Dogs already on THIS session are removed above, so
+       * anything found here is a second booking.
+       */
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId: source.tenantId,
+        petIds: petIdsToAdd,
+        at: source.scheduledStart,
+      });
 
       const sessionId = source.sessionId ?? nanoid(16);
       if (!source.sessionId) {
@@ -9834,6 +9897,40 @@ const retailRouter = router({
       return db.select().from(retailProducts).where(and(...conditions)).orderBy(asc(retailProducts.name));
     }),
 
+  /**
+   * The shelf, for anybody who can sell off it.
+   *
+   * `retail.list` above is protectedProcedure, which REJECTS restricted
+   * staff — correct, because it returns `costAud` and a groomer has no
+   * business reading the salon's margins. But the two screens that sell
+   * a product both read it, so a bather or a receptionist opening the
+   * Shop panel on a booking got FORBIDDEN and an empty picker. The
+   * people most likely to be at the counter were the ones who could not
+   * use it.
+   *
+   * So the till reads this instead: the same rows, without the cost
+   * price. Modelled on `appointmentAddOns.catalogue`, which already
+   * does exactly this for services.
+   */
+  sellable: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1) }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        id: retailProducts.id,
+        name: retailProducts.name,
+        sku: retailProducts.sku,
+        category: retailProducts.category,
+        priceAud: retailProducts.priceAud,
+        stockQty: retailProducts.stockQty,
+        reorderThreshold: retailProducts.reorderThreshold,
+      }).from(retailProducts).where(and(
+        eq(retailProducts.tenantId, tenantOf(ctx, input ?? {})),
+        eq(retailProducts.isActive, true),
+      )).orderBy(asc(retailProducts.name));
+    }),
+
   create: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -12042,6 +12139,17 @@ const onlineBookingRouter = router({
     const notes = [input.notes?.trim(), sizeNote].filter(Boolean).join("\n");
     const tenantId = tenantOf(ctx, input);
     const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: input.weightKg });
+    /*
+     * One booking per dog per day. A guest booking reuses the dog
+     * already on file when the name matches, so a returning client can
+     * book a dog that is already in that day — and nobody is at the
+     * counter to notice. See shared/duplicateBooking.ts.
+     */
+    await assertDogsNotAlreadyBookedThatDay(db, {
+      tenantId,
+      petIds: [petId],
+      at: input.scheduledStart,
+    });
     const [result] = await db.insert(appointments).values({ tenantId, clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, price: estimatePrice, status: "pending", workflowState: "scheduled", bookedOnline: true });
     const appointmentId = (result as any).insertId as number;
     // The booking row is written. Nothing below may throw it away.
@@ -12090,6 +12198,17 @@ const onlineBookingRouter = router({
     const notes = buildOnlineBookingNotes({ notes: input.notes, sizeLabel: weightBand.label, weightKg: input.weightKg, preview: true });
     const tenantId = tenantOf(ctx, input);
     const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: input.weightKg });
+    /*
+     * One booking per dog per day. A guest booking reuses the dog
+     * already on file when the name matches, so a returning client can
+     * book a dog that is already in that day — and nobody is at the
+     * counter to notice. See shared/duplicateBooking.ts.
+     */
+    await assertDogsNotAlreadyBookedThatDay(db, {
+      tenantId,
+      petIds: [petId],
+      at: input.scheduledStart,
+    });
     // Marked booked_online, because it IS the online path — the point of
     // the preview is to exercise what a stranger would get, bell row and
     // confirmation included. It therefore also consumes one of the day's
@@ -12921,6 +13040,73 @@ const smsRouter = router({
       const result = await sendSms(client.phone, body, { tenantId: tenantOf(ctx, input), trigger: "staff" });
       await db.insert(smsLogs).values({ tenantId: tenantOf(ctx, input), clientId: input.clientId, appointmentId: input.appointmentId, toNumber: client.phone, body, twilioSid: result.sid, status: result.success ? "sent" : "failed", type: input.templateType, direction: "outbound", errorMessage: result.error });
       return result;
+    }),
+
+  /**
+   * How many texts actually went out, and what became of them.
+   *
+   * Andy, 10/11/2026, from the Messages page: 100 sent, 0 delivered,
+   * 0 failed. Every one of those three numbers was wrong, and none of
+   * them was a delivery problem — 674 of the last 676 outbound rows are
+   * `delivered`, so Twilio's callbacks have been working all along.
+   *
+   * What was wrong:
+   *
+   * - "Total Sent" was the LENGTH OF THE FETCHED PAGE. The page asks for
+   *   100 log rows and counted them, so it has read exactly 100 since
+   *   the day the hundredth text was sent, and would have read 100 at a
+   *   thousand or at ten. It counted inbound replies as sent, too.
+   * - "Delivered" counted `status = 'sent'`, which is the step BEFORE
+   *   delivered. Twilio moves a message through it in about a second, so
+   *   the tile was counting messages caught mid-flight: 4 in the salon's
+   *   entire history, and 0 most of the time.
+   * - "Failed" was right by luck — there genuinely was one failure in
+   *   the window — but it could only ever see the last hundred rows.
+   *
+   * Counted here instead, over a stated window, in SQL.
+   *
+   * DISTINCT on the Twilio SID, because a family booking writes one log
+   * row per dog for ONE text. Counting rows made every two-dog send look
+   * like two against the salon's bill — 676 rows is 627 texts over the
+   * last 30 days. Rows with no SID (a send that never reached Twilio)
+   * are counted individually, since each is its own attempt.
+   */
+  stats: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** The window the tiles name. 30 days is how the salon thinks about SMS volume. */
+      days: z.number().int().min(1).max(365).default(30),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      const days = input?.days ?? 30;
+      const empty = { days, sent: 0, delivered: 0, failed: 0, received: 0 };
+      if (!db) return empty;
+
+      /* One text = one Twilio SID. See the note above. No GROUP BY at
+         all, so ONLY_FULL_GROUP_BY has nothing to reject — the trap
+         CLAUDE.md §6 describes needs a grouped computed expression. */
+      const texts = (when: ReturnType<typeof sql>) =>
+        sql<number>`COUNT(DISTINCT CASE WHEN ${when} THEN COALESCE(${smsLogs.twilioSid}, CONCAT('row:', ${smsLogs.id})) END)`;
+      const outbound = sql`${smsLogs.direction} = 'outbound'`;
+
+      const [row] = await db.select({
+        sent: texts(outbound),
+        delivered: texts(sql`${outbound} AND ${smsLogs.status} = 'delivered'`),
+        failed: texts(sql`${outbound} AND ${smsLogs.status} = 'failed'`),
+        received: texts(sql`${smsLogs.direction} = 'inbound'`),
+      }).from(smsLogs).where(and(
+        eq(smsLogs.tenantId, tenantOf(ctx, input ?? {})),
+        gte(smsLogs.sentAt, sql`DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${days} DAY)`),
+      ));
+
+      return {
+        days,
+        sent: Number(row?.sent ?? 0),
+        delivered: Number(row?.delivered ?? 0),
+        failed: Number(row?.failed ?? 0),
+        received: Number(row?.received ?? 0),
+      };
     }),
 
   getLogs: protectedProcedure
@@ -15541,6 +15727,7 @@ export const appRouter = router({
   pricing: pricingRouter,
   storeCredit: storeCreditRouter,
   retail: retailRouter,
+  counterSale: counterSaleRouter,
   analytics: analyticsRouter,
   analyticsExt: analyticsRouterExtended,
   migration: migrationRouter,

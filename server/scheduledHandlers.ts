@@ -49,6 +49,7 @@ import { appointments, staff } from "../drizzle/schema";
 import { gte, inArray, isNotNull, isNull, lt, notInArray } from "drizzle-orm";
 import { decideAppointmentReminder, REMINDER_SKIP_LABEL } from "@shared/reminderDecision";
 import { groupRemindersByBooking } from "@shared/reminderGrouping";
+import { REMINDER_STAGES } from "@shared/reminderStages";
 import { bookingKey, confirmedBookingKeys } from "@shared/confirmedBookings";
 import { runClientStatusSweepQuietly } from "./clientStatusSweep";
 import { EARLIEST_AUTOMATED_TEXT_HOUR } from "@shared/sendingHours";
@@ -779,11 +780,15 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
      * migration for no gain, and this comment is cheaper than the
      * deploy.
      */
-    const stages: { key: "4d" | "2d" | "day_before"; daysOut: number; column: "reminder4dSentAt" | "reminder2dSentAt" | "reminderMorningSentAt"; sqlColumn: string }[] = [
-      { key: "4d", daysOut: 4, column: "reminder4dSentAt", sqlColumn: "reminder_4d_sent_at" },
-      { key: "2d", daysOut: 2, column: "reminder2dSentAt", sqlColumn: "reminder_2d_sent_at" },
-      { key: "day_before", daysOut: 1, column: "reminderMorningSentAt", sqlColumn: "reminder_morning_sent_at" },
-    ];
+    /*
+     * Which stages run is a salon rule, so it lives in shared/ with a
+     * test on it rather than inline here. The 2-day stage was retired
+     * on 10/11/2026 — Lauren, with a client's thread open showing three
+     * texts about one booking and two of them asking her to confirm:
+     * "just want to confirm to 1 message and not receive the one 2 days
+     * before."
+     */
+    const stages = REMINDER_STAGES;
 
     let sent = 0;
     let skipped = 0;

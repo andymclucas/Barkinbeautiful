@@ -962,6 +962,41 @@ textarea[data-slot="textarea"],
 }
 
 /*
+ * On a phone, a rail's chips have to look pressable on their own.
+ *
+ * Andy, 09/11/2026, with a photo of the client record: "Alignment is a
+ * bit off on these tabs. Maybe more of a centralised look with
+ * highlighted tabs able to be selected."
+ *
+ * The hover rule above is the whole of what says an inactive tab is a
+ * control, and a touch screen has no hover. So on his phone nine of the
+ * ten sections were muted text sitting on the rail's own fill, with only
+ * the active pill looking like anything at all. Below the lg breakpoint
+ * — exactly where the rail stops being a vertical list and becomes a
+ * block of chips — each inactive chip gets its own surface and edge.
+ *
+ * Scoped to .tabs-rail rather than every tab bar: the others are short,
+ * wide segmented controls whose items sit shoulder to shoulder inside
+ * one pill, and giving those a resting surface each would draw a row of
+ * separate buttons where a single control belongs.
+ *
+ * Keyed on [role="tab"], not the data-slot, for the reason the active
+ * rule above gives: an asChild tooltip wrapper rewrites data-slot, and
+ * role survives it.
+ */
+@media (max-width: 1023.98px) {
+  [data-slot="tabs-list"].tabs-rail > [role="tab"] {
+    /* On every chip, including the selected one, so choosing a tab does
+       not resize it by the width of two borders. */
+    border: 1px solid transparent;
+  }
+  [data-slot="tabs-list"].tabs-rail > [role="tab"]:not([aria-selected="true"]) {
+    background: var(--card);
+    border-color: color-mix(in oklch, var(--brand-primary) 16%, transparent);
+  }
+}
+
+/*
  * A tab bar wider than the phone scrolls; it does not cram.
  *
  * Andy, 05/11/2026, with a photo of Pricing & Services on his phone:

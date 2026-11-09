@@ -1,8 +1,11 @@
 export const BATH_PRIORITY_VALUES = [1, 2, 3, 4, 5] as const;
 
-export type BathPriorityValue = typeof BATH_PRIORITY_VALUES[number];
+export type BathPriorityValue = (typeof BATH_PRIORITY_VALUES)[number];
 
-export const BATH_PRIORITY_META: Record<BathPriorityValue, { label: string; colour: string; softColour: string }> = {
+export const BATH_PRIORITY_META: Record<
+  BathPriorityValue,
+  { label: string; colour: string; softColour: string }
+> = {
   1: { label: "Next", colour: "#e11d48", softColour: "#fff1f2" },
   2: { label: "After next", colour: "#ea580c", softColour: "#fff7ed" },
   3: { label: "Third", colour: "#ca8a04", softColour: "#fefce8" },
@@ -55,24 +58,45 @@ export type BathPriorityQueueItem<T extends BathPriorityQueueRow> = {
  * slate, rather than wrapping round and giving a sixth dog the same red
  * as the one actually going next.
  */
-export function bathQueuePositionMeta(position: number): { label: string; colour: string; softColour: string } {
+export function bathQueuePositionMeta(position: number): {
+  label: string;
+  colour: string;
+  softColour: string;
+} {
   const known = BATH_PRIORITY_META[position as BathPriorityValue];
   if (known) return known;
-  return { label: `${position}th in line`, colour: "#475569", softColour: "#f8fafc" };
+  return {
+    label: `${position}th in line`,
+    colour: "#475569",
+    softColour: "#f8fafc",
+  };
 }
 
-const BATH_QUEUE_STATES = new Set(["scheduled", "checked_in", "waiting_for_bath", "bathing"]);
+const BATH_QUEUE_STATES = new Set([
+  "scheduled",
+  "checked_in",
+  "waiting_for_bath",
+  "bathing",
+]);
 
 export function isBathPriorityEligible(workflowState: string) {
   return BATH_QUEUE_STATES.has(workflowState);
 }
 
 export function isBathPriorityMutable(workflowState: string) {
-  return workflowState !== "complete" && workflowState !== "cancelled" && workflowState !== "no_show";
+  return (
+    workflowState !== "complete" &&
+    workflowState !== "cancelled" &&
+    workflowState !== "no_show"
+  );
 }
 
-function priorityValue(value: number | null | undefined): BathPriorityValue | null {
-  return BATH_PRIORITY_VALUES.includes(value as BathPriorityValue) ? value as BathPriorityValue : null;
+function priorityValue(
+  value: number | null | undefined
+): BathPriorityValue | null {
+  return BATH_PRIORITY_VALUES.includes(value as BathPriorityValue)
+    ? (value as BathPriorityValue)
+    : null;
 }
 
 function scheduledTimestamp(value: BathPriorityQueueRow["scheduledStart"]) {
@@ -83,7 +107,8 @@ function scheduledTimestamp(value: BathPriorityQueueRow["scheduledStart"]) {
 function queueCohortKey(row: BathPriorityQueueRow) {
   if (row.bathGroupId?.trim()) return `bath-group-${row.bathGroupId.trim()}`;
   if (row.sessionId?.trim()) return `session-${row.sessionId.trim()}`;
-  if (row.petFamilyGroupId) return `family-${row.petFamilyGroupId}-${scheduledTimestamp(row.scheduledStart)}`;
+  if (row.petFamilyGroupId)
+    return `family-${row.petFamilyGroupId}-${scheduledTimestamp(row.scheduledStart)}`;
   return `appointment-${row.id}`;
 }
 
@@ -91,7 +116,9 @@ function queueCohortKey(row: BathPriorityQueueRow) {
  * Builds a separate bathing queue without changing the normal workflow order.
  * Same-session dogs and same-time family-linked dogs share one queue item.
  */
-export function buildBathPriorityQueue<T extends BathPriorityQueueRow>(rows: T[]): BathPriorityQueueItem<T>[] {
+export function buildBathPriorityQueue<T extends BathPriorityQueueRow>(
+  rows: T[]
+): BathPriorityQueueItem<T>[] {
   const groups = new Map<string, T[]>();
   for (const row of rows) {
     const priority = priorityValue(row.bathPriority);
@@ -102,29 +129,101 @@ export function buildBathPriorityQueue<T extends BathPriorityQueueRow>(rows: T[]
     groups.set(key, group);
   }
 
-  return Array.from(groups.values())
-    .map((group) => {
-      const first = group[0]!;
-      const priority = priorityValue(first.bathPriority)!;
-      const petNames = Array.from(new Set(group.map((row) => row.petName?.trim()).filter((name): name is string => Boolean(name))));
-      return {
-        priority,
-        // Filled in once the whole queue is ordered, below.
-        position: 0,
-        rows: group.sort((left, right) => left.id - right.id),
-        petNames,
-        scheduledStart: first.scheduledStart,
-        isCoordinatedBooking: group.length > 1,
-      };
-    })
-    .sort((left, right) => left.priority - right.priority
-      || (left.rows[0]!.bathQueueOrder ?? Number.MAX_SAFE_INTEGER) - (right.rows[0]!.bathQueueOrder ?? Number.MAX_SAFE_INTEGER)
-      || scheduledTimestamp(left.scheduledStart) - scheduledTimestamp(right.scheduledStart)
-      || left.rows[0]!.id - right.rows[0]!.id)
-    // Numbered after sorting, so the top of the list is always 1 whatever
-    // the stored priorities happen to be. Dogs together in one coordinated
-    // booking are one item and so share a position — they go in together.
-    .map((item, index) => ({ ...item, position: index + 1 }));
+  return (
+    Array.from(groups.values())
+      .map(group => {
+        const first = group[0]!;
+        const priority = priorityValue(first.bathPriority)!;
+        const petNames = Array.from(
+          new Set(
+            group
+              .map(row => row.petName?.trim())
+              .filter((name): name is string => Boolean(name))
+          )
+        );
+        return {
+          priority,
+          // Filled in once the whole queue is ordered, below.
+          position: 0,
+          rows: group.sort((left, right) => left.id - right.id),
+          petNames,
+          scheduledStart: first.scheduledStart,
+          isCoordinatedBooking: group.length > 1,
+        };
+      })
+      .sort(
+        (left, right) =>
+          left.priority - right.priority ||
+          (left.rows[0]!.bathQueueOrder ?? Number.MAX_SAFE_INTEGER) -
+            (right.rows[0]!.bathQueueOrder ?? Number.MAX_SAFE_INTEGER) ||
+          scheduledTimestamp(left.scheduledStart) -
+            scheduledTimestamp(right.scheduledStart) ||
+          left.rows[0]!.id - right.rows[0]!.id
+      )
+      // Numbered after sorting, so the top of the list is always 1 whatever
+      // the stored priorities happen to be. Dogs together in one coordinated
+      // booking are one item and so share a position — they go in together.
+      .map((item, index) => ({ ...item, position: index + 1 }))
+  );
+}
+
+/**
+ * The cohort a dog bathes in: the group staff made, else its booking,
+ * else its family at that time, else itself.
+ *
+ * Exported so the board can ask "are these two already going in
+ * together?" with the same key the queue is built from. Two answers to
+ * that question would eventually disagree, and the one that disagreed
+ * would offer to group dogs that are already grouped.
+ */
+export function bathCohortKey(row: BathPriorityQueueRow): string {
+  return queueCohortKey(row);
+}
+
+/**
+ * The other dogs now sharing this dog's bath number, that are not
+ * already going in with it.
+ *
+ * Andy, 10/11/2026: "Some dogs can be bathed together - so if they are
+ * assigned the same priority number give the option to say 'bath these
+ * dogs together?' and tick yes or no."
+ *
+ * Two dogs on the same number is not the same as two dogs in the same
+ * bath. The queue already copes — they become two items sharing a
+ * priority, ordered behind one another — and that is right for two
+ * strangers who happen to be next. It is wrong for two dogs that would
+ * go in at once, and the only way to say so today is the Group dogs
+ * dialog, which means leaving the number you just set and picking them
+ * out of a list of the whole board.
+ *
+ * So the board asks at the moment the collision appears. Empty means
+ * there is nothing to ask: nobody else is on that number, or everybody
+ * else on it is already in this dog's cohort.
+ *
+ * Asked, never assumed — the same rule as the family check-in prompt.
+ * Two dogs share a car far more often than they share a bath.
+ */
+export function dogsOnTheSameBathNumber<T extends BathPriorityQueueRow>(
+  appointmentId: number,
+  rows: readonly T[]
+): T[] {
+  const self = rows.find(row => row.id === appointmentId);
+  if (!self) return [];
+  const priority = priorityValue(self.bathPriority);
+  if (!priority) return [];
+  if (!isBathPriorityEligible(self.workflowState)) return [];
+
+  const mine = queueCohortKey(self);
+  return rows.filter(
+    row =>
+      row.id !== self.id &&
+      priorityValue(row.bathPriority) === priority &&
+      isBathPriorityEligible(row.workflowState) &&
+      /* A dog already in the bath cannot be put in with another one, and
+       offering it reads as though the board has lost track. */
+      isBathPriorityMutable(row.workflowState) &&
+      queueCohortKey(row) !== mine
+  );
 }
 
 export type BathPriorityAnchor = {
@@ -158,12 +257,15 @@ export type BathPriorityScope =
  */
 export function bathPriorityScope(
   anchor: BathPriorityAnchor,
-  applyToLinkedDogs: boolean,
+  applyToLinkedDogs: boolean
 ): BathPriorityScope {
   if (!applyToLinkedDogs) return { kind: "alone", appointmentId: anchor.id };
-  if (anchor.bathGroupId?.trim()) return { kind: "bathGroup", bathGroupId: anchor.bathGroupId.trim() };
-  if (anchor.sessionId?.trim()) return { kind: "session", sessionId: anchor.sessionId.trim() };
-  if (anchor.petFamilyGroupId) return { kind: "family", petFamilyGroupId: anchor.petFamilyGroupId };
+  if (anchor.bathGroupId?.trim())
+    return { kind: "bathGroup", bathGroupId: anchor.bathGroupId.trim() };
+  if (anchor.sessionId?.trim())
+    return { kind: "session", sessionId: anchor.sessionId.trim() };
+  if (anchor.petFamilyGroupId)
+    return { kind: "family", petFamilyGroupId: anchor.petFamilyGroupId };
   return { kind: "alone", appointmentId: anchor.id };
 }
 
@@ -181,7 +283,7 @@ export function bathPriorityScope(
  */
 export function bathPriorityChangeReaches(
   scope: BathPriorityScope,
-  candidate: { id: number; bathGroupId?: string | null },
+  candidate: { id: number; bathGroupId?: string | null }
 ): boolean {
   if (scope.kind === "alone") return candidate.id === scope.appointmentId;
   if (scope.kind === "bathGroup") return true;

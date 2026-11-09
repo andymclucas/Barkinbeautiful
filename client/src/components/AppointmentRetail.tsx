@@ -42,7 +42,11 @@ export function AppointmentRetail({ appointmentId, onChanged }: {
   const [picked, setPicked] = useState("");
   const [quantity, setQuantity] = useState("1");
 
-  const { data: products } = trpc.retail.list.useQuery({ includeArchived: false });
+  /* retail.sellable, not retail.list. The list is protectedProcedure
+     because it carries the cost price, so it answered FORBIDDEN to
+     exactly the restricted staff this panel is for: a bather with the
+     dog in front of them saw an empty picker. */
+  const { data: products } = trpc.retail.sellable.useQuery({});
 
   const sell = trpc.appointmentAddOns.addRetail.useMutation({
     onSuccess: (r) => {
@@ -56,7 +60,7 @@ export function AppointmentRetail({ appointmentId, onChanged }: {
       setPicked("");
       setQuantity("1");
       void utils.appointmentAddOns.list.invalidate({ appointmentId });
-      void utils.retail.list.invalidate();
+      void utils.retail.sellable.invalidate();
       onChanged?.();
     },
     onError: (e) => toast.error(e.message, { duration: 8000 }),

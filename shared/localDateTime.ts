@@ -239,3 +239,38 @@ export function localCalendarDayKey(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+/**
+ * The UTC instants bounding a Brisbane calendar day, from its date key.
+ *
+ * Brisbane is UTC+10 with no DST, so 00:00 local is 14:00 UTC the day
+ * before. Half-open: `start` inclusive, `end` exclusive, ready for
+ * `gte(start) AND lt(end)`.
+ */
+export function brisbaneDayBoundsForKey(dateKey: string): { start: Date; end: Date } {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return {
+    start: new Date(Date.UTC(year, month - 1, day - 1, 14, 0, 0)),
+    end: new Date(Date.UTC(year, month - 1, day, 14, 0, 0)),
+  };
+}
+
+/**
+ * The Brisbane day CONTAINING an instant.
+ *
+ * Two duplicate-booking guards hand-rolled this as
+ *
+ *   Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()) - 10 * 3600_000
+ *
+ * which reads the UTC calendar date and then shifts it, so for anything
+ * in the Brisbane 00:00–10:00 band it names the day BEFORE. The salon
+ * opens at 07:30, which is 21:30 UTC the previous day, so every booking
+ * before 10am Brisbane — the busiest half of the diary — had its
+ * duplicate check run against the wrong 24 hours.
+ *
+ * Take the Brisbane date first, then bound it. Same family of bug as
+ * `CURDATE()` reading UTC, which faked 31 missing dogs on 06/11/2026.
+ */
+export function brisbaneDayBounds(at: Date): { start: Date; end: Date } {
+  return brisbaneDayBoundsForKey(brisbaneDateKey(at));
+}

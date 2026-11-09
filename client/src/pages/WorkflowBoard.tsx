@@ -26,7 +26,7 @@ import { shouldShowWorkflowRow } from "@/lib/workflowTerminalStates";
 import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresholds";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
-import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, bathQueuePositionMeta, buildBathPriorityQueue, isBathPriorityMutable } from "@shared/bathPriorityQueue";
+import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, bathQueuePositionMeta, buildBathPriorityQueue, dogsOnTheSameBathNumber, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Save, Star, Sun, Tv2, Unlink, UserPlus, Users, X } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -148,6 +148,27 @@ export default function WorkflowBoard() {
   const [groomerFilter, setGroomerFilter] = useState<string>("__all__");
   const [familyFilter, setFamilyFilter] = useState<number | null>(null);
   const [bathGroupPopup, setBathGroupPopup] = useState<{ appointmentId: number; petName: string; bathPriority: number | null } | null>(null);
+  /**
+   * Two dogs have just landed on the same bath number. Ask.
+   *
+   * Andy, 10/11/2026: "Some dogs can be bathed together - so if they are
+   * assigned the same priority number give the option to say 'bath these
+   * dogs together?' and tick yes or no."
+   *
+   * Same shape as the family check-in prompt, and the same reason: two
+   * dogs sharing a number is not the same as two dogs sharing a bath,
+   * and the board must not decide which. Saying no leaves them exactly
+   * as they are — two items on one number, which already works.
+   *
+   * It fires on the ACTION, not on the state, so it cannot nag: setting
+   * a number asks once, and nothing asks again until somebody sets one.
+   */
+  const [bathTogetherPrompt, setBathTogetherPrompt] = useState<{
+    appointmentId: number;
+    petName: string;
+    priorityLabel: string;
+    others: { id: number; petName: string }[];
+  } | null>(null);
   const [bathGroupSelectedIds, setBathGroupSelectedIds] = useState<number[]>([]);
   const [bathGroupPriority, setBathGroupPriority] = useState<string>("__keep__");
   const [bathQueueDragId, setBathQueueDragId] = useState<number | null>(null);
@@ -270,8 +291,31 @@ export default function WorkflowBoard() {
   });
 
   const setBathPriority = trpc.workflow.setBathPriority.useMutation({
-    onSuccess: ({ updated }) => {
+    onSuccess: ({ updated }, variables) => {
       toast.success(updated > 1 ? `Bath priority updated for ${updated} linked dogs` : "Bath priority updated");
+      /*
+       * Worked out from the rows already in hand with the new number
+       * applied locally, because refetch has not landed yet and reading
+       * boardData here would ask about the number this dog had a moment
+       * ago. The same trick the pickup prompt uses two screens down.
+       */
+      const priority = (variables as { bathPriority?: number | null } | undefined)?.bathPriority ?? null;
+      const appointmentId = (variables as { appointmentId?: number } | undefined)?.appointmentId;
+      if (priority !== null && typeof appointmentId === "number") {
+        const rows = (boardData ?? []).map((row) =>
+          row.id === appointmentId ? { ...row, bathPriority: priority } : row);
+        const others = dogsOnTheSameBathNumber(appointmentId, rows as never);
+        if (others.length > 0) {
+          const self = rows.find((row) => row.id === appointmentId);
+          setBathTogetherPrompt({
+            appointmentId,
+            petName: self?.petName?.trim() || "this dog",
+            priorityLabel: BATH_PRIORITY_META[priority as typeof BATH_PRIORITY_VALUES[number]]?.label ?? String(priority),
+            others: (others as { id: number; petName?: string | null }[])
+              .map((row) => ({ id: row.id, petName: row.petName?.trim() || "a dog" })),
+          });
+        }
+      }
       refetch();
     },
     onError: (error) => toast.error(error.message),
@@ -1009,6 +1053,50 @@ export default function WorkflowBoard() {
                 }}
               >
                 Just {checkInFamilyPrompt.petName}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Two dogs on one bath number. Both buttons leave the number
+          alone — the only question is whether they go in together, so
+          neither answer is a dead end. */}
+      {bathTogetherPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setBathTogetherPrompt(null)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative bg-card rounded-2xl shadow-2xl max-w-xs w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-950/50">
+                <Link2 className="h-6 w-6 text-violet-600 dark:text-violet-400" />
+              </div>
+              <h3 className="text-lg font-bold">Bath these dogs together?</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {joinPetNames(bathTogetherPrompt.others.map(o => o.petName))}
+                {bathTogetherPrompt.others.length === 1 ? " is " : " are "}
+                also on {bathTogetherPrompt.priorityLabel}.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button
+                className="bg-violet-700 text-white hover:bg-violet-800"
+                disabled={setBathGroup.isPending}
+                onClick={() => {
+                  const prompt = bathTogetherPrompt;
+                  setBathTogetherPrompt(null);
+                  setBathGroup.mutate({
+                    appointmentId: prompt.appointmentId,
+                    date: boardDate,
+                    linkedAppointmentIds: prompt.others.map(o => o.id),
+                  });
+                }}
+              >
+                Yes — one bath for {bathTogetherPrompt.others.length + 1} dogs
+              </Button>
+              <Button variant="outline" onClick={() => setBathTogetherPrompt(null)}>
+                {/* Not "Cancel": the number is already saved, and nothing
+                    here is undone by saying no. */}
+                No — same number, separate baths
               </Button>
             </div>
           </div>

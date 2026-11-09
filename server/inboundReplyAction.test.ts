@@ -27,13 +27,29 @@ describe("the automated texts ask for the reply they rely on", () => {
     time: "9:00 am", salonName: "Barkin Beautiful",
   };
 
-  it("puts the prompt on the confirmation and every reminder stage", () => {
+  it("puts the prompt on the confirmation and on the stages that ask", () => {
     const confirmation = buildBookingConfirmationSms(reminderArgs);
     expect(confirmation).toContain(REPLY_PROMPT);
-    for (const stage of ["4d", "2d", "day_before", undefined] as const) {
+    for (const stage of ["4d", "2d", undefined] as const) {
       expect(buildAppointmentReminderSms({ ...reminderArgs, stage }), String(stage))
         .toContain(REPLY_PROMPT);
     }
+  });
+
+  it("leaves the prompt off the last reminder", () => {
+    /*
+     * This assertion used to include day_before, and the inversion is
+     * deliberate rather than a deletion.
+     *
+     * Andy, 10/11/2026: "Only one confirmation text to go out." The day
+     * before, the slot is being held and there is nothing useful left to
+     * answer; a client who needs to cancel by then rings the salon. The
+     * reply machinery is still invited by the confirmation and the
+     * four-day reminder above, which is what this describe block exists
+     * to protect.
+     */
+    expect(buildAppointmentReminderSms({ ...reminderArgs, stage: "day_before" }))
+      .not.toContain(REPLY_PROMPT);
   });
 
   it("keeps every one of them to a single GSM-7 segment", () => {
