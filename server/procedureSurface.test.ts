@@ -502,7 +502,12 @@ describe("tRPC procedure surface", () => {
     // 408 since 10/11/2026: counterSale.sell, .forDay and .voidSale —
     // selling retail to somebody with no booking. All three are
     // operationalProcedure and appear in OPERATIONAL below.
-    expect(surface).toHaveLength(409);
+    // 410 since 10/11/2026: sms.stats. The Messages tiles counted the
+    // fetched PAGE (always 100) and counted `status = 'sent'` as
+    // delivered (the step before it, which Twilio passes through in a
+    // second), so the page read "100 sent, 0 delivered". protectedProcedure
+    // like sms.getLogs beside it, so it is not in OPERATIONAL below.
+    expect(surface).toHaveLength(410);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
