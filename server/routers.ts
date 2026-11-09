@@ -12974,6 +12974,73 @@ const smsRouter = router({
       return result;
     }),
 
+  /**
+   * How many texts actually went out, and what became of them.
+   *
+   * Andy, 10/11/2026, from the Messages page: 100 sent, 0 delivered,
+   * 0 failed. Every one of those three numbers was wrong, and none of
+   * them was a delivery problem — 674 of the last 676 outbound rows are
+   * `delivered`, so Twilio's callbacks have been working all along.
+   *
+   * What was wrong:
+   *
+   * - "Total Sent" was the LENGTH OF THE FETCHED PAGE. The page asks for
+   *   100 log rows and counted them, so it has read exactly 100 since
+   *   the day the hundredth text was sent, and would have read 100 at a
+   *   thousand or at ten. It counted inbound replies as sent, too.
+   * - "Delivered" counted `status = 'sent'`, which is the step BEFORE
+   *   delivered. Twilio moves a message through it in about a second, so
+   *   the tile was counting messages caught mid-flight: 4 in the salon's
+   *   entire history, and 0 most of the time.
+   * - "Failed" was right by luck — there genuinely was one failure in
+   *   the window — but it could only ever see the last hundred rows.
+   *
+   * Counted here instead, over a stated window, in SQL.
+   *
+   * DISTINCT on the Twilio SID, because a family booking writes one log
+   * row per dog for ONE text. Counting rows made every two-dog send look
+   * like two against the salon's bill — 676 rows is 627 texts over the
+   * last 30 days. Rows with no SID (a send that never reached Twilio)
+   * are counted individually, since each is its own attempt.
+   */
+  stats: protectedProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** The window the tiles name. 30 days is how the salon thinks about SMS volume. */
+      days: z.number().int().min(1).max(365).default(30),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      const days = input?.days ?? 30;
+      const empty = { days, sent: 0, delivered: 0, failed: 0, received: 0 };
+      if (!db) return empty;
+
+      /* One text = one Twilio SID. See the note above. No GROUP BY at
+         all, so ONLY_FULL_GROUP_BY has nothing to reject — the trap
+         CLAUDE.md §6 describes needs a grouped computed expression. */
+      const texts = (when: ReturnType<typeof sql>) =>
+        sql<number>`COUNT(DISTINCT CASE WHEN ${when} THEN COALESCE(${smsLogs.twilioSid}, CONCAT('row:', ${smsLogs.id})) END)`;
+      const outbound = sql`${smsLogs.direction} = 'outbound'`;
+
+      const [row] = await db.select({
+        sent: texts(outbound),
+        delivered: texts(sql`${outbound} AND ${smsLogs.status} = 'delivered'`),
+        failed: texts(sql`${outbound} AND ${smsLogs.status} = 'failed'`),
+        received: texts(sql`${smsLogs.direction} = 'inbound'`),
+      }).from(smsLogs).where(and(
+        eq(smsLogs.tenantId, tenantOf(ctx, input ?? {})),
+        gte(smsLogs.sentAt, sql`DATE_SUB(UTC_TIMESTAMP(), INTERVAL ${days} DAY)`),
+      ));
+
+      return {
+        days,
+        sent: Number(row?.sent ?? 0),
+        delivered: Number(row?.delivered ?? 0),
+        failed: Number(row?.failed ?? 0),
+        received: Number(row?.received ?? 0),
+      };
+    }),
+
   getLogs: protectedProcedure
     .input(z.object({ tenantId: z.number().default(1), limit: z.number().default(50), clientId: z.number().optional() }))
     .query(async ({ input, ctx }) => {

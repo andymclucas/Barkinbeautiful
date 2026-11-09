@@ -407,16 +407,17 @@ export default function Messages() {
     });
   }, [collapsedLogs, search, statusFilter, typeFilter]);
 
-  const stats = useMemo(() => {
-    // Counted off the collapsed list too: "total" above a list of texts
-    // means texts, and counting log rows made every family send look like
-    // two against the salon's Twilio bill.
-    return {
-      total: collapsedLogs.length,
-      sent: collapsedLogs.filter((l: any) => l.status === "sent").length,
-      failed: collapsedLogs.filter((l: any) => l.status === "failed").length,
-    };
-  }, [collapsedLogs]);
+  /**
+   * Counted by the database, over a stated window.
+   *
+   * Andy, 10/11/2026: 100 sent, 0 delivered, 0 failed. All three were
+   * wrong and none of them was a delivery problem. "Total Sent" was the
+   * LENGTH OF THE FETCHED PAGE — the query asks for 100 rows, so it had
+   * read exactly 100 since the hundredth text was ever sent — and
+   * "Delivered" counted `status === "sent"`, the step BEFORE delivered,
+   * which Twilio passes through in about a second. See sms.stats.
+   */
+  const { data: stats } = trpc.sms.stats.useQuery({ days: 30 });
 
   const pendingInboundReplies = useMemo(() => {
     if (!logs) return [];
@@ -836,9 +837,9 @@ export default function Messages() {
             card became 88px for the row. sm and up is untouched. */}
         <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {[
-            { label: "Total Sent", value: stats.total, icon: MessageSquare, colour: "text-blue-600 dark:text-blue-400" },
-            { label: "Delivered", value: stats.sent, icon: CheckCircle2, colour: "text-emerald-600 dark:text-emerald-400" },
-            { label: "Failed", value: stats.failed, icon: XCircle, colour: "text-red-600 dark:text-red-400" },
+            { label: "Sent", value: stats?.sent ?? 0, icon: MessageSquare, colour: "text-blue-600 dark:text-blue-400" },
+            { label: "Delivered", value: stats?.delivered ?? 0, icon: CheckCircle2, colour: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Failed", value: stats?.failed ?? 0, icon: XCircle, colour: "text-red-600 dark:text-red-400" },
           ].map(s => (
             <Card key={s.label} className="py-0 sm:py-6">
               <CardContent className="flex flex-col items-start gap-1 p-3 sm:flex-row sm:items-center sm:gap-3 sm:p-4">
@@ -851,6 +852,20 @@ export default function Messages() {
             </Card>
           ))}
         </div>
+
+        {/* The window, said once rather than on all three tiles. A number
+            with no period attached is the thing that made the old tiles
+            unquestionable: "100" looked like a fact rather than a page
+            length. Replies in are worth seeing beside them — it is the
+            same Twilio bill and the volume Andy judged the missed-call
+            auto-reply on. */}
+        <p className="-mt-3 text-[11px] text-muted-foreground">
+          Last {stats?.days ?? 30} days
+          {stats ? ` · ${stats.received} replies in` : ""}
+          {stats && stats.sent !== stats.delivered + stats.failed
+            ? ` · ${stats.sent - stats.delivered - stats.failed} still on the way`
+            : ""}
+        </p>
 
         <Card>
           <CardHeader className="pb-3">
