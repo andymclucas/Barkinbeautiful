@@ -77,13 +77,13 @@ async function snapshot(c: any) {
   });
   console.log(sale);
 
-  const [[invoice]] = await c.query(
+  const [[invoice]] = await c.query<any[]>(
     `SELECT id, invoice_number, client_id, appointment_id, membership_id, subtotal, tax_amount, total,
             status, payment_method, paid_at, notes
        FROM invoices WHERE id = ?`,
     [sale.invoiceId]
   );
-  const [lines] = await c.query(
+  const [lines] = await c.query<any[]>(
     `SELECT id, description, quantity, unit_price, line_total, product_id
        FROM invoice_line_items WHERE invoice_id = ?`,
     [sale.invoiceId]
@@ -132,7 +132,7 @@ async function snapshot(c: any) {
   });
   console.log(voided);
 
-  const [[afterVoidInvoice]] = await c.query(
+  const [[afterVoidInvoice]] = await c.query<any[]>(
     "SELECT status, paid_at, notes FROM invoices WHERE id = ?",
     [sale.invoiceId]
   );
