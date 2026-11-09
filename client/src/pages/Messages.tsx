@@ -808,7 +808,13 @@ export default function Messages() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        {/* Andy, 10/11/2026, with a photo of this page on his phone:
+            "Alignment is out on mobile version." The row was a plain
+            flex with justify-between and buttons that carry shrink-0,
+            so below ~430px "Compose SMS" ran off the right edge and was
+            cut in half — measured at 375px, the row wanted 411px inside
+            343px. A column on a phone, the row it already was from sm. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold font-display">Messages</h1>
             <p className="text-sm text-muted-foreground">SMS communications via Twilio</p>
@@ -823,18 +829,23 @@ export default function Messages() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Three across on a phone too. One per row cost 422px of an
+            812px screen to show three numbers, which is why the page
+            read as mostly empty boxes. Card's own py-6 is dropped below
+            sm so the content's padding is the only padding: 130px a
+            card became 88px for the row. sm and up is untouched. */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {[
             { label: "Total Sent", value: stats.total, icon: MessageSquare, colour: "text-blue-600 dark:text-blue-400" },
             { label: "Delivered", value: stats.sent, icon: CheckCircle2, colour: "text-emerald-600 dark:text-emerald-400" },
             { label: "Failed", value: stats.failed, icon: XCircle, colour: "text-red-600 dark:text-red-400" },
           ].map(s => (
-            <Card key={s.label}>
-              <CardContent className="p-4 flex items-center gap-3">
-                <s.icon className={`h-8 w-8 ${s.colour}`} />
+            <Card key={s.label} className="py-0 sm:py-6">
+              <CardContent className="flex flex-col items-start gap-1 p-3 sm:flex-row sm:items-center sm:gap-3 sm:p-4">
+                <s.icon className={`h-5 w-5 sm:h-8 sm:w-8 ${s.colour}`} />
                 <div>
-                  <div className="text-2xl font-bold">{s.value}</div>
-                  <div className="text-xs text-muted-foreground">{s.label}</div>
+                  <div className="text-xl font-bold sm:text-2xl">{s.value}</div>
+                  <div className="text-[11px] text-muted-foreground sm:text-xs">{s.label}</div>
                 </div>
               </CardContent>
             </Card>
