@@ -57,7 +57,25 @@ export function ApptPanelFooter({
     n.toLocaleString("en-AU", { style: "currency", currency: "AUD" });
 
   return (
-    <div className="sticky bottom-0 z-20 -mx-6 mt-2 border-t bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    /*
+     * A bar of its own, outside the scroll. NOT sticky, and NOT
+     * translucent.
+     *
+     * Andy, 09/11/2026: "The total and take payment button should be a
+     * seperate element down the bottom so it doesn't cause any overlap."
+     *
+     * The first version was `sticky bottom-0` with a `bg-background/95`
+     * backdrop-blur. Both were wrong for the same reason: a sticky child
+     * of a scroll container is MEANT to have content pass under it, and
+     * the translucency let you read the rows going past. The panel now
+     * puts this below the scrolling body instead (see Calendar.tsx), so
+     * the pinning is structural and the background can be solid.
+     *
+     * `-mx-6 px-6` still takes it out to the panel's edges under the
+     * p-6, and `shrink-0` stops the flex column squeezing it when the
+     * body is long.
+     */
+    <div className="-mx-6 mt-2 shrink-0 border-t bg-background px-6 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-muted-foreground">
