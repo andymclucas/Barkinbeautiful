@@ -158,12 +158,118 @@ export type QuickWalkInDetails = {
   email?: string | null;
 };
 
-/** One dog on a walk-in. `petId` is set when the dog is already on file. */
+/**
+ * One dog on a walk-in. `petId` is set when the dog is already on file.
+ *
+ * ## Service and price are per DOG, and may be left to follow the first
+ *
+ * Andy, 09/11/2026, looking at a two-dog walk-in with one service
+ * picker and one "Price each" between them: "I think these dogs need to
+ * have services linked individually." Two dogs in together is routinely
+ * one nail clip and one quick bath, and a single picker forced staff to
+ * either lie about one of them or take the walk-in twice.
+ *
+ * `null` means "the same as the first dog", rather than copying the
+ * value in when the row is added. That matters for the order people
+ * actually work in at a counter: Lauren's four-dog nail family is
+ * typed as four names FIRST and priced once at the end, and a copy
+ * taken at add time would have left three dogs on whatever the price
+ * box held before she got to it. Inheriting means she types $25 once
+ * and all four follow; the moment she changes one, that one stops
+ * following and the others do not notice.
+ */
 export type QuickDog = {
   name: string;
   breed?: string | null;
   petId?: number | null;
+  /** null or absent: the same service as the first dog. */
+  serviceType?: QuickService | null;
+  /** null or absent: the same price as the first dog, as typed. */
+  price?: string | null;
 };
+
+/** A dog with its own service and price filled in. */
+export type QuickDogLine = {
+  name: string;
+  breed?: string | null;
+  petId?: number | null;
+  serviceType: QuickService;
+  /** As typed. Still has to go through parseCounterPrice. */
+  rawPrice: string;
+};
+
+/**
+ * Every dog on the walk-in, the first included, each with a service and
+ * a price of its own.
+ *
+ * One list rather than "the first dog and then the others", because
+ * every caller — the total, the duration, the inserts — wants all of
+ * them treated the same way. The split only exists because the first
+ * dog arrives as petName/petId and changing that would have touched
+ * every caller of this mutation.
+ */
+export function quickDogLines(
+  first: {
+    name: string;
+    breed?: string | null;
+    petId?: number | null;
+    serviceType: QuickService;
+    price?: string | null;
+  },
+  extras: readonly QuickDog[],
+): QuickDogLine[] {
+  const leadPrice = first.price ?? "";
+  const lines: QuickDogLine[] = [{
+    name: first.name,
+    breed: first.breed ?? null,
+    petId: first.petId ?? null,
+    serviceType: first.serviceType,
+    rawPrice: leadPrice,
+  }];
+  for (const dog of usableQuickDogs(extras).slice(0, QUICK_MAX_DOGS - 1)) {
+    lines.push({
+      name: dog.name,
+      breed: dog.breed ?? null,
+      petId: dog.petId ?? null,
+      // `??` not `||`: an explicitly chosen service is never falsy, and
+      // an explicitly emptied PRICE is a free dog, which is a real
+      // thing at a counter and must not fall back to the first dog's.
+      serviceType: dog.serviceType ?? first.serviceType,
+      rawPrice: dog.price ?? leadPrice,
+    });
+  }
+  return lines;
+}
+
+/**
+ * What the client is about to be asked for, across every dog.
+ *
+ * Returns the first unusable price rather than a total, because a
+ * counter needs to be told WHICH dog's price it cannot read. null means
+ * nothing was typed anywhere, which is legitimate — the price can be
+ * settled on the invoice.
+ */
+export function quickWalkInTotal(
+  lines: readonly { name: string; rawPrice: string }[],
+): { ok: true; total: string | null } | { ok: false; reason: string } {
+  let sum = 0;
+  let anyPriced = false;
+  for (const line of lines) {
+    const parsed = parseCounterPrice(line.rawPrice);
+    if (!parsed.ok) {
+      /* Named only when there is more than one dog. On a single-dog
+         walk-in — most of them — "Jeff: ..." reads as a riddle, and
+         there is no other box it could be. */
+      const named = lines.length > 1 && line.name.trim() !== "";
+      return { ok: false, reason: named ? `${line.name}: ${parsed.reason}` : parsed.reason };
+    }
+    if (parsed.price !== null) {
+      anyPriced = true;
+      sum += Number(parsed.price);
+    }
+  }
+  return { ok: true, total: anyPriced ? sum.toFixed(2) : null };
+}
 
 /** The dogs actually being booked: named ones, in order, deduped by name. */
 export function usableQuickDogs(dogs: readonly QuickDog[]): QuickDog[] {
