@@ -513,7 +513,13 @@ export default function Messages() {
                 </div>
               </div>
     
-              <div className="flex-1 min-h-[320px] overflow-y-auto bg-muted/20 px-3 py-2 lg:h-auto lg:min-h-0">
+              {/* The ONLY scroller in the conversation, on a phone and on a
+                  desktop alike. min-h-0, because a flex child will not shrink
+                  below its content without it and then nothing scrolls. It
+                  used to carry min-h-[320px] below lg to give the dialog some
+                  height of its own; the dialog has a real height now, and that
+                  floor would push the reply box off a phone in landscape. */}
+              <div className="flex-1 min-h-0 overflow-y-auto bg-muted/20 px-3 py-2">
                 <MessageThread
                   messages={threadMessages}
                   showStatus
@@ -1430,11 +1436,42 @@ export default function Messages() {
           same conversation in a dialog. */}
       {!isWideScreen && (
       <Dialog open={!!openThread} onOpenChange={(open) => !open && setOpenThread(null)}>
-        <DialogContent className="max-w-[420px] gap-0 overflow-hidden rounded-[26px] p-0 lg:hidden">
+        {/*
+          A real height, not just the shared max-height.
+
+          Andy, 10/11/2026, with a photo of a thread on his phone: "Can't
+          scroll down to see more messages on mobile view."
+
+          `overflow-hidden` is here for the rounded corners, and tailwind-merge
+          puts it in the same group as the shared `overflow-y-auto`, so it
+          DELETED it. The dialog kept its max-height and lost the only thing
+          that made the overflow reachable: measured at 375x812, a 780px box
+          holding 2,539px of conversation, the list handed unbounded height so
+          it never became a scroller, and the reply box 1,760px below the fold.
+
+          A maximum alone is not enough — a box with only a maximum still hands
+          its children unbounded height. With a definite height the column
+          below divides it: header pinned, list scrolls, reply box on the
+          bottom edge, which is what a messaging app does.
+          `dialog.reachable.test.tsx` holds this for all 77 dialogs.
+
+          gap-0 is gone with it: the shared gap-4 is what the close button's
+          `[&+*]:-mt-4` cancels out, so suppressing it left the header pulled
+          16px up under the rounded top edge.
+
+          The close button is inset for the same reason CommandDialog places
+          its own: its -mr-2 is tuned for the p-6 every other dialog has, and
+          against a p-0 content box it hangs OUTSIDE the corner, where
+          overflow-hidden takes a bite out of it. Visible in Andy's photo.
+          Two classes beat hand-rolling a second close button.
+        */}
+        <DialogContent className="flex h-[calc(100dvh-2rem)] max-w-[420px] flex-col overflow-hidden rounded-[26px] p-0 [&_[data-slot=dialog-close]]:mt-2 [&_[data-slot=dialog-close]]:mr-2 lg:hidden">
           <DialogTitle className="sr-only">
             {openThread?.clientName?.trim() || openThread?.toNumber || "Conversation"}
           </DialogTitle>
-          <div className="flex min-h-0 flex-col">
+          {/* flex-1 so the column fills the dialog's height, min-h-0 so the
+              list inside it is allowed to be shorter than its content. */}
+          <div className="flex min-h-0 flex-1 flex-col">
             {conversationPane}
           </div>
         </DialogContent>
