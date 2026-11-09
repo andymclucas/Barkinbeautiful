@@ -1,4 +1,9 @@
 import { petPhotoDeletionVerdict } from "@shared/petPhotoDeletion";
+import { duplicateBookingMessage } from "@shared/duplicateBooking";
+import {
+  assertDogsNotAlreadyBookedThatDay,
+  findDogsAlreadyBookedThatDay,
+} from "./duplicateBooking";
 import { vipPetIds } from "@shared/vipPetIds";
 import { dogsNamedInPlan } from "@shared/membershipCoveredPets";
 import { buildRescheduleUpdate } from "@shared/rescheduleUpdate";
@@ -826,29 +831,25 @@ const calendarRouter = router({
       }
 
       /*
-       * Nothing else for these dogs that day, whatever state it is in.
-       * Duplicating a dog is the worst thing this can do — staff work
-       * from that board — and matching on the booking id alone is what
-       * let it happen twice on 29/09.
+       * Nothing else live for these dogs that day. Duplicating a dog is
+       * the worst thing this can do — staff work from that board — and
+       * matching on the booking id alone is what let it happen twice on
+       * 29/09.
+       *
+       * Through the shared guard since 09/11/2026. The copy that used to
+       * live here computed the day from the UTC date and shifted it,
+       * which named the day BEFORE for anything in the Brisbane
+       * 00:00–10:00 band — so a 07:30 or 08:00 rebook, the salon's
+       * busiest slots, was checked against the wrong 24 hours. It also
+       * counted cancelled rows, so a client who cancelled in the
+       * morning was told to "pick another date" for an afternoon that
+       * was in fact free.
        */
-      const dayStart = new Date(Date.UTC(
-        start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()) - 10 * 3600_000);
-      const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-      const clashes = await db
-        .select({ petId: appointments.petId })
-        .from(appointments)
-        .where(and(
-          eq(appointments.tenantId, tenantId),
-          inArray(appointments.petId, siblings.map((s: any) => s.petId)),
-          gte(appointments.scheduledStart, dayStart),
-          lt(appointments.scheduledStart, dayEnd),
-        ));
-      if (clashes.length > 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "One of these dogs is already booked that day — pick another date",
-        });
-      }
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId,
+        petIds: siblings.map((s: any) => s.petId),
+        at: start,
+      });
 
       /*
        * A dog recorded as passed away stays on the record and stays
@@ -2164,6 +2165,18 @@ const calendarRouter = router({
       }
       const departedMessage = departedBookingMessage([pet]);
       if (departedMessage) throw new Error(departedMessage);
+      /*
+       * One booking per dog per day. Tanya Leek's Bonnie and Chester
+       * were booked at 12:30 on 6 November and again at 11:30 on the
+       * 8th by somebody who meant to MOVE the first booking; both
+       * confirmations went out and she agreed to both. See
+       * shared/duplicateBooking.ts.
+       */
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId: tenantOf(ctx, input),
+        petIds: [input.petId],
+        at: parseBrisbaneLocalDateTime(input.scheduledStart),
+      });
       const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, [input.petId], input.serviceType);
       const coveredMembership = coverage.membershipByPetId[input.petId] ?? null;
       const token = nanoid(32);
@@ -2286,8 +2299,24 @@ const calendarRouter = router({
           )).limit(1);
           if (conflict) { clash = true; break; }
         }
-        if (clash) {
-          skipped.push({ scheduledStart: occurrenceStart, reason: "Groomer already booked at this time" });
+        /*
+         * And nothing else live for these dogs that day.
+         * addRecurrenceToAppointment — the path that EXTENDS a series —
+         * has carried this since it was written; this one, which creates
+         * the series, did not. A skip rather than a throw, so the rest of
+         * the series still books and the report says which dates did not.
+         */
+        let clashReason: string | null = clash ? "Groomer already booked at this time" : null;
+        if (!clashReason) {
+          const dogsBusy = await findDogsAlreadyBookedThatDay(db, {
+            tenantId: tenantOf(ctx, input),
+            petIds,
+            at: occurrenceStart,
+          });
+          if (dogsBusy.length > 0) clashReason = duplicateBookingMessage(dogsBusy);
+        }
+        if (clashReason) {
+          skipped.push({ scheduledStart: occurrenceStart, reason: clashReason });
           occurrenceStart = new Date(occurrenceStart.getTime() + stepMs);
           continue;
         }
@@ -2575,22 +2604,17 @@ const calendarRouter = router({
         }
 
         if (!clashReason) {
-          /* Nothing else for these dogs that day, whatever state it is
-             in — the same guard rebook carries, written after a dog was
-             duplicated onto a live board twice on 29/09. */
-          const dayStart = new Date(Date.UTC(
-            occurrenceStart.getUTCFullYear(), occurrenceStart.getUTCMonth(), occurrenceStart.getUTCDate(),
-          ) - 10 * 3_600_000);
-          const dayEnd = new Date(dayStart.getTime() + 86_400_000);
-          const [dogBusy] = await db.select({ petId: appointments.petId }).from(appointments).where(and(
-            eq(appointments.tenantId, tenantId),
-            inArray(appointments.petId, petIdsOnBooking),
-            gte(appointments.scheduledStart, dayStart),
-            lt(appointments.scheduledStart, dayEnd),
-            ne(appointments.status, "cancelled"),
-            ne(appointments.workflowState, "cancelled"),
-          )).limit(1);
-          if (dogBusy) clashReason = "That dog is already booked in that day";
+          /* Nothing else live for these dogs that day — the same guard
+             rebook carries, written after a dog was duplicated onto a
+             live board twice on 29/09, and shared since 09/11/2026. The
+             copy that was here read the UTC date, so a 07:30 occurrence
+             was checked against the previous day. */
+          const dogsBusy = await findDogsAlreadyBookedThatDay(db, {
+            tenantId,
+            petIds: petIdsOnBooking,
+            at: occurrenceStart,
+          });
+          if (dogsBusy.length > 0) clashReason = duplicateBookingMessage(dogsBusy);
         }
 
         if (clashReason) {
@@ -2714,6 +2738,18 @@ const calendarRouter = router({
       // dialog, because the dialog is not the only way in.
       const departedMessage = departedBookingMessage(selectedPets);
       if (departedMessage) throw new Error(departedMessage);
+      /*
+       * One booking per dog per day. Tanya Leek's Bonnie and Chester
+       * were booked at 12:30 on 6 November and again at 11:30 on the
+       * 8th by somebody who meant to MOVE the first booking; both
+       * confirmations went out and she agreed to both. See
+       * shared/duplicateBooking.ts.
+       */
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId: tenantOf(ctx, input),
+        petIds,
+        at: parseBrisbaneLocalDateTime(input.scheduledStart),
+      });
       const groomerForPet = await resolveGroomerPerPet(db, tenantOf(ctx, input), petIds, input.staffId, input.staffByPetId);
       const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
       // Assign a shared sessionId when booking multiple pets together
@@ -3045,6 +3081,16 @@ const calendarRouter = router({
         requestedPetIds,
       );
       if (petIdsToAdd.length === 0) return { success: true, added: 0 };
+      /*
+       * A dog joining this booking must not already be in that day on
+       * another one. Dogs already on THIS session are removed above, so
+       * anything found here is a second booking.
+       */
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId: source.tenantId,
+        petIds: petIdsToAdd,
+        at: source.scheduledStart,
+      });
 
       const sessionId = source.sessionId ?? nanoid(16);
       if (!source.sessionId) {
@@ -12042,6 +12088,17 @@ const onlineBookingRouter = router({
     const notes = [input.notes?.trim(), sizeNote].filter(Boolean).join("\n");
     const tenantId = tenantOf(ctx, input);
     const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: input.weightKg });
+    /*
+     * One booking per dog per day. A guest booking reuses the dog
+     * already on file when the name matches, so a returning client can
+     * book a dog that is already in that day — and nobody is at the
+     * counter to notice. See shared/duplicateBooking.ts.
+     */
+    await assertDogsNotAlreadyBookedThatDay(db, {
+      tenantId,
+      petIds: [petId],
+      at: input.scheduledStart,
+    });
     const [result] = await db.insert(appointments).values({ tenantId, clientId: client.id, petId, staffId: input.staffId, serviceType: input.serviceType, scheduledStart: input.scheduledStart, scheduledEnd: capacity.scheduledEnd, notes, price: estimatePrice, status: "pending", workflowState: "scheduled", bookedOnline: true });
     const appointmentId = (result as any).insertId as number;
     // The booking row is written. Nothing below may throw it away.
@@ -12090,6 +12147,17 @@ const onlineBookingRouter = router({
     const notes = buildOnlineBookingNotes({ notes: input.notes, sizeLabel: weightBand.label, weightKg: input.weightKg, preview: true });
     const tenantId = tenantOf(ctx, input);
     const estimatePrice = await onlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: input.weightKg });
+    /*
+     * One booking per dog per day. A guest booking reuses the dog
+     * already on file when the name matches, so a returning client can
+     * book a dog that is already in that day — and nobody is at the
+     * counter to notice. See shared/duplicateBooking.ts.
+     */
+    await assertDogsNotAlreadyBookedThatDay(db, {
+      tenantId,
+      petIds: [petId],
+      at: input.scheduledStart,
+    });
     // Marked booked_online, because it IS the online path — the point of
     // the preview is to exercise what a stranger would get, bell row and
     // confirmation included. It therefore also consumes one of the day's

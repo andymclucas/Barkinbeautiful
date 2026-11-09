@@ -51,6 +51,8 @@ import { buildOnlineBookingSlotStarts } from "@shared/onlineBookingSlots";
 import { getAutoDurationMinutesForPets } from "@shared/appointmentDuration";
 import { busyForStaff } from "../staffBusy";
 import { startMembershipSubscription, createCardSetupLink } from "../stripeCards";
+import { findDogsAlreadyBookedThatDay } from "../duplicateBooking";
+import { brisbaneDateKey } from "../../shared/localDateTime";
 
 /** How far ahead a sign-up books. Andy's ask: a client sees their year. */
 const DEFAULT_MONTHS_AHEAD = 12;
@@ -561,6 +563,36 @@ export const membershipSignupRouter = router({
         .from(pets).where(inArray(pets.id, lines.map((l: { petId: number }) => l.petId)));
       const signupDeparted = departedBookingMessage(signupPets);
       if (signupDeparted) throw new TRPCError({ code: "BAD_REQUEST", message: signupDeparted });
+
+      /*
+       * One booking per dog per day, across the WHOLE plan.
+       *
+       * Approving a sign-up books every occurrence forward, so a single
+       * clash halfway through would otherwise be written as a second
+       * booking for that dog on that day. Checked for all occurrences
+       * first, like the departed check above and for the same reason: it
+       * must fail before anything is written, and it must name the dates
+       * so whoever is approving can move them rather than guess.
+       */
+      const signupPetIds = lines.map((l: { petId: number }) => l.petId);
+      const clashingDates: string[] = [];
+      for (const occurrence of plan.occurrences) {
+        if (!occurrence.start) continue;
+        const busy = await findDogsAlreadyBookedThatDay(db, {
+          tenantId,
+          petIds: signupPetIds,
+          at: occurrence.start,
+        });
+        if (busy.length > 0) clashingDates.push(brisbaneDateKey(occurrence.start));
+      }
+      if (clashingDates.length > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            `These dogs are already booked on ${clashingDates.join(", ")}. `
+            + "Move or cancel those bookings, or change the plan's start, then approve again.",
+        });
+      }
 
       const sessionId = lines.length > 1 ? nanoid(16) : null;
       let bookedCount = 0;
