@@ -38,11 +38,10 @@
  * Groomigo holds a row per dog, so pet names are split before matching or
  * every family booking reads as both missing and extra.
  */
-import { execFileSync } from "node:child_process";
 import { statSync } from "node:fs";
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
-import { parseSharedStrings, parseSheet } from "../shared/xlsxReader.ts";
+import { readMoegoSheet } from "./readMoegoXlsx.ts";
 import { brisbaneDate } from "../shared/businessDays.ts";
 import { planCancellations, isDeadStatus, isDeadAppointment, matchKey } from "../shared/moegoReconcile.ts";
 
@@ -71,9 +70,11 @@ console.log(`Window:   ${FROM} .. ${TO}  (${DAYS} days, Brisbane)`);
 console.log(`Mode:     ${APPLY ? "APPLY - will write cancellations" : "DRY RUN - writes nothing"}\n`);
 
 // ── Read the export ────────────────────────────────────────────────────────
-const unzip = (entry: string) =>
-  execFileSync("unzip", ["-p", XLSX, entry], { maxBuffer: 4e8 }).toString("utf8");
-const rows = parseSheet(unzip("xl/worksheets/sheet1.xml"), parseSharedStrings(unzip("xl/sharedStrings.xml")));
+/* Was a local unzip that asked for xl/sharedStrings.xml unconditionally
+   and threw when MoeGo shipped an export without one — which some of
+   its reports do. readMoegoSheet treats that part as optional, which is
+   what it is. */
+const rows = readMoegoSheet(XLSX, 4e8);
 const header = rows[0].map((h) => (h ?? "").trim());
 const at = (name: string) => {
   const i = header.findIndex((h) => h.toLowerCase() === name.toLowerCase());

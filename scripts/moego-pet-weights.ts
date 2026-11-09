@@ -26,10 +26,9 @@
  *  - A weight already recorded is left alone unless --overwrite is passed:
  *    somebody put it there on purpose.
  */
-import { execFileSync } from "node:child_process";
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
-import { parseSheet } from "../shared/xlsxReader.ts";
+import { readMoegoSheet } from "./readMoegoXlsx.ts";
 import { petWeightUpdate } from "../shared/petWeight.ts";
 
 dotenv.config({ quiet: true });
@@ -46,11 +45,11 @@ if (!file) {
 /** Groomigo's own bound, from pets.updateWeight. */
 const MAX_KG = 80;
 
-const sheet = execFileSync("unzip", ["-p", file, "xl/worksheets/sheet1.xml"], {
-  maxBuffer: 256 * 1024 * 1024,
-}).toString("utf8");
-// This export has no sharedStrings part — every cell is an inline string.
-const rows = parseSheet(sheet, []);
+/* The comment here used to say "this export has no sharedStrings part"
+   and pass []. True of the export it was written for, and silently
+   wrong for any other — every shared-string cell would have read as
+   empty, with no error. readMoegoSheet asks and copes either way. */
+const rows = readMoegoSheet(file, 256 * 1024 * 1024);
 if (rows.length === 0) throw new Error("No rows in the sheet");
 
 const header = rows[0].map((c) => c.trim());
