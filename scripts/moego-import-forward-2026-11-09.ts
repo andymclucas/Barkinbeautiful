@@ -342,6 +342,43 @@ const dateKey = (date: string) => { const d = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec
     }
   }
 
+  /*
+   * Dogs already double-booked in this window, before anything is
+   * written.
+   *
+   * Reported, never fatal. These used to veto the whole import by way
+   * of the post-condition below — on 09/11/2026 Tanya Leek's Bonnie and
+   * Chester, each booked twice on 14 January by a person on the 6th and
+   * the 8th, rolled back 950 unrelated inserts.
+   *
+   * They are still worth printing: a dog on the board twice is a real
+   * problem somebody has to fix, and this is the one run that looks at
+   * the whole window and would notice.
+   */
+  const span = plan.map((p) => p.start.getTime());
+  const [preExisting]: any = await c.query(
+    /* DATE_FORMAT, not DATE: mysql2 hands a DATE back as a Date object
+       and it prints as "Thu Jan 14 2027 10:00:00 GMT+1000 (Australian
+       Eastern Standard Time)" in a line meant for a person to read. */
+    `SELECT p.name AS dog, CONCAT(cl.first_name,' ',cl.last_name) AS client,
+            DATE_FORMAT(CONVERT_TZ(a.scheduled_start,'+00:00','+10:00'),'%a %d %b %Y') d,
+            COUNT(*) n
+       FROM appointments a
+       JOIN pets p ON p.id = a.pet_id
+       JOIN clients cl ON cl.id = a.client_id
+      WHERE a.tenant_id = ? AND a.status NOT IN ('cancelled','no_show')
+        AND a.scheduled_start BETWEEN ? AND ?
+      GROUP BY a.pet_id, p.name, client, d HAVING n > 1
+      ORDER BY d`,
+    [TENANT, new Date(Math.min(...span)), new Date(Math.max(...span))]);
+  if (preExisting.length > 0) {
+    console.log(`\nALREADY double-booked in this window, before this import (${preExisting.length}):`);
+    for (const r of preExisting) {
+      console.log(`  ${r.dog} (${r.client}) — ${r.n} bookings on ${r.d}`);
+    }
+    console.log("  Not caused by this import and not blocking it. Worth fixing on the board.");
+  }
+
   if (!APPLY) { console.log(`\nDRY RUN — nothing written. Re-run with --apply to create ${plan.length} appointments.\n`); await c.end(); return; }
 
   // ── apply ─────────────────────────────────────────────────────────────
@@ -366,25 +403,65 @@ const dateKey = (date: string) => { const d = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec
     if (created !== plan.length) throw new Error(`created ${created}, planned ${plan.length}`);
 
     /*
-     * Post-conditions, inside the transaction: no pet booked twice on a
-     * day this run touched.
+     * Post-condition, inside the transaction: no dog this run touched is
+     * on the board twice that day.
      *
-     * The window comes from the rows actually being imported rather than
-     * a month written here. January's copy named '2027-01-01' to
-     * '2027-01-31'; this run spans February to June, and a hard-coded
-     * month would have checked a range the import never wrote to and
-     * passed while duplicating dogs outside it.
+     * ## It asks about the rows IT wrote, not about the window
+     *
+     * It used to check every (pet, day) between the first and last
+     * imported date, which is a different question and the wrong one.
+     * On 09/11/2026 that rolled back all 950 inserts because Tanya
+     * Leek's Bonnie and Chester were each already booked twice on 14
+     * January — created in Groomigo on the 6th and the 8th, no MoeGo id,
+     * nothing to do with this import and not made worse by it.
+     *
+     * A pre-existing duplicate anywhere in a seven-month window made the
+     * import impossible to run at all, and the failure said "duplicates
+     * after insert", which reads as the import having caused them.
+     *
+     * Scoped to the pairs this run wrote, it still catches everything it
+     * is for: a dog put on a day it was already on comes back as 2, and
+     * a dog this run wrote twice comes back as 2. A day that already had
+     * two and gains a third comes back as 3. The only thing it stops
+     * reporting is damage somebody else did.
+     *
+     * Pre-existing duplicates are still SURFACED below — they are a real
+     * problem on a real board — they just no longer veto an unrelated
+     * import.
      */
-    const days = plan.map((p) => p.start);
-    const from = new Date(Math.min(...days.map((d) => d.getTime())));
-    const to = new Date(Math.max(...days.map((d) => d.getTime())));
-    const [dupes]: any = await c.query(
-      `SELECT pet_id, DATE(CONVERT_TZ(scheduled_start,'+00:00','+10:00')) d, COUNT(*) n
+    const brisbaneDay = (d: Date) =>
+      new Date(d.getTime() + 10 * 3600_000).toISOString().slice(0, 10);
+    const touched = new Set(plan.map((p) => `${p.petId}|${brisbaneDay(p.start)}`));
+
+    /*
+     * The RANGE query, then filtered in JS — not a row-constructor IN.
+     *
+     * `(pet_id, DATE(CONVERT_TZ(...))) IN ((..),(..))` is the obvious
+     * way to ask about the touched pairs and it cannot use an index,
+     * because the left side is a function. Measured against the real
+     * database on 09/11/2026: 34.9 SECONDS for 885 pairs. Inside a
+     * transaction already holding 950 inserts that is a long time to
+     * hold locks for a check.
+     *
+     * The range query rides idx_appt_tenant_date and returns only the
+     * handful of (pet, day) pairs that have more than one booking in
+     * seven months, so the set to filter is tiny.
+     */
+    const span = plan.map((p) => p.start.getTime());
+    const [windowDupes]: any = await c.query(
+      `SELECT pet_id, DATE_FORMAT(CONVERT_TZ(scheduled_start,'+00:00','+10:00'),'%Y-%m-%d') d,
+              COUNT(*) n
          FROM appointments
         WHERE tenant_id = ? AND status NOT IN ('cancelled','no_show')
           AND scheduled_start BETWEEN ? AND ?
-        GROUP BY pet_id, d HAVING n > 1`, [TENANT, from, to]);
-    if (dupes.length) throw new Error(`${dupes.length} pet/day duplicates after insert — rolling back`);
+        GROUP BY pet_id, d HAVING n > 1`,
+      [TENANT, new Date(Math.min(...span)), new Date(Math.max(...span))]);
+
+    const mine = windowDupes.filter((r: any) => touched.has(`${r.pet_id}|${r.d}`));
+    if (mine.length) {
+      throw new Error(`${mine.length} dog(s) this run touched are booked twice that day`
+        + ` — e.g. pet ${mine[0].pet_id} on ${mine[0].d} — rolling back`);
+    }
 
     await c.commit();
     console.log(`\nAPPLIED — ${created} appointments created, no pet booked twice.\n`);
