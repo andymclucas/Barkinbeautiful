@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Search, Package, AlertTriangle } from "lucide-react";
+import { CounterSale } from "@/components/CounterSale";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -42,6 +43,13 @@ export default function Retail() {
             </div>
           </div>
         )}
+
+        {/* The till, above the catalogue. Lauren Romari, 10/11/2026:
+            "what happens if someone walks in just wanting to buy
+            retail?" Ringing a sale up is the thing done daily; editing
+            the product list is the thing done monthly, so it goes
+            first. */}
+        <CounterSale onSold={() => refetch()} />
 
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

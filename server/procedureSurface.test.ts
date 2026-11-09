@@ -219,6 +219,18 @@ const OPERATIONAL = [
   "clientsRouter.quickPreview",
   "clientsRouter.updateContact",
   "clientsRouter.updateDetails",
+  // The counter till. Lauren Romari, 10/11/2026: "what happens if
+  // someone walks in just wanting to buy retail?" Nothing did — every
+  // path to a bill went through a booking. operationalProcedure for the
+  // same reason addRetail is: whoever is nearest the door when a client
+  // picks up a bag of treats is often a bather or a receptionist, and
+  // protectedProcedure would leave the floor unable to take money.
+  // voidSale is operational too, and refuses anything not rung up today
+  // — a typo is the person standing there's to fix, a sale from last
+  // week is a refund decision and this does not do refunds.
+  "counterSaleRouter.forDay",
+  "counterSaleRouter.sell",
+  "counterSaleRouter.voidSale",
   "familyRouter.linkPets",
   "familyRouter.searchPets",
   "familyRouter.unlinkPet",
@@ -324,6 +336,11 @@ const OPERATIONAL = [
    * a row in salon_access is what lets somebody read another business's
    * clients and takings.
    */
+  // The shelf without the cost price. retail.list carries costAud and is
+  // protectedProcedure for that reason, which left restricted staff — the
+  // ones most often at the counter — with an empty product picker on the
+  // Shop panel. This is the same rows minus the margin.
+  "retailRouter.sellable",
   "salonsRouter.canAccess",
   "salonsRouter.mine",
   "searchRouter.everything",
@@ -482,7 +499,10 @@ describe("tRPC procedure surface", () => {
     // adminProcedure — provisioning makes a new business on the platform
     // and hands somebody the keys, and eligibleOwners lists the
     // platform's accounts — so none appears in OPERATIONAL or PUBLIC.
-    expect(surface).toHaveLength(405);
+    // 408 since 10/11/2026: counterSale.sell, .forDay and .voidSale —
+    // selling retail to somebody with no booking. All three are
+    // operationalProcedure and appear in OPERATIONAL below.
+    expect(surface).toHaveLength(409);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -535,7 +555,7 @@ describe("tRPC procedure surface", () => {
      * 140 since 06/11/2026: salons.mine and salons.canAccess. Both read
      * only from the caller's own access list.
      */
-    expect(OPERATIONAL).toHaveLength(147);
+    expect(OPERATIONAL).toHaveLength(151);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

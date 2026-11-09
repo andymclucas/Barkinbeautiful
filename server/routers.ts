@@ -161,6 +161,7 @@ import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { automatedMessagesRouter } from "./routers/automatedMessages";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
+import { counterSaleRouter } from "./routers/counterSale";
 import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
 import { priceForPet } from "../shared/multiPetPricing";
@@ -9834,6 +9835,40 @@ const retailRouter = router({
       return db.select().from(retailProducts).where(and(...conditions)).orderBy(asc(retailProducts.name));
     }),
 
+  /**
+   * The shelf, for anybody who can sell off it.
+   *
+   * `retail.list` above is protectedProcedure, which REJECTS restricted
+   * staff — correct, because it returns `costAud` and a groomer has no
+   * business reading the salon's margins. But the two screens that sell
+   * a product both read it, so a bather or a receptionist opening the
+   * Shop panel on a booking got FORBIDDEN and an empty picker. The
+   * people most likely to be at the counter were the ones who could not
+   * use it.
+   *
+   * So the till reads this instead: the same rows, without the cost
+   * price. Modelled on `appointmentAddOns.catalogue`, which already
+   * does exactly this for services.
+   */
+  sellable: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1) }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        id: retailProducts.id,
+        name: retailProducts.name,
+        sku: retailProducts.sku,
+        category: retailProducts.category,
+        priceAud: retailProducts.priceAud,
+        stockQty: retailProducts.stockQty,
+        reorderThreshold: retailProducts.reorderThreshold,
+      }).from(retailProducts).where(and(
+        eq(retailProducts.tenantId, tenantOf(ctx, input ?? {})),
+        eq(retailProducts.isActive, true),
+      )).orderBy(asc(retailProducts.name));
+    }),
+
   create: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -15541,6 +15576,7 @@ export const appRouter = router({
   pricing: pricingRouter,
   storeCredit: storeCreditRouter,
   retail: retailRouter,
+  counterSale: counterSaleRouter,
   analytics: analyticsRouter,
   analyticsExt: analyticsRouterExtended,
   migration: migrationRouter,
