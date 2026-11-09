@@ -35,10 +35,9 @@
  *  - Never overwrites a band a human set, or one derived from a weight
  *    they recorded (size_band_source 'manual' or 'weighed').
  */
-import { execFileSync } from "node:child_process";
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
-import { parseSharedStrings, parseSheet } from "../shared/xlsxReader.ts";
+import { readMoegoSheet } from "./readMoegoXlsx.ts";
 import { bandFromServiceText, sizeBandSourceIsHuman, type DogSizeBand } from "../shared/dogSizeBand.ts";
 
 dotenv.config({ quiet: true });
@@ -51,12 +50,9 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-function readSheet(path: string) {
-  const unzip = (entry: string) =>
-    execFileSync("unzip", ["-p", path, entry], { maxBuffer: 256 * 1024 * 1024 }).toString("utf8");
-  const strings = parseSharedStrings(unzip("xl/sharedStrings.xml"));
-  return parseSheet(unzip("xl/worksheets/sheet1.xml"), strings);
-}
+/* Was a local unzip that required xl/sharedStrings.xml and threw
+   without it. See scripts/readMoegoXlsx.ts. */
+const readSheet = (path: string) => readMoegoSheet(path, 256 * 1024 * 1024);
 
 /** Split a comma-joined MoeGo cell, trimming and dropping blanks. */
 const split = (value: string) => value.split(",").map((s) => s.trim()).filter(Boolean);

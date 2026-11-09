@@ -16,9 +16,8 @@
  * so a pet whose codes are now blank has the column set back to NULL.
  */
 import "dotenv/config";
-import { execFileSync } from "node:child_process";
 import mysql from "mysql2/promise";
-import { parseSheet } from "../shared/xlsxReader.ts";
+import { readMoegoSheet } from "./readMoegoXlsx.ts";
 import { parsePetCodes } from "../shared/petCodes.ts";
 
 const args = process.argv.slice(2);
@@ -26,10 +25,11 @@ const APPLY = args.includes("--apply");
 const file = args.find((a) => !a.startsWith("--"));
 if (!file) throw new Error('Usage: moego-pet-codes.ts "<Pet list.xlsx>" [--apply]');
 
-const sheet = execFileSync("unzip", ["-p", file, "xl/worksheets/sheet1.xml"], {
-  maxBuffer: 512 * 1024 * 1024,
-}).toString("utf8");
-const rows = parseSheet(sheet, []);
+/* Was `parseSheet(sheet, [])` — it never looked for sharedStrings at
+   all. That is right for an export with inline strings and silently
+   wrong for one without: every shared-string cell would have read as
+   empty, with no error. readMoegoSheet handles both. */
+const rows = readMoegoSheet(file, 512 * 1024 * 1024);
 if (rows.length === 0) throw new Error("No rows in the sheet");
 
 const header = rows[0].map((c) => c.trim());
