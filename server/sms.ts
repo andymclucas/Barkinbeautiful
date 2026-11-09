@@ -181,7 +181,15 @@ export function buildAppointmentReminderSms(opts: {
   date: string;
   time: string;
   salonName?: string;
-  stage?: "4d" | "2d" | "morning";
+  /**
+   * "morning" is the LAST reminder and no longer always the morning of.
+   *
+   * Andy, 09/11/2026: "Send the reminder text at 9am the day before if
+   * they are booked in before 9am." A dog booked at 7:30 is already on
+   * the table by the time a 9am text lands, so its last reminder goes
+   * the day before and says "tomorrow". See shared/lastReminder.ts.
+   */
+  stage?: "4d" | "2d" | "morning" | "day_before";
   /**
    * True once this client has already replied Y about this booking.
    *
@@ -216,6 +224,12 @@ export function buildAppointmentReminderSms(opts: {
   }
   if (opts.stage === "morning") {
     return `Good morning ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment today at ${opts.time} at ${salon}.${ask}`;
+  }
+  if (opts.stage === "day_before") {
+    /* Same 9am send, different day. "Good morning" still fits; only the
+       word for the day changes, so a client who gets this and then
+       arrives reads one consistent story. */
+    return `Good morning ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment tomorrow at ${opts.time} at ${salon}.${ask}`;
   }
   return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time}.${ask}`;
 }
