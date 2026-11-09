@@ -4,12 +4,29 @@ import { CLIENT_LIST_MAX_PAGE_SIZE } from "./clientList";
  * What a client's status means, and which of them a person may choose.
  *
  * `clients.status` has held four values since the schema was written —
- * active, inactive, lapsed, blocked — and the Clients page has filtered
- * and sorted on all four for just as long. Nothing ever set one. There
- * was no setter procedure, no control on the client record, and the MoeGo
- * import did not write it either, so all ~10,000 clients sat on the
- * `active` default and three of the four filter options could not match a
- * row. Found 07/11/2026, when Andy asked whether the filtering worked.
+ * active, inactive, lapsed, blocked. They are not a coincidence: they
+ * are MoeGo's own client statuses, which its client list filters on as
+ * Active / Inactive / Lapsed / Block, and the import carried them
+ * across.
+ *
+ * ## This note used to say the opposite, and was wrong
+ *
+ * It said "Nothing ever set one... the MoeGo import did not write it
+ * either, so all ~10,000 clients sat on the `active` default and three
+ * of the four filter options could not match a row."
+ *
+ * Only the first half was true — there was no SETTER until 07/11/2026,
+ * which is the gap Andy found. The import had been writing the column
+ * since 3 August. Checked against MoeGo itself on 09/11/2026: its
+ * client list holds **410 Inactive**, against 419 non-active rows in
+ * Groomigo before the catch-up ran, and the names line up one for one —
+ * David Bergman, Louise Dunker, Tiana Neville, Fiona Law.
+ *
+ * The error mattered. It made 419 clients look like decisions somebody
+ * had typed, when they are Lauren's own MoeGo flags imported faithfully
+ * — including about twenty who are still coming in, Melissa Cornish two
+ * days before this was written. That is a question for the salon, not a
+ * bug in here, and the previous note pointed away from both answers.
  *
  * ## `lapsed` is computed, never chosen
  *
