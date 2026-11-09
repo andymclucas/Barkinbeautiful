@@ -50,6 +50,9 @@
  *
  *   corepack pnpm exec tsx scripts/assign-usual-groomer-2026-11-09.ts
  *   corepack pnpm exec tsx scripts/assign-usual-groomer-2026-11-09.ts --apply
+ *
+ * Baths are skipped by default -- see BATH_SERVICES. Add --include-baths
+ * to do them as well, which is a roster decision, not a data one.
  */
 import "dotenv/config";
 import fs from "node:fs";
@@ -58,6 +61,24 @@ import mysql from "mysql2/promise";
 const APPLY = process.argv.includes("--apply");
 const MIN_SHARE = 0.7;
 const MIN_GROOMS = 3;
+
+/**
+ * Baths are left alone.
+ *
+ * Andy, 09/11/2026: "Grooms only, leave the baths."
+ *
+ * The inference pointed 51 of its 62 answers at Stephanie Baldwin, and 53
+ * of them were baths, because she is who did the baths when that history
+ * was made. The salon now has four active bathers and three joined
+ * afterwards, so filling every bath in with Stephanie would write down a
+ * roster that no longer exists.
+ *
+ * Skipping is the DEFAULT, and the flag turns baths on rather than off. A
+ * forgotten flag then leaves 69 baths unassigned, which is the state they
+ * are already in, instead of quietly stacking them all on one bather.
+ */
+const BATH_SERVICES = new Set(["bath_only"]);
+const INCLUDE_BATHS = process.argv.includes("--include-baths");
 
 type Candidate = {
   id: number;
@@ -119,6 +140,8 @@ async function main() {
 
   const assign: Candidate[] = [];
   const held: { id: number; start: string; who: string; why: string }[] = [];
+  /** Skipped without being looked at -- the bath roster's call, not this. */
+  const baths: { id: number; start: string; who: string }[] = [];
 
   for (const r of open) {
     const base = {
@@ -126,6 +149,12 @@ async function main() {
       client: r.client, service: r.service_type,
     };
     const who = `${r.pet} (${r.client})`;
+
+    // Baths, before any inference runs on them -- see BATH_SERVICES.
+    if (BATH_SERVICES.has(r.service_type) && !INCLUDE_BATHS) {
+      baths.push({ id: r.id, start: r.start, who });
+      continue;
+    }
 
     // 1. A human already recorded the answer.
     if (r.pref_id && r.pref_active) {
@@ -170,7 +199,12 @@ async function main() {
 
   console.log(`\nunassigned upcoming dogs : ${open.length}`);
   console.log(`would assign             : ${assign.length}`);
-  console.log(`held for a person        : ${held.length}\n`);
+  console.log(`held for a person        : ${held.length}`);
+  console.log(
+    `baths left alone         : ${baths.length}` +
+      (INCLUDE_BATHS ? "  (--include-baths given)" : "  (--include-baths to do them too)"),
+  );
+  console.log("");
 
   console.table(assign.map((a) => ({
     id: a.id, start: a.start, pet: a.pet, client: a.client,
@@ -187,7 +221,7 @@ async function main() {
 
   if (!APPLY) {
     fs.mkdirSync("scripts/out", { recursive: true });
-    fs.writeFileSync(out, JSON.stringify({ assign, held }, null, 2));
+    fs.writeFileSync(out, JSON.stringify({ assign, held, baths }, null, 2));
     console.log(`\nDRY RUN. Nothing written to the database. Plan saved to ${out}`);
     console.log("Re-run with --apply to fill them in.\n");
     await c.end();
@@ -219,7 +253,7 @@ async function main() {
     }
     await c.commit();
     fs.mkdirSync("scripts/out", { recursive: true });
-    fs.writeFileSync(out, JSON.stringify({ applied: assign, held }, null, 2));
+    fs.writeFileSync(out, JSON.stringify({ applied: assign, held, baths }, null, 2));
     console.log(`\nAssigned ${changed} dogs. Nothing was texted. Log: ${out}`);
   } catch (err) {
     await c.rollback();
