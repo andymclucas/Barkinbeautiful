@@ -143,7 +143,7 @@ import { toastBookingConfirmation } from "@/lib/confirmationToast";
 import { NextAvailablePanel } from "@/components/NextAvailablePanel";
 import {
   describeRecurrence, recurrenceStarts,
-  MAX_FREQUENCY_WEEKS, MIN_FREQUENCY_WEEKS, type RecurrenceEnd,
+  MAX_FREQUENCY_WEEKS, MIN_FREQUENCY_WEEKS, ONGOING_MONTHS, type RecurrenceEnd,
 } from "@shared/recurrenceRule";
 import { overlapPlacement } from "@shared/appointmentCardOverlap";
 import { appointmentStack, MIN_DRAWN_MINUTES } from "@shared/appointmentStack";
@@ -1497,7 +1497,10 @@ export default function Calendar() {
     // bookings — this is for the client who says "I need him by twelve".
     collectByTime: "",
   });
-  const [repeatForm, setRepeatForm] = useState({ enabled: false, frequencyWeeks: "6", untilDate: "" });
+  const [repeatForm, setRepeatForm] = useState<{
+    enabled: boolean; frequencyWeeks: string;
+    endKind: RecurrenceEnd["kind"]; sessions: string; untilDate: string;
+  }>({ enabled: false, frequencyWeeks: "6", endKind: "ongoing", sessions: "6", untilDate: "" });
   /**
    * Repeating a booking that ALREADY exists, from the edit dialog.
    *
@@ -2694,7 +2697,7 @@ export default function Calendar() {
       }
       setShowNewAppt(false);
       setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
-      setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" });
+      setRepeatForm({ enabled: false, frequencyWeeks: "6", endKind: "ongoing", sessions: "6", untilDate: "" });
       setClientSearch("");
       refetch();
     },
@@ -2833,9 +2836,18 @@ export default function Calendar() {
       if (warning) toast.warning(warning, { duration: 6000 });
     }
     if (repeatForm.enabled) {
-      if (!repeatForm.untilDate) {
+      if (repeatForm.endKind === "date" && !repeatForm.untilDate) {
         toast.error("Please choose a date to repeat until"); return;
       }
+      if (repeatForm.endKind === "count" && !(Number(repeatForm.sessions) >= 1)) {
+        toast.error("Choose how many bookings to make"); return;
+      }
+      const repeatEnd: RecurrenceEnd =
+        repeatForm.endKind === "count"
+          ? { kind: "count", sessions: Number(repeatForm.sessions) }
+          : repeatForm.endKind === "date"
+            ? { kind: "date", untilDate: repeatForm.untilDate }
+            : { kind: "ongoing" };
       createRecurringMutation.mutate({
         clientId: parseInt(newAppt.clientId),
         petIds: newAppt.petIds.map(id => parseInt(id)),
@@ -2845,7 +2857,7 @@ export default function Calendar() {
         scheduledStart: newAppt.scheduledStart,
         scheduledEnd: newAppt.scheduledEnd,
         frequencyWeeks: parseInt(repeatForm.frequencyWeeks),
-        untilDate: repeatForm.untilDate,
+        end: repeatEnd,
         notes: newAppt.notes || undefined,
         price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
         // Not passed: createRecurringAppointments never sends a
@@ -4393,7 +4405,7 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setAddingClient(false); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", untilDate: "" }); } }}>
+      <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setAddingClient(false); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", endKind: "ongoing", sessions: "6", untilDate: "" }); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -4880,16 +4892,67 @@ export default function Calendar() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {/* Andy, 10/11/2026: "Don't add mandatory end date -
+                        choose option for 'no end date' 'after xx weeks' or
+                        'choose end date'." The same three the edit dialog
+                        has always had, through the same shared rule. It
+                        opens on Ongoing, so the common case needs nothing
+                        typed — which was the complaint. */}
                     <div className="space-y-1.5">
-                      <Label>Until *</Label>
-                      <DateField value={repeatForm.untilDate} onChange={next => setRepeatForm(f => ({ ...f, untilDate: next }))} />
+                      <Label>Ends</Label>
+                      <Select
+                        value={repeatForm.endKind}
+                        onValueChange={v => setRepeatForm(f => ({ ...f, endKind: v as RecurrenceEnd["kind"] }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ongoing">No end date</SelectItem>
+                          <SelectItem value="count">After a number of bookings</SelectItem>
+                          <SelectItem value="date">On a date</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
+                    {repeatForm.endKind === "count" && (
+                      <div className="space-y-1.5">
+                        <Label htmlFor="repeat-new-sessions">How many</Label>
+                        <Input
+                          id="repeat-new-sessions"
+                          type="number" min={1} max={60} inputMode="numeric"
+                          value={repeatForm.sessions}
+                          /* Whole numbers only, capped where the server
+                             caps — the edit dialog does the same, for the
+                             same reason: "2.5" enabled the button and then
+                             failed on the server's zod. */
+                          onChange={e => setRepeatForm(f => ({
+                            ...f,
+                            sessions: e.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                          }))}
+                        />
+                      </div>
+                    )}
+                    {repeatForm.endKind === "date" && (
+                      <div className="space-y-1.5">
+                        <Label>Up to</Label>
+                        <DateField value={repeatForm.untilDate} onChange={next => setRepeatForm(f => ({ ...f, untilDate: next }))} />
+                      </div>
+                    )}
                     <p className="col-span-2 text-xs text-muted-foreground">
                       Creates a booking every {repeatForm.frequencyWeeks} week{repeatForm.frequencyWeeks === "1" ? "" : "s"} at the same time
-                      {newAppt.petIds.length > 1 ? ` for all ${newAppt.petIds.length} selected dogs together` : ""}, starting from the date above, up to and including the "Until" date.
+                      {newAppt.petIds.length > 1 ? ` for all ${newAppt.petIds.length} selected dogs together` : ""}, starting from the date above
+                      {repeatForm.endKind === "count"
+                        ? `, ${repeatForm.sessions || "0"} time${repeatForm.sessions === "1" ? "" : "s"} in all.`
+                        : repeatForm.endKind === "date"
+                          ? ', up to and including the "Up to" date.'
+                          : `, for the next ${ONGOING_MONTHS} months. Extend it any time from the booking itself.`}
+                      {/* What actually skips an occurrence. This used to say
+                          "if the groomer is already booked" — which stopped
+                          being true on 10/11/2026, when having another dog
+                          stopped counting as a clash. Saying it still would
+                          send staff looking for a conflict that is not
+                          there. */}
                       {newAppt.petIds.length > 1
-                        ? " If the groomer is already booked on a particular date, that whole occurrence (all dogs) is skipped and the rest of the series still gets created."
-                        : " If the groomer is already booked on a particular date, that one occurrence is skipped and the rest still get created."}
+                        ? " A date where a groomer is away, or where one of these dogs is already booked, is skipped and the rest of the series still gets created."
+                        : " A date where the groomer is away, or where this dog is already booked, is skipped and the rest still get created."}
                     </p>
                   </div>
                 )}

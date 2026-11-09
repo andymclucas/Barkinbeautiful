@@ -183,6 +183,9 @@ import { automatedMessagesRouter } from "./routers/automatedMessages";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { counterSaleRouter } from "./routers/counterSale";
+import { findBlockoutsCovering } from "./groomerBlockout";
+import { recurringOccurrenceRefusal } from "@shared/recurringOccurrence";
+import { recurrenceWindow, type RecurrenceEnd } from "@shared/recurrenceRule";
 import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
 import { priceForPet } from "../shared/multiPetPricing";
@@ -2249,7 +2252,22 @@ const calendarRouter = router({
       scheduledStart: z.string(), // first occurrence's start
       scheduledEnd: z.string(),   // first occurrence's end
       frequencyWeeks: z.number().int().min(1).max(26),
-      untilDate: z.string(), // yyyy-mm-dd, inclusive
+      /*
+       * How the series ends. Andy, 10/11/2026: "Don't add mandatory end
+       * date - choose option for 'no end date' 'after xx weeks' or
+       * 'choose end date'."
+       *
+       * The same three the EDIT dialog has always offered, through the
+       * same shared rule — see recurrenceWindow. `untilDate` stays
+       * optional and is read when no `end` is sent, so a caller that
+       * predates this keeps working and means what it always meant.
+       */
+      end: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("count"), sessions: z.number().int().min(1).max(60) }),
+        z.object({ kind: z.literal("date"), untilDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+        z.object({ kind: z.literal("ongoing") }),
+      ]).optional(),
+      untilDate: z.string().optional(), // yyyy-mm-dd, inclusive
       notes: z.string().optional(),
       price: z.string().optional(),
     }))
@@ -2273,12 +2291,18 @@ const calendarRouter = router({
       const firstStart = parseBrisbaneLocalDateTime(input.scheduledStart);
       const firstEnd = parseBrisbaneLocalDateTime(input.scheduledEnd);
       const durationMs = firstEnd.getTime() - firstStart.getTime();
-      const until = new Date(input.untilDate + "T23:59:59");
+      /* One rule for all three endings, shared with the edit dialog. */
+      const end: RecurrenceEnd = input.end
+        ?? (input.untilDate ? { kind: "date", untilDate: input.untilDate } : { kind: "ongoing" });
+      const window = recurrenceWindow(firstStart, end, input.frequencyWeeks);
+      const until = window.until;
       if (Number.isNaN(until.getTime()) || until.getTime() < firstStart.getTime()) {
         throw new Error("The 'repeat until' date must be after the first appointment");
       }
       const stepMs = input.frequencyWeeks * 7 * 24 * 60 * 60 * 1000;
-      const maxOccurrences = 60; // safety cap (~2 years weekly, well beyond any sane single request)
+      /* The cap IS the ending for "after a number of sessions", and a
+         safety net for the other two. See recurrenceWindow. */
+      const maxOccurrences = window.maxOccurrences;
 
       const recurringGroupId = nanoid(24);
       const created: { scheduledStart: Date; petCount: number }[] = [];
@@ -2304,18 +2328,29 @@ const calendarRouter = router({
         // Every groomer this occurrence needs, not just the booking default:
         // with the dogs split between two people, checking only the default
         // would book the second groomer straight over an existing appointment.
-        let clash = false;
-        for (const groomerId of occurrenceGroomerIds) {
-          const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
-            eq(appointments.staffId, groomerId),
-            eq(appointments.tenantId, tenantOf(ctx, input)),
-            ne(appointments.workflowState, "cancelled"),
-            ne(appointments.status, "cancelled"),
-            lt(appointments.scheduledStart, occurrenceEnd),
-            gt(appointments.scheduledEnd, occurrenceStart),
-          )).limit(1);
-          if (conflict) { clash = true; break; }
-        }
+        /*
+         * Only LEAVE stops an occurrence.
+         *
+         * This used to refuse on ANY overlapping appointment, and so
+         * refused nearly every date it was given — Lauren, 10/11/2026,
+         * got all four dates of a six-weekly series rejected because the
+         * groomer had another dog at 7:30, which they do most mornings.
+         * An overlap is how this salon runs: 14,445 overlapping pairs
+         * against 12,728 appointments. Every other path settled that
+         * long ago; this was the last one still asking the blunt
+         * question. See shared/recurringOccurrence.ts.
+         *
+         * Capacity is the real limit on a groomer's day and it is a
+         * warning everywhere else, so it is reported below rather than
+         * refusing a series booked six months out against a diary that
+         * is barely filled in.
+         */
+        const blockouts = await findBlockoutsCovering(db, {
+          tenantId: tenantOf(ctx, input),
+          staffIds: occurrenceGroomerIds,
+          start: occurrenceStart,
+          end: occurrenceEnd,
+        });
         /*
          * And nothing else live for these dogs that day.
          * addRecurrenceToAppointment — the path that EXTENDS a series —
@@ -2323,15 +2358,16 @@ const calendarRouter = router({
          * the series, did not. A skip rather than a throw, so the rest of
          * the series still books and the report says which dates did not.
          */
-        let clashReason: string | null = clash ? "Groomer already booked at this time" : null;
-        if (!clashReason) {
-          const dogsBusy = await findDogsAlreadyBookedThatDay(db, {
-            tenantId: tenantOf(ctx, input),
-            petIds,
-            at: occurrenceStart,
-          });
-          if (dogsBusy.length > 0) clashReason = duplicateBookingMessage(dogsBusy);
-        }
+        const dogsBusy = blockouts.length > 0 ? [] : await findDogsAlreadyBookedThatDay(db, {
+          tenantId: tenantOf(ctx, input),
+          petIds,
+          at: occurrenceStart,
+        });
+        const clashReason = recurringOccurrenceRefusal({
+          blockouts,
+          dogsAlreadyBooked: dogsBusy,
+          duplicateMessage: dogsBusy.length > 0 ? duplicateBookingMessage(dogsBusy) : null,
+        });
         if (clashReason) {
           skipped.push({ scheduledStart: occurrenceStart, reason: clashReason });
           occurrenceStart = new Date(occurrenceStart.getTime() + stepMs);
@@ -2596,24 +2632,20 @@ const calendarRouter = router({
          * and not others — and the dates come back named, because "1
          * skipped" is not something anybody can act on.
          *
-         * Three questions, not one. The groomer's other appointments; the
-         * groomer being away or the salon shut; and the DOG's own day,
-         * which is the one that matters most. Duplicating a dog is the
-         * worst thing this can do, staff work from that board, and with
-         * no groomer assigned the first check asks nothing at all — so a
-         * second press would otherwise clone the entire series.
+         * Two questions, not three. The groomer being away or the salon
+         * shut; and the DOG's own day, which is the one that matters
+         * most. Duplicating a dog is the worst thing this can do and
+         * staff work from that board.
+         *
+         * The third question — "does this groomer have another dog
+         * then?" — was removed on 10/11/2026 along with its twin in
+         * createRecurringAppointments. An overlap is how this salon
+         * runs, 14,445 overlapping pairs against 12,728 appointments,
+         * and refusing on it refused nearly every date a series was
+         * given. See shared/recurringOccurrence.ts.
          */
         let clashReason: string | null = null;
         for (const groomerId of groomerIds) {
-          const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
-            eq(appointments.staffId, groomerId),
-            eq(appointments.tenantId, tenantId),
-            ne(appointments.workflowState, "cancelled"),
-            ne(appointments.status, "cancelled"),
-            lt(appointments.scheduledStart, occurrenceEnd),
-            gt(appointments.scheduledEnd, occurrenceStart),
-          )).limit(1);
-          if (conflict) { clashReason = "Groomer already booked at this time"; break; }
           const away = (busyByGroomer.get(groomerId) ?? []).find(b =>
             new Date(b.start).getTime() < occurrenceEnd.getTime()
             && new Date(b.end).getTime() > occurrenceStart.getTime());

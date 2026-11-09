@@ -57,6 +57,75 @@ export const ONGOING_MONTHS = 12;
  */
 export const MAX_OCCURRENCES = 60;
 
+/**
+ * The window a series runs over, as the booking loop wants it.
+ *
+ * Andy, 10/11/2026, with the New Appointment dialog's "Until *" open on
+ * a date picker: "Don't add mandatory end date - choose option for 'no
+ * end date' 'after xx weeks' or 'choose end date'."
+ *
+ * All three already existed. The EDIT dialog — the one that extends a
+ * series — has offered sessions, a date and ongoing since it was
+ * written, and `recurrenceStarts` below is the rule behind it. Only the
+ * CREATE path still demanded a date, because it was written first and
+ * never came back.
+ *
+ * So this is the same three answers, shaped for the loop that creates
+ * the series rather than for the preview that lists it: a last possible
+ * date, and a cap on how many to make. The two together express all
+ * three endings without the loop knowing which one it was given.
+ *
+ * "No end date" is twelve months, which is ONGOING_MONTHS and is stated
+ * rather than implied. Nothing can be literally endless in a table of
+ * rows, a year is further ahead than this salon books, and the edit
+ * dialog extends a series that reaches its end.
+ */
+export function recurrenceWindow(
+  firstStart: Date,
+  end: RecurrenceEnd,
+  frequencyWeeks: number
+): { until: Date; maxOccurrences: number } {
+  const step = Math.max(1, Math.trunc(frequencyWeeks) || 1);
+  const far = () => {
+    const until = new Date(firstStart.getTime());
+    until.setMonth(until.getMonth() + ONGOING_MONTHS);
+    return until;
+  };
+
+  if (end.kind === "count") {
+    const sessions = Math.trunc(end.sessions);
+    const wanted = Math.max(
+      1,
+      Math.min(MAX_OCCURRENCES, Number.isFinite(sessions) ? sessions : 1)
+    );
+    return {
+      /*
+       * Far enough that the COUNT is what stops it, and that depends on
+       * the FREQUENCY — twenty bookings six weeks apart span more than
+       * two years. A flat horizon here silently shortened a long series
+       * and reported the rest as skipped, which is the kind of wrong
+       * that looks like the feature not working. Caught by its own test.
+       */
+      until: new Date(
+        firstStart.getTime() + wanted * step * 7 * 24 * 60 * 60 * 1000
+      ),
+      maxOccurrences: wanted,
+    };
+  }
+
+  if (end.kind === "date") {
+    /* End of that day in local time, so a booking ON the last date is
+       included — "up to and including" is what the dialog says. */
+    const until = new Date(`${end.untilDate}T23:59:59`);
+    return {
+      until: Number.isNaN(until.getTime()) ? far() : until,
+      maxOccurrences: MAX_OCCURRENCES,
+    };
+  }
+
+  return { until: far(), maxOccurrences: MAX_OCCURRENCES };
+}
+
 export type RecurrenceRequest = {
   /** The booking being repeated, as "YYYY-MM-DDTHH:mm" local time. */
   firstStart: string;
@@ -68,10 +137,17 @@ export type RecurrenceResult =
   | { ok: true; starts: string[]; truncated: boolean }
   | { ok: false; reason: string };
 
-function parseLocal(value: string): { y: number; m: number; d: number; time: string } | null {
+function parseLocal(
+  value: string
+): { y: number; m: number; d: number; time: string } | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(value);
   if (!match) return null;
-  return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]), time: match[4]! };
+  return {
+    y: Number(match[1]),
+    m: Number(match[2]),
+    d: Number(match[3]),
+    time: match[4]!,
+  };
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -86,11 +162,19 @@ const pad = (n: number) => String(n).padStart(2, "0");
  */
 export function recurrenceStarts(request: RecurrenceRequest): RecurrenceResult {
   const first = parseLocal(request.firstStart);
-  if (!first) return { ok: false, reason: "That booking has no usable date and time" };
+  if (!first)
+    return { ok: false, reason: "That booking has no usable date and time" };
 
   const weeks = Math.trunc(request.frequencyWeeks);
-  if (!Number.isFinite(weeks) || weeks < MIN_FREQUENCY_WEEKS || weeks > MAX_FREQUENCY_WEEKS) {
-    return { ok: false, reason: `Repeat every ${MIN_FREQUENCY_WEEKS} to ${MAX_FREQUENCY_WEEKS} weeks` };
+  if (
+    !Number.isFinite(weeks) ||
+    weeks < MIN_FREQUENCY_WEEKS ||
+    weeks > MAX_FREQUENCY_WEEKS
+  ) {
+    return {
+      ok: false,
+      reason: `Repeat every ${MIN_FREQUENCY_WEEKS} to ${MAX_FREQUENCY_WEEKS} weeks`,
+    };
   }
 
   let wanted: number;
@@ -114,7 +198,9 @@ export function recurrenceStarts(request: RecurrenceRequest): RecurrenceResult {
     wanted = MAX_OCCURRENCES;
   } else {
     // Ongoing: a year, counted in months so it lands on the same date.
-    const horizon = new Date(Date.UTC(first.y, first.m - 1 + ONGOING_MONTHS, first.d));
+    const horizon = new Date(
+      Date.UTC(first.y, first.m - 1 + ONGOING_MONTHS, first.d)
+    );
     untilKey = `${horizon.getUTCFullYear()}-${pad(horizon.getUTCMonth() + 1)}-${pad(horizon.getUTCDate())}`;
     wanted = MAX_OCCURRENCES;
   }
@@ -132,20 +218,32 @@ export function recurrenceStarts(request: RecurrenceRequest): RecurrenceResult {
   }
 
   if (starts.length === 0) {
-    return { ok: false, reason: "That gives no further bookings — check the dates" };
+    return {
+      ok: false,
+      reason: "That gives no further bookings — check the dates",
+    };
   }
   /* Truncated means "there were more and you cannot have them", not
      "you asked for exactly the cap". Asking for 60 and getting 60 used
      to raise a warning saying it had been cut short. */
-  const asked = request.end.kind === "count" ? Math.trunc(request.end.sessions) : Infinity;
-  return { ok: true, starts, truncated: starts.length === MAX_OCCURRENCES && asked > MAX_OCCURRENCES };
+  const asked =
+    request.end.kind === "count" ? Math.trunc(request.end.sessions) : Infinity;
+  return {
+    ok: true,
+    starts,
+    truncated: starts.length === MAX_OCCURRENCES && asked > MAX_OCCURRENCES,
+  };
 }
 
 /** One line for the confirmation, before anything is written. */
-export function describeRecurrence(request: RecurrenceRequest, count: number): string {
-  const every = request.frequencyWeeks === 1
-    ? "every week"
-    : `every ${request.frequencyWeeks} weeks`;
+export function describeRecurrence(
+  request: RecurrenceRequest,
+  count: number
+): string {
+  const every =
+    request.frequencyWeeks === 1
+      ? "every week"
+      : `every ${request.frequencyWeeks} weeks`;
   const booking = count === 1 ? "booking" : "bookings";
   if (request.end.kind === "ongoing") {
     return `${count} more ${booking}, ${every}, for the next ${ONGOING_MONTHS} months.`;
@@ -201,19 +299,26 @@ export type BookingRowCoverage = {
   coveredNow: boolean;
 };
 
-export function lapsedCoverage(rows: readonly BookingRowCoverage[]): BookingRowCoverage[] {
-  return rows.filter((row) => row.membershipId !== null && !row.coveredNow);
+export function lapsedCoverage(
+  rows: readonly BookingRowCoverage[]
+): BookingRowCoverage[] {
+  return rows.filter(row => row.membershipId !== null && !row.coveredNow);
 }
 
-export function lapsedCoverageMessage(rows: readonly BookingRowCoverage[]): string | null {
+export function lapsedCoverageMessage(
+  rows: readonly BookingRowCoverage[]
+): string | null {
   const gone = lapsedCoverage(rows);
   if (gone.length === 0) return null;
-  const names = gone.map((r) => r.petName?.trim()).filter(Boolean) as string[];
-  const who = names.length === 0
-    ? "A membership on this booking"
-    : names.length === 1
-      ? `${names[0]}'s membership`
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}'s memberships`;
-  return `${who} no longer covers that booking — it may be paused, cancelled, or suspended for a `
-    + "failed payment. Sort the membership out before repeating the booking.";
+  const names = gone.map(r => r.petName?.trim()).filter(Boolean) as string[];
+  const who =
+    names.length === 0
+      ? "A membership on this booking"
+      : names.length === 1
+        ? `${names[0]}'s membership`
+        : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}'s memberships`;
+  return (
+    `${who} no longer covers that booking — it may be paused, cancelled, or suspended for a ` +
+    "failed payment. Sort the membership out before repeating the booking."
+  );
 }
