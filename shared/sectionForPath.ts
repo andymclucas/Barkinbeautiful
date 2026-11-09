@@ -62,6 +62,14 @@ export const SECTION_BY_NAMESPACE: Readonly<Record<string, StaffSection>> = {
   petCodes: "pricing",
   groomStylePresets: "pricing",
   retail: "pricing",
+  // The counter till sits ON the Retail page, so it is reachable only by
+  // someone who can open that page. Gating it by anything else would be
+  // a permission that cannot be exercised. Worth knowing: it means a
+  // staff member who is not given the Pricing & Services section cannot
+  // ring up a sale, even though the procedures themselves are
+  // operational. If the floor should always be able to sell, this is
+  // the line to move, not the procedure type.
+  counterSale: "pricing",
   storeCredit: "pricing",
 
   staff: "staff",
