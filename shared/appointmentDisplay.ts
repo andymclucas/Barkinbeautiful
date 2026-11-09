@@ -47,3 +47,49 @@ export function formatAppointmentHeading({
 
   return client ? `${names[0]} (${client})` : names[0];
 }
+
+/**
+ * How many of a family booking's dogs this card stands for.
+ *
+ * Andy, 09/11/2026, with a photo of the Wednesday board: "There is also
+ * duplicates for Nov 11 for Benji & Sweety Graham — they are under
+ * Stephanie & also in unassigned."
+ *
+ * They were one appointment each with different groomers, drawn correctly
+ * in two columns — but both cards named the whole booking, so the same
+ * pair of names appeared twice and read as one booking entered twice. A
+ * card now names only its own dogs, which means it also has to say that
+ * the rest of the booking exists, or a split family reads as two
+ * unrelated appointments.
+ *
+ * The count comes first because every place this is drawn truncates on a
+ * narrow column, so the tail of the phrase is what gets lost.
+ */
+export function formatFamilyBookingCount({
+  onThisCard,
+  inBooking,
+}: {
+  onThisCard: number;
+  inBooking: number;
+}): string {
+  const total = Math.max(inBooking, onThisCard, 0);
+  const here = Math.max(Math.min(onThisCard, total), 0);
+  const dogs = total === 1 ? "dog" : "dogs";
+  if (here >= total) return `${total} ${dogs}`;
+  return `${here} of ${total} ${dogs}`;
+}
+
+/**
+ * The small line under a family booking's name on a calendar card.
+ *
+ * Andy, 09/11/2026: "Booking should span both columns still." The card's
+ * NAME narrows to the dogs it draws; the booking does not, so the count
+ * here is the whole booking's and the pricing panel, the booking total
+ * and the edit dialog are untouched.
+ */
+export function formatFamilyBookingLine(args: {
+  onThisCard: number;
+  inBooking: number;
+}): string {
+  return `${formatFamilyBookingCount(args)} · family booking`;
+}
