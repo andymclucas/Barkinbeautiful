@@ -78,10 +78,13 @@ export function ApptPanelFooter({
     <div className="-mx-6 mt-2 shrink-0 border-t bg-background px-6 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {partPaid ? "Still owing" : settled ? "Paid in full" : "Estimated total"}
           </p>
-          <p className="text-xl font-semibold tabular-nums leading-tight">
+          {/* Andy, 09/11/2026: "larger text and buttons more noticeable
+              and prominent." This is the figure somebody reads out to a
+              client with a card in their hand. */}
+          <p className="text-2xl font-bold tabular-nums leading-tight">
             {partPaid ? money(owing) : money(total)}
           </p>
           {partPaid && (
@@ -99,7 +102,7 @@ export function ApptPanelFooter({
         </div>
 
         {!settled && total > 0 && (
-          <Button type="button" onClick={onTakePayment} className="shrink-0">
+          <Button type="button" onClick={onTakePayment} size="lg" className="shrink-0 text-base font-semibold">
             Take payment
           </Button>
         )}
