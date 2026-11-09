@@ -130,6 +130,7 @@ const PUBLIC = [
 const OPERATIONAL = [
   "analyticsRouter.christmasCountdown",
   "appointmentAddOnsRouter.add",
+  "appointmentAddOnsRouter.addRetail",
   "appointmentAddOnsRouter.catalogue",
   "appointmentAddOnsRouter.list",
   "appointmentAddOnsRouter.remove",
@@ -443,6 +444,22 @@ describe("tRPC procedure surface", () => {
     // taking either side. Noted because the same shape will recur: the
     // count is one line and two parallel branches both touch it.
     //
+    // 405 since 09/11/2026: appointmentAddOns.addRetail. Andy: "Add
+    // retail items into the appointment card so these can be added to
+    // the cart for checkout."
+    //
+    // The assertion read 404 while the comment above it said 405 — the
+    // running history and the number had drifted apart at some point.
+    // 405 is what the parser actually counts, measured rather than
+    // reasoned from the comments.
+    //
+    // operationalProcedure, deliberately — selling a bag of treats is
+    // counter work, and a receptionist or a groomer with the client in
+    // front of them is exactly who does it. It writes to the booking
+    // they already have open, through the same staff-access check every
+    // other add-on takes, so it widens what restricted staff can do by
+    // one thing they already do with a card machine.
+    //
     // 403 since 06/11/2026: platformBilling — the salon's own subscription
     // to Groomigo. None of the three appears in OPERATIONAL or PUBLIC,
     // which is the point: `status` is protectedProcedure and so rejects
@@ -465,7 +482,7 @@ describe("tRPC procedure surface", () => {
     // adminProcedure — provisioning makes a new business on the platform
     // and hands somebody the keys, and eligibleOwners lists the
     // platform's accounts — so none appears in OPERATIONAL or PUBLIC.
-    expect(surface).toHaveLength(404);
+    expect(surface).toHaveLength(405);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -518,7 +535,7 @@ describe("tRPC procedure surface", () => {
      * 140 since 06/11/2026: salons.mine and salons.canAccess. Both read
      * only from the caller's own access list.
      */
-    expect(OPERATIONAL).toHaveLength(146);
+    expect(OPERATIONAL).toHaveLength(147);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

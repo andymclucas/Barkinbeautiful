@@ -1840,6 +1840,24 @@ export const appointmentAddOns = mysqlTable("appointment_add_ons", {
   appointmentId: int("appointment_id").notNull(),
   /** Kept for reporting; null once a catalogue entry is retired. */
   pricingServiceId: int("pricing_service_id"),
+  /**
+   * The retail product sold, when this line is a THING rather than a
+   * service.
+   *
+   * Andy, 09/11/2026: "Add retail items into the appointment card so
+   * these can be added to the cart for checkout." This table already IS
+   * the cart — its lines feed addOnsTotal, which feeds
+   * payments.forBooking, which is what the panel shows and what Take
+   * payment collects — so a bag of treats becomes a line here rather
+   * than a second table that would have to re-earn totals, discounts
+   * and invoicing.
+   *
+   * Exactly one of pricingServiceId and retailProductId is set. Not a
+   * CHECK constraint: TiDB parses those and does not enforce them, so
+   * the application is the only guard and a constraint would be a
+   * comforting lie.
+   */
+  retailProductId: int("retail_product_id"),
   name: varchar("name", { length: 255 }).notNull(),
   unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).default("0.00").notNull(),
   quantity: int("quantity").default(1).notNull(),

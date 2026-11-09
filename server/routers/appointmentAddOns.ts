@@ -12,13 +12,14 @@
  * price list and it moves; an invoice is what was charged on the day.
  */
 import { z } from "zod";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
-import { appointmentAddOns, pricingServices, staff } from "../../drizzle/schema";
+import { appointmentAddOns, pricingServices, retailProducts, staff } from "../../drizzle/schema";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import { validateLineDiscount, MAX_DISCOUNT_REASON } from "../../shared/lineDiscount";
+import { describeStockWarning, isRetailLine, stockAfterSale } from "../../shared/retailSale";
 import { addOnRequiresManualPrice, addOnsTotal } from "../../shared/appointmentAddOns";
 
 export const appointmentAddOnsRouter = router({
@@ -107,6 +108,82 @@ export const appointmentAddOnsRouter = router({
       });
 
       return { success: true, name: service.name, unitPrice };
+    }),
+
+  /**
+   * Put a retail product on the booking's cart.
+   *
+   * Andy, 09/11/2026: "Add retail items into the appointment card so
+   * these can be added to the cart for checkout."
+   *
+   * Separate from `add` rather than a flag on it, because the two take
+   * different catalogues, have different failure modes and only one of
+   * them moves stock. A single procedure branching on which id arrived
+   * would be one function doing two jobs with one set of guards.
+   */
+  addRetail: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().int().positive().default(1),
+      appointmentId: z.number(),
+      retailProductId: z.number(),
+      quantity: z.number().int().min(1).max(20).default(1),
+      /** Overrides the shelf price. Staff discretion at the counter. */
+      unitPrice: z.number().min(0).max(10000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+
+      const [product] = await db.select().from(retailProducts).where(and(
+        eq(retailProducts.id, input.retailProductId),
+        eq(retailProducts.tenantId, tenantId),
+      )).limit(1);
+      if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "That product is not in the catalogue" });
+      /* Archived means withdrawn from sale. Reading the row and then
+         refusing is deliberate: "not in the catalogue" for something
+         staff can see in the Retail list would send them looking for a
+         bug. */
+      if (!product.isActive) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `${product.name} is archived and not for sale` });
+      }
+
+      const unitPrice = input.unitPrice !== undefined
+        ? input.unitPrice.toFixed(2)
+        : (product.priceAud ?? "0.00");
+
+      /*
+       * The line and the stock move together or not at all. Without the
+       * transaction a failed stock write leaves a sale on the bill that
+       * never came off the shelf, which is the one of the two that
+       * costs money.
+       */
+      const sale = stockAfterSale(Number(product.stockQty ?? 0), input.quantity);
+      await db.transaction(async (tx: any) => {
+        await tx.insert(appointmentAddOns).values({
+          tenantId,
+          appointmentId: input.appointmentId,
+          retailProductId: product.id,
+          // Snapshots, so a rename or a price rise never changes a past
+          // bill — the same reason the service add-on copies them.
+          name: product.name,
+          unitPrice,
+          quantity: input.quantity,
+          createdByUserId: ctx.user?.id ?? null,
+        });
+        await tx.update(retailProducts)
+          .set({ stockQty: sale.remaining })
+          .where(and(eq(retailProducts.id, product.id), eq(retailProducts.tenantId, tenantId)));
+      });
+
+      return {
+        success: true,
+        name: product.name,
+        unitPrice,
+        remaining: sale.remaining,
+        warning: describeStockWarning(sale.warning, product.name),
+      };
     }),
 
   /** Change what was charged, or how many. */
@@ -232,6 +309,30 @@ export const appointmentAddOnsRouter = router({
       )).limit(1);
       if (!row) return { success: true };
       await requireApprovedStaffAppointmentAccess(db, ctx.user, row.appointmentId);
+
+      /*
+       * A retail line goes back on the shelf when it comes off the bill.
+       *
+       * Stock falls when the line is ADDED, so every add needs exactly
+       * one matching restore or the count drifts down for ever — the
+       * client changes their mind, the line comes off, and nothing
+       * notices the shampoo is still there.
+       *
+       * Both writes in one transaction for the same reason as the sale:
+       * a delete that succeeds while the restock fails loses the item.
+       */
+      if (isRetailLine(row)) {
+        await db.transaction(async (tx: any) => {
+          await tx.delete(appointmentAddOns).where(eq(appointmentAddOns.id, input.id));
+          await tx.update(retailProducts)
+            .set({ stockQty: sql`${retailProducts.stockQty} + ${row.quantity}` })
+            .where(and(
+              eq(retailProducts.id, row.retailProductId as number),
+              eq(retailProducts.tenantId, tenantOf(ctx, input)),
+            ));
+        });
+        return { success: true, restocked: row.quantity };
+      }
 
       await db.delete(appointmentAddOns).where(eq(appointmentAddOns.id, input.id));
       return { success: true };
