@@ -11,14 +11,32 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  PAYMENT_METHODS, PAYMENT_METHOD_LABELS, splitEvenly, validatePaymentAmount,
-  type PaymentMethod,
+  PAYMENT_METHODS, PAYMENT_METHOD_LABELS, methodChargesCard, splitEvenly,
+  validatePaymentAmount, type PaymentMethod,
 } from "@shared/splitPayments";
 import { allocateAcrossDogs, describeAllocation, totalOutstanding, prefilledAmount } from "@shared/payAcrossDogs";
 import { cashTender, describeChange, acceptsOverTender } from "@shared/cashTendered";
 
 /** Sentinel for the "every dog on this booking" option in the picker. */
 const ALL_DOGS = -1;
+
+/**
+ * A charge that has been asked for and not yet confirmed.
+ *
+ * Deliberately a snapshot of the amount, the dogs and the allocation
+ * split as they stood when somebody pressed charge — not a pointer at
+ * the live inputs, which sit beside the prompt and can be edited while
+ * it is open. `amount` and `who` are here so the prompt can say what it
+ * is about to do; a confirm for a real card charge that prints no
+ * figure is not a confirm.
+ */
+type PendingCharge = {
+  allocations: Array<{ appointmentId: number; amount: string }>;
+  /** Already formatted, e.g. "$290.00". */
+  amount: string;
+  /** Whose groom, e.g. "Agnes + Shirley". */
+  who: string;
+};
 
 /**
  * Taking the money for a booking, in as many transactions as it takes.
@@ -128,6 +146,26 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
     onError: (error) => toast.error(error.message),
   });
 
+  /*
+   * The charge somebody has asked for and not yet confirmed.
+   *
+   * It lives up here rather than in CardOnFileRow because there are now
+   * TWO ways to ask for one — that row's own button, and picking Stripe
+   * in the dropdown (Andy, 09/11/2026: "Make Stripe in the dropdown
+   * actually charge the card on file"). Both open the same confirm,
+   * which keeps one charge call, one decline path, and one place that
+   * knows which card is on file.
+   *
+   * It holds a SNAPSHOT rather than a boolean, and that is the point.
+   * The amount box and the dog picker sit directly beside the confirm,
+   * so the figures behind a "Charge the card?" prompt can be edited
+   * while it is open. Reading them live meant "Yes, charge it" charged
+   * whatever they said by then, and the prompt printed no amount at
+   * all, so nobody could see it had moved. What was agreed to is what
+   * gets charged.
+   */
+  const [pendingCharge, setPendingCharge] = useState<PendingCharge | null>(null);
+
   if (isLoading || !data) {
     return <p className="py-3 text-xs text-muted-foreground">Loading payments…</p>;
   }
@@ -197,8 +235,53 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
     ? tender.error
     : payingAll ? (spread && !spread.ok ? spread.error : null) : (check && !check.ok ? check.error : null);
 
+  /**
+   * Every line one press would pay, as chargeCardOnFile wants them.
+   *
+   * One definition, used both to arm the confirm and to decide whether
+   * the card row's own button can do anything.
+   */
+  const chargeAllocations =
+    payingAll && spread?.ok
+      ? spread.allocations.map((a) => ({ appointmentId: a.appointmentId, amount: a.amount.toFixed(2) }))
+      : canSubmit
+        ? [{ appointmentId: selectedId, amount: effectiveAmount }]
+        : [];
+
+  /** Arm the confirm with what is on screen NOW. See PendingCharge. */
+  const requestCharge = () =>
+    setPendingCharge({
+      allocations: chargeAllocations,
+      amount: `$${effectiveAmount}`,
+      who: payingAll
+        ? balances.map((b) => b.petName).join(" + ")
+        : (selected?.petName ?? "this booking"),
+    });
+
   const submit = async () => {
     if (!canSubmit) return;
+    /*
+     * Stripe does not record, it charges — so it does not go to
+     * payments.record at all. It opens the confirm on the card row
+     * below, which is the one control that knows which card is on file
+     * and what happens when there is none.
+     *
+     * It asks first because every other method here writes down money
+     * that has already changed hands, and the staff using this dropdown
+     * have spent months picking "Stripe" to mean exactly that. One
+     * confirm is cheap against charging a client out of habit.
+     */
+    if (methodChargesCard(method)) {
+      /* A negative amount is a refund, and this path cannot do one: the
+         server answers "nothing to charge", which reads like a fault
+         rather than an answer. Say what to do instead. */
+      if (Number(effectiveAmount) < 0) {
+        toast.error("Stripe here charges the card. Refund in Stripe, then record it as Other.");
+        return;
+      }
+      requestCharge();
+      return;
+    }
     if (payingAll && spread?.ok) {
       // Sequential, so a failure part-way leaves the rows that did land
       // rather than a half-applied batch nobody can see.
@@ -350,7 +433,9 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
           {multiDog && (
             <Select
               value={String(selectedId)}
-              onValueChange={(v) => { setTarget(Number(v)); resetAmount(); }}
+              /* Dropping the prompt: it names dogs and an amount that
+                 are about to stop being the ones on screen. */
+              onValueChange={(v) => { setTarget(Number(v)); resetAmount(); setPendingCharge(null); }}
             >
               <SelectTrigger className="h-8 w-[7.5rem] text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -375,7 +460,10 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             onChange={(e) => setAmount(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
           />
-          <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethod)}>
+          {/* Same reason, plus one of its own: with the prompt left open,
+              switching to Cash flipped the button back to "Take payment"
+              while "Yes, charge it" sat there still live. */}
+          <Select value={method} onValueChange={(v) => { setMethod(v as PaymentMethod); setPendingCharge(null); }}>
             <SelectTrigger className="h-8 w-[8.5rem] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               {PAYMENT_METHODS.map((m) => (
@@ -396,16 +484,22 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             onClick={submit}
           >
             {record.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            Take payment
+            {/* The label says which of the two things the press does.
+                "Take payment" on a button that charges a real card is
+                the ambiguity this whole change exists to remove. */}
+            {methodChargesCard(method) ? "Charge card" : "Take payment"}
           </Button>
         </div>
 
-        {/* The card on file. Separate from the row above because nothing
-            in that dropdown moves money — every method there RECORDS a
-            payment taken somewhere else, and this is the one control
-            that actually charges. Putting it in the same dropdown would
-            make "Stripe" mean two different things. */}
+        {/* The card on file, and since 09/11/2026 the one thing that
+            charges it. It stays its own row because it shows WHICH card
+            and whether it can be charged at all; picking Stripe in the
+            dropdown opens this row's confirm rather than a second copy
+            of it. */}
         <CardOnFileRow
+          pending={pendingCharge}
+          requestCharge={requestCharge}
+          cancelCharge={() => setPendingCharge(null)}
           appointmentIds={payingAll ? balances.map((b) => b.appointmentId) : [selectedId]}
           /* NOT selectedId: when every dog is being paid for at once that
              is the ALL_DOGS sentinel (-1), which is not an appointment
@@ -415,13 +509,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
           /* What is actually owed, not what has been typed into the box —
              an empty box is not "nothing owing". */
           owingCents={Math.round((owedHere ?? 0) * 100)}
-          allocations={
-            payingAll && spread?.ok
-              ? spread.allocations.map((a) => ({ appointmentId: a.appointmentId, amount: a.amount.toFixed(2) }))
-              : canSubmit
-                ? [{ appointmentId: selectedId, amount: effectiveAmount }]
-                : []
-          }
+          allocations={chargeAllocations}
           note={note}
           onPaid={() => {
             // Same as a recorded payment: the balance just moved, so the
@@ -625,15 +713,21 @@ function BilledOverrideRow({
  */
 function CardOnFileRow({
   appointmentIds, anchorAppointmentId, owingCents, allocations, note, onPaid,
+  pending, requestCharge, cancelCharge,
 }: {
   appointmentIds: number[];
   anchorAppointmentId: number;
   owingCents: number;
+  /** Live — for whether a charge is possible at all. */
   allocations: Array<{ appointmentId: number; amount: string }>;
   note: string;
   onPaid: () => void;
+  /* The confirm is owned by the panel, because picking Stripe in its
+     dropdown opens this same one. Frozen — it is what gets charged. */
+  pending: PendingCharge | null;
+  requestCharge: () => void;
+  cancelCharge: () => void;
 }) {
-  const [confirming, setConfirming] = useState(false);
   const [entering, setEntering] = useState(false);
   const utils = trpc.useUtils();
   // Whether the card can be typed in here, or has to go through
@@ -647,14 +741,14 @@ function CardOnFileRow({
 
   const charge = trpc.payments.chargeCardOnFile.useMutation({
     onSuccess: (r) => {
-      setConfirming(false);
+      cancelCharge();
       // A decline is a normal outcome, not an exception: the procedure
       // returns success:false rather than throwing, so it is reported
       // here rather than in onError.
       if (r.success) { toast.success(r.message); onPaid(); }
       else toast.error(r.message);
     },
-    onError: (e) => { setConfirming(false); toast.error(e.message); },
+    onError: (e) => { cancelCharge(); toast.error(e.message); },
   });
 
   const setupLink = trpc.payments.cardSetupLink.useMutation({
@@ -667,13 +761,56 @@ function CardOnFileRow({
     onError: (e) => toast.error(e.message),
   });
 
-  if (!card) return null;
+  /*
+   * This row hides itself when there is nothing to say — but it must
+   * never hide while a charge has been ASKED for.
+   *
+   * Since 09/11/2026 picking Stripe in the dropdown opens this row's
+   * confirm, so a row that returns null would make that press do
+   * nothing whatsoever. That is the same silent dead button the panel
+   * shipped once before, when a placeholder key left a Charge control
+   * that could never work (see payments.cardOnFile). Hidden is fine;
+   * hidden after somebody pressed charge is not.
+   */
+  if (!card) {
+    /* With a dismiss, because this is also where an errored query
+       lands: without one the prompt said "Checking…" for ever, and
+       stayed armed to reappear once the query did answer. */
+    return pending ? (
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2">
+        <span className="text-xs text-muted-foreground">Checking the card on file…</span>
+        <Button size="sm" variant="outline" className="ml-auto h-8" onClick={cancelCharge}>
+          Cancel
+        </Button>
+      </div>
+    ) : null;
+  }
 
   const busy = charge.isPending || setupLink.isPending;
   const needsCard = card.state === "needs_card" || card.state === "expired";
+  /** Whether this row's own button can do anything — live inputs. */
   const canCharge = card.state === "chargeable" && allocations.length > 0;
+  /**
+   * Whether the PROMPT can go through — the frozen snapshot, not the
+   * live box. Asking the live one meant clearing the amount while the
+   * prompt was open turned it into "Nothing owing to charge" over a
+   * perfectly good snapshot that was still what would be charged.
+   */
+  const pendingChargeable =
+    card.state === "chargeable" && (pending?.allocations.length ?? 0) > 0;
 
-  if (card.state === "stripe_off") return null;
+  if (card.state === "stripe_off") {
+    return pending ? (
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2">
+        <span className="text-xs font-semibold text-destructive">
+          Stripe is not set up on this deployment — nothing was charged
+        </span>
+        <Button size="sm" variant="outline" className="ml-auto h-8" onClick={cancelCharge}>
+          OK
+        </Button>
+      </div>
+    ) : null;
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2">
@@ -682,17 +819,41 @@ function CardOnFileRow({
         {card.card ?? (needsCard ? "No card on file" : "Card on file")}
       </span>
       <div className="ml-auto flex items-center gap-2">
-        {confirming ? (
+        {pending && !pendingChargeable ? (
+          /* Reachable only from the dropdown: this row's own button is
+             disabled when there is nothing to charge, and turns into
+             "Add a card" when there is none. Andy asked what the button
+             does with no card linked — this is the answer, said before
+             anything is attempted rather than as a decline afterwards.
+             Expired first, because needsCard covers both and "no card
+             on file" is wrong beside a row showing the card. */
           <>
-            <span className="text-xs font-semibold">Charge the card on file?</span>
-            <Button size="sm" variant="outline" className="h-8" onClick={() => setConfirming(false)} disabled={busy}>
+            <span className="text-xs font-semibold text-destructive">
+              {card.state === "expired"
+                ? "That card has expired — replace it first"
+                : needsCard
+                  ? "No card on file — add one first"
+                  : "Nothing owing to charge"}
+            </span>
+            <Button size="sm" variant="outline" className="h-8" onClick={cancelCharge}>
+              OK
+            </Button>
+          </>
+        ) : pending ? (
+          <>
+            {/* The amount and the dogs, from the snapshot: what is being
+                agreed to has to be visible to agree to it. */}
+            <span className="text-xs font-semibold">
+              Charge {pending.amount} to the card on file for {pending.who}?
+            </span>
+            <Button size="sm" variant="outline" className="h-8" onClick={cancelCharge} disabled={busy}>
               Cancel
             </Button>
             <Button
               size="sm"
               className="h-8 gap-1.5"
               disabled={busy}
-              onClick={() => charge.mutate({ allocations, note: note.trim() || undefined })}
+              onClick={() => charge.mutate({ allocations: pending.allocations, note: note.trim() || undefined })}
             >
               {charge.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Yes, charge it
@@ -705,7 +866,7 @@ function CardOnFileRow({
             className="h-8 gap-1.5"
             disabled={busy || (!needsCard && !canCharge)}
             onClick={() => {
-              if (!needsCard) return setConfirming(true);
+              if (!needsCard) return requestCharge();
               // In place when we can, Stripe's tab when we cannot.
               if (entry?.inPlace) setEntering(true);
               else setupLink.mutate({ appointmentId: anchorAppointmentId });
