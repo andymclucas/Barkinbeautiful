@@ -407,16 +407,17 @@ export default function Messages() {
     });
   }, [collapsedLogs, search, statusFilter, typeFilter]);
 
-  const stats = useMemo(() => {
-    // Counted off the collapsed list too: "total" above a list of texts
-    // means texts, and counting log rows made every family send look like
-    // two against the salon's Twilio bill.
-    return {
-      total: collapsedLogs.length,
-      sent: collapsedLogs.filter((l: any) => l.status === "sent").length,
-      failed: collapsedLogs.filter((l: any) => l.status === "failed").length,
-    };
-  }, [collapsedLogs]);
+  /**
+   * Counted by the database, over a stated window.
+   *
+   * Andy, 10/11/2026: 100 sent, 0 delivered, 0 failed. All three were
+   * wrong and none of them was a delivery problem. "Total Sent" was the
+   * LENGTH OF THE FETCHED PAGE — the query asks for 100 rows, so it had
+   * read exactly 100 since the hundredth text was ever sent — and
+   * "Delivered" counted `status === "sent"`, the step BEFORE delivered,
+   * which Twilio passes through in about a second. See sms.stats.
+   */
+  const { data: stats } = trpc.sms.stats.useQuery({ days: 30 });
 
   const pendingInboundReplies = useMemo(() => {
     if (!logs) return [];
@@ -513,7 +514,13 @@ export default function Messages() {
                 </div>
               </div>
     
-              <div className="flex-1 min-h-[320px] overflow-y-auto bg-muted/20 px-3 py-2 lg:h-auto lg:min-h-0">
+              {/* The ONLY scroller in the conversation, on a phone and on a
+                  desktop alike. min-h-0, because a flex child will not shrink
+                  below its content without it and then nothing scrolls. It
+                  used to carry min-h-[320px] below lg to give the dialog some
+                  height of its own; the dialog has a real height now, and that
+                  floor would push the reply box off a phone in landscape. */}
+              <div className="flex-1 min-h-0 overflow-y-auto bg-muted/20 px-3 py-2">
                 <MessageThread
                   messages={threadMessages}
                   showStatus
@@ -802,7 +809,13 @@ export default function Messages() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        {/* Andy, 10/11/2026, with a photo of this page on his phone:
+            "Alignment is out on mobile version." The row was a plain
+            flex with justify-between and buttons that carry shrink-0,
+            so below ~430px "Compose SMS" ran off the right edge and was
+            cut in half — measured at 375px, the row wanted 411px inside
+            343px. A column on a phone, the row it already was from sm. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold font-display">Messages</h1>
             <p className="text-sm text-muted-foreground">SMS communications via Twilio</p>
@@ -817,23 +830,42 @@ export default function Messages() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Three across on a phone too. One per row cost 422px of an
+            812px screen to show three numbers, which is why the page
+            read as mostly empty boxes. Card's own py-6 is dropped below
+            sm so the content's padding is the only padding: 130px a
+            card became 88px for the row. sm and up is untouched. */}
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {[
-            { label: "Total Sent", value: stats.total, icon: MessageSquare, colour: "text-blue-600 dark:text-blue-400" },
-            { label: "Delivered", value: stats.sent, icon: CheckCircle2, colour: "text-emerald-600 dark:text-emerald-400" },
-            { label: "Failed", value: stats.failed, icon: XCircle, colour: "text-red-600 dark:text-red-400" },
+            { label: "Sent", value: stats?.sent ?? 0, icon: MessageSquare, colour: "text-blue-600 dark:text-blue-400" },
+            { label: "Delivered", value: stats?.delivered ?? 0, icon: CheckCircle2, colour: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Failed", value: stats?.failed ?? 0, icon: XCircle, colour: "text-red-600 dark:text-red-400" },
           ].map(s => (
-            <Card key={s.label}>
-              <CardContent className="p-4 flex items-center gap-3">
-                <s.icon className={`h-8 w-8 ${s.colour}`} />
+            <Card key={s.label} className="py-0 sm:py-6">
+              <CardContent className="flex flex-col items-start gap-1 p-3 sm:flex-row sm:items-center sm:gap-3 sm:p-4">
+                <s.icon className={`h-5 w-5 sm:h-8 sm:w-8 ${s.colour}`} />
                 <div>
-                  <div className="text-2xl font-bold">{s.value}</div>
-                  <div className="text-xs text-muted-foreground">{s.label}</div>
+                  <div className="text-xl font-bold sm:text-2xl">{s.value}</div>
+                  <div className="text-[11px] text-muted-foreground sm:text-xs">{s.label}</div>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
+
+        {/* The window, said once rather than on all three tiles. A number
+            with no period attached is the thing that made the old tiles
+            unquestionable: "100" looked like a fact rather than a page
+            length. Replies in are worth seeing beside them — it is the
+            same Twilio bill and the volume Andy judged the missed-call
+            auto-reply on. */}
+        <p className="-mt-3 text-[11px] text-muted-foreground">
+          Last {stats?.days ?? 30} days
+          {stats ? ` · ${stats.received} replies in` : ""}
+          {stats && stats.sent !== stats.delivered + stats.failed
+            ? ` · ${stats.sent - stats.delivered - stats.failed} still on the way`
+            : ""}
+        </p>
 
         <Card>
           <CardHeader className="pb-3">
@@ -1430,11 +1462,42 @@ export default function Messages() {
           same conversation in a dialog. */}
       {!isWideScreen && (
       <Dialog open={!!openThread} onOpenChange={(open) => !open && setOpenThread(null)}>
-        <DialogContent className="max-w-[420px] gap-0 overflow-hidden rounded-[26px] p-0 lg:hidden">
+        {/*
+          A real height, not just the shared max-height.
+
+          Andy, 10/11/2026, with a photo of a thread on his phone: "Can't
+          scroll down to see more messages on mobile view."
+
+          `overflow-hidden` is here for the rounded corners, and tailwind-merge
+          puts it in the same group as the shared `overflow-y-auto`, so it
+          DELETED it. The dialog kept its max-height and lost the only thing
+          that made the overflow reachable: measured at 375x812, a 780px box
+          holding 2,539px of conversation, the list handed unbounded height so
+          it never became a scroller, and the reply box 1,760px below the fold.
+
+          A maximum alone is not enough — a box with only a maximum still hands
+          its children unbounded height. With a definite height the column
+          below divides it: header pinned, list scrolls, reply box on the
+          bottom edge, which is what a messaging app does.
+          `dialog.reachable.test.tsx` holds this for all 77 dialogs.
+
+          gap-0 is gone with it: the shared gap-4 is what the close button's
+          `[&+*]:-mt-4` cancels out, so suppressing it left the header pulled
+          16px up under the rounded top edge.
+
+          The close button is inset for the same reason CommandDialog places
+          its own: its -mr-2 is tuned for the p-6 every other dialog has, and
+          against a p-0 content box it hangs OUTSIDE the corner, where
+          overflow-hidden takes a bite out of it. Visible in Andy's photo.
+          Two classes beat hand-rolling a second close button.
+        */}
+        <DialogContent className="flex h-[calc(100dvh-2rem)] max-w-[420px] flex-col overflow-hidden rounded-[26px] p-0 [&_[data-slot=dialog-close]]:mt-2 [&_[data-slot=dialog-close]]:mr-2 lg:hidden">
           <DialogTitle className="sr-only">
             {openThread?.clientName?.trim() || openThread?.toNumber || "Conversation"}
           </DialogTitle>
-          <div className="flex min-h-0 flex-col">
+          {/* flex-1 so the column fills the dialog's height, min-h-0 so the
+              list inside it is allowed to be shorter than its content. */}
+          <div className="flex min-h-0 flex-1 flex-col">
             {conversationPane}
           </div>
         </DialogContent>
