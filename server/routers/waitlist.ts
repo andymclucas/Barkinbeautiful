@@ -51,6 +51,7 @@ import {
   rankMatches, waitlistOfferSms, waitlistOfferUrl, windowLengthDays,
 } from "@shared/waitlist";
 import { settleWaitlistEntries } from "../waitlistSettle";
+import { assertDogsNotAlreadyBookedThatDay } from "../duplicateBooking";
 
 const DATE_KEY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -730,6 +731,18 @@ export const waitlistRouter = router({
         db, tenantId, offer.clientId, [offer.petId],
         (offer.serviceType ?? "classic_groom") as any,
       );
+
+      /*
+       * One booking per dog per day. A dog taken off the waitlist into a
+       * freed slot must not already be in that day — the offer was made
+       * earlier and the dog may have been booked in between.
+       * See shared/duplicateBooking.ts.
+       */
+      await assertDogsNotAlreadyBookedThatDay(db, {
+        tenantId,
+        petIds: [offer.petId],
+        at: start,
+      });
 
       const [created] = await db.insert(appointments).values({
         tenantId, clientId: offer.clientId, petId: offer.petId,
