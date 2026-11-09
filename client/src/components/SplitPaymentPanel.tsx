@@ -8,14 +8,35 @@ import { describeDiscount } from "@shared/appointmentDiscount";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
-  PAYMENT_METHODS, PAYMENT_METHOD_LABELS, methodChargesCard, splitEvenly,
-  validatePaymentAmount, type PaymentMethod,
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABELS,
+  methodChargesCard,
+  splitEvenly,
+  validatePaymentAmount,
+  type PaymentMethod,
 } from "@shared/splitPayments";
-import { allocateAcrossDogs, describeAllocation, totalOutstanding, prefilledAmount } from "@shared/payAcrossDogs";
-import { cashTender, describeChange, acceptsOverTender } from "@shared/cashTendered";
+import {
+  allocateAcrossDogs,
+  describeAllocation,
+  totalOutstanding,
+  prefilledAmount,
+} from "@shared/payAcrossDogs";
+import {
+  cashTender,
+  describeChange,
+  describeHandBack,
+  describeTender,
+  acceptsOverTender,
+  handBackFor,
+  type HandBack,
+} from "@shared/cashTendered";
 
 /** Sentinel for the "every dog on this booking" option in the picker. */
 const ALL_DOGS = -1;
@@ -55,13 +76,20 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 
 const STATUS_STYLE: Record<string, string> = {
   paid: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
-  partial: "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
+  partial:
+    "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300",
   unpaid: "bg-muted text-muted-foreground",
 };
 
-export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) {
+export function SplitPaymentPanel({
+  appointmentId,
+}: {
+  appointmentId: number;
+}) {
   const utils = trpc.useUtils();
-  const { data, isLoading } = trpc.payments.forBooking.useQuery({ appointmentId });
+  const { data, isLoading } = trpc.payments.forBooking.useQuery({
+    appointmentId,
+  });
 
   const [target, setTarget] = useState<number | null>(null);
   /**
@@ -93,7 +121,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
   const clientId = data?.appointments?.[0]?.clientId ?? null;
   const { data: credit } = trpc.storeCredit.getBalance.useQuery(
     { clientId: clientId as number },
-    { enabled: clientId != null },
+    { enabled: clientId != null }
   );
   const creditBalance = Number(credit?.balance ?? 0);
 
@@ -102,10 +130,32 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
   const [method, setMethod] = useState<PaymentMethod>("eftpos");
   const [note, setNote] = useState("");
 
+  /**
+   * Change owed to somebody who is still standing there.
+   *
+   * Lauren, 10/11/2026: "I put in $300 cash, take payment... it doesnt
+   * work out change to give back." It did — and then cleared the amount
+   * box, which is what "Change $34.00" was computed from, so the number
+   * disappeared at the exact moment the drawer opened.
+   *
+   * Kept as its own fact so it survives the payment that produced it,
+   * and dismissed by a person rather than by a refetch.
+   */
+  const [handBack, setHandBack] = useState<HandBack | null>(null);
+
   /** Typing, or tapping a quick amount, takes the field off the balance. */
-  const setAmount = (value: string) => { setAmountEdited(true); setTypedAmount(value); };
+  const setAmount = (value: string) => {
+    setAmountEdited(true);
+    setTypedAmount(value);
+    // A new amount means a new sale. Change from the last one must never
+    // be left sitting over it.
+    setHandBack(null);
+  };
   /** Back onto the balance — after a payment lands, or the target changes. */
-  const resetAmount = () => { setAmountEdited(false); setTypedAmount(""); };
+  const resetAmount = () => {
+    setAmountEdited(false);
+    setTypedAmount("");
+  };
 
   /**
    * Nothing chosen yet means nobody has touched the picker, so choose the
@@ -120,10 +170,11 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
    */
   const multiDog = (data?.appointments.length ?? 0) > 1;
   const effectiveTarget = target ?? (multiDog ? ALL_DOGS : null);
-  const selectedId = effectiveTarget ?? data?.appointments[0]?.appointmentId ?? appointmentId;
+  const selectedId =
+    effectiveTarget ?? data?.appointments[0]?.appointmentId ?? appointmentId;
   const selected = useMemo(
-    () => data?.appointments.find((a) => a.appointmentId === selectedId),
-    [data, selectedId],
+    () => data?.appointments.find(a => a.appointmentId === selectedId),
+    [data, selectedId]
   );
 
   const record = trpc.payments.record.useMutation({
@@ -133,9 +184,11 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
       resetAmount();
       setNote("");
       toast.success("Payment recorded");
+      // The all-dogs path replaces this toast with its own; the single-dog
+      // path leaves it, and the banner below carries the figure either way.
       utils.payments.forBooking.invalidate({ appointmentId });
     },
-    onError: (error) => toast.error(error.message),
+    onError: error => toast.error(error.message),
   });
 
   const remove = trpc.payments.remove.useMutation({
@@ -143,7 +196,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
       toast.success("Payment removed");
       utils.payments.forBooking.invalidate({ appointmentId });
     },
-    onError: (error) => toast.error(error.message),
+    onError: error => toast.error(error.message),
   });
 
   /*
@@ -164,10 +217,14 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
    * all, so nobody could see it had moved. What was agreed to is what
    * gets charged.
    */
-  const [pendingCharge, setPendingCharge] = useState<PendingCharge | null>(null);
+  const [pendingCharge, setPendingCharge] = useState<PendingCharge | null>(
+    null
+  );
 
   if (isLoading || !data) {
-    return <p className="py-3 text-xs text-muted-foreground">Loading payments…</p>;
+    return (
+      <p className="py-3 text-xs text-muted-foreground">Loading payments…</p>
+    );
   }
 
   /**
@@ -184,7 +241,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
    * types one number.
    */
   const payingAll = selectedId === ALL_DOGS;
-  const balances = data.appointments.map((a) => ({
+  const balances = data.appointments.map(a => ({
     appointmentId: a.appointmentId,
     petName: a.petName,
     outstanding: a.outstanding,
@@ -202,7 +259,9 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
     ? totalOutstanding(balances)
     : (selected?.outstanding ?? 0);
   const amount = prefilledAmount({
-    edited: amountEdited, typed: typedAmount, outstanding: outstandingForTarget,
+    edited: amountEdited,
+    typed: typedAmount,
+    outstanding: outstandingForTarget,
   });
 
   /**
@@ -217,23 +276,41 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
    * $110 of revenue; recording the $200 would put money the salon does
    * not have into every report.
    */
-  const owedHere = payingAll ? totalOutstanding(balances) : (selected?.outstanding ?? null);
-  const tender = acceptsOverTender(method) && amount.trim()
-    ? cashTender({ tendered: amount, outstanding: owedHere })
-    : null;
+  const owedHere = payingAll
+    ? totalOutstanding(balances)
+    : (selected?.outstanding ?? null);
+  const tender =
+    acceptsOverTender(method) && amount.trim()
+      ? cashTender({ tendered: amount, outstanding: owedHere })
+      : null;
   const overTendered = Boolean(tender?.ok && tender.change > 0);
   // Once cash covers the bill, the amount APPLIED is what the rest of
   // the panel works from — never the tendered figure.
-  const effectiveAmount = tender?.ok && overTendered ? tender.applied.toFixed(2) : amount;
+  const effectiveAmount =
+    tender?.ok && overTendered ? tender.applied.toFixed(2) : amount;
 
-  const spread = payingAll && effectiveAmount.trim() ? allocateAcrossDogs(effectiveAmount, balances) : null;
-  const check = !payingAll && effectiveAmount.trim()
-    ? validatePaymentAmount(effectiveAmount, { outstanding: selected?.outstanding ?? null, paid: selected?.paid ?? 0 })
-    : null;
+  const spread =
+    payingAll && effectiveAmount.trim()
+      ? allocateAcrossDogs(effectiveAmount, balances)
+      : null;
+  const check =
+    !payingAll && effectiveAmount.trim()
+      ? validatePaymentAmount(effectiveAmount, {
+          outstanding: selected?.outstanding ?? null,
+          paid: selected?.paid ?? 0,
+        })
+      : null;
   const canSubmit = payingAll ? Boolean(spread?.ok) : Boolean(check?.ok);
-  const error = tender && !tender.ok
-    ? tender.error
-    : payingAll ? (spread && !spread.ok ? spread.error : null) : (check && !check.ok ? check.error : null);
+  const error =
+    tender && !tender.ok
+      ? tender.error
+      : payingAll
+        ? spread && !spread.ok
+          ? spread.error
+          : null
+        : check && !check.ok
+          ? check.error
+          : null;
 
   /**
    * Every line one press would pay, as chargeCardOnFile wants them.
@@ -243,7 +320,10 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
    */
   const chargeAllocations =
     payingAll && spread?.ok
-      ? spread.allocations.map((a) => ({ appointmentId: a.appointmentId, amount: a.amount.toFixed(2) }))
+      ? spread.allocations.map(a => ({
+          appointmentId: a.appointmentId,
+          amount: a.amount.toFixed(2),
+        }))
       : canSubmit
         ? [{ appointmentId: selectedId, amount: effectiveAmount }]
         : [];
@@ -254,12 +334,20 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
       allocations: chargeAllocations,
       amount: `$${effectiveAmount}`,
       who: payingAll
-        ? balances.map((b) => b.petName).join(" + ")
+        ? balances.map(b => b.petName).join(" + ")
         : (selected?.petName ?? "this booking"),
     });
 
   const submit = async () => {
     if (!canSubmit) return;
+    /* Worked out BEFORE anything is recorded. The success handler clears
+       the amount box, so by the time it runs there is nothing left to
+       compute a hand-back from — which is the whole bug. */
+    const owing = handBackFor({
+      tendered: amount,
+      outstanding: owedHere,
+      method,
+    });
     /*
      * Stripe does not record, it charges — so it does not go to
      * payments.record at all. It opens the confirm on the card row
@@ -276,7 +364,9 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
          server answers "nothing to charge", which reads like a fault
          rather than an answer. Say what to do instead. */
       if (Number(effectiveAmount) < 0) {
-        toast.error("Stripe here charges the card. Refund in Stripe, then record it as Other.");
+        toast.error(
+          "Stripe here charges the card. Refund in Stripe, then record it as Other."
+        );
         return;
       }
       requestCharge();
@@ -294,13 +384,26 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             note: note.trim() || undefined,
           });
         }
-        toast.success(`Payment recorded — ${describeAllocation(spread.allocations)}`);
+        setHandBack(owing);
+        toast.success(
+          owing
+            ? `${describeHandBack(owing)} — ${describeAllocation(spread.allocations)}`
+            : `Payment recorded — ${describeAllocation(spread.allocations)}`
+        );
       } catch {
         // record's own onError has already said what went wrong.
       }
       return;
     }
-    record.mutate({ appointmentId: selectedId, amount: effectiveAmount, method, note: note.trim() || undefined });
+    record.mutate(
+      {
+        appointmentId: selectedId,
+        amount: effectiveAmount,
+        method,
+        note: note.trim() || undefined,
+      },
+      { onSuccess: () => setHandBack(owing) }
+    );
   };
 
   return (
@@ -321,21 +424,75 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
               {money(creditBalance)} store credit
             </span>
           )}
-          {data.anyUnpriced
-            ? "Some dogs have no price yet"
-            : <>Booking {money(data.bookingTotal)} · paid {money(data.bookingPaid)} · owing <strong className="text-foreground">{money(data.bookingOutstanding)}</strong></>}
+          {data.anyUnpriced ? (
+            "Some dogs have no price yet"
+          ) : (
+            <>
+              Booking {money(data.bookingTotal)} · paid{" "}
+              {money(data.bookingPaid)} · owing{" "}
+              <strong className="text-foreground">
+                {money(data.bookingOutstanding)}
+              </strong>
+            </>
+          )}
         </p>
       </div>
 
+      {/*
+        The change, kept where it can be read while the drawer is open.
+
+        Lauren, 10/11/2026: "They gave me $300 cash... it doesnt work out
+        change to give back." The figure existed, under the amount box,
+        and the amount box is cleared the instant the payment lands — so
+        it was on screen only while she was typing and gone by the time
+        she needed it.
+
+        At the TOP, not under the controls: on a phone the controls are
+        below the fold by the time a two-dog booking has drawn its rows.
+        Dismissed by a person pressing Done, never by a refetch, because
+        the only thing that ends it is the coins leaving the drawer.
+      */}
+      {handBack && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 dark:border-emerald-900/60 dark:bg-emerald-950/40"
+          role="status"
+          data-testid="hand-back"
+        >
+          <div className="min-w-0">
+            <p className="text-base font-bold text-emerald-800 dark:text-emerald-300">
+              {describeHandBack(handBack)}
+            </p>
+            {/* The sum behind it, so a figure that looks wrong can be
+                checked rather than argued with. */}
+            <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
+              {describeTender(handBack)}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 shrink-0"
+            onClick={() => setHandBack(null)}
+          >
+            Done
+          </Button>
+        </div>
+      )}
+
       {/* Per dog: what it costs, what has been taken, what is left. */}
       <div className="space-y-1.5">
-        {data.appointments.map((entry) => (
-          <div key={entry.appointmentId} className="rounded-lg border bg-background px-2.5 py-2">
+        {data.appointments.map(entry => (
+          <div
+            key={entry.appointmentId}
+            className="rounded-lg border bg-background px-2.5 py-2"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold">{entry.petName}</span>
                 {entry.status && (
-                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLE[entry.status] ?? ""}`}>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_STYLE[entry.status] ?? ""}`}
+                  >
                     {entry.status}
                   </span>
                 )}
@@ -346,9 +503,13 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
                 )}
               </div>
               <span className="text-[11px] tabular-nums text-muted-foreground">
-                {entry.total === null ? "no price" : `${money(entry.total)} · paid ${money(entry.paid)}`}
+                {entry.total === null
+                  ? "no price"
+                  : `${money(entry.total)} · paid ${money(entry.paid)}`}
                 {entry.outstanding !== null && entry.outstanding > 0 && (
-                  <strong className="ml-1 text-foreground">owing {money(entry.outstanding)}</strong>
+                  <strong className="ml-1 text-foreground">
+                    owing {money(entry.outstanding)}
+                  </strong>
                 )}
               </span>
             </div>
@@ -363,18 +524,25 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
                 {entry.billedTotalOverride !== null ? (
                   <>
                     Price set by hand
-                    {entry.billedOverrideReason ? ` — ${entry.billedOverrideReason}` : ""}
+                    {entry.billedOverrideReason
+                      ? ` — ${entry.billedOverrideReason}`
+                      : ""}
                   </>
                 ) : (
                   <>
                     {money(entry.servicePrice ?? 0)} groom
-                    {entry.addOnsTotal > 0 && <> + {money(entry.addOnsTotal)} extras</>}
+                    {entry.addOnsTotal > 0 && (
+                      <> + {money(entry.addOnsTotal)} extras</>
+                    )}
                     {/* Named, not folded into "extras". A client querying
                         the bill asks about THIS line, and the answer is
                         that they agreed to it on the day — which is the
                         whole reason the quote was recorded. */}
                     {entry.approvedExtrasTotal > 0 && (
-                      <> + {money(entry.approvedExtrasTotal)} agreed on the day</>
+                      <>
+                        {" "}
+                        + {money(entry.approvedExtrasTotal)} agreed on the day
+                      </>
                     )}
                   </>
                 )}
@@ -398,15 +566,26 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
 
             {entry.lines.length > 0 && (
               <ul className="mt-1.5 space-y-1 border-t pt-1.5">
-                {entry.lines.map((line) => (
-                  <li key={line.id} className="flex items-center justify-between gap-2 text-[11px]">
+                {entry.lines.map(line => (
+                  <li
+                    key={line.id}
+                    className="flex items-center justify-between gap-2 text-[11px]"
+                  >
                     <span className="truncate text-muted-foreground">
-                      {PAYMENT_METHOD_LABELS[line.method as PaymentMethod] ?? line.method}
-                      {line.payerFirstName && <> · {line.payerFirstName} {line.payerLastName}</>}
+                      {PAYMENT_METHOD_LABELS[line.method as PaymentMethod] ??
+                        line.method}
+                      {line.payerFirstName && (
+                        <>
+                          {" "}
+                          · {line.payerFirstName} {line.payerLastName}
+                        </>
+                      )}
                       {line.note && <> · {line.note}</>}
                     </span>
                     <span className="flex items-center gap-1.5 shrink-0">
-                      <span className={`tabular-nums font-semibold ${Number(line.amount) < 0 ? "text-red-600 dark:text-red-400" : ""}`}>
+                      <span
+                        className={`tabular-nums font-semibold ${Number(line.amount) < 0 ? "text-red-600 dark:text-red-400" : ""}`}
+                      >
                         {money(Number(line.amount))}
                       </span>
                       <button
@@ -435,17 +614,31 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
               value={String(selectedId)}
               /* Dropping the prompt: it names dogs and an amount that
                  are about to stop being the ones on screen. */
-              onValueChange={(v) => { setTarget(Number(v)); resetAmount(); setPendingCharge(null); }}
+              onValueChange={v => {
+                setTarget(Number(v));
+                resetAmount();
+                setPendingCharge(null);
+                setHandBack(null);
+              }}
             >
-              <SelectTrigger className="h-8 w-[7.5rem] text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-8 w-[7.5rem] text-xs">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {/* First, because paying for the whole household is the
                     common case at the counter — not the exception. */}
-                <SelectItem value={String(ALL_DOGS)} className="text-xs font-semibold">
+                <SelectItem
+                  value={String(ALL_DOGS)}
+                  className="text-xs font-semibold"
+                >
                   All dogs {money(totalOutstanding(balances))}
                 </SelectItem>
-                {data.appointments.map((entry) => (
-                  <SelectItem key={entry.appointmentId} value={String(entry.appointmentId)} className="text-xs">
+                {data.appointments.map(entry => (
+                  <SelectItem
+                    key={entry.appointmentId}
+                    value={String(entry.appointmentId)}
+                    className="text-xs"
+                  >
                     {entry.petName}
                   </SelectItem>
                 ))}
@@ -457,17 +650,29 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             placeholder="0.00"
             inputMode="decimal"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            onChange={e => setAmount(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") submit();
+            }}
           />
           {/* Same reason, plus one of its own: with the prompt left open,
               switching to Cash flipped the button back to "Take payment"
               while "Yes, charge it" sat there still live. */}
-          <Select value={method} onValueChange={(v) => { setMethod(v as PaymentMethod); setPendingCharge(null); }}>
-            <SelectTrigger className="h-8 w-[8.5rem] text-xs"><SelectValue /></SelectTrigger>
+          <Select
+            value={method}
+            onValueChange={v => {
+              setMethod(v as PaymentMethod);
+              setPendingCharge(null);
+            }}
+          >
+            <SelectTrigger className="h-8 w-[8.5rem] text-xs">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
-              {PAYMENT_METHODS.map((m) => (
-                <SelectItem key={m} value={m} className="text-xs">{PAYMENT_METHOD_LABELS[m]}</SelectItem>
+              {PAYMENT_METHODS.map(m => (
+                <SelectItem key={m} value={m} className="text-xs">
+                  {PAYMENT_METHOD_LABELS[m]}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -475,7 +680,7 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             className="h-8 min-w-[6rem] flex-1 text-xs"
             placeholder="Note (optional)"
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={e => setNote(e.target.value)}
           />
           <Button
             size="sm"
@@ -483,7 +688,9 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
             disabled={!canSubmit || record.isPending}
             onClick={submit}
           >
-            {record.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {record.isPending && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            )}
             {/* The label says which of the two things the press does.
                 "Take payment" on a button that charges a real card is
                 the ambiguity this whole change exists to remove. */}
@@ -500,7 +707,9 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
           pending={pendingCharge}
           requestCharge={requestCharge}
           cancelCharge={() => setPendingCharge(null)}
-          appointmentIds={payingAll ? balances.map((b) => b.appointmentId) : [selectedId]}
+          appointmentIds={
+            payingAll ? balances.map(b => b.appointmentId) : [selectedId]
+          }
           /* NOT selectedId: when every dog is being paid for at once that
              is the ALL_DOGS sentinel (-1), which is not an appointment
              and made the card lookup silently skip. The panel's own
@@ -526,12 +735,17 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
         {selected && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
             <span className="text-xs text-muted-foreground">
-              {describeDiscount(selected.discountPercent, selected.discountReason)
-                ?? `No discount on ${selected.petName}`}
+              {describeDiscount(
+                selected.discountPercent,
+                selected.discountReason
+              ) ?? `No discount on ${selected.petName}`}
             </span>
             <ApplyDiscountDialog
               appointmentId={selected.appointmentId}
-              grossPrice={selected.preDiscountPrice ?? (selected.total != null ? selected.total.toFixed(2) : null)}
+              grossPrice={
+                selected.preDiscountPrice ??
+                (selected.total != null ? selected.total.toFixed(2) : null)
+              }
               currentPercent={selected.discountPercent}
               currentReason={selected.discountReason}
               sessionHasOtherPets={(data?.appointments.length ?? 0) > 1}
@@ -542,13 +756,32 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
 
         {/* One tap for the two amounts anyone actually types. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {!payingAll && selected?.outstanding != null && selected.outstanding > 0 && (
-            <>
-              <QuickAmount label={`Balance ${money(selected.outstanding)}`} onClick={() => setAmount(selected.outstanding!.toFixed(2))} />
-              <QuickAmount label={`Half ${money(splitEvenly(selected.outstanding, 2)[0])}`} onClick={() => setAmount(splitEvenly(selected.outstanding!, 2)[0].toFixed(2))} />
-              <QuickAmount label={`Third ${money(splitEvenly(selected.outstanding, 3)[0])}`} onClick={() => setAmount(splitEvenly(selected.outstanding!, 3)[0].toFixed(2))} />
-            </>
-          )}
+          {!payingAll &&
+            selected?.outstanding != null &&
+            selected.outstanding > 0 && (
+              <>
+                <QuickAmount
+                  label={`Balance ${money(selected.outstanding)}`}
+                  onClick={() => setAmount(selected.outstanding!.toFixed(2))}
+                />
+                <QuickAmount
+                  label={`Half ${money(splitEvenly(selected.outstanding, 2)[0])}`}
+                  onClick={() =>
+                    setAmount(
+                      splitEvenly(selected.outstanding!, 2)[0].toFixed(2)
+                    )
+                  }
+                />
+                <QuickAmount
+                  label={`Third ${money(splitEvenly(selected.outstanding, 3)[0])}`}
+                  onClick={() =>
+                    setAmount(
+                      splitEvenly(selected.outstanding!, 3)[0].toFixed(2)
+                    )
+                  }
+                />
+              </>
+            )}
           {payingAll && totalOutstanding(balances) > 0 && (
             <QuickAmount
               label={`Whole booking ${money(totalOutstanding(balances))}`}
@@ -559,11 +792,18 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
               A part payment fills one dog at a time, so "Agnes $145.00
               and Shirley $55.00" is worth seeing rather than assuming. */}
           {spread?.ok && (
-            <span className="text-[11px] text-muted-foreground" data-testid="allocation-preview">
+            <span
+              className="text-[11px] text-muted-foreground"
+              data-testid="allocation-preview"
+            >
               {describeAllocation(spread.allocations)}
             </span>
           )}
-          {error && <span className="text-[11px] text-red-600 dark:text-red-400">{error}</span>}
+          {error && (
+            <span className="text-[11px] text-red-600 dark:text-red-400">
+              {error}
+            </span>
+          )}
           {/* The number the counter reads out while the drawer is open.
               Green and bold because handing back the wrong change is the
               mistake this is here to prevent. */}
@@ -581,7 +821,13 @@ export function SplitPaymentPanel({ appointmentId }: { appointmentId: number }) 
   );
 }
 
-function QuickAmount({ label, onClick }: { label: string; onClick: () => void }) {
+function QuickAmount({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -610,7 +856,12 @@ function QuickAmount({ label, onClick }: { label: string; onClick: () => void })
  * be readable.
  */
 function BilledOverrideRow({
-  appointmentId, petName, current, currentReason, computed, onSaved,
+  appointmentId,
+  petName,
+  current,
+  currentReason,
+  computed,
+  onSaved,
 }: {
   appointmentId: number;
   petName: string;
@@ -620,20 +871,30 @@ function BilledOverrideRow({
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState(current !== null ? current.toFixed(2) : "");
+  const [amount, setAmount] = useState(
+    current !== null ? current.toFixed(2) : ""
+  );
   const [reason, setReason] = useState(currentReason ?? "");
 
   const save = trpc.payments.setBilledOverride.useMutation({
-    onSuccess: (result) => {
-      toast.success(result.cleared ? `${petName} back to the worked-out price` : `${petName} set to $${Number(amount).toFixed(2)}`);
+    onSuccess: result => {
+      toast.success(
+        result.cleared
+          ? `${petName} back to the worked-out price`
+          : `${petName} set to $${Number(amount).toFixed(2)}`
+      );
       setOpen(false);
       onSaved();
     },
-    onError: (error) => toast.error(error.message),
+    onError: error => toast.error(error.message),
   });
 
   const parsed = Number(amount);
-  const canSave = amount.trim() !== "" && Number.isFinite(parsed) && parsed >= 0 && reason.trim() !== "";
+  const canSave =
+    amount.trim() !== "" &&
+    Number.isFinite(parsed) &&
+    parsed >= 0 &&
+    reason.trim() !== "";
 
   // Collapsed: just the action. The line above this already says where
   // the figure came from, and repeating it on every dog of a booking
@@ -645,12 +906,20 @@ function BilledOverrideRow({
           type="button"
           className="text-[10px] font-medium text-primary underline-offset-2 hover:underline"
           onClick={() => {
-            setAmount(current !== null ? current.toFixed(2) : computed !== null ? computed.toFixed(2) : "");
+            setAmount(
+              current !== null
+                ? current.toFixed(2)
+                : computed !== null
+                  ? computed.toFixed(2)
+                  : ""
+            );
             setReason(currentReason ?? "");
             setOpen(true);
           }}
         >
-          {current !== null ? `Change ${petName}'s price` : `Set ${petName}'s price by hand`}
+          {current !== null
+            ? `Change ${petName}'s price`
+            : `Set ${petName}'s price by hand`}
         </button>
         {current !== null && (
           <button
@@ -668,26 +937,44 @@ function BilledOverrideRow({
 
   return (
     <div className="mt-1.5 space-y-2 rounded-md bg-muted/50 px-2 py-2">
-      <p className="text-[11px] font-medium">What is {petName} actually being charged?</p>
+      <p className="text-[11px] font-medium">
+        What is {petName} actually being charged?
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         <Input
-          className="h-8 w-24 text-xs tabular-nums" inputMode="decimal" placeholder="0.00"
-          value={amount} onChange={(e) => setAmount(e.target.value)}
+          className="h-8 w-24 text-xs tabular-nums"
+          inputMode="decimal"
+          placeholder="0.00"
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
         />
         <Input
-          className="h-8 min-w-0 flex-1 text-xs" placeholder="Why — e.g. quoted before the coat matted"
-          value={reason} onChange={(e) => setReason(e.target.value)}
+          className="h-8 min-w-0 flex-1 text-xs"
+          placeholder="Why — e.g. quoted before the coat matted"
+          value={reason}
+          onChange={e => setReason(e.target.value)}
         />
       </div>
       <p className="text-[10px] text-muted-foreground">
-        This replaces the worked-out figure. The extras stay on the invoice as a record of what was done.
+        This replaces the worked-out figure. The extras stay on the invoice as a
+        record of what was done.
       </p>
       <div className="flex justify-end gap-1.5">
-        <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setOpen(false)}>Cancel</Button>
         <Button
-          size="sm" className="h-7 gap-1 text-[11px]"
+          size="sm"
+          variant="ghost"
+          className="h-7 text-[11px]"
+          onClick={() => setOpen(false)}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          className="h-7 gap-1 text-[11px]"
           disabled={!canSave || save.isPending}
-          onClick={() => save.mutate({ appointmentId, amount, reason: reason.trim() })}
+          onClick={() =>
+            save.mutate({ appointmentId, amount, reason: reason.trim() })
+          }
         >
           {save.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
           Save price
@@ -712,8 +999,15 @@ function BilledOverrideRow({
  * means a refund and a phone call.
  */
 function CardOnFileRow({
-  appointmentIds, anchorAppointmentId, owingCents, allocations, note, onPaid,
-  pending, requestCharge, cancelCharge,
+  appointmentIds,
+  anchorAppointmentId,
+  owingCents,
+  allocations,
+  note,
+  onPaid,
+  pending,
+  requestCharge,
+  cancelCharge,
 }: {
   appointmentIds: number[];
   anchorAppointmentId: number;
@@ -736,19 +1030,24 @@ function CardOnFileRow({
   const { data: entry } = trpc.payments.cardEntryConfig.useQuery();
   const { data: card } = trpc.payments.cardOnFile.useQuery(
     { appointmentId: anchorAppointmentId, owingCents: Math.max(0, owingCents) },
-    { enabled: anchorAppointmentId > 0 },
+    { enabled: anchorAppointmentId > 0 }
   );
 
   const charge = trpc.payments.chargeCardOnFile.useMutation({
-    onSuccess: (r) => {
+    onSuccess: r => {
       cancelCharge();
       // A decline is a normal outcome, not an exception: the procedure
       // returns success:false rather than throwing, so it is reported
       // here rather than in onError.
-      if (r.success) { toast.success(r.message); onPaid(); }
-      else toast.error(r.message);
+      if (r.success) {
+        toast.success(r.message);
+        onPaid();
+      } else toast.error(r.message);
     },
-    onError: (e) => { cancelCharge(); toast.error(e.message); },
+    onError: e => {
+      cancelCharge();
+      toast.error(e.message);
+    },
   });
 
   const setupLink = trpc.payments.cardSetupLink.useMutation({
@@ -756,9 +1055,11 @@ function CardOnFileRow({
       // A new tab, not a redirect: the staff member is mid-booking and
       // the client types the card on the salon iPad or their own phone.
       window.open(url, "_blank", "noopener");
-      toast.success("Stripe's secure card page is open. It saves to this client for next time.");
+      toast.success(
+        "Stripe's secure card page is open. It saves to this client for next time."
+      );
     },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   /*
@@ -778,8 +1079,15 @@ function CardOnFileRow({
        stayed armed to reappear once the query did answer. */
     return pending ? (
       <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2">
-        <span className="text-xs text-muted-foreground">Checking the card on file…</span>
-        <Button size="sm" variant="outline" className="ml-auto h-8" onClick={cancelCharge}>
+        <span className="text-xs text-muted-foreground">
+          Checking the card on file…
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto h-8"
+          onClick={cancelCharge}
+        >
           Cancel
         </Button>
       </div>
@@ -805,7 +1113,12 @@ function CardOnFileRow({
         <span className="text-xs font-semibold text-destructive">
           Stripe is not set up on this deployment — nothing was charged
         </span>
-        <Button size="sm" variant="outline" className="ml-auto h-8" onClick={cancelCharge}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto h-8"
+          onClick={cancelCharge}
+        >
           OK
         </Button>
       </div>
@@ -835,7 +1148,12 @@ function CardOnFileRow({
                   ? "No card on file — add one first"
                   : "Nothing owing to charge"}
             </span>
-            <Button size="sm" variant="outline" className="h-8" onClick={cancelCharge}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={cancelCharge}
+            >
               OK
             </Button>
           </>
@@ -846,16 +1164,29 @@ function CardOnFileRow({
             <span className="text-xs font-semibold">
               Charge {pending.amount} to the card on file for {pending.who}?
             </span>
-            <Button size="sm" variant="outline" className="h-8" onClick={cancelCharge} disabled={busy}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={cancelCharge}
+              disabled={busy}
+            >
               Cancel
             </Button>
             <Button
               size="sm"
               className="h-8 gap-1.5"
               disabled={busy}
-              onClick={() => charge.mutate({ allocations: pending.allocations, note: note.trim() || undefined })}
+              onClick={() =>
+                charge.mutate({
+                  allocations: pending.allocations,
+                  note: note.trim() || undefined,
+                })
+              }
             >
-              {charge.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {charge.isPending && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              )}
               Yes, charge it
             </Button>
           </>
@@ -872,7 +1203,9 @@ function CardOnFileRow({
               else setupLink.mutate({ appointmentId: anchorAppointmentId });
             }}
           >
-            {setupLink.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {setupLink.isPending && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            )}
             {card.action}
           </Button>
         )}
@@ -882,10 +1215,15 @@ function CardOnFileRow({
           true of the hosted fallback and wrong once in-place entry is
           on. Correct it here, where that is known. */}
       {(() => {
-        const hint = needsCard && entry?.inPlace
-          ? "Type it in here on Stripe's own fields. Saved to this client for next time."
-          : card.hint;
-        return hint ? <p className="w-full text-[11px] leading-snug text-muted-foreground">{hint}</p> : null;
+        const hint =
+          needsCard && entry?.inPlace
+            ? "Type it in here on Stripe's own fields. Saved to this client for next time."
+            : card.hint;
+        return hint ? (
+          <p className="w-full text-[11px] leading-snug text-muted-foreground">
+            {hint}
+          </p>
+        ) : null;
       })()}
       <CardEntryDialog
         appointmentId={anchorAppointmentId}
