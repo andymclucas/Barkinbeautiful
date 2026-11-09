@@ -36,30 +36,59 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 /**
  * What staff see in the "Take payment" dropdown.
  *
- * Every one of these RECORDS a payment that has already happened
- * somewhere else. Taking a payment here charges nothing: `payments.record`
- * validates the amount and inserts a row, and the only method that does
- * anything further is store_credit, which draws the balance down.
+ * All but one of these RECORD a payment that has already happened
+ * somewhere else: `payments.record` validates the amount and inserts a
+ * row, and `store_credit` additionally draws the balance down.
  *
- * "Stripe" therefore needed saying out loud. Money moves through Stripe
- * in exactly three places — the Pay Now link on an emailed invoice,
- * saving a card, and membership billing — and none of them is this
- * panel. A bare "Stripe" read like a button that would charge the card
- * on file, and picking it did the opposite: it marked the booking paid
- * and took nothing.
+ * ## Stripe is the exception, since 09/11/2026
  *
- * The option still earns its place. A client who pays the Pay Now link
- * now has it posted for them by the webhook, so the usual case needs
- * nobody to type anything — but a payment taken through Stripe some
- * other way still has to be written down, and the panel refuses an
- * amount the booking no longer owes, so a second hand-keyed copy
- * cannot double-count.
+ * Andy: "Make Stripe in the dropdown actually charge the card on file."
+ *
+ * It used to be the opposite, and this comment used to say so at
+ * length: a bare "Stripe" read like a button that would charge the card
+ * and picking it did the reverse — marked the booking paid and took
+ * nothing. The honest fix then was the label. The honest fix now is to
+ * make the word mean what everybody reads it as.
+ *
+ * Picking it routes to `payments.chargeCardOnFile` instead of
+ * `payments.record`, behind the same two-step confirm the card box
+ * uses, because the person choosing it this week has spent months
+ * choosing it to mean "write this down".
+ *
+ * ## What that costs
+ *
+ * There is no longer a way to hand-key a Stripe payment that happened
+ * some other way. The common case never needed one — a client who pays
+ * the Pay Now link has it posted by the webhook — but if a payment ever
+ * arrives through Stripe by a route the webhook does not see, it now
+ * has to go in as "Other" with a note.
+ *
+ * The stored value is still `stripe` either way, and that is right: it
+ * means money moved through Stripe, which is true of a charge and of a
+ * webhook posting alike.
  */
+/**
+ * Whether picking this method MOVES money, rather than writing down
+ * money that moved somewhere else.
+ *
+ * One function because the panel asks twice — once to route the press
+ * away from `payments.record`, and once to label the button "Charge
+ * card" instead of "Take payment". Two inline `=== "stripe"` checks is
+ * precisely how a button comes to promise one thing and do the other,
+ * which is the bug this whole change replaced.
+ *
+ * If a second method ever starts charging, it goes here, and the
+ * confirm and the label follow for free.
+ */
+export function methodChargesCard(method: PaymentMethod): boolean {
+  return method === "stripe";
+}
+
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cash: "Cash",
   eftpos: "EFTPOS",
   card: "Card (manual)",
-  stripe: "Stripe (already paid online)",
+  stripe: "Stripe — charge the card on file",
   bank_transfer: "Bank transfer",
   store_credit: "Store credit",
   other: "Other",

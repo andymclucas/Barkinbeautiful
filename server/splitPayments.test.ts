@@ -8,6 +8,7 @@ import {
   toCents,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
+  methodChargesCard,
 } from "../shared/splitPayments";
 
 const line = (amount: string | number | null) => ({ amount });
@@ -157,14 +158,64 @@ describe("payment methods", () => {
   });
 
   /**
-   * Taking a payment on this panel charges nothing — it records money
-   * that already arrived. A bare "Stripe" read like a button that would
-   * charge the card on file, and picking it marked the booking paid and
-   * took nothing. The label has to keep saying so.
+   * This asserted the OPPOSITE until 09/11/2026 — that the label had to
+   * say "already paid", because picking Stripe recorded a payment and
+   * charged nothing.
+   *
+   * Andy: "Make Stripe in the dropdown actually charge the card on
+   * file." So the word now means what everybody read it as, and the
+   * label has to say THAT instead. The inversion is deliberate, not a
+   * deletion: a label that promises a charge on an option that only
+   * records is the same bug in the other direction, and it is the one
+   * that costs the salon money rather than embarrassing it.
    */
-  it("says the Stripe option is a record of money already taken, not a charge", () => {
+  it("says the Stripe option charges the card, because it does", () => {
     expect(PAYMENT_METHOD_LABELS.stripe).not.toBe("Stripe");
-    expect(PAYMENT_METHOD_LABELS.stripe.toLowerCase()).toContain("already paid");
+    expect(PAYMENT_METHOD_LABELS.stripe.toLowerCase()).toContain("charge");
+    expect(PAYMENT_METHOD_LABELS.stripe.toLowerCase()).toContain("card on file");
+    expect(PAYMENT_METHOD_LABELS.stripe.toLowerCase()).not.toContain("already paid");
+  });
+
+  /*
+   * And the others still only write things down. If a second method
+   * ever starts moving money, it needs the same confirm step and the
+   * same label treatment — this is what would notice.
+   */
+  it("leaves every other method as a record of money already taken", () => {
+    for (const method of PAYMENT_METHODS) {
+      if (method === "stripe") continue;
+      expect(PAYMENT_METHOD_LABELS[method].toLowerCase(), method)
+        .not.toContain("charge");
+    }
+  });
+});
+
+/**
+ * The panel asks this twice — to route the press away from
+ * payments.record, and to label the button. Asking it in one place is
+ * what stops a button that says "Charge card" and records instead.
+ */
+describe("methodChargesCard", () => {
+  it("is true for the one method that moves money", () => {
+    expect(methodChargesCard("stripe")).toBe(true);
+  });
+
+  it("is false for every method that only records", () => {
+    for (const method of PAYMENT_METHODS) {
+      if (method === "stripe") continue;
+      expect(methodChargesCard(method), method).toBe(false);
+    }
+  });
+
+  /* The label and the behaviour have to agree, in both directions.
+     This is the assertion that would have failed before 09/11/2026. */
+  it("agrees with the label on every method", () => {
+    for (const method of PAYMENT_METHODS) {
+      expect(
+        PAYMENT_METHOD_LABELS[method].toLowerCase().includes("charge"),
+        method,
+      ).toBe(methodChargesCard(method));
+    }
   });
 });
 
