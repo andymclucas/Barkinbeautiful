@@ -290,28 +290,70 @@ export async function clientStatusSweepHandler(req: any, res: any) {
     const db = await getDb();
     if (!db) return res.json({ ok: true, skipped: "no-db" });
 
+    /*
+     * The same call the reminder job makes, so the two cannot drift.
+     *
+     * A 200 either way, including on a refusal: a cron that 500s gets
+     * retried, and retrying a ceiling refusal just produces the same
+     * refusal at the same volume. The reason is in the body and in the
+     * log, which is what wants reading.
+     */
+    const result = await runClientStatusSweepQuietly(db);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("[client-status] Error:", err);
+    return res.status(500).json({ error: String(err), timestamp: new Date().toISOString() });
+  }
+}
+
+/**
+ * Run the sweep and never let it hurt the caller.
+ *
+ * Andy, 09/11/2026, after the Render command could not be saved: "Do B."
+ *
+ * The sweep wants a daily trigger and Groomigo has exactly one that is
+ * proven — the 6:30am cron that sends the reminders. Rather than a
+ * second Render job (which would need CRON_SECRET set on it, a secret
+ * nobody should be typing twice) or an edit to the command that the
+ * browser refuses to save, the reminder handler calls this.
+ *
+ * ## It can only ever be quiet
+ *
+ * Everything is caught. A sweep that throws, a database that goes away
+ * mid-run, a plan the ceiling refuses — none of them may change what
+ * the reminder handler returns or stop a text going out. The salon
+ * notices a missing reminder within the hour; it would not notice a
+ * missing sweep for weeks, so the asymmetry decides who yields.
+ *
+ * It returns a small object rather than nothing, so the cron's own
+ * response body says what happened and the Render log is diagnosable
+ * without a second place to look.
+ */
+export type QuietSweepResult =
+  | { ran: true; deactivated: number; reactivated: number; cutoffDay: string }
+  | { ran: false; reason: string };
+
+export async function runClientStatusSweepQuietly(db: any): Promise<QuietSweepResult> {
+  try {
     const rows = await readSweepRows(db);
     const plan = planSweep(rows, new Date());
     for (const line of describeSweep(plan)) console.log(`[client-status] ${line}`);
 
     if (plan.refusedReason) {
-      /*
-       * Loud, and a 200. A cron that 500s gets retried, and retrying a
-       * refusal just produces the same refusal at the same volume. The
-       * run is reported as skipped with the reason, which is what wants
-       * reading in the Render log.
-       */
+      /* Loud in the log, quiet to the caller. A ceiling refusal after
+         the catch-up means something is wrong with the book, not with
+         the reminders. */
       console.error(`[client-status] REFUSED — ${plan.refusedReason}.`
         + ` Nothing was written. Run scripts/mark-inactive-clients.ts and look.`);
-      return res.json({ ok: true, skipped: "ceiling", reason: plan.refusedReason });
+      return { ran: false, reason: plan.refusedReason };
     }
 
     const applied = await applySweep(db, plan);
     console.log(`[client-status] marked ${applied.deactivated} inactive,`
       + ` brought ${applied.reactivated} back`);
-    return res.json({ ok: true, cutoffDay: plan.cutoffDay, ...applied });
-  } catch (err) {
-    console.error("[client-status] Error:", err);
-    return res.status(500).json({ error: String(err), timestamp: new Date().toISOString() });
+    return { ran: true, cutoffDay: plan.cutoffDay, ...applied };
+  } catch (error) {
+    console.error("[client-status] failed, and the reminders are unaffected:", error);
+    return { ran: false, reason: String((error as Error)?.message ?? error) };
   }
 }
