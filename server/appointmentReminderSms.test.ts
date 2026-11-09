@@ -134,9 +134,23 @@ describe("buildAppointmentReminderSms", () => {
     });
 
     it("keeps the prompt for a client who has not answered", () => {
-      for (const stage of ["4d", "2d", "day_before", undefined] as const) {
+      // day_before is not in this list any more, and that is the point.
+      // Andy, 10/11/2026: "Only one confirmation text to go out." See
+      // the note on `asksToConfirm` in sms.ts.
+      for (const stage of ["4d", "2d", undefined] as const) {
         expect(build(["Teddy"], stage, false), String(stage))
           .toContain("Reply Y to confirm or N to cancel.");
+      }
+    });
+
+    it("never asks on the last reminder, answered or not", () => {
+      // The day before, the slot is being held. A client who needs to
+      // cancel by then rings the salon, which is the conversation that
+      // should happen anyway.
+      for (const answered of [true, false]) {
+        const text = build(["Teddy"], "day_before", answered);
+        expect(text, `alreadyConfirmed=${answered}`).not.toContain("Reply Y");
+        expect(text, `alreadyConfirmed=${answered}`).not.toContain("cancel");
       }
     });
   });
