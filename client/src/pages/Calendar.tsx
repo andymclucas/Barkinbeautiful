@@ -3651,68 +3651,108 @@ export default function Calendar() {
     ? `${weekDays[0].toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}`
     : fmtDateShort(dayDate);
 
+  /**
+   * The day-navigation cluster: bigger, round and coloured, on purpose.
+   *
+   * Andy, 09/11/2026: "I think we centralise these buttons and have the
+   * 'Today' and side scrolling buttons bigger and coloured so that's
+   * the main feature."
+   *
+   * It was the quietest thing on a toolbar of nine pills, while being
+   * the control used most often — every other button on this bar acts
+   * on whichever day these three choose, so they are what the toolbar
+   * is for. 44px square, which is also the smallest comfortable touch
+   * target on a phone; they were 36, and the board is used on one.
+   */
+  const navButtonClass =
+    "brand-lift h-11 w-11 rounded-full border-2 border-primary/30 bg-primary/10 " +
+    "text-primary hover:border-primary/50 hover:bg-primary/20 hover:text-primary";
+
   return (
     <HourHeightContext.Provider value={HOUR_HEIGHT}>
     <DashboardLayout>
       <div className="flex min-h-0 flex-col gap-4 lg:h-[calc(100dvh-6.5rem)]">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/90 bg-card/70 px-3 py-3 shadow-lg shadow-[color-mix(in_oklch,var(--brand-primary)_8%,transparent)] backdrop-blur">
-          {/* flex-wrap and min-w-0: on a phone this row is about 500px of
-              controls in 340px of space, and without wrapping the date
-              label and the appointment-count pill drew on top of each
-              other. Reported from a photo of the board, 03/11/2026. */}
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Button variant="outline" size="icon" className="brand-lift bg-card/80" onClick={() => viewMode === "week" ? navigateWeek(-1) : navigateDay(-1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" className="brand-lift bg-card/80 font-semibold" onClick={goToToday}>Today</Button>
-            <Button variant="outline" size="icon" className="brand-lift bg-card/80" onClick={() => viewMode === "week" ? navigateWeek(1) : navigateDay(1)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Popover open={showDatePicker} onOpenChange={setShowDatePicker}>
-              <PopoverTrigger asChild>
-                {/* Only below lg. At lg and up the sidebar carries a permanent
-                    month, and a second one floating on top of it overlaps the
-                    rail and reads as two calendars disagreeing. */}
-                <button className="brand-lift ml-1 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-base font-bold transition-colors hover:bg-primary/10 hover:text-primary lg:hidden">
-                  <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
-                  {weekLabel}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start" collisionPadding={8}>
-                <CalendarPicker
-                  mode="single"
-                  selected={viewMode !== "week" ? dayDate : weekStart}
-                  onSelect={(d) => {
-                    if (!d) return;
-                    if (viewMode !== "week") {
-                      const nd = new Date(d); nd.setHours(0,0,0,0); setDayDate(nd);
-                    } else {
-                      setWeekStart(getWeekStart(d));
-                    }
-                    setShowDatePicker(false);
-                  }}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            <span className="ml-1 hidden items-center gap-2 px-2 py-1.5 text-base font-bold lg:flex">
-              <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
-              {weekLabel}
-            </span>
-            <span className="shrink-0 whitespace-nowrap rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
-              {sidebarSummary.totalAppointments} appointment{sidebarSummary.totalAppointments === 1 ? "" : "s"}
-              {/* Named rather than silently subtracted. A cancelled dog
-                  is still drawn on the board, so a count that quietly
-                  skipped it would look wrong to anyone counting blocks. */}
-              {sidebarSummary.cancelledCount > 0 && (
-                <span className="ml-1 font-normal text-muted-foreground">
-                  · {sidebarSummary.cancelledCount} cancelled
-                </span>
-              )}
-            </span>
+        {/* Centred and stacked below lg, because that is where it is
+            read: a phone wrapped these into seven ragged left-aligned
+            rows. At lg the left/right split still fits on one line and
+            is kept. Andy, 09/11/2026: "I think we centralise these
+            buttons". */}
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-white/90 bg-card/70 px-3 py-3 shadow-lg shadow-[color-mix(in_oklch,var(--brand-primary)_8%,transparent)] backdrop-blur lg:flex-row lg:flex-wrap lg:justify-between">
+          <div className="flex w-full min-w-0 flex-col items-center gap-2 lg:w-auto lg:flex-row lg:flex-wrap">
+            {/* The three that matter — see navButtonClass. The arrows
+                also gain a name here: they had none, so a screen reader
+                read the whole cluster as "button, Today, button". */}
+            <div className="flex shrink-0 items-center justify-center gap-2">
+              <Button variant="outline" size="icon" className={navButtonClass}
+                aria-label={viewMode === "week" ? "Previous week" : "Previous day"}
+                onClick={() => viewMode === "week" ? navigateWeek(-1) : navigateDay(-1)}>
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+              <Button size="sm" className="brand-lift h-11 rounded-full px-7 text-base font-bold shadow-md shadow-primary/25" onClick={goToToday}>
+                Today
+              </Button>
+              <Button variant="outline" size="icon" className={navButtonClass}
+                aria-label={viewMode === "week" ? "Next week" : "Next day"}
+                onClick={() => viewMode === "week" ? navigateWeek(1) : navigateDay(1)}>
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
+            {/* The day being looked at, and how full it is, on their own
+                centred line beneath the controls that change them.
+
+                flex-wrap and min-w-0 stay: this is about 500px of label
+                in 340px of phone, and without wrapping the date and the
+                appointment-count pill drew on top of each other.
+                Reported from a photo of the board, 03/11/2026. */}
+            <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
+              <Popover open={showDatePicker} onOpenChange={setShowDatePicker}>
+                <PopoverTrigger asChild>
+                  {/* Only below lg. At lg and up the sidebar carries a permanent
+                      month, and a second one floating on top of it overlaps the
+                      rail and reads as two calendars disagreeing. */}
+                  <button className="brand-lift flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-base font-bold transition-colors hover:bg-primary/10 hover:text-primary lg:hidden">
+                    <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
+                    {weekLabel}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start" collisionPadding={8}>
+                  <CalendarPicker
+                    mode="single"
+                    selected={viewMode !== "week" ? dayDate : weekStart}
+                    onSelect={(d) => {
+                      if (!d) return;
+                      if (viewMode !== "week") {
+                        const nd = new Date(d); nd.setHours(0,0,0,0); setDayDate(nd);
+                      } else {
+                        setWeekStart(getWeekStart(d));
+                      }
+                      setShowDatePicker(false);
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <span className="ml-1 hidden items-center gap-2 px-2 py-1.5 text-base font-bold lg:flex">
+                <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarIcon className="h-4 w-4" /></span>
+                {weekLabel}
+              </span>
+              <span className="shrink-0 whitespace-nowrap rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+                {sidebarSummary.totalAppointments} appointment{sidebarSummary.totalAppointments === 1 ? "" : "s"}
+                {/* Named rather than silently subtracted. A cancelled dog
+                    is still drawn on the board, so a count that quietly
+                    skipped it would look wrong to anyone counting blocks. */}
+                {sidebarSummary.cancelledCount > 0 && (
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    · {sidebarSummary.cancelledCount} cancelled
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Centred below lg to match; right-aligned at lg where the
+              date cluster holds the left. */}
+          <div className="flex flex-wrap items-center justify-center gap-2 lg:justify-end">
             <Popover open={apptSearchOpen} onOpenChange={(open) => { setApptSearchOpen(open); if (!open) setApptSearchTerm(""); }}>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="brand-lift h-9 gap-1.5 bg-card/80 text-xs shadow-sm" title="Find any appointment by dog or client name">
