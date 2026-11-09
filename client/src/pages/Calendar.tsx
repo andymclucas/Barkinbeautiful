@@ -49,7 +49,7 @@ import { GROOM_CONDITION_LABELS, GROOM_RATING_LABELS } from "@shared/groomingCar
 import { arrivalLabel, hasArrivedOnSite } from "@shared/appointmentArrival";
 import { buildSharedAppointmentPriceBreakdown } from "@shared/sharedAppointmentPricing";
 import { buildCalendarDragTargetMinutes, formatCalendarDragTargetTime } from "@shared/calendarDragTarget";
-import { formatSharedAppointmentName, formatAppointmentHeading } from "@shared/appointmentDisplay";
+import { formatSharedAppointmentName, formatAppointmentHeading, formatFamilyBookingCount, formatFamilyBookingLine } from "@shared/appointmentDisplay";
 import {
   appointmentDetailChanges,
   hasAppointmentDetailChanges,
@@ -105,7 +105,7 @@ import { PaymentStamp } from "@/components/PaymentStamp";
 import { VipMark } from "@/components/VipMark";
 import { showsMembershipMark } from "@shared/membershipMark";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
-import { liveSiblings, bookingCardKey } from "@shared/bookingSiblings";
+import { liveSiblings, sameColumnSiblings, columnCardMembers } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
@@ -431,6 +431,7 @@ function ApptBlock({
   onDragStart,
   onDragEnd,
   siblings,
+  columnSiblings,
   columnWidth,
   stackCount = 0,
 }: {
@@ -453,7 +454,17 @@ function ApptBlock({
   onClick: () => void;
   onDragStart?: (e: React.DragEvent, appt: Appt) => void;
   onDragEnd?: () => void;
+  /**
+   * Every other live dog on this BOOKING. Drives the shared price, the
+   * booking total and the dog count — all facts about the booking, which
+   * does not shrink when a family is split between two groomers.
+   */
   siblings?: Appt[];
+  /**
+   * The subset of those drawn in THIS column, which is what the card may
+   * name. Omit it and the card names the whole booking, as it used to.
+   */
+  columnSiblings?: Appt[];
 }) {
   const HOUR_HEIGHT = useHourHeight();
   const start = toAESTDate(new Date(appt.scheduledStart));
@@ -493,8 +504,23 @@ function ApptBlock({
   const wfLabel = workflowStateLabel(appt.workflowState);
   const sharedPetAppointments = (siblings && siblings.length > 0 ? [appt, ...siblings] : [appt])
     .sort((left, right) => left.id - right.id);
+  /*
+   * The dogs this card actually DRAWS.
+   *
+   * Andy, 09/11/2026: "There is also duplicates for Nov 11 for Benji &
+   * Sweety Graham — they are under Stephanie & also in unassigned." One
+   * appointment each, different groomers, so two cards is right — but
+   * both took their name from the whole booking and both read "Benji &
+   * Sweety Graham", which is what read as a duplicate. 107 upcoming
+   * bookings were split across two columns that day.
+   *
+   * The name comes from these; everything else on the card still comes
+   * from sharedPetAppointments above, because the booking is one booking.
+   */
+  const cardPetAppointments = [appt, ...(columnSiblings ?? siblings ?? [])]
+    .sort((left, right) => left.id - right.id);
   const sharedAppointmentLabel = formatSharedAppointmentName({
-    petNames: sharedPetAppointments.map((pet) => pet.petName),
+    petNames: cardPetAppointments.map((pet) => pet.petName),
     surname: appt.clientLastName,
   });
   const sharedPriceBreakdown = siblings && siblings.length > 0
@@ -674,7 +700,7 @@ function ApptBlock({
               * Losing the tail of the phrase costs nothing: the dog
               * count is the part that matters and it comes first.
               */}
-            {density.showFamilyLine && <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{sharedPetAppointments.length} dogs · family booking</div>}
+            {density.showFamilyLine && <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{formatFamilyBookingLine({ onThisCard: cardPetAppointments.length, inBooking: sharedPetAppointments.length })}</div>}
             {!compact && (
               <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                 {density.timeFormat === "range"
@@ -3225,8 +3251,15 @@ export default function Calendar() {
                        owing when the same board is viewed by week. */
                     const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
                     const isVip = showsMembershipMark({ membershipId: appt.membershipId, isCancelled });
+                    /* The week list draws a row per dog and never
+                       collapses, so a row names its own column's dogs and
+                       carries the booking's count beside the time. Naming
+                       the whole booking on every row is what made one
+                       split family read as two. */
+                    const bookingPets = [appt, ...getSiblings(appt as Appt)];
+                    const rowPets = [appt, ...sameColumnSiblings(appt as Appt, getSiblings(appt as Appt))];
                     const sharedAppointmentLabel = formatSharedAppointmentName({
-                      petNames: [appt, ...getSiblings(appt as Appt)].map((pet) => pet.petName),
+                      petNames: rowPets.map((pet) => pet.petName),
                       surname: appt.clientLastName,
                     });
                     return (
@@ -3251,6 +3284,7 @@ export default function Calendar() {
                         <div className="truncate mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                           {fmtTime(new Date(appt.scheduledStart))}
                           {appt.staffName ? ` · ${appt.staffName.split(" ")[0]}` : ""}
+                          {bookingPets.length > 1 ? ` · ${formatFamilyBookingCount({ onThisCard: rowPets.length, inBooking: bookingPets.length })}` : ""}
                         </div>
                         <span className="mt-1 inline-flex rounded-full bg-card/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</span>
                       </div>
@@ -3556,18 +3590,18 @@ export default function Calendar() {
                       The key has to match the one liveSiblings uses, or a
                       row is drawn twice or not at all. */}
                   {(() => {
-                    // Determine which appts to show: one per (session, start)
-                    const shownIds = new Set<number>();
-                    const sessionPrimary = new Map<string, Appt>();
-                    for (const a of colAppts) {
-                      if (a.sessionId) {
-                        const key = bookingCardKey(a as Appt);
-                        const existing = sessionPrimary.get(key);
-                        if (!existing || a.id < existing.id) sessionPrimary.set(key, a as Appt);
-                      }
-                    }
-                    Array.from(sessionPrimary.values()).forEach(primary => shownIds.add(primary.id));
-                    const displayAppts = colAppts.filter(a => !a.sessionId || shownIds.has(a.id));
+                    /*
+                     * Which cards this column draws and which dogs each
+                     * one names, from one rule rather than two. Built
+                     * from colAppts rather than from staffId, because the
+                     * column is not always the staff member: the Daycare
+                     * pseudo-column owns a dog by its SERVICE
+                     * (columnOwnsAppointment), so a daycare dog and its
+                     * groomed sibling split into two cards even with the
+                     * same person against both.
+                     */
+                    const cardMembers = columnCardMembers(colAppts);
+                    const displayAppts = colAppts.filter(a => !a.sessionId || cardMembers.has(a.id));
                     /*
                      * Andy, 05/11/2026: "Need to find a way to be able to
                      * see the appts behind the ones over the top. Perhaps
@@ -3612,6 +3646,7 @@ export default function Calendar() {
                         onDragStart={handleDragStart}
                         onDragEnd={handleDragEnd}
                         siblings={getSiblings(appt as Appt)}
+                        columnSiblings={cardMembers.get(appt.id) ?? []}
                       />
                       );
                     });
@@ -4194,8 +4229,15 @@ export default function Calendar() {
             </h3>
             <div className="flex flex-wrap gap-2">
               {unassigned.map(appt => {
+                /* A chip names the dogs in the Unassigned strip, not the
+                   booking: Benji Graham sat here while his sister Sweety was
+                   already Stephanie's, and both read "Benji & Sweety Graham".
+                   The count keeps the family visible — it is the reason to
+                   give this dog the same groomer. */
+                const chipBookingPets = [appt, ...getSiblings(appt as Appt)];
+                const chipPets = [appt, ...sameColumnSiblings(appt as Appt, getSiblings(appt as Appt))];
                 const sharedAppointmentLabel = formatSharedAppointmentName({
-                  petNames: [appt, ...getSiblings(appt as Appt)].map((pet) => pet.petName),
+                  petNames: chipPets.map((pet) => pet.petName),
                   surname: appt.clientLastName,
                 });
                 // A cancelled dog used to look exactly like a live one here,
@@ -4219,6 +4261,7 @@ export default function Calendar() {
                     <span className="text-muted-foreground ml-1">
                       · {appt.clientFirstName} {appt.clientLastName}
                       · {viewMode === "week" ? `${fmtDateShort(new Date(appt.scheduledStart))}, ` : ""}{fmtTime(new Date(appt.scheduledStart))}
+                      {chipBookingPets.length > 1 ? ` · ${formatFamilyBookingCount({ onThisCard: chipPets.length, inBooking: chipBookingPets.length })}` : ""}
                     </span>
                   </div>
                 );
@@ -6565,8 +6608,10 @@ export default function Calendar() {
             id,
             /* A raw instant, like every other fmtTime call site. */
             time: fmtTime(new Date(appt.scheduledStart)),
+            /* The picker lists the CARDS stacked in one column, so each
+               entry names the same dogs its card does. */
             label: formatSharedAppointmentName({
-              petNames: [appt, ...getSiblings(appt)].map((pet) => pet.petName),
+              petNames: [appt, ...sameColumnSiblings(appt, getSiblings(appt))].map((pet) => pet.petName),
               surname: appt.clientLastName,
             }) || (appt.petName ?? "Unnamed"),
             service: SERVICE_LABELS[appt.serviceType] ?? appt.serviceType,
