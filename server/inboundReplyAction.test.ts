@@ -18,15 +18,19 @@ const appt = (over: Partial<ReplyCandidate> = {}): ReplyCandidate => ({
 });
 
 describe("the automated texts ask for the reply they rely on", () => {
+  /* No groomer: Lauren asked for the name to come off on 09/11/2026
+     and the builders no longer take one. It lingered here because
+     tsconfig.json excludes test files from the typecheck, so a test can
+     pass a property that no longer exists and nothing says so. */
   const reminderArgs = {
     clientFirstName: "Sarah", petNames: ["Bella"], date: "Fri 7 Nov",
-    time: "9:00 am", groomer: "Megan", salonName: "Barkin Beautiful",
+    time: "9:00 am", salonName: "Barkin Beautiful",
   };
 
-  it("puts the prompt on the confirmation and all four reminder stages", () => {
+  it("puts the prompt on the confirmation and every reminder stage", () => {
     const confirmation = buildBookingConfirmationSms(reminderArgs);
     expect(confirmation).toContain(REPLY_PROMPT);
-    for (const stage of ["4d", "2d", "morning", undefined] as const) {
+    for (const stage of ["4d", "2d", "day_before", undefined] as const) {
       expect(buildAppointmentReminderSms({ ...reminderArgs, stage }), String(stage))
         .toContain(REPLY_PROMPT);
     }
@@ -43,7 +47,7 @@ describe("the automated texts ask for the reply they rely on", () => {
      */
     const bodies = [
       buildBookingConfirmationSms(reminderArgs),
-      ...(["4d", "2d", "morning", undefined] as const).map((stage) =>
+      ...(["4d", "2d", "day_before", undefined] as const).map((stage) =>
         buildAppointmentReminderSms({ ...reminderArgs, stage })),
     ];
     for (const body of bodies) {
@@ -67,7 +71,7 @@ describe("the automated texts ask for the reply they rely on", () => {
     };
     const bodies = [
       buildBookingConfirmationSms(two),
-      ...(["4d", "2d", "morning", undefined] as const).map((stage) =>
+      ...(["4d", "2d", "day_before", undefined] as const).map((stage) =>
         buildAppointmentReminderSms({ ...two, stage })),
     ];
     for (const body of bodies) {

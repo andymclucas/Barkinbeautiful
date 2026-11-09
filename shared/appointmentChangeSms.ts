@@ -52,6 +52,7 @@
  */
 
 import { brisbaneDateKey } from "./localDateTime";
+import { EARLIEST_AUTOMATED_TEXT_HOUR, withinSendingHours } from "./sendingHours";
 import { describePets } from "./pickupGroup";
 
 /**
@@ -62,7 +63,8 @@ import { describePets } from "./pickupGroup";
  */
 export const DEFAULT_SALON = "Barkin' Beautiful";
 /** Nothing automated lands between these hours on the salon's clock. */
-const QUIET_FROM_HOUR = 8;
+/** Andy, 09/11/2026: "9am texts only." Was 8. See shared/sendingHours.ts. */
+const QUIET_FROM_HOUR = EARLIEST_AUTOMATED_TEXT_HOUR;
 const QUIET_UNTIL_HOUR = 20;
 /** Inside this, a reschedule overrides quiet hours. */
 const URGENT_WITHIN_MS = 24 * 60 * 60 * 1000;
@@ -296,7 +298,7 @@ export function decideRescheduleSms(input: CommonInput & {
   const soonest = Math.min(start, ms(input.previousStart) || start);
   const urgent = soonest - now <= URGENT_WITHIN_MS;
   if (!urgent && input.localHour !== undefined
-      && (input.localHour < QUIET_FROM_HOUR || input.localHour >= QUIET_UNTIL_HOUR)) {
+      && !withinSendingHours(input.localHour, QUIET_UNTIL_HOUR)) {
     return { send: false, reason: "quiet_hours" };
   }
 

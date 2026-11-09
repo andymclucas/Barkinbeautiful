@@ -1,4 +1,5 @@
 import { describePets } from "./pickupGroup";
+import { EARLIEST_AUTOMATED_TEXT_HOUR, withinSendingHours } from "./sendingHours";
 import { REPLY_PROMPT } from "./replyPrompt";
 /**
  * The text a client gets when the salon books their dog in.
@@ -41,7 +42,14 @@ const DEFAULT_SALON = "Barkin' Beautiful";
  */
 export const MINIMUM_LEAD_MINUTES = 120;
 
-export const QUIET_FROM_HOUR = 7;
+/**
+ * Andy, 09/11/2026: "9am texts only. No earlier than that."
+ *
+ * Was 7. Re-exported rather than deleted because the booking screen and
+ * the tests import it; the VALUE now comes from shared/sendingHours.ts,
+ * which is the one place the floor is written down.
+ */
+export const QUIET_FROM_HOUR = EARLIEST_AUTOMATED_TEXT_HOUR;
 export const QUIET_UNTIL_HOUR = 19;
 
 /**
@@ -204,7 +212,7 @@ export function decideBookingConfirmation(input: {
   // book during the day, but an owner catching up on the diary at 10pm
   // would otherwise text the client then. Silence is recoverable — a
   // staff member can send the manual template in the morning.
-  if (input.localHour !== undefined && (input.localHour < QUIET_FROM_HOUR || input.localHour >= QUIET_UNTIL_HOUR)) {
+  if (input.localHour !== undefined && !withinSendingHours(input.localHour, QUIET_UNTIL_HOUR)) {
     return { send: false, reason: "quiet_hours" };
   }
 

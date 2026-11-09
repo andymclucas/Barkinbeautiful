@@ -1,4 +1,5 @@
 import { dayInZone } from "./calendarDay";
+import { EARLIEST_AUTOMATED_TEXT_HOUR, withinSendingHours } from "./sendingHours";
 
 /**
  * Nudging a client to book the next groom, before they drift.
@@ -65,7 +66,8 @@ export const REBOOK_REMINDER_CATCH_UP_DAYS = 6;
 export const REBOOK_REMINDER_MAX_PER_RUN = 25;
 
 /** Quiet hours, matching the booking confirmation so one salon speaks once. */
-export const REBOOK_QUIET_FROM_HOUR = 7;
+/** Andy, 09/11/2026: "9am texts only." Was 7. See shared/sendingHours.ts. */
+export const REBOOK_QUIET_FROM_HOUR = EARLIEST_AUTOMATED_TEXT_HOUR;
 export const REBOOK_QUIET_UNTIL_HOUR = 19;
 
 export type RebookReminderSkipReason =
@@ -174,7 +176,7 @@ export function decideRebookReminder(input: {
   if (daysUntil < opensAt - REBOOK_REMINDER_CATCH_UP_DAYS) return { send: false, reason: "too_late" };
 
   if (input.localHour !== undefined
-    && (input.localHour < REBOOK_QUIET_FROM_HOUR || input.localHour >= REBOOK_QUIET_UNTIL_HOUR)) {
+    && !withinSendingHours(input.localHour, REBOOK_QUIET_UNTIL_HOUR)) {
     return { send: false, reason: "quiet_hours" };
   }
 
