@@ -106,9 +106,14 @@ function brisbane(dm: string, hhmm: string): string {
       `SELECT id FROM appointments WHERE tenant_id=? AND moego_appointment_id=?`, [TENANT, p.booking]);
     if (booked.length) throw new Error(`${p.pet}: booking ${p.booking} already on appt ${booked[0].id}`);
 
-    const { band, reason } = bandFromServiceText(p.service);
+    // BandMatch is a discriminated union and `reason` exists only on the
+    // null-band arm, so destructuring both off it does not typecheck -- the
+    // printed line was right at runtime, but only by luck of the two arms
+    // agreeing. Narrowed properly instead.
+    const match = bandFromServiceText(p.service);
+    const bandLabel = match.band === null ? `UNSET (${match.reason})` : match.band;
     console.log(`${p.first} ${p.last}  ${p.phone}  ${p.email}`);
-    console.log(`   ${p.pet} (${p.breed})  band ${band ?? `UNSET (${reason})`} from the MoeGo service`);
+    console.log(`   ${p.pet} (${p.breed})  band ${bandLabel} from the MoeGo service`);
     console.log(`   ${p.day} ${p.start}-${p.end}  ${p.serviceType}  $${p.price}  staff ${p.staffId}  booking ${p.booking}\n`);
   }
 

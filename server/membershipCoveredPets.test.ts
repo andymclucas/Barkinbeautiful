@@ -176,9 +176,13 @@ describe("membershipsByCoveredPet", () => {
   });
 
   it("leaves out a plan covering nothing rather than keying it on zero", () => {
-    expect(membershipsByCoveredPet([{ id: 1, coveredPetIds: [] }])).toEqual({});
-    expect(membershipsByCoveredPet([{ id: 1 }])).toEqual({});
-    expect(membershipsByCoveredPet([{ id: 1, coveredPetIds: null }])).toEqual({});
-    expect(membershipsByCoveredPet([{ id: 1, coveredPetIds: [Number.NaN] }])).toEqual({});
+    // Named explicitly rather than inferred: `[{ id: 1 }]` alone makes TS
+    // excess-property-check the literal against the generic's constraint,
+    // which has no `id`, and the call reads as an error when it is fine.
+    type Plan = { id: number; coveredPetIds?: readonly number[] | null };
+    expect(membershipsByCoveredPet<Plan>([{ id: 1, coveredPetIds: [] }])).toEqual({});
+    expect(membershipsByCoveredPet<Plan>([{ id: 1 }])).toEqual({});
+    expect(membershipsByCoveredPet<Plan>([{ id: 1, coveredPetIds: null }])).toEqual({});
+    expect(membershipsByCoveredPet<Plan>([{ id: 1, coveredPetIds: [Number.NaN] }])).toEqual({});
   });
 });

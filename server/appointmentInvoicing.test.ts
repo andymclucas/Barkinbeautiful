@@ -168,7 +168,13 @@ describe("add-ons make an otherwise unbillable groom billable", () => {
 });
 
 describe("work the owner agreed to mid-groom reaches the bill", () => {
-  const base = {
+  // price is stated rather than left off. "No figure was ever recorded" is
+  // this block's premise, and the two cases below that do not override it
+  // were relying on the property being absent entirely, which the type does
+  // not allow -- a required property whose type includes undefined still has
+  // to be there. Every other case sets its own.
+  const base: InvoiceDecisionInput = {
+    price: null,
     membershipId: null, existingInvoiceCount: 0,
     workflowState: "complete", status: "confirmed",
   };

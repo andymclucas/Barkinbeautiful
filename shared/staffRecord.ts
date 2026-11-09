@@ -24,13 +24,26 @@ export type MaybeWithRevenueTarget = {
   revenueTargetPeriod?: unknown;
 };
 
-export function withoutRevenueTarget<T extends MaybeWithRevenueTarget>(
+/*
+ * Constrained to `object`, not to MaybeWithRevenueTarget.
+ *
+ * Both of that type's properties are optional, which makes it a WEAK type:
+ * TypeScript refuses any argument sharing no property with it. So a staff
+ * record that never carried a target -- the thing this function is meant to
+ * cope with, and what its own "copes with a record that never had them"
+ * test passes -- was rejected at the call site. Nothing caught it because
+ * every real caller hands over a full row from the staff table.
+ *
+ * The implementation still names MaybeWithRevenueTarget, since that is what
+ * it destructures.
+ */
+export function withoutRevenueTarget<T extends object>(
   member: T,
 ): Omit<T, "revenueTarget" | "revenueTargetPeriod">;
-export function withoutRevenueTarget<T extends MaybeWithRevenueTarget>(
+export function withoutRevenueTarget<T extends object>(
   member: T | null | undefined,
 ): Omit<T, "revenueTarget" | "revenueTargetPeriod"> | null;
-export function withoutRevenueTarget<T extends MaybeWithRevenueTarget>(member: T | null | undefined) {
+export function withoutRevenueTarget(member: MaybeWithRevenueTarget | null | undefined) {
   if (member === null || member === undefined) return null;
   const { revenueTarget: _target, revenueTargetPeriod: _period, ...rest } = member;
   return rest;

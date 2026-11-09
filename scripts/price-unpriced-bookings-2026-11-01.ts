@@ -81,7 +81,13 @@ const TO = "2026-11-09";
   const catalogue = catalogueRows.map((r: any) => ({
     id: r.id,
     name: r.name,
-    priceAud: r.priceAud === null ? null : Number(r.priceAud),
+    // String, because PriceCatalogueItem.priceAud is a string: the column
+    // is a decimal and mysql2 hands it back as text. Converting to a number
+    // here made the value disagree with its own declared type all the way
+    // down into PriceOption. Harmless as it happened -- groomPricing only
+    // ever passes it along and null-checks it -- but it was a lie, and the
+    // `Number(...).toFixed(2)` below is unaffected either way.
+    priceAud: r.priceAud === null ? null : String(r.priceAud),
     priceMode: r.priceMode,
     legacyServiceType: r.legacyServiceType,
     weightBand: r.weightBand,

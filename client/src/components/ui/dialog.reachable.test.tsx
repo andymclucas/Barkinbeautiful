@@ -49,8 +49,15 @@ function tsxFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) tsxFiles(full, found);
-    // A dialog inside a test file is a fixture, not a dialog staff can open.
-    else if (full.endsWith(".tsx") && !full.endsWith(".test.tsx"))
+    /* A dialog inside a test file is a fixture, not a dialog staff can
+       open. Matched on ".test" anywhere in the name rather than on the
+       extension, because something on this machine leaves macOS-style
+       copies beside real files — "dialog.reachable.test 2.tsx" — and a
+       filter anchored to the end of the name read that as a component
+       and reported its own fixtures as unreadable call sites. The
+       copies are gitignored, so it only ever failed locally, which is
+       the worst place for a suite to go red for no reason. */
+    else if (full.endsWith(".tsx") && !full.includes(".test"))
       found.push(full);
   }
   return found;

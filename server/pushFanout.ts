@@ -14,7 +14,7 @@
  * are logged and dropped.
  */
 import { appEvents } from "./eventBus";
-import { pushForEvent } from "../shared/pushNotification";
+import { pushForEvent, type PushEventInput } from "../shared/pushNotification";
 import { sendPushToTenant, isPushConfigured } from "./webPush";
 
 let attached = false;
@@ -27,8 +27,13 @@ export function startPushFanout() {
 
   appEvents.on("app-event", (event: unknown) => {
     try {
-      const e = (event ?? {}) as { type?: string; tenantId?: number };
-      const payload = pushForEvent(e as Parameters<typeof pushForEvent>[0]);
+      // One cast, at the edge where an unknown comes off the bus.
+      // PushEventInput now names every field the bus publishes, so the
+      // second cast this used to need is gone -- and a field added to an
+      // event without being added there will now show up as a type error
+      // rather than being silently dropped.
+      const e = (event ?? {}) as PushEventInput;
+      const payload = pushForEvent(e);
       // call-ended and anything unrecognised: nothing to say.
       if (!payload) return;
 
