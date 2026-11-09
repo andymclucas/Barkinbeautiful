@@ -4,9 +4,8 @@ import { trpc } from "@/lib/trpc";
 import { AssignStaffPicker } from "@/components/AssignStaffPicker";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { MassTextDialog } from "@/components/MassTextDialog";
-import { canAdministerStaff } from "@shared/staffAdministrators";
+import { canSendMassText } from "@shared/calendarMassText";
 import { tidyTranscript, extractCallbackNumbers, formatAustralianNumber, worthShowingCallback } from "@shared/voicemailTranscript";
-import { canEditSection } from "@shared/staffPermissions";
 import { ThreadClientContext } from "@/components/ThreadClientContext";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useIsWideScreen } from "@/hooks/useMobile";
@@ -176,9 +175,13 @@ export default function Messages() {
   // checks again — this just avoids offering what would be refused.
   const { data: me } = trpc.auth.me.useQuery();
   const { data: myStaff } = trpc.staff.getMyProfile.useQuery(undefined, { retry: false });
-  const canMassText =
-    canAdministerStaff(me ? { id: me.id, email: me.email } : null) ||
-    canEditSection(myStaff ?? null, "mass_text");
+  /* One rule, shared with the calendar's own Text the day button. It
+     was two lines here and copying them was how three different
+     restricted-staff route lists drifted apart — CLAUDE.md §7. */
+  const canMassText = canSendMassText(
+    me ? { id: me.id, email: me.email } : null,
+    myStaff ?? null,
+  );
   const { data: starredList, refetch: refetchStarred } = trpc.sms.getStarredThreads.useQuery({});
   const starredKeys = useMemo(() => new Set(starredList ?? []), [starredList]);
   const setStarred = trpc.sms.setThreadStarred.useMutation({

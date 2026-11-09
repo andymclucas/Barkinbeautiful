@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Megaphone, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -26,11 +26,35 @@ const TIERS = ["diamond", "platinum", "gold", "silver", "bronze"] as const;
  * types the number, because a dialog you can dismiss with one click is not
  * a decision.
  */
-export function MassTextDialog() {
+export function MassTextDialog({
+  defaultRange,
+  triggerLabel = "Mass text",
+  triggerIcon = <Megaphone className="h-3.5 w-3.5" />,
+  triggerClassName = "gap-1.5",
+}: {
+  /*
+   * The dates to open on, when something else already knows them.
+   *
+   * Lauren, 09/11/2026, on the diary for Friday 13 November: "Is there a
+   * way to text this days clients to let them know we are closing at
+   * 12:30pm early that day... or do I need to do it manually to each
+   * one?" She could already — `booked_between` with one day in both
+   * boxes — but only from Messages, four steps away from the day she
+   * was looking at.
+   *
+   * Read when the dialog OPENS, not once at mount: the calendar moves
+   * under this button all day, and a range captured at mount would text
+   * whichever day happened to be on screen when the page loaded.
+   */
+  defaultRange?: { from: string; to: string };
+  triggerLabel?: string;
+  triggerIcon?: ReactNode;
+  triggerClassName?: string;
+} = {}) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<MassTextAudienceKey>("booked_between");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(defaultRange?.from ?? "");
+  const [to, setTo] = useState(defaultRange?.to ?? "");
   const [tier, setTier] = useState<string>("gold");
   const [body, setBody] = useState("");
   const [typed, setTyped] = useState("");
@@ -69,8 +93,19 @@ export function MassTextDialog() {
 
   return (
     <>
-      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setOpen(true)}>
-        <Megaphone className="h-3.5 w-3.5" /> Mass text
+      <Button variant="outline" size="sm" className={triggerClassName} onClick={() => {
+        /* The audience is set from whatever the caller is showing RIGHT
+           NOW, every time. Nothing else is reset — a half-typed message
+           survives closing the dialog by accident, which is worth more
+           than a tidy initial state. */
+        if (defaultRange) {
+          setKind("booked_between");
+          setFrom(defaultRange.from);
+          setTo(defaultRange.to);
+        }
+        setOpen(true);
+      }}>
+        {triggerIcon} {triggerLabel}
       </Button>
 
       <Dialog open={open} onOpenChange={(next) => !send.isPending && setOpen(next)}>
