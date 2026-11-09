@@ -115,13 +115,29 @@ import {
 import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
 import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
-import { buildTimeSlots, minutesToTimeValue } from "../shared/bookingTimeSlots";
+import { minutesToTimeValue, salonBookingStarts } from "../shared/bookingTimeSlots";
 
-/** The staff dialog's own grid, so the button cannot offer a time the
-    dropdown does not have. */
-const STAFF_SLOT_STARTS = buildTimeSlots()
-  .map((slot) => timeValueToMinutes(slot.value))
-  .filter((m): m is number => m !== null);
+/**
+ * Every start time the app may OFFER — down the phone, in Next
+ * available, or in the rebook dialog.
+ *
+ * Lauren, 10/11/2026, with Next available showing 7am slots: "can we
+ * adjust the times to our work hours, first dogs 7:30, last booking come
+ * in at 1pm".
+ *
+ * It used to be the staff dropdown's grid, 07:00 to 18:00, on the
+ * reasoning that the button must not offer a time the dropdown cannot
+ * express. That is the right constraint pointed the wrong way: the
+ * dropdown is deliberately WIDER than the working day so staff can
+ * record the odd 13:30 or 14:00 booking — 41 of them in the last six
+ * months — and inheriting its width made the phone tool read 7am slots
+ * out to clients for a salon whose first dog is 7:30.
+ *
+ * So the dropdown keeps its range and this is the salon's own. Every
+ * time here is still on the dropdown's half-hour grid, so the original
+ * constraint holds.
+ */
+const OFFERABLE_SLOT_STARTS = salonBookingStarts();
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl, getPortalBaseUrl } from "./appUrl";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
@@ -1931,7 +1947,7 @@ const calendarRouter = router({
         if (error) return { slots: [], summary: { searched: 0, closed: 0, full: 0 }, message: error };
         const opts = {
           durationMinutes,
-          slotStartsFor: () => STAFF_SLOT_STARTS,
+          slotStartsFor: () => OFFERABLE_SLOT_STARTS,
           todayKey, nowMinutes: minutesInSalonDay(new Date()),
         };
         const slots = nextFreeSlots(days, opts, input.limit);
@@ -2021,7 +2037,7 @@ const calendarRouter = router({
       const nowMinutes = minutesInSalonDay(new Date());
       const found = firstFreeSlot(days, {
         durationMinutes: input.durationMinutes,
-        slotStartsFor: () => STAFF_SLOT_STARTS,
+        slotStartsFor: () => OFFERABLE_SLOT_STARTS,
         todayKey, nowMinutes,
       });
 
@@ -2104,7 +2120,7 @@ const calendarRouter = router({
 
       const around = slotsAroundTarget(days, input.targetDate, {
         durationMinutes: input.durationMinutes,
-        slotStartsFor: () => STAFF_SLOT_STARTS,
+        slotStartsFor: () => OFFERABLE_SLOT_STARTS,
         todayKey,
         nowMinutes: minutesInSalonDay(new Date()),
         maxDistanceDays: input.windowDays,

@@ -26,6 +26,52 @@ import { ONLINE_BOOKING_SLOT_INTERVAL_MINUTES } from "./onlineBookingSlots";
 export const STAFF_BOOKING_OPEN_MINUTES = 7 * 60;
 export const STAFF_BOOKING_CLOSE_MINUTES = 18 * 60;
 
+/**
+ * The hours the salon actually takes dogs in.
+ *
+ * Lauren, 10/11/2026, with the Next available dialog open on 7am:
+ * "can we adjust the times to our work hours, first dogs 7:30, last
+ * booking come in at 1pm".
+ *
+ * This is NOT the dropdown above, and the difference is the point. The
+ * dropdown is what staff may TYPE — it has to be able to express the
+ * odd booking, because the diary has 31 bookings at 13:30 and 10 at
+ * 14:00 in the last six months and narrowing it would make those
+ * impossible to record. This is what the app may OFFER: a time read
+ * down the phone to a client, or suggested in the rebook dialog. The
+ * app should never propose a time the salon does not work.
+ *
+ * Measured over 5,245 appointments on 10/11/2026: 11 start before 07:30
+ * — one at 07:00, three at 07:25, the rest at 3am and 5am and obviously
+ * import noise — so nothing real is lost at the early end either.
+ *
+ * Hardcoded, like every other hour in this file. There is no
+ * opening-hours column on `tenants`, so a second salon with different
+ * hours needs one; this is the constant it would come from.
+ */
+export const SALON_FIRST_BOOKING_MINUTES = 7 * 60 + 30;
+export const SALON_LAST_BOOKING_MINUTES = 13 * 60;
+
+/**
+ * Every start time the app may offer, in salon minutes.
+ *
+ * Both ends inclusive: "last booking come in at 1pm" means 1pm is a
+ * booking, not the minute after the last one.
+ */
+export function salonBookingStarts(stepMinutes?: number): number[] {
+  const step = stepMinutes ?? ONLINE_BOOKING_SLOT_INTERVAL_MINUTES;
+  if (step <= 0) return [];
+  const starts: number[] = [];
+  for (
+    let at = SALON_FIRST_BOOKING_MINUTES;
+    at <= SALON_LAST_BOOKING_MINUTES;
+    at += step
+  ) {
+    starts.push(at);
+  }
+  return starts;
+}
+
 export type TimeSlot = { value: string; label: string };
 
 /** 540 → "9:00 am". Midday and midnight read as 12, not 0. */
@@ -45,7 +91,9 @@ export function minutesToTimeValue(minutesFromMidnight: number): string {
 }
 
 /** "09:30" → 570. Returns null for anything that is not a time. */
-export function timeValueToMinutes(value: string | null | undefined): number | null {
+export function timeValueToMinutes(
+  value: string | null | undefined
+): number | null {
   if (!value) return null;
   const match = /^(\d{1,2}):(\d{2})/.exec(value.trim());
   if (!match) return null;
@@ -82,7 +130,7 @@ export function buildTimeSlots(options?: {
 
   return minutes
     .sort((a, b) => a - b)
-    .map((at) => ({ value: minutesToTimeValue(at), label: formatSlotLabel(at) }));
+    .map(at => ({ value: minutesToTimeValue(at), label: formatSlotLabel(at) }));
 }
 
 /**
@@ -91,7 +139,10 @@ export function buildTimeSlots(options?: {
  * Both empty for an empty or malformed value, so a half-filled form shows
  * empty fields rather than "Invalid Date".
  */
-export function splitLocalDateTime(value: string | null | undefined): { date: string; time: string } {
+export function splitLocalDateTime(value: string | null | undefined): {
+  date: string;
+  time: string;
+} {
   if (!value) return { date: "", time: "" };
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(value.trim());
   if (!match) return { date: "", time: "" };
