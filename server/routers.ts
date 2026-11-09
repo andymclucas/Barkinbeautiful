@@ -185,6 +185,7 @@ import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appoint
 import { counterSaleRouter } from "./routers/counterSale";
 import { findBlockoutsCovering } from "./groomerBlockout";
 import { recurringOccurrenceRefusal } from "@shared/recurringOccurrence";
+import { recurrenceWindow, type RecurrenceEnd } from "@shared/recurrenceRule";
 import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
 import { priceForPet } from "../shared/multiPetPricing";
@@ -2251,7 +2252,22 @@ const calendarRouter = router({
       scheduledStart: z.string(), // first occurrence's start
       scheduledEnd: z.string(),   // first occurrence's end
       frequencyWeeks: z.number().int().min(1).max(26),
-      untilDate: z.string(), // yyyy-mm-dd, inclusive
+      /*
+       * How the series ends. Andy, 10/11/2026: "Don't add mandatory end
+       * date - choose option for 'no end date' 'after xx weeks' or
+       * 'choose end date'."
+       *
+       * The same three the EDIT dialog has always offered, through the
+       * same shared rule — see recurrenceWindow. `untilDate` stays
+       * optional and is read when no `end` is sent, so a caller that
+       * predates this keeps working and means what it always meant.
+       */
+      end: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("count"), sessions: z.number().int().min(1).max(60) }),
+        z.object({ kind: z.literal("date"), untilDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }),
+        z.object({ kind: z.literal("ongoing") }),
+      ]).optional(),
+      untilDate: z.string().optional(), // yyyy-mm-dd, inclusive
       notes: z.string().optional(),
       price: z.string().optional(),
     }))
@@ -2275,12 +2291,18 @@ const calendarRouter = router({
       const firstStart = parseBrisbaneLocalDateTime(input.scheduledStart);
       const firstEnd = parseBrisbaneLocalDateTime(input.scheduledEnd);
       const durationMs = firstEnd.getTime() - firstStart.getTime();
-      const until = new Date(input.untilDate + "T23:59:59");
+      /* One rule for all three endings, shared with the edit dialog. */
+      const end: RecurrenceEnd = input.end
+        ?? (input.untilDate ? { kind: "date", untilDate: input.untilDate } : { kind: "ongoing" });
+      const window = recurrenceWindow(firstStart, end, input.frequencyWeeks);
+      const until = window.until;
       if (Number.isNaN(until.getTime()) || until.getTime() < firstStart.getTime()) {
         throw new Error("The 'repeat until' date must be after the first appointment");
       }
       const stepMs = input.frequencyWeeks * 7 * 24 * 60 * 60 * 1000;
-      const maxOccurrences = 60; // safety cap (~2 years weekly, well beyond any sane single request)
+      /* The cap IS the ending for "after a number of sessions", and a
+         safety net for the other two. See recurrenceWindow. */
+      const maxOccurrences = window.maxOccurrences;
 
       const recurringGroupId = nanoid(24);
       const created: { scheduledStart: Date; petCount: number }[] = [];
