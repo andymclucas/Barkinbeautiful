@@ -320,18 +320,25 @@ export function buildCancellationSms(input: {
     + `has been cancelled. Call us any time to rebook. \u{1F43E}`;
 }
 
+/**
+ * The groomer is deliberately not named here.
+ *
+ * Lauren, 09/11/2026: "Can we also please remove the groomers name -
+ * thanks." Dropped from the reminder, the booking confirmation and this
+ * one together — the reasoning is on buildAppointmentReminderSms, and
+ * it applies hardest to a move, which is exactly when the salon is
+ * re-arranging who does what.
+ */
 export function buildRescheduleSms(input: {
   clientFirstName: string;
   petNames: readonly string[];
   date: string;
   time: string;
-  groomer?: string | null;
   salonName?: string;
 }): string {
   const salon = input.salonName?.trim() || DEFAULT_SALON;
   const who = input.clientFirstName?.trim() || "there";
   const { subject } = describePets(input.petNames);
-  const withGroomer = input.groomer?.trim() ? ` with ${input.groomer.trim()}` : "";
   return `Hi ${who}! ${subject}'s grooming appointment at ${salon} has moved to ${input.date} `
-    + `at ${input.time}${withGroomer}. See you then! \u{1F43E}`;
+    + `at ${input.time}. See you then! \u{1F43E}`;
 }

@@ -157,15 +157,45 @@ export async function sendSms(
  * pickup message covers this exactly — "Do not ever send 2 or 3" — and
  * the pickup text and the booking confirmation both already obeyed it.
  * This was the last of the three that did not.
+ *
+ * ## It no longer names the groomer
+ *
+ * Lauren, 09/11/2026, reading these texts in Messages: "Can we also
+ * please remove the groomers name - thanks."
+ *
+ * The name on a booking is who is PENCILLED in, and the floor moves —
+ * a dog gets handed to whoever is free, somebody is off sick, a bather
+ * takes the brush-out. A client told "with Charlie Purcell" who is seen
+ * by Megan has been told something that turned out not to be true, and
+ * the salon gains nothing by saying it. The MoeGo imports make it worse
+ * again: they carry full names the client has never heard — "Akilah
+ * McDonell-Taylor" — where the salon says Akilah.
+ *
+ * `buildBookingConfirmationSms` and `buildRescheduleSms` dropped it in
+ * the same change, so the whole family of appointment texts reads the
+ * same way.
  */
 export function buildAppointmentReminderSms(opts: {
   clientFirstName: string;
   petNames: readonly string[];
   date: string;
   time: string;
-  groomer: string;
   salonName?: string;
   stage?: "4d" | "2d" | "morning";
+  /**
+   * True once this client has already replied Y about this booking.
+   *
+   * Andy, 09/11/2026: "once the client responds with Y, then just a
+   * reminder only goes out. Does not need another confirmation." So the
+   * Y/N prompt comes off and the text becomes what it says it is.
+   *
+   * N is dropped with it, deliberately. Leaving "Reply N to cancel" on
+   * its own would be a half-question that nothing in the thread sets
+   * up, and a client who needs to cancel after confirming rings the
+   * salon — which is the conversation that should happen anyway, since
+   * by then the slot is being held for them.
+   */
+  alreadyConfirmed?: boolean;
 }) {
   const salon = opts.salonName ?? "Barkin' Beautiful";
   // Same helper the pickup text and the confirmation use, so a client
@@ -174,16 +204,20 @@ export function buildAppointmentReminderSms(opts: {
   // Always "'s". A trailing apostrophe is for a plural noun ending in s,
   // not a list of names: "Albert and Eddy's", never "Albert and Eddy'".
   const possessive = `${subject}'s`;
+  /* Built as a SUFFIX rather than interpolating REPLY_PROMPT directly,
+     so dropping it takes its leading space with it. Interpolating ""
+     leaves "12:30 pm. " — a trailing space on a real text message. */
+  const ask = opts.alreadyConfirmed ? "" : ` ${REPLY_PROMPT}`;
   if (opts.stage === "4d") {
-    return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. ${REPLY_PROMPT}`;
+    return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time}.${ask}`;
   }
   if (opts.stage === "2d") {
-    return `Hi ${opts.clientFirstName}! ${possessive} grooming appointment at ${salon} is in 2 days, ${opts.date} at ${opts.time} with ${opts.groomer}. ${REPLY_PROMPT}`;
+    return `Hi ${opts.clientFirstName}! ${possessive} grooming appointment at ${salon} is in 2 days, ${opts.date} at ${opts.time}.${ask}`;
   }
   if (opts.stage === "morning") {
-    return `Good morning ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment today at ${opts.time} with ${opts.groomer} at ${salon}. ${REPLY_PROMPT}`;
+    return `Good morning ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment today at ${opts.time} at ${salon}.${ask}`;
   }
-  return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time} with ${opts.groomer}. ${REPLY_PROMPT}`;
+  return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time}.${ask}`;
 }
 
 export function buildAppointmentConfirmationSms(opts: {

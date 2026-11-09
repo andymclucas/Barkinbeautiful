@@ -184,10 +184,10 @@ describe("the messages themselves", () => {
   it("reads correctly moving two dogs", () => {
     expect(buildRescheduleSms({
       clientFirstName: "Jo", petNames: ["Albert", "Eddy"],
-      date: "Saturday 7 November", time: "9:00 am", groomer: "Megan",
+      date: "Saturday 7 November", time: "9:00 am",
     })).toBe(
       "Hi Jo! Albert and Eddy's grooming appointment at Barkin' Beautiful has moved to "
-      + "Saturday 7 November at 9:00 am with Megan. See you then! \u{1F43E}",
+      + "Saturday 7 November at 9:00 am. See you then! \u{1F43E}",
     );
   });
 
@@ -201,12 +201,19 @@ describe("the messages themselves", () => {
     }
   });
 
-  it("drops the groomer cleanly when the dog is unassigned", () => {
+  /*
+   * Lauren, 09/11/2026: "Can we also please remove the groomers name -
+   * thanks." It used to be named when one was assigned and dropped when
+   * not; now it is never named, which is what this asserts. A move is
+   * the case where it mattered most — re-arranging the board is exactly
+   * when who does the dog changes.
+   */
+  it("never names the groomer", () => {
     const sms = buildRescheduleSms({
-      clientFirstName: "Jo", petNames: ["Teddy"], date: "Friday", time: "9am", groomer: null,
+      clientFirstName: "Jo", petNames: ["Teddy"], date: "Friday", time: "9am",
     });
     expect(sms).toContain("has moved to Friday at 9am. See you then!");
-    expect(sms).not.toContain("with ");
+    expect(sms).not.toMatch(/ with /);
   });
 
   it("falls back to a greeting rather than 'Hi !'", () => {
@@ -218,7 +225,7 @@ describe("the messages themselves", () => {
     for (const build of [buildCancellationSms, buildRescheduleSms]) {
       expect(build({
         clientFirstName: "Jo", petNames: ["Stella", "Belle", "Teddy"],
-        date: "Wednesday 23 December", time: "12:30 pm", groomer: "Charlotte Purcell",
+        date: "Wednesday 23 December", time: "12:30 pm",
       }).length).toBeLessThanOrEqual(306);
     }
   });
