@@ -120,6 +120,7 @@ import { useState, useMemo, useRef, useEffect, useCallback, useContext, createCo
 import { toast } from "sonner";
 import { Link, useLocation, useSearch } from "wouter";
 import { MassTextDialog } from "@/components/MassTextDialog";
+import { AppointmentRetail } from "@/components/AppointmentRetail";
 import { calendarDateFromSearch } from "@shared/calendarDeepLink";
 import { calendarTextLabel, calendarTextRange, canSendMassText } from "@shared/calendarMassText";
 import { StaffAvatar } from "@/components/StaffAvatar";
@@ -5622,6 +5623,30 @@ export default function Calendar() {
                       ))}
                     </div>
                   : <AppointmentAddOns appointmentId={editAppt.id} />)}
+
+                {/* Andy, 09/11/2026: "Add retail items into the
+                    appointment card so these can be added to the cart
+                    for checkout."
+
+                    Below the add-ons and OUTSIDE the per-dog loop: a
+                    teeth clean belongs to the animal that had it, a bag
+                    of treats belongs to the person. Splitting a purchase
+                    across two dogs would make one family's bill read as
+                    two half-purchases.
+
+                    The line goes on the appointment this panel was
+                    opened from. payments.forBooking sums every dog on
+                    the session, so it reaches the same total and the
+                    same Take payment either way. */}
+                {editAppt && (
+                  <AppointmentRetail
+                    appointmentId={editAppt.id}
+                    onChanged={() => {
+                      void utils.payments.forBooking.invalidate({ appointmentId: editAppt.id });
+                    }}
+                  />
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-base font-semibold">Start</Label>

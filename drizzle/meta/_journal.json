@@ -1142,6 +1142,13 @@
       "when": 1794010200000,
       "tag": "0162_sms_log_rebook_type",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "5",
+      "when": 1794010300000,
+      "tag": "0163_add_on_retail_product",
+      "breakpoints": true
     }
   ]
 }

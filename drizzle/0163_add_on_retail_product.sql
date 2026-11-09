@@ -1,0 +1,24 @@
+-- A retail product sold on a booking is a line on that booking.
+--
+-- Andy, 09/11/2026: "Add retail items into the appointment card so these
+-- can be added to the cart for checkout."
+--
+-- appointment_add_ons already IS the cart: its lines feed addOnsTotal,
+-- which feeds payments.forBooking, which is the total the panel shows
+-- and the figure Take payment collects. They carry per-line discounts
+-- and become invoice_line_items. A bag of treats wants every one of
+-- those, so it becomes a line there rather than a second table that
+-- would have to re-earn all of it.
+--
+-- Mirrors pricing_service_id exactly: nullable, no foreign key, kept for
+-- reporting and null once a product is retired. A line is a SERVICE
+-- add-on or a RETAIL one, never both -- which the application enforces,
+-- because a CHECK constraint on TiDB is parsed and not enforced.
+--
+-- One statement. CLAUDE.md section 6: MySQL/TiDB DDL is not
+-- transactional, so two statements can leave the first applied, the
+-- migration unrecorded, and a re-run failing on "Duplicate column name".
+--
+-- Additive and nullable, so it is migrate-first safe: the old code never
+-- names it, and every existing insert stays valid.
+ALTER TABLE `appointment_add_ons` ADD COLUMN `retail_product_id` INT NULL;
