@@ -5,6 +5,7 @@ import {
   NON_VISIT_STATES,
   decideInactive,
   inactiveCutoffDay,
+  decideReactivate,
 } from "@shared/clientActivity";
 import { appointments, memberships } from "../drizzle/schema";
 import { getTableColumns } from "drizzle-orm";
@@ -33,14 +34,42 @@ describe("decideInactive", () => {
     expect(d.markInactive).toBe(true);
   });
 
-  it("leaves alone anyone with no visit on record, unless asked", () => {
-    // 8,319 clients are in this cohort and the data cannot tell "left
-    // before the imported history starts in July 2024" from "enquired
-    // once and never booked". Marking them is a decision, not a default.
+  /*
+   * This used to assert the opposite — that an empty history was left
+   * alone unless asked for — on the grounds that the data cannot tell
+   * "left before the import starts in July 2024" from "never booked".
+   *
+   * That is still true and it turned out not to matter. Measured
+   * 09/11/2026: the earliest appointment in Groomigo is 2024-07-21 and
+   * the cutoff is 2025-11-09, so both readings are more than twelve
+   * months old and land on the same side of the line. The old default
+   * answered a narrower question than the one being asked.
+   */
+  it("counts no visit on record as gone", () => {
     expect(decideInactive({ ...gone, lastVisitDay: null }))
-      .toEqual({ markInactive: false, reason: "never_visited" });
+      .toEqual({ markInactive: true, lastVisitDay: null });
     expect(decideInactive({ ...gone, lastVisitDay: null, includeNeverVisited: true }))
       .toEqual({ markInactive: true, lastVisitDay: null });
+  });
+
+  it("can still be asked the narrower question", () => {
+    // Deliberately false, not merely absent: "only the clients who
+    // demonstrably came and then stopped" is a real question and the
+    // caller has to ask for it.
+    expect(decideInactive({ ...gone, lastVisitDay: null, includeNeverVisited: false }))
+      .toEqual({ markInactive: false, reason: "never_visited" });
+  });
+
+  /*
+   * The cohort is only safe to include while the cutoff is shorter than
+   * the imported history is long. If somebody drops INACTIVE_AFTER_MONTHS
+   * to six, a client who last came in August 2024 still reads as "never"
+   * and would be marked on absent data rather than on evidence.
+   */
+  it("is only sound while the window is shorter than the imported history", () => {
+    const EARLIEST_IMPORTED = "2024-07-21";
+    const cutoff = inactiveCutoffDay(new Date("2026-11-09T00:00:00+10:00"), "Australia/Brisbane")!;
+    expect(cutoff > EARLIEST_IMPORTED).toBe(true);
   });
 
   it("never marks a paying member", () => {
@@ -148,5 +177,79 @@ describe("LIVE_MEMBERSHIP_STATUSES", () => {
   it("leaves out the two that mean they have gone", () => {
     expect(LIVE_MEMBERSHIP_STATUSES).not.toContain("cancelled");
     expect(LIVE_MEMBERSHIP_STATUSES).not.toContain("expired");
+  });
+});
+
+/**
+ * The other direction.
+ *
+ * Andy, 09/11/2026: "The rule should be in place." A pass that only
+ * moves people one way goes stale the next morning — the first inactive
+ * client somebody books in would stay inactive for ever, out of every
+ * mass text, while their dog sits on the board.
+ */
+describe("decideReactivate", () => {
+  it("brings an inactive client back when they are booked in", () => {
+    expect(decideReactivate({ status: "inactive", hasFutureBooking: true }))
+      .toEqual({ markActive: true });
+  });
+
+  it("leaves an inactive client alone while nothing is booked", () => {
+    expect(decideReactivate({ status: "inactive", hasFutureBooking: false }))
+      .toEqual({ markActive: false, reason: "nothing_booked" });
+  });
+
+  /*
+   * The case this rule exists to protect, and the reason it is not the
+   * inactive rule inverted. Staff who know a client has moved away mark
+   * them inactive TODAY, while their last groom was last month. An
+   * inverted rule — "active if they visited inside twelve months" —
+   * would put them back overnight and nobody would work out why.
+   */
+  it("does not undo a status a person set by hand", () => {
+    expect(decideReactivate({ status: "inactive", hasFutureBooking: false }))
+      .toEqual({ markActive: false, reason: "nothing_booked" });
+  });
+
+  /*
+   * blocked is the salon saying no. It is not staleness and nothing
+   * automatic may lift it — a client blocked after an incident who
+   * somehow gets booked in must stay blocked, loudly.
+   */
+  it("never lifts blocked, even with a booking in the diary", () => {
+    expect(decideReactivate({ status: "blocked", hasFutureBooking: true }))
+      .toEqual({ markActive: false, reason: "not_inactive" });
+  });
+
+  it("leaves lapsed to the report that computes it", () => {
+    expect(decideReactivate({ status: "lapsed", hasFutureBooking: true }))
+      .toEqual({ markActive: false, reason: "not_inactive" });
+  });
+
+  it("does nothing to someone already active", () => {
+    expect(decideReactivate({ status: "active", hasFutureBooking: true }))
+      .toEqual({ markActive: false, reason: "not_inactive" });
+  });
+
+  /*
+   * The two halves must never both fire on one client, or a nightly
+   * pass would flip them back and forth for ever.
+   */
+  it("cannot both deactivate and reactivate the same client", () => {
+    const cutoffDay = "2025-11-09";
+    for (const hasFutureBooking of [true, false]) {
+      for (const lastVisitDay of [null, "2024-01-01", "2026-10-01"]) {
+        const down = decideInactive({
+          status: "active", lastVisitDay, hasFutureBooking,
+          hasLiveMembership: false, cutoffDay,
+        });
+        const up = decideReactivate({ status: "inactive", hasFutureBooking });
+        // They act on different starting statuses, so at most one can
+        // ever apply to a given row — this pins that they also disagree
+        // about a future booking in the same direction.
+        if (down.markInactive) expect(hasFutureBooking).toBe(false);
+        if (up.markActive) expect(hasFutureBooking).toBe(true);
+      }
+    }
   });
 });

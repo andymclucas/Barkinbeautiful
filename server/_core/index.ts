@@ -1,5 +1,6 @@
 import { automatedSmsPermitted } from "@shared/automatedSms";
 import { decideConfirmAction, decideReplyAction, describeReplyRefusal } from "@shared/inboundReplyAction";
+import { clientStatusSweepHandler } from "../clientStatusSweep";
 import "dotenv/config";
 import { startPresenceSweeper } from "../presenceRegistry";
 import express from "express";
@@ -160,6 +161,17 @@ async function startServer() {
      CRON_SECRET must be set on the cron service as well as the web one,
      or every run 403s silently. */
   app.post("/api/scheduled/rebook-reminders", rebookReminderHandler);
+  /* Keeping clients.status true, nightly. Andy, 09/11/2026: "The rule
+     should be in place that if zero appts in the last 12 months (or any
+     upcoming), the client goes into Inactive status."
+
+     A job rather than a one-off script, because a one-off is correct for
+     about a day: the next client who books goes on being inactive, out
+     of every mass text, with their dog on the board. It moves clients
+     BOTH ways — see shared/clientActivity.ts for why the two directions
+     are deliberately not mirror images. CRON_SECRET must be set on the
+     cron service as well as the web one, or every run 403s silently. */
+  app.post("/api/scheduled/client-status", clientStatusSweepHandler);
 
   // One-off admin utility: given a MoeGo pet ID and its photo URL (from the
   // old platform we're migrating away from), download the image server-side
