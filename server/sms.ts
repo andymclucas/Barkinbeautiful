@@ -182,14 +182,18 @@ export function buildAppointmentReminderSms(opts: {
   time: string;
   salonName?: string;
   /**
-   * "morning" is the LAST reminder and no longer always the morning of.
+   * "day_before" is the LAST reminder, and there is no morning-of one.
    *
-   * Andy, 09/11/2026: "Send the reminder text at 9am the day before if
-   * they are booked in before 9am." A dog booked at 7:30 is already on
-   * the table by the time a 9am text lands, so its last reminder goes
-   * the day before and says "tomorrow". See shared/lastReminder.ts.
+   * Andy, 09/11/2026: "last reminder text for all appts (regardless of
+   * time) is sent at 9am the day before. Nothing gets sent on the day
+   * of."
+   *
+   * The morning-of stage went at 06:30 and stopped making sense the
+   * moment every automated text moved to nine — a dog booked at 7:30 is
+   * on the table by then, and the salon's biggest single slot is 9:00,
+   * which a 9am text would have reached with no notice at all.
    */
-  stage?: "4d" | "2d" | "morning" | "day_before";
+  stage?: "4d" | "2d" | "day_before";
   /**
    * True once this client has already replied Y about this booking.
    *
@@ -222,13 +226,12 @@ export function buildAppointmentReminderSms(opts: {
   if (opts.stage === "2d") {
     return `Hi ${opts.clientFirstName}! ${possessive} grooming appointment at ${salon} is in 2 days, ${opts.date} at ${opts.time}.${ask}`;
   }
-  if (opts.stage === "morning") {
-    return `Good morning ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment today at ${opts.time} at ${salon}.${ask}`;
-  }
   if (opts.stage === "day_before") {
-    /* Same 9am send, different day. "Good morning" still fits; only the
-       word for the day changes, so a client who gets this and then
-       arrives reads one consistent story. */
+    /* "Good morning" because it goes at nine, "tomorrow" because that
+       is now the only day a last reminder is ever sent. The date is
+       left out deliberately: "tomorrow at 7:30 am" is what somebody
+       acts on, and repeating the date beside it reads as a second
+       appointment. */
     return `Good morning ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment tomorrow at ${opts.time} at ${salon}.${ask}`;
   }
   return `Hi ${opts.clientFirstName}! ${subject} ${verb === "are" ? "have" : "has"} a grooming appointment at ${salon} on ${opts.date} at ${opts.time}.${ask}`;

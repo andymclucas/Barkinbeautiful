@@ -52,7 +52,6 @@ import { groupRemindersByBooking } from "@shared/reminderGrouping";
 import { bookingKey, confirmedBookingKeys } from "@shared/confirmedBookings";
 import { runClientStatusSweepQuietly } from "./clientStatusSweep";
 import { EARLIEST_AUTOMATED_TEXT_HOUR } from "@shared/sendingHours";
-import { lastReminderDecision } from "@shared/lastReminder";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 
 
@@ -761,25 +760,28 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
     };
 
     /*
-     * The last stage is two windows, not one.
+     * Nothing goes out on the day. The last reminder is always the day
+     * before, at nine.
      *
-     * Andy, 09/11/2026: "Send the reminder text at 9am the day before if
-     * they are booked in before 9am." A dog booked at 7:30 is on the
-     * table before a 9am text lands, so its last reminder goes out the
-     * day before saying "tomorrow"; a dog booked at 12:30 still gets it
-     * on the day saying "today".
+     * Andy, 09/11/2026: "last reminder text for all appts (regardless
+     * of time) is sent at 9am the day before. Nothing gets sent on the
+     * day of."
      *
-     * Both claim reminder_morning_sent_at, so a booking gets one last
-     * reminder and never two — which is also why the two windows cannot
-     * simply both run: lastReminderDecision splits them so exactly one
-     * run owns each appointment.
+     * This replaced a morning-of stage that ran at 06:30 and stopped
+     * making sense the moment every automated text moved to nine — a
+     * dog booked at 7:30 is on the table by then. The first attempt
+     * split the last stage in two by booking time; one flat rule is
+     * better, and it also settles the 588 bookings that start at
+     * exactly 9:00, the salon's biggest slot, which a same-day text
+     * would have reached with no notice at all.
+     *
+     * `reminder_morning_sent_at` keeps its name. Renaming a column is a
+     * migration for no gain, and this comment is cheaper than the
+     * deploy.
      */
-    const stages: { key: "4d" | "2d" | "morning" | "day_before"; daysOut: number; column: "reminder4dSentAt" | "reminder2dSentAt" | "reminderMorningSentAt"; sqlColumn: string }[] = [
+    const stages: { key: "4d" | "2d" | "day_before"; daysOut: number; column: "reminder4dSentAt" | "reminder2dSentAt" | "reminderMorningSentAt"; sqlColumn: string }[] = [
       { key: "4d", daysOut: 4, column: "reminder4dSentAt", sqlColumn: "reminder_4d_sent_at" },
       { key: "2d", daysOut: 2, column: "reminder2dSentAt", sqlColumn: "reminder_2d_sent_at" },
-      // Today, for anything from 9am onwards.
-      { key: "morning", daysOut: 0, column: "reminderMorningSentAt", sqlColumn: "reminder_morning_sent_at" },
-      // Tomorrow, for anything before 9am.
       { key: "day_before", daysOut: 1, column: "reminderMorningSentAt", sqlColumn: "reminder_morning_sent_at" },
     ];
 
@@ -898,24 +900,6 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
         // Bound once so the narrowing survives the guard below.
         const phone = row.clientPhone;
         if (!row.scheduledStart || !phone) { skipped++; continue; }
-        /*
-         * Which of the two last-reminder windows owns this booking.
-         *
-         * Both read the same claim column, so without this a dog booked
-         * at 7:30 tomorrow would be texted today as "tomorrow" AND a dog
-         * booked at 12:30 today would be texted today as "today" — fine
-         * — but a dog booked at 7:30 TODAY would also be picked up by
-         * the same-day window and told "today at 7:30 am" at nine
-         * o'clock, when it is already here.
-         */
-        if (stage.key === "morning" || stage.key === "day_before") {
-          const apptHour = Number(row.scheduledStart.toLocaleString("en-AU", {
-            timeZone: "Australia/Brisbane", hour: "2-digit", hour12: false,
-          }));
-          const owns = lastReminderDecision({ apptHour, daysAway: stage.daysOut });
-          if (!owns.send) { skipped++; continue; }
-        }
-
         /* Second line of defence. The SQL above already excludes these,
            but that filter sits among four others and can be edited by
            somebody adding an unrelated one; this rule has its own tests
