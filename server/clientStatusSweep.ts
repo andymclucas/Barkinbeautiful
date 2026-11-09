@@ -14,12 +14,21 @@
  * shared/clientActivity.ts, which explains why the two directions are
  * deliberately NOT mirror images.
  *
- * ## One implementation, two callers
+ * ## One rule, two callers — and two WRITES, deliberately
  *
  * `scripts/mark-inactive-clients.ts` is how a person runs it and watches
  * what happens. `/api/scheduled/client-status` is how it keeps happening.
- * Both land here, so the nightly job cannot quietly drift from the thing
- * that was reviewed.
+ * Both share readSweepRows and planSweep, which is where the correctness
+ * lives, so the nightly job cannot drift from the thing that was
+ * reviewed.
+ *
+ * They do NOT share the write. The script wraps it in a transaction and
+ * saves a reversal file first, because it moves thousands of rows at
+ * once and `clients.status` keeps no history — that file is the only way
+ * back. The nightly job moves a handful and runs on a box with an
+ * ephemeral disk, where a reversal file would be a lie. Saying this out
+ * loud because the first version of this note claimed one implementation
+ * and there were always two.
  *
  * ## The work is done in SQL
  *
@@ -126,8 +135,31 @@ export async function readSweepRows(
   }));
 }
 
-/** What the sweep would do. Pure, given the rows — so it is testable. */
-export function planSweep(rows: readonly SweepRow[], now: Date): SweepPlan {
+/**
+ * What the sweep would do. Pure, given the rows — so it is testable.
+ *
+ * `acknowledgedDeactivations` lifts the ceiling, and ONLY when it equals
+ * the number the plan actually arrived at.
+ *
+ * The refusal message tells you to raise MAX_SHARE_OF_ACTIVE in the
+ * source and say so in the commit, rather than pass a flag. That was
+ * right about flags and wrong about the constant: the same ceiling
+ * guards the NIGHTLY job, so raising it to let one catch-up through
+ * would leave the job with no safety net for ever.
+ *
+ * So the escape is a number, not a switch. You cannot type 8683 without
+ * having run the dry run and read it, it says in the shell history
+ * exactly what was authorised, and it goes stale by itself — re-run it
+ * next week when the figure has moved and it refuses rather than
+ * sweeping again. The same shape as the mass text making you type the
+ * recipient count above 25, for the same reason: a confirmation you can
+ * satisfy without reading is not a confirmation.
+ */
+export function planSweep(
+  rows: readonly SweepRow[],
+  now: Date,
+  opts?: { acknowledgedDeactivations?: number },
+): SweepPlan {
   const cutoffDay = inactiveCutoffDay(now, SALON_ZONE);
   if (!cutoffDay) throw new Error("could not work out the cutoff day");
 
@@ -162,9 +194,17 @@ export function planSweep(rows: readonly SweepRow[], now: Date): SweepPlan {
 
   const activeCount = rows.filter((r) => r.status === "active").length;
   const share = activeCount ? toDeactivate.length / activeCount : 0;
-  const refusedReason = share > MAX_SHARE_OF_ACTIVE
+  const overCeiling = share > MAX_SHARE_OF_ACTIVE;
+  // Exact, not "at least". A plan that has grown since the number was
+  // read is a different plan, and the whole point is that the operator
+  // authorised THIS one.
+  const acknowledged = opts?.acknowledgedDeactivations === toDeactivate.length;
+  const refusedReason = overCeiling && !acknowledged
     ? `${(share * 100).toFixed(1)}% of the active book is above the`
       + ` ${(MAX_SHARE_OF_ACTIVE * 100).toFixed(0)}% ceiling`
+      + (opts?.acknowledgedDeactivations === undefined
+        ? ""
+        : ` — acknowledged ${opts.acknowledgedDeactivations}, plan is ${toDeactivate.length}`)
     : null;
 
   return {
