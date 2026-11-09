@@ -50,6 +50,7 @@ import { gte, inArray, isNotNull, isNull, lt, notInArray } from "drizzle-orm";
 import { decideAppointmentReminder, REMINDER_SKIP_LABEL } from "@shared/reminderDecision";
 import { groupRemindersByBooking } from "@shared/reminderGrouping";
 import { bookingKey, confirmedBookingKeys } from "@shared/confirmedBookings";
+import { runClientStatusSweepQuietly } from "./clientStatusSweep";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 
 
@@ -664,8 +665,45 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
 
     const db = await getDb();
     if (!db) return res.json({ ok: true, skipped: "no-db" });
+
+    /*
+     * The daily client-status sweep rides this job.
+     *
+     * It is a surprise to find it here, so: Andy asked on 09/11/2026 for
+     * "the rule should be in place" — clients.status kept true nightly
+     * rather than by a script somebody remembers to run. The obvious
+     * home is its own Render cron job, and /api/scheduled/client-status
+     * exists for exactly that and still works.
+     *
+     * What stopped it is mundane. A second Render job needs CRON_SECRET
+     * set on it — environments are per service, which is what made this
+     * very job 403 silently when it was built — and editing THIS job's
+     * command to add a second curl could not be saved: the browser
+     * blocks any request to api.render.com carrying an
+     * "Authorization: Bearer" payload, for Andy as well as for Claude.
+     * Proven by experiment: the same page saves a plain echo first time.
+     *
+     * So the sweep uses the one daily trigger that is proven. Move it
+     * back out the moment a cron can be pointed at the endpoint; the
+     * endpoint is still there and this call is the only thing to delete.
+     *
+     * ## Why here, and not after the texts
+     *
+     * Because the SMS gate returns below, and the sweep has nothing to
+     * do with SMS — put it after and it would never run on a machine
+     * with automation off, which is every environment except
+     * production. It costs a couple of seconds on a job that already
+     * takes thirty.
+     *
+     * It cannot hurt the texts: runClientStatusSweepQuietly catches
+     * everything and returns a reason rather than throwing. The salon
+     * notices a missing reminder within the hour and would not notice a
+     * missing sweep for weeks, so the sweep is the one that yields.
+     */
+    const clientStatus = await runClientStatusSweepQuietly(db);
+
     if (process.env.SMS_AUTOMATION_ENABLED !== "true") {
-      return res.json({ ok: true, skipped: "automation-disabled" });
+      return res.json({ ok: true, skipped: "automation-disabled", clientStatus });
     }
 
     // Brisbane is UTC+10 with no DST, so "midnight AEST" is always 14:00 UTC
@@ -885,7 +923,7 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
       breakdown[stage.key] = stageSent;
     }
 
-    return res.json({ ok: true, sent, skipped, breakdown });
+    return res.json({ ok: true, sent, skipped, breakdown, clientStatus });
   } catch (err) {
     console.error("[appointmentReminderHandler] Error:", err);
     return res.status(500).json({ error: String(err), timestamp: new Date().toISOString() });

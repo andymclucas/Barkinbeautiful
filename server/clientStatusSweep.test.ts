@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { MAX_SHARE_OF_ACTIVE, planSweep, describeSweep, type SweepRow } from "./clientStatusSweep";
+import {
+  MAX_SHARE_OF_ACTIVE, planSweep, describeSweep, runClientStatusSweepQuietly,
+  type SweepRow,
+} from "./clientStatusSweep";
 
 /**
  * The nightly pass, as a plan.
@@ -125,5 +128,58 @@ describe("planSweep", () => {
     ], NOW));
     expect(lines.join("\n")).toContain("to mark inactive: 1");
     expect(lines.join("\n")).toContain("visited inside the window");
+  });
+});
+
+/**
+ * The sweep rides the reminder cron, so it must be incapable of
+ * stopping a text.
+ *
+ * Andy, 09/11/2026, after the Render command could not be saved: "Do B."
+ * That put a maintenance job inside the endpoint that texts the salon's
+ * clients every morning, which is only acceptable while these hold.
+ */
+describe("runClientStatusSweepQuietly", () => {
+  const throwing = {
+    execute: () => { throw new Error("database went away mid-run"); },
+  };
+  const rejecting = {
+    execute: () => Promise.reject(new Error("connection reset")),
+  };
+
+  it("does not throw when the read blows up", async () => {
+    const result = await runClientStatusSweepQuietly(throwing);
+    expect(result.ran).toBe(false);
+    if (!result.ran) expect(result.reason).toContain("database went away");
+  });
+
+  it("does not throw when the read rejects", async () => {
+    const result = await runClientStatusSweepQuietly(rejecting);
+    expect(result.ran).toBe(false);
+    if (!result.ran) expect(result.reason).toContain("connection reset");
+  });
+
+  /* The thing that actually matters: whatever happens in here, the
+     caller gets an object back and carries on to send its texts. */
+  it("always returns rather than rejecting, whatever it is handed", async () => {
+    for (const db of [throwing, rejecting, null, undefined, {}, 42]) {
+      await expect(runClientStatusSweepQuietly(db as any)).resolves.toBeTruthy();
+    }
+  });
+
+  it("reports a ceiling refusal as not-run, with the reason", async () => {
+    // Nine of ten active clients long gone — over the 50% ceiling.
+    const rows = [
+      ...Array.from({ length: 9 }, (_, i) => ({
+        id: i + 1, tenantId: 1, name: `c${i}`, status: "active",
+        lastVisitDay: "2024-01-01", hasFutureBooking: false, hasLiveMembership: false,
+      })),
+      { id: 10, tenantId: 1, name: "c10", status: "active",
+        lastVisitDay: "2026-10-01", hasFutureBooking: false, hasLiveMembership: false },
+    ];
+    const db = { execute: async () => [rows.map((r) => ({ ...r, hasFutureBooking: 0, hasLiveMembership: 0 }))] };
+    const result = await runClientStatusSweepQuietly(db as any);
+    expect(result.ran).toBe(false);
+    if (!result.ran) expect(result.reason).toContain("ceiling");
   });
 });
