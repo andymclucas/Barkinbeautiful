@@ -218,7 +218,22 @@ function downloadCsv(content: string, filename: string) {
 export default function Clients() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  /*
+   * Opens on Active, not on everybody.
+   *
+   * Andy, 09/11/2026: "the default setting for the clients tab drop down
+   * filter should be set to active."
+   *
+   * The list is the salon's client book, and the question somebody has
+   * when they open it is almost always about a client they still have.
+   * "All" put 9,695 rows in front of them, 8,683 of which are people who
+   * have not been in for over a year — so the first page was a wall of
+   * names with no bookings and the useful ones were nowhere near it.
+   *
+   * Every other option is one press away and the dropdown says which it
+   * is, so nothing is hidden; it is only no longer the default.
+   */
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSizeOption>(50);
   const [sortBy, setSortBy] = useState<SortBy>("firstName");
