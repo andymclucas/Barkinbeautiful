@@ -3251,15 +3251,21 @@ export default function Calendar() {
                        owing when the same board is viewed by week. */
                     const pay = appointmentPaymentDisplay((appt as any).paymentStatus, { isCancelled });
                     const isVip = showsMembershipMark({ membershipId: appt.membershipId, isCancelled });
-                    /* The week list draws a row per dog and never
-                       collapses, so a row names its own column's dogs and
-                       carries the booking's count beside the time. Naming
-                       the whole booking on every row is what made one
-                       split family read as two. */
+                    /*
+                     * A row per DOG, because this list never collapses —
+                     * so a row names its own dog and carries the booking's
+                     * count beside the time.
+                     *
+                     * Naming the whole booking on every row drew the same
+                     * pair of names twice: 134 upcoming rows were identical
+                     * twins on 09/11/2026. Same complaint as the day board's
+                     * "duplicates for Nov 11 for Benji & Sweety Graham", one
+                     * level in — there the two rows were in two columns, here
+                     * they are in the same one.
+                     */
                     const bookingPets = [appt, ...getSiblings(appt as Appt)];
-                    const rowPets = [appt, ...sameColumnSiblings(appt as Appt, getSiblings(appt as Appt))];
                     const sharedAppointmentLabel = formatSharedAppointmentName({
-                      petNames: rowPets.map((pet) => pet.petName),
+                      petNames: [appt.petName],
                       surname: appt.clientLastName,
                     });
                     return (
@@ -3284,7 +3290,7 @@ export default function Calendar() {
                         <div className="truncate mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                           {fmtTime(new Date(appt.scheduledStart))}
                           {appt.staffName ? ` · ${appt.staffName.split(" ")[0]}` : ""}
-                          {bookingPets.length > 1 ? ` · ${formatFamilyBookingCount({ onThisCard: rowPets.length, inBooking: bookingPets.length })}` : ""}
+                          {bookingPets.length > 1 ? ` · ${formatFamilyBookingCount({ onThisCard: 1, inBooking: bookingPets.length })}` : ""}
                         </div>
                         <span className="mt-1 inline-flex rounded-full bg-card/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</span>
                       </div>
@@ -4229,15 +4235,19 @@ export default function Calendar() {
             </h3>
             <div className="flex flex-wrap gap-2">
               {unassigned.map(appt => {
-                /* A chip names the dogs in the Unassigned strip, not the
-                   booking: Benji Graham sat here while his sister Sweety was
-                   already Stephanie's, and both read "Benji & Sweety Graham".
-                   The count keeps the family visible — it is the reason to
-                   give this dog the same groomer. */
+                /*
+                 * One chip per dog, named after that dog. This strip does not
+                 * collapse either: Benji Graham sat here while his sister
+                 * Sweety was already Stephanie's and both read "Benji & Sweety
+                 * Graham", and a pair of loose siblings gave two chips with
+                 * one name between them.
+                 *
+                 * The count stays, because it is the reason to put this dog
+                 * with the same groomer as the rest of its booking.
+                 */
                 const chipBookingPets = [appt, ...getSiblings(appt as Appt)];
-                const chipPets = [appt, ...sameColumnSiblings(appt as Appt, getSiblings(appt as Appt))];
                 const sharedAppointmentLabel = formatSharedAppointmentName({
-                  petNames: chipPets.map((pet) => pet.petName),
+                  petNames: [appt.petName],
                   surname: appt.clientLastName,
                 });
                 // A cancelled dog used to look exactly like a live one here,
@@ -4261,7 +4271,7 @@ export default function Calendar() {
                     <span className="text-muted-foreground ml-1">
                       · {appt.clientFirstName} {appt.clientLastName}
                       · {viewMode === "week" ? `${fmtDateShort(new Date(appt.scheduledStart))}, ` : ""}{fmtTime(new Date(appt.scheduledStart))}
-                      {chipBookingPets.length > 1 ? ` · ${formatFamilyBookingCount({ onThisCard: chipPets.length, inBooking: chipBookingPets.length })}` : ""}
+                      {chipBookingPets.length > 1 ? ` · ${formatFamilyBookingCount({ onThisCard: 1, inBooking: chipBookingPets.length })}` : ""}
                     </span>
                   </div>
                 );
