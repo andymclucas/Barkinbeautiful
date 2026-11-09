@@ -142,3 +142,64 @@ describe("DialogContent side variant", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
+
+/**
+ * The appointment panel overrides the container's own layout, and the
+ * override has to actually win.
+ *
+ * Andy, 09/11/2026: "The total and take payment button should be a
+ * seperate element down the bottom so it doesn't cause any overlap."
+ * The fix makes that panel a flex column whose body scrolls and whose
+ * bottom bar does not — which only works if `className` beats the base
+ * `grid ... overflow-y-auto` through tailwind-merge.
+ *
+ * jsdom does no layout, so this cannot prove the bar sits at the
+ * bottom. It CAN prove the two classes that would silently undo it are
+ * gone, which is the part an edit would not notice breaking.
+ */
+describe("DialogContent layout overrides", () => {
+  const classesFor = (className?: string) => {
+    const { unmount } = render(
+      <Dialog open onOpenChange={() => {}}>
+        <DialogContent side="right" className={className}>
+          <DialogHeader><DialogTitle>Edit appointment</DialogTitle></DialogHeader>
+          <p>Body</p>
+        </DialogContent>
+      </Dialog>,
+    );
+    const cls = document.querySelector('[data-slot="dialog-content"]')?.className ?? "";
+    unmount();
+    return cls;
+  };
+
+  it("scrolls and lays out as a grid by default", () => {
+    const cls = classesFor();
+    expect(cls).toContain("grid");
+    expect(cls).toContain("overflow-y-auto");
+  });
+
+  /*
+   * `overflow-y-hidden`, deliberately, and not `overflow-hidden`:
+   * tailwind-merge keeps those in separate groups, so `overflow-hidden`
+   * would leave `overflow-y-auto` in place and the container would go
+   * on scrolling — which is the whole bug.
+   */
+  it("lets a flex column replace the grid and the scrolling", () => {
+    const cls = classesFor("flex flex-col overflow-y-hidden");
+    expect(cls).toContain("flex");
+    expect(cls).toContain("flex-col");
+    expect(cls).toContain("overflow-y-hidden");
+    expect(cls).not.toContain("grid");
+    expect(cls).not.toMatch(/\boverflow-y-auto\b/);
+  });
+
+  /* Checked rather than assumed: the comment in Calendar.tsx first
+     claimed `overflow-hidden` would leave `overflow-y-auto` in place
+     because tailwind-merge groups the axes separately. It does not —
+     the shorthand clears the axis class too. Both spellings work; the
+     panel uses the y-only one so the x axis keeps whatever the base
+     gives it. */
+  it("also lets the overflow shorthand replace the scrolling", () => {
+    expect(classesFor("flex flex-col overflow-hidden")).not.toMatch(/\boverflow-y-auto\b/);
+  });
+});

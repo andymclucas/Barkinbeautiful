@@ -75,11 +75,42 @@ describe("the appointment panel footer", () => {
       .then(() => expect(onTakePayment).toHaveBeenCalled());
   });
 
-  it("stays pinned to the bottom of the scrolling panel", () => {
-    // sticky, not fixed: this panel's own content is what scrolls, so a
-    // fixed footer would sit against the viewport instead of the panel.
+  /*
+   * This asserted the OPPOSITE until 09/11/2026 — "stays pinned to the
+   * bottom of the scrolling panel", expecting `sticky bottom-0`. That is
+   * what produced the overlap Andy reported: a sticky child of a scroll
+   * container is MEANT to have the content pass underneath it, so the
+   * Payments card, the card-on-file box and the panel's own Take payment
+   * button all slid under this bar on the way past, readable through a
+   * translucent background.
+   *
+   * The pinning is now structural — Calendar.tsx makes the panel a flex
+   * column and this bar is a sibling of the scrolling body, not a child
+   * of it. So the bar must NOT reintroduce either.
+   */
+  it("is not sticky, so nothing can scroll underneath it", () => {
     const { container } = show({ bookingTotal: "60.00", bookingPaid: "0", bookingOutstanding: "60.00" });
-    expect(container.firstElementChild?.className).toContain("sticky");
-    expect(container.firstElementChild?.className).toContain("bottom-0");
+    const cls = container.firstElementChild?.className ?? "";
+    expect(cls).not.toContain("sticky");
+    expect(cls).not.toContain("fixed");
+    expect(cls).not.toContain("absolute");
+  });
+
+  it("is opaque, so nothing shows through it", () => {
+    // bg-background, not bg-background/95 + backdrop-blur. The
+    // translucency was half of why the overlap was so hard to read.
+    const cls = show({ bookingTotal: "60.00", bookingPaid: "0", bookingOutstanding: "60.00" })
+      .container.firstElementChild?.className ?? "";
+    expect(cls).toContain("bg-background");
+    expect(cls).not.toContain("bg-background/");
+    expect(cls).not.toContain("backdrop-blur");
+  });
+
+  it("keeps its own height in a flex column", () => {
+    // Without shrink-0 the column squeezes the bar to nothing when the
+    // body is long, which is every booking with a payment panel.
+    const cls = show({ bookingTotal: "60.00", bookingPaid: "0", bookingOutstanding: "60.00" })
+      .container.firstElementChild?.className ?? "";
+    expect(cls).toContain("shrink-0");
   });
 });

@@ -4964,7 +4964,33 @@ export default function Calendar() {
             phone and 512px from sm up, which is what this content was laid
             out for. Passing max-w-lg would win on mobile too and leave a
             narrow strip with the calendar showing beside it. */}
-        <DialogContent side="right">
+        {/*
+            A column, not a scrolling block.
+
+            Andy, 09/11/2026: "The total and take payment button should
+            be a seperate element down the bottom so it doesn't cause any
+            overlap."
+
+            It did overlap, and `sticky bottom-0` is why. DialogContent
+            is itself the scroll container, so a sticky child pins to the
+            bottom of the viewport and every row of the panel slides
+            UNDER it on the way past — the Payments card, the card-on-file
+            box, the second Take payment button. A translucent background
+            made it worse: you could read the content through it.
+
+            Sticky cannot be fixed by nudging it. Anything pinned inside
+            a scroll container has content pass beneath it by definition.
+            So the panel is now header / scrolling body / bottom bar, and
+            the bar is outside the scroll entirely — which is also how
+            MoeGo's panel is built, the thing this was copied from.
+
+            `overflow-y-hidden` rather than the shorthand so the x axis
+            keeps whatever the base gives it. Either spelling clears the
+            base `overflow-y-auto` — checked in dialog.test.tsx, because
+            the first version of this note asserted the opposite and was
+            wrong.
+        */}
+        <DialogContent side="right" className="flex flex-col overflow-y-hidden">
           <DialogHeader>
             {/* The dog and the owner carry the heading. "Edit appointment"
                 is the one thing on this screen a groomer already knows, and
@@ -5001,6 +5027,11 @@ export default function Calendar() {
             const editSiblings = getSiblings(editAppt);
             return (
             <>
+            {/* The body, and the only thing that scrolls. `min-h-0` is
+                load-bearing: a flex child defaults to min-height:auto
+                and would grow to its content instead of scrolling,
+                pushing the bar off the bottom of the screen. */}
+            <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6">
             <Tabs value={editTab} onValueChange={setEditTab}>
               <TabsList className="w-full">
                 <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
@@ -6209,13 +6240,18 @@ export default function Calendar() {
 
             </Tabs>
 
+            </div>
+
             {/*
-              The two things staff need on every tab, pinned.
+              The two things staff need on every tab, in a bar of their
+              own below the scroll.
 
               Andy, 09/11/2026, with MoeGo's panel open: "Show the total
               'estimated price' in Groomigo when an appt is clicked on and
               also the option to be able to 'Take Payment' as the two
-              default buttons."
+              default buttons." Then, seeing the first attempt: "The total
+              and take payment button should be a seperate element down
+              the bottom so it doesn't cause any overlap."
 
               Both already existed — SplitPaymentPanel carries the totals
               and the button — but they sit at the BOTTOM of the Details
@@ -6223,14 +6259,14 @@ export default function Calendar() {
               the times, the discount and the notes, and from the other
               three tabs they were not visible at all.
 
-              `sticky bottom-0` rather than a fixed footer, mirroring the
-              sticky close button at the top of this same panel: the
-              content is what scrolls, so anything pinned has to ride the
-              scroll container or it slides out of view. `-mx-6 px-6`
-              takes it back out to the panel's edges, under the p-6.
+              The first version was `sticky bottom-0`, which overlapped:
+              a sticky child of a scroll container has the content pass
+              underneath it, which is what it is for. It is now a sibling
+              of the scrolling body rather than a child of it, so there
+              is nothing it can overlap.
 
               It reads payments.forBooking — the same query the panel
-              below uses, so TanStack serves both from one fetch and the
+              above uses, so TanStack serves both from one fetch and the
               two cannot disagree about the number.
             */}
             <ApptPanelFooter
