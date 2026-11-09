@@ -210,13 +210,20 @@ describe("rules added after review", () => {
       .toEqual({ send: false, reason: "not_confirmed" });
   });
 
-  it("will not land a text in the middle of the night", () => {
-    for (const hour of [0, 3, 6, 19, 22, 23]) {
-      expect(decideBookingConfirmation({ ...live, localHour: hour }))
+  /*
+   * 7 and 8 used to be allowed here. Andy, 09/11/2026: "9am texts only.
+   * No earlier than that." The floor is now one constant in
+   * shared/sendingHours.ts and this is one of four senders that used to
+   * have its own answer.
+   */
+  it("will not land a text before nine, or after seven", () => {
+    for (const hour of [0, 3, 6, 7, 8, 19, 22, 23]) {
+      expect(decideBookingConfirmation({ ...live, localHour: hour }), `${hour}:00`)
         .toEqual({ send: false, reason: "quiet_hours" });
     }
-    for (const hour of [7, 9, 13, 18]) {
-      expect(decideBookingConfirmation({ ...live, localHour: hour })).toEqual({ send: true });
+    for (const hour of [9, 13, 18]) {
+      expect(decideBookingConfirmation({ ...live, localHour: hour }), `${hour}:00`)
+        .toEqual({ send: true });
     }
   });
 

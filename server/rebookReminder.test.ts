@@ -99,12 +99,18 @@ describe("deciding whether to nudge a client to rebook", () => {
       .toEqual({ send: false, reason: "no_phone" });
   });
 
-  it("will not text at three in the morning if the cron is misscheduled", () => {
-    expect(decideRebookReminder({ ...base, localHour: 3 }))
-      .toEqual({ send: false, reason: "quiet_hours" });
-    expect(decideRebookReminder({ ...base, localHour: 20 }))
-      .toEqual({ send: false, reason: "quiet_hours" });
-    expect(decideRebookReminder({ ...base, localHour: 8 }).send).toBe(true);
+  /*
+   * 8am used to pass here, and the rebook cron still fires at 08:00
+   * Brisbane. Andy, 09/11/2026: "9am texts only. No earlier than that."
+   * The schedule moves too, but this is what makes the schedule not the
+   * only thing standing between a client and an early text.
+   */
+  it("will not text before nine, whatever the cron says", () => {
+    for (const hour of [3, 7, 8, 20]) {
+      expect(decideRebookReminder({ ...base, localHour: hour }), `${hour}:00`)
+        .toEqual({ send: false, reason: "quiet_hours" });
+    }
+    expect(decideRebookReminder({ ...base, localHour: 9 }).send).toBe(true);
   });
 
   /**

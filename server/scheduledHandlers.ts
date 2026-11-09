@@ -51,6 +51,7 @@ import { decideAppointmentReminder, REMINDER_SKIP_LABEL } from "@shared/reminder
 import { groupRemindersByBooking } from "@shared/reminderGrouping";
 import { bookingKey, confirmedBookingKeys } from "@shared/confirmedBookings";
 import { runClientStatusSweepQuietly } from "./clientStatusSweep";
+import { EARLIEST_AUTOMATED_TEXT_HOUR } from "@shared/sendingHours";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 
 
@@ -704,6 +705,38 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
 
     if (process.env.SMS_AUTOMATION_ENABLED !== "true") {
       return res.json({ ok: true, skipped: "automation-disabled", clientStatus });
+    }
+
+    /*
+     * Never before nine, whatever the cron says.
+     *
+     * Andy, 09/11/2026: "9am texts only. No earlier than that."
+     *
+     * This handler had no hour check of its own — the 06:30 Render
+     * schedule WAS the protection, which put the rule in a dashboard
+     * field instead of in the code. A mis-typed cron expression, a
+     * manual Trigger Run, or somebody pointing a second schedule at
+     * this endpoint would all have texted the salon's book at whatever
+     * hour it happened to be, with nothing here to refuse.
+     *
+     * The schedule moves to 09:00 as well. Both, because the schedule
+     * decides WHEN it runs and this decides whether it may send — and
+     * the one that must not be wrong is the second.
+     *
+     * The client-status sweep above runs regardless: it is maintenance,
+     * not a message, and the hour is irrelevant to it.
+     */
+    const brisbaneHour = Number(new Date().toLocaleString("en-AU", {
+      timeZone: "Australia/Brisbane", hour: "2-digit", hour12: false,
+    }));
+    if (!Number.isFinite(brisbaneHour) || brisbaneHour < EARLIEST_AUTOMATED_TEXT_HOUR) {
+      console.warn(`[reminders] refusing to send at ${brisbaneHour}:00 Brisbane —`
+        + ` nothing automated goes out before ${EARLIEST_AUTOMATED_TEXT_HOUR}:00.`
+        + ` Check the cron schedule.`);
+      return res.json({
+        ok: true, skipped: "too-early",
+        brisbaneHour, earliest: EARLIEST_AUTOMATED_TEXT_HOUR, clientStatus,
+      });
     }
 
     // Brisbane is UTC+10 with no DST, so "midnight AEST" is always 14:00 UTC
