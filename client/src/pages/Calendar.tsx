@@ -118,8 +118,9 @@ import { AngelWings } from "@/components/AngelWings";
 import { petHasPassedAway, PET_CANNOT_BE_SELECTED } from "@shared/petBookable";
 import { useState, useMemo, useRef, useEffect, useCallback, useContext, createContext } from "react";
 import { toast } from "sonner";
-import { Link } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { MassTextDialog } from "@/components/MassTextDialog";
+import { calendarDateFromSearch } from "@shared/calendarDeepLink";
 import { calendarTextLabel, calendarTextRange, canSendMassText } from "@shared/calendarMassText";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
@@ -1282,7 +1283,12 @@ export default function Calendar() {
     user ? { id: user.id, email: user.email } : null,
     myStaffProfile ?? null,
   );
-  const [weekStart, setWeekStart]   = useState(() => getWeekStart(getTodayAEST()));
+  const [weekStart, setWeekStart]   = useState(
+    () => getWeekStart(
+      calendarDateFromSearch(typeof window === "undefined" ? "" : window.location.search)
+        ?? getTodayAEST(),
+    ),
+  );
   const [showNewAppt, setShowNewAppt] = useState(false);
   const [editAppt, setEditAppt]     = useState<Appt | null>(null);
   /*
@@ -1296,7 +1302,19 @@ export default function Calendar() {
   const [editTab, setEditTab] = useState("details");
   const [copySnap, setCopySnap]     = useState<ReportSnapshot | null>(null);
   const [viewMode, setViewMode]     = useState<"week" | "day" | "agenda">("day");
-  const [dayDate, setDayDate]       = useState(() => getTodayAEST());
+  /*
+   * Opened from a link, the day comes from `?date=`; otherwise today.
+   *
+   * Set in the INITIALISER as well as the effect below, so a diary
+   * opened cold on a dated link never paints today's board first and
+   * then jump. The effect is what handles the far more common case —
+   * somebody already on the calendar searching for another dog, where
+   * only the query string changes and the component does not remount.
+   */
+  const [dayDate, setDayDate]       = useState(
+    () => calendarDateFromSearch(typeof window === "undefined" ? "" : window.location.search)
+      ?? getTodayAEST(),
+  );
   // The diary opens on the grooming side; the bathing team is opt-in from the
   // staff menu. Held as an INTENT rather than a list of ids so that a groomer
   // hired next month appears without anybody reopening the filter — see
@@ -1329,6 +1347,39 @@ export default function Calendar() {
   const [newContact, setNewContact] = useState({ name: "", phone: "", relationship: "" });
   const [apptSearchOpen, setApptSearchOpen] = useState(false);
   const [apptSearchTerm, setApptSearchTerm] = useState("");
+
+  /*
+   * Follow `/calendar?date=YYYY-MM-DD` when it changes under us.
+   *
+   * Andy, 09/11/2026: "When clicking on an appt in the global search,
+   * it doesn't take the user to the correct date. Just lands on today."
+   *
+   * The link was always right — appointmentHref has built it since the
+   * search was written — but this page never read it. The initialiser
+   * alone would not have been enough either: the commonest case is
+   * somebody ALREADY on the diary searching for another dog, and then
+   * only the query string changes, the route does not, and wouter does
+   * not remount the page. So the day is followed here too.
+   *
+   * ## The parameter is consumed, not kept
+   *
+   * `?date=` is an instruction to open on a day, not a description of
+   * where the diary is sitting. Left in place it would go stale the
+   * moment somebody pressed the next-day arrow, Back would re-aim the
+   * board at a day they had moved on from, and clicking the same search
+   * result twice would do nothing the second time because the string
+   * had not changed. Replacing rather than pushing keeps Back meaning
+   * "the screen I came from".
+   */
+  const calendarSearch = useSearch();
+  const [, navigateCalendar] = useLocation();
+  useEffect(() => {
+    const target = calendarDateFromSearch(calendarSearch);
+    if (!target) return;
+    setDayDate(target);
+    setWeekStart(getWeekStart(target));
+    navigateCalendar("/calendar", { replace: true });
+  }, [calendarSearch, navigateCalendar]);
 
   const [collectByDraft, setCollectByDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);

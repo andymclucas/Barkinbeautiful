@@ -52,6 +52,19 @@ export default defineConfig({
     include: [
       "server/**/*.test.ts",
       "server/**/*.spec.ts",
+      /**
+       * shared/ is here because CLAUDE.md §10 tells you to colocate a
+       * unit test with the pure function it covers, and without this
+       * glob such a test is collected by nothing and "passes" by never
+       * running. Found 09/11/2026: shared/calendarDeepLink.test.ts sat
+       * in shared/ and the suite reported 364 files green without it.
+       *
+       * The repo's own 300-odd tests for shared modules all live in
+       * server/, which is why nobody had hit this. That convention
+       * stands; this is so following the documented one does not give
+       * a silent pass.
+       */
+      "shared/**/*.test.ts",
       "client/**/*.test.ts",
       "client/**/*.test.tsx",
     ],
