@@ -155,6 +155,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 
 import { PetCodeChips } from "@/components/PetCodeChips";
 import { parsePetCodes } from "@shared/petCodes";
+import { bookingPetRows } from "@shared/appointmentPets";
 import { biteWarningsIn } from "@shared/petCodeRisk";
 import { EmailInvoiceButton } from "@/components/EmailInvoiceButton";
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -5041,45 +5042,94 @@ export default function Calendar() {
               </TabsList>
 
               <TabsContent value="details" className="space-y-4 pt-2">
-                <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm space-y-0.5">
-                  {editSiblings.length > 0 ? (
-                    <div className="space-y-0.5">
-                      <span className="text-muted-foreground">Pets:</span>
-                      {[editAppt, ...editSiblings].map((p) => {
-                        const rStatus = reportStatusMap[p.id];
-                        return (
-                          <span key={p.id} className="inline-flex items-center gap-1.5 ml-1">
-                            <PetPhotoQuickAdd petId={p.petId} petName={p.petName} appointmentId={p.id} className="h-10 w-10" />
-                            <strong>{p.petName}</strong>{p.petBreed ? ` · ${p.petBreed}` : ""}
-                            {p.lastAppointmentDate && <span className="text-xs text-muted-foreground">· Last: {new Date(p.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</span>}
-                            {rStatus === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 inline" />}
-                            {rStatus === "draft" && <span className="text-[10px] bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1">Draft</span>}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground">Pet:</span>
-                      <PetPhotoQuickAdd petId={editAppt.petId} petName={editAppt.petName} appointmentId={editAppt.id} className="h-10 w-10" />
-                      <strong>{editAppt.petName}</strong>{editAppt.petBreed ? ` · ${editAppt.petBreed}` : ""}
-                      {reportStatusMap[editAppt.id] === "sent" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
-                      {reportStatusMap[editAppt.id] === "draft" && <span className="text-[10px] bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1">Draft</span>}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5">
+                <div className="rounded-lg bg-muted/50 px-3 py-3 text-[15px] space-y-2">
+                  {/*
+                    One row per dog, each one a link to its own record.
+
+                    Andy, 09/11/2026, with MoeGo's panel beside this one:
+                    "the pets are not very noticeable as you can see the
+                    MoeGo card has more details of the pets and they are
+                    clickable." MoeGo gives every dog a card of its own;
+                    this was a run-on line of small grey text with a
+                    40px photo, and on a two-dog booking the two ran
+                    together.
+
+                    The codes are the part that was actually WRONG, not
+                    just small. petMoegoCodeLabels is per dog and this
+                    panel rendered editAppt's — the lead dog's — once,
+                    under the client. On the booking Andy was looking at,
+                    Mickey carries DONT PLUCK EARS and Tilly does not, so
+                    the panel either showed Mickey's warning against the
+                    pair or dropped it, depending which dog led. Now each
+                    dog carries its own.
+
+                    Not shown, because the data is not there: MoeGo
+                    prints a sex symbol and "Entire" per dog. Groomigo
+                    has the columns and they are empty — gender is
+                    "unknown" on 12,555 of 12,556 dogs and desexed is
+                    false on every one. The import never brought them
+                    across. Printing them would invent a fact about
+                    somebody's dog, so this prints what is known and the
+                    gap is a job for the importer.
+                  */}
+                  <div className="space-y-2">
+                    {bookingPetRows(editAppt, editSiblings).map((p) => {
+                      const rStatus = reportStatusMap[p.appointmentId];
+                      return (
+                        <div key={p.appointmentId} className="flex items-start gap-3">
+                          <PetPhotoQuickAdd petId={p.petId} petName={p.name} appointmentId={p.appointmentId} className="h-14 w-14 shrink-0" />
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {/* The dog's own record, which is where the
+                                  paperwork, the weight and the history
+                                  live. ClientDetail already reads ?pet=
+                                  and opens on that dog scrolled to. */}
+                              <Link
+                                href={p.href}
+                                className="inline-flex items-center gap-1 text-lg font-semibold leading-tight text-primary hover:underline"
+                                title={`Open ${p.name}'s record`}
+                              >
+                                {p.name}
+                                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                              </Link>
+                              {rStatus === "sent" && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+                              {rStatus === "draft" && (
+                                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                                  Report draft
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {p.breed ?? "Breed not recorded"}
+                              {p.lastVisit && (
+                                <> · Last: {p.lastVisit.toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</>
+                              )}
+                            </div>
+                            {/* THIS dog's codes, not the booking's. */}
+                            <PetCodeChips codes={p.codes} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-2">
                     <span className="text-muted-foreground">Client:</span>
                     {/* Straight through to the client record - the groomers were
                         going out to Clients and searching by name to get here. */}
                     <Link
                       href={`/clients/${editAppt.clientId}`}
-                      className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                      className="inline-flex items-center gap-1 text-base font-semibold text-primary hover:underline"
                       title="Open this client's record"
                     >
                       {editAppt.clientFirstName} {editAppt.clientLastName}
-                      <ExternalLink className="h-3 w-3" />
+                      <ExternalLink className="h-3.5 w-3.5" />
                     </Link>
-                    {editAppt.clientPhone ? <span className="text-muted-foreground">· {editAppt.clientPhone}</span> : null}
+                    {editAppt.clientPhone
+                      ? <a href={`tel:${editAppt.clientPhone}`} className="text-muted-foreground hover:underline">
+                          · {editAppt.clientPhone}
+                        </a>
+                      : null}
                   </div>
                   {/* Who to ring about THIS booking. The salon was writing
                       "Tx + Rochelle" on the whiteboard in green marker
@@ -5252,12 +5302,12 @@ export default function Calendar() {
                       The contact saved on this booking is no longer on the client’s record. It will fall back to {editAppt.clientFirstName} {editAppt.clientLastName}.
                     </p>
                   )}
-                  {/* The dog's codes, where the groomer opening the
-                      booking will see them — the same chips and the same
-                      catalogue colours as the board. Charlie asked for
-                      the colours; they are no use on a screen that does
-                      not show the codes at all. */}
-                  <PetCodeChips codes={editAppt.petMoegoCodeLabels} />
+                  {/* The codes moved up to sit under the dog they
+                      belong to. They used to render here, once, from
+                      editAppt — the lead dog — which on a two-dog
+                      booking attributed one dog's warnings to both.
+                      Charlie asked for the catalogue colours; they are
+                      no use on the wrong animal. */}
                   {editAppt.lastAppointmentDate && <div><span className="text-muted-foreground">Last appointment:</span> {new Date(editAppt.lastAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long", year: "numeric" })}</div>}
                 </div>
                 {/* Moved up from below the Notes field.
@@ -5384,8 +5434,13 @@ export default function Calendar() {
                   return (
                     <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
                       <div>
-                        <Label className="text-xs font-bold">Dogs on this booking</Label>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
+                        {/* Andy, 09/11/2026: "the card needs to have
+                            larger text and buttons more noticeable and
+                            prominent." These were 12px bold — a caption
+                            on a block that decides whether a dog is
+                            coming. */}
+                        <Label className="text-base font-bold">Dogs on this booking</Label>
+                        <p className="mt-0.5 text-sm text-muted-foreground">
                           {describeAttendance(rows)}
                         </p>
                       </div>
@@ -5411,8 +5466,8 @@ export default function Calendar() {
                         if (plan.cancel.length < 2) return null;
                         return (
                           <Button
-                            type="button" size="sm" variant="outline"
-                            className="h-7 w-full text-xs"
+                            type="button" variant="outline"
+                            className="h-10 w-full border-red-200 text-sm font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
                             disabled={cancelWholeBookingMutation.isPending}
                             onClick={() => setConfirmWholeCancel({
                               id: editAppt.id,
@@ -5425,17 +5480,16 @@ export default function Calendar() {
                       })()}
                         {rows.map(row => (
                           <div key={row.id} className="flex items-center gap-2">
-                            <span className={`flex-1 truncate text-xs font-medium ${row.coming ? "" : "text-muted-foreground line-through"}`}>
+                            <span className={`flex-1 truncate text-base font-medium ${row.coming ? "" : "text-muted-foreground line-through"}`}>
                               {row.name}
                             </span>
                             {row.action === "blocked" ? (
-                              <span className="shrink-0 text-xs text-muted-foreground" title={row.reason}>{row.label}</span>
+                              <span className="shrink-0 text-sm text-muted-foreground" title={row.reason}>{row.label}</span>
                             ) : (
                               <Button
                                 type="button"
-                                size="sm"
                                 variant={row.action === "remove" ? "outline" : "secondary"}
-                                className="h-7 shrink-0 text-xs"
+                                className="h-10 shrink-0 px-4 text-sm font-semibold"
                                 disabled={workflowMutation.isPending}
                                 onClick={() => {
                                   if (row.action === "remove") {
@@ -5467,7 +5521,7 @@ export default function Calendar() {
                 })()}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label>Groomer</Label>
+                    <Label className="text-base font-semibold">Groomer</Label>
                     {editSiblings.length > 0 ? (
                       <div className="space-y-2">
                         {[editAppt, ...editSiblings].map(pet => (
@@ -5498,7 +5552,7 @@ export default function Calendar() {
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Service</Label>
+                    <Label className="text-base font-semibold">Service</Label>
                     {editSiblings.length > 0 ? (
                       <div className="space-y-2">
                         {[editAppt, ...editSiblings].map(pet => (
@@ -5570,11 +5624,11 @@ export default function Calendar() {
                   : <AppointmentAddOns appointmentId={editAppt.id} />)}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label>Start</Label>
+                    <Label className="text-base font-semibold">Start</Label>
                     <DateTimeField aria-label="Starts" value={editForm.scheduledStart} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledStart: next }))} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>End</Label>
+                    <Label className="text-base font-semibold">End</Label>
                     <DateTimeField aria-label="Ends" value={editForm.scheduledEnd} fallbackDate={editForm.scheduledStart?.slice(0, 10)} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledEnd: next }))} />
                   </div>
                 </div>
@@ -5760,7 +5814,7 @@ export default function Calendar() {
                 })()}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label>Status</Label>
+                    <Label className="text-base font-semibold">Status</Label>
                     <Select value={editForm.workflowState} onValueChange={v => setEditForm(p => ({ ...p, workflowState: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -5814,7 +5868,7 @@ export default function Calendar() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="flex items-center gap-1.5">
+                    <Label className="flex items-center gap-1.5 text-base font-semibold">
                       Price ($)
                       <MoegoBadge moegoAppointmentId={editAppt.moegoAppointmentId} />
                     </Label>
@@ -5839,7 +5893,7 @@ export default function Calendar() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Notes</Label>
+                  <Label className="text-base font-semibold">Notes</Label>
                   <Textarea rows={2} value={editForm.notes} onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))} />
                 </div>
 
