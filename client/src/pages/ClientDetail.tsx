@@ -1438,7 +1438,31 @@ export default function ClientDetail() {
               the rail was unpainted when it was not. Removed rather than
               left to mislead — the stylesheet owns the fill, the border
               and the padding. */}
-          <TabsList className="tabs-rail flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 lg:sticky lg:top-4 lg:flex-col lg:flex-nowrap">
+          {/* Two even columns on a phone, a vertical list from lg.
+
+              Andy, 09/11/2026, with a photo of the client record:
+              "Alignment is a bit off on these tabs. Maybe more of a
+              centralised look with highlighted tabs able to be
+              selected."
+
+              It was a wrapped row of natural-width chips, so the ten
+              items fell 3 / 2 / 3 / 2 and every row ended at a different
+              place with a ragged gap down the right. Wrapping decides
+              that from label lengths, which no amount of justifying
+              fixes — centring a row of three wide chips and a row of two
+              narrow ones still gives two different rows.
+
+              A grid takes the decision away: five even rows, every chip
+              the same width, nothing ragged. The rail at lg is unchanged
+              — there it is one column already.
+
+              One column below 360px. Two columns there leave a 136px
+              chip, and "Memberships (12)" needs 122 of it before the
+              icon and the padding, so the longest few labels truncate.
+              Above that the pair fits with room to spare, measured at
+              375 and 430 with three-digit counts. 360 is the width the
+              arithmetic changes at, not a device. */}
+          <TabsList className="tabs-rail grid h-auto w-full grid-cols-1 gap-1.5 min-[360px]:grid-cols-2 lg:sticky lg:top-4 lg:flex lg:flex-col lg:gap-0.5">
             {[
               { value: "overview", label: "Overview", icon: LayoutDashboard },
               { value: "pets", label: `Pets (${pets.length})`, icon: Dog },
@@ -1454,25 +1478,33 @@ export default function ClientDetail() {
               <TabsTrigger
                 key={item.value}
                 value={item.value}
-                /* flex-none and h-auto undo two things the shadcn TabsList
-                   base assumes, both of which are right for a single-row
+                /* flex-none and h-auto undo two things the shadcn
+                   TabsTrigger base assumes, both right for a single-row
                    equal-width tab strip and wrong for this.
 
-                   `flex-1` gives every trigger flex-basis:0, so on a phone —
-                   where the rail falls back to a wrapped row — each row
-                   divided its width between however many items happened to
-                   fit. Three tabs on one line, two on the next, every row a
-                   different size, and the active pill stretched to whatever
-                   slot it landed in. The `w-full` that used to be here was
-                   meant to stop that and could not: flex-basis beats width.
+                   `flex-1` gives every trigger flex-basis:0. It is inert
+                   inside the grid on a phone, but from lg the rail is a
+                   flex COLUMN, and there flex-basis:0 makes each of the
+                   ten items stretch to share the column's height.
 
-                   `h-[calc(100%-1px)]` is a percentage of a container that
-                   is h-auto, which has nothing to resolve against once the
-                   row wraps.
+                   `h-[calc(100%-1px)]` is a percentage of a container
+                   that is h-auto, so it has nothing to resolve against.
 
-                   So: natural-width chips that wrap on a phone, full-width
-                   rows in the lg column where the rail is a vertical list. */
-                className="h-auto flex-none w-auto justify-start gap-2 rounded-lg px-3 py-2 text-sm lg:w-full data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+                   Nothing here sets the radius, the colours or the
+                   selected state: index.css styles [role="tab"] without a
+                   layer, which beats a Tailwind utility whatever its
+                   specificity. A `rounded-lg` and three
+                   `data-[state=active]:*` classes used to sit here doing
+                   exactly nothing, and reading them told you the active
+                   tab was a pale tint when the stylesheet was painting it
+                   a brand gradient.
+
+                   px-2 rather than px-3: at 375px the two-column cell is
+                   164px, and "Memberships (2)" wanted 115 of the 114 the
+                   wider padding left it — truncated by a single pixel.
+                   Eight pixels back puts every label inside its chip with
+                   room for three-digit counts. */
+                className="h-auto w-full flex-none justify-center gap-2 px-2 py-2 text-sm lg:justify-start lg:px-3"
               >
                 <item.icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{item.label}</span>
