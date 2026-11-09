@@ -27,9 +27,6 @@ const ALIASES: MoegoStaffAlias[] = [
   { moegoName: "bather", staffId: 7 },
 ];
 
-const NAMES: Record<number, string> = { 1: "Lauren", 2: "Megs", 3: "Charlotte", 7: "Stephanie", 99: "Nathan" };
-const nameOf = (id: number) => NAMES[id] ?? `#${id}`;
-
 const run = (staffIds: number[], roster = ROSTER, aliases = ALIASES) =>
   resolveMoegoStaff(
     staffIds.length ? "x" : "",
@@ -170,14 +167,14 @@ describe("resolveMoegoStaffForPets", () => {
 
 describe("describeStaffResolution", () => {
   it("says who, and says when it came through an alias", () => {
-    expect(describeStaffResolution(resolveMoegoStaff("Bather 1", ROSTER, ALIASES), nameOf))
+    expect(describeStaffResolution(resolveMoegoStaff("Bather 1", ROSTER, ALIASES)))
       .toBe('Stephanie Baldwin (MoeGo calls them "Bather 1")');
-    expect(describeStaffResolution(resolveMoegoStaff("Charlotte Purcell", ROSTER, ALIASES), nameOf))
+    expect(describeStaffResolution(resolveMoegoStaff("Charlotte Purcell", ROSTER, ALIASES)))
       .toBe("Charlotte Purcell");
   });
 
   it("says what to do about a name nobody knows", () => {
-    expect(describeStaffResolution(resolveMoegoStaff("Bather 2", ROSTER, ALIASES), nameOf))
+    expect(describeStaffResolution(resolveMoegoStaff("Bather 2", ROSTER, ALIASES)))
       .toContain("add an alias or stop");
   });
 });

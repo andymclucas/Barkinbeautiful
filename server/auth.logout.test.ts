@@ -13,13 +13,23 @@ type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] } {
   const clearedCookies: CookieCall[] = [];
 
+  // Filled out in full rather than partially. Logout cares about none of
+  // these, but a half-built user is how a fixture quietly stops resembling
+  // the row the procedures actually receive -- which is what the missing
+  // tenantId here would have meant for any test that reused it.
   const user: AuthenticatedUser = {
     id: 1,
     openId: "sample-user",
+    tenantId: 1,
     email: "sample@example.com",
     name: "Sample User",
     loginMethod: "manus",
+    passwordHash: null,
+    passwordResetTokenHash: null,
+    passwordResetExpiresAt: null,
     role: "user",
+    timezone: null,
+    staffColumnOrder: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -27,6 +37,11 @@ function createAuthContext(): { ctx: TrpcContext; clearedCookies: CookieCall[] }
 
   const ctx: TrpcContext = {
     user,
+    // The salon this caller belongs to, and every salon they may act in.
+    // Both are part of the context every procedure receives; a fixture
+    // without them is not the shape the router is handed.
+    tenantId: 1,
+    accessibleTenantIds: [1],
     req: {
       protocol: "https",
       headers: {},

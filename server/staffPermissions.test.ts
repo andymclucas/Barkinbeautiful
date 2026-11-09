@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   STAFF_SECTIONS, STAFF_SECTION_KEYS, isStaffSection, parseSections,
   canEditSection, describeGrant, sectionLabel,
-  summariseGrant, STAFF_SECTION_KEYS,
+  summariseGrant,
   canViewSection, viewableSections,
 } from "../shared/staffPermissions";
 

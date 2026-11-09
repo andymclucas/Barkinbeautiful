@@ -324,21 +324,35 @@ describe("the Christmas theme", () => {
    */
   const BULB_FLOOR = 3;
 
+  /**
+   * A brand token that this block measures, asserted present AND narrowed.
+   *
+   * These are `string | null` on the brand type because a salon can leave
+   * them unset. The festive brand sets them, and if it ever stops, that
+   * should fail here by name rather than be coerced to "" and measured as
+   * black.
+   */
+  const token = (value: string | null, name: string): string => {
+    if (!value) throw new Error(`FESTIVE_BRAND.${name} is not set`);
+    return value;
+  };
+  const SIDEBAR = token(FESTIVE_BRAND.sidebar, "sidebar");
+
   it("keeps every bulb visible against the festive sidebar", () => {
     // The first version used FESTIVE_GREEN for the green bulb. That colour
     // is a SURFACE that has to carry white text, so it is dark by
     // construction, and against the dark green sidebar it measured 1.46:1 —
     // a third of the garland was simply not there.
     for (const bulb of [FESTIVE_BULB_RED, FESTIVE_BULB_GREEN, FESTIVE_BULB_GOLD]) {
-      expect(contrastRatio(bulb, FESTIVE_BRAND.sidebar)).toBeGreaterThanOrEqual(BULB_FLOOR);
+      expect(contrastRatio(bulb, SIDEBAR)).toBeGreaterThanOrEqual(BULB_FLOOR);
     }
   });
 
   it("records why the bulb green is not the surface green", () => {
     // Pins the trap itself: if someone "tidies" the two greens back into
     // one, this fails and says which way round they go.
-    expect(contrastRatio(FESTIVE_GREEN, FESTIVE_BRAND.sidebar)).toBeLessThan(BULB_FLOOR);
-    expect(contrastRatio(FESTIVE_BULB_GREEN, FESTIVE_BRAND.sidebar)).toBeGreaterThan(BULB_FLOOR);
+    expect(contrastRatio(FESTIVE_GREEN, SIDEBAR)).toBeLessThan(BULB_FLOOR);
+    expect(contrastRatio(FESTIVE_BULB_GREEN, SIDEBAR)).toBeGreaterThan(BULB_FLOOR);
   });
 
   it("keeps white readable on the two colours that carry text", () => {
@@ -360,7 +374,7 @@ describe("the Christmas theme", () => {
     // `accent` reaches exactly one rule, the corner gradient. The pale pink
     // that was here had chroma 0.061 and vanished into it; this asserts the
     // accent is a real colour rather than a tint.
-    const accent = hexToOklch(FESTIVE_BRAND.accent)!;
+    const accent = hexToOklch(token(FESTIVE_BRAND.accent, "accent"))!;
     expect(accent.c).toBeGreaterThan(0.15);
   });
 

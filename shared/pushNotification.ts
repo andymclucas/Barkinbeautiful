@@ -15,11 +15,32 @@
 
 import { notificationBody } from "./notificationDelivery";
 
+/**
+ * What the event bus actually publishes, loosely typed.
+ *
+ * Every field is optional because this takes all four of the bus's event
+ * shapes (new-message, call-ringing, call-ended, missed-call) and decides
+ * from `type` which fields it may trust.
+ *
+ * `tenantId`, `callSid` and `petNames` are here because the events in
+ * server/eventBus.ts carry them. They were missing, and the fanout papered
+ * over the gap with `as Parameters<typeof pushForEvent>[0]`, so a mismatch
+ * between this type and the bus could never be seen. The cast is gone.
+ *
+ * `clientId` is read below to deep-link a push at a client, and NOTHING on
+ * the bus sets it, so that link has never once fired -- every push lands on
+ * /messages instead of the conversation. Left as-is deliberately: adding it
+ * means changing what the Twilio webhooks emit, which is a decision rather
+ * than a typecheck fix. Noted 09/11/2026.
+ */
 export type PushEventInput = {
   type?: string;
   id?: number;
+  tenantId?: number;
+  callSid?: string;
   clientId?: number | null;
   clientName?: string | null;
+  petNames?: readonly string[];
   fromNumber?: string;
   body?: string;
   transcriptText?: string | null;

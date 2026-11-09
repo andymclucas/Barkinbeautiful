@@ -79,7 +79,10 @@ const FIRM: Record<string, number> = {
           how = `known prices for ${b.pets.length - 1} dogs, the last is the residual`;
         }
       }
-      const sum = prices.reduce((a, x) => a + Number(x), 0);
+      // The accumulator is annotated because `prices` is (number | null)[]
+      // and reduce's first overload then matches, inferring the accumulator
+      // as number | null even though the seed is 0.
+      const sum = prices.reduce((a: number, x) => a + Number(x), 0);
       if (Math.abs(sum - b.total) > 0.01) { skipped.push(`${who} (${b.bid}): ${prices.join(" + ")} = ${sum}, not $${b.total} — refusing`); continue; }
 
       console.log(`${who} — MoeGo $${b.total} (${how})`);

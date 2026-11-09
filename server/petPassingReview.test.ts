@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { buildPassingReview, describePassingReview } from "../shared/petPassingReview";
 
-const plan = (id: number, name: string, price: string, petId: number | null, weeks = 1) => ({
+// price is nullable because a membership genuinely can carry none, which
+// is what the "copes with a membership that carries no price" case below
+// passes. It was typed `string` and the null went unnoticed until
+// *.test.ts came inside tsc.
+const plan = (id: number, name: string, price: string | null, petId: number | null, weeks = 1) => ({
   id, name, pricePerCycle: price, billingCycleWeeks: weeks, petId, petName: null,
 });
 

@@ -9,12 +9,31 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
  * client's. A text sent because somebody was trying the form cannot be
  * recalled.
  */
-const sendEmail = vi.fn(async () => true);
-const sendSms = vi.fn(async () => ({ success: true, sid: "SM_test" }));
-const insertValues = vi.fn(async () => undefined);
+// Each mock declares the parameters the real function takes, so that
+// mock.calls is typed. Written as `vi.fn(async () => true)` the call list
+// is an EMPTY TUPLE: every `mock.calls[0][0]` below is then an index into a
+// tuple that cannot have a first element, and the `as { subject, html }`
+// casts were converting `undefined`. The assertions passed at runtime and
+// were checked against nothing, which only showed up once *.test.ts came
+// inside tsc. These shapes mirror server/email.ts and server/sms.ts.
+const sendEmail = vi.fn(
+  async (_message: {
+    to: string; subject: string; html: string;
+    fromName?: string; replyTo?: string;
+  }) => true,
+);
+const sendSms = vi.fn(
+  async (_to: string, _body: string, _trigger?: unknown) =>
+    ({ success: true, sid: "SM_test" }),
+);
+const insertValues = vi.fn(async (_row: Record<string, unknown>) => undefined);
 
-vi.mock("./email", () => ({ sendEmail: (...a: unknown[]) => sendEmail(...(a as [])) }));
-vi.mock("./sms", () => ({ sendSms: (...a: unknown[]) => sendSms(...(a as [])) }));
+vi.mock("./email", () => ({
+  sendEmail: (...a: unknown[]) => sendEmail(...(a as Parameters<typeof sendEmail>)),
+}));
+vi.mock("./sms", () => ({
+  sendSms: (...a: unknown[]) => sendSms(...(a as Parameters<typeof sendSms>)),
+}));
 vi.mock("./db", () => ({
   getDb: async () => ({
     select: () => ({

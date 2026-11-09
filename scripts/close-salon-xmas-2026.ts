@@ -82,6 +82,8 @@ async function main() {
     res: {} as never,
     user: actor,
     tenantId: 1,
+    // Part of the context every procedure receives, and it was missing.
+    accessibleTenantIds: [1],
   });
 
   console.log("");
