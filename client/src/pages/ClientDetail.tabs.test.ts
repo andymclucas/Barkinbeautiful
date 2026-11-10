@@ -16,9 +16,12 @@ import { cn } from "@/lib/utils";
  * Andy, 09/11/2026: "Alignment is a bit off on these tabs. Maybe more of
  * a centralised look with highlighted tabs able to be selected."
  *
- * The rail is a vertical list on lg and a block of chips on a phone, and
- * the shadcn base is built for neither: it assumes a single-row strip of
- * equal-width tabs.
+ * Andy, 10/11/2026: "change the side bar buttons... and make them
+ * horizontally aligned with the pets directly under that."
+ *
+ * So it is a block of chips on a phone, five to a row on a laptop and
+ * ten across from 2xl. The shadcn base is built for none of those: it
+ * assumes one short strip of equal-width tabs that always fits.
  */
 const SHADCN_TRIGGER_BASE =
   "data-[state=active]:bg-background dark:data-[state=active]:text-foreground focus-visible:border-ring "
@@ -39,7 +42,7 @@ const SOURCE = () =>
  * about what actually moved.
  */
 function railTriggerClasses(): string[] {
-  const match = /className="([^"]*lg:justify-start[^"]*)"/.exec(SOURCE());
+  const match = /className="([^"]*flex-none[^"]*lg:px-3[^"]*)"/.exec(SOURCE());
   if (!match) throw new Error("the rail's tab trigger classes should still be findable");
   return cn(SHADCN_TRIGGER_BASE, match[1]).split(" ");
 }
@@ -53,9 +56,9 @@ function railListClasses(): string[] {
 describe("the client record tab rail on a phone", () => {
   it("drops the base's flex-1, which is what broke the alignment", () => {
     /*
-     * `flex-1` is flex-basis:0. It is inert inside the grid on a phone,
-     * but from lg the rail is a flex COLUMN, and there flex-basis:0 makes
-     * all ten items stretch to share the column's height.
+     * `flex-1` is flex-basis:0, which is meaningless in a grid cell and
+     * actively wrong in any flex container the rail has ever been: it
+     * made all ten items share the space rather than take their cell.
      */
     expect(railTriggerClasses()).not.toContain("flex-1");
     expect(railTriggerClasses()).toContain("flex-none");
@@ -81,13 +84,17 @@ describe("the client record tab rail on a phone", () => {
     expect(classes).not.toContain("w-auto");
   });
 
-  it("centres the label on a phone and left-aligns it on the rail", () => {
-    // Andy, 09/11/2026: "more of a centralised look". At lg the rail is a
-    // vertical list, where ten centred labels of different lengths would
-    // have no common edge to read down.
+  it("centres the label at every width", () => {
+    /*
+     * Andy, 09/11/2026: "more of a centralised look". This used to go
+     * left from lg, because ten labels stacked in a COLUMN wanted a
+     * common edge to read down. The rail runs across the top from
+     * 10/11/2026, so each chip is its own cell and the label belongs in
+     * the middle of it — the inversion is deliberate, not a deletion.
+     */
     const classes = railTriggerClasses();
     expect(classes).toContain("justify-center");
-    expect(classes).toContain("lg:justify-start");
+    expect(classes).not.toContain("lg:justify-start");
   });
 
   it("keeps the padding that stops the longest label truncating", () => {
@@ -140,9 +147,30 @@ describe("the rail's list survives tailwind-merge", () => {
     expect(classes).toContain("min-[360px]:grid-cols-2");
   });
 
-  it("goes back to a flex column on lg", () => {
+  it("widens into rows across the top rather than a column down the side", () => {
+    /*
+     * This asserted lg:flex and lg:flex-col until 10/11/2026, when Andy
+     * asked for the sections to run horizontally. The inversion is the
+     * point, so it is rewritten rather than deleted.
+     *
+     * It stays a GRID at every width, which is what keeps all ten chips
+     * the same width with nothing ragged — the property the vertical
+     * rail was built to get. Five to a row on a laptop, all ten across
+     * from 2xl, where a full-width page gives each cell about 190px and
+     * "Memberships (12)" wants 122 of it.
+     */
     const classes = railListClasses();
-    expect(classes).toContain("lg:flex");
-    expect(classes).toContain("lg:flex-col");
+    expect(classes).toContain("grid");
+    expect(classes).not.toContain("lg:flex");
+    expect(classes).not.toContain("lg:flex-col");
+    expect(classes).toContain("lg:grid-cols-5");
+    expect(classes).toContain("2xl:grid-cols-10");
+  });
+
+  it("is not stuck to the top of the page any more", () => {
+    // A sticky COLUMN that follows you down a long record is useful; a
+    // sticky row across the top is a second header competing with the
+    // one the app already has.
+    expect(railListClasses()).not.toContain("lg:sticky");
   });
 });

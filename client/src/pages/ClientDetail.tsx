@@ -56,9 +56,30 @@ import { DateTimeField } from "@/components/DateTimeField";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
-  Dog, Phone, Mail, MapPin, CalendarDays, CreditCard, ArrowLeft,
-  AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil, X
+  AlertTriangle,
+  ArrowLeft,
+  Award,
+  CalendarDays,
+  ChevronDown,
+  ClipboardList,
+  Clock,
+  Copy,
+  CreditCard,
+  Dog,
+  DollarSign,
+  ImagePlus,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
+  Plus,
+  ShieldCheck,
+  SlidersHorizontal,
+  Trash2,
+  UserRoundPlus,
+  X,
 } from "lucide-react";
 import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe, MessageSquare, ShieldCheck as ShieldCheckIcon } from "lucide-react";
 import { Link } from "wouter";
@@ -149,7 +170,7 @@ function AlertBadge({ level, warnings }: { level: string; warnings?: string | nu
 
 function ClientProfileSkeleton() {
   return (
-    <div className="space-y-6 max-w-5xl animate-pulse" aria-busy="true" aria-label="Loading client profile" data-testid="client-profile-skeleton">
+    <div className="space-y-6 animate-pulse" aria-busy="true" aria-label="Loading client profile" data-testid="client-profile-skeleton">
       <div className="flex items-center justify-between"><div className="h-8 w-32 rounded-md bg-muted" /><div className="h-9 w-40 rounded-md bg-muted" /></div>
       <div className="rounded-2xl border bg-card p-6"><div className="flex gap-5"><div className="h-16 w-16 rounded-full bg-muted" /><div className="flex-1 space-y-3"><div className="h-7 w-52 rounded bg-muted" /><div className="h-4 w-80 max-w-full rounded bg-muted" /><div className="h-4 w-60 max-w-full rounded bg-muted" /></div></div></div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-20 rounded-xl border bg-card" />)}</div>
@@ -415,6 +436,7 @@ export default function ClientDetail() {
   const [portalAccountRevokeConfirm, setPortalAccountRevokeConfirm] = useState(false);
   const [contactForm, setContactForm] = useState({ name: "", phone: "", email: "", relationship: "" });
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false, status: "active" as string });
   const updateClientDetails = trpc.clients.updateDetails.useMutation({
     onSuccess: async () => {
@@ -853,7 +875,16 @@ export default function ClientDetail() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-5xl">
+      {/* Andy, 10/11/2026, with a photo of the record: "It looks like
+          it's justified left and squashed. On desktop, let's have this
+          cover the entire page."
+
+          It was capped at max-w-5xl — 1024px — so on a 1900px screen two
+          thirds of the desk was empty and the pet cards were 320px wide
+          with groomer notes wrapping every four words. The cap made
+          sense when the record was a narrow column beside a rail; with
+          the rail across the top there is nothing to leave room for. */}
+      <div className="space-y-6">
         {/* Above everything, including the back button: somebody who came
             here to change a card or a membership should see that Lauren
             is already in it before they start, not after. */}
@@ -1124,6 +1155,22 @@ export default function ClientDetail() {
                 >
                   <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit details
                 </Button>
+                {/* Andy, 10/11/2026: "Add a preferences button within the
+                    client details that has automated texts button option
+                    to turn on or off."
+
+                    The switch behind it is not new — it was a checkbox
+                    buried in Edit details, four clicks and a scroll from
+                    here, under a dialog headed with somebody's address.
+                    Whether a client gets texted is not a contact detail;
+                    it is a standing instruction from them, and it now has
+                    a door of its own. */}
+                <Button
+                  variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setPreferencesOpen(true)}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" /> Preferences
+                </Button>
               </div>
 
               {(() => {
@@ -1336,30 +1383,12 @@ export default function ClientDetail() {
                 * message, and promising otherwise would be worse than
                 * saying nothing.
                 */}
-              <div className="rounded-lg border p-3">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-                    checked={editDetailsForm.smsOptedOut}
-                    onChange={e => setEditDetailsForm(f => ({ ...f, smsOptedOut: e.target.checked }))}
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">No automated texts</span>
-                    <span className="block text-xs text-muted-foreground">
-                      Keeps them out of mass texts and booking confirmations. Staff can still
-                      text them by hand, and a reply to a missed call still goes out.
-                    </span>
-                    {client.smsOptedOutAt && (
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        Opted out {new Date(client.smsOptedOutAt).toLocaleDateString("en-AU", {
-                          timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric",
-                        })}
-                      </span>
-                    )}
-                  </span>
-                </label>
-              </div>
+              {/* The automated-texts switch moved to Preferences on
+                  10/11/2026 and is deliberately NOT here as well. Two
+                  controls for one column means one of them is read from a
+                  form that was loaded before the other changed it, and
+                  the loser silently wins on save. Saving this dialog no
+                  longer sends the field at all. */}
               <div>
                 <Label>Notes</Label>
                 <Textarea
@@ -1374,7 +1403,11 @@ export default function ClientDetail() {
               <Button variant="outline" onClick={() => setEditDetailsOpen(false)} disabled={updateClientDetails.isPending}>Cancel</Button>
               <Button
                 onClick={() => {
-                  const { status, ...rest } = editDetailsForm;
+                  /* smsOptedOut is dropped, not passed through: it is
+                     owned by Preferences now, and sending a value this
+                     form loaded minutes ago would undo a change made
+                     there in between. */
+                  const { status, smsOptedOut: _ownedByPreferences, ...rest } = editDetailsForm;
                   updateClientDetails.mutate({
                     clientId,
                     ...rest,
@@ -1388,6 +1421,61 @@ export default function ClientDetail() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/*
+          * What this client has asked the salon to do, as opposed to how
+          * to reach them.
+          *
+          * Andy, 10/11/2026: "Add a preferences button within the client
+          * details that has automated texts button option to turn on or
+          * off."
+          *
+          * One switch today and room for the next one. It saves on the
+          * flick rather than behind a Save button, because there is
+          * nothing here to get half-right and a preference somebody
+          * forgot to save is a client who keeps being texted.
+          */}
+        <Dialog open={preferencesOpen} onOpenChange={setPreferencesOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Preferences</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium">Automated texts</p>
+                  <p className="text-xs text-muted-foreground">
+                    Reminders, booking confirmations and mass texts. Turning this off
+                    does not stop a groomer texting them by hand, and a reply to a
+                    missed call still goes out &mdash; so this promises only what it
+                    can keep.
+                  </p>
+                  {client.smsOptedOutAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Turned off {new Date(client.smsOptedOutAt).toLocaleDateString("en-AU", {
+                        timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric",
+                      })}
+                    </p>
+                  )}
+                </div>
+                {/* On means they GET them. The column underneath records
+                    the opposite — smsOptedOutAt — and showing a switch
+                    labelled by what it prevents is how somebody turns
+                    texts off by turning something on. */}
+                <Switch
+                  checked={!client.smsOptedOutAt}
+                  disabled={updateClientDetails.isPending}
+                  aria-label="Automated texts"
+                  onCheckedChange={next => updateClientDetails.mutate({ clientId, smsOptedOut: !next })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPreferencesOpen(false)}>Done</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
 
 
         {/* Stats row */}
@@ -1420,21 +1508,32 @@ export default function ClientDetail() {
           </div>
         )}
 
-        {/* The record, as a rail rather than a tab strip.
-            Radix Tabs still drives it — the panels below are untouched —
-            but five horizontal tabs could not grow to twelve sections
-            without wrapping into an unreadable row. */}
+        {/* The sections, across the top.
+            Andy, 10/11/2026: "change the side bar buttons (overview,
+            bookings, pets etc) and make them horizontally aligned with
+            the pets directly under that."
+
+            This was a vertical rail, on the reasoning that five
+            horizontal tabs could not grow to twelve sections without
+            wrapping into an unreadable row. That was true of a strip of
+            natural-width tabs inside a 1024px column. It is not true of
+            a GRID across a full-width page: ten even cells, five to a
+            row on a laptop and all ten in one row from 2xl, so nothing
+            wraps and nothing is ragged — which was the property the rail
+            was built to get in the first place. */}
         <Tabs
           value={activeClientTab}
           onValueChange={setActiveClientTab}
-          orientation="vertical"
-          className="grid gap-5 lg:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]"
+          orientation="horizontal"
+          className="flex flex-col gap-5"
         >
           {/* The rail is a column that runs the height of the record, not
               a list that stops after its last item. Without items-start
               the grid stretches it, so the divider runs the full length;
               the nav inside stays stuck to the top while you scroll. */}
-          <div className="lg:h-full lg:border-r lg:border-border lg:pr-3">
+          {/* A line under the sections rather than beside them, now
+              that they run across the top. */}
+          <div className="lg:border-b lg:border-border lg:pb-3">
           {/* tabs-rail squares the corners. index.css paints every tab list
               as a pill — right for a short, wide segmented control and an
               ellipse on a rail ten items tall, which closed over Overview
@@ -1470,7 +1569,7 @@ export default function ClientDetail() {
               Above that the pair fits with room to spare, measured at
               375 and 430 with three-digit counts. 360 is the width the
               arithmetic changes at, not a device. */}
-          <TabsList className="tabs-rail grid h-auto w-full grid-cols-1 gap-1.5 min-[360px]:grid-cols-2 lg:sticky lg:top-4 lg:flex lg:flex-col lg:gap-0.5">
+          <TabsList className="tabs-rail grid h-auto w-full grid-cols-1 gap-1.5 min-[360px]:grid-cols-2 lg:grid-cols-5 2xl:grid-cols-10">
             {[
               { value: "overview", label: "Overview", icon: LayoutDashboard },
               { value: "pets", label: `Pets (${pets.length})`, icon: Dog },
@@ -1512,7 +1611,11 @@ export default function ClientDetail() {
                    wider padding left it — truncated by a single pixel.
                    Eight pixels back puts every label inside its chip with
                    room for three-digit counts. */
-                className="h-auto w-full flex-none justify-center gap-2 px-2 py-2 text-sm lg:justify-start lg:px-3"
+                /* Centred at every width now. The left edge existed so
+                   ten labels stacked in a column had a common edge to
+                   read down; in a row across the top each chip is its own
+                   cell and a centred label sits in the middle of it. */
+                className="h-auto w-full flex-none justify-center gap-2 px-2 py-2 text-sm lg:px-3"
               >
                 <item.icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{item.label}</span>
