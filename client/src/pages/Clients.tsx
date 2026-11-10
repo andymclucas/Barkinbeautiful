@@ -714,8 +714,8 @@ export default function Clients() {
                     tab." All three were already in the database and none
                     was on a screen, so "who still has no card?" meant
                     opening clients one at a time. */}
-                <th className="text-left p-3 font-medium text-muted-foreground hidden xl:table-cell">Portal</th>
-                <th className="text-left p-3 font-medium text-muted-foreground hidden xl:table-cell">Card</th>
+                <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">Portal</th>
+                <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">Card</th>
                 <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">Membership</th>
                 {/* Not sortable, and not a loss: it sorted on createdAt, where
                     10,075 of 10,101 rows share the import date, so the order
@@ -820,7 +820,7 @@ export default function Clients() {
                       the group worth chasing and reads as plain "No"
                       otherwise. portalIsSetUp is still the yes/no the filter
                       asks, so the two cannot disagree. */}
-                  <td className="p-3 hidden xl:table-cell">
+                  <td className="p-3 hidden lg:table-cell">
                     {(() => {
                       const portal = describePortal(c.portalAccountStatus);
                       return (
@@ -835,7 +835,7 @@ export default function Clients() {
                   </td>
                   {/* Card. Named where Stripe gave a brand, because "Visa
                       ••4242" is what staff say on the phone. */}
-                  <td className="p-3 hidden xl:table-cell">
+                  <td className="p-3 hidden lg:table-cell">
                     <span className={`text-xs font-medium ${
                       hasCardOnFile(c) ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}`}>
                       {describeCard(c)}
