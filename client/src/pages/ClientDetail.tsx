@@ -56,9 +56,30 @@ import { DateTimeField } from "@/components/DateTimeField";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
-  Dog, Phone, Mail, MapPin, CalendarDays, CreditCard, ArrowLeft,
-  AlertTriangle, Award, Clock, DollarSign, Plus, ImagePlus, ChevronDown, ClipboardList, Copy, ShieldCheck, Trash2, UserRoundPlus, Pencil, X
+  AlertTriangle,
+  ArrowLeft,
+  Award,
+  CalendarDays,
+  ChevronDown,
+  ClipboardList,
+  Clock,
+  Copy,
+  CreditCard,
+  Dog,
+  DollarSign,
+  ImagePlus,
+  Mail,
+  MapPin,
+  Pencil,
+  Phone,
+  Plus,
+  ShieldCheck,
+  SlidersHorizontal,
+  Trash2,
+  UserRoundPlus,
+  X,
 } from "lucide-react";
 import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageOpen, Syringe, MessageSquare, ShieldCheck as ShieldCheckIcon } from "lucide-react";
 import { Link } from "wouter";
@@ -415,6 +436,7 @@ export default function ClientDetail() {
   const [portalAccountRevokeConfirm, setPortalAccountRevokeConfirm] = useState(false);
   const [contactForm, setContactForm] = useState({ name: "", phone: "", email: "", relationship: "" });
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false, status: "active" as string });
   const updateClientDetails = trpc.clients.updateDetails.useMutation({
     onSuccess: async () => {
@@ -1133,6 +1155,22 @@ export default function ClientDetail() {
                 >
                   <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit details
                 </Button>
+                {/* Andy, 10/11/2026: "Add a preferences button within the
+                    client details that has automated texts button option
+                    to turn on or off."
+
+                    The switch behind it is not new — it was a checkbox
+                    buried in Edit details, four clicks and a scroll from
+                    here, under a dialog headed with somebody's address.
+                    Whether a client gets texted is not a contact detail;
+                    it is a standing instruction from them, and it now has
+                    a door of its own. */}
+                <Button
+                  variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setPreferencesOpen(true)}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" /> Preferences
+                </Button>
               </div>
 
               {(() => {
@@ -1345,30 +1383,12 @@ export default function ClientDetail() {
                 * message, and promising otherwise would be worse than
                 * saying nothing.
                 */}
-              <div className="rounded-lg border p-3">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-                    checked={editDetailsForm.smsOptedOut}
-                    onChange={e => setEditDetailsForm(f => ({ ...f, smsOptedOut: e.target.checked }))}
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">No automated texts</span>
-                    <span className="block text-xs text-muted-foreground">
-                      Keeps them out of mass texts and booking confirmations. Staff can still
-                      text them by hand, and a reply to a missed call still goes out.
-                    </span>
-                    {client.smsOptedOutAt && (
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        Opted out {new Date(client.smsOptedOutAt).toLocaleDateString("en-AU", {
-                          timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric",
-                        })}
-                      </span>
-                    )}
-                  </span>
-                </label>
-              </div>
+              {/* The automated-texts switch moved to Preferences on
+                  10/11/2026 and is deliberately NOT here as well. Two
+                  controls for one column means one of them is read from a
+                  form that was loaded before the other changed it, and
+                  the loser silently wins on save. Saving this dialog no
+                  longer sends the field at all. */}
               <div>
                 <Label>Notes</Label>
                 <Textarea
@@ -1383,7 +1403,11 @@ export default function ClientDetail() {
               <Button variant="outline" onClick={() => setEditDetailsOpen(false)} disabled={updateClientDetails.isPending}>Cancel</Button>
               <Button
                 onClick={() => {
-                  const { status, ...rest } = editDetailsForm;
+                  /* smsOptedOut is dropped, not passed through: it is
+                     owned by Preferences now, and sending a value this
+                     form loaded minutes ago would undo a change made
+                     there in between. */
+                  const { status, smsOptedOut: _ownedByPreferences, ...rest } = editDetailsForm;
                   updateClientDetails.mutate({
                     clientId,
                     ...rest,
@@ -1397,6 +1421,61 @@ export default function ClientDetail() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/*
+          * What this client has asked the salon to do, as opposed to how
+          * to reach them.
+          *
+          * Andy, 10/11/2026: "Add a preferences button within the client
+          * details that has automated texts button option to turn on or
+          * off."
+          *
+          * One switch today and room for the next one. It saves on the
+          * flick rather than behind a Save button, because there is
+          * nothing here to get half-right and a preference somebody
+          * forgot to save is a client who keeps being texted.
+          */}
+        <Dialog open={preferencesOpen} onOpenChange={setPreferencesOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Preferences</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium">Automated texts</p>
+                  <p className="text-xs text-muted-foreground">
+                    Reminders, booking confirmations and mass texts. Turning this off
+                    does not stop a groomer texting them by hand, and a reply to a
+                    missed call still goes out &mdash; so this promises only what it
+                    can keep.
+                  </p>
+                  {client.smsOptedOutAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Turned off {new Date(client.smsOptedOutAt).toLocaleDateString("en-AU", {
+                        timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric",
+                      })}
+                    </p>
+                  )}
+                </div>
+                {/* On means they GET them. The column underneath records
+                    the opposite — smsOptedOutAt — and showing a switch
+                    labelled by what it prevents is how somebody turns
+                    texts off by turning something on. */}
+                <Switch
+                  checked={!client.smsOptedOutAt}
+                  disabled={updateClientDetails.isPending}
+                  aria-label="Automated texts"
+                  onCheckedChange={next => updateClientDetails.mutate({ clientId, smsOptedOut: !next })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPreferencesOpen(false)}>Done</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
 
 
         {/* Stats row */}
