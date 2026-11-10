@@ -214,6 +214,9 @@ export function PetCodeCatalogue() {
               type="button"
               role="tab"
               id="pet-code-tab-warnings"
+              // index.css paints every selected role="tab" in the brand
+              // colour; this is what keeps the Warnings header red.
+              data-tone="warning"
               aria-selected={category === "warning"}
               aria-controls="pet-code-panel"
               onClick={() => setCategory("warning")}

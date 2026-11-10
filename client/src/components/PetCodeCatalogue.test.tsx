@@ -51,6 +51,8 @@ describe("PetCodeCatalogue", () => {
     render(<PetCodeCatalogue />);
     expect(screen.getByRole("tab", { name: /Pet Codes\s*1/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /Warnings\s*2/ })).toHaveAttribute("aria-selected", "false");
+    // The red header is a stylesheet rule keyed on this attribute.
+    expect(screen.getByRole("tab", { name: /Warnings/ })).toHaveAttribute("data-tone", "warning");
     expect(codesIn("pet-code-section-codes")).toEqual(["✂5f"]);
     expect(screen.queryByTestId("pet-code-section-warnings")).toBeNull();
   });
