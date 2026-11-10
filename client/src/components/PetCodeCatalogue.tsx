@@ -43,6 +43,9 @@ type CodeRow = {
 
 type FormState = { code: string; description: string; colourHex: string; isActive: boolean; isWarning: boolean };
 
+/** The two kinds of entry. One list is shown at a time. */
+type Category = "code" | "warning";
+
 const EMPTY: FormState = { code: "", description: "", colourHex: "", isActive: true, isWarning: false };
 
 export function PetCodeCatalogue() {
@@ -50,6 +53,11 @@ export function PetCodeCatalogue() {
   const list = trpc.petCodes.list.useQuery({});
   const rows = (list.data ?? []) as CodeRow[];
   const [editor, setEditor] = useState<{ record: CodeRow | null; form: FormState } | null>(null);
+  /* Which of the two lists is on screen. Andy, 10/11/2026: "Split them
+     into headers at the top under the Add Code button that are the two
+     categories." They had been stacked, so 64 codes sat below 47
+     warnings and took a long scroll to reach. */
+  const [category, setCategory] = useState<Category>("code");
   const codeRef = useRef<HTMLInputElement>(null);
   /* Which emoji THIS salon already uses, so the picker opens on the
      ones its own board is written in rather than on a generic row. */
@@ -57,7 +65,13 @@ export function PetCodeCatalogue() {
 
   const refresh = () => utils.petCodes.list.invalidate();
   const create = trpc.petCodes.create.useMutation({
-    onSuccess: () => { toast.success("Code added"); setEditor(null); refresh(); },
+    onSuccess: (_result, input) => {
+      toast.success(input.isWarning ? "Warning added" : "Code added");
+      // Show the list the new entry landed in, so it is not added out of sight.
+      setCategory(input.isWarning ? "warning" : "code");
+      setEditor(null);
+      refresh();
+    },
     onError: (e) => toast.error(e.message),
   });
   const update = trpc.petCodes.update.useMutation({
@@ -83,7 +97,8 @@ export function PetCodeCatalogue() {
     record: record ?? null,
     form: record
       ? { code: record.code, description: record.description ?? "", colourHex: record.colourHex ?? "", isActive: record.isActive, isWarning: Boolean(record.isWarning) }
-      : { ...EMPTY },
+      // A new entry starts as whichever list is being looked at.
+      : { ...EMPTY, isWarning: category === "warning" },
   });
 
   const renaming = Boolean(editor?.record && editor.form.code.trim() !== editor.record.code);
@@ -173,46 +188,107 @@ export function PetCodeCatalogue() {
           <p className="mt-1 text-sm text-muted-foreground">Add the shorthand your groomers use, like "✂5f" or "SENSITIVE".</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-3">
           {/* Two lists, because they behave differently. A Warning is
               drawn as a bright red badge and raised in the red warning
-              box on appointments and the workflow board; a Code is not. */}
-          <section data-testid="pet-code-section-warnings">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-red-700 dark:text-red-400">
+              box on appointments and the workflow board; a Code is not.
+              The headers switch between them rather than stacking them. */}
+          <div role="tablist" aria-label="Pet code categories" className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              role="tab"
+              id="pet-code-tab-codes"
+              aria-selected={category === "code"}
+              aria-controls="pet-code-panel"
+              onClick={() => setCategory("code")}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-bold transition-colors ${
+                category === "code"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <Tag className="h-4 w-4" aria-hidden /> Pet Codes
+              <span className="font-normal tabular-nums opacity-80">{codeRows.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="pet-code-tab-warnings"
+              aria-selected={category === "warning"}
+              aria-controls="pet-code-panel"
+              onClick={() => setCategory("warning")}
+              className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-bold transition-colors ${
+                category === "warning"
+                  ? "border-red-700 bg-red-600 text-white"
+                  : "border-red-200 bg-background text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30"
+              }`}
+            >
               <AlertTriangle className="h-4 w-4" aria-hidden /> Warnings
-              <span className="font-normal normal-case tracking-normal text-muted-foreground">
-                {warningRows.length} — bright red on every appointment and on the workflow board
-              </span>
-            </h3>
-            {warningRows.length === 0 ? (
-              <p className="mt-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                No warnings yet. Edit a code and switch on "Warning" to move it here.
+              <span className="font-normal tabular-nums opacity-80">{warningRows.length}</span>
+            </button>
+          </div>
+          {category === "warning" ? (
+            <section
+              role="tabpanel"
+              id="pet-code-panel"
+              aria-labelledby="pet-code-tab-warnings"
+              data-testid="pet-code-section-warnings"
+              className="space-y-2"
+            >
+              <p className="text-xs text-muted-foreground">
+                Bright red on every appointment and on the workflow board.
               </p>
-            ) : (
-              <div className="mt-2">{renderTable(warningRows, true)}</div>
-            )}
-          </section>
-          <section data-testid="pet-code-section-codes">
-            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-muted-foreground">
-              <Tag className="h-4 w-4" aria-hidden /> Codes
-              <span className="font-normal normal-case tracking-normal">
-                {codeRows.length} — clip, style and handling shorthand
-              </span>
-            </h3>
-            {codeRows.length === 0 ? (
-              <p className="mt-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No codes yet.</p>
-            ) : (
-              <div className="mt-2">{renderTable(codeRows, false)}</div>
-            )}
-          </section>
+              {warningRows.length === 0 ? (
+                <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                  No warnings yet. Add one, or edit a code and change its type to Warning.
+                </p>
+              ) : (
+                renderTable(warningRows, true)
+              )}
+            </section>
+          ) : (
+            <section
+              role="tabpanel"
+              id="pet-code-panel"
+              aria-labelledby="pet-code-tab-codes"
+              data-testid="pet-code-section-codes"
+              className="space-y-2"
+            >
+              <p className="text-xs text-muted-foreground">Clip, style and handling shorthand.</p>
+              {codeRows.length === 0 ? (
+                <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No codes yet.</p>
+              ) : (
+                renderTable(codeRows, false)
+              )}
+            </section>
+          )}
         </div>
       )}
 
       <Dialog open={Boolean(editor)} onOpenChange={(o) => !o && setEditor(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>{editor?.record ? "Edit" : "Add"} pet code</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editor?.record ? "Edit" : "Add"} {editor?.form.isWarning || alwaysWarning ? "warning" : "pet code"}</DialogTitle></DialogHeader>
           {editor && (
             <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="pet-code-type">Type</Label>
+                {/* A plain select, as the rest of Pricing & Services uses. */}
+                <select
+                  id="pet-code-type"
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm disabled:opacity-60"
+                  value={alwaysWarning || editor.form.isWarning ? "warning" : "code"}
+                  disabled={alwaysWarning}
+                  onChange={(e) => setEditor((c) => c && { ...c, form: { ...c.form, isWarning: e.target.value === "warning" } })}
+                >
+                  <option value="code">Pet Code</option>
+                  <option value="warning">Warning</option>
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {alwaysWarning
+                    ? "Bites, aggression and muzzle codes are always warnings, and cannot be changed."
+                    : "A Warning is shown as a bright red badge, and in the red warning box, on appointments and the workflow board."}
+                </p>
+              </div>
               <div className="space-y-1.5">
                 <Label>Code</Label>
                 {/* The code itself is often an emoji here — 💊, 💥, 📢 and
@@ -265,22 +341,6 @@ export function PetCodeCatalogue() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50/60 p-3 dark:border-red-900/50 dark:bg-red-950/30">
-                <div>
-                  <p className="text-sm font-medium">Warning</p>
-                  <p className="text-xs text-muted-foreground">
-                    {alwaysWarning
-                      ? "Bites, aggression and muzzle codes are always warnings, and cannot be switched off."
-                      : "Shown as a bright red badge, and in the red warning box, on appointments and the workflow board."}
-                  </p>
-                </div>
-                <Switch
-                  aria-label="Warning"
-                  checked={alwaysWarning || editor.form.isWarning}
-                  disabled={alwaysWarning}
-                  onCheckedChange={(v) => setEditor((c) => c && { ...c, form: { ...c.form, isWarning: v } })}
-                />
-              </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
                   <p className="text-sm font-medium">Offer this code</p>
@@ -311,7 +371,7 @@ export function PetCodeCatalogue() {
                 else create.mutate(payload);
               }}
             >
-              {editor?.record ? "Save" : "Add code"}
+              {editor?.record ? "Save" : editor?.form.isWarning || alwaysWarning ? "Add warning" : "Add code"}
             </Button>
           </DialogFooter>
         </DialogContent>
