@@ -21,6 +21,10 @@ import { readCardLinkToken } from "../cardLinkToken";
 import { createCardSetupLink } from "../stripeCards";
 import { getPortalBaseUrl } from "../appUrl";
 import { portalHostRedirect } from "../portalHostRedirect";
+import {
+  buildPortalManifest,
+  portalAccessTokenIn,
+} from "../../shared/portalManifest";
 import { getDb } from "../db";
 import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, missedCallAutoTexts, clientErrorLogs, workflowLogs } from "../../drizzle/schema";
 import {
@@ -1010,6 +1014,36 @@ async function startServer() {
       console.error(`[card-link] could not make a Stripe session for client ${result.clientId}:`, error);
       return res.redirect(302, `${getPortalBaseUrl()}/portal/card-link-expired`);
     }
+  });
+
+  /**
+   * The manifest a client's phone reads when they save their portal.
+   *
+   * Served per token so `start_url` is the client's own portal page
+   * rather than the account sign-in form the static manifest names —
+   * see `shared/portalManifest.ts` for what that cost Renee Gannon.
+   *
+   * Nothing here needs the token to be VALID. It is already in the URL
+   * of the page asking, the document is the same for every client bar
+   * one string, and refusing an expired one would only mean a client
+   * whose link lapsed could not re-save their icon. The pattern match
+   * is the guard that matters: anything that is not 64 hex characters
+   * never reaches the JSON.
+   *
+   * Before the SPA, for the same reason as /card/:token above, and
+   * before the host redirect, which ignores it anyway because it ends
+   * in an extension.
+   */
+  app.get("/portal/:token/app.webmanifest", (req, res) => {
+    const token = portalAccessTokenIn(`/portal/${req.params.token ?? ""}`);
+    const manifest = buildPortalManifest(
+      token ? `/portal/${token}` : "/portal/login"
+    );
+    res.type("application/manifest+json");
+    // A client's icon must not be built from a stale copy, and the
+    // document is tiny.
+    res.set("Cache-Control", "no-store");
+    res.json(manifest);
   });
 
   app.use(portalHostRedirect);
