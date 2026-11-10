@@ -21,6 +21,9 @@ export const STAFF_OPERATION_ROUTES: readonly string[] = [
   "/workflow",
   "/memberships",
   "/clients",
+  // The counter till (11/11/2026): whoever is at the counter can ring up
+  // a walk-in. The page is the till only, no product editing.
+  "/counter",
 ];
 
 /**

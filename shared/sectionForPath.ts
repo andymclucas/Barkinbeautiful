@@ -62,14 +62,9 @@ export const SECTION_BY_NAMESPACE: Readonly<Record<string, StaffSection>> = {
   petCodes: "pricing",
   groomStylePresets: "pricing",
   retail: "pricing",
-  // The counter till sits ON the Retail page, so it is reachable only by
-  // someone who can open that page. Gating it by anything else would be
-  // a permission that cannot be exercised. Worth knowing: it means a
-  // staff member who is not given the Pricing & Services section cannot
-  // ring up a sale, even though the procedures themselves are
-  // operational. If the floor should always be able to sell, this is
-  // the line to move, not the procedure type.
-  counterSale: "pricing",
+  // counterSale is NOT here: it is in UNGATED_NAMESPACES below (Andy,
+  // 11/11/2026). The comment that stood here said exactly this — "if the
+  // floor should always be able to sell, this is the line to move".
   storeCredit: "pricing",
 
   staff: "staff",
@@ -107,6 +102,16 @@ export const UNGATED_PATHS: readonly string[] = [
 
 export const UNGATED_NAMESPACES: readonly string[] = [
   "auth",
+  /*
+   * The counter till, open to every staff login (Andy, 11/11/2026: "yes,
+   * do it", on letting whoever is at the counter ring a sale up). It was
+   * gated by Pricing & Services, which bathers do not hold, so the person
+   * nearest the door often could not take the money. Same reasoning as
+   * clients.create being ungated: a walk-in is served by whoever is there.
+   * What it can do is narrow — sell from the product list at its listed
+   * price, and void only TODAY's sales (see server/routers/counterSale.ts).
+   */
+  "counterSale",
   /*
    * Which salon you are in cannot depend on a permission, for the same
    * reason signing in cannot: the header asks salons.mine on every page

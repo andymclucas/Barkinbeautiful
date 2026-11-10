@@ -48,6 +48,7 @@ import { sidebarEntriesFor, groupContaining, type SidebarGroupKey } from "@share
 import { useSidebarHover } from "@/hooks/useSidebarHover";
 import {
   CalendarDays,
+  ShoppingBag,
   Workflow,
   CreditCard,
   Users,
@@ -112,6 +113,8 @@ const menuItems: NavItem[] = [
   { icon: CalendarDays,   label: "Appointments",      path: "/calendar" },
   { icon: Workflow,       label: "Workflow Board",    path: "/workflow" },
   { icon: Users,          label: "Clients & Pets",    path: "/clients" },
+  // The counter till (11/11/2026). Open to every staff login.
+  { icon: ShoppingBag,    label: "Counter Sale",      path: "/counter" },
   { icon: CreditCard,     label: "Memberships",       path: "/memberships" },
   { icon: DollarSign,     label: "Pricing & Services", path: "/pricing" },
   { icon: MessageSquare,  label: "Messages",          path: "/messages" },

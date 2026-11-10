@@ -55,6 +55,16 @@ describe("isStaffOperationRoute", () => {
     // link to a page you get bounced off is worse than no link.
     expect(layout.split("isStaffOperationRoute(").length - 1).toBe(3);
     expect(layout).not.toContain('["/calendar", "/workflow", "/memberships"]');
-    expect(STAFF_OPERATION_ROUTES).toHaveLength(4);
+    // 5 since 11/11/2026: /counter, the counter till.
+    expect(STAFF_OPERATION_ROUTES).toHaveLength(5);
+  });
+});
+
+describe("the counter till (11/11/2026)", () => {
+  it("is open to every staff login, so whoever is at the counter can ring up a sale", () => {
+    expect(isStaffOperationRoute("/counter")).toBe(true);
+    // The product editing stays owner-side.
+    expect(isStaffOperationRoute("/retail")).toBe(false);
+    expect(isStaffOperationRoute("/pricing")).toBe(false);
   });
 });

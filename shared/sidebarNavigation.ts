@@ -36,6 +36,9 @@ export const SIDEBAR_LAYOUT: readonly SidebarEntry[] = [
   { kind: "item", path: "/calendar" },
   { kind: "item", path: "/workflow" },
   { kind: "item", path: "/clients" },
+  // Daily, and used by the whole floor, so a top-level row rather than
+  // inside Financials, which restricted staff never see.
+  { kind: "item", path: "/counter" },
   { kind: "group", key: "financials", label: "Financials", paths: ["/memberships", "/pricing"] },
   {
     kind: "group",
