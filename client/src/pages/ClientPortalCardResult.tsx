@@ -18,7 +18,25 @@ import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
  * checkout.session.completed webhook, not by this page, so there is nothing
  * to look up and nothing a stranger could learn by guessing the URL.
  */
-export default function ClientPortalCardResult({ saved }: { saved: boolean }) {
+export type CardResultOutcome = "saved" | "cancelled" | "expired";
+
+export default function ClientPortalCardResult({ outcome }: { outcome: CardResultOutcome }) {
+  const saved = outcome === "saved";
+  /*
+   * A THIRD outcome, added 10/11/2026 with the short card link.
+   *
+   * /card/<token> sends a client here when the token does not verify or
+   * has run out, and until this existed that URL had no route at all:
+   * "/portal/:token" swallowed it, asked the server for a portal with
+   * the token "card-link-expired", and showed a 404 — to somebody who
+   * had just tapped a link from their groomer.
+   *
+   * It needs its own words rather than borrowing the cancelled ones.
+   * "You can use the same link again whenever you're ready" is true
+   * after somebody closes Stripe and false for a link that has expired,
+   * and it is the only sentence on the page that tells them what to do.
+   */
+  const expired = outcome === "expired";
   // This page is sent to the salon's own clients, so it wears the
   // salon's colours rather than stock Groomigo ones.
   usePublicBrandTheme();
@@ -46,13 +64,19 @@ export default function ClientPortalCardResult({ saved }: { saved: boolean }) {
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.28em] opacity-80">Barkin&rsquo; Beautiful</p>
             <h1 className="mt-3 font-display text-4xl font-bold leading-tight">
-              {saved ? "Thank you — your card is saved." : "No card was saved."}
+              {saved
+                ? "Thank you — your card is saved."
+                : expired
+                  ? "That link has expired."
+                  : "No card was saved."}
             </h1>
           </div>
           <p className="max-w-xl text-sm leading-6 opacity-90">
             {saved
               ? "You don't need to do anything else. We'll use this card for your grooming membership, and we'll always tell you before anything changes."
-              : "Nothing was charged and nothing was stored. You can use the same link again whenever you're ready."}
+              : expired
+                ? "Nothing was charged and nothing was stored. Card links only last a month — send us a message and we'll send you a fresh one."
+                : "Nothing was charged and nothing was stored. You can use the same link again whenever you're ready."}
           </p>
         </div>
 
@@ -65,7 +89,8 @@ export default function ClientPortalCardResult({ saved }: { saved: boolean }) {
                 </>
               ) : (
                 <>
-                  <XCircle className="h-5 w-5 text-muted-foreground" /> Card not saved
+                  <XCircle className="h-5 w-5 text-muted-foreground" />{" "}
+                  {expired ? "Link expired" : "Card not saved"}
                 </>
               )}
             </CardTitle>
@@ -82,6 +107,11 @@ export default function ClientPortalCardResult({ saved }: { saved: boolean }) {
                 </p>
                 <p>If you have a client portal login, you can sign in to see your upcoming visits.</p>
               </>
+            ) : expired ? (
+              <p>
+                Nothing has gone wrong at your end. Links like this one are only good for a month, so the salon just
+                needs to send you another — a reply to the text it came in on is enough.
+              </p>
             ) : (
               <p>
                 If you closed the page by accident, open the link the salon sent you and try again. If the link has
