@@ -42,7 +42,7 @@ import {
   cardChargeAvailability, chargeIdempotencyKey, describeChargeFailure,
 } from "@shared/cardOnFileCharge";
 import {
-  chargeSavedCard, createCardSetupLink, createCardSetupIntent, saveCardFromSetupIntent,
+  chargeSavedCard, createCardSetupLink, clientCardLink, createCardSetupIntent, saveCardFromSetupIntent,
 } from "../stripeCards";
 import { describeCard, describeStripeKey } from "@shared/stripeBilling";
 import { notifyOwner } from "../ownerNotification";
@@ -1024,8 +1024,9 @@ export const paymentsRouter = router({
         .where(eq(appointments.id, input.appointmentId))
         .limit(1);
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
-      const link = await createCardSetupLink(row.clientId);
-      return { url: link.url, clientId: row.clientId };
+      /* Staff copy this and send it, so it is the short link rather
+         than a raw Stripe session that dies in 24 hours. */
+      return { url: clientCardLink(row.clientId), clientId: row.clientId };
     }),
 
   /**

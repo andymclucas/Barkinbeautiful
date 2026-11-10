@@ -17,6 +17,9 @@ import { rebookReminderHandler } from "../rebookReminders";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { readCardLinkToken } from "../cardLinkToken";
+import { createCardSetupLink } from "../stripeCards";
+import { getPortalBaseUrl } from "../appUrl";
 import { portalHostRedirect } from "../portalHostRedirect";
 import { getDb } from "../db";
 import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, missedCallAutoTexts, clientErrorLogs, workflowLogs } from "../../drizzle/schema";
@@ -971,6 +974,44 @@ async function startServer() {
    * A no-op until VITE_PORTAL_URL names a different host, so this is
    * safe to deploy before the domain exists.
    */
+  /*
+   * The short card link, swapped for a fresh Stripe session on the way
+   * through.
+   *
+   * Lauren, 10/11/2026, texting one to a client: "that looks hectic."
+   * The client asked how many credits it cost. A Stripe Checkout URL
+   * carries its whole state in the fragment — the one in that thread was
+   * 299 characters before it ran off the screen — and took the message
+   * to four segments.
+   *
+   * It also expires. A Stripe Checkout session is good for 24 hours, so
+   * a link texted on Friday is dead by Saturday and the client sees
+   * Stripe's error page with the salon's name on it. Minting the session
+   * HERE, when they click, means the text can sit in a phone for a
+   * month and still work.
+   *
+   * Before the SPA is served, or the client gets the staff app's index
+   * page instead of their card form. After every /api route, which is
+   * the same reasoning as the host redirect below it.
+   */
+  app.get("/card/:token", async (req, res) => {
+    const result = readCardLinkToken(String(req.params.token ?? ""));
+    if (!result.ok) {
+      /* The reason goes to the log, never to the client. "Bad
+         signature" to somebody who followed a link from their own
+         groomer reads as an accusation. */
+      console.warn(`[card-link] refused a link: ${result.reason}`);
+      return res.redirect(302, `${getPortalBaseUrl()}/portal/card-link-expired`);
+    }
+    try {
+      const link = await createCardSetupLink(result.clientId);
+      return res.redirect(302, link.url);
+    } catch (error) {
+      console.error(`[card-link] could not make a Stripe session for client ${result.clientId}:`, error);
+      return res.redirect(302, `${getPortalBaseUrl()}/portal/card-link-expired`);
+    }
+  });
+
   app.use(portalHostRedirect);
 
   // development mode uses Vite, production mode uses static files

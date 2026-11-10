@@ -101,7 +101,7 @@ import { resolveAppointmentMembershipCoverage, type AppointmentService } from ".
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
 import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
-import { createCardSetupLink } from "./stripeCards";
+import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { buildUpcomingDatesSms, upcomingDatesShown } from "@shared/upcomingDatesSms";
@@ -13565,8 +13565,21 @@ const smsRouter = router({
           renderError = "No client on this recipient row, so no card link could be made";
         } else if (needsCardLink) {
           try {
-            const link = await createCardSetupLink(row.clientId as number);
-            const rendered = renderMassTextBody(body, { cardLink: link.url });
+            /*
+             * The short link, not a Stripe session.
+             *
+             * Three things change for a campaign this size. It is about
+             * 65 characters instead of 500, which took Lauren's message
+             * from four SMS segments to two — half the Twilio bill
+             * across ten thousand clients. It makes no Stripe call, so
+             * the batch is not ten thousand API requests against a rate
+             * limit, and it does not leave ten thousand Checkout
+             * sessions to expire unused. And it still works next month:
+             * a Stripe session dies after 24 hours, which a campaign
+             * nobody opens the same day would have discovered the hard
+             * way.
+             */
+            const rendered = renderMassTextBody(body, { cardLink: clientCardLink(row.clientId as number) });
             if (rendered.ok) perRecipient = rendered.body;
             else renderError = rendered.error;
           } catch (error) {
