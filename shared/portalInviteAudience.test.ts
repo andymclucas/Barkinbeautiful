@@ -42,6 +42,15 @@ describe("selectPortalInviteRecipients", () => {
     expect(r.skipped.shared_email).toBe(1);
   });
 
+  it("leaves alone a client whose setup link still works, and counts them again once it expires", () => {
+    const now = new Date("2026-11-11T00:00:00Z");
+    const live = c(7, { portalAccountStatus: "setup_pending", portalSetupExpiresAt: new Date("2026-11-20T00:00:00Z") });
+    const dead = c(8, { portalAccountStatus: "setup_pending", portalSetupExpiresAt: new Date("2026-11-02T00:00:00Z") });
+    const r = run([live, dead], { now });
+    expect(r.recipients.map((x) => x.clientId)).toEqual([8]);
+    expect(r.skipped.invitation_outstanding).toBe(1);
+  });
+
   it("skips an address that is already another client's portal login", () => {
     const r = run([c(4, { email: "taken@example.com" })], { portalLoginOwners: new Map([["taken@example.com", 99]]) });
     expect(r.skipped.email_used_by_another_portal).toBe(1);

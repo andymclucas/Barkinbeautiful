@@ -81,7 +81,7 @@ import { calculateMembershipAccount } from "../shared/membershipAccountsReceivab
 import { createStaffInvitationToken, hashStaffInvitationToken, isLinkedStaffUser, isStaffInvitationExpired } from "../shared/staffInvitation";
 import { createInvoiceCheckout } from "./stripePayments";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
-import { clientPortalLinkRenewal, createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
+import { CLIENT_PORTAL_ACCESS_TTL_MS, clientPortalLinkRenewal, createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
@@ -163,7 +163,7 @@ import { loadPendingAgreements, recordPortalSignatures, requestIp } from "./port
 import { PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
 import {
   PORTAL_INVITE_AUDIENCE_TYPE, portalInviteAudience, portalInviteEmail, portalInviteProgress,
-  runPortalInviteCampaign, isPortalInviteRunning,
+  runPortalInviteCampaign, isPortalInviteRunning, withPortalInviteStartLock,
 } from "./portalInviteCampaign";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
@@ -14733,7 +14733,24 @@ async function buildClientPortalPayload(db: any, access: {
   salonName: string;
   salonPhone: string | null;
   salonEmail: string | null;
-}) {
+}, options: { staffPreview?: boolean } = {}) {
+  /*
+   * The agreement gate, on the server. Until the service agreement is
+   * signed the CLIENT gets their name, the salon's and the agreement —
+   * nothing else — so the gate is not just a page covering data that is
+   * already in the browser. Staff preview still sees everything.
+   */
+  const pendingAgreements = await loadPendingAgreements(db, access.tenantId, access.clientId);
+  if (pendingAgreements.length > 0 && !options.staffPreview) {
+    return {
+      pendingAgreements,
+      salon: { name: access.salonName, phone: access.salonPhone, email: access.salonEmail },
+      client: { firstName: access.clientFirstName, lastName: access.clientLastName, email: access.clientEmail, phone: access.clientPhone, address: access.clientAddress ?? null },
+      pets: [], appointments: [], memberships: [], groomingCards: [],
+      storeCreditBalance: "0.00", invoices: [], payments: [],
+    };
+  }
+
   const [clientPets, clientAppointments, clientMemberships, clientReports, creditBalanceRow, clientInvoices, clientApptPayments, clientMembershipPayments] = await Promise.all([
     db.select({ id: pets.id, name: pets.name, breed: pets.breed, species: pets.species, status: pets.status })
       .from(pets)
@@ -14854,9 +14871,6 @@ async function buildClientPortalPayload(db: any, access: {
       .orderBy(desc(membershipPayments.paidAt))
       .limit(60),
   ]);
-
-  // The agreement gate: the portal page shows these before anything else.
-  const pendingAgreements = await loadPendingAgreements(db, access.tenantId, access.clientId);
 
   return {
     pendingAgreements,
@@ -15222,11 +15236,36 @@ const clientPortalRouter = router({
       // had is half of why one of them spent a week certain the fault was
       // at her end.
       const isReset = effect.isReset; // same address already had an account \u2014 this is a reset, not a first-time setup
-      const emailSent = input.sendEmail === false ? false : await sendEmail({
-        to: loginEmail,
-        subject: isReset ? "Reset your Barkin' Beautiful client portal password" : "Set up your Barkin' Beautiful client portal account",
-        html: `<p>Hi ${client.firstName || "there"},</p><p>${isReset ? "Here's your link to set a new password for your Barkin' Beautiful client portal account." : "You've been given access to the Barkin' Beautiful client portal, where you can see your upcoming appointments and your dog's grooming status."}</p><p><a href="${setupUrl}">${isReset ? "Reset my password" : "Set up my account"}</a></p><p>This link expires on ${setup.expiresAt.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Brisbane" })}. It does not create staff or administrator access.</p>`,
-      });
+      /*
+       * A first-time setup gets the same email as the bulk invitation
+       * (server/portalInviteCampaign.ts), so a client invited from their
+       * own page and one invited in the campaign read the same words —
+       * including that the service agreement comes first when it is
+       * still unsigned. A reset keeps its own short wording.
+       */
+      let emailSent = false;
+      if (input.sendEmail !== false) {
+        if (isReset) {
+          emailSent = await sendEmail({
+            to: loginEmail,
+            subject: "Reset your Barkin' Beautiful client portal password",
+            html: `<p>Hi ${client.firstName || "there"},</p><p>Here's your link to set a new password for your Barkin' Beautiful client portal account.</p><p><a href="${setupUrl}">Reset my password</a></p><p>This link expires on ${setup.expiresAt.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Brisbane" })}. It does not create staff or administrator access.</p>`,
+          });
+        } else {
+          const [salon] = await db.select({ name: tenants.name, phone: tenants.phone, email: tenants.email })
+            .from(tenants).where(eq(tenants.id, client.tenantId)).limit(1);
+          const pending = await loadPendingAgreements(db, client.tenantId, client.id);
+          const invite = portalInviteEmail({
+            firstName: client.firstName,
+            salonName: salon?.name ?? "Barkin' Beautiful",
+            salonPhone: salon?.phone ?? null,
+            setupUrl,
+            expiresAt: setup.expiresAt,
+            agreementTitles: pending.map((a) => a.title),
+          });
+          emailSent = await sendEmail({ to: loginEmail, subject: invite.subject, html: invite.html, replyTo: salon?.email ?? null });
+        }
+      }
 
       return {
         setupUrl,
@@ -15272,7 +15311,7 @@ const clientPortalRouter = router({
         .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, 1)))
         .limit(1);
       if (!access) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
-      return buildClientPortalPayload(db, access);
+      return buildClientPortalPayload(db, access, { staffPreview: true });
     }),
 
   getSetup: publicProcedure
@@ -15418,7 +15457,7 @@ const clientPortalRouter = router({
         salonName: "Barkin' Beautiful",
         salonPhone: null,
         setupUrl: `${getPortalBaseUrl()}/portal/setup/…`,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + CLIENT_PORTAL_ACCESS_TTL_MS),
         agreementTitles: ["Barkin Beautiful Service Agreement"],
       });
       return {
@@ -15452,6 +15491,7 @@ const clientPortalRouter = router({
       const tenantId = tenantOf(ctx, input);
       const filter = JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE });
 
+      return withPortalInviteStartLock(tenantId, async () => {
       const [inFlight] = await db.select({ id: emailCampaigns.id })
         .from(emailCampaigns)
         .where(and(eq(emailCampaigns.tenantId, tenantId), eq(emailCampaigns.audienceFilter, filter), eq(emailCampaigns.status, "sending")))
@@ -15472,20 +15512,31 @@ const clientPortalRouter = router({
         // their own setup link, built at send time.
         bodyHtml: "<p>Per-client portal invitation. Each email carries that client's own setup link; see server/portalInviteCampaign.ts.</p>",
         audienceFilter: filter,
-        status: "sending",
+        // Draft until every recipient row exists. A start that dies part
+        // way through the inserts leaves a draft nobody can resume, not a
+        // "sending" campaign that blocks every future start and quietly
+        // finishes a partial list.
+        status: "draft",
         totalRecipients: audience.recipients.length,
         totalSent: 0,
         createdBy: ctx.user.id,
       }).$returningId();
 
       // Everybody intended, on disk, before the first email goes.
-      for (const r of audience.recipients) {
-        await db.insert(emailCampaignSends).values({ campaignId: inserted.id, clientId: r.clientId, email: r.email, status: "pending" });
+      for (let i = 0; i < audience.recipients.length; i += 200) {
+        await db.insert(emailCampaignSends).values(
+          audience.recipients.slice(i, i + 200).map((r) => ({ campaignId: inserted.id, clientId: r.clientId, email: r.email, status: "pending" as const })),
+        );
       }
+      await db.update(emailCampaigns).set({ status: "sending" }).where(eq(emailCampaigns.id, inserted.id));
 
       const { sendEmail } = await import("./email");
       runPortalInviteCampaign(db, inserted.id, tenantId, sendEmail);
       return { campaignId: inserted.id, queued: audience.recipients.length };
+      }).catch((error: unknown) => {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({ code: "CONFLICT", message: (error as Error).message });
+      });
     }),
 
   /** Pick up a send the server restarted in the middle of. */
@@ -15574,6 +15625,15 @@ const clientPortalRouter = router({
             ? "This client portal setup link has expired. Please ask the salon for a new link."
             : "This link has expired, but your existing password still works. Ask the salon for a new link if you need to change it.",
         });
+      }
+      /*
+       * The agreement gate, on the server. The setup page asks for the
+       * signature first, but a page is only a suggestion: without this,
+       * calling completeSetup directly opens the portal unsigned.
+       */
+      const unsigned = await loadPendingAgreements(db, client.tenantId, client.id);
+      if (unsigned.length > 0) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Please read and sign the ${unsigned.map((a) => a.title).join(" and ")} first. Reload this page to see it.` });
       }
       const passwordHash = await bcrypt.hash(input.password, 12);
       const setupResult = await db.update(clients).set({

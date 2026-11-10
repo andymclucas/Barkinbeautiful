@@ -18,6 +18,8 @@ export type PortalInviteCandidate = {
   email: string | null;
   portalAccountStatus: "not_enabled" | "setup_pending" | "active" | "revoked";
   portalLoginEmail: string | null;
+  /** When the client's current setup link stops working, if they have one. */
+  portalSetupExpiresAt?: Date | null;
 };
 
 export type PortalInviteRecipient = {
@@ -33,6 +35,7 @@ export type PortalInviteSkipReason =
   | "access_revoked"
   | "unsubscribed"
   | "on_hold"
+  | "invitation_outstanding"
   | "shared_email"
   | "email_used_by_another_portal";
 
@@ -42,6 +45,7 @@ export const PORTAL_INVITE_SKIP_LABELS: Record<PortalInviteSkipReason, string> =
   access_revoked: "Portal access was turned off by the salon",
   unsubscribed: "Unsubscribed from salon emails",
   on_hold: "On hold — not to be contacted yet",
+  invitation_outstanding: "Already holds a setup link that still works",
   shared_email: "Shares an email with another client (the first one gets it)",
   email_used_by_another_portal: "Email is another client's portal login",
 };
@@ -61,11 +65,13 @@ export function selectPortalInviteRecipients(input: {
   heldClientIds: ReadonlySet<number>;
   /** portal login email -> the client it belongs to, across the tenant. */
   portalLoginOwners: ReadonlyMap<string, number>;
+  now?: Date;
 }): { recipients: PortalInviteRecipient[]; skipped: Record<PortalInviteSkipReason, number> } {
   const skipped: Record<PortalInviteSkipReason, number> = {
     no_email: 0, already_has_portal: 0, access_revoked: 0, unsubscribed: 0,
-    on_hold: 0, shared_email: 0, email_used_by_another_portal: 0,
+    on_hold: 0, invitation_outstanding: 0, shared_email: 0, email_used_by_another_portal: 0,
   };
+  const now = (input.now ?? new Date()).getTime();
   const recipients: PortalInviteRecipient[] = [];
   const claimed = new Set<string>();
 
@@ -79,6 +85,17 @@ export function selectPortalInviteRecipients(input: {
     // Somebody at the salon switched this off on purpose. A campaign must
     // not quietly switch it back on.
     if (c.portalAccountStatus === "revoked") { skipped.access_revoked += 1; continue; }
+    /*
+     * Somebody who already holds a working link — from an earlier send, or
+     * the button on their client page — is left alone. Issuing a new one
+     * would kill the link in the email they may have open right now, and
+     * a second identical email is the confusing message this avoids.
+     * Once that link expires they are counted again, which makes a later
+     * send a reminder to exactly the people who never finished.
+     */
+    if (c.portalAccountStatus === "setup_pending" && c.portalSetupExpiresAt && c.portalSetupExpiresAt.getTime() > now) {
+      skipped.invitation_outstanding += 1; continue;
+    }
 
     // A half-finished setup keeps the address it was set up with.
     const email = normaliseEmail(c.portalLoginEmail) || normaliseEmail(c.email);

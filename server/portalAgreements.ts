@@ -80,12 +80,20 @@ export async function recordPortalSignatures(db: any, input: {
         recordedByUserId: null,
       });
       signed += 1;
-    } catch {
+    } catch (error) {
       // The unique key: a double-tap, or two tabs. Already signed is the
-      // outcome they wanted, so it is not an error.
+      // outcome they wanted, so it is not an error. ANYTHING else is
+      // rethrown — a swallowed write failure would tell the client they
+      // had signed when no record of it exists.
+      if (!isDuplicateKey(error)) throw error;
     }
   }
   return { ok: true, signed };
+}
+
+function isDuplicateKey(error: unknown): boolean {
+  const e = error as { code?: string; errno?: number; cause?: { code?: string; errno?: number } } | null;
+  return e?.code === "ER_DUP_ENTRY" || e?.errno === 1062 || e?.cause?.code === "ER_DUP_ENTRY" || e?.cause?.errno === 1062;
 }
 
 /** The address a request came from, behind Render's proxy. */

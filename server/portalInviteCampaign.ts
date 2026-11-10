@@ -75,6 +75,7 @@ export async function portalInviteAudience(db: any, tenantId: number) {
     email: clients.email,
     portalAccountStatus: clients.portalAccountStatus,
     portalLoginEmail: clients.portalLoginEmail,
+    portalSetupExpiresAt: clients.portalSetupExpiresAt,
   })
     .from(clients)
     .where(and(eq(clients.tenantId, tenantId), eq(clients.status, "active")));
@@ -145,13 +146,30 @@ async function issueSetupLinkForCampaign(db: any, clientId: number, tenantId: nu
   const [client] = await db.select({
     id: clients.id,
     firstName: clients.firstName,
+    status: clients.status,
     portalAccountStatus: clients.portalAccountStatus,
     portalLoginEmail: clients.portalLoginEmail,
+    portalSetupExpiresAt: clients.portalSetupExpiresAt,
   })
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId)))
     .limit(1);
   if (!client) return { skip: "Client no longer exists" as const };
+  // Re-checked per row: a send of several hundred takes minutes, and the
+  // preview's answers can go stale while it runs.
+  if (client.status !== "active") return { skip: "Skipped: client is no longer active" as const };
+  if (
+    client.portalAccountStatus === "setup_pending" &&
+    client.portalSetupExpiresAt && new Date(client.portalSetupExpiresAt).getTime() > Date.now()
+  ) {
+    return { skip: "Skipped: already holds a setup link that still works" as const };
+  }
+  const [unsubscribed] = await db.select({ id: emailUnsubscribes.id })
+    .from(emailUnsubscribes)
+    // Lower-cased on both sides: TiDB's default collation is case-sensitive.
+    .where(and(eq(emailUnsubscribes.tenantId, tenantId), sql`LOWER(TRIM(${emailUnsubscribes.email})) = ${email}`))
+    .limit(1);
+  if (unsubscribed) return { skip: "Skipped: unsubscribed from salon emails" as const };
   if (client.portalAccountStatus === "active") return { skip: "Skipped: set up their portal before this reached them" as const };
   if (client.portalAccountStatus === "revoked") return { skip: "Skipped: portal access was turned off" as const };
   if (heldClientIds(tenantId).has(client.id)) return { skip: "Skipped: on hold" as const };
@@ -188,6 +206,24 @@ async function issueSetupLinkForCampaign(db: any, clientId: number, tenantId: nu
 }
 
 const running = new Set<number>();
+/**
+ * Tenants with a start in progress. Starting is several queries long —
+ * the whole client list is read before the campaign row exists — and two
+ * overlapping starts (a double click, two tabs) would each make a
+ * campaign and email everybody twice. Render runs one instance, so an
+ * in-process lock covers it; the "already sending" check covers the rest.
+ */
+const starting = new Set<number>();
+
+export async function withPortalInviteStartLock<T>(tenantId: number, fn: () => Promise<T>): Promise<T> {
+  if (starting.has(tenantId)) throw new Error("An invitation send is already being started.");
+  starting.add(tenantId);
+  try {
+    return await fn();
+  } finally {
+    starting.delete(tenantId);
+  }
+}
 
 export function isPortalInviteRunning(campaignId: number): boolean {
   return running.has(campaignId);
