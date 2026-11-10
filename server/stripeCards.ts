@@ -26,6 +26,7 @@ import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
 import { getPortalBaseUrl } from "./appUrl";
+import { cardLinkUrl } from "./cardLinkToken";
 import { toStripeCents, stripeRecurring } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
@@ -91,6 +92,29 @@ export async function createCardSetupLink(clientId: number) {
 }
 
 /**
+ * The link to GIVE a client — short, and good for a month.
+ *
+ * `createCardSetupLink` above makes a Stripe Checkout session and hands
+ * back its URL. That is the right thing when the client is on the page
+ * and about to be redirected. It is the wrong thing to put in a text or
+ * an email, for two reasons measured on 10/11/2026:
+ *
+ * It is enormous. The one in Lauren's thread was 299 characters before
+ * it ran off the screen, taking her message to four SMS segments —
+ * four times the cost, on a campaign aimed at ten thousand clients.
+ *
+ * And it dies. Stripe expires a Checkout session after 24 hours, so a
+ * link texted on Friday fails on Saturday with Stripe's own error page.
+ *
+ * This hands back a signed stand-in that makes the Stripe session when
+ * the client clicks. About 65 characters, always fresh. See
+ * server/cardLinkToken.ts and the /card/:token route.
+ */
+export function clientCardLink(clientId: number): string {
+  return cardLinkUrl(getPortalBaseUrl(), clientId);
+}
+
+/**
  * Create a card setup link and email it to the client.
  *
  * Separate from createCardSetupLink, which only returns the URL: emailing a
@@ -127,7 +151,9 @@ export async function emailCardSetupLink(clientId: number) {
     );
   }
 
-  const link = await createCardSetupLink(clientId);
+  /* The emailed link is a link for a CLIENT, so it is the short one
+     that outlives a Stripe session. See clientCardLink. */
+  const link = { url: clientCardLink(clientId) };
   const { subject, html } = buildCardLinkEmail({
     firstName: client.firstName,
     url: link.url,

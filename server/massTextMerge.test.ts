@@ -8,7 +8,10 @@ import {
   usesCardLink,
 } from "@shared/massTextMerge";
 import {
-  MASS_TEXT_AUDIENCES, MAX_BODY_LENGTH, describeAudience, validateAudience,
+  MASS_TEXT_AUDIENCES,
+  MAX_BODY_LENGTH,
+  describeAudience,
+  validateAudience,
 } from "@shared/massTextRecipients";
 
 /**
@@ -24,7 +27,9 @@ import {
  */
 describe("renderMassTextBody", () => {
   it("puts the client's own link in", () => {
-    const r = renderMassTextBody(`Add a card: ${CARD_LINK_TOKEN}`, { cardLink: "https://x/cs_1" });
+    const r = renderMassTextBody(`Add a card: ${CARD_LINK_TOKEN}`, {
+      cardLink: "https://x/cs_1",
+    });
     expect(r).toEqual({ ok: true, body: "Add a card: https://x/cs_1" });
   });
 
@@ -33,18 +38,25 @@ describe("renderMassTextBody", () => {
     // it is worse than no message, and the row must read as failed
     // rather than delivered.
     for (const missing of [null, undefined, "", "   "]) {
-      const r = renderMassTextBody(`Here: ${CARD_LINK_TOKEN}`, { cardLink: missing });
+      const r = renderMassTextBody(`Here: ${CARD_LINK_TOKEN}`, {
+        cardLink: missing,
+      });
       expect(r.ok).toBe(false);
     }
   });
 
   it("leaves a body with no token exactly as typed", () => {
     const body = "We're closed Monday.";
-    expect(renderMassTextBody(body, { cardLink: null })).toEqual({ ok: true, body });
+    expect(renderMassTextBody(body, { cardLink: null })).toEqual({
+      ok: true,
+      body,
+    });
   });
 
   it("replaces every occurrence", () => {
-    const r = renderMassTextBody(`${CARD_LINK_TOKEN} or ${CARD_LINK_TOKEN}`, { cardLink: "L" });
+    const r = renderMassTextBody(`${CARD_LINK_TOKEN} or ${CARD_LINK_TOKEN}`, {
+      cardLink: "L",
+    });
     expect(r).toEqual({ ok: true, body: "L or L" });
   });
 
@@ -58,12 +70,27 @@ describe("renderMassTextBody", () => {
 
 describe("estimatedRenderedLength", () => {
   it("counts what goes out, not what was typed", () => {
-    // MAX_BODY_LENGTH is checked against the TEMPLATE, so an 11-character
-    // token hiding a ~100-character Stripe URL means the real message is
-    // far longer than the number on the sender's screen — more segments
-    // and more money than they agreed to.
+    /*
+     * MAX_BODY_LENGTH is checked against the TEMPLATE, so an
+     * 11-character token hiding a real link means the message that goes
+     * out is longer than the number on the sender's screen — more
+     * segments and more money than they agreed to.
+     *
+     * Read from the token's own estimate rather than a number written
+     * here. This asserted "+80" against a ~100-character Stripe URL,
+     * and when the link became a 65-character signed one on 10/11/2026
+     * the assertion failed for the right reason and the wrong one: the
+     * behaviour was fine, the magic number was stale. Pinned to the
+     * source now, so shortening the link again cannot break it.
+     */
+    const card = MASS_TEXT_TOKENS.find(t => t.token === CARD_LINK_TOKEN)!;
     const body = `Card: ${CARD_LINK_TOKEN}`;
-    expect(estimatedRenderedLength(body)).toBeGreaterThan(body.length + 80);
+    expect(estimatedRenderedLength(body)).toBe(
+      body.length - CARD_LINK_TOKEN.length + card.estimatedLength
+    );
+    // And it is still meaningfully longer than what was typed, which is
+    // the thing the sender needs to be told.
+    expect(estimatedRenderedLength(body)).toBeGreaterThan(body.length + 40);
   });
 
   it("is the plain length when there is no token", () => {
@@ -71,7 +98,8 @@ describe("estimatedRenderedLength", () => {
   });
 
   it("can exceed the typed limit, which is the warning worth having", () => {
-    const body = "x".repeat(MAX_BODY_LENGTH - CARD_LINK_TOKEN.length) + CARD_LINK_TOKEN;
+    const body =
+      "x".repeat(MAX_BODY_LENGTH - CARD_LINK_TOKEN.length) + CARD_LINK_TOKEN;
     expect(body.length).toBeLessThanOrEqual(MAX_BODY_LENGTH);
     expect(estimatedRenderedLength(body)).toBeGreaterThan(MAX_BODY_LENGTH);
   });
@@ -87,14 +115,17 @@ describe("estimatedRenderedLength", () => {
 
 describe("the members-without-card audience", () => {
   it("is offered in the picker", () => {
-    expect(MASS_TEXT_AUDIENCES.map((a) => a.key)).toContain("members_without_card");
+    expect(MASS_TEXT_AUDIENCES.map(a => a.key)).toContain(
+      "members_without_card"
+    );
   });
 
   it("validates and describes itself", () => {
     const v = validateAudience({ kind: "members_without_card" });
     expect(v).toEqual({ ok: true, audience: { kind: "members_without_card" } });
-    expect(describeAudience({ kind: "members_without_card" }))
-      .toMatch(/no card on file/i);
+    expect(describeAudience({ kind: "members_without_card" })).toMatch(
+      /no card on file/i
+    );
   });
 
   it("still refuses an audience it does not know", () => {

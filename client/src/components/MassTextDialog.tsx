@@ -14,6 +14,7 @@ import {
   type MassTextAudienceKey,
 } from "@shared/massTextRecipients";
 import { CARD_LINK_TOKEN, estimatedRenderedLength, usesCardLink } from "@shared/massTextMerge";
+import { calculateSmsCost } from "@shared/smsSegments";
 
 const TIERS = ["diamond", "platinum", "gold", "silver", "bronze"] as const;
 
@@ -193,15 +194,42 @@ export function MassTextDialog({
               </div>
 
               {/* The typed limit is checked against the TEMPLATE, so an
-                  11-character token hiding a ~100-character Stripe URL
-                  means the real message is much longer than the counter
-                  above says — and longer messages cost more segments. */}
+                  11-character token hiding a real link means the message
+                  that goes out is longer than the counter above says. */}
               {usesCardLink(body) && (
                 <p className="text-xs text-amber-700 dark:text-amber-300">
                   With the link filled in this sends about{" "}
                   {estimatedRenderedLength(body)} characters per message.
                 </p>
               )}
+
+              {/*
+                SEGMENTS, which is what Twilio bills. Characters were the
+                only figure here, and a character count does not tell
+                anybody what a send costs: 160 is one message and 161 is
+                two, then every 153 after that.
+                Andy, 10/11/2026, asked about a card link: "Would this be
+                a single text from Twilio number?" It was four. Nothing on
+                this screen would have said so, and the screen is where
+                somebody decides to press send to ten thousand people.
+              */}
+              {body.trim() !== "" && (() => {
+                const estimated = estimatedRenderedLength(body);
+                /* Padded to the length it will really be, so the cost is
+                   worked out on the message that goes out rather than on
+                   the template somebody typed. The padding is plain
+                   ASCII, which is the encoding a link is anyway. */
+                const cost = calculateSmsCost(body + "x".repeat(Math.max(0, estimated - body.length)));
+                return (
+                  <p className={`text-xs ${cost.segments > 1 ? "font-semibold text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
+                    {cost.segments} SMS segment{cost.segments === 1 ? "" : "s"} each
+                    {count > 0 ? ` · ${(cost.segments * count).toLocaleString()} in total` : ""}
+                    {cost.forcedUnicode
+                      ? " · an emoji or special character cut the segment size to 67"
+                      : ""}
+                  </p>
+                );
+              })()}
             </div>
 
             <div className={`rounded-lg border px-3 py-2.5 text-sm ${count > 0 ? "border-amber-300 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30" : "bg-muted/40"}`}>

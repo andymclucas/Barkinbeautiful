@@ -37,8 +37,19 @@ export const MASS_TEXT_TOKENS: readonly MassTextToken[] = [
   {
     token: CARD_LINK_TOKEN,
     label: "Card setup link",
-    example: "https://checkout.stripe.com/c/pay/cs_live_…",
-    estimatedLength: 100,
+    example: "https://staff.barkinbeautiful.com.au/card/we.1q2w3e.a1b2c3d4e5f6",
+    /*
+     * Measured, not guessed. This read 100 while the example beside it
+     * was a Stripe Checkout URL — and a real one of those is about 500
+     * characters, so the dialog told whoever was sending that a 250
+     * character message would go out at 250 when it went out at 650.
+     * Four SMS segments shown as two, across ten thousand clients.
+     *
+     * It is a short signed link now (server/cardLinkToken.ts): the host,
+     * "/card/", and a token of about 22 characters. 65 is that at the
+     * app's own domain, rounded up so the estimate never reads low.
+     */
+    estimatedLength: 65,
   },
 ];
 

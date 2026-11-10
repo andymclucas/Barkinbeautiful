@@ -19,6 +19,7 @@ import { getDb } from "../db";
 import { appointments, clients, memberships, membershipPayments, pets } from "../../drizzle/schema";
 import {
   createCardSetupLink,
+  clientCardLink,
   createCardSetupIntent,
   saveCardFromSetupIntent,
   emailCardSetupLink,
@@ -87,7 +88,9 @@ export const stripeCardsRouter = router({
    */
   createSetupLink: adminProcedure
     .input(z.object({ clientId: z.number() }))
-    .mutation(async ({ input }) => createCardSetupLink(input.clientId)),
+    /* The short link: this one is handed to a client, by whichever
+       channel the salon picks. */
+    .mutation(async ({ input }) => ({ url: clientCardLink(input.clientId) })),
 
   /**
    * The third way to get a card on file: type it in, here, now.
