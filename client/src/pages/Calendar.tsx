@@ -97,6 +97,7 @@ import { ApptPanelFooter } from "@/components/ApptPanelFooter";
 import { describeWeeks, visitRhythm } from "@shared/visitRhythm";
 import { PetCodesPanel } from "@/components/PetCodesPanel";
 import { RebookButton } from "@/components/RebookButton";
+import { TextBookingButton } from "@/components/TextBookingButton";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
 import { summariseCalendar } from "@shared/calendarSummary";
@@ -6156,6 +6157,10 @@ export default function Calendar() {
                       in the payment row — it is about the diary, not the
                       till. */}
                   <RebookButton appointmentId={editAppt.id} />
+                  {/* Lauren, 11/11/2026: send the client this booking by
+                      hand — after a text held back before 9am, or to tell
+                      them about a rebook. */}
+                  <TextBookingButton appointmentId={editAppt.id} />
                   {editSiblings.length > 0 && (() => {
                     const allPets = [editAppt, ...editSiblings];
                     const allHavePrices = allPets.every(p => {
