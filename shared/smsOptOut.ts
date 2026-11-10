@@ -32,6 +32,21 @@ export type SmsOptOutChange = { smsOptedOutAt: Date | null } | Record<string, ne
  * left alone to today — that date is the answer to "were they opted out
  * when we sent this?", and it is the only record of it.
  */
+/**
+ * The same rule for any "turned off at" column: off stamps it once (and
+ * never restamps, so WHEN stays true), on clears it, undefined leaves it.
+ * Used by the per-client confirmation and cancellation switches.
+ */
+export function offSwitchUpdate(input: {
+  requestedOff: boolean | undefined;
+  current: Date | string | null | undefined;
+  now?: Date;
+}): Date | null | undefined {
+  if (input.requestedOff === undefined) return undefined;
+  if (!input.requestedOff) return null;
+  return input.current ? undefined : input.now ?? new Date();
+}
+
 export function smsOptOutUpdate(input: {
   /** What the form sent. Undefined means the form did not touch it. */
   requested: boolean | undefined;

@@ -94,7 +94,8 @@ export type ChangeSkipReason =
   | "quiet_hours"
   | "not_cancelled"
   | "same_day"
-  | "burst_guard";
+  | "burst_guard"
+  | "client_preference";
 
 export type ChangeDecision =
   | { send: true }
@@ -111,6 +112,7 @@ export const CHANGE_SKIP_LABEL: Record<ChangeSkipReason, string> = {
   not_cancelled: "the booking is not cancelled",
   same_day: "the booking did not move to a different day",
   burst_guard: "too many of these went out at once — stopped as a safety measure",
+  client_preference: "cancellation texts are turned off in this client's Preferences",
 };
 
 /**
@@ -179,9 +181,16 @@ export function decideCancellationSms(input: CommonInput & {
   cancellationSmsSentAt: Date | string | number | null | undefined;
   status: string;
   workflowState: string;
+  /**
+   * Set when staff turned cancellation texts off for this client in
+   * Preferences. Lauren, 11/11/2026, after cancelling a sick dog: "I didn't
+   * want to text her that we cancelled him.. waste of a text".
+   */
+  cancellationSmsOffAt?: Date | string | null;
 }): ChangeDecision {
   const refusal = commonRefusal(input, Boolean(input.cancellationSmsSentAt));
   if (refusal) return refusal;
+  if (input.cancellationSmsOffAt) return { send: false, reason: "client_preference" };
 
   if (input.status !== "cancelled" && input.workflowState !== "cancelled") {
     return { send: false, reason: "not_cancelled" };

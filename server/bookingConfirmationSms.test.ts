@@ -150,7 +150,8 @@ describe("decideBookingConfirmation", () => {
     for (const key of Object.keys(CONFIRMATION_SKIP_LABEL)) {
       expect(CONFIRMATION_SKIP_LABEL[key as keyof typeof CONFIRMATION_SKIP_LABEL]).toBeTruthy();
     }
-    expect(Object.keys(CONFIRMATION_SKIP_LABEL)).toHaveLength(13);
+    // 14 since 11/11/2026: client_preference, the per-client switch.
+    expect(Object.keys(CONFIRMATION_SKIP_LABEL)).toHaveLength(14);
   });
 });
 
@@ -381,5 +382,15 @@ describe("the confirmation claim is not spent on a blocked text", () => {
       ...live, policyAllows: false, moegoAppointmentId: "124259135",
     });
     expect(decision.send).toBe(false);
+  });
+});
+
+describe("per-client confirmation switch (client Preferences, 11/11/2026)", () => {
+  it("does not confirm to a client whose booking confirmations are turned off", () => {
+    expect(decideBookingConfirmation({ ...live, confirmationSmsOffAt: new Date() }))
+      .toEqual({ send: false, reason: "client_preference" });
+  });
+  it("still confirms when the switch is on", () => {
+    expect(decideBookingConfirmation({ ...live, confirmationSmsOffAt: null }).send).toBe(true);
   });
 });

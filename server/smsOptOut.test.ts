@@ -44,3 +44,14 @@ describe("smsOptOutUpdate", () => {
       .toEqual({ smsOptedOutAt: null });
   });
 });
+
+describe("offSwitchUpdate", () => {
+  it("stamps once when turned off, clears when turned on, leaves alone when not asked", async () => {
+    const { offSwitchUpdate } = await import("../shared/smsOptOut");
+    const now = new Date("2026-11-11T00:00:00Z");
+    expect(offSwitchUpdate({ requestedOff: true, current: null, now })).toEqual(now);
+    expect(offSwitchUpdate({ requestedOff: true, current: new Date("2026-01-01"), now })).toBeUndefined();
+    expect(offSwitchUpdate({ requestedOff: false, current: new Date("2026-01-01"), now })).toBeNull();
+    expect(offSwitchUpdate({ requestedOff: undefined, current: null, now })).toBeUndefined();
+  });
+});

@@ -96,7 +96,8 @@ export type ConfirmationSkipReason =
   | "too_soon"
   | "not_live"
   | "automation_off"
-  | "policy_off";
+  | "policy_off"
+  | "client_preference";
 
 export type ConfirmationDecision =
   | { send: true }
@@ -124,6 +125,8 @@ export function decideBookingConfirmation(input: {
   workflowState: string;
   /** Set when the client replied STOP. */
   smsOptedOutAt?: Date | string | null;
+  /** Set when staff turned booking confirmations off in the client's Preferences. */
+  confirmationSmsOffAt?: Date | string | null;
   /** Hour of day, 0-23, on the SALON's clock. Omit to skip the check. */
   localHour?: number;
   /**
@@ -190,6 +193,9 @@ export function decideBookingConfirmation(input: {
   // (routers.ts). An automated text to somebody who opted out is the
   // one message that is never excusable.
   if (input.smsOptedOutAt) return { send: false, reason: "opted_out" };
+  // Narrower than the STOP above: just this one text, for this client
+  // (Andy, 11/11/2026, client Preferences).
+  if (input.confirmationSmsOffAt) return { send: false, reason: "client_preference" };
 
   // Backfills and corrections touch past rows constantly — 368 August
   // appointments were advanced on 26/10/2026 alone. None of those people
@@ -223,6 +229,7 @@ export const CONFIRMATION_SKIP_LABEL: Record<ConfirmationSkipReason, string> = {
   already_arranged: "already booked elsewhere — staff asked not to text",
   too_soon: "starts too soon for a confirmation to be useful",
   opted_out: "the client has replied STOP",
+  client_preference: "booking confirmations are turned off in this client's Preferences",
   not_confirmed: "the booking is not confirmed yet",
   quiet_hours: "outside the hours an automated text may land",
   already_sent: "a confirmation has already gone out",

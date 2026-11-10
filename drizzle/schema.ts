@@ -322,6 +322,14 @@ export const clients = mysqlTable("clients", {
   /** When they told us to stop texting. Set from an inbound STOP reply. */
   smsOptedOutAt: timestamp("sms_opted_out_at"),
   /**
+   * Per-client switches for two automated texts, from the client's
+   * Preferences (Andy, 11/11/2026). NULL means they get it; a timestamp
+   * means it was turned off for them, and when. Narrower than
+   * smsOptedOutAt, which stops every automated text.
+   */
+  confirmationSmsOffAt: timestamp("confirmation_sms_off_at"),
+  cancellationSmsOffAt: timestamp("cancellation_sms_off_at"),
+  /**
    * The rebook nudge's claim, keyed on the CLIENT rather than a dog.
    *
    * A two-dog household makes one trip and must get one text, so the
