@@ -149,7 +149,7 @@ function AlertBadge({ level, warnings }: { level: string; warnings?: string | nu
 
 function ClientProfileSkeleton() {
   return (
-    <div className="space-y-6 max-w-5xl animate-pulse" aria-busy="true" aria-label="Loading client profile" data-testid="client-profile-skeleton">
+    <div className="space-y-6 animate-pulse" aria-busy="true" aria-label="Loading client profile" data-testid="client-profile-skeleton">
       <div className="flex items-center justify-between"><div className="h-8 w-32 rounded-md bg-muted" /><div className="h-9 w-40 rounded-md bg-muted" /></div>
       <div className="rounded-2xl border bg-card p-6"><div className="flex gap-5"><div className="h-16 w-16 rounded-full bg-muted" /><div className="flex-1 space-y-3"><div className="h-7 w-52 rounded bg-muted" /><div className="h-4 w-80 max-w-full rounded bg-muted" /><div className="h-4 w-60 max-w-full rounded bg-muted" /></div></div></div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-20 rounded-xl border bg-card" />)}</div>
@@ -853,7 +853,16 @@ export default function ClientDetail() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 max-w-5xl">
+      {/* Andy, 10/11/2026, with a photo of the record: "It looks like
+          it's justified left and squashed. On desktop, let's have this
+          cover the entire page."
+
+          It was capped at max-w-5xl — 1024px — so on a 1900px screen two
+          thirds of the desk was empty and the pet cards were 320px wide
+          with groomer notes wrapping every four words. The cap made
+          sense when the record was a narrow column beside a rail; with
+          the rail across the top there is nothing to leave room for. */}
+      <div className="space-y-6">
         {/* Above everything, including the back button: somebody who came
             here to change a card or a membership should see that Lauren
             is already in it before they start, not after. */}
@@ -1420,21 +1429,32 @@ export default function ClientDetail() {
           </div>
         )}
 
-        {/* The record, as a rail rather than a tab strip.
-            Radix Tabs still drives it — the panels below are untouched —
-            but five horizontal tabs could not grow to twelve sections
-            without wrapping into an unreadable row. */}
+        {/* The sections, across the top.
+            Andy, 10/11/2026: "change the side bar buttons (overview,
+            bookings, pets etc) and make them horizontally aligned with
+            the pets directly under that."
+
+            This was a vertical rail, on the reasoning that five
+            horizontal tabs could not grow to twelve sections without
+            wrapping into an unreadable row. That was true of a strip of
+            natural-width tabs inside a 1024px column. It is not true of
+            a GRID across a full-width page: ten even cells, five to a
+            row on a laptop and all ten in one row from 2xl, so nothing
+            wraps and nothing is ragged — which was the property the rail
+            was built to get in the first place. */}
         <Tabs
           value={activeClientTab}
           onValueChange={setActiveClientTab}
-          orientation="vertical"
-          className="grid gap-5 lg:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]"
+          orientation="horizontal"
+          className="flex flex-col gap-5"
         >
           {/* The rail is a column that runs the height of the record, not
               a list that stops after its last item. Without items-start
               the grid stretches it, so the divider runs the full length;
               the nav inside stays stuck to the top while you scroll. */}
-          <div className="lg:h-full lg:border-r lg:border-border lg:pr-3">
+          {/* A line under the sections rather than beside them, now
+              that they run across the top. */}
+          <div className="lg:border-b lg:border-border lg:pb-3">
           {/* tabs-rail squares the corners. index.css paints every tab list
               as a pill — right for a short, wide segmented control and an
               ellipse on a rail ten items tall, which closed over Overview
@@ -1470,7 +1490,7 @@ export default function ClientDetail() {
               Above that the pair fits with room to spare, measured at
               375 and 430 with three-digit counts. 360 is the width the
               arithmetic changes at, not a device. */}
-          <TabsList className="tabs-rail grid h-auto w-full grid-cols-1 gap-1.5 min-[360px]:grid-cols-2 lg:sticky lg:top-4 lg:flex lg:flex-col lg:gap-0.5">
+          <TabsList className="tabs-rail grid h-auto w-full grid-cols-1 gap-1.5 min-[360px]:grid-cols-2 lg:grid-cols-5 2xl:grid-cols-10">
             {[
               { value: "overview", label: "Overview", icon: LayoutDashboard },
               { value: "pets", label: `Pets (${pets.length})`, icon: Dog },
@@ -1512,7 +1532,11 @@ export default function ClientDetail() {
                    wider padding left it — truncated by a single pixel.
                    Eight pixels back puts every label inside its chip with
                    room for three-digit counts. */
-                className="h-auto w-full flex-none justify-center gap-2 px-2 py-2 text-sm lg:justify-start lg:px-3"
+                /* Centred at every width now. The left edge existed so
+                   ten labels stacked in a column had a common edge to
+                   read down; in a row across the top each chip is its own
+                   cell and a centred label sits in the middle of it. */
+                className="h-auto w-full flex-none justify-center gap-2 px-2 py-2 text-sm lg:px-3"
               >
                 <item.icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{item.label}</span>
