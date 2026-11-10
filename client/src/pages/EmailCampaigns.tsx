@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { PortalInvitePanel } from "@/components/PortalInvitePanel";
 
 const AUDIENCE_OPTIONS = [
   { value: "all_active",         label: "All Active Clients" },
@@ -392,6 +393,8 @@ export default function EmailCampaigns() {
             New Campaign
           </Button>
         </div>
+
+        <PortalInvitePanel />
 
         {/* KPI cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
