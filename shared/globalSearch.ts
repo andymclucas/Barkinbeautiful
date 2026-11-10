@@ -38,7 +38,7 @@ export type SearchHit = {
    * search, or a scroll down their record, to reach the dog you were
    * actually after — and the dog is what the salon talks in.
    *
-   * Departed dogs are left out. `pets.status` is active|departed and
+   * Departed dogs are left out. `pets.status` is active|departed|archived and
    * departed is how this salon retires a duplicate, so listing them
    * would offer dead links to records nobody wants reopened.
    */

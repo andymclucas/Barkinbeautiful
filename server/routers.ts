@@ -12314,10 +12314,11 @@ const onlineBookingRouter = router({
       const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...properName(input), phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
-    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName), ne(pets.status, "archived"))).limit(1);
     /* A guest booking reuses the dog already on file when the name
        matches, so naming a departed dog would book it. A new pet is
-       created active and cannot be departed. */
+       created active and cannot be departed. An ARCHIVED namesake is
+       skipped: it is usually the duplicate of the live dog being named. */
     if (existingPet) {
       const guestDeparted = departedBookingMessage([existingPet]);
       if (guestDeparted) throw new Error(guestDeparted);
@@ -12374,10 +12375,11 @@ const onlineBookingRouter = router({
       const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...properName(input), phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
-    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName), ne(pets.status, "archived"))).limit(1);
     /* A guest booking reuses the dog already on file when the name
        matches, so naming a departed dog would book it. A new pet is
-       created active and cannot be departed. */
+       created active and cannot be departed. An ARCHIVED namesake is
+       skipped: it is usually the duplicate of the live dog being named. */
     if (existingPet) {
       const guestDeparted = departedBookingMessage([existingPet]);
       if (guestDeparted) throw new Error(guestDeparted);

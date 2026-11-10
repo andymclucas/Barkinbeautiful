@@ -94,7 +94,7 @@ export const searchRouter = router({
        * Andy, 03/11/2026: "show the dog or all dogs in the family that
        * can be clickable when searching with the main search function."
        *
-       * Active only - `pets.status` is active|departed, and departed is
+       * Active only - `pets.status` is active|departed|archived, and departed is
        * how this salon retires a duplicate, so offering one is a link to
        * a record nobody wants reopened.
        */
