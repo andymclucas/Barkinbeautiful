@@ -121,11 +121,29 @@ package-lock.json
 .manus-logs/
 
 # macOS/iCloud duplicate artefacts: "foo 2.ts" beside "foo.ts". Three were
-# swept into a commit by `git add -A` on 14/10/2026. The SPACE is what makes
-# the pattern safe: scripts/moego-sync-2026-10-12.ts must stay tracked.
-* [0-9].ts
-* [0-9].tsx
-* [0-9].md
+# swept into a commit by `git add -A` on 14/10/2026.
+#
+# ANY extension, because listing them one at a time does not hold. On
+# 10/11/2026 "populateApprovedPricingCatalogue.d 2.mts" showed up in
+# `git status` for exactly that reason — .mts was not on the list — and
+# the next `git add -A` would have committed it. Seventeen of these were
+# in the tree that morning, including .png, .wav, .webp, .svg, .html,
+# .webmanifest and .js copies in dist/.
+#
+# Whatever makes them is still running: five appeared in one minute
+# while three branches were being merged, every one of them a copy of a
+# file that merge had just touched. So the rule has to cover the
+# extensions nobody has thought of yet.
+#
+# Two digits as well as one: "index 3.html" exists, and nothing stops a
+# tenth copy.
+#
+# The SPACE before the digits is what keeps this safe, and it is the
+# whole reason the pattern can be this broad:
+# scripts/moego-sync-2026-10-12.ts has a hyphen and stays tracked. No
+# tracked file in the repository matches, checked before widening it.
+* [0-9].*
+* [0-9][0-9].*
 
 # MoeGo pulls. Every one is a list of real clients with their phone
 # numbers, and this repository is on GitHub. The import script reads
