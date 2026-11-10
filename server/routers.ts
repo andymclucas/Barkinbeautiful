@@ -81,7 +81,7 @@ import { calculateMembershipAccount } from "../shared/membershipAccountsReceivab
 import { createStaffInvitationToken, hashStaffInvitationToken, isLinkedStaffUser, isStaffInvitationExpired } from "../shared/staffInvitation";
 import { createInvoiceCheckout } from "./stripePayments";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
-import { createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
+import { clientPortalLinkRenewal, createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
@@ -15420,7 +15420,17 @@ const clientPortalRouter = router({
         throw new TRPCError({ code: "UNAUTHORIZED", message: "This client portal link has expired. Please ask the salon for a new link." });
       }
 
-      await db.update(clientPortalAccess).set({ lastAccessedAt: new Date() }).where(eq(clientPortalAccess.id, access.id));
+      /* The expiry runs from the last visit, not from the day the link
+         was issued, so a Home Screen icon a client actually uses does
+         not stop working a month after they install it. Returns null
+         when the link was already renewed today, which keeps this to
+         one write a day rather than one per page view. */
+      const now = new Date();
+      const renewedExpiry = clientPortalLinkRenewal(access.expiresAt, now);
+      await db.update(clientPortalAccess).set({
+        lastAccessedAt: now,
+        ...(renewedExpiry ? { expiresAt: renewedExpiry } : {}),
+      }).where(eq(clientPortalAccess.id, access.id));
 
       return buildClientPortalPayload(db, access);
     }),

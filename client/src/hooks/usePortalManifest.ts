@@ -1,6 +1,10 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { audienceForPath } from "@shared/portalHosting";
+import {
+  portalManifestHrefFor,
+  STAFF_MANIFEST_PATH,
+} from "@shared/portalManifest";
 
 /**
  * Which app a phone saves when somebody presses "Add to Home Screen".
@@ -24,6 +28,15 @@ import { audienceForPath } from "@shared/portalHosting";
  * `audienceForPath` is the same function the host redirect uses, so
  * "which pages are the client's" has one answer. A page that is staff's
  * keeps the staff manifest, which is every page outside /portal.
+ *
+ * That fixed the icon's identity and not where it pointed. Renee, the
+ * same client, the next morning: "I deleted the previous link we saved
+ * to Home Screen. Opened new email and saved that to Home Screen... if
+ * I try to open that same link from the homescreen — it asks for
+ * password." The portal manifest's start_url was "/portal/login", so
+ * the icon opened an account form for an account she has never had.
+ * `portalManifestHrefFor` now hands a token page a manifest of its own
+ * whose start_url is that page. See `shared/portalManifest.ts`.
  */
 export function usePortalManifest(): void {
   const [location] = useLocation();
@@ -36,7 +49,9 @@ export function usePortalManifest(): void {
 
     const audience = audienceForPath(location);
     const wanted =
-      audience === "client" ? "/portal.webmanifest" : "/manifest.webmanifest";
+      audience === "client"
+        ? portalManifestHrefFor(location)
+        : STAFF_MANIFEST_PATH;
     // Compared against the resolved href, because the attribute is a path
     // and the property is absolute.
     if (!link.href.endsWith(wanted)) link.href = wanted;

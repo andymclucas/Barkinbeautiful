@@ -44,16 +44,37 @@ beforeEach(() => {
     '<meta name="apple-mobile-web-app-title" content="Groomigo">';
 });
 
+/**
+ * A real one. The shape matters: `portalAccessTokenIn` only accepts 64
+ * hex characters, so a placeholder like "some-access-token" reads as an
+ * ordinary portal page and this file would assert the static manifest
+ * and pass without ever exercising the per-client one.
+ */
+const TOKEN = "648c6f4a01" + "b".repeat(54);
+
 describe("which app a phone saves", () => {
   it("offers the salon's own app on a client's portal", () => {
-    at("/portal/some-access-token");
-    expect(manifestHref()).toContain("/portal.webmanifest");
+    at(`/portal/${TOKEN}`);
+    expect(manifestHref()).toContain("webmanifest");
     expect(appTitle()).toBe("Barkin' Beautiful");
   });
 
+  it("gives a client's own page a manifest carrying their token", () => {
+    // Renee Gannon, 10/11/2026, having deleted and re-saved the icon as
+    // asked: "if I try to open that same link from the homescreen - it
+    // asks for password." The static manifest's start_url is
+    // "/portal/login", so the icon opened an account form for an
+    // account she has never had. Her own page must advertise a manifest
+    // whose start_url is her own page.
+    at(`/portal/${TOKEN}`);
+    expect(manifestHref()).toBe(`/portal/${TOKEN}/app.webmanifest`);
+    expect(manifestHref()).not.toBe("/portal.webmanifest");
+  });
+
   it("does the same on the portal login and the setup link", () => {
-    // start_url points at the login, so saving from anywhere in the
-    // portal has to land back inside the portal.
+    // These have no token to point at, so they keep the static manifest
+    // and its start_url of /portal/login — the right answer for someone
+    // who arrived without a link.
     for (const path of ["/portal/login", "/portal/setup/abc123", "/portal"]) {
       document.head.innerHTML =
         '<link rel="manifest" href="/manifest.webmanifest">' +
@@ -77,6 +98,6 @@ describe("which app a phone saves", () => {
   it("does nothing at all when the page links no manifest", () => {
     // Previews and the thumbnail capture render without the real head.
     document.head.innerHTML = "";
-    expect(() => at("/portal/token")).not.toThrow();
+    expect(() => at(`/portal/${TOKEN}`)).not.toThrow();
   });
 });
