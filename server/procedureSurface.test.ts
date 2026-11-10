@@ -282,12 +282,18 @@ const OPERATIONAL = [
   // protectedProcedure, so a restricted groomer cannot rename the
   // vocabulary the whole salon reads.
   "petCodesRouter.list",
+  // Archiving a dog and undoing it. Andy, 10/11/2026: "All groomers
+  // should have access." Refused while the dog has bookings or a
+  // membership, so it cannot cancel anything or move money; records who
+  // did it; and Restore undoes it. Tenant-checked on the pet.
+  "petsRouter.archive",
   "petsRouter.create",
   // The salon's own breed list, read from the dogs on file. Operational
   // because it feeds the breed box on the walk-in and add-pet forms,
   // which the floor uses.
   "petsRouter.listBreeds",
   "petsRouter.listByClient",
+  "petsRouter.restore",
   // The dog's usual groomer. A groomer knows which dogs are theirs, and
   // the person taking the booking is who hears "can we have Charlotte
   // again". Tenant-checked on both the pet and the staff member.
@@ -508,8 +514,8 @@ describe("tRPC procedure surface", () => {
     // second), so the page read "100 sent, 0 delivered". protectedProcedure
     // like sms.getLogs beside it, so it is not in OPERATIONAL below.
     // 412 since 10/11/2026: pets.archive and pets.restore, the "archive
-    // dog" button. adminProcedure like pets.remove and pets.markDeparted
-    // beside them, so neither is in OPERATIONAL or PUBLIC.
+    // dog" button. Opened to every groomer the same day, so both are in
+    // OPERATIONAL below.
     expect(surface).toHaveLength(412);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
@@ -563,7 +569,12 @@ describe("tRPC procedure surface", () => {
      * 140 since 06/11/2026: salons.mine and salons.canAccess. Both read
      * only from the caller's own access list.
      */
-    expect(OPERATIONAL).toHaveLength(151);
+    /*
+     * 153 since 10/11/2026: pets.archive and pets.restore. Andy: "All
+     * groomers should have access." Guarded so neither can cancel a
+     * booking or touch a membership, and reversible.
+     */
+    expect(OPERATIONAL).toHaveLength(153);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

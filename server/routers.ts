@@ -7121,14 +7121,17 @@ const petsRouter = router({
    * no longer comes, or a duplicate record — the cases that until now could
    * only be retired by recording a death. See shared/petArchive.ts.
    *
-   * `adminProcedure`, like `remove` and `markDeparted` beside it.
+   * `operationalProcedure`: Andy, 10/11/2026, "All groomers should have
+   * access." Safe to open because of what it refuses (below) and because
+   * Restore undoes it; `archived_by_user_id` says who did it. Unlike
+   * `remove` and `markDeparted` beside it, which stay admin-only.
    *
    * Refused while the dog has upcoming bookings or is on an active
    * membership, rather than cancelling them: a cancellation can text a
    * client and ending a plan moves money, and an archive button must do
    * neither. `check: true` asks without archiving, so the UI can warn first.
    */
-  archive: adminProcedure
+  archive: operationalProcedure
     .input(z.object({ tenantId: z.number().default(1), petId: z.number(), check: z.boolean().default(false) }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -7173,8 +7176,8 @@ const petsRouter = router({
       return { checked: false as const, success: true, petName: pet.name, clientId: pet.clientId };
     }),
 
-  /** Undo an archive. Only ever moves archived -> active. */
-  restore: adminProcedure
+  /** Undo an archive. Only ever moves archived -> active. Every groomer, like archive. */
+  restore: operationalProcedure
     .input(z.object({ tenantId: z.number().default(1), petId: z.number() }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
