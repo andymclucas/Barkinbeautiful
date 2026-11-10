@@ -47,6 +47,12 @@ const PUBLIC = [
   "clientPortalRouter.cancelAppointment",
   "clientPortalRouter.completeSetup",
   "clientPortalRouter.createMyCardSetupLink",
+  // The texted service-agreement link (/sign/<token>), for clients with no
+  // email (11/11/2026). The signed token from server/agreementLinkToken.ts
+  // is the identity; it returns a first name, the salon name and the
+  // agreements, and can only record that one client's signature on an
+  // agreement currently outstanding for them.
+  "clientPortalRouter.getAgreementLink",
   "clientPortalRouter.getChat",
   "clientPortalRouter.getMyPaymentMethod",
   "clientPortalRouter.getMyPortal",
@@ -69,6 +75,7 @@ const PUBLIC = [
   // client (shared/portalAgreements.ts).
   "clientPortalRouter.signAgreementsAtSetup",
   "clientPortalRouter.signMyAgreements",
+  "clientPortalRouter.signWithAgreementLink",
   "clientPortalRouter.updateMyProfile",
   // An owner answering a quote for extra work found mid-groom, from a
   // texted link. Public on purpose and not behind the portal login: the
@@ -530,7 +537,9 @@ describe("tRPC procedure surface", () => {
     // both are in PUBLIC above); portalInvitePreview, startPortalInvite,
     // resumePortalInvite and portalInviteStatus are adminProcedure, like
     // issuing a single setup link.
-    expect(surface).toHaveLength(418);
+    // 420 since 11/11/2026 (later the same day): getAgreementLink and
+    // signWithAgreementLink, the texted signing link — both in PUBLIC.
+    expect(surface).toHaveLength(420);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -539,7 +548,7 @@ describe("tRPC procedure surface", () => {
     // 53 since 06/11/2026: groomQuotes getByToken and answerByToken, the
     // owner's end of a mid-groom quote. Unauthenticated by design — the
     // note beside them in PUBLIC says what bounds them.
-    expect(PUBLIC).toHaveLength(54);
+    expect(PUBLIC).toHaveLength(56);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

@@ -13,7 +13,7 @@ import {
   MASS_TEXT_AUDIENCES, MAX_BODY_LENGTH, needsTypedConfirmation,
   type MassTextAudienceKey,
 } from "@shared/massTextRecipients";
-import { CARD_LINK_TOKEN, estimatedRenderedLength, usesCardLink } from "@shared/massTextMerge";
+import { AGREEMENT_LINK_TOKEN, CARD_LINK_TOKEN, estimatedRenderedLength, usesAgreementLink, usesCardLink } from "@shared/massTextMerge";
 import { calculateSmsCost } from "@shared/smsSegments";
 
 const TIERS = ["diamond", "platinum", "gold", "silver", "bronze"] as const;
@@ -29,6 +29,8 @@ const TIERS = ["diamond", "platinum", "gold", "silver", "bronze"] as const;
  */
 export function MassTextDialog({
   defaultRange,
+  defaultAudience,
+  defaultBody,
   triggerLabel = "Mass text",
   triggerIcon = <Megaphone className="h-3.5 w-3.5" />,
   triggerClassName = "gap-1.5",
@@ -48,6 +50,14 @@ export function MassTextDialog({
    * whichever day happened to be on screen when the page loaded.
    */
   defaultRange?: { from: string; to: string };
+  /**
+   * Open on a particular audience — the agreement card on Email Campaigns
+   * opens this on "hasn't signed, no email" with a suggested message, so
+   * the text half of that send is one button away from the email half.
+   */
+  defaultAudience?: MassTextAudienceKey;
+  /** Filled in only when the message box is empty, never over a draft. */
+  defaultBody?: string;
   triggerLabel?: string;
   triggerIcon?: ReactNode;
   triggerClassName?: string;
@@ -57,6 +67,8 @@ export function MassTextDialog({
   const [from, setFrom] = useState(defaultRange?.from ?? "");
   const [to, setTo] = useState(defaultRange?.to ?? "");
   const [tier, setTier] = useState<string>("gold");
+  // agreement_unsigned: leave out anyone the emailed invitation reaches.
+  const [noEmailOnly, setNoEmailOnly] = useState(true);
   const [body, setBody] = useState("");
   const [typed, setTyped] = useState("");
   // Stable for this composition. A retry after a timeout carries the same
@@ -68,6 +80,7 @@ export function MassTextDialog({
     : kind === "membership_tier" ? { kind, tier }
     : kind === "hand_picked" ? { kind, clientIds: [] as number[] }
     : kind === "members_without_card" ? { kind: "members_without_card" as const }
+    : kind === "agreement_unsigned" ? { kind: "agreement_unsigned" as const, noEmailOnly }
     : { kind: "all_active" as const };
 
   const preview = trpc.sms.previewMassText.useQuery(
@@ -104,6 +117,8 @@ export function MassTextDialog({
           setFrom(defaultRange.from);
           setTo(defaultRange.to);
         }
+        if (defaultAudience) setKind(defaultAudience);
+        if (defaultBody) setBody((b) => (b.trim() ? b : defaultBody));
         setOpen(true);
       }}>
         {triggerIcon} {triggerLabel}
@@ -151,6 +166,21 @@ export function MassTextDialog({
               </div>
             )}
 
+            {kind === "agreement_unsigned" && (
+              <label className="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--primary)]"
+                  checked={noEmailOnly}
+                  onChange={(e) => setNoEmailOnly(e.target.checked)}
+                />
+                <span>
+                  Only clients with <strong>no email address</strong>. The emailed portal invitation reaches the
+                  others; untick to text every client who hasn&rsquo;t signed, as a reminder.
+                </span>
+              </label>
+            )}
+
             {kind === "hand_picked" && (
               <p className="rounded-lg border border-dashed px-3 py-3 text-xs text-muted-foreground">
                 Picking clients individually isn&rsquo;t built yet. Use one of the other audiences, or send from
@@ -186,7 +216,15 @@ export function MassTextDialog({
                 >
                   Insert card setup link
                 </Button>
-                {usesCardLink(body) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBody((b) => `${b}${b && !b.endsWith(" ") ? " " : ""}${AGREEMENT_LINK_TOKEN}`)}
+                >
+                  Insert agreement link
+                </Button>
+                {(usesCardLink(body) || usesAgreementLink(body)) && (
                   <span className="text-xs text-muted-foreground">
                     Each client gets their own link.
                   </span>
@@ -196,7 +234,7 @@ export function MassTextDialog({
               {/* The typed limit is checked against the TEMPLATE, so an
                   11-character token hiding a real link means the message
                   that goes out is longer than the counter above says. */}
-              {usesCardLink(body) && (
+              {(usesCardLink(body) || usesAgreementLink(body)) && (
                 <p className="text-xs text-amber-700 dark:text-amber-300">
                   With the link filled in this sends about{" "}
                   {estimatedRenderedLength(body)} characters per message.

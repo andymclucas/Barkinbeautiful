@@ -43,7 +43,7 @@ import {
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
   invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, petWeights, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
-  clientPackages, agreementSignatures, clientNotes,
+  clientPackages, agreementSignatures, agreementDocuments, clientNotes,
   groomQuotes,
   groomQuoteLines,
 } from "../drizzle/schema";
@@ -163,7 +163,7 @@ import { loadPendingAgreements, recordPortalSignatures, requestIp } from "./port
 import { PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
 import {
   PORTAL_INVITE_AUDIENCE_TYPE, portalInviteAudience, portalInviteEmail, portalInviteProgress,
-  runPortalInviteCampaign, isPortalInviteRunning, withPortalInviteStartLock,
+  runPortalInviteCampaign, isPortalInviteRunning, withPortalInviteStartLock, heldClientIds,
 } from "./portalInviteCampaign";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
@@ -177,7 +177,10 @@ import { actualEndFor } from "@shared/appointmentActualTimes";
 import { STAFF_SECTION_KEYS, parseSections, canEditSection, sectionLabel, type StaffSection } from "@shared/staffPermissions";
 import { OWNER_ROLE, isStaffRole, defaultEditSections, defaultViewSections } from "@shared/staffRoleDefaults";
 import { validateAudience, describeAudience, guardSend, MAX_BODY_LENGTH, type MassTextAudience } from "@shared/massTextRecipients";
-import { usesCardLink, renderMassTextBody } from "@shared/massTextMerge";
+import { usesCardLink, usesAgreementLink, renderMassTextBody } from "@shared/massTextMerge";
+import { agreementLinkUrl, readAgreementLinkToken } from "./agreementLinkToken";
+import { agreementsAwaitingSignature } from "@shared/portalAgreements";
+import { hasUsableEmail } from "@shared/portalInviteAudience";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
 import { randomUUID } from "node:crypto";
@@ -13734,10 +13737,25 @@ const smsRouter = router({
        * the rows still pending rather than texting the first half twice.
        */
       const needsCardLink = usesCardLink(body);
+      const needsAgreementLink = usesAgreementLink(body);
       for (const row of pending) {
         let perRecipient = body;
         let renderError: string | null = null;
-        if (needsCardLink && row.clientId === null) {
+        if (needsAgreementLink && !needsCardLink) {
+          // The agreement link: same rules as the card link below — one
+          // per client, made in the loop, and no link means no message.
+          if (row.clientId === null) {
+            renderError = "No client on this recipient row, so no agreement link could be made";
+          } else {
+            try {
+              const rendered = renderMassTextBody(body, { agreementLink: agreementLinkUrl(getPortalBaseUrl(), row.clientId as number) });
+              if (rendered.ok) perRecipient = rendered.body;
+              else renderError = rendered.error;
+            } catch (error) {
+              renderError = `Agreement link failed: ${(error as Error).message}`;
+            }
+          }
+        } else if (needsCardLink && row.clientId === null) {
           // Every audience that can carry this token selects FROM clients,
           // so a null id should be unreachable. Refusing the row rather
           // than asserting keeps one odd row from stopping the batch.
@@ -13758,7 +13776,10 @@ const smsRouter = router({
              * nobody opens the same day would have discovered the hard
              * way.
              */
-            const rendered = renderMassTextBody(body, { cardLink: clientCardLink(row.clientId as number) });
+            const rendered = renderMassTextBody(body, {
+              cardLink: clientCardLink(row.clientId as number),
+              agreementLink: needsAgreementLink ? agreementLinkUrl(getPortalBaseUrl(), row.clientId as number) : null,
+            });
             if (rendered.ok) perRecipient = rendered.body;
             else renderError = rendered.error;
           } catch (error) {
@@ -14650,6 +14671,37 @@ async function massTextRecipients(
         inArray(memberships.status, ["active", "paused", "pending_payment"]),
         eq(memberships.isTest, false),
       ));
+  } else if (audience.kind === "agreement_unsigned") {
+    /*
+     * Everybody active who has not signed the current version of every
+     * sign_once agreement (shared/portalAgreements.ts — the same rule the
+     * portal gate uses, so the text and the gate cannot disagree about
+     * who still owes a signature). Held clients are left out, as they
+     * are from the emailed invitation.
+     */
+    const docs = await db.select({
+      id: agreementDocuments.id, slug: agreementDocuments.slug, title: agreementDocuments.title,
+      version: agreementDocuments.version, status: agreementDocuments.status,
+      requirement: agreementDocuments.requirement, requiresSignature: agreementDocuments.requiresSignature,
+    }).from(agreementDocuments).where(and(eq(agreementDocuments.tenantId, tenantId), eq(agreementDocuments.status, "active")));
+    const required = agreementsAwaitingSignature(docs, []);
+    if (required.length > 0) {
+      const candidates = await db.select({
+        clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName,
+        email: clients.email, portalLoginEmail: clients.portalLoginEmail,
+      }).from(clients).where(and(...base));
+      const sigs = await db.select({ clientId: agreementSignatures.clientId, documentId: agreementSignatures.documentId, documentVersion: agreementSignatures.documentVersion })
+        .from(agreementSignatures)
+        .where(and(eq(agreementSignatures.tenantId, tenantId), inArray(agreementSignatures.documentId, required.map((d) => d.id))));
+      const signed = new Set(sigs.map((s) => `${s.clientId}:${s.documentId}:${s.documentVersion}`));
+      const held = heldClientIds(tenantId);
+      rows = candidates
+        .filter((c) => !held.has(c.clientId))
+        .filter((c) => required.some((d) => !signed.has(`${c.clientId}:${d.id}:${d.version}`)))
+        // The emailed portal invitation reaches anybody with an address.
+        .filter((c) => !audience.noEmailOnly || !hasUsableEmail(c))
+        .map(({ clientId, phone, firstName, lastName }) => ({ clientId, phone, firstName, lastName }));
+    }
   } else if (audience.kind === "membership_tier") {
     rows = await db.selectDistinct({ clientId: clients.id, phone: clients.phone, firstName: clients.firstName, lastName: clients.lastName })
       .from(clients)
@@ -15429,6 +15481,56 @@ const clientPortalRouter = router({
       const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
       const result = await recordPortalSignatures(db, {
         tenantId, clientId, documentIds: input.documentIds, signedName: input.signedName,
+        ip: requestIp(ctx.req), userAgent: String(ctx.req?.headers?.["user-agent"] ?? "") || null,
+      });
+      if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: result.error });
+      return { signed: result.signed };
+    }),
+
+  /**
+   * The texted signing link (/sign/<token>): what this client still has to
+   * sign. The token is the identity, made by server/agreementLinkToken.ts
+   * for one client. Returns only a first name, the salon's name and the
+   * agreements — nothing else about the client.
+   */
+  getAgreementLink: publicProcedure
+    .input(z.object({ token: z.string().min(5).max(80) }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const read = readAgreementLinkToken(input.token);
+      if (!read.ok) {
+        console.warn(`[agreement-link] refused a link: ${read.reason}`);
+        throw new TRPCError({ code: "UNAUTHORIZED", message: read.reason === "expired"
+          ? "This link has expired. Please ask the salon to send you a new one."
+          : "This link isn't valid. Please ask the salon to send you a new one." });
+      }
+      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId, firstName: clients.firstName, salonName: tenants.name })
+        .from(clients).innerJoin(tenants, eq(clients.tenantId, tenants.id))
+        .where(eq(clients.id, read.clientId)).limit(1);
+      if (!client) throw new TRPCError({ code: "UNAUTHORIZED", message: "This link isn't valid. Please ask the salon to send you a new one." });
+      return {
+        firstName: client.firstName,
+        salonName: client.salonName,
+        pendingAgreements: await loadPendingAgreements(db, client.tenantId, client.id),
+      };
+    }),
+
+  signWithAgreementLink: publicProcedure
+    .input(z.object({
+      token: z.string().min(5).max(80),
+      documentIds: z.array(z.number().int().positive()).min(1).max(20),
+      signedName: z.string().max(200),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const read = readAgreementLinkToken(input.token);
+      if (!read.ok) throw new TRPCError({ code: "UNAUTHORIZED", message: "This link has expired or isn't valid. Please ask the salon for a new one." });
+      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId }).from(clients).where(eq(clients.id, read.clientId)).limit(1);
+      if (!client) throw new TRPCError({ code: "UNAUTHORIZED", message: "This link isn't valid. Please ask the salon for a new one." });
+      const result = await recordPortalSignatures(db, {
+        tenantId: client.tenantId, clientId: client.id, documentIds: input.documentIds, signedName: input.signedName,
         ip: requestIp(ctx.req), userAgent: String(ctx.req?.headers?.["user-agent"] ?? "") || null,
       });
       if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: result.error });

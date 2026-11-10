@@ -132,3 +132,24 @@ describe("the members-without-card audience", () => {
     expect(validateAudience({ kind: "everyone_ever" }).ok).toBe(false);
   });
 });
+
+describe("{agreement_link}", () => {
+  it("fills in the client's own signing link", () => {
+    const r = renderMassTextBody("Please sign here: {agreement_link}", { agreementLink: "https://x.au/sign/a.b.c" });
+    expect(r).toEqual({ ok: true, body: "Please sign here: https://x.au/sign/a.b.c" });
+  });
+
+  it("refuses rather than send the sentence with no link", () => {
+    expect(renderMassTextBody("Please sign here: {agreement_link}", { agreementLink: "" }).ok).toBe(false);
+  });
+
+  it("the suggested message, with its link, fits in two segments", async () => {
+    const { calculateSmsCost } = await import("@shared/smsSegments");
+    const { SUGGESTED_AGREEMENT_TEXT } = await import("@shared/massTextMerge");
+    const rendered = renderMassTextBody(SUGGESTED_AGREEMENT_TEXT, {
+      agreementLink: "https://staff.barkinbeautiful.com.au/sign/7tq.1abcdef.0123456789ab",
+    });
+    expect(rendered.ok).toBe(true);
+    if (rendered.ok) expect(calculateSmsCost(rendered.body).segments).toBeLessThanOrEqual(2);
+  });
+});

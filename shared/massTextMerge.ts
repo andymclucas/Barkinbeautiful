@@ -20,6 +20,13 @@
  */
 
 export const CARD_LINK_TOKEN = "{card_link}";
+/**
+ * The service agreement, 11/11/2026: a link that opens the agreement for
+ * that one client to sign on their phone (server/agreementLinkToken.ts).
+ * Earns its place for the same reason as the card link — the clients it
+ * is for have no email, so without it they cannot be asked at all.
+ */
+export const AGREEMENT_LINK_TOKEN = "{agreement_link}";
 
 export type MassTextToken = {
   token: string;
@@ -51,6 +58,13 @@ export const MASS_TEXT_TOKENS: readonly MassTextToken[] = [
      */
     estimatedLength: 65,
   },
+  {
+    token: AGREEMENT_LINK_TOKEN,
+    label: "Service agreement signing link",
+    example: "https://staff.barkinbeautiful.com.au/sign/we.1q2w3e.a1b2c3d4e5f6",
+    // Same shape as the card link: host, "/sign/", ~22 characters of token.
+    estimatedLength: 65,
+  },
 ];
 
 /** Which tokens a body actually uses. */
@@ -60,6 +74,10 @@ export function tokensUsed(body: string): string[] {
 
 export function usesCardLink(body: string): boolean {
   return body.includes(CARD_LINK_TOKEN);
+}
+
+export function usesAgreementLink(body: string): boolean {
+  return body.includes(AGREEMENT_LINK_TOKEN);
 }
 
 /**
@@ -94,7 +112,7 @@ export type RenderResult =
 
 export function renderMassTextBody(
   body: string,
-  values: { cardLink?: string | null },
+  values: { cardLink?: string | null; agreementLink?: string | null },
 ): RenderResult {
   let out = body;
   if (body.includes(CARD_LINK_TOKEN)) {
@@ -104,5 +122,21 @@ export function renderMassTextBody(
     }
     out = out.split(CARD_LINK_TOKEN).join(link);
   }
+  if (body.includes(AGREEMENT_LINK_TOKEN)) {
+    const link = values.agreementLink?.trim();
+    if (!link) {
+      return { ok: false, error: "No agreement link could be created for this client" };
+    }
+    out = out.split(AGREEMENT_LINK_TOKEN).join(link);
+  }
   return { ok: true, body: out };
 }
+
+/**
+ * A starting message for the agreement text, for whoever presses send to
+ * edit. Plain ASCII and two segments with the link filled in, which is
+ * asserted by a test. No first name: the token system has none, and
+ * "Hi ," with a blank name is worse than no greeting.
+ */
+export const SUGGESTED_AGREEMENT_TEXT =
+  "Hi from Barkin' Beautiful! Before your dog's next groom, please read and sign our service agreement here: {agreement_link} Thank you!";

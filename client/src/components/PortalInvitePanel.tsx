@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { FileSignature, Loader2, Mail, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { MassTextDialog } from "@/components/MassTextDialog";
+import { SUGGESTED_AGREEMENT_TEXT } from "@shared/massTextMerge";
 
 export const PORTAL_INVITE_TYPED_CONFIRM_THRESHOLD = 25;
 
@@ -43,7 +45,10 @@ export function PortalInvitePanelView({
   resuming,
   onStart,
   onResume,
+  textAction,
 }: {
+  /** The "text the agreement" button; a slot so this view stays server-free. */
+  textAction?: ReactNode;
   preview: PortalInvitePreview | undefined;
   progress: PortalInviteProgress | null | undefined;
   starting: boolean;
@@ -129,6 +134,19 @@ export function PortalInvitePanelView({
           </>
         )}
 
+        {/* The text half (Andy, 11/11/2026: "Just create the email and text
+            workflow"). Clients with no email cannot get this invitation or
+            a portal login, so they are texted a link that opens the
+            agreement on its own. Opens the ordinary Mass Text dialog, with
+            its own count, typed confirmation and SMS balance check. */}
+        <div className="space-y-2 rounded-lg border border-dashed p-3 text-sm">
+          <p className="font-medium">Clients with no email</p>
+          <p className="text-xs text-muted-foreground">
+            They can&rsquo;t get this email or a portal login, so they&rsquo;re texted a link that opens the agreement to sign on their phone.
+          </p>
+          {textAction}
+        </div>
+
         {progress && (
           <div className="space-y-2 rounded-lg border p-3 text-sm" aria-label="Invitation progress">
             <p className="font-medium">
@@ -199,6 +217,14 @@ export function PortalInvitePanel() {
       resuming={resume.isPending}
       onStart={(confirmedCount) => start.mutate({ confirmedCount })}
       onResume={() => campaignId && resume.mutate({ campaignId })}
+      textAction={
+        <MassTextDialog
+          defaultAudience="agreement_unsigned"
+          defaultBody={SUGGESTED_AGREEMENT_TEXT}
+          triggerLabel="Text the agreement to clients with no email"
+          triggerClassName="gap-1.5"
+        />
+      }
     />
   );
 }
