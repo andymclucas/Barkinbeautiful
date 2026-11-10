@@ -23,6 +23,9 @@
 
 import { petAlertText, petAlertTone, type PetAlertInput } from "./petAlert";
 import type { ActionablePetAlertLevel } from "./petAlertStatus";
+import { parsePetCodes } from "./petCodes";
+import { indexPetCodes, type PetCodeEntry } from "./petCodeCatalogue";
+import { warningCodesText } from "./petCodeWarnings";
 
 export type BookingWarningTone = ActionablePetAlertLevel;
 
@@ -38,7 +41,7 @@ export type BookingWarning = {
    * both "DO NOT BOOK" would put those words over something routine, and
    * a stop word that appears over routine things stops being read.
    */
-  kind: "client-blocked" | "pet-alert";
+  kind: "client-blocked" | "pet-alert" | "pet-codes";
   /** Who it is about — the client's name, or the dog's. */
   subject: string;
   text: string;
@@ -46,7 +49,19 @@ export type BookingWarning = {
 
 export type BookingWarningInput = {
   client?: { name?: string | null; status?: string | null } | null;
-  pets?: ReadonlyArray<PetAlertInput & { name?: string | null }> | null;
+  pets?: ReadonlyArray<
+    PetAlertInput & {
+      name?: string | null;
+      /** The dog's codes as stored: "✂5f, SENSITIVE, DOG AGGRESSIVE". */
+      moegoCodeLabels?: string | null;
+    }
+  > | null;
+  /**
+   * The salon's code catalogue, which says which codes are Warnings.
+   * Without it only the built-in floor (bites, aggression, muzzle) is
+   * raised — see shared/petCodeWarnings.ts.
+   */
+  petCodes?: readonly PetCodeEntry[] | null;
 };
 
 /**
@@ -78,19 +93,34 @@ export function bookingWarnings(input: BookingWarningInput): BookingWarning[] {
     });
   }
 
+  const codeIndex = indexPetCodes(input.petCodes ?? []);
+
   for (const pet of input.pets ?? []) {
+    const subject = pet.name?.trim() || "This dog";
     const tone = petAlertTone(pet);
     const text = tone ? petAlertText(pet) : null;
-    if (!tone || !text) continue;
-    // Never truncated: petAlertText returns the whole warning, and the
-    // half of "Bites for face and feet. Do not muzzle" that fits is worse
-    // than useless.
-    (tone === "danger" ? danger : caution).push({
-      tone,
-      kind: "pet-alert",
-      subject: pet.name?.trim() || "This dog",
-      text,
-    });
+    if (tone && text) {
+      // Never truncated: petAlertText returns the whole warning, and the
+      // half of "Bites for face and feet. Do not muzzle" that fits is
+      // worse than useless.
+      (tone === "danger" ? danger : caution).push({ tone, kind: "pet-alert", subject, text });
+    }
+
+    /*
+     * The dog's warning CODES, which are a different record from the
+     * alert above and were never shown here.
+     *
+     * Andy, 10/11/2026: "Make sure that these are all added in the
+     * bright red warning box on both the appt and the workflow
+     * sections." A dog can carry SENSITIVE and DOG AGGRESSIVE as codes
+     * with an alert level of "ok" and no warning text at all — that is
+     * most of them — and the box said nothing.
+     *
+     * Always red: he asked for red, and a code somebody has classed as
+     * a Warning is not a "caution".
+     */
+    const codes = warningCodesText(parsePetCodes(pet.moegoCodeLabels), codeIndex);
+    if (codes) danger.push({ tone: "danger", kind: "pet-codes", subject, text: codes });
   }
 
   // Danger first. The panel is skimmed, and the thing that stops a

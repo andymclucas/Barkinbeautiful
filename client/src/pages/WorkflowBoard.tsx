@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { PetCodeWarningBox } from "@/components/PetCodeWarningBox";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
 import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCascade";
 import { trpc } from "@/lib/trpc";
@@ -183,6 +184,8 @@ export default function WorkflowBoard() {
     readyAt: number | null; completedAt: number | null; scheduledStart: Date | string | number;
     /** Latest grooming note already recorded against this appointment. */
     groomStyleNote?: string | null;
+    /** The dog's codes as stored, for the red Warnings box. */
+    petMoegoCodeLabels?: string | null;
   }>(null);
   const [editingNotes, setEditingNotes] = useState<string>("");
   const [savingNotes, setSavingNotes] = useState(false);
@@ -1196,6 +1199,11 @@ export default function WorkflowBoard() {
                 </div>
               </div>
             )}
+
+            {/* The dog's warning CODES — SENSITIVE, DOG AGGRESSIVE and the
+                rest. A separate record from the alert above, so a dog with
+                an alert level of "ok" used to open to no red box at all. */}
+            <PetCodeWarningBox codes={petPopup.petMoegoCodeLabels} />
 
             {/* Stage + timer */}
             <div className="flex items-center gap-2 flex-wrap">

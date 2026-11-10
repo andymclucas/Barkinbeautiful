@@ -15,10 +15,21 @@ import {
   worstBookingWarningTone,
   type BookingWarningInput,
 } from "@shared/bookingWarnings";
+import { parsePetCodes } from "@shared/petCodes";
+import { usePetCodeIndex } from "@/hooks/usePetCodeIndex";
 
 export function BookingWarnings(props: BookingWarningInput & { className?: string }) {
   const { className, ...input } = props;
-  const warnings = bookingWarnings(input);
+  /*
+   * The catalogue says which of a dog's codes are Warnings. It is asked
+   * for only when a dog here actually carries a code, and the built-in
+   * floor (bites, aggression, muzzle) is raised even before it answers.
+   */
+  const hasCodes = (input.pets ?? []).some(
+    (pet) => parsePetCodes(pet.moegoCodeLabels).length > 0,
+  );
+  const { entries } = usePetCodeIndex(hasCodes);
+  const warnings = bookingWarnings({ ...input, petCodes: input.petCodes ?? entries });
   const tone = worstBookingWarningTone(warnings);
   if (!tone) return null;
 
@@ -63,9 +74,11 @@ export function BookingWarnings(props: BookingWarningInput & { className?: strin
               <span className="font-semibold">
                 {w.kind === "client-blocked"
                   ? "DO NOT BOOK"
-                  : w.tone === "danger"
-                    ? "Danger"
-                    : "Caution"}{" "}
+                  : w.kind === "pet-codes"
+                    ? "Warning"
+                    : w.tone === "danger"
+                      ? "Danger"
+                      : "Caution"}{" "}
                 — {w.subject}:
               </span>{" "}
               {w.text}

@@ -157,7 +157,6 @@ import { getActiveTimeZone } from "@/lib/timezone";
 import { PetCodeChips } from "@/components/PetCodeChips";
 import { parsePetCodes } from "@shared/petCodes";
 import { bookingPetRows } from "@shared/appointmentPets";
-import { biteWarningsIn } from "@shared/petCodeRisk";
 import { EmailInvoiceButton } from "@/components/EmailInvoiceButton";
 // ── Constants ────────────────────────────────────────────────────────────────
 const HOURS = Array.from({ length: 13 }, (_, i) => i + 7); // 7am–7pm (13 rows)
@@ -394,6 +393,9 @@ type Appt = {
   petBreed: string | null;
   /** The dog's shorthand codes, as stored: "✂5f, SENSITIVE". */
   petMoegoCodeLabels: string | null;
+  /** The dog's alert, for the warning panel on the edit dialog. */
+  petAlertLevel?: string | null;
+  petWarnings?: string | null;
   staffName: string | null;
   staffColour: string | null;
   sessionId: string | null;
@@ -749,13 +751,20 @@ function ApptBlock({
                   * codes, so the one thing a bather needs before
                   * reaching into the tub was the first thing dropped.
                   * A small card shows the bite chip and nothing else.
+                  *
+                  * Widened 10/11/2026 from bites to every Warning: "All
+                  * warnings must be noticeable on the appt and the
+                  * workflow in bright red badges." Which codes those are
+                  * is the catalogue's call (Pricing & Services → Pet
+                  * codes), so a small card now shows its red badges and
+                  * drops only the ordinary codes.
                   */}
-                {(() => {
-                  const codes = parsePetCodes(appt.petMoegoCodeLabels);
-                  const shown = density.showCodes ? codes : biteWarningsIn(codes);
-                  if (shown.length === 0) return null;
-                  return <div className="mt-1"><PetCodeChips codes={shown} size="xs" /></div>;
-                })()}
+                <PetCodeChips
+                  codes={appt.petMoegoCodeLabels}
+                  size="xs"
+                  className="mt-1"
+                  warningsOnly={!density.showCodes}
+                />
                 {density.showNextVisit && appt.nextAppointmentDate && (
                   <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: svc.border, opacity: 0.9 }}>
                     Next: {new Date(appt.nextAppointmentDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
@@ -5206,6 +5215,19 @@ export default function Calendar() {
                 and would grow to its content instead of scrolling,
                 pushing the bar off the bottom of the screen. */}
             <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6">
+            {/* The same red panel New Appointment has, on the booking
+                itself: the dog's alert and its warning codes, for every
+                dog on the visit. Above the tabs so it is read whichever
+                tab is open. */}
+            <BookingWarnings
+              pets={[editAppt, ...editSiblings].map((a) => ({
+                name: a.petName,
+                alertLevel: a.petAlertLevel,
+                warnings: a.petWarnings,
+                moegoCodeLabels: a.petMoegoCodeLabels,
+              }))}
+              className="mb-3"
+            />
             <Tabs value={editTab} onValueChange={setEditTab}>
               <TabsList className="w-full">
                 <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>

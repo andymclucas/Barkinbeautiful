@@ -1,8 +1,8 @@
-import { trpc } from "@/lib/trpc";
 import { parsePetCodes } from "@shared/petCodes";
-import { isBiteWarning } from "@shared/petCodeRisk";
-import { colourFor, indexPetCodes, meaningFor, type PetCodeEntry } from "@shared/petCodeCatalogue";
+import { colourFor, meaningFor } from "@shared/petCodeCatalogue";
+import { splitWarningCodes } from "@shared/petCodeWarnings";
 import { readableTextOn } from "@shared/readableTextOn";
+import { usePetCodeIndex } from "@/hooks/usePetCodeIndex";
 
 /**
  * A dog's codes, in the salon's colours, wherever they are shown.
@@ -17,6 +17,15 @@ import { readableTextOn } from "@shared/readableTextOn";
  * One component now, so a colour set in the catalogue shows up
  * everywhere at once and a fourth copy cannot drift.
  *
+ * ## Warnings
+ *
+ * Andy, 10/11/2026: "All warnings must be noticeable on the appt and
+ * the workflow in bright red badges." A code the catalogue classes as a
+ * Warning — or one that is a warning by its own wording, see
+ * shared/petCodeWarnings.ts — is drawn bold, red and FIRST, whatever
+ * colour somebody once gave it. This widens what 04/11/2026 did for
+ * bites alone.
+ *
  * The catalogue query is shared: React Query dedupes it by key, so a
  * board of forty dogs makes one request, not forty.
  */
@@ -24,23 +33,29 @@ export function PetCodeChips({
   codes: raw,
   size = "sm",
   className = "",
+  warningsOnly = false,
 }: {
   /** The stored string, or an already-split list. */
   codes: string | string[] | null | undefined;
   /** "xs" for the board, where the row is three lines tall. */
   size?: "xs" | "sm";
   className?: string;
+  /**
+   * Show the warnings and drop the rest — for a card too small to carry
+   * every code. The warnings are never the thing that gets dropped.
+   */
+  warningsOnly?: boolean;
 }) {
-  const codes = Array.isArray(raw) ? raw : parsePetCodes(raw);
+  const all = Array.isArray(raw) ? raw : parsePetCodes(raw);
   // Hook order is fixed, so the query runs before the early return.
-  const catalogue = trpc.petCodes.list.useQuery(
-    { includeInactive: true },
-    // Codes rarely change and every row on the board asks for them.
-    { staleTime: 5 * 60 * 1000, enabled: codes.length > 0 },
-  );
+  const { index } = usePetCodeIndex(all.length > 0);
+  if (all.length === 0) return null;
+
+  const split = splitWarningCodes(all, index);
+  const warnings = new Set(split.warnings);
+  const codes = warningsOnly ? split.warnings : [...split.warnings, ...split.codes];
   if (codes.length === 0) return null;
 
-  const index = indexPetCodes((catalogue.data ?? []) as PetCodeEntry[]);
   const padding = size === "xs" ? "px-1 py-px text-[9px]" : "px-1.5 py-0.5 text-[10px]";
 
   return (
@@ -51,17 +66,14 @@ export function PetCodeChips({
       {codes.map((code) => {
         const meaning = meaningFor(code, index);
         /*
-         * A bite warning overrides whatever colour the catalogue gives
-         * it, and overrides having no colour at all.
-         *
-         * Andy, 04/11/2026: "Any 'bites' warning need to be bold and
-         * red so it is very noticeable by the groomers & bathers." It
-         * is the one code where being missed means somebody is hurt, so
-         * it does not get to inherit a pastel somebody picked months
-         * ago, and it does not sit in the same grey as a blade number.
+         * A warning overrides whatever colour the catalogue gives it,
+         * and overrides having no colour at all. It is the code where
+         * being missed means somebody is hurt, so it does not get to
+         * inherit a pastel somebody picked months ago, and it does not
+         * sit in the same grey as a blade number.
          */
-        const bites = isBiteWarning(code);
-        const colour = bites ? null : colourFor(code, index);
+        const warning = warnings.has(code);
+        const colour = warning ? null : colourFor(code, index);
         return (
           <span
             key={code}
@@ -69,7 +81,7 @@ export function PetCodeChips({
             // new groomer has not learned yet.
             title={meaning ? `${code} — ${meaning}` : code}
             className={`inline-flex items-center rounded leading-tight ${padding} ${
-              bites
+              warning
                 ? "bg-red-600 font-black uppercase tracking-wide text-white ring-1 ring-red-800"
                 : colour
                   ? "font-semibold"
@@ -78,7 +90,7 @@ export function PetCodeChips({
             // Black or white, whichever actually contrasts. White was
             // once forced on every colour, and white on amber is 2:1.
             style={colour ? { background: colour, color: readableTextOn(colour) } : undefined}
-            data-testid={bites ? "pet-code-chip-bite" : "pet-code-chip"}
+            data-testid={warning ? "pet-code-chip-warning" : "pet-code-chip"}
           >
             {code}
           </span>

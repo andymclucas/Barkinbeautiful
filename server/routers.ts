@@ -1317,6 +1317,11 @@ const calendarRouter = router({
           // The dog's codes, so the appointment dialog can show them
           // alongside the board. Same column the board already reads.
           petMoegoCodeLabels: pets.moegoCodeLabels,
+          // The dog's alert, so the appointment dialog can put it in the
+          // same red box the workflow board shows. Both columns already
+          // exist; the calendar simply never asked for them.
+          petAlertLevel: pets.alertLevel,
+          petWarnings: pets.warnings,
           staffName: staff.name,
           staffColour: staff.colourHex,
         })

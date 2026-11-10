@@ -1149,6 +1149,20 @@
       "when": 1794010300000,
       "tag": "0163_add_on_retail_product",
       "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "5",
+      "when": 1794010400000,
+      "tag": "0164_pet_code_is_warning",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "5",
+      "when": 1794010500000,
+      "tag": "0165_seed_pet_code_warnings",
+      "breakpoints": true
     }
   ]
 }

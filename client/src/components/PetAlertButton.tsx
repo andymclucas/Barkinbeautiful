@@ -2,6 +2,9 @@ import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { petAlertTone, petAlertText, type PetAlertInput } from "@shared/petAlert";
+import { parsePetCodes } from "@shared/petCodes";
+import { describeWarningCode, warningCodesIn } from "@shared/petCodeWarnings";
+import { usePetCodeIndex } from "@/hooks/usePetCodeIndex";
 
 /**
  * The warning flag on a dog's row.
@@ -19,14 +22,34 @@ import { petAlertTone, petAlertText, type PetAlertInput } from "@shared/petAlert
  * a desktop, and the popover opens on tap, because the salon floor reads
  * this board on an iPad where hover does not exist. The full text is shown
  * either way, never truncated.
+ *
+ * `warningCodes` are the dog's warning-class pet codes, already spelled
+ * out ("PITA — Difficult to groom"). Andy, 10/11/2026, asked for them in
+ * the red warning box; a dog carrying any gets a RED flag even when its
+ * alert level is "ok", and the popover lists them above the alert text.
  */
-export function PetAlertButton({ pet, petName }: { pet: PetAlertInput; petName?: string | null }) {
+export function PetAlertButton({
+  pet,
+  petName,
+  warningCodes,
+}: {
+  pet: PetAlertInput;
+  petName?: string | null;
+  warningCodes?: readonly string[] | null;
+}) {
   const [open, setOpen] = useState(false);
-  const tone = petAlertTone(pet);
-  const text = petAlertText(pet);
-  if (!tone || !text) return null;
+  const alertTone = petAlertTone(pet);
+  const alertText = alertTone ? petAlertText(pet) : null;
+  const codes = warningCodes ?? [];
+  const hasAlert = Boolean(alertTone && alertText);
+  if (!hasAlert && codes.length === 0) return null;
 
-  const label = `${tone === "danger" ? "Danger" : "Caution"} on ${petName ?? "this dog"}: ${text}`;
+  const tone = codes.length > 0 ? "danger" : alertTone;
+  const text = [codes.length > 0 ? codes.join(" · ") : null, hasAlert ? alertText : null]
+    .filter(Boolean)
+    .join("\n");
+  const heading = hasAlert ? (alertTone === "danger" ? "Danger" : "Caution") : "Warning";
+  const label = `${codes.length > 0 ? "Warning" : heading} on ${petName ?? "this dog"}: ${text}`;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -50,12 +73,64 @@ export function PetAlertButton({ pet, petName }: { pet: PetAlertInput; petName?:
         className="w-64 p-3 text-xs leading-5"
         onClick={(event) => event.stopPropagation()}
       >
-        <p className={`mb-1 font-bold uppercase tracking-wide ${tone === "danger" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
-          {tone === "danger" ? "Danger" : "Caution"}
-          {petName ? ` · ${petName}` : ""}
-        </p>
-        <p className="whitespace-pre-wrap text-foreground">{text}</p>
+        {codes.length > 0 && (
+          <div className={hasAlert ? "mb-2" : ""} data-testid="pet-alert-warning-codes">
+            <p className="mb-1 font-bold uppercase tracking-wide text-red-600 dark:text-red-400">
+              {codes.length === 1 ? "Warning" : "Warnings"}
+              {petName ? ` · ${petName}` : ""}
+            </p>
+            <ul className="space-y-0.5 font-semibold text-red-700 dark:text-red-300">
+              {codes.map((code) => (
+                <li key={code}>{code}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {hasAlert && (
+          <>
+            <p className={`mb-1 font-bold uppercase tracking-wide ${alertTone === "danger" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
+              {heading}
+              {petName && codes.length === 0 ? ` · ${petName}` : ""}
+            </p>
+            <p className="whitespace-pre-wrap text-foreground">{alertText}</p>
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );
+}
+
+/**
+ * The flag for a row that knows the dog's codes as well as its alert.
+ *
+ * Split in two so the catalogue is only asked for when the dog carries
+ * a code: the board table renders this for EVERY row and is tested with
+ * plain props, so the outer component must not call a tRPC hook.
+ */
+export function PetAlertFlag({
+  pet,
+  petName,
+  codes: raw,
+}: {
+  pet: PetAlertInput;
+  petName?: string | null;
+  codes: string | string[] | null | undefined;
+}) {
+  const codes = Array.isArray(raw) ? raw : parsePetCodes(raw);
+  if (codes.length === 0) return <PetAlertButton pet={pet} petName={petName} />;
+  return <FlagWithCodes pet={pet} petName={petName} codes={codes} />;
+}
+
+function FlagWithCodes({
+  pet,
+  petName,
+  codes,
+}: {
+  pet: PetAlertInput;
+  petName?: string | null;
+  codes: string[];
+}) {
+  const { index } = usePetCodeIndex();
+  const warnings = warningCodesIn(codes, index).map((code) => describeWarningCode(code, index));
+  return <PetAlertButton pet={pet} petName={petName} warningCodes={warnings} />;
 }

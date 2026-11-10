@@ -784,6 +784,12 @@ export const petCodes = mysqlTable("pet_codes", {
   colourHex: varchar("colour_hex", { length: 16 }),
   sortOrder: int("sort_order").default(0).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
+  /**
+   * A Warning rather than a Code: drawn as a bright red badge and put
+   * in the red warning box on the appointment and the workflow board.
+   * Andy, 10/11/2026. See shared/petCodeWarnings.ts for the rule.
+   */
+  isWarning: boolean("is_warning").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (t) => [

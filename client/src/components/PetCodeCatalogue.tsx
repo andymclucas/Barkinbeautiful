@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Plus, Pencil, Trash2, Tag } from "lucide-react";
+import { Plus, Pencil, Trash2, Tag, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { readableTextOn } from "@shared/readableTextOn";
+import { isAlwaysWarningCode } from "@shared/petCodeWarnings";
 import { InlineEmojiPicker } from "@/components/InlineEmojiPicker";
 
 /**
@@ -35,12 +36,14 @@ type CodeRow = {
   colourHex: string | null;
   sortOrder: number;
   isActive: boolean;
+  /** A Warning rather than a Code. Absent until migration 0164. */
+  isWarning?: boolean | null;
   dogsUsing: number;
 };
 
-type FormState = { code: string; description: string; colourHex: string; isActive: boolean };
+type FormState = { code: string; description: string; colourHex: string; isActive: boolean; isWarning: boolean };
 
-const EMPTY: FormState = { code: "", description: "", colourHex: "", isActive: true };
+const EMPTY: FormState = { code: "", description: "", colourHex: "", isActive: true, isWarning: false };
 
 export function PetCodeCatalogue() {
   const utils = trpc.useUtils();
@@ -79,31 +82,21 @@ export function PetCodeCatalogue() {
   const open = (record?: CodeRow) => setEditor({
     record: record ?? null,
     form: record
-      ? { code: record.code, description: record.description ?? "", colourHex: record.colourHex ?? "", isActive: record.isActive }
+      ? { code: record.code, description: record.description ?? "", colourHex: record.colourHex ?? "", isActive: record.isActive, isWarning: Boolean(record.isWarning) }
       : { ...EMPTY },
   });
 
   const renaming = Boolean(editor?.record && editor.form.code.trim() !== editor.record.code);
 
-  return (
-    <div className="space-y-3" data-testid="pet-code-catalogue">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          The badges beside a dog's name. A groomer can still type one that is not on this list —
-          these give it a meaning and a colour everywhere it appears.
-        </p>
-        <Button onClick={() => open()} className="gap-2"><Plus className="h-4 w-4" /> Add code</Button>
-      </div>
+  // A code is a Warning when the catalogue says so, or when its own
+  // wording makes it one (bites, aggression, muzzle) — those cannot be
+  // switched off, see shared/petCodeWarnings.ts.
+  const isWarningRow = (row: CodeRow) => Boolean(row.isWarning) || isAlwaysWarningCode(row.code);
+  const warningRows = rows.filter(isWarningRow);
+  const codeRows = rows.filter((row) => !isWarningRow(row));
+  const alwaysWarning = isAlwaysWarningCode(editor?.form.code ?? "");
 
-      {list.isLoading ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">Loading codes…</p>
-      ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-10 text-center">
-          <Tag className="mx-auto h-7 w-7 text-muted-foreground" />
-          <p className="mt-2 font-semibold">No pet codes yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">Add the shorthand your groomers use, like "✂5f" or "SENSITIVE".</p>
-        </div>
-      ) : (
+  const renderTable = (list: CodeRow[], warning: boolean) => (
         <div className="overflow-x-auto rounded-xl border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -115,12 +108,18 @@ export function PetCodeCatalogue() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {list.map((row) => (
                 <tr key={row.id} className="border-t" data-testid="pet-code-row">
                   <td className="p-3">
                     <span
-                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold ${row.colourHex ? "" : "bg-muted"} ${row.isActive ? "" : "opacity-50"}`}
-                      style={row.colourHex ? { background: row.colourHex, color: readableTextOn(row.colourHex) } : undefined}
+                      className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs ${
+                        warning
+                          ? "bg-red-600 font-black text-white ring-1 ring-red-800"
+                          : `font-bold ${row.colourHex ? "" : "bg-muted"}`
+                      } ${row.isActive ? "" : "opacity-50"}`}
+                      // A Warning is always red — its own colour is ignored
+                      // everywhere, so it is not shown here either.
+                      style={!warning && row.colourHex ? { background: row.colourHex, color: readableTextOn(row.colourHex) } : undefined}
                     >
                       {row.code}
                     </span>
@@ -150,6 +149,62 @@ export function PetCodeCatalogue() {
               ))}
             </tbody>
           </table>
+        </div>
+  );
+
+  return (
+    <div className="space-y-3" data-testid="pet-code-catalogue">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          The badges beside a dog's name. A groomer can still type one that is not on this list —
+          these give it a meaning and a colour everywhere it appears. A <strong>Warning</strong> is
+          shown as a bright red badge, and in the red warning box, on every appointment and on the
+          workflow board.
+        </p>
+        <Button onClick={() => open()} className="gap-2"><Plus className="h-4 w-4" /> Add code</Button>
+      </div>
+
+      {list.isLoading ? (
+        <p className="py-10 text-center text-sm text-muted-foreground">Loading codes…</p>
+      ) : rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-10 text-center">
+          <Tag className="mx-auto h-7 w-7 text-muted-foreground" />
+          <p className="mt-2 font-semibold">No pet codes yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">Add the shorthand your groomers use, like "✂5f" or "SENSITIVE".</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Two lists, because they behave differently. A Warning is
+              drawn as a bright red badge and raised in the red warning
+              box on appointments and the workflow board; a Code is not. */}
+          <section data-testid="pet-code-section-warnings">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-red-700 dark:text-red-400">
+              <AlertTriangle className="h-4 w-4" aria-hidden /> Warnings
+              <span className="font-normal normal-case tracking-normal text-muted-foreground">
+                {warningRows.length} — bright red on every appointment and on the workflow board
+              </span>
+            </h3>
+            {warningRows.length === 0 ? (
+              <p className="mt-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                No warnings yet. Edit a code and switch on "Warning" to move it here.
+              </p>
+            ) : (
+              <div className="mt-2">{renderTable(warningRows, true)}</div>
+            )}
+          </section>
+          <section data-testid="pet-code-section-codes">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-muted-foreground">
+              <Tag className="h-4 w-4" aria-hidden /> Codes
+              <span className="font-normal normal-case tracking-normal">
+                {codeRows.length} — clip, style and handling shorthand
+              </span>
+            </h3>
+            {codeRows.length === 0 ? (
+              <p className="mt-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No codes yet.</p>
+            ) : (
+              <div className="mt-2">{renderTable(codeRows, false)}</div>
+            )}
+          </section>
         </div>
       )}
 
@@ -210,6 +265,22 @@ export function PetCodeCatalogue() {
                   )}
                 </div>
               </div>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50/60 p-3 dark:border-red-900/50 dark:bg-red-950/30">
+                <div>
+                  <p className="text-sm font-medium">Warning</p>
+                  <p className="text-xs text-muted-foreground">
+                    {alwaysWarning
+                      ? "Bites, aggression and muzzle codes are always warnings, and cannot be switched off."
+                      : "Shown as a bright red badge, and in the red warning box, on appointments and the workflow board."}
+                  </p>
+                </div>
+                <Switch
+                  aria-label="Warning"
+                  checked={alwaysWarning || editor.form.isWarning}
+                  disabled={alwaysWarning}
+                  onCheckedChange={(v) => setEditor((c) => c && { ...c, form: { ...c.form, isWarning: v } })}
+                />
+              </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
                   <p className="text-sm font-medium">Offer this code</p>
@@ -233,6 +304,8 @@ export function PetCodeCatalogue() {
                   description: editor.form.description.trim() || null,
                   colourHex: editor.form.colourHex || null,
                   isActive: editor.form.isActive,
+                  // Saved as it is shown: an always-warning code is stored as one.
+                  isWarning: editor.form.isWarning || isAlwaysWarningCode(editor.form.code),
                 };
                 if (editor.record) update.mutate({ id: editor.record.id, ...payload });
                 else create.mutate(payload);
