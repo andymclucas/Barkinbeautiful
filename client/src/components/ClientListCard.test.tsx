@@ -12,14 +12,27 @@ import { ClientListCard, type ClientListCardData } from "./ClientListCard";
  */
 
 const fmt = (v: Date | string) =>
-  new Date(v).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "2-digit", timeZone: "Australia/Brisbane" });
+  new Date(v).toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+    timeZone: "Australia/Brisbane",
+  });
 
-const client = (over: Partial<ClientListCardData> = {}): ClientListCardData => ({
-  id: 1, firstName: "Aaron", lastName: "Harch", phone: "0418280122",
-  email: "aaron@stormwarden.io", status: "active",
+const client = (
+  over: Partial<ClientListCardData> = {}
+): ClientListCardData => ({
+  id: 1,
+  firstName: "Aaron",
+  lastName: "Harch",
+  phone: "0418280122",
+  email: "aaron@stormwarden.io",
+  status: "active",
   pets: [{ id: 10, name: "Luna", breed: "Moodle" }],
-  bookings: 32, firstVisit: "2024-08-01T00:00:00Z",
-  lastVisit: "2026-09-23T00:00:00Z", nextVisit: "2026-10-21T00:00:00Z",
+  bookings: 32,
+  firstVisit: "2024-08-01T00:00:00Z",
+  lastVisit: "2026-09-23T00:00:00Z",
+  nextVisit: "2026-10-21T00:00:00Z",
   ...over,
 });
 
@@ -30,8 +43,8 @@ describe("ClientListCard", () => {
   it("shows the things the table used to hide on a phone", () => {
     show(client());
     expect(screen.getByText("Aaron Harch")).toBeInTheDocument();
-    expect(screen.getByText("Luna")).toBeInTheDocument();      // the dog
-    expect(screen.getByText("Moodle")).toBeInTheDocument();    // its breed
+    expect(screen.getByText("Luna")).toBeInTheDocument(); // the dog
+    expect(screen.getByText("Moodle")).toBeInTheDocument(); // its breed
     expect(screen.getByText("0418280122")).toBeInTheDocument();
     expect(screen.getByText("aaron@stormwarden.io")).toBeInTheDocument();
     expect(screen.getByText("32 bookings")).toBeInTheDocument();
@@ -51,7 +64,16 @@ describe("ClientListCard", () => {
   });
 
   it("leaves out what it does not have, rather than printing blanks", () => {
-    show(client({ phone: null, email: null, lastVisit: null, nextVisit: null, firstVisit: null, bookings: 0 }));
+    show(
+      client({
+        phone: null,
+        email: null,
+        lastVisit: null,
+        nextVisit: null,
+        firstVisit: null,
+        bookings: 0,
+      })
+    );
     expect(screen.queryByText(/^Last /)).toBeNull();
     expect(screen.queryByText(/^Next /)).toBeNull();
     expect(screen.queryByText(/^Since /)).toBeNull();
@@ -67,7 +89,10 @@ describe("ClientListCard", () => {
   it("caps the dogs tighter than the table does", () => {
     // Two, not three: a card is already five lines tall and the phone
     // list has to stay scannable.
-    const pets = Array.from({ length: 5 }, (_, i) => ({ id: i, name: `Dog ${i + 1}` }));
+    const pets = Array.from({ length: 5 }, (_, i) => ({
+      id: i,
+      name: `Dog ${i + 1}`,
+    }));
     show(client({ pets }));
     expect(screen.getByText("Dog 2")).toBeInTheDocument();
     expect(screen.queryByText("Dog 3")).toBeNull();
@@ -82,5 +107,65 @@ describe("ClientListCard", () => {
   it("links to the client record", () => {
     const { container } = show(client({ id: 1162 }));
     expect(container.querySelector('a[href="/clients/1162"]')).not.toBeNull();
+  });
+
+  /*
+   * Andy, 10/11/2026: "Make the columns visible on mobile too." The
+   * table's own columns are invisible below 640px — a phone gets this
+   * card instead — so the three had to be put here by hand, and these
+   * pin that they actually are.
+   */
+  describe("portal, card and membership", () => {
+    it("says when there is no card, which is the one worth acting on", () => {
+      // 10,111 of 10,114 clients on 10/11/2026. Silence would read as
+      // "nothing to see" for the single biggest gap in the salon's data.
+      show(client());
+      expect(screen.getByText("No card")).toBeInTheDocument();
+    });
+
+    it("names the card when there is one", () => {
+      show(
+        client({
+          stripeDefaultPaymentMethodId: "pm_123",
+          stripeCardBrand: "Visa",
+          stripeCardLast4: "4242",
+        })
+      );
+      expect(screen.getByText("Visa ••4242")).toBeInTheDocument();
+    });
+
+    it("says yes to a card Stripe gave no brand for", () => {
+      // A Stripe Link method carries no brand and no last4. Reading those
+      // would report no card for a client who has one.
+      show(client({ stripeDefaultPaymentMethodId: "pm_link" }));
+      expect(screen.getByText("Yes")).toBeInTheDocument();
+    });
+
+    it("separates an unfinished invitation from never having one", () => {
+      show(client({ portalAccountStatus: "setup_pending" }));
+      expect(screen.getByText("Portal invited")).toBeInTheDocument();
+    });
+
+    it("says the portal is set up only when they can sign in", () => {
+      show(client({ portalAccountStatus: "active" }));
+      expect(screen.getByText("Portal yes")).toBeInTheDocument();
+    });
+
+    it("names the membership when there is an active one", () => {
+      show(client({ membership: { label: "Gold VIP Classic", extra: 0 } }));
+      expect(screen.getByText("Gold VIP Classic")).toBeInTheDocument();
+    });
+
+    it("shows no membership chip at all when there is none", () => {
+      // A row of "No" chips would crowd out the dogs, which are what a
+      // phone opens this list for. Only the card's absence is worth a chip.
+      show(client({ membership: null }));
+      expect(screen.queryByText(/membership/i)).toBeNull();
+    });
+
+    it("counts the extras rather than hiding them", () => {
+      show(client({ membership: { label: "Gold VIP Classic", extra: 1 } }));
+      expect(screen.getByText("Gold VIP Classic +1")).toBeInTheDocument();
+    });
   });
 });

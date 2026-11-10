@@ -3,6 +3,7 @@ import { User, Phone, Mail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ClientPetList, type ClientListPet } from "@/components/ClientPetList";
 import { clientSince } from "@shared/clientSince";
+import { describeCard, describePortal, hasCardOnFile } from "@shared/clientListFacts";
 
 /**
  * One client, on a phone.
@@ -30,6 +31,17 @@ export type ClientListCardData = {
   firstVisit?: Date | string | null;
   lastVisit?: Date | string | null;
   nextVisit?: Date | string | null;
+  /* The three facts added to the table on 10/11/2026. Andy, the same
+     day: "Make the columns visible on mobile too." A phone gets a card
+     rather than the table, so they had to be put here by hand — the
+     table's own columns are invisible below sm, and widening them would
+     have been a seven-column table at 375px, which is what this card
+     exists to avoid. */
+  portalAccountStatus?: string | null;
+  stripeDefaultPaymentMethodId?: string | null;
+  stripeCardBrand?: string | null;
+  stripeCardLast4?: string | null;
+  membership?: { label: string; extra: number } | null;
 };
 
 export function ClientListCard({
@@ -78,6 +90,38 @@ export function ClientListCard({
               )}
             </div>
           )}
+
+          {/* Portal, card and membership, as chips.
+              Three more lines of label-and-value would push the dogs and
+              the phone number off a phone screen, and those are what the
+              list is opened for. A chip says the same thing in the width
+              of its own word, and only the two that are worth acting on
+              carry a colour: a membership, and a card that is missing. */}
+          <div className="flex flex-wrap items-center gap-1">
+            {(() => {
+              const portal = describePortal(client.portalAccountStatus);
+              return (
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                  portal === "Yes" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                  : portal === "Invited" ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                  : "bg-muted text-muted-foreground"}`}>
+                  Portal {portal.toLowerCase()}
+                </span>
+              );
+            })()}
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+              hasCardOnFile(client)
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                : "bg-muted text-muted-foreground"}`}>
+              {hasCardOnFile(client) ? describeCard(client) : "No card"}
+            </span>
+            {client.membership && (
+              <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
+                {client.membership.label}
+                {client.membership.extra > 0 ? ` +${client.membership.extra}` : ""}
+              </span>
+            )}
+          </div>
 
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
             <span className="font-medium text-foreground">
