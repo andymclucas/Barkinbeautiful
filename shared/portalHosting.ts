@@ -49,6 +49,9 @@ export const CLIENT_PATH_ROOTS: readonly string[] = [
   // while the dog is on the table, so it belongs on the client host with
   // everything else they are sent.
   "/quote",
+  // The service agreement, texted to clients with no email (11/11/2026).
+  // Segment-matched, so "/signup" (a salon signing up) is unaffected.
+  "/sign",
 ];
 
 /** Staff surface that happens to sit inside a client tree. */

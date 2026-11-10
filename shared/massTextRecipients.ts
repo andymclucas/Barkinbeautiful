@@ -27,6 +27,14 @@ export const MASS_TEXT_AUDIENCES = [
    * and nobody who has already done it.
    */
   { key: "members_without_card", label: "Members with no card on file" },
+  /*
+   * The service agreement, 11/11/2026. Andy: it "needs to go to everyone
+   * that hasn't signed the agreement in Groomigo". The portal invitation
+   * reaches the ones with an email; this reaches the rest by text, with
+   * {agreement_link}. Like the card audience it counts down as people
+   * sign, so re-running it is a reminder to exactly who is left.
+   */
+  { key: "agreement_unsigned", label: "Clients who haven't signed the service agreement" },
 ] as const;
 
 export type MassTextAudienceKey = (typeof MASS_TEXT_AUDIENCES)[number]["key"];
@@ -36,7 +44,9 @@ export type MassTextAudience =
   | { kind: "membership_tier"; tier: string }
   | { kind: "hand_picked"; clientIds: number[] }
   | { kind: "all_active" }
-  | { kind: "members_without_card" };
+  | { kind: "members_without_card" }
+  /** noEmailOnly: leave out anyone the emailed portal invitation can reach. */
+  | { kind: "agreement_unsigned"; noEmailOnly: boolean };
 
 /** Above this, the sender types the number to confirm. */
 export const TYPED_CONFIRM_THRESHOLD = 25;
@@ -92,6 +102,10 @@ export function validateAudience(input: unknown): AudienceValidation {
       return { ok: true, audience: { kind: "all_active" } };
     case "members_without_card":
       return { ok: true, audience: { kind: "members_without_card" } };
+    case "agreement_unsigned":
+      // Defaults to the narrow set: texting somebody who is also being
+      // emailed the same request is two credits and a nag.
+      return { ok: true, audience: { kind: "agreement_unsigned", noEmailOnly: a.noEmailOnly !== false } };
     default:
       return { ok: false, error: "Choose who this goes to." };
   }
@@ -110,6 +124,10 @@ export function describeAudience(audience: MassTextAudience): string {
       return "Every active client";
     case "members_without_card":
       return "Members with no card on file";
+    case "agreement_unsigned":
+      return audience.noEmailOnly
+        ? "Clients who haven't signed the service agreement and have no email"
+        : "Clients who haven't signed the service agreement";
   }
 }
 

@@ -127,3 +127,14 @@ describe("tightened validation", () => {
     }).ok).toBe(true);
   });
 });
+
+describe("agreement_unsigned audience", () => {
+  it("defaults to clients with no email, so nobody is emailed and texted the same request", () => {
+    expect(validateAudience({ kind: "agreement_unsigned" })).toEqual({ ok: true, audience: { kind: "agreement_unsigned", noEmailOnly: true } });
+  });
+  it("can be widened to every unsigned client", () => {
+    const v = validateAudience({ kind: "agreement_unsigned", noEmailOnly: false });
+    expect(v).toEqual({ ok: true, audience: { kind: "agreement_unsigned", noEmailOnly: false } });
+    if (v.ok) expect(describeAudience(v.audience)).toBe("Clients who haven't signed the service agreement");
+  });
+});

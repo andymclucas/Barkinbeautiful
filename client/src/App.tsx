@@ -51,6 +51,7 @@ const MembershipSignup = lazyPage(() => import("./pages/MembershipSignup"));
 const ClientPhotoUpload = lazyPage(() => import("./pages/ClientPhotoUpload"));
 const WaitlistOffer = lazyPage(() => import("./pages/WaitlistOffer"));
 const GroomQuote = lazyPage(() => import("./pages/GroomQuote"));
+const AgreementSign = lazyPage(() => import("./pages/AgreementSign"));
 const WaitlistJoin = lazyPage(() => import("./pages/WaitlistJoin"));
 const Login = lazyPage(() => import("./pages/Login"));
 const SalonSignup = lazyPage(() => import("./pages/SalonSignup"));
@@ -129,6 +130,9 @@ function Router() {
       {/* Where an owner agrees to extra work found mid-groom. Token-only,
           deliberately not behind the portal login: the dog is on the table. */}
       <Route path="/quote/:token" component={GroomQuote} />
+      {/* The service agreement, from a texted link. Token-only, no account:
+          it is for clients with no email, who cannot have a portal login. */}
+      <Route path="/sign/:token" component={AgreementSign} />
       <Route path="/portal" component={ClientPortal} />
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/setup/:token" component={ClientPortalSetup} />

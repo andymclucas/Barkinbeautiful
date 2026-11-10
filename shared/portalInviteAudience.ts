@@ -59,6 +59,11 @@ export function normaliseEmail(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+/** Whether a client has an address an email could actually be sent to. */
+export function hasUsableEmail(c: { email: string | null; portalLoginEmail?: string | null }): boolean {
+  return EMAIL.test(normaliseEmail(c.portalLoginEmail) || normaliseEmail(c.email));
+}
+
 export function selectPortalInviteRecipients(input: {
   candidates: readonly PortalInviteCandidate[];
   unsubscribedEmails: ReadonlySet<string>;
