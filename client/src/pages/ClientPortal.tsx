@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 
 import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
+import { AgreementGate, type GateAgreement } from "@/components/portal/AgreementGate";
 type PortalPet = { id: number; name: string; breed: string | null; species: string; status: string };
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
@@ -27,7 +28,7 @@ type PortalGroomingCard = { id: number; petId: number; petName: string; appointm
 type PortalInvoiceRow = { id: number; invoiceNumber: string | null; total: string | null; status: string | null; paymentMethod: string | null; paidAt: string | Date | null; dueAt: string | Date | null; createdAt: string | Date | null };
 type PortalPaymentRow = { key: string; source: "invoice" | "membership" | "appointment"; amount: number; at: string | Date | number; method: string | null; description: string };
 
-type PortalData = { salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string; invoices: PortalInvoiceRow[]; payments: PortalPaymentRow[] };
+type PortalData = { pendingAgreements?: GateAgreement[]; salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string; invoices: PortalInvoiceRow[]; payments: PortalPaymentRow[] };
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -750,9 +751,28 @@ export default function ClientPortal() {
     onSuccess: () => { toast.success("Appointment cancelled"); setCancelTarget(null); refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const signAgreements = trpc.clientPortal.signMyAgreements.useMutation({ onSuccess: () => refetch() });
 
   if (isLoading) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 p-6"><div className="mx-auto max-w-4xl animate-pulse space-y-5"><div className="h-24 rounded-2xl bg-muted" /><div className="grid gap-4 sm:grid-cols-3">{[1, 2, 3].map(item => <div key={item} className="h-32 rounded-xl bg-muted" />)}</div></div></main>;
   if (error || !data) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 grid place-items-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>{token ? "Portal link unavailable" : "Client sign in required"}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{clientFacingPortalError(error?.message, Boolean(token))}</p>{!token && <Button onClick={() => navigate("/portal/login")}>Go to client sign in</Button>}</CardContent></Card></main>;
+
+  /*
+   * The agreement gate (Andy, 11/11/2026): until the service agreement is
+   * signed, it is the only thing the portal shows. Not in staff preview —
+   * staff are looking at the portal, not signing for the client; the
+   * preview banner says what is outstanding instead.
+   */
+  const pendingAgreements = data.pendingAgreements ?? [];
+  if (!isPreview && pendingAgreements.length > 0) {
+    return <AgreementGate
+      agreements={pendingAgreements}
+      salonName={data.salon.name}
+      firstName={data.client.firstName}
+      submitting={signAgreements.isPending}
+      error={signAgreements.error?.message}
+      onSign={(signedName, documentIds) => signAgreements.mutate({ token: token ?? undefined, signedName, documentIds })}
+    />;
+  }
 
   const upcoming = data.appointments.filter(appointment => new Date(appointment.scheduledStart).getTime() >= Date.now() && !["cancelled", "no_show"].includes(appointment.status));
   const past = data.appointments.filter(appointment => !upcoming.includes(appointment));
@@ -810,6 +830,12 @@ export default function ClientPortal() {
           This is exactly what {data.client.firstName} sees. Nothing here is live for them, their access links are
           untouched, and the actions they would have are hidden.
         </p>
+        {pendingAgreements.length > 0 && (
+          <p className="mt-2 font-medium text-amber-900 dark:text-amber-200">
+            Not yet signed: {pendingAgreements.map((a) => a.title).join(", ")}. {data.client.firstName} will be asked to sign
+            before anything else when they open the portal.
+          </p>
+        )}
       </div>
     )}
 

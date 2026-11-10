@@ -159,6 +159,12 @@ import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } f
 import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
 import { getAppointmentMembershipCoverage } from "./appointmentCoverage";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
+import { loadPendingAgreements, recordPortalSignatures, requestIp } from "./portalAgreements";
+import { PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
+import {
+  PORTAL_INVITE_AUDIENCE_TYPE, portalInviteAudience, portalInviteEmail, portalInviteProgress,
+  runPortalInviteCampaign, isPortalInviteRunning,
+} from "./portalInviteCampaign";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
@@ -12787,6 +12793,14 @@ const emailCampaignsRouter = router({
         .limit(1);
       if (!campaign) throw new Error("Campaign not found");
       if (campaign.status === "sent") throw new Error("Campaign already sent");
+      // "sending" is a send already under way; pressing Send again would
+      // mail the whole audience a second time.
+      if (campaign.status === "sending") throw new Error("Campaign is already sending");
+      // The portal invitation is recorded here but sent by its own runner:
+      // its body is a description with no per-client link.
+      if ((campaign.audienceFilter ?? "").includes(`"${PORTAL_INVITE_AUDIENCE_TYPE}"`)) {
+        throw new Error("Portal invitations are sent from the Portal invitation card, not here");
+      }
 
       // Get unsubscribed emails
       const unsubRows = await db
@@ -14841,7 +14855,11 @@ async function buildClientPortalPayload(db: any, access: {
       .limit(60),
   ]);
 
+  // The agreement gate: the portal page shows these before anything else.
+  const pendingAgreements = await loadPendingAgreements(db, access.tenantId, access.clientId);
+
   return {
+    pendingAgreements,
     salon: { name: access.salonName, phone: access.salonPhone, email: access.salonEmail },
     client: { firstName: access.clientFirstName, lastName: access.clientLastName, email: access.clientEmail, phone: access.clientPhone, address: access.clientAddress ?? null },
     pets: clientPets,
@@ -15264,6 +15282,7 @@ const clientPortalRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const [client] = await db.select({
         id: clients.id,
+        tenantId: clients.tenantId,
         firstName: clients.firstName,
         lastName: clients.lastName,
         portalLoginEmail: clients.portalLoginEmail,
@@ -15320,7 +15339,182 @@ const clientPortalRouter = router({
         client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail },
         salon: { name: client.salonName },
         expiresAt: client.portalSetupExpiresAt,
+        // Step one of setup, before the password (shared/portalAgreements.ts).
+        pendingAgreements: await loadPendingAgreements(db, client.tenantId, client.id),
       };
+    }),
+
+  /**
+   * Sign the service agreement from the setup page, before a password exists.
+   *
+   * The setup token is the client's identity here: it was emailed to them
+   * and nobody else holds it. Signing does not use the token up — they
+   * still need it to choose a password straight after.
+   */
+  signAgreementsAtSetup: publicProcedure
+    .input(z.object({
+      token: z.string().min(32).max(128),
+      documentIds: z.array(z.number().int().positive()).min(1).max(20),
+      signedName: z.string().max(200),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId })
+        .from(clients)
+        .where(and(
+          eq(clients.portalSetupTokenHash, hashClientPortalToken(input.token)),
+          inArray(clients.portalAccountStatus, [...REDEEMABLE_PORTAL_STATUSES]),
+          gt(clients.portalSetupExpiresAt, new Date()),
+        ))
+        .limit(1);
+      if (!client) throw new TRPCError({ code: "UNAUTHORIZED", message: "This setup link is invalid or has expired. Please ask the salon for a new one." });
+      const result = await recordPortalSignatures(db, {
+        tenantId: client.tenantId, clientId: client.id, documentIds: input.documentIds, signedName: input.signedName,
+        ip: requestIp(ctx.req), userAgent: String(ctx.req?.headers?.["user-agent"] ?? "") || null,
+      });
+      if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: result.error });
+      return { signed: result.signed };
+    }),
+
+  /** Sign from inside the portal: an existing account, or an access link. */
+  signMyAgreements: publicProcedure
+    .input(z.object({
+      token: z.string().optional(),
+      documentIds: z.array(z.number().int().positive()).min(1).max(20),
+      signedName: z.string().max(200),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      const result = await recordPortalSignatures(db, {
+        tenantId, clientId, documentIds: input.documentIds, signedName: input.signedName,
+        ip: requestIp(ctx.req), userAgent: String(ctx.req?.headers?.["user-agent"] ?? "") || null,
+      });
+      if (!result.ok) throw new TRPCError({ code: "BAD_REQUEST", message: result.error });
+      return { signed: result.signed };
+    }),
+
+  /**
+   * Who the bulk portal invitation would reach, and why the rest would not.
+   * adminProcedure, like issuing a single setup link.
+   */
+  portalInvitePreview: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1) }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      const audience = await portalInviteAudience(db, tenantId);
+      const [latest] = await db.select({ id: emailCampaigns.id })
+        .from(emailCampaigns)
+        .where(and(eq(emailCampaigns.tenantId, tenantId), eq(emailCampaigns.audienceFilter, JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE }))))
+        .orderBy(desc(emailCampaigns.id))
+        .limit(1);
+      const sample = audience.recipients[0];
+      const exampleEmail = portalInviteEmail({
+        firstName: sample?.firstName ?? "Jane",
+        salonName: "Barkin' Beautiful",
+        salonPhone: null,
+        setupUrl: `${getPortalBaseUrl()}/portal/setup/…`,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        agreementTitles: ["Barkin Beautiful Service Agreement"],
+      });
+      return {
+        count: audience.recipients.length,
+        activeClients: audience.activeClients,
+        skipped: (Object.keys(audience.skipped) as PortalInviteSkipReason[])
+          .filter((k) => audience.skipped[k] > 0)
+          .map((k) => ({ reason: k, label: PORTAL_INVITE_SKIP_LABELS[k], count: audience.skipped[k] })),
+        sample: audience.recipients.slice(0, 5).map((r) => `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email),
+        exampleSubject: exampleEmail.subject,
+        exampleHtml: exampleEmail.html,
+        latestCampaignId: latest?.id ?? null,
+        enabled: process.env.MASS_TEXT_ENABLED === "true",
+      };
+    }),
+
+  /**
+   * Send the invitation to everybody the preview counted.
+   *
+   * Real email to real clients, so: the same environment switch as mass
+   * text (a dev machine pointed at production must never mail the client
+   * list), the count the sender confirmed must still be the count, and
+   * only one invitation campaign may be sending at a time.
+   */
+  startPortalInvite: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1), confirmedCount: z.number().int().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      requireMassTextEnabled();
+      const tenantId = tenantOf(ctx, input);
+      const filter = JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE });
+
+      const [inFlight] = await db.select({ id: emailCampaigns.id })
+        .from(emailCampaigns)
+        .where(and(eq(emailCampaigns.tenantId, tenantId), eq(emailCampaigns.audienceFilter, filter), eq(emailCampaigns.status, "sending")))
+        .limit(1);
+      if (inFlight) {
+        throw new TRPCError({ code: "CONFLICT", message: "An invitation send is already running. Resume or wait for it rather than starting another." });
+      }
+
+      const audience = await portalInviteAudience(db, tenantId);
+      const guard = guardPortalInviteSend({ recipientCount: audience.recipients.length, confirmedCount: input.confirmedCount });
+      if (!guard.ok) throw new TRPCError({ code: "BAD_REQUEST", message: guard.error });
+
+      const [inserted] = await db.insert(emailCampaigns).values({
+        tenantId,
+        name: `Portal invitation + service agreement (${new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })})`,
+        subject: "Set up your client portal",
+        // A description, not a sendable body: each client's email carries
+        // their own setup link, built at send time.
+        bodyHtml: "<p>Per-client portal invitation. Each email carries that client's own setup link; see server/portalInviteCampaign.ts.</p>",
+        audienceFilter: filter,
+        status: "sending",
+        totalRecipients: audience.recipients.length,
+        totalSent: 0,
+        createdBy: ctx.user.id,
+      }).$returningId();
+
+      // Everybody intended, on disk, before the first email goes.
+      for (const r of audience.recipients) {
+        await db.insert(emailCampaignSends).values({ campaignId: inserted.id, clientId: r.clientId, email: r.email, status: "pending" });
+      }
+
+      const { sendEmail } = await import("./email");
+      runPortalInviteCampaign(db, inserted.id, tenantId, sendEmail);
+      return { campaignId: inserted.id, queued: audience.recipients.length };
+    }),
+
+  /** Pick up a send the server restarted in the middle of. */
+  resumePortalInvite: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1), campaignId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      requireMassTextEnabled();
+      const tenantId = tenantOf(ctx, input);
+      const [campaign] = await db.select({ id: emailCampaigns.id, status: emailCampaigns.status, audienceFilter: emailCampaigns.audienceFilter })
+        .from(emailCampaigns)
+        .where(and(eq(emailCampaigns.id, input.campaignId), eq(emailCampaigns.tenantId, tenantId)))
+        .limit(1);
+      if (!campaign || campaign.audienceFilter !== JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE })) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Invitation send not found" });
+      }
+      if (campaign.status !== "sending") throw new TRPCError({ code: "BAD_REQUEST", message: "That send has already finished." });
+      if (isPortalInviteRunning(campaign.id)) return { resumed: false, running: true };
+      const { sendEmail } = await import("./email");
+      return { resumed: runPortalInviteCampaign(db, campaign.id, tenantId, sendEmail), running: true };
+    }),
+
+  portalInviteStatus: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1), campaignId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      return portalInviteProgress(db, input.campaignId, tenantOf(ctx, input));
     }),
 
   completeSetup: publicProcedure

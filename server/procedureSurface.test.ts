@@ -61,6 +61,14 @@ const PUBLIC = [
   "clientPortalRouter.me",
   "clientPortalRouter.rescheduleAppointment",
   "clientPortalRouter.sendChatMessage",
+  // The service agreement, signed by the client themselves before the
+  // portal opens (11/11/2026). AtSetup is identified by the emailed setup
+  // token, MyAgreements by the portal session or access link — the same
+  // identities completeSetup and getMyPortal already trust. Both can only
+  // record a signature on an agreement currently outstanding for that one
+  // client (shared/portalAgreements.ts).
+  "clientPortalRouter.signAgreementsAtSetup",
+  "clientPortalRouter.signMyAgreements",
   "clientPortalRouter.updateMyProfile",
   // An owner answering a quote for extra work found mid-groom, from a
   // texted link. Public on purpose and not behind the portal login: the
@@ -516,7 +524,13 @@ describe("tRPC procedure surface", () => {
     // 412 since 10/11/2026: pets.archive and pets.restore, the "archive
     // dog" button. Opened to every groomer the same day, so both are in
     // OPERATIONAL below.
-    expect(surface).toHaveLength(412);
+    // 418 since 11/11/2026: the portal invitation with the service
+    // agreement first. signAgreementsAtSetup and signMyAgreements are
+    // public (the setup token or portal session is the identity, and
+    // both are in PUBLIC above); portalInvitePreview, startPortalInvite,
+    // resumePortalInvite and portalInviteStatus are adminProcedure, like
+    // issuing a single setup link.
+    expect(surface).toHaveLength(418);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -525,7 +539,7 @@ describe("tRPC procedure surface", () => {
     // 53 since 06/11/2026: groomQuotes getByToken and answerByToken, the
     // owner's end of a mid-groom quote. Unauthenticated by design — the
     // note beside them in PUBLIC says what bounds them.
-    expect(PUBLIC).toHaveLength(52);
+    expect(PUBLIC).toHaveLength(54);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
