@@ -163,6 +163,7 @@ import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
 import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
+import { activeMembership } from "@shared/clientListFacts";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
 import { christmasCountdown, christmasSeason, seasonYearFor } from "@shared/christmasCountdown";
 import { fillDailySeries } from "@shared/dailySeries";
@@ -5564,6 +5565,18 @@ const clientsRouter = router({
       tenantId: z.number().default(1),
       search: z.string().optional(),
       status: z.enum(["active", "inactive", "lapsed", "blocked"]).optional(),
+      /*
+       * The three columns added on 10/11/2026, as filters.
+       *
+       * In the WHERE rather than applied to the page after it loads —
+       * "who still has no card?" over 10,101 clients is a question about
+       * all of them, and filtering the fifty rows that happened to come
+       * back would give a different answer on every page and a total
+       * that did not match what was on screen.
+       */
+      portalSetUp: z.boolean().optional(),
+      cardOnFile: z.boolean().optional(),
+      hasMembership: z.boolean().optional(),
       page: z.number().default(1),
       pageSize: z.number().default(50),
       sortBy: z.enum(["firstName", "lastName", "email", "phone", "status", "createdAt"]).default("firstName"),
@@ -5575,6 +5588,33 @@ const clientsRouter = router({
       const offset = (input.page - 1) * input.pageSize;
       const conditions = [eq(clients.tenantId, tenantOf(ctx, input))];
       if (input.status) conditions.push(eq(clients.status, input.status));
+      /* "active" is the only status that means they can sign in. An
+         unfinished invitation and a revoked account are both NOT set
+         up — see portalIsSetUp, which the column reads too, so the
+         filter and the chip beside it cannot disagree. */
+      if (input.portalSetUp !== undefined) {
+        conditions.push(input.portalSetUp
+          ? eq(clients.portalAccountStatus, "active")
+          : ne(clients.portalAccountStatus, "active"));
+      }
+      /* The payment METHOD, not the brand or the last four: a Stripe
+         Link card carries neither and would read as "no card". */
+      if (input.cardOnFile !== undefined) {
+        conditions.push(input.cardOnFile
+          ? isNotNull(clients.stripeDefaultPaymentMethodId)
+          : isNull(clients.stripeDefaultPaymentMethodId));
+      }
+      /* Andy, 10/11/2026: "Only active memberships." A paused or
+         cancelled one is not a membership now. */
+      if (input.hasMembership !== undefined) {
+        const held = sql`EXISTS (
+          SELECT 1 FROM ${memberships}
+          WHERE ${memberships.clientId} = ${clients.id}
+            AND ${memberships.tenantId} = ${clients.tenantId}
+            AND ${memberships.status} = 'active'
+        )`;
+        conditions.push(input.hasMembership ? held : sql`NOT ${held}`);
+      }
       if (input.search) {
         const term = `%${input.search}%`;
         conditions.push(
@@ -5662,6 +5702,36 @@ const clientsRouter = router({
         visitRows.map((v: any) => [Number(v.clientId), v]),
       );
 
+      /*
+       * The memberships for this PAGE, in one query.
+       *
+       * The same shape as the pets and visits above, and for the same
+       * reason: a query per client over 10,101 of them is what made
+       * getDebtSummary take 64 seconds. Only the rows a membership
+       * column could show are selected, and `activeMembership` decides
+       * which one — so the list and the client record cannot disagree
+       * about who is a member.
+       */
+      const membershipRows = clientIds.length === 0 ? [] : await db.select({
+        clientId: memberships.clientId,
+        name: memberships.name,
+        tier: memberships.tier,
+        status: memberships.status,
+      }).from(memberships)
+        .where(and(
+          eq(memberships.tenantId, tenantOf(ctx, input)),
+          inArray(memberships.clientId, clientIds),
+          eq(memberships.status, "active"),
+        ))
+        .orderBy(asc(memberships.id));
+
+      const membershipsByClient = new Map<number, any[]>();
+      for (const row of membershipRows as any[]) {
+        const list = membershipsByClient.get(Number(row.clientId)) ?? [];
+        list.push(row);
+        membershipsByClient.set(Number(row.clientId), list);
+      }
+
       return {
         clients: rows.map((c: any) => {
           const visits = visitsByClient.get(c.id);
@@ -5672,6 +5742,9 @@ const clientsRouter = router({
             firstVisit: visits?.firstVisit ?? null,
             lastVisit: visits?.lastVisit ?? null,
             nextVisit: visits?.nextVisit ?? null,
+            /* Decided by the shared rule, not by the query, so the chip
+               on this list means the same thing as everywhere else. */
+            membership: activeMembership(membershipsByClient.get(c.id) ?? []),
           };
         }),
         total,

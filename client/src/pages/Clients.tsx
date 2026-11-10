@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { getClientPreviewSide } from "../lib/clientPreviewPosition";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { clientSince, describeClientSince } from "@shared/clientSince";
+import { describeCard, describePortal, hasCardOnFile } from "@shared/clientListFacts";
 import {
   CLIENT_STATUS_COPY, CLIENT_STATUS_BULK_MAX, SETTABLE_CLIENT_STATUSES,
   type SettableClientStatus,
@@ -234,6 +235,20 @@ export default function Clients() {
    * is, so nothing is hidden; it is only no longer the default.
    */
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  /*
+   * Andy, 10/11/2026: "Add more columns to the clients tab... make them
+   * filterable." Three yes/no questions the list could not answer.
+   *
+   * "any" means do not ask, so the default list is unchanged and the
+   * filters cost nothing until somebody uses one. They go to the SERVER
+   * — see clients.list — because "who still has no card?" is a question
+   * about all 10,114 clients, not about the fifty on this page.
+   */
+  type YesNoFilter = "any" | "yes" | "no";
+  const [portalFilter, setPortalFilter] = useState<YesNoFilter>("any");
+  const [cardFilter, setCardFilter] = useState<YesNoFilter>("any");
+  const [membershipFilter, setMembershipFilter] = useState<YesNoFilter>("any");
+  const yesNo = (value: YesNoFilter) => (value === "any" ? undefined : value === "yes");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSizeOption>(50);
   const [sortBy, setSortBy] = useState<SortBy>("firstName");
@@ -274,6 +289,9 @@ export default function Clients() {
   const queryParams = {
     search: debouncedSearch || undefined,
     status: statusFilter !== "all" ? statusFilter : undefined,
+    portalSetUp: yesNo(portalFilter),
+    cardOnFile: yesNo(cardFilter),
+    hasMembership: yesNo(membershipFilter),
     page,
     pageSize,
     sortBy,
@@ -345,7 +363,8 @@ export default function Clients() {
      ticks go with them rather than quietly following you. */
   useEffect(() => {
     clearSelection();
-  }, [page, pageSize, statusFilter, debouncedSearch, sortBy, sortDir, clearSelection]);
+  }, [page, pageSize, statusFilter, portalFilter, cardFilter, membershipFilter,
+      debouncedSearch, sortBy, sortDir, clearSelection]);
 
   // CSV export — fetches all matching rows then triggers download
   const exportQuery = trpc.clients.exportCsv.useQuery(
@@ -529,6 +548,31 @@ export default function Clients() {
             </SelectContent>
           </Select>
 
+          {/* The three columns, as filters. Each asks the SERVER, so the
+              total under the table is the real answer across every
+              client rather than a count of what this page happened to
+              hold. */}
+          {([
+            { value: portalFilter, set: setPortalFilter, all: "Portal: any", yes: "Portal set up", no: "No portal" },
+            { value: cardFilter, set: setCardFilter, all: "Card: any", yes: "Card on file", no: "No card" },
+            { value: membershipFilter, set: setMembershipFilter, all: "Membership: any", yes: "Has membership", no: "No membership" },
+          ] as const).map((filter) => (
+            <Select
+              key={filter.all}
+              value={filter.value}
+              onValueChange={v => { filter.set(v as YesNoFilter); setPage(1); }}
+            >
+              <SelectTrigger className="w-full sm:w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">{filter.all}</SelectItem>
+                <SelectItem value="yes">{filter.yes}</SelectItem>
+                <SelectItem value="no">{filter.no}</SelectItem>
+              </SelectContent>
+            </Select>
+          ))}
+
           {/* CSV export */}
           <Button variant="outline" className="gap-2 flex-shrink-0" onClick={handleExport} disabled={exporting}>
             <Download className="h-4 w-4" />
@@ -666,6 +710,13 @@ export default function Clients() {
                 <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Contact</th>
                 <th className="text-left p-3 font-medium text-muted-foreground hidden xl:table-cell">Bookings</th>
                 <SortTh col="status" label="Status" className="hidden lg:table-cell" />
+                {/* Andy, 10/11/2026: "Add more columns to the clients
+                    tab." All three were already in the database and none
+                    was on a screen, so "who still has no card?" meant
+                    opening clients one at a time. */}
+                <th className="text-left p-3 font-medium text-muted-foreground hidden xl:table-cell">Portal</th>
+                <th className="text-left p-3 font-medium text-muted-foreground hidden xl:table-cell">Card</th>
+                <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">Membership</th>
                 {/* Not sortable, and not a loss: it sorted on createdAt, where
                     10,075 of 10,101 rows share the import date, so the order
                     it produced was arbitrary. */}
@@ -675,12 +726,12 @@ export default function Clients() {
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={canBulkEdit ? 8 : 7} className="text-center py-12 text-muted-foreground">Loading clients…</td>
+                  <td colSpan={canBulkEdit ? 11 : 10} className="text-center py-12 text-muted-foreground">Loading clients…</td>
                 </tr>
               )}
               {!isLoading && data?.clients.length === 0 && (
                 <tr>
-                  <td colSpan={canBulkEdit ? 8 : 7} className="text-center py-12 text-muted-foreground">No clients found.</td>
+                  <td colSpan={canBulkEdit ? 11 : 10} className="text-center py-12 text-muted-foreground">No clients found.</td>
                 </tr>
               )}
               {data?.clients.map(c => (
@@ -763,6 +814,46 @@ export default function Clients() {
                   {/* Status */}
                   <td className="p-3 hidden lg:table-cell">
                     <Badge className={`text-xs ${STATUS_COLOURS[c.status]}`}>{c.status}</Badge>
+                  </td>
+                  {/* Portal. Three answers rather than two: "Invited" is a
+                      client who was sent a link and never finished, which is
+                      the group worth chasing and reads as plain "No"
+                      otherwise. portalIsSetUp is still the yes/no the filter
+                      asks, so the two cannot disagree. */}
+                  <td className="p-3 hidden xl:table-cell">
+                    {(() => {
+                      const portal = describePortal(c.portalAccountStatus);
+                      return (
+                        <span className={`text-xs font-medium ${
+                          portal === "Yes" ? "text-emerald-700 dark:text-emerald-400"
+                          : portal === "Invited" ? "text-amber-700 dark:text-amber-400"
+                          : "text-muted-foreground"}`}>
+                          {portal}
+                        </span>
+                      );
+                    })()}
+                  </td>
+                  {/* Card. Named where Stripe gave a brand, because "Visa
+                      ••4242" is what staff say on the phone. */}
+                  <td className="p-3 hidden xl:table-cell">
+                    <span className={`text-xs font-medium ${
+                      hasCardOnFile(c) ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}`}>
+                      {describeCard(c)}
+                    </span>
+                  </td>
+                  {/* Membership. Active only — Andy, 10/11/2026 — because a
+                      cancelled one shown here gets a dog booked as covered. */}
+                  <td className="p-3 hidden lg:table-cell">
+                    {c.membership ? (
+                      <span className="text-xs font-medium">
+                        {c.membership.label}
+                        {c.membership.extra > 0 && (
+                          <span className="ml-1 text-muted-foreground">+{c.membership.extra} more</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">No</span>
+                    )}
                   </td>
                   {/* Since */}
                   {/* The date they first came in, or nothing. It used to show
