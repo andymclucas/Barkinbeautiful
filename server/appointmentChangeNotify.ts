@@ -94,6 +94,7 @@ const SELECTION = {
   clientFirstName: clients.firstName,
   clientPhone: clients.phone,
   smsOptedOutAt: clients.smsOptedOutAt,
+  cancellationSmsOffAt: clients.cancellationSmsOffAt,
   petName: pets.name,
   /*
    * Read so a dog that has passed away, or a duplicate record retired
@@ -166,6 +167,7 @@ export async function sendCancellationNotice(db: any, appointmentId: number): Pr
       automationEnabled: process.env.SMS_AUTOMATION_ENABLED === "true",
       policyAllows: automatedSmsPermitted("cancellation", process.env),
       cancellationSmsSentAt: null,
+      cancellationSmsOffAt: first.cancellationSmsOffAt,
       clientPhone: first.clientPhone,
       smsOptedOutAt: first.smsOptedOutAt,
       scheduledStart: first.scheduledStart,

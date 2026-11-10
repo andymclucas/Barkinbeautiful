@@ -391,3 +391,13 @@ describe("a same-day move stays silent — Andy's call, 04/11/2026", () => {
     })).toEqual({ send: true });
   });
 });
+
+describe("per-client cancellation switch (client Preferences, 11/11/2026)", () => {
+  it("does not text a client whose cancellation texts are turned off", () => {
+    expect(decideCancellationSms({ ...cancelBase, cancellationSmsOffAt: new Date() }))
+      .toEqual({ send: false, reason: "client_preference" });
+  });
+  it("still texts when the switch is on", () => {
+    expect(decideCancellationSms({ ...cancelBase, cancellationSmsOffAt: null }).send).toBe(true);
+  });
+});

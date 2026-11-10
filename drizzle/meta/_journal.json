@@ -1177,6 +1177,13 @@
       "when": 1794290100000,
       "tag": "0167_pet_archived_at",
       "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "5",
+      "when": 1794380000000,
+      "tag": "0168_client_text_preferences",
+      "breakpoints": true
     }
   ]
 }

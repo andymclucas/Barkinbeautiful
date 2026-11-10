@@ -61,7 +61,7 @@ import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
 import { planMembershipSeries } from "../shared/membershipSeries";
 import { busyForStaff } from "./staffBusy";
 import { addWeeks, gapsBetween, manualInterval, rebookInterval } from "../shared/rebook";
-import { smsOptOutUpdate } from "../shared/smsOptOut";
+import { smsOptOutUpdate, offSwitchUpdate } from "../shared/smsOptOut";
 import { intervalWeeksForTier } from "../shared/membershipPackages";
 import { SERVICE_TYPES } from "../shared/serviceTypes";
 import { getLargeDogCapacityResult, isLargeDogFullGroom } from "../shared/onlineBookingLargeDogCapacity";
@@ -5858,6 +5858,13 @@ const clientsRouter = router({
        * and the SMS opt-out already here.
        */
       status: z.enum(SETTABLE_CLIENT_STATUSES).optional(),
+      /**
+       * Per-client switches from Preferences (Andy, 11/11/2026): true turns
+       * that one automated text OFF for this client. Stored as a timestamp,
+       * like smsOptedOut, by the same rule (shared/smsOptOut.ts).
+       */
+      confirmationSmsOff: z.boolean().optional(),
+      cancellationSmsOff: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -5884,6 +5891,17 @@ const clientsRouter = router({
           requested: input.smsOptedOut,
           current: existing?.at ?? null,
         }));
+      }
+      if (input.confirmationSmsOff !== undefined || input.cancellationSmsOff !== undefined) {
+        const [existing] = await db
+          .select({ confirmation: clients.confirmationSmsOffAt, cancellation: clients.cancellationSmsOffAt })
+          .from(clients)
+          .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, tenantId)))
+          .limit(1);
+        const confirmation = offSwitchUpdate({ requestedOff: input.confirmationSmsOff, current: existing?.confirmation });
+        const cancellation = offSwitchUpdate({ requestedOff: input.cancellationSmsOff, current: existing?.cancellation });
+        if (confirmation !== undefined) updates.confirmationSmsOffAt = confirmation;
+        if (cancellation !== undefined) updates.cancellationSmsOffAt = cancellation;
       }
       /* Scoped to the caller's own salon. This filtered on id alone, so
          an admin of one salon could edit another salon's client by id —

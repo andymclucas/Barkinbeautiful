@@ -27,6 +27,8 @@ export const CLIENT_PUBLIC_COLUMNS = {
   status: clients.status,
   referralSource: clients.referralSource,
   smsOptedOutAt: clients.smsOptedOutAt,
+  confirmationSmsOffAt: clients.confirmationSmsOffAt,
+  cancellationSmsOffAt: clients.cancellationSmsOffAt,
   portalLoginEmail: clients.portalLoginEmail,
   portalAccountStatus: clients.portalAccountStatus,
   portalSetupExpiresAt: clients.portalSetupExpiresAt,

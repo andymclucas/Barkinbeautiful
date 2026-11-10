@@ -1527,6 +1527,37 @@ export default function ClientDetail() {
                   onCheckedChange={next => updateClientDetails.mutate({ clientId, smsOptedOut: !next })}
                 />
               </div>
+              {/* Two narrower switches (Andy, 11/11/2026), after Lauren
+                  cancelled a sick dog and did not want the owner texted
+                  "call us any time to rebook". Each stops ONE automated
+                  text for this client; the switch above still stops them
+                  all, so these read as off and locked while it is off. */}
+              {([
+                { key: "confirmationSmsOff", at: client.confirmationSmsOffAt, title: "Booking confirmation texts", help: "The text sent when a booking is made for them." },
+                { key: "cancellationSmsOff", at: client.cancellationSmsOffAt, title: "Cancellation texts", help: "The text sent when one of their bookings is cancelled." },
+              ] as const).map((item) => (
+                <div key={item.key} className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-medium">{item.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {client.smsOptedOutAt ? "Off while automated texts are off." : item.help}
+                    </p>
+                    {!client.smsOptedOutAt && item.at && (
+                      <p className="text-xs text-muted-foreground">
+                        Turned off {new Date(item.at).toLocaleDateString("en-AU", {
+                          timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric",
+                        })}
+                      </p>
+                    )}
+                  </div>
+                  <Switch
+                    checked={!client.smsOptedOutAt && !item.at}
+                    disabled={updateClientDetails.isPending || Boolean(client.smsOptedOutAt)}
+                    aria-label={item.title}
+                    onCheckedChange={next => updateClientDetails.mutate({ clientId, [item.key]: !next })}
+                  />
+                </div>
+              ))}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setPreferencesOpen(false)}>Done</Button>
