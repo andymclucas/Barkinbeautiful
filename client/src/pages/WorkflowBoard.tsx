@@ -5,6 +5,7 @@ import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCa
 import { trpc } from "@/lib/trpc";
 import { splitDaycare } from "@shared/daycareBoard";
 import { useBuildVersionReload, buildReloadMode } from "@/hooks/useBuildVersionReload";
+import { useBoardFitScale } from "@/hooks/useBoardFitScale";
 import { useTvMode } from "@/lib/tvMode";
 import { DaycareBoardSection } from "@/components/DaycareBoardSection";
 import { useTimezone } from "@/lib/timezone";
@@ -599,6 +600,8 @@ export default function WorkflowBoard() {
   // different product from the board standing next to it. Keeping one copy is
   // what stops that happening again — a column added here appears on the TV.
 
+  const { ref: boardFitRef, scale: boardScale } = useBoardFitScale();
+
   if (tvMode) {
     return (
       <div className="fixed inset-0 bg-muted dark:bg-slate-950 text-foreground dark:text-white overflow-auto z-50">
@@ -663,7 +666,11 @@ export default function WorkflowBoard() {
   // ─── Main Board View ─────────────────────────────────────────────────────────
   return (
     <DashboardLayout>
-      <div className="space-y-3">
+      {/* Scaled as one picture so it looks the same on any screen —
+          see shared/boardFitScale.ts. The outer div is the unscaled
+          measure; the inner one carries the zoom. */}
+      <div ref={boardFitRef}>
+      <div className="space-y-3" style={boardScale < 1 ? { zoom: boardScale } : undefined} data-board-scale={boardScale}>
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
@@ -1016,6 +1023,7 @@ export default function WorkflowBoard() {
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-red-200 dark:bg-red-900/50" /> 60+ min in stage</span>
           <span className="ml-auto text-muted-foreground">Auto-refreshes every 20s</span>
         </div>
+      </div>
       </div>
 
       {/* ── OUT Payment Confirmation ── */}
