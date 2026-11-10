@@ -35,6 +35,13 @@ export type ClientDeletionCounts = {
   invoices: number;
   payments: number;
   memberships: number;
+  /**
+   * Rows in pet_membership_events naming this client or one of their dogs
+   * (as the dog or as its replacement). Membership history, and a real
+   * foreign key: before 11/11/2026 it was not counted, so a client with
+   * it passed the check and the delete then failed half way through.
+   */
+  membershipEvents?: number;
   storeCreditEntries: number;
   packages: number;
   agreements: number;
@@ -61,6 +68,7 @@ const RULES: { key: keyof ClientDeletionCounts; describe: (n: number) => string 
   { key: "payments", describe: (n) => `${plural(n, "payment")} taken` },
   { key: "invoices", describe: (n) => `${plural(n, "invoice")}` },
   { key: "memberships", describe: (n) => `${plural(n, "membership")}` },
+  { key: "membershipEvents", describe: (n) => `${plural(n, "membership history entry", "membership history entries")}` },
   { key: "storeCreditEntries", describe: (n) => `${plural(n, "store credit entry", "store credit entries")}` },
   { key: "appointments", describe: (n) => `${plural(n, "appointment")}` },
   { key: "petsWithHistory", describe: (n) => `${plural(n, "dog")} with grooming history` },
