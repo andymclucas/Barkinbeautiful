@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { parsePetCodes } from "@shared/petCodes";
-import { indexPetCodes, meaningFor, colourFor } from "@shared/petCodeCatalogue";
+import { indexPetCodes, meaningFor, colourFor, badgeTextColour, textColourFor } from "@shared/petCodeCatalogue";
 import { readableTextOn } from "@shared/readableTextOn";
 import { isWarningCode } from "@shared/petCodeWarnings";
 import { usePetCodeIndex } from "@/hooks/usePetCodeIndex";
@@ -49,7 +49,7 @@ export function PetCodePicker({
   // Only the active ones are offered; a retired code still renders on a
   // dog that carries it, it just is not suggested.
   const catalogue = trpc.petCodes.list.useQuery({ includeInactive: false }, { enabled: !readOnly });
-  const offered = indexPetCodes((catalogue.data ?? []) as { code: string; description: string | null; colourHex: string | null }[]);
+  const offered = indexPetCodes((catalogue.data ?? []) as { code: string; description: string | null; colourHex: string | null; textColourHex?: string | null }[]);
   // The chips read the WHOLE catalogue, retired codes included: a
   // read-only record still has to show its warnings red, and a retired
   // Warning is still a warning on the dog that carries it.
@@ -107,7 +107,7 @@ export function PetCodePicker({
             }`}
             // Black or white, whichever actually contrasts — white was
             // forced on every colour, and white on amber is about 2:1.
-            style={colour ? { background: colour, color: readableTextOn(colour) } : undefined}
+            style={colour ? { background: colour, color: badgeTextColour(colour, textColourFor(code, index), readableTextOn) } : undefined}
             data-testid={warning ? "pet-code-chip-warning" : "pet-code-chip"}
           >
             {code}

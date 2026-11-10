@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { readableTextOn } from "@shared/readableTextOn";
+import { badgeTextColour } from "@shared/petCodeCatalogue";
 import { isAlwaysWarningCode } from "@shared/petCodeWarnings";
 import { InlineEmojiPicker } from "@/components/InlineEmojiPicker";
 
@@ -34,6 +35,8 @@ type CodeRow = {
   code: string;
   description: string | null;
   colourHex: string | null;
+  /** Null = automatic text colour. Absent until migration 0169. */
+  textColourHex?: string | null;
   sortOrder: number;
   isActive: boolean;
   /** A Warning rather than a Code. Absent until migration 0164. */
@@ -41,12 +44,12 @@ type CodeRow = {
   dogsUsing: number;
 };
 
-type FormState = { code: string; description: string; colourHex: string; isActive: boolean; isWarning: boolean };
+type FormState = { code: string; description: string; colourHex: string; textColourHex: string; isActive: boolean; isWarning: boolean };
 
 /** The two kinds of entry. One list is shown at a time. */
 type Category = "code" | "warning";
 
-const EMPTY: FormState = { code: "", description: "", colourHex: "", isActive: true, isWarning: false };
+const EMPTY: FormState = { code: "", description: "", colourHex: "", textColourHex: "", isActive: true, isWarning: false };
 
 export function PetCodeCatalogue() {
   const utils = trpc.useUtils();
@@ -96,7 +99,7 @@ export function PetCodeCatalogue() {
   const open = (record?: CodeRow) => setEditor({
     record: record ?? null,
     form: record
-      ? { code: record.code, description: record.description ?? "", colourHex: record.colourHex ?? "", isActive: record.isActive, isWarning: Boolean(record.isWarning) }
+      ? { code: record.code, description: record.description ?? "", colourHex: record.colourHex ?? "", textColourHex: record.textColourHex ?? "", isActive: record.isActive, isWarning: Boolean(record.isWarning) }
       // A new entry starts as whichever list is being looked at.
       : { ...EMPTY, isWarning: category === "warning" },
   });
@@ -134,7 +137,7 @@ export function PetCodeCatalogue() {
                       } ${row.isActive ? "" : "opacity-50"}`}
                       // A Warning is always red — its own colour is ignored
                       // everywhere, so it is not shown here either.
-                      style={!warning && row.colourHex ? { background: row.colourHex, color: readableTextOn(row.colourHex) } : undefined}
+                      style={!warning && row.colourHex ? { background: row.colourHex, color: badgeTextColour(row.colourHex, row.textColourHex, readableTextOn) } : undefined}
                     >
                       {row.code}
                     </span>
@@ -338,12 +341,46 @@ export function PetCodeCatalogue() {
                     onChange={(e) => setEditor((c) => c && { ...c, form: { ...c.form, colourHex: e.target.value } })}
                   />
                   {editor.form.colourHex && (
-                    <Button variant="ghost" size="sm" onClick={() => setEditor((c) => c && { ...c, form: { ...c.form, colourHex: "" } })}>
+                    <Button variant="ghost" size="sm" onClick={() => setEditor((c) => c && { ...c, form: { ...c.form, colourHex: "", textColourHex: "" } })}>
                       Clear
                     </Button>
                   )}
                 </div>
               </div>
+              {/* Text colour (Andy, 11/11/2026: black on red "can't be read
+                  very well"). Only means something on a coloured badge, so
+                  it appears once a badge colour is chosen. Automatic is
+                  black or white, whichever measures higher contrast. */}
+              {editor.form.colourHex && (
+                <div className="space-y-1.5">
+                  <Label>Text colour</Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="color"
+                      aria-label="Text colour"
+                      className="h-9 w-14 p-1"
+                      value={editor.form.textColourHex || badgeTextColour(editor.form.colourHex, null, readableTextOn)}
+                      onChange={(e) => setEditor((c) => c && { ...c, form: { ...c.form, textColourHex: e.target.value } })}
+                    />
+                    <Button type="button" variant={editor.form.textColourHex === "#ffffff" ? "secondary" : "outline"} size="sm"
+                      onClick={() => setEditor((c) => c && { ...c, form: { ...c.form, textColourHex: "#ffffff" } })}>White</Button>
+                    <Button type="button" variant={editor.form.textColourHex === "#111827" ? "secondary" : "outline"} size="sm"
+                      onClick={() => setEditor((c) => c && { ...c, form: { ...c.form, textColourHex: "#111827" } })}>Black</Button>
+                    <Button type="button" variant={editor.form.textColourHex ? "ghost" : "secondary"} size="sm"
+                      onClick={() => setEditor((c) => c && { ...c, form: { ...c.form, textColourHex: "" } })}>Automatic</Button>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                    Preview
+                    <span
+                      data-testid="pet-code-badge-preview"
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold"
+                      style={{ background: editor.form.colourHex, color: badgeTextColour(editor.form.colourHex, editor.form.textColourHex, readableTextOn) }}
+                    >
+                      {editor.form.code.trim() || "Code"}
+                    </span>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
                   <p className="text-sm font-medium">Offer this code</p>
@@ -366,6 +403,8 @@ export function PetCodeCatalogue() {
                   code: editor.form.code.trim(),
                   description: editor.form.description.trim() || null,
                   colourHex: editor.form.colourHex || null,
+                  // No badge colour means no text colour: it would apply to nothing.
+                  textColourHex: editor.form.colourHex && editor.form.textColourHex ? editor.form.textColourHex : null,
                   isActive: editor.form.isActive,
                   // Saved as it is shown: an always-warning code is stored as one.
                   isWarning: editor.form.isWarning || isAlwaysWarningCode(editor.form.code),

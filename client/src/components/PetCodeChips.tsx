@@ -1,5 +1,5 @@
 import { parsePetCodes } from "@shared/petCodes";
-import { colourFor, meaningFor } from "@shared/petCodeCatalogue";
+import { badgeTextColour, colourFor, meaningFor, textColourFor } from "@shared/petCodeCatalogue";
 import { splitWarningCodes } from "@shared/petCodeWarnings";
 import { readableTextOn } from "@shared/readableTextOn";
 import { usePetCodeIndex } from "@/hooks/usePetCodeIndex";
@@ -89,7 +89,7 @@ export function PetCodeChips({
             }`}
             // Black or white, whichever actually contrasts. White was
             // once forced on every colour, and white on amber is 2:1.
-            style={colour ? { background: colour, color: readableTextOn(colour) } : undefined}
+            style={colour ? { background: colour, color: badgeTextColour(colour, textColourFor(code, index), readableTextOn) } : undefined}
             data-testid={warning ? "pet-code-chip-warning" : "pet-code-chip"}
           >
             {code}

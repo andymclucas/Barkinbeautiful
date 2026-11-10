@@ -77,3 +77,20 @@ describe("indexPetCodes", () => {
     expect(indexPetCodes([{ code: "  " }, { code: "A" }]).size).toBe(1);
   });
 });
+
+describe("badge text colour (11/11/2026)", () => {
+  it("uses the salon's choice when it made one", async () => {
+    const { badgeTextColour, textColourFor } = await import("../shared/petCodeCatalogue");
+    const { readableTextOn } = await import("../shared/readableTextOn");
+    const idx = indexPetCodes([{ code: "No cologne", colourHex: "#ff0000", textColourHex: "#ffffff" }]);
+    expect(textColourFor("no cologne", idx)).toBe("#ffffff");
+    expect(badgeTextColour("#ff0000", textColourFor("No cologne", idx), readableTextOn)).toBe("#ffffff");
+  });
+
+  it("falls back to automatic, which picks black on pure red — the case Andy found hard to read", async () => {
+    const { badgeTextColour } = await import("../shared/petCodeCatalogue");
+    const { readableTextOn, DARK_TEXT } = await import("../shared/readableTextOn");
+    expect(badgeTextColour("#ff0000", null, readableTextOn)).toBe(DARK_TEXT);
+    expect(badgeTextColour("#ff0000", "not-a-colour", readableTextOn)).toBe(DARK_TEXT);
+  });
+});

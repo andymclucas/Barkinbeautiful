@@ -1184,6 +1184,13 @@
       "when": 1794380000000,
       "tag": "0168_client_text_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "5",
+      "when": 1794380100000,
+      "tag": "0169_pet_code_text_colour",
+      "breakpoints": true
     }
   ]
 }
