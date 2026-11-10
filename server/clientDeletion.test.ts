@@ -72,3 +72,14 @@ describe("describeDeletionRefusal", () => {
     expect(describeDeletionRefusal("", ["1 invoice"])).toContain("This client");
   });
 });
+
+describe("membership history blocks a delete (11/11/2026)", () => {
+  it("refuses a client whose dog appears in membership history, and says so", () => {
+    const check = checkClientDeletion({ membershipEvents: 2 });
+    expect(check.canDelete).toBe(false);
+    expect(check.blockers).toEqual(["2 membership history entries"]);
+  });
+  it("still allows a clean duplicate", () => {
+    expect(checkClientDeletion({ membershipEvents: 0 }).canDelete).toBe(true);
+  });
+});

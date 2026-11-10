@@ -43,7 +43,7 @@ import {
   emailCampaigns, emailCampaignSends, emailUnsubscribes,
   invoiceAppointments, groomingReports, groomStylePresets, familyGroups, smsLogs, users, petMembershipEvents, membershipPets, staffInvitations, staffAccessEvents, clientPortalAccess, workflowTimingReviewThresholds, clientContacts, pricingServices, membershipPlans, storeCreditTransactions, petWeights, missedCalls, appointmentPayments, messageThreadStars, massTextBatches, massTextRecipientRows, portalThreads, portalMessages,
   appointmentAddOns,
-  clientPackages, agreementSignatures, agreementDocuments, clientNotes,
+  clientPackages, agreementSignatures, agreementDocuments, clientNotes, stripeEvents,
   groomQuotes,
   groomQuoteLines,
 } from "../drizzle/schema";
@@ -5234,9 +5234,11 @@ const clientsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
+      // Scoped to the caller's own salon: by id alone, an owner of one
+      // salon could delete another salon's client.
       const [client] = await db
         .select({ id: clients.id, tenantId: clients.tenantId, firstName: clients.firstName, lastName: clients.lastName })
-        .from(clients).where(eq(clients.id, input.clientId)).limit(1);
+        .from(clients).where(and(eq(clients.id, input.clientId), eq(clients.tenantId, tenantOf(ctx)))).limit(1);
       if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
 
       const one = async (table: any, column: any) => {
@@ -5259,6 +5261,13 @@ const clientsRouter = router({
         invoices: await one(invoices, invoices.clientId),
         payments: await one(appointmentPayments, appointmentPayments.clientId),
         memberships: await one(memberships, memberships.clientId),
+        // A real foreign key on the client AND on the dog (as the dog, or
+        // as its replacement), so every route in counts.
+        membershipEvents: Number((await db.select({ n: sql<number>`COUNT(*)` }).from(petMembershipEvents).where(
+          petIds.length > 0
+            ? or(eq(petMembershipEvents.clientId, client.id), inArray(petMembershipEvents.petId, petIds), inArray(petMembershipEvents.replacementPetId, petIds))
+            : eq(petMembershipEvents.clientId, client.id),
+        ))[0]?.n ?? 0),
         storeCreditEntries: await one(storeCreditTransactions, storeCreditTransactions.clientId),
         packages: await one(clientPackages, clientPackages.clientId),
         agreements: await one(agreementSignatures, agreementSignatures.clientId),
@@ -5281,14 +5290,40 @@ const clientsRouter = router({
        * could have stood on its own has already blocked the delete
        * above, so there is nothing of record left to lose here.
        */
-      await db.delete(clientContacts).where(eq(clientContacts.clientId, client.id));
-      await db.delete(clientNotes).where(eq(clientNotes.clientId, client.id));
-      // The dogs' weighings go with the dogs. There are no real foreign
-      // keys here (see pet_weights in schema.ts), so nothing would stop
-      // these becoming orphans pointing at a deleted pet.
-      if (petIds.length > 0) await db.delete(petWeights).where(inArray(petWeights.petId, petIds));
-      if (petIds.length > 0) await db.delete(pets).where(inArray(pets.id, petIds));
-      await db.delete(clients).where(eq(clients.id, client.id));
+      /*
+       * One transaction. This used to be six separate statements, and on
+       * 11/11/2026 a delete removed the dog and then failed on the client
+       * row (a stripe_events foreign key), leaving an owner with no dog.
+       * Now it all happens or none of it does.
+       *
+       * Every table with a REAL foreign key to clients or pets is handled
+       * here or blocks above (pet_membership_events, appointment_payments).
+       * shared/clientDeletion.ts has the reasoning for what blocks.
+       */
+      await db.transaction(async (tx: any) => {
+        await tx.delete(clientContacts).where(eq(clientContacts.clientId, client.id));
+        await tx.delete(clientNotes).where(eq(clientNotes.clientId, client.id));
+        // Portal access links open this client's portal and nothing else.
+        await tx.delete(clientPortalAccess).where(eq(clientPortalAccess.clientId, client.id));
+        /*
+         * Detached, not deleted: a Stripe webhook that was processed and a
+         * call that came in both happened, and stripe_events is also what
+         * stops a redelivered webhook being processed twice. Saving a card
+         * in the portal writes one of these, which is what failed the
+         * delete on 11/11/2026.
+         */
+        await tx.update(stripeEvents).set({ clientId: null }).where(eq(stripeEvents.clientId, client.id));
+        await tx.update(missedCalls).set({ clientId: null }).where(eq(missedCalls.clientId, client.id));
+        if (petIds.length > 0) {
+          // The dogs' weighings and style notes go with the dogs. These
+          // dogs have never been booked in, or the delete would have
+          // been refused above.
+          await tx.delete(petWeights).where(inArray(petWeights.petId, petIds));
+          await tx.delete(groomStyleNotes).where(inArray(groomStyleNotes.petId, petIds));
+          await tx.delete(pets).where(inArray(pets.id, petIds));
+        }
+        await tx.delete(clients).where(and(eq(clients.id, client.id), eq(clients.tenantId, client.tenantId)));
+      });
 
       return { success: true, name, petsRemoved: petIds.length };
     }),
