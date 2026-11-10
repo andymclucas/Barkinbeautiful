@@ -962,6 +962,38 @@ textarea[data-slot="textarea"],
 }
 
 /*
+ * A tab that is a WARNING is red, not the brand colour.
+ *
+ * Andy, 10/11/2026: "Header needs to be red." The Warnings header on
+ * Pricing & Services → Pet codes carried Tailwind red classes, and the
+ * rules above — keyed on role="tab" — repainted it brand pink the moment
+ * it was selected, and muted its text when it was not. Opt in with
+ * data-tone="warning"; the extra attribute is what outranks them.
+ */
+[role="tab"][data-tone="warning"] {
+  color: #b91c1c;
+}
+.dark [role="tab"][data-tone="warning"] {
+  color: #f87171;
+}
+[role="tab"][data-tone="warning"]:hover:not([aria-selected="true"]):not(:disabled) {
+  background: color-mix(in oklch, #dc2626 12%, transparent);
+  color: #b91c1c;
+}
+.dark [role="tab"][data-tone="warning"]:hover:not([aria-selected="true"]):not(:disabled) {
+  color: #f87171;
+}
+[role="tab"][data-tone="warning"][aria-selected="true"],
+.dark [role="tab"][data-tone="warning"][aria-selected="true"] {
+  background-image: linear-gradient(180deg, #ef4444 0%, #dc2626 60%, #b91c1c 100%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, white 30%, transparent),
+    0 1px 2px color-mix(in oklch, #dc2626 32%, transparent),
+    0 6px 14px -8px color-mix(in oklch, #dc2626 55%, transparent);
+}
+
+/*
  * On a phone, a rail's chips have to look pressable on their own.
  *
  * Andy, 09/11/2026, with a photo of the client record: "Alignment is a
