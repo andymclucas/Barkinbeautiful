@@ -2144,8 +2144,10 @@ export default function ClientDetail() {
                       {/* Andy, 10/11/2026: "Let's make an 'archive dog'
                           button." For a dog that has stopped coming or a
                           duplicate record — so nobody has to record a
-                          death to get it off the booking list. */}
-                      {isAdmin && isPetCurrent(pet.status) && (
+                          death to get it off the booking list. Every
+                          groomer, not just admins: "All groomers should
+                          have access." */}
+                      {isPetCurrent(pet.status) && (
                         <Button
                           type="button"
                           variant="outline"
@@ -2214,7 +2216,7 @@ export default function ClientDetail() {
             <div className="mt-4">
               <ArchivedPetsSection
                 pets={archivedPets}
-                canRestore={isAdmin}
+                canRestore
                 restoringId={restorePet.isPending ? restorePet.variables?.petId ?? null : null}
                 onRestore={(pet) => restorePet.mutate({ petId: pet.id })}
               />
