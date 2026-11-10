@@ -147,4 +147,53 @@ describe("worstBookingWarningTone", () => {
       worstBookingWarningTone([{ tone: "caution", kind: "pet-alert", subject: "Milo", text: "x" }]),
     ).toBe("caution");
   });
+
+  /**
+   * Andy, 10/11/2026: warning-class pet codes "added in the bright red
+   * warning box". They are a separate record from the dog's alert, so a
+   * dog at alert level "ok" used to open a booking with no panel at all.
+   */
+  describe("warning codes", () => {
+    const petCodes = [
+      { code: "SENSITIVE", description: "SENSITIVE", isWarning: true },
+      { code: "PITA", description: "Difficult to groom", isWarning: true },
+      { code: "✂5f", description: "5F blade", isWarning: false },
+    ];
+
+    it("raises a dog's warning codes in red, and leaves its ordinary codes out", () => {
+      expect(
+        bookingWarnings({
+          pets: [{ name: "Bella", alertLevel: "ok", warnings: null, moegoCodeLabels: "✂5f, SENSITIVE, PITA" }],
+          petCodes,
+        }),
+      ).toEqual([
+        { tone: "danger", kind: "pet-codes", subject: "Bella", text: "SENSITIVE · PITA — Difficult to groom" },
+      ]);
+    });
+
+    it("says nothing for a dog whose codes are all ordinary", () => {
+      expect(
+        bookingWarnings({
+          pets: [{ name: "Bella", alertLevel: "ok", warnings: null, moegoCodeLabels: "✂5f" }],
+          petCodes,
+        }),
+      ).toEqual([]);
+    });
+
+    it("raises aggression and bite codes before the catalogue has loaded", () => {
+      const [w] = bookingWarnings({
+        pets: [{ name: "Rex", alertLevel: "ok", warnings: null, moegoCodeLabels: "DOG AGGRESSIVE, ✂5f" }],
+      });
+      expect(w).toEqual({ tone: "danger", kind: "pet-codes", subject: "Rex", text: "DOG AGGRESSIVE" });
+    });
+
+    it("shows both the alert and the codes for a dog that has both", () => {
+      const all = bookingWarnings({
+        pets: [{ name: "Bear", alertLevel: "caution", warnings: "Hates the dryer.", moegoCodeLabels: "SENSITIVE" }],
+        petCodes,
+      });
+      expect(all.map((w) => w.kind).sort()).toEqual(["pet-alert", "pet-codes"]);
+      expect(worstBookingWarningTone(all)).toBe("danger");
+    });
+  });
 });

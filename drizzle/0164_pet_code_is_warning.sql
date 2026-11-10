@@ -1,0 +1,14 @@
+-- Pet codes come in two kinds: Codes and Warnings.
+--
+-- Andy, 10/11/2026: "there are some that should be classed as warnings...
+-- such as SENSITIVE, DOG AGGRESSIVE... sorted under the pet codes to
+-- 'Codes' and 'Warnings' and these behave differently."
+--
+-- A flag on the catalogue row, because which codes are warnings is the
+-- salon's call and the catalogue is where the salon already manages
+-- them. NOT NULL with a default, so every existing row and every insert
+-- from code that predates this column stays valid.
+--
+-- One statement. Must be applied BEFORE the code reaches main: Drizzle
+-- names every schema column in every bare select of pet_codes.
+ALTER TABLE `pet_codes` ADD COLUMN `is_warning` BOOLEAN NOT NULL DEFAULT 0;

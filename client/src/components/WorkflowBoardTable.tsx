@@ -14,7 +14,7 @@ import { DogBoardHoverCard } from "@/components/DogBoardHoverCard";
 import { parsePetCodes } from "@shared/petCodes";
 import { PetCodeChips } from "@/components/PetCodeChips";
 import { joinedContactBadge } from "@shared/appointmentContact";
-import { PetAlertButton } from "@/components/PetAlertButton";
+import { PetAlertFlag } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
 import { Check, CheckCircle2, Clock, FileText, Link2, MessageSquare, Unlink } from "lucide-react";
@@ -682,19 +682,23 @@ export function WorkflowBoardTable({
                               </p>
                             );
                           })()}
-                          <PetAlertButton
+                          {/* The flag also carries the dog's warning CODES, so
+                              a dog with SENSITIVE or DOG AGGRESSIVE and an
+                              alert level of "ok" still gets a red one. */}
+                          <PetAlertFlag
                             pet={{ alertLevel: appt.petAlertLevel, warnings: appt.petWarnings }}
                             petName={appt.petName}
+                            codes={(appt as any).petMoegoCodeLabels}
                           />
                           {(() => {
                             // MoeGo's own tags for this dog, shown exactly as
                             // MoeGo shows them: "✂5f, #7f, No cologne,
                             // SENSITIVE". They mix clip specs, style shorthand
-                            // and genuine safety flags, and are deliberately
-                            // not classified — "PLUCK EARS" and "DONT PLUCK
-                            // EARS" are both real codes, one word apart, so a
-                            // parser deciding what matters would eventually
-                            // get one of them backwards. A human reads them.
+                            // and genuine safety flags. Nothing here GUESSES
+                            // which is which — "PLUCK EARS" and "DONT PLUCK
+                            // EARS" are one word apart — but the catalogue
+                            // records it (Pricing & Services → Pet codes →
+                            // Warnings), and those are drawn red and first.
                             const codes = parsePetCodes(appt.petMoegoCodeLabels);
                             if (codes.length === 0) return null;
                             // Through the shared chips, so a colour set in

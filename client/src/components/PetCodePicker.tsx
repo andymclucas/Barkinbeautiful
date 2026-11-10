@@ -8,6 +8,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { parsePetCodes } from "@shared/petCodes";
 import { indexPetCodes, meaningFor, colourFor } from "@shared/petCodeCatalogue";
 import { readableTextOn } from "@shared/readableTextOn";
+import { isWarningCode } from "@shared/petCodeWarnings";
+import { usePetCodeIndex } from "@/hooks/usePetCodeIndex";
 
 /**
  * The codes on a dog, with the salon's catalogue behind the picker.
@@ -47,7 +49,12 @@ export function PetCodePicker({
   // Only the active ones are offered; a retired code still renders on a
   // dog that carries it, it just is not suggested.
   const catalogue = trpc.petCodes.list.useQuery({ includeInactive: false }, { enabled: !readOnly });
-  const index = indexPetCodes((catalogue.data ?? []) as { code: string; description: string | null; colourHex: string | null }[]);
+  const offered = indexPetCodes((catalogue.data ?? []) as { code: string; description: string | null; colourHex: string | null }[]);
+  // The chips read the WHOLE catalogue, retired codes included: a
+  // read-only record still has to show its warnings red, and a retired
+  // Warning is still a warning on the dog that carries it.
+  const whole = usePetCodeIndex(codes.length > 0).index;
+  const index = whole.size > 0 ? whole : offered;
 
   const save = trpc.pets.updateCodes.useMutation({
     onSuccess: (r) => { setCodes(r.codes); utils.clients.getProfile.invalidate(); },
@@ -84,16 +91,24 @@ export function PetCodePicker({
     <div className="flex flex-wrap items-center gap-1" data-testid="pet-code-picker">
       {codes.map((code) => {
         const meaning = meaningFor(code, index);
-        const colour = colourFor(code, index);
+        // A Warning is red here too, the same badge as the board.
+        const warning = isWarningCode(code, index);
+        const colour = warning ? null : colourFor(code, index);
         return (
           <span
             key={code}
             title={meaning ? `${code} — ${meaning}` : code}
-            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${colour ? "" : "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"}`}
+            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] ${
+              warning
+                ? "bg-red-600 font-black text-white ring-1 ring-red-800"
+                : colour
+                  ? "font-semibold"
+                  : "bg-slate-200 font-semibold text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+            }`}
             // Black or white, whichever actually contrasts — white was
             // forced on every colour, and white on amber is about 2:1.
             style={colour ? { background: colour, color: readableTextOn(colour) } : undefined}
-            data-testid="pet-code-chip"
+            data-testid={warning ? "pet-code-chip-warning" : "pet-code-chip"}
           >
             {code}
             {meaning && <span className="font-normal opacity-75">· {meaning}</span>}

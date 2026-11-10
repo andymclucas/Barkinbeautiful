@@ -18,6 +18,8 @@ export type PetCodeEntry = {
   description?: string | null;
   colourHex?: string | null;
   isActive?: boolean;
+  /** A Warning rather than a Code. See shared/petCodeWarnings.ts. */
+  isWarning?: boolean | null;
 };
 
 /** Case-insensitive, because "sensitive" and "SENSITIVE" are one code. */

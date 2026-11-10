@@ -28,6 +28,8 @@ const codeInput = z.object({
   colourHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "Use a colour like #7c3aed").optional().nullable(),
   sortOrder: z.number().int().min(0).max(9999).optional(),
   isActive: z.boolean().optional(),
+  /** Warning rather than Code: red badge, and listed in the red box. */
+  isWarning: z.boolean().optional(),
 });
 
 /** How many dogs carry this code right now. The text is the join. */
@@ -107,6 +109,7 @@ export const petCodesRouter = router({
         colourHex: input.colourHex ?? null,
         sortOrder: input.sortOrder ?? 0,
         isActive: input.isActive ?? true,
+        isWarning: input.isWarning ?? false,
       });
       return { id: (result as any).insertId as number };
     }),
@@ -156,6 +159,7 @@ export const petCodesRouter = router({
         colourHex: input.colourHex ?? null,
         ...(input.sortOrder === undefined ? {} : { sortOrder: input.sortOrder }),
         ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
+        ...(input.isWarning === undefined ? {} : { isWarning: input.isWarning }),
         updatedAt: new Date(),
       }).where(and(eq(petCodes.id, input.id), eq(petCodes.tenantId, tenantId)));
 
