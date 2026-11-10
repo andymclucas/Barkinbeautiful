@@ -203,6 +203,7 @@ import { searchRouter } from "./routers/search";
 import { parsePetCodes } from "../shared/petCodes";
 import { buildPassingReview, describePassingReview, type PassingReview } from "../shared/petPassingReview";
 import { canDeletePet } from "../shared/petDeletion";
+import { archiveBlocker } from "../shared/petArchive";
 import { combineInvoice, combinedInvoiceNumber, type CombinableAppointment } from "../shared/combinedInvoice";
 import { bookingPricingRouter } from "./routers/bookingPricing";
 import { stripeConnectRouter } from "./routers/stripeConnect";
@@ -5030,7 +5031,7 @@ const clientsRouter = router({
       const gone = await db
         .select({ id: pets.id })
         .from(pets)
-        .where(and(eq(pets.tenantId, tenantId), eq(pets.status, "departed")));
+        .where(and(eq(pets.tenantId, tenantId), inArray(pets.status, ["departed", "archived"])));
 
       // The salon's clock: "how many days late" is a day either side at
       // the band boundaries, and the bands are what staff act on.
@@ -5673,7 +5674,8 @@ const clientsRouter = router({
         clientId: pets.clientId, id: pets.id, name: pets.name,
         breed: pets.breed, status: pets.status,
       }).from(pets)
-        .where(and(eq(pets.tenantId, tenantOf(ctx, input)), inArray(pets.clientId, clientIds)))
+        // Archived dogs are not listed against their owner (petArchive.ts).
+        .where(and(eq(pets.tenantId, tenantOf(ctx, input)), inArray(pets.clientId, clientIds), ne(pets.status, "archived")))
         .orderBy(asc(pets.name));
 
       const visitRows = clientIds.length === 0 ? [] : await db.select({
@@ -6716,7 +6718,10 @@ const petsRouter = router({
         const [client] = await db.select({ tenantId: clients.tenantId }).from(clients).where(eq(clients.id, input.clientId)).limit(1);
         if (!client || client.tenantId !== portalStaff.tenantId) throw new Error("This client is not available to your salon staff profile");
       }
-      return db.select().from(pets).where(eq(pets.clientId, input.clientId));
+      // Archived dogs are left out: this list feeds the booking dialogs,
+      // and an archived dog is one nobody should be offered. See
+      // shared/petArchive.ts. Departed dogs stay, struck through.
+      return db.select().from(pets).where(and(eq(pets.clientId, input.clientId), ne(pets.status, "archived")));
     }),
 
   /**
@@ -7109,6 +7114,82 @@ const petsRouter = router({
       return { checked: false as const, success: true, petName: pet.name, clientId: pet.clientId };
     }),
 
+  /**
+   * Archive a dog: off every booking list, history kept, restorable.
+   *
+   * Andy, 10/11/2026: "Let's make an 'archive dog' button." For a dog that
+   * no longer comes, or a duplicate record — the cases that until now could
+   * only be retired by recording a death. See shared/petArchive.ts.
+   *
+   * `adminProcedure`, like `remove` and `markDeparted` beside it.
+   *
+   * Refused while the dog has upcoming bookings or is on an active
+   * membership, rather than cancelling them: a cancellation can text a
+   * client and ending a plan moves money, and an archive button must do
+   * neither. `check: true` asks without archiving, so the UI can warn first.
+   */
+  archive: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1), petId: z.number(), check: z.boolean().default(false) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const [pet] = await db.select({ id: pets.id, name: pets.name, clientId: pets.clientId, status: pets.status })
+        .from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantId))).limit(1);
+      if (!pet) throw new Error("Pet not found");
+
+      const [upcoming] = await db.select({ n: sql<number>`COUNT(*)` }).from(appointments).where(and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.petId, pet.id),
+        gte(appointments.scheduledStart, new Date()),
+        notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+      ));
+      // Both ways a dog can be on a plan: as the plan's own dog, and as a
+      // covered extra in membership_pets.
+      const held = await db.select({ name: memberships.name }).from(memberships).where(and(
+        eq(memberships.tenantId, tenantId),
+        eq(memberships.petId, pet.id),
+        notInArray(memberships.status, ["cancelled", "expired"]),
+      ));
+      const covered = await db.select({ name: memberships.name }).from(membershipPets)
+        .innerJoin(memberships, eq(memberships.id, membershipPets.membershipId))
+        .where(and(
+          eq(memberships.tenantId, tenantId),
+          eq(membershipPets.petId, pet.id),
+          notInArray(memberships.status, ["cancelled", "expired"]),
+        ));
+      const blocker = archiveBlocker({
+        name: pet.name,
+        status: pet.status,
+        upcomingBookings: Number(upcoming?.n ?? 0),
+        memberships: Array.from(new Set([...held, ...covered].map((m) => m.name))),
+      });
+      if (input.check) return { checked: true as const, petName: pet.name, blocker };
+      if (blocker) throw new TRPCError({ code: "BAD_REQUEST", message: blocker });
+
+      await db.update(pets)
+        .set({ status: "archived", archivedAt: new Date(), archivedByUserId: ctx.user.id })
+        .where(and(eq(pets.id, pet.id), eq(pets.tenantId, tenantId), eq(pets.status, "active")));
+      return { checked: false as const, success: true, petName: pet.name, clientId: pet.clientId };
+    }),
+
+  /** Undo an archive. Only ever moves archived -> active. */
+  restore: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1), petId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const [pet] = await db.select({ id: pets.id, name: pets.name, status: pets.status, clientId: pets.clientId })
+        .from(pets).where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantId))).limit(1);
+      if (!pet) throw new Error("Pet not found");
+      if (pet.status !== "archived") throw new TRPCError({ code: "BAD_REQUEST", message: `${pet.name} is not archived.` });
+      await db.update(pets)
+        .set({ status: "active", archivedAt: null, archivedByUserId: null })
+        .where(and(eq(pets.id, pet.id), eq(pets.tenantId, tenantId), eq(pets.status, "archived")));
+      return { success: true, petName: pet.name, clientId: pet.clientId };
+    }),
+
   setTestFlag: adminProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -7191,7 +7272,8 @@ const petsRouter = router({
             weightKg: departedRow?.weightKg ?? null, weight: departedRow?.weight ?? null,
           },
           survivingPets: household
-            .filter((row) => row.id !== pet.id)
+            // An archived dog is not a surviving pet to move a plan onto.
+            .filter((row) => row.id !== pet.id && row.status !== "archived")
             .map((row) => ({
               id: row.id, name: row.name,
               status: row.status === "departed" ? "departed" as const : "active" as const,
@@ -12232,10 +12314,11 @@ const onlineBookingRouter = router({
       const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...properName(input), phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
-    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName), ne(pets.status, "archived"))).limit(1);
     /* A guest booking reuses the dog already on file when the name
        matches, so naming a departed dog would book it. A new pet is
-       created active and cannot be departed. */
+       created active and cannot be departed. An ARCHIVED namesake is
+       skipped: it is usually the duplicate of the live dog being named. */
     if (existingPet) {
       const guestDeparted = departedBookingMessage([existingPet]);
       if (guestDeparted) throw new Error(guestDeparted);
@@ -12292,10 +12375,11 @@ const onlineBookingRouter = router({
       const [created] = await db.insert(clients).values({ tenantId: tenantOf(ctx, input), ...properName(input), phone: input.phone, email, status: "active" });
       client = { id: (created as any).insertId as number };
     }
-    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName))).limit(1);
+    const [existingPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets).where(and(eq(pets.tenantId, tenantOf(ctx, input)), eq(pets.clientId, client.id), eq(pets.name, input.petName), ne(pets.status, "archived"))).limit(1);
     /* A guest booking reuses the dog already on file when the name
        matches, so naming a departed dog would book it. A new pet is
-       created active and cannot be departed. */
+       created active and cannot be departed. An ARCHIVED namesake is
+       skipped: it is usually the duplicate of the live dog being named. */
     if (existingPet) {
       const guestDeparted = departedBookingMessage([existingPet]);
       if (guestDeparted) throw new Error(guestDeparted);
@@ -14636,7 +14720,9 @@ async function buildClientPortalPayload(db: any, access: {
   const [clientPets, clientAppointments, clientMemberships, clientReports, creditBalanceRow, clientInvoices, clientApptPayments, clientMembershipPayments] = await Promise.all([
     db.select({ id: pets.id, name: pets.name, breed: pets.breed, species: pets.species, status: pets.status })
       .from(pets)
-      .where(and(eq(pets.clientId, access.clientId), eq(pets.tenantId, access.tenantId)))
+      // A client never sees an archived dog — often it is a duplicate
+      // record of a dog they still have (shared/petArchive.ts).
+      .where(and(eq(pets.clientId, access.clientId), eq(pets.tenantId, access.tenantId), ne(pets.status, "archived")))
       .orderBy(asc(pets.name)),
     db.select({
       id: appointments.id,

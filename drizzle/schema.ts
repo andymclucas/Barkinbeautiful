@@ -492,8 +492,16 @@ export const pets = mysqlTable("pets", {
   warnings: text("warnings"),
   weight: decimal("weight", { precision: 5, scale: 2 }),
   familyGroupId: int("family_group_id"),
-  status: mysqlEnum("status", ["active", "departed"]).default("active").notNull(),
+  /**
+   * "archived" since 10/11/2026 (migration 0166): a dog that no longer
+   * comes, or a duplicate record. Hidden from booking and lists, history
+   * kept, restorable. NOT the same as departed, which means passed away.
+   * See shared/petArchive.ts.
+   */
+  status: mysqlEnum("status", ["active", "departed", "archived"]).default("active").notNull(),
   departedAt: timestamp("departed_at"),
+  archivedAt: timestamp("archived_at"),
+  archivedByUserId: int("archived_by_user_id"),
 }, (t) => [index("idx_pets_client").on(t.clientId), index("idx_pets_tenant").on(t.tenantId)]);
 
 // ─── Appointments ─────────────────────────────────────────────────────────────

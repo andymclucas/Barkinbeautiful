@@ -55,6 +55,27 @@ describe("departedBookingMessage", () => {
   });
 });
 
+describe("an archived dog", () => {
+  const archived = { id: 7, name: "Lena", status: "archived" };
+
+  it("cannot be booked, and is not described as passed away", () => {
+    expect(departedPetsIn([alive, archived]).map((p) => p.id)).toEqual([7]);
+    expect(departedBookingMessage([archived]))
+      .toBe("Lena is archived and cannot be booked. Restore it from the client page first.");
+  });
+
+  it("is not a death for the memorial checks", () => {
+    expect(petHasPassedAway(archived)).toBe(false);
+  });
+
+  it("explains both when a selection holds one of each", () => {
+    expect(departedBookingMessage([gone, archived])).toBe(
+      "Tyson has been recorded as passed away and cannot be booked. "
+        + "Lena is archived and cannot be booked. Restore it from the client page first."
+    );
+  });
+});
+
 describe("the form's own wording", () => {
   it("is what Andy asked for, verbatim", () => {
     expect(PET_CANNOT_BE_SELECTED).toBe("This pet cannot be selected");

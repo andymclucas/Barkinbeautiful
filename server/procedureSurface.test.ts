@@ -507,7 +507,10 @@ describe("tRPC procedure surface", () => {
     // delivered (the step before it, which Twilio passes through in a
     // second), so the page read "100 sent, 0 delivered". protectedProcedure
     // like sms.getLogs beside it, so it is not in OPERATIONAL below.
-    expect(surface).toHaveLength(410);
+    // 412 since 10/11/2026: pets.archive and pets.restore, the "archive
+    // dog" button. adminProcedure like pets.remove and pets.markDeparted
+    // beside them, so neither is in OPERATIONAL or PUBLIC.
+    expect(surface).toHaveLength(412);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

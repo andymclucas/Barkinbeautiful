@@ -1163,6 +1163,20 @@
       "when": 1794010500000,
       "tag": "0165_seed_pet_code_warnings",
       "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "5",
+      "when": 1794290000000,
+      "tag": "0166_pet_status_archived",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "5",
+      "when": 1794290100000,
+      "tag": "0167_pet_archived_at",
+      "breakpoints": true
     }
   ]
 }

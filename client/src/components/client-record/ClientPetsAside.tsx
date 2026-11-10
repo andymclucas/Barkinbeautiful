@@ -1,4 +1,5 @@
 import { AlertTriangle, Dog, ShieldAlert, ShieldCheck } from "lucide-react";
+import { isPetCurrent } from "@shared/petArchive";
 import { sizeBandLabel, type DogSizeBand } from "@shared/dogSizeBand";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +30,8 @@ type AsidePet = {
 export function ClientPetsAside({ clientId, pets }: { clientId: number; pets: AsidePet[] }) {
   const { data: paperwork } = trpc.petPaperwork.forClient.useQuery({ clientId });
 
-  const active = pets.filter(pet => pet.status !== "departed");
+  // Current dogs only: neither passed away nor archived (shared/petArchive.ts).
+  const active = pets.filter(pet => isPetCurrent(pet.status));
   if (active.length === 0) {
     return (
       <Card>

@@ -9,7 +9,8 @@ export type ReplacementPetCandidate = {
    * reason this guard could not be left as "a weight or nothing".
    */
   sizeBand?: string | null;
-  status?: "active" | "departed";
+  /** "archived" since 10/11/2026 — never a replacement, see shared/petArchive.ts. */
+  status?: "active" | "departed" | "archived";
 };
 
 /** The first weight actually on file, treating blanks as absent. */
@@ -73,7 +74,7 @@ export function isEligibleMembershipReplacement(
   departedPet: ReplacementPetCandidate,
   replacementPet: ReplacementPetCandidate,
 ) {
-  if (departedPet.id === replacementPet.id || replacementPet.status === "departed") return false;
+  if (departedPet.id === replacementPet.id || replacementPet.status === "departed" || replacementPet.status === "archived") return false;
   const departedBand = getReplacementWeightBand(departedPet);
   const replacementBand = getReplacementWeightBand(replacementPet);
   return Boolean(departedBand && replacementBand && departedBand.id === replacementBand.id);
