@@ -1,0 +1,17 @@
+{
+  "id": "/portal",
+  "name": "Barkin' Beautiful",
+  "short_name": "Barkin' Beautiful",
+  "description": "Your dogs' grooming appointments, photos and bills at Barkin' Beautiful.",
+  "start_url": "/portal/login",
+  "scope": "/portal",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#d61572",
+  "icons": [
+    { "src": "/portal-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/portal-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/portal-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

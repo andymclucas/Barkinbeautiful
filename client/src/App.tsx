@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Redirect, Route, Switch } from "wouter";
 import { Suspense } from "react";
 import { lazyPage } from "@/lib/lazyPage";
+import { usePortalManifest } from "@/hooks/usePortalManifest";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 
@@ -80,6 +81,11 @@ function OnlineBookingPublic() {
 }
 
 function Router() {
+  /* Which app a phone saves on "Add to Home Screen". A client on their
+     own portal must not be handed the staff app's icon and sign-in —
+     see usePortalManifest. Here rather than in App, because this is the
+     component that re-renders on every route change. */
+  usePortalManifest();
   return (
     <Switch>
       {/* Admin routes */}
