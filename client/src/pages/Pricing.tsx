@@ -211,7 +211,7 @@ export default function Pricing() {
             <TabsTrigger value="services">Services <span className="ml-1 text-xs text-muted-foreground">{services.length}</span></TabsTrigger>
             <TabsTrigger value="add-ons">Add-ons <span className="ml-1 text-xs text-muted-foreground">{addOns.length}</span></TabsTrigger>
             <TabsTrigger value="memberships">Memberships <span className="ml-1 text-xs text-muted-foreground">{planRows.length}</span></TabsTrigger>
-            <TabsTrigger value="pet-codes">Pet codes</TabsTrigger>
+            <TabsTrigger value="pet-codes">Pet Codes/Warnings</TabsTrigger>
             {/* Andy, 05/11/2026: "create another section under pricing
                 and services for 'retail'". */}
             <TabsTrigger value="retail">Retail</TabsTrigger>

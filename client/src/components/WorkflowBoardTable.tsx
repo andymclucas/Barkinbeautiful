@@ -697,7 +697,7 @@ export function WorkflowBoardTable({
                             // and genuine safety flags. Nothing here GUESSES
                             // which is which — "PLUCK EARS" and "DONT PLUCK
                             // EARS" are one word apart — but the catalogue
-                            // records it (Pricing & Services → Pet codes →
+                            // records it (Pricing & Services → Pet Codes/Warnings →
                             // Warnings), and those are drawn red and first.
                             const codes = parsePetCodes(appt.petMoegoCodeLabels);
                             if (codes.length === 0) return null;
