@@ -892,19 +892,26 @@ export default function ClientDetail() {
         {/* Back button */}
         {/* flex-wrap: without it the right-hand group runs off the
             screen on a phone and "Quick actions" is half cut off, which
-            is what Andy sent a photo of on 04/11/2026. */}
+            is what Andy sent a photo of on 04/11/2026.
+
+            The INNER group needed it too. Andy, 10/11/2026: "book appt
+            button is off screen" — the outer row wrapped the group onto
+            its own line, and the group itself then ran three buttons
+            wide past the edge. On a phone the group takes the full
+            width, the two secondary buttons share a row, and Book
+            Appointment gets a row of its own. */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Link href="/clients">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <ArrowLeft className="h-4 w-4" /> Back to Clients
             </Button>
           </Link>
-          <div className="flex items-center gap-2">
-            {isAdmin && <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setPortalLink(null); setPortalSetupLink(null); setPortalRevokeConfirm(false); setPortalAccountRevokeConfirm(false); setPortalLinkOpen(true); }}><ShieldCheck className="h-4 w-4" /> Client portal</Button>}
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            {isAdmin && <Button variant="outline" size="sm" className="flex-1 gap-1.5 sm:flex-none" onClick={() => { setPortalLink(null); setPortalSetupLink(null); setPortalRevokeConfirm(false); setPortalAccountRevokeConfirm(false); setPortalLinkOpen(true); }}><ShieldCheck className="h-4 w-4" /> Client portal</Button>}
             {isAdmin && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1.5"><ClipboardList className="h-4 w-4" /> Quick actions <ChevronDown className="h-3.5 w-3.5" /></Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1.5 sm:flex-none"><ClipboardList className="h-4 w-4" /> Quick actions <ChevronDown className="h-3.5 w-3.5" /></Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
                   <DropdownMenuLabel>Pet & membership management</DropdownMenuLabel>
@@ -946,7 +953,7 @@ export default function ClientDetail() {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Button size="sm" className="gap-1.5" disabled={activePets.length === 0} onClick={() => { setBookPetId(activePets[0] ? String(activePets[0].id) : ""); setBookFamilyPetIds([]); setBookOpen(true); }}>
+            <Button size="sm" className="w-full gap-1.5 sm:w-auto" disabled={activePets.length === 0} onClick={() => { setBookPetId(activePets[0] ? String(activePets[0].id) : ""); setBookFamilyPetIds([]); setBookOpen(true); }}>
               <Plus className="h-4 w-4" /> Book Appointment
             </Button>
           </div>
@@ -1146,8 +1153,12 @@ export default function ClientDetail() {
                   <MessageSquare className="h-3.5 w-3.5 mr-1.5" /> Send SMS
                 </Button>
                 )}
+                {/* outline, like Send SMS beside it. As ghost buttons these
+                    two had invisible padding, so when the row wrapped on a
+                    phone "Preferences" started a line indented from the
+                    button above it. */}
                 <Button
-                  variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground"
+                  variant="outline" size="sm"
                   onClick={() => {
                     setEditDetailsForm({
                       email: client.email ?? "",
@@ -1174,7 +1185,7 @@ export default function ClientDetail() {
                     it is a standing instruction from them, and it now has
                     a door of its own. */}
                 <Button
-                  variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground"
+                  variant="outline" size="sm"
                   onClick={() => setPreferencesOpen(true)}
                 >
                   <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" /> Preferences
@@ -1244,8 +1255,12 @@ export default function ClientDetail() {
               * hold its width and squeeze the name column until the
               * name overflowed; text-right then left "Delete client"
               * floating against the edge.
+              *
+              * pl-[84px] on a phone is the avatar (64px) plus the gap
+              * (20px): without it this sat under the avatar, on a
+              * different edge from every other line of the card.
               */}
-            <div className="w-full text-left sm:w-auto sm:text-right text-sm text-muted-foreground sm:flex-shrink-0">
+            <div className="w-full pl-[84px] text-left sm:w-auto sm:pl-0 sm:text-right text-sm text-muted-foreground sm:flex-shrink-0">
               <p className="text-xs">Client since</p>
               <p className="font-medium text-foreground">
                 {new Date(client.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), month: "short", year: "numeric" })}
@@ -1262,7 +1277,7 @@ export default function ClientDetail() {
             <>
               <Separator className="my-4" />
               <button
-                className="text-sm text-muted-foreground/70 hover:text-muted-foreground italic underline decoration-dotted underline-offset-2"
+                className="text-left text-sm text-muted-foreground/70 hover:text-muted-foreground italic underline decoration-dotted underline-offset-2"
                 onClick={() => {
                   setEditDetailsForm({
                     email: client.email ?? "",
