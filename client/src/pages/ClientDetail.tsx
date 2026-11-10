@@ -85,7 +85,9 @@ import { Link2, Link2Off, Search, LayoutDashboard, Star, FileSignature, PackageO
 import { Link } from "wouter";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { HeartCrack, History, Replace, Unlink } from "lucide-react";
+import { Archive, HeartCrack, History, Replace, Unlink } from "lucide-react";
+import { isPetArchived, isPetCurrent } from "@shared/petArchive";
+import { ArchivedPetsSection } from "@/components/client-record/ArchivedPetsSection";
 import { getDepartedMembershipBillingImpact, getReplacementWeightBand, isEligibleMembershipReplacement, replacementEligibilityMessage } from "@shared/departedPetMembership";
 import { resolveAppointmentMembershipCoverage } from "@shared/appointmentMembershipCoverage";
 import { getActiveTimeZone } from "@/lib/timezone";
@@ -511,6 +513,36 @@ export default function ClientDetail() {
     },
     onError: (error) => toast.error(error.message),
   });
+  /*
+   * Archive a dog (shared/petArchive.ts). Opening the dialog asks the
+   * server first (`check: true`) so a dog with bookings or a membership
+   * says why before anyone presses the button. `blocker` is undefined
+   * while that answer is on its way.
+   */
+  const [archiveTarget, setArchiveTarget] = useState<{ id: number; name: string; blocker?: string | null } | null>(null);
+  const archivePet = trpc.pets.archive.useMutation({
+    onSuccess: async (result) => {
+      if (result.checked) {
+        setArchiveTarget(current => current ? { ...current, blocker: result.blocker } : current);
+        return;
+      }
+      await utils.clients.getProfile.invalidate({ clientId });
+      setArchiveTarget(null);
+      toast.success(`${result.petName} has been archived`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const openArchive = (pet: { id: number; name: string }) => {
+    setArchiveTarget({ id: pet.id, name: pet.name });
+    archivePet.mutate({ petId: pet.id, check: true });
+  };
+  const restorePet = trpc.pets.restore.useMutation({
+    onSuccess: async (result) => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      toast.success(`${result.petName} has been restored`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const manageDepartedPetMembership = trpc.memberships.manageDepartedPet.useMutation({
     onSuccess: async (result) => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -774,7 +806,10 @@ export default function ClientDetail() {
   const clientHasCardOnFile = canChargeOffSession(client);
   const additionalContacts = data.contacts ?? [];
   const petMembershipEvents = data.petMembershipEvents ?? [];
-  const activePets = pets.filter(pet => pet.status !== "departed");
+  const activePets = pets.filter(pet => isPetCurrent(pet.status));
+  // Archived dogs leave the card grid for the folded section below it.
+  const cardPets = pets.filter(pet => !isPetArchived(pet.status));
+  const archivedPets = pets.filter(pet => isPetArchived(pet.status));
   const selectedBookingPet = activePets.find(pet => String(pet.id) === bookPetId);
   const bookingFamilyCompanions = selectedBookingPet?.familyGroupId
     ? activePets.filter(pet => pet.familyGroupId === selectedBookingPet.familyGroupId && pet.id !== selectedBookingPet.id)
@@ -949,7 +984,7 @@ export default function ClientDetail() {
                       Manage {membership.name} for {pet.name}
                     </DropdownMenuItem>
                   ))}
-                  {pets.some(pet => pet.status !== "departed") && <><DropdownMenuSeparator /><DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Record a passing from the relevant pet card below.</DropdownMenuLabel></>}
+                  {pets.some(pet => isPetCurrent(pet.status)) && <><DropdownMenuSeparator /><DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Record a passing from the relevant pet card below.</DropdownMenuLabel></>}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -1595,7 +1630,7 @@ export default function ClientDetail() {
           <TabsList className="tabs-rail grid h-auto w-full grid-cols-1 gap-1.5 min-[360px]:grid-cols-2 lg:grid-cols-5 2xl:grid-cols-10">
             {[
               { value: "overview", label: "Overview", icon: LayoutDashboard },
-              { value: "pets", label: `Pets (${pets.length})`, icon: Dog },
+              { value: "pets", label: `Pets (${cardPets.length})`, icon: Dog },
               { value: "appointments", label: `Bookings (${appointments.length})`, icon: CalendarDays },
               { value: "memberships", label: `Memberships (${memberships.length})`, icon: Award },
               { value: "payments", label: `Payments (${payments.length})`, icon: CreditCard },
@@ -1742,8 +1777,8 @@ export default function ClientDetail() {
               </Button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pets.length === 0 && <p className="text-muted-foreground text-sm col-span-3">No pets on file.</p>}
-              {pets.map(pet => {
+              {cardPets.length === 0 && <p className="text-muted-foreground text-sm col-span-3">No pets on file.</p>}
+              {cardPets.map(pet => {
                 const pMemberships = petMemberships[pet.id] ?? [];
                 const activePetMembership = pMemberships.find(m => m.status === "active");
                 return (
@@ -2106,6 +2141,21 @@ export default function ClientDetail() {
                           <HeartCrack className="mr-1.5 h-3.5 w-3.5" /> Record passing
                         </Button>
                       )}
+                      {/* Andy, 10/11/2026: "Let's make an 'archive dog'
+                          button." For a dog that has stopped coming or a
+                          duplicate record — so nobody has to record a
+                          death to get it off the booking list. */}
+                      {isAdmin && isPetCurrent(pet.status) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 h-8 w-full text-muted-foreground"
+                          onClick={() => openArchive({ id: pet.id, name: pet.name })}
+                        >
+                          <Archive className="mr-1.5 h-3.5 w-3.5" /> Archive dog
+                        </Button>
+                      )}
                       {/* Family Link section */}
                       <div className="mt-2 pt-2 border-t">
                         {familyLinkPetId === pet.id ? (
@@ -2160,6 +2210,14 @@ export default function ClientDetail() {
                   </Card>
                 );
               })}
+            </div>
+            <div className="mt-4">
+              <ArchivedPetsSection
+                pets={archivedPets}
+                canRestore={isAdmin}
+                restoringId={restorePet.isPending ? restorePet.variables?.petId ?? null : null}
+                onRestore={(pet) => restorePet.mutate({ petId: pet.id })}
+              />
             </div>
             {petMembershipEvents.length > 0 && (
               <div className="mt-4 rounded-xl border bg-muted/20 p-4">
@@ -2372,7 +2430,7 @@ export default function ClientDetail() {
                 </p>
                 <AddMembershipButton
                   clientId={clientId}
-                  pets={pets.map(p => ({ id: p.id, name: p.name, breed: p.breed }))}
+                  pets={cardPets.map(p => ({ id: p.id, name: p.name, breed: p.breed }))}
                   onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
                 />
               </div>
@@ -2708,6 +2766,31 @@ export default function ClientDetail() {
             <Button variant="outline" onClick={() => setBookOpen(false)}>Cancel</Button>
             <Button onClick={handleBook} disabled={createAppt.isPending}>
               {createAppt.isPending ? "Booking..." : "Book Appointment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(archiveTarget)} onOpenChange={(open) => { if (!open && !archivePet.isPending) setArchiveTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Archive className="h-5 w-5" /> Archive {archiveTarget?.name}?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1 text-sm">
+            <p>For a dog that no longer comes, or a duplicate record. <strong>{archiveTarget?.name}</strong> will be hidden from bookings, the clients list and the client portal. Past bookings, notes, photos and payments all stay.</p>
+            <p className="text-muted-foreground">It does not record a passing, and it can be restored any time from <strong>Archived dogs</strong> under the pet cards.</p>
+            {archiveTarget?.blocker === undefined && <p className="text-muted-foreground">Checking for bookings and memberships…</p>}
+            {archiveTarget?.blocker && (
+              <p role="alert" className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-900 dark:text-amber-200">{archiveTarget.blocker}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={archivePet.isPending && archiveTarget?.blocker !== undefined} onClick={() => setArchiveTarget(null)}>Cancel</Button>
+            <Button
+              disabled={!archiveTarget || archiveTarget.blocker !== null || archivePet.isPending}
+              onClick={() => archiveTarget && archivePet.mutate({ petId: archiveTarget.id })}
+            >
+              {archivePet.isPending && archiveTarget?.blocker === null ? "Archiving…" : "Archive dog"}
             </Button>
           </DialogFooter>
         </DialogContent>
