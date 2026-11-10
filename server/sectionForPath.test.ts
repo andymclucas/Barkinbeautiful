@@ -103,3 +103,10 @@ describe("sectionForPath", () => {
     for (const p of UNGATED_PATHS) expect(p).toContain(".");
   });
 });
+
+describe("counter sale is never gated by a section (11/11/2026)", () => {
+  it("lets a bather, who holds only appointments and workflow, take the money", () => {
+    expect(sectionForPath("counterSale.sell")).toBeNull();
+    expect(sectionForPath("counterSale.voidSale")).toBeNull();
+  });
+});

@@ -12,6 +12,7 @@ import { Pencil, Plus, Power, Tags, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { RetailSection } from "@/components/RetailSection";
+import { CounterSale } from "@/components/CounterSale";
 
 type ServiceRecord = {
   id: number;
@@ -221,7 +222,10 @@ export default function Pricing() {
           <TabsContent value="add-ons" className="mt-4"><CatalogueTable rows={addOns} loading={servicesLoading} onEdit={(record) => openServiceEditor("add_on", record)} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change historical records.`)) deleteServiceMutation.mutate({ id: record.id }); }} /></TabsContent>
           <TabsContent value="memberships" className="mt-4"><MembershipPlanTable rows={planRows} loading={plansLoading} onEdit={openPlanEditor} onDelete={(record) => { if (window.confirm(`Remove ${record.name} from the catalogue? This does not change existing memberships.`)) deletePlanMutation.mutate({ id: record.id }); }} /></TabsContent>
           <TabsContent value="pet-codes" className="mt-4"><PetCodeCatalogue /></TabsContent>
-          <TabsContent value="retail" className="mt-4"><RetailSection /></TabsContent>
+          {/* The till above the products (Andy, 11/11/2026): this is where
+              people look for "sell something", and the till used to live
+              only on a page nothing linked to. */}
+          <TabsContent value="retail" className="mt-4 space-y-4"><CounterSaleOnPricing /><RetailSection /></TabsContent>
         </Tabs>
       </div>
 
@@ -270,4 +274,10 @@ function ServiceForm({ form, onChange }: { form: ServiceFormState; onChange: (fo
 function MembershipPlanForm({ form, onChange }: { form: ReturnType<typeof emptyPlanForm>; onChange: (form: ReturnType<typeof emptyPlanForm>) => void }) {
   const update = (key: keyof typeof form, value: string | boolean) => onChange({ ...form, [key]: value });
   return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Plan name *</Label><Input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. Gold Classic Small" /></div><div className="space-y-1.5"><Label>Unique code *</Label><Input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="e.g. gold-classic-small" /></div><div className="space-y-1.5"><Label>Tier *</Label><Input value={form.tier} onChange={(event) => update("tier", event.target.value)} placeholder="e.g. Gold" /></div><div className="space-y-1.5"><Label>Service variant</Label><Input value={form.serviceVariant} onChange={(event) => update("serviceVariant", event.target.value)} placeholder="e.g. Classic" /></div><div className="space-y-1.5"><Label>Weight band</Label><Input value={form.weightBand} onChange={(event) => update("weightBand", event.target.value)} placeholder="e.g. Small 0–10kg" /></div><div className="space-y-1.5"><Label>Weekly price (AUD) *</Label><Input type="number" min="0" step="0.01" value={form.weeklyPriceAud} onChange={(event) => update("weeklyPriceAud", event.target.value)} /></div><div className="space-y-1.5"><Label>Appointment interval (weeks) *</Label><Input type="number" min="1" value={form.appointmentIntervalWeeks} onChange={(event) => update("appointmentIntervalWeeks", event.target.value)} /></div><div className="space-y-1.5"><Label>Billing cycle (weeks)</Label><Input type="number" min="1" value={form.billingCycleWeeks} onChange={(event) => update("billingCycleWeeks", event.target.value)} /></div><div className="space-y-1.5"><Label>Sort order</Label><Input type="number" min="0" value={form.sortOrder} onChange={(event) => update("sortOrder", event.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>Description</Label><textarea value={form.description} onChange={(event) => update("description", event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional internal description" /></div><label className="flex items-center gap-2 text-sm font-medium sm:col-span-2"><input type="checkbox" checked={form.isActive} onChange={(event) => update("isActive", event.target.checked)} /> Active and ready for future use</label></div>;
+}
+
+/** The till, refreshing the product list's stock counts after each sale. */
+function CounterSaleOnPricing() {
+  const utils = trpc.useUtils();
+  return <CounterSale onSold={() => { void utils.retail.list.invalidate(); void utils.retail.sellable.invalidate(); }} />;
 }
