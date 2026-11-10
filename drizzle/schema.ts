@@ -798,6 +798,12 @@ export const petCodes = mysqlTable("pet_codes", {
   /** What the shorthand stands for: "Nervous", "#5f blade". */
   description: varchar("description", { length: 255 }),
   colourHex: varchar("colour_hex", { length: 16 }),
+  /**
+   * The badge's text colour, when the salon chose one. NULL is automatic:
+   * black or white, whichever contrasts more with colourHex. Andy,
+   * 11/11/2026, on black-on-red: "can't be read very well".
+   */
+  textColourHex: varchar("text_colour_hex", { length: 16 }),
   sortOrder: int("sort_order").default(0).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   /**

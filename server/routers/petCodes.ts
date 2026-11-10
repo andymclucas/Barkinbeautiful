@@ -26,6 +26,8 @@ const codeInput = z.object({
   code: z.string().trim().min(1).max(80),
   description: z.string().trim().max(255).optional().nullable(),
   colourHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "Use a colour like #7c3aed").optional().nullable(),
+  /** Null = automatic (black or white, whichever reads better on the badge). */
+  textColourHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "Use a colour like #ffffff").optional().nullable(),
   sortOrder: z.number().int().min(0).max(9999).optional(),
   isActive: z.boolean().optional(),
   /** Warning rather than Code: red badge, and listed in the red box. */
@@ -107,6 +109,7 @@ export const petCodesRouter = router({
         tenantId, code: input.code,
         description: input.description ?? null,
         colourHex: input.colourHex ?? null,
+        textColourHex: input.textColourHex ?? null,
         sortOrder: input.sortOrder ?? 0,
         isActive: input.isActive ?? true,
         isWarning: input.isWarning ?? false,
@@ -157,6 +160,9 @@ export const petCodesRouter = router({
         code: input.code,
         description: input.description ?? null,
         colourHex: input.colourHex ?? null,
+        // Left alone when not sent, so an older screen saving a code does
+        // not quietly reset somebody's text colour to automatic.
+        ...(input.textColourHex === undefined ? {} : { textColourHex: input.textColourHex }),
         ...(input.sortOrder === undefined ? {} : { sortOrder: input.sortOrder }),
         ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
         ...(input.isWarning === undefined ? {} : { isWarning: input.isWarning }),

@@ -17,6 +17,8 @@ export type PetCodeEntry = {
   code: string;
   description?: string | null;
   colourHex?: string | null;
+  /** The badge's text colour, or null/absent for automatic. */
+  textColourHex?: string | null;
   isActive?: boolean;
   /** A Warning rather than a Code. See shared/petCodeWarnings.ts. */
   isWarning?: boolean | null;
@@ -45,6 +47,30 @@ export function meaningFor(code: string, index: Map<string, PetCodeEntry>): stri
 export function colourFor(code: string, index: Map<string, PetCodeEntry>): string | null {
   const hex = String(index.get(code.trim().toLowerCase())?.colourHex ?? "").trim();
   return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : null;
+}
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+
+/**
+ * The text colour for a badge: the salon's choice when it made one,
+ * otherwise whichever of black or white contrasts more (readableTextOn).
+ * The automatic choice is correct by the numbers and can still be the
+ * wrong call by eye — black on pure red measures 5.3:1 against white's
+ * 4:1, and Andy found it hard to read — so a person can overrule it.
+ */
+export function badgeTextColour(
+  background: string,
+  chosen: string | null | undefined,
+  automatic: (bg: string) => string,
+): string {
+  const pick = String(chosen ?? "").trim();
+  return HEX.test(pick) ? pick : automatic(background);
+}
+
+/** The text colour the salon chose for this code, or null for automatic. */
+export function textColourFor(code: string, index: Map<string, PetCodeEntry>): string | null {
+  const hex = String(index.get(code.trim().toLowerCase())?.textColourHex ?? "").trim();
+  return HEX.test(hex) ? hex : null;
 }
 
 /** "SENSITIVE — Nervous", or just "SENSITIVE" when nothing is known.
