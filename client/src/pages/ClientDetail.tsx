@@ -1028,14 +1028,22 @@ export default function ClientDetail() {
               </div>
               <div className="rounded-xl border bg-muted/30 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">Quick look &mdash; no password</h3><p className="text-sm text-muted-foreground">{portalAccess?.status === "active" ? `An active link expires ${new Date(portalAccess.expiresAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" })}${portalAccess.lastAccessedAt ? ` and was last opened ${new Date(portalAccess.lastAccessedAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}` : ""}.` : portalAccess ? `The latest link is ${portalAccess.status}. Create a new expiry-bound link when required.` : "No quick-look link has been issued yet."}</p></div><Badge variant="outline" className="capitalize">{portalAccess?.status ?? "not issued"}</Badge></div>
-                {/* Lauren, 10/11/2026, after sending one of these: the
-                    client "went to save the site to her phone. it then
-                    asked for a sign in and password which she never set
-                    up." She had been sent this link, which has no
-                    password by design. The two sections differ in
-                    exactly one way that matters, and it was not written
-                    down anywhere a person reads before choosing. */}
-                <p className="mt-2 text-xs text-muted-foreground">Good for a quick look on their phone. It expires, and it is not a login &mdash; a client who saves the portal to their phone will be asked to sign in, so use the section below if they want to keep it.</p>
+                {/* This paragraph said, for most of 10/11/2026, that a
+                    client who saved the portal to their phone would be
+                    asked to sign in. That was true when it was written
+                    — Lauren had just watched it happen — and it stopped
+                    being true the same afternoon, once the saved icon
+                    started carrying the client's own token
+                    (shared/portalManifest.ts).
+
+                    Left as it was, it would have gone on steering staff
+                    to the login section to solve a problem that no
+                    longer exists, which is the more expensive of the
+                    two front doors for a client who only ever wanted
+                    their dog's appointments on their phone. A warning
+                    nobody re-reads after the bug is fixed is worse than
+                    no warning. */}
+                <p className="mt-2 text-xs text-muted-foreground">Good for their phone. They can save it to the Home Screen and it opens straight into their own portal &mdash; no password. It lapses 30 days after they last open it, so a link they use keeps working and one they ignore does not. Set up a login below only if they want it on more than one device, or somewhere an emailed link will not reach.</p>
                 <div className="mt-3 flex flex-wrap gap-2">{portalAccess?.status === "active" && <Button variant="destructive" size="sm" onClick={() => setPortalRevokeConfirm(true)}>Revoke the quick-look link</Button>}<Button size="sm" disabled={issuePortalLink.isPending} onClick={() => issuePortalLink.mutate({ clientId })}>{issuePortalLink.isPending ? "Creating link…" : portalAccess?.status === "active" ? "Replace the quick-look link" : "Create a quick-look link"}</Button></div>
               </div>
               <div className="rounded-xl border bg-muted/30 p-4">
