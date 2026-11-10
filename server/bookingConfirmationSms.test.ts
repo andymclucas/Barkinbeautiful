@@ -394,3 +394,37 @@ describe("per-client confirmation switch (client Preferences, 11/11/2026)", () =
     expect(decideBookingConfirmation({ ...live, confirmationSmsOffAt: null }).send).toBe(true);
   });
 });
+
+describe("no Y/N question on a booking the four-day reminder will reach (11/11/2026)", () => {
+  const now = new Date("2026-11-11T00:00:00Z");
+
+  it("asks within five days, states it further out", async () => {
+    const { confirmationAsksToConfirm } = await import("../shared/bookingConfirmationSms");
+    expect(confirmationAsksToConfirm(new Date("2026-11-14T00:00:00Z"), now)).toBe(true);
+    expect(confirmationAsksToConfirm(new Date("2026-11-16T00:00:00Z"), now)).toBe(true);
+    expect(confirmationAsksToConfirm(new Date("2026-11-16T01:00:00Z"), now)).toBe(false);
+    expect(confirmationAsksToConfirm(new Date("2027-01-14T01:00:00Z"), now)).toBe(false);
+  });
+
+  it("a January rebook says it is booked and that a reminder will follow, and asks nothing", async () => {
+    const { REMIND_LATER } = await import("../shared/bookingConfirmationSms");
+    const sms = buildBookingConfirmationSms({
+      clientFirstName: "Natalie", petNames: ["Milo"], date: "Thursday 14 January", time: "11:00 am",
+      salonName: "Barkin' Beautiful", asksToConfirm: false,
+    });
+    expect(sms).toBe("Hi Natalie! Milo's grooming appointment at Barkin' Beautiful is booked for Thursday 14 January at 11:00 am. We'll remind you closer to the day.");
+    expect(sms).not.toContain("Reply Y");
+    expect(REMIND_LATER.length).toBeLessThanOrEqual("Reply Y to confirm or N to cancel.".length + 1);
+  });
+
+  it("stays plain ASCII and one segment", async () => {
+    const { calculateSmsCost } = await import("@shared/smsSegments");
+    const sms = buildBookingConfirmationSms({
+      clientFirstName: "Natalie", petNames: ["Milo"], date: "Wednesday 30 December", time: "11:30 am",
+      salonName: "Barkin' Beautiful", asksToConfirm: false,
+    });
+    const cost = calculateSmsCost(sms);
+    expect(cost.forcedUnicode).toBe(false);
+    expect(cost.segments).toBe(1);
+  });
+});

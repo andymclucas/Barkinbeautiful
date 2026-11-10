@@ -207,6 +207,9 @@ const OPERATIONAL = [
   "calendarRouter.reschedule",
   "calendarRouter.searchAppointments",
   "calendarRouter.setAppointmentDiscount",
+  // "Text booking details" on the appointment (11/11/2026), behind the
+  // same per-appointment gate as every other operational write.
+  "calendarRouter.textBookingDetails",
   "calendarRouter.undoDeleteAppointment",
   "calendarRouter.updateDetails",
   "calendarRouter.updateWorkflowState",
@@ -539,7 +542,8 @@ describe("tRPC procedure surface", () => {
     // issuing a single setup link.
     // 420 since 11/11/2026 (later the same day): getAgreementLink and
     // signWithAgreementLink, the texted signing link — both in PUBLIC.
-    expect(surface).toHaveLength(420);
+    // 421 since 11/11/2026: calendar.textBookingDetails, in OPERATIONAL.
+    expect(surface).toHaveLength(421);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -597,7 +601,7 @@ describe("tRPC procedure surface", () => {
      * groomers should have access." Guarded so neither can cancel a
      * booking or touch a membership, and reversible.
      */
-    expect(OPERATIONAL).toHaveLength(153);
+    expect(OPERATIONAL).toHaveLength(154);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

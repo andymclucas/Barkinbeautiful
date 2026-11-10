@@ -28,7 +28,46 @@ export type BookingConfirmationInput = {
   /** "9:00 am" — already in the salon's zone. */
   time: string;
   salonName?: string | null;
+  /**
+   * Whether to end with "Reply Y to confirm or N to cancel". Defaults to
+   * true. See confirmationAsksToConfirm for when it should be false.
+   */
+  asksToConfirm?: boolean;
 };
+
+/**
+ * Said instead of the Y/N question on a booking far enough out that the
+ * four-day reminder will ask it. ASCII, and no longer than the question
+ * it replaces, so the confirmation stays one segment.
+ */
+export const REMIND_LATER = "We'll remind you closer to the day.";
+
+/**
+ * Whether a confirmation should ask the client to confirm.
+ *
+ * Lauren, 11/11/2026, having rebooked a dog for January: "just want to
+ * send a text to say we rebooked... not for them to confirm to it
+ * today". Andy's rule from 10/11/2026 is one ask per booking, and the
+ * four-day reminder already makes it (server/sms.ts) — so a booking that
+ * reminder will reach should not ask now as well, two months early.
+ *
+ * More than five days out, the four-day reminder is still to come, so
+ * the confirmation is a plain statement. Closer than that the reminder
+ * may already have passed, and this text is the only chance to ask. The
+ * extra day is margin: the reminder job works in calendar days, and a
+ * booking 4 days and 20 hours out could miss it.
+ */
+export const ASK_ON_CONFIRMATION_WITHIN_HOURS = 5 * 24;
+
+export function confirmationAsksToConfirm(
+  scheduledStart: Date | string | number,
+  now: Date | number = new Date(),
+): boolean {
+  const start = scheduledStart instanceof Date ? scheduledStart.getTime() : new Date(scheduledStart).getTime();
+  const at = typeof now === "number" ? now : now.getTime();
+  if (!Number.isFinite(start)) return true;
+  return start - at <= ASK_ON_CONFIRMATION_WITHIN_HOURS * 3_600_000;
+}
 
 const DEFAULT_SALON = "Barkin' Beautiful";
 
@@ -80,7 +119,8 @@ export function buildBookingConfirmationSms(input: BookingConfirmationInput): st
    * mistake from the other end. The test that covered this asserted
    * `toContain("are booked for")` and so pinned it.
    */
-  return `Hi ${who}! ${subject}'s grooming appointment at ${salon} is booked for ${input.date} at ${input.time}. ${REPLY_PROMPT}`;
+  const ending = input.asksToConfirm === false ? REMIND_LATER : REPLY_PROMPT;
+  return `Hi ${who}! ${subject}'s grooming appointment at ${salon} is booked for ${input.date} at ${input.time}. ${ending}`;
 }
 
 export type ConfirmationSkipReason =
@@ -231,7 +271,10 @@ export const CONFIRMATION_SKIP_LABEL: Record<ConfirmationSkipReason, string> = {
   opted_out: "the client has replied STOP",
   client_preference: "booking confirmations are turned off in this client's Preferences",
   not_confirmed: "the booking is not confirmed yet",
-  quiet_hours: "outside the hours an automated text may land",
+  // Said plainly, with the way out. Lauren read the old wording — "outside
+  // the hours an automated text may land" — as being about the 10:30
+  // SLOT, when the booking had been saved at 8:59 am (11/11/2026).
+  quiet_hours: "it's before 9am or after 7pm, when automatic texts are held back. Use \"Text booking details\" on the appointment to send it yourself",
   already_sent: "a confirmation has already gone out",
   no_phone: "no phone number on the client",
   imported: "brought across from MoeGo",

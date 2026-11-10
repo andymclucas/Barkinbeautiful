@@ -200,7 +200,7 @@ import { countInvoicesCovering } from "./invoiceCoverage";
 import { trackerSmsAllowed } from "../shared/trackerSmsGate";
 import { priceForPet } from "../shared/multiPetPricing";
 import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount";
-import { sendBookingConfirmation } from "./bookingConfirmation";
+import { sendBookingConfirmation, sendBookingDetailsByStaff } from "./bookingConfirmation";
 import { sendCancellationNotice, sendRescheduleNotice, clearCancellationClaim } from "./appointmentChangeNotify";
 import { wholeBookingCancellation } from "@shared/sharedBookingAttendance";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
@@ -476,6 +476,24 @@ async function buildUpcomingDatesForClient(db: any, tenantId: number, clientId: 
 }
 
 const calendarRouter = router({
+  /**
+   * "Text booking details" on the appointment: a person sending the client
+   * their booking, in the same words as the automatic confirmation.
+   * Lauren, 11/11/2026 — see sendBookingDetailsByStaff for why it exists.
+   *
+   * operationalProcedure behind the same per-appointment gate every other
+   * operational write uses, so a restricted groomer can text the owner of
+   * a dog on their own book and no one else's.
+   */
+  textBookingDetails: operationalProcedure
+    .input(z.object({ appointmentId: z.number().int().positive(), again: z.boolean().default(false) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      return sendBookingDetailsByStaff(db, { appointmentId: input.appointmentId, tenantId: tenantOf(ctx), again: input.again });
+    }),
+
   /**
    * Apply or remove a staff discount on an appointment.
    *

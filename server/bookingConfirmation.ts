@@ -22,13 +22,14 @@
  * a database or a Twilio key.
  */
 import { automatedSmsPermitted } from "@shared/automatedSms";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
 import { appointments, clients, pets, staff, tenants, smsLogs } from "../drizzle/schema";
 import { sendSms } from "./sms";
 import { safeTimeZone } from "../shared/auditTimestamp";
 import {
   buildBookingConfirmationSms, decideBookingConfirmation,
   CONFIRMATION_SKIP_LABEL,
+  confirmationAsksToConfirm,
 } from "../shared/bookingConfirmationSms";
 
 export type ConfirmationOutcome =
@@ -139,6 +140,7 @@ export async function sendBookingConfirmation(
       petNames: rows.map((r: any) => r.petName).filter(Boolean),
       date, time,
       salonName: first.salonName,
+      asksToConfirm: confirmationAsksToConfirm(first.scheduledStart),
     });
 
     /**
@@ -196,4 +198,109 @@ export async function sendBookingConfirmation(
     console.error("[BookingConfirmation] failed for", appointmentIds, error);
     return { sent: false, reason: "an error occurred while sending" };
   }
+}
+
+
+export type StaffBookingTextOutcome =
+  | { sent: true; to: string; pets: number }
+  | { sent: false; reason: string; alreadySentAt?: Date | null };
+
+/**
+ * A person pressing "Text booking details" on the appointment.
+ *
+ * Lauren, 11/11/2026: she rebooked a dog at 8:59 am, the automatic
+ * confirmation was rightly held back until 9 (Andy's rule), and there
+ * was then no way to send it at all — nothing retries a held-back text.
+ *
+ * This is a STAFF send, not an automated one: no quiet hours, no
+ * allow-list, no per-client switches — those govern what the system
+ * sends on its own, and the Preferences dialog says plainly that they do
+ * not stop a person texting by hand. Same words as the automatic one, so
+ * the client cannot tell which sent it, and it marks the booking as
+ * confirmed-by-text so the automatic one never follows it.
+ *
+ * A second send of the same booking needs `again`, so a double tap is a
+ * question rather than two texts.
+ */
+export async function sendBookingDetailsByStaff(
+  db: any,
+  input: { appointmentId: number; tenantId: number; again?: boolean },
+): Promise<StaffBookingTextOutcome> {
+  const [anchor] = await db
+    .select({ id: appointments.id, clientId: appointments.clientId, scheduledStart: appointments.scheduledStart })
+    .from(appointments)
+    .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, input.tenantId)))
+    .limit(1);
+  if (!anchor) return { sent: false, reason: "That appointment was not found." };
+
+  // The booking: every live dog of this client at this same time — one
+  // trip, one text, as the automatic confirmation does.
+  const rows = await db
+    .select({
+      id: appointments.id,
+      tenantId: appointments.tenantId,
+      clientId: appointments.clientId,
+      scheduledStart: appointments.scheduledStart,
+      confirmationSmsSentAt: appointments.confirmationSmsSentAt,
+      clientFirstName: clients.firstName,
+      clientPhone: clients.phone,
+      petName: pets.name,
+      salonName: tenants.name,
+      timezone: tenants.timezone,
+    })
+    .from(appointments)
+    .leftJoin(clients, eq(clients.id, appointments.clientId))
+    .leftJoin(pets, eq(pets.id, appointments.petId))
+    .leftJoin(tenants, eq(tenants.id, appointments.tenantId))
+    .where(and(
+      eq(appointments.tenantId, input.tenantId),
+      eq(appointments.clientId, anchor.clientId),
+      eq(appointments.scheduledStart, anchor.scheduledStart),
+      notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+      notInArray(appointments.status, ["cancelled", "no_show"]),
+    ));
+  if (rows.length === 0) return { sent: false, reason: "This booking is cancelled, so there is nothing to tell them." };
+
+  const first = rows[0];
+  if (new Date(first.scheduledStart).getTime() <= Date.now()) {
+    return { sent: false, reason: "This appointment has already happened." };
+  }
+  const phone = String(first.clientPhone ?? "").trim();
+  if (!phone) return { sent: false, reason: "There is no phone number on this client." };
+
+  const previously = rows.map((r: any) => r.confirmationSmsSentAt).find(Boolean) ?? null;
+  if (previously && !input.again) {
+    return { sent: false, reason: "already_sent", alreadySentAt: new Date(previously) };
+  }
+
+  const { date, time } = formatWhen(new Date(first.scheduledStart), first.timezone);
+  const body = buildBookingConfirmationSms({
+    clientFirstName: first.clientFirstName ?? "",
+    petNames: rows.map((r: any) => r.petName).filter(Boolean),
+    date, time,
+    salonName: first.salonName,
+    asksToConfirm: confirmationAsksToConfirm(first.scheduledStart),
+  });
+
+  // Claim the rows that have not been texted, so the automatic one never
+  // sends this booking again. Rows already texted keep their first time.
+  await db.update(appointments)
+    .set({ confirmationSmsSentAt: new Date() })
+    .where(and(inArray(appointments.id, rows.map((r: any) => r.id)), isNull(appointments.confirmationSmsSentAt)));
+
+  const result = await sendSms(phone, body, { tenantId: first.tenantId, trigger: "staff" });
+  await db.insert(smsLogs).values({
+    tenantId: first.tenantId,
+    clientId: first.clientId,
+    appointmentId: first.id,
+    toNumber: phone,
+    body,
+    twilioSid: result.sid ?? null,
+    status: result.success ? "sent" : "failed",
+    type: "confirmation",
+    direction: "outbound",
+    errorMessage: result.success ? null : (result.error ?? "unknown error"),
+  });
+  if (!result.success) return { sent: false, reason: result.error ?? "The text could not be sent." };
+  return { sent: true, to: phone, pets: rows.length };
 }
