@@ -84,6 +84,9 @@ describe("which door a page belongs to", () => {
       "/portal": "client", "/portal/login": "client", "/portal/setup/:token": "client",
       "/portal/invoice-paid": "client", "/portal/invoice-cancelled": "client",
       "/portal/card-saved": "client", "/portal/card-cancelled": "client",
+      // Where /card/<token> lands a client whose link will not verify or
+      // has run out. A client page like its two siblings above.
+      "/portal/card-link-expired": "client",
       "/portal/:token": "client", "/track/:token": "client", "/photo/:token": "client",
       "/slot/:token": "client", "/card/:token": "client",
       "/quote/:token": "client",

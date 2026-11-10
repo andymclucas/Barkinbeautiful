@@ -138,8 +138,13 @@ function Router() {
           just paid is shown an error. */}
       <Route path="/portal/invoice-paid">{() => <ClientInvoiceResult paid />}</Route>
       <Route path="/portal/invoice-cancelled">{() => <ClientInvoiceResult paid={false} />}</Route>
-      <Route path="/portal/card-saved">{() => <ClientPortalCardResult saved />}</Route>
-      <Route path="/portal/card-cancelled">{() => <ClientPortalCardResult saved={false} />}</Route>
+      <Route path="/portal/card-saved">{() => <ClientPortalCardResult outcome="saved" />}</Route>
+      <Route path="/portal/card-cancelled">{() => <ClientPortalCardResult outcome="cancelled" />}</Route>
+      {/* Where /card/<token> sends a client when the token will not
+          verify or has run out. Registered here with its siblings and
+          BEFORE "/portal/:token", which would otherwise swallow it and
+          show a 404 to somebody who just tapped a link from the salon. */}
+      <Route path="/portal/card-link-expired">{() => <ClientPortalCardResult outcome="expired" />}</Route>
       <Route path="/portal/:token" component={ClientPortal} />
 
       {/* Aliases for paths staff have bookmarked that were never routes.
