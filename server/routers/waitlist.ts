@@ -52,6 +52,28 @@ import {
 } from "@shared/waitlist";
 import { settleWaitlistEntries } from "../waitlistSettle";
 import { assertDogsNotAlreadyBookedThatDay } from "../duplicateBooking";
+import { entryPetIds, joinDogNames, splitEntryPets, MAX_DOGS_PER_WAITLIST_ENTRY } from "@shared/waitlistPets";
+
+/**
+ * Turn each entry's petName into every dog on it ("Zoey & Max") and add
+ * petIds, with one query for all the extra dogs' names. Entries with one
+ * dog come back unchanged apart from petIds.
+ */
+async function withAllDogs<T extends { petId: number; petName: string; extraPetIds?: unknown }>(
+  db: any, rows: T[],
+): Promise<Array<T & { petIds: number[] }>> {
+  const extraIds = Array.from(new Set(rows.flatMap((r) => entryPetIds(r.petId, r.extraPetIds).slice(1))));
+  const names = new Map<number, string>();
+  if (extraIds.length > 0) {
+    const found = await db.select({ id: pets.id, name: pets.name }).from(pets).where(inArray(pets.id, extraIds));
+    for (const f of found) names.set(f.id, f.name);
+  }
+  return rows.map((r) => {
+    const ids = entryPetIds(r.petId, r.extraPetIds);
+    const label = joinDogNames([r.petName, ...ids.slice(1).map((id) => names.get(id) ?? "")]);
+    return { ...r, petIds: ids, petName: label || r.petName };
+  });
+}
 
 const DATE_KEY = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -97,7 +119,10 @@ export const waitlistRouter = router({
     .input(z.object({
       tenantId: z.number().default(1),
       clientId: z.number(),
-      petId: z.number(),
+      /** One dog (the original shape) ... */
+      petId: z.number().optional(),
+      /** ... or several waiting for the same slot (11/11/2026). */
+      petIds: z.array(z.number().int().positive()).min(1).max(MAX_DOGS_PER_WAITLIST_ENTRY).optional(),
       serviceType: z.string().max(40).optional(),
       preferredStaffId: z.number().optional(),
       earliestDate: DATE_KEY,
@@ -125,14 +150,23 @@ export const waitlistRouter = router({
         });
       }
 
-      const [pet] = await db.select({ id: pets.id, name: pets.name })
+      const wanted = input.petIds ?? (input.petId ? [input.petId] : []);
+      if (wanted.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose at least one dog." });
+      const { petId, extraPetIds } = splitEntryPets(wanted);
+      const allIds = [petId, ...(extraPetIds ?? [])];
+      const found = await db.select({ id: pets.id, name: pets.name, status: pets.status })
         .from(pets)
-        .where(and(eq(pets.id, input.petId), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantId)))
-        .limit(1);
-      if (!pet) throw new TRPCError({ code: "BAD_REQUEST", message: "That dog is not on this client's record" });
+        .where(and(inArray(pets.id, allIds), eq(pets.clientId, input.clientId), eq(pets.tenantId, tenantId)));
+      if (found.length !== allIds.length) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "One of those dogs is not on this client's record" });
+      }
+      const notBookable = departedBookingMessage(found);
+      if (notBookable) throw new TRPCError({ code: "BAD_REQUEST", message: notBookable });
+      const byId = new Map<number, string>(found.map((f: any) => [f.id, f.name]));
+      const pet = { name: joinDogNames(allIds.map((id) => byId.get(id) ?? "")) };
 
       const [created] = await db.insert(waitlistEntries).values({
-        tenantId, clientId: input.clientId, petId: input.petId,
+        tenantId, clientId: input.clientId, petId, extraPetIds,
         serviceType: input.serviceType ?? null,
         preferredStaffId: input.preferredStaffId ?? null,
         earliestDate: input.earliestDate, latestDate: input.latestDate,
@@ -367,13 +401,14 @@ export const waitlistRouter = router({
        */
       await settleWaitlistEntries(db, tenantId, { clientId: input.clientId });
 
-      return db.select({
+      const listed = await db.select({
         id: waitlistEntries.id,
         clientId: waitlistEntries.clientId,
         clientName: sql<string>`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
         clientPhone: clients.phone,
         petId: waitlistEntries.petId,
         petName: pets.name,
+        extraPetIds: waitlistEntries.extraPetIds,
         serviceType: waitlistEntries.serviceType,
         preferredStaffId: waitlistEntries.preferredStaffId,
         preferredStaffName: staff.name,
@@ -394,6 +429,7 @@ export const waitlistRouter = router({
           input.clientId ? eq(waitlistEntries.clientId, input.clientId) : undefined,
         ))
         .orderBy(asc(waitlistEntries.createdAt));
+      return withAllDogs(db, listed);
     }),
 
   /** Take a client off the list. */
@@ -435,7 +471,9 @@ export const waitlistRouter = router({
         clientId: waitlistEntries.clientId,
         clientName: sql<string>`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
         clientPhone: clients.phone,
+        petId: waitlistEntries.petId,
         petName: pets.name,
+        extraPetIds: waitlistEntries.extraPetIds,
         preferredStaffId: waitlistEntries.preferredStaffId,
         preferredStaffName: staff.name,
         earliestDate: waitlistEntries.earliestDate,
@@ -461,7 +499,7 @@ export const waitlistRouter = router({
         serviceType: input.serviceType ?? null,
       };
 
-      const matched = open
+      const matched = (await withAllDogs(db, open))
         .map((entry: any) => ({ entry, result: matchesSlot(entry, slot) }))
         .filter((row: any) => row.result.matches)
         .map((row: any) => ({ ...row.entry, exactGroomer: row.result.exactGroomer }));
@@ -496,9 +534,10 @@ export const waitlistRouter = router({
       }
 
       const [salon] = await db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
-      const entries = await db.select({
+      const rawEntries = await db.select({
         id: waitlistEntries.id, clientId: waitlistEntries.clientId,
-        phone: clients.phone, petName: pets.name, status: waitlistEntries.status,
+        phone: clients.phone, petId: waitlistEntries.petId, petName: pets.name,
+        extraPetIds: waitlistEntries.extraPetIds, status: waitlistEntries.status,
       })
         .from(waitlistEntries)
         .innerJoin(clients, eq(waitlistEntries.clientId, clients.id))
@@ -507,6 +546,8 @@ export const waitlistRouter = router({
           eq(waitlistEntries.tenantId, tenantId),
           inArray(waitlistEntries.id, input.entryIds),
         ));
+      // "a spot for Zoey & Max" — one text names every dog on the entry.
+      const entries = await withAllDogs(db, rawEntries);
 
       const label = whenLabel(input.scheduledStart);
       const sent: Array<{ entryId: number; offerId: number; smsSent: boolean; error: string | null }> = [];
@@ -562,7 +603,9 @@ export const waitlistRouter = router({
         scheduledStart: waitlistOffers.scheduledStart,
         durationMinutes: waitlistOffers.durationMinutes,
         staffName: staff.name,
+        petId: waitlistEntries.petId,
         petName: pets.name,
+        extraPetIds: waitlistEntries.extraPetIds,
         clientFirstName: clients.firstName,
         salonName: tenants.name,
       })
@@ -581,10 +624,11 @@ export const waitlistRouter = router({
       const state = offerState(row);
       if (!state.ok) return { ok: false as const, message: state.message, reason: state.reason };
 
+      const [named] = await withAllDogs(db, [row]);
       return {
         ok: true as const,
         firstName: row.clientFirstName,
-        petName: row.petName,
+        petName: named.petName,
         salonName: row.salonName,
         staffName: row.staffName,
         whenLabel: whenLabel(new Date(row.scheduledStart)),
@@ -673,6 +717,7 @@ export const waitlistRouter = router({
         staffId: waitlistOffers.staffId, scheduledStart: waitlistOffers.scheduledStart,
         durationMinutes: waitlistOffers.durationMinutes, serviceType: waitlistOffers.serviceType,
         clientId: waitlistEntries.clientId, petId: waitlistEntries.petId,
+        extraPetIds: waitlistEntries.extraPetIds,
       })
         .from(waitlistOffers)
         .innerJoin(waitlistEntries, eq(waitlistOffers.entryId, waitlistEntries.id))
@@ -707,9 +752,11 @@ export const waitlistRouter = router({
 
       /* An offer can sit for days before it is accepted, and the dog can
          be recorded as passed away in between. */
-      const [offerPet] = await db.select({ id: pets.id, name: pets.name, status: pets.status })
-        .from(pets).where(eq(pets.id, offer.petId)).limit(1);
-      const offerDeparted = offerPet ? departedBookingMessage([offerPet]) : null;
+      // Every dog on the entry is booked into the slot (11/11/2026).
+      const offerPetIds = entryPetIds(offer.petId, offer.extraPetIds);
+      const offerPets = await db.select({ id: pets.id, name: pets.name, status: pets.status })
+        .from(pets).where(inArray(pets.id, offerPetIds));
+      const offerDeparted = offerPets.length > 0 ? departedBookingMessage(offerPets) : null;
       if (offerDeparted) throw new TRPCError({ code: "BAD_REQUEST", message: offerDeparted });
 
       /*
@@ -728,7 +775,7 @@ export const waitlistRouter = router({
        * an "x2" plan, which is the case that has caught this out before.
        */
       const coverage = await getAppointmentMembershipCoverage(
-        db, tenantId, offer.clientId, [offer.petId],
+        db, tenantId, offer.clientId, offerPetIds,
         (offer.serviceType ?? "classic_groom") as any,
       );
 
@@ -740,24 +787,30 @@ export const waitlistRouter = router({
        */
       await assertDogsNotAlreadyBookedThatDay(db, {
         tenantId,
-        petIds: [offer.petId],
+        petIds: offerPetIds,
         at: start,
       });
 
-      const [created] = await db.insert(appointments).values({
-        tenantId, clientId: offer.clientId, petId: offer.petId,
-        staffId: offer.staffId,
-        serviceType: (offer.serviceType ?? "classic_groom") as any,
-        scheduledStart: start, scheduledEnd: end,
-        trackerToken: nanoid(32),
-        workflowState: "scheduled", status: "confirmed",
-        membershipId: coverage.membershipByPetId[offer.petId]?.id ?? null,
-        // Price deliberately unset: a membership dog's groom carries none
-        // and a casual one is priced at booking. Staff set it on the card
-        // rather than this guessing. Unchanged — only the LINK to the
-        // plan was missing, not the pricing.
-      });
-      const appointmentId = (created as any).insertId as number;
+      // One appointment per dog, all in the same slot with the same
+      // groomer — the shape a family booking made on the calendar has.
+      const createdIds: number[] = [];
+      for (const petId of offerPetIds) {
+        const [created] = await db.insert(appointments).values({
+          tenantId, clientId: offer.clientId, petId,
+          staffId: offer.staffId,
+          serviceType: (offer.serviceType ?? "classic_groom") as any,
+          scheduledStart: start, scheduledEnd: end,
+          trackerToken: nanoid(32),
+          workflowState: "scheduled", status: "confirmed",
+          membershipId: coverage.membershipByPetId[petId]?.id ?? null,
+          // Price deliberately unset: a membership dog's groom carries none
+          // and a casual one is priced at booking. Staff set it on the card
+          // rather than this guessing. Unchanged — only the LINK to the
+          // plan was missing, not the pricing.
+        });
+        createdIds.push((created as any).insertId as number);
+      }
+      const appointmentId = createdIds[0];
 
       await db.update(waitlistOffers).set({
         status: "approved", appointmentId,
@@ -770,9 +823,10 @@ export const waitlistRouter = router({
 
       // Everyone else offered this exact slot. They tapped "yes please"
       // and would otherwise never hear back.
-      const losers = await db.select({
+      const rawLosers = await db.select({
         id: waitlistOffers.id, clientId: waitlistEntries.clientId,
-        phone: clients.phone, petName: pets.name, status: waitlistOffers.status,
+        phone: clients.phone, petId: waitlistEntries.petId, petName: pets.name,
+        extraPetIds: waitlistEntries.extraPetIds, status: waitlistOffers.status,
       })
         .from(waitlistOffers)
         .innerJoin(waitlistEntries, eq(waitlistOffers.entryId, waitlistEntries.id))
@@ -784,6 +838,7 @@ export const waitlistRouter = router({
           ne(waitlistOffers.id, offer.id),
           inArray(waitlistOffers.status, ["offered", "claimed"]),
         ));
+      const losers = await withAllDogs(db, rawLosers);
 
       let told = 0;
       for (const loser of losers) {
@@ -808,7 +863,7 @@ export const waitlistRouter = router({
         }
       }
 
-      return { success: true, appointmentId, declinedOthers: losers.length, toldOthers: told };
+      return { success: true, appointmentId, appointmentIds: createdIds, declinedOthers: losers.length, toldOthers: told };
     }),
 
   /** Turn a claim down without giving the slot to anybody. */

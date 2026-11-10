@@ -388,7 +388,8 @@ export default function ClientDetail() {
   const { data: waitlistEntries } = trpc.waitlist.listEntries.useQuery(
     { clientId, status: "active" },
   );
-  const waitlistedPetIds = new Set((waitlistEntries ?? []).map((entry) => entry.petId));
+  // Every dog on every entry — an entry can hold several since 11/11/2026.
+  const waitlistedPetIds = new Set((waitlistEntries ?? []).flatMap((entry) => entry.petIds ?? [entry.petId]));
   const editingWaitlistEntry = (waitlistEntries ?? []).find((entry) => entry.id === editWaitlistId);
   /**
    * Removing a groom photo, with the same named confirm a booking gets.

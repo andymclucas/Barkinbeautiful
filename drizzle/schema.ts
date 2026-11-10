@@ -2076,6 +2076,12 @@ export const waitlistEntries = mysqlTable("waitlist_entries", {
   tenantId: int("tenant_id").notNull().references(() => tenants.id),
   clientId: int("client_id").notNull().references(() => clients.id),
   petId: int("pet_id").notNull().references(() => pets.id),
+  /**
+   * The household's other dogs waiting for the same slot, after petId.
+   * NULL for one dog. Andy, 11/11/2026: "Only one dog able to be added to
+   * the waitlist." See shared/waitlistPets.ts.
+   */
+  extraPetIds: json("extra_pet_ids").$type<number[] | null>(),
   serviceType: varchar("service_type", { length: 40 }),
   /** A preference, not a filter — see shared/waitlist.ts. */
   preferredStaffId: int("preferred_staff_id"),
