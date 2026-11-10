@@ -63,7 +63,10 @@ describe("every appointment-creating path refuses a departed dog", () => {
     // deleted path carried one of these calls.
     expect(count(read("server/routers.ts"), /departedBookingMessage\(/g)).toBe(10);
     expect(count(read("server/routers/membershipSignup.ts"), /departedBookingMessage\(/g)).toBe(1);
-    expect(count(read("server/routers/waitlist.ts"), /departedBookingMessage\(/g)).toBe(1);
+    // 2 since 11/11/2026: join checks too, now that it takes several
+    // dogs — a passed-away or archived dog is refused when it is put on
+    // the list, not only when a claim is approved days later.
+    expect(count(read("server/routers/waitlist.ts"), /departedBookingMessage\(/g)).toBe(2);
   });
 
   it("guards the public online-booking path, not just the staff ones", () => {

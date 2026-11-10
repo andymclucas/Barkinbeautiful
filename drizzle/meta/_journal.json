@@ -1191,6 +1191,13 @@
       "when": 1794380100000,
       "tag": "0169_pet_code_text_colour",
       "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "5",
+      "when": 1794380200000,
+      "tag": "0170_waitlist_extra_pets",
+      "breakpoints": true
     }
   ]
 }

@@ -39,10 +39,20 @@ describe("AddKnownClientToWaitlist", () => {
     expect(screen.getByRole("button", { name: /Add to waitlist/ })).toBeEnabled();
   });
 
-  it("asks which dog when there is more than one, and waits for an answer", () => {
+  it("asks which dogs when there is more than one, and waits for an answer", () => {
     render(<AddKnownClientToWaitlist clientId={1162} pets={[LINK, BELLE]} />);
-    expect(screen.getByText("Dog")).toBeInTheDocument();
+    expect(screen.getByText("Dogs")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Add to waitlist/ })).toBeDisabled();
+  });
+
+  /* Andy, 11/11/2026: "Only one dog able to be added to the waitlist." */
+  it("puts both dogs on one entry when both are ticked", () => {
+    render(<AddKnownClientToWaitlist clientId={1162} pets={[LINK, BELLE]} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Belle" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Link" }));
+    fireEvent.click(screen.getByRole("button", { name: /Add to waitlist/ }));
+    // In the order the dogs are listed, not the order they were ticked.
+    expect(joinMutate.mock.calls[0][0]).toMatchObject({ clientId: 1162, petIds: [1574, 2001] });
   });
 
   /*
@@ -61,7 +71,7 @@ describe("AddKnownClientToWaitlist", () => {
     fireEvent.click(screen.getByRole("button", { name: /Add to waitlist/ }));
     expect(joinMutate).toHaveBeenCalledTimes(1);
     const sent = joinMutate.mock.calls[0][0];
-    expect(sent).toMatchObject({ clientId: 1162, petId: 1574, timeOfDay: "any" });
+    expect(sent).toMatchObject({ clientId: 1162, petIds: [1574], timeOfDay: "any" });
     expect(sent.earliestDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(sent.latestDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });

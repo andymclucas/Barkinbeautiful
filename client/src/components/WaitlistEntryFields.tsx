@@ -99,10 +99,12 @@ export function WaitlistEntryFields({
 }
 
 /** The shape waitlist.join wants, from what the form collected. */
-export function waitlistJoinInput(clientId: number, petId: number, f: WaitlistFields) {
+export function waitlistJoinInput(clientId: number, petIds: number | readonly number[], f: WaitlistFields) {
   return {
     clientId,
-    petId,
+    // Every dog waiting for the same slot (11/11/2026). One entry, one
+    // offer, one booking for the household.
+    petIds: Array.isArray(petIds) ? [...petIds] : [petIds as number],
     earliestDate: f.earliestDate,
     latestDate: f.latestDate,
     timeOfDay: f.timeOfDay as "any" | "morning" | "afternoon",
@@ -112,7 +114,46 @@ export function waitlistJoinInput(clientId: number, petId: number, f: WaitlistFi
 }
 
 /**
- * The whole thing for a client who is already known: pick the dog, set
+ * Which of the client's dogs are waiting. Tick boxes, not a dropdown:
+ * Andy, 11/11/2026, "Only one dog able to be added to the waitlist" —
+ * a household's dogs usually come together and wait for one slot.
+ */
+export function WaitlistDogChoice({
+  pets, value, onChange,
+}: {
+  pets: { id: number; name: string }[];
+  value: readonly number[];
+  onChange: (next: number[]) => void;
+}) {
+  const chosen = new Set(value);
+  return (
+    <fieldset>
+      <legend className="text-xs font-medium">Dogs</legend>
+      <div className="mt-1 flex flex-wrap gap-2">
+        {pets.map((p) => (
+          <label key={p.id} className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--primary)]"
+              checked={chosen.has(p.id)}
+              onChange={(e) => {
+                const next = new Set(chosen);
+                if (e.target.checked) next.add(p.id); else next.delete(p.id);
+                // Keep the order the dogs are listed in, so the first
+                // ticked is not whichever was clicked first.
+                onChange(pets.map((x) => x.id).filter((id) => next.has(id)));
+              }}
+            />
+            {p.name}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * The whole thing for a client who is already known: pick the dogs, set
  * the window, add them.
  */
 export function AddKnownClientToWaitlist({
@@ -124,7 +165,9 @@ export function AddKnownClientToWaitlist({
   onAdded?: () => void;
 }) {
   const utils = trpc.useUtils();
-  const [petId, setPetId] = useState(pets.length === 1 ? String(pets[0].id) : "");
+  // One dog is chosen for you; with several, nothing is ticked until
+  // someone says which — the wrong dog on the list is worse than a click.
+  const [petIds, setPetIds] = useState<number[]>(pets.length === 1 ? [pets[0].id] : []);
   const [form, setForm] = useState<WaitlistFields>(emptyWaitlistFields());
 
   const join = trpc.waitlist.join.useMutation({
@@ -149,20 +192,10 @@ export function AddKnownClientToWaitlist({
     <div className="space-y-3">
       {/* Skipped when there is only one dog — asking which of one is
           a click for nothing. */}
-      {pets.length > 1 && (
-        <div>
-          <Label className="text-xs">Dog</Label>
-          <Select value={petId} onValueChange={setPetId}>
-            <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Which dog?" /></SelectTrigger>
-            <SelectContent>
-              {pets.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      {pets.length > 1 && <WaitlistDogChoice pets={pets} value={petIds} onChange={setPetIds} />}
       <WaitlistEntryFields value={form} onChange={setForm} />
-      <Button size="sm" disabled={!petId || join.isPending}
-        onClick={() => join.mutate(waitlistJoinInput(clientId, Number(petId), form))}>
+      <Button size="sm" disabled={petIds.length === 0 || join.isPending}
+        onClick={() => join.mutate(waitlistJoinInput(clientId, petIds, form))}>
         {join.isPending ? "Adding…" : "Add to waitlist"}
       </Button>
     </div>

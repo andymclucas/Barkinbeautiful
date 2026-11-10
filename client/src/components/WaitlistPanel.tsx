@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { isPetCurrent } from "@shared/petArchive";
 import {
-  WaitlistEntryFields, emptyWaitlistFields, waitlistJoinInput, type WaitlistFields,
+  WaitlistEntryFields, WaitlistDogChoice, emptyWaitlistFields, waitlistJoinInput, type WaitlistFields,
 } from "@/components/WaitlistEntryFields";
 import { Badge } from "@/components/ui/badge";
 import { ClientLink, PetLink } from "@/components/RecordLink";
@@ -166,6 +167,16 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
   const [search, setSearch] = useState("");
   const [chosen, setChosen] = useState<any>(null);
   const [form, setForm] = useState<WaitlistFields>(emptyWaitlistFields());
+  // Every dog of the chosen client, so a household can wait together
+  // (Andy, 11/11/2026). The dog searched for starts ticked.
+  const [petIds, setPetIds] = useState<number[]>([]);
+  const clientPets = trpc.pets.listByClient.useQuery(
+    { clientId: chosen?.clientId ?? 0 },
+    { enabled: Boolean(chosen?.clientId) },
+  );
+  const currentPets = ((clientPets.data ?? []) as { id: number; name: string; status?: string | null }[])
+    .filter((p) => isPetCurrent(p.status ?? "active"));
+  const choose = (row: any) => { setChosen(row); setPetIds(row?.petId ? [row.petId] : []); };
 
   const results = trpc.memberships.searchClients.useQuery({ search }, { enabled: search.trim().length >= 2 });
   const groomers = trpc.staff.listOperational.useQuery({});
@@ -173,7 +184,7 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
   const join = trpc.waitlist.join.useMutation({
     onSuccess: (r) => {
       toast.success(`${r.petName} added to the waitlist`);
-      setOpen(false); setChosen(null); setSearch("");
+      setOpen(false); choose(null); setSearch("");
       setForm(emptyWaitlistFields());
       onAdded();
     },
@@ -193,7 +204,7 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Add to the waitlist</h3>
         <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Close"
-          onClick={() => { setOpen(false); setChosen(null); }}>
+          onClick={() => { setOpen(false); choose(null); }}>
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -209,7 +220,7 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
               ) : results.data.map((r: any) => (
                 <button key={`${r.clientId}-${r.petId}`} type="button"
                   className="flex w-full items-center gap-2 rounded-md border px-3 py-1.5 text-left text-sm hover:bg-muted"
-                  onClick={() => setChosen(r)}>
+                  onClick={() => choose(r)}>
                   <span className="font-medium">{r.firstName} {r.lastName}</span>
                   <span className="text-muted-foreground">· {r.petName}</span>
                   {r.petBreed && <span className="text-xs text-muted-foreground">({r.petBreed})</span>}
@@ -222,15 +233,20 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
         <>
           <p className="mt-2 text-sm">
             <span className="font-medium">{chosen.firstName} {chosen.lastName}</span>
-            <span className="text-muted-foreground"> · {chosen.petName}</span>
+            {currentPets.length <= 1 && <span className="text-muted-foreground"> · {chosen.petName}</span>}
             <Button variant="link" size="sm" className="h-auto p-0 pl-2 text-xs"
-              onClick={() => setChosen(null)}>change</Button>
+              onClick={() => choose(null)}>change</Button>
           </p>
+          {currentPets.length > 1 && (
+            <div className="mt-3">
+              <WaitlistDogChoice pets={currentPets} value={petIds} onChange={setPetIds} />
+            </div>
+          )}
           <div className="mt-3">
             <WaitlistEntryFields value={form} onChange={setForm} />
           </div>
-          <Button size="sm" className="mt-3" disabled={join.isPending}
-            onClick={() => join.mutate(waitlistJoinInput(chosen.clientId, chosen.petId, form))}>
+          <Button size="sm" className="mt-3" disabled={join.isPending || petIds.length === 0}
+            onClick={() => join.mutate(waitlistJoinInput(chosen.clientId, petIds, form))}>
             {join.isPending ? "Adding\u2026" : "Add to waitlist"}
           </Button>
         </>
