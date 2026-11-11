@@ -174,13 +174,32 @@ describe("not offering the same membership twice", () => {
   it("still drops a plan that matches a built-in on cadence too", () => {
     // Same tier, service, band AND interval: this is the seeded mirror,
     // and all 48 of those must stay hidden.
-    const sixWeekly = { ...storableSilverPlus, appointmentIntervalWeeks: 6 };
+    // Silver Styled Small six-weekly is $22 built in; the seeded row
+    // carries the same price.
+    const sixWeekly = { ...storableSilverPlus, appointmentIntervalWeeks: 6, weeklyPriceAud: "22.00" };
     expect(assignablePackagesFor(smallBuiltIns, [sixWeekly], "small").filter(p => p.custom)).toHaveLength(0);
   });
 
-  it("does not treat a repriced membership as a new one", () => {
-    // A salon changing its own rate has not invented a second membership.
+  it("offers the salon's own price beside the built-in, rather than dropping it", () => {
+    // This used to be dropped as "a repriced copy", which meant the
+    // salon's price never reached the picker. Lauren's $27 four-weekly
+    // Gold Classic Small, 12/11/2026, vanished exactly this way.
     const repriced = { ...mirrorOfABuiltIn, weeklyPriceAud: "60.00" };
-    expect(assignablePackagesFor(smallBuiltIns, [repriced], "small").filter(p => p.custom)).toHaveLength(0);
+    const custom = assignablePackagesFor(smallBuiltIns, [repriced], "small").filter(p => p.custom);
+    expect(custom).toHaveLength(1);
+    expect(custom[0].weeklyPrice).toBe(60);
+  });
+
+  it("offers Lauren's plan, as it was saved, to a 10 kg dog and no other band", () => {
+    const laurens = {
+      id: 150001, name: "Gold VIP Classic- SML (0-10kg) CLIP ONLY 4 WEEKLY CLASSIC",
+      tier: "Gold +", serviceVariant: "Classic", weightBand: "small 0-10kg",
+      weeklyPriceAud: "27.00", appointmentIntervalWeeks: 4, isActive: true,
+    };
+    const forSmall = assignablePackagesFor(smallBuiltIns, [laurens], "small").filter(p => p.custom);
+    expect(forSmall.map(p => p.id)).toEqual(["plan:150001"]);
+    expect(forSmall[0]).toMatchObject({ tier: "gold", serviceType: "classic", weightClass: "small" });
+    expect(validatePlanForAssignment(forSmall[0])).toEqual({ ok: true });
+    expect(assignablePackagesFor([], [laurens], "large")).toEqual([]);
   });
 });

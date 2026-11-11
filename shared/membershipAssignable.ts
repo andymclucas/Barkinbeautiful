@@ -19,6 +19,7 @@
  */
 
 import type { MembershipPackage, MembershipWeightClass } from "./membershipPackages";
+import { normalisePlanService, normalisePlanTier, normalisePlanWeightBand } from "./membershipPlanFields";
 
 export type AssignablePackage = {
   /** Built-ins keep their own id; a custom plan is "plan:<row id>". */
@@ -95,14 +96,23 @@ export type MembershipPlanRow = {
 
 export function fromPlan(plan: MembershipPlanRow): AssignablePackage {
   const price = typeof plan.weeklyPriceAud === "number" ? plan.weeklyPriceAud : Number(plan.weeklyPriceAud);
+  // Read as a person meant them: "Gold +" is gold, "Classic" is classic,
+  // "small 0-10kg" is the small band (shared/membershipPlanFields.ts).
+  // What cannot be read is passed through as typed, so the assignment
+  // refuses it with a message naming the field instead of guessing.
+  const serviceText = plan.serviceVariant?.trim() || "";
+  const band = normalisePlanWeightBand(plan.weightBand);
   return {
     id: `${CUSTOM_PLAN_ID_PREFIX}${plan.id}`,
     name: plan.name,
-    tier: plan.tier,
-    serviceType: plan.serviceVariant?.trim() || "classic",
+    tier: normalisePlanTier(plan.tier) ?? plan.tier,
+    serviceType: serviceText === "" ? "classic" : normalisePlanService(serviceText) ?? serviceText,
     // No weight band means the plan suits any dog, which is the point of
-    // a bespoke one — it was written for a particular client's dogs.
-    weightClass: plan.weightBand?.trim() || null,
+    // a bespoke one — it was written for a particular client's dogs. A
+    // band nobody can read is treated the same way rather than hiding the
+    // plan from every dog, which is what used to happen; the plan's name
+    // still says who it is for, and saving it now requires a real band.
+    weightClass: band.band,
     weeklyPrice: Number.isFinite(price) ? price : 0,
     appointmentIntervalWeeks: plan.appointmentIntervalWeeks,
     visitsPerYear: visitsPerYearFor(plan.appointmentIntervalWeeks),
@@ -173,14 +183,20 @@ export function assignablePackagesFor(
   // The tests missed it because their fixture used tier "silver-plus",
   // which is not storable and therefore collided with nothing.
   //
-  // Price is deliberately NOT part of it: a salon repricing a membership
-  // it already has has not invented a second one, and comparing on price
-  // would show both the built-in rate and theirs.
+  // Price IS part of it, since 12/11/2026. It used to be left out, on the
+  // reasoning that a repriced plan is not a new membership — but the
+  // result was that the salon's price was silently dropped and the
+  // built-in one offered instead. Lauren's $27 four-weekly Gold Classic
+  // Small was hidden as a "duplicate" of the $22 built-in. Every one of
+  // the 48 seeded rows carries its built-in's exact price, so they are
+  // still recognised as copies; a plan at a different price is the
+  // salon's own and is offered beside the built-in, named as they wrote it.
   const duplicatesBuiltIn = (p: AssignablePackage) => offered.some(b =>
     b.tier === p.tier
     && b.serviceType === p.serviceType
     && b.weightClass === p.weightClass
-    && b.appointmentIntervalWeeks === p.appointmentIntervalWeeks);
+    && b.appointmentIntervalWeeks === p.appointmentIntervalWeeks
+    && Math.round(b.weeklyPrice * 100) === Math.round(p.weeklyPrice * 100));
 
   const custom = plans
     .filter(p => p.isActive !== false)

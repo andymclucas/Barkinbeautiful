@@ -104,6 +104,7 @@ import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlign
 import { resolveAppointmentMembershipCoverage, type AppointmentService } from "../shared/appointmentMembershipCoverage";
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
 import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
+import { cleanPlanFields } from "../shared/membershipPlanFields";
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
@@ -10157,11 +10158,16 @@ const pricingRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      // Stored as the picker reads them, so a new plan is offered to the
+      // dogs in its band (shared/membershipPlanFields.ts).
+      const fields = cleanPlanFields(input);
+      if (!fields.ok) throw new TRPCError({ code: "BAD_REQUEST", message: fields.reason });
       await db.insert(membershipPlans).values({
         ...input,
         code: normalisePricingCode(input.code),
-        serviceVariant: input.serviceVariant || null,
-        weightBand: input.weightBand || null,
+        tier: fields.tier,
+        serviceVariant: fields.serviceVariant,
+        weightBand: fields.weightBand,
         description: input.description || null,
         weeklyPriceAud: input.weeklyPriceAud.toFixed(2),
       });
@@ -10173,11 +10179,14 @@ const pricingRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const { id, tenantId, ...values } = input;
+      const fields = cleanPlanFields(values);
+      if (!fields.ok) throw new TRPCError({ code: "BAD_REQUEST", message: fields.reason });
       const result = await db.update(membershipPlans).set({
         ...values,
         code: normalisePricingCode(values.code),
-        serviceVariant: values.serviceVariant || null,
-        weightBand: values.weightBand || null,
+        tier: fields.tier,
+        serviceVariant: fields.serviceVariant,
+        weightBand: fields.weightBand,
         description: values.description || null,
         weeklyPriceAud: values.weeklyPriceAud.toFixed(2),
       }).where(and(eq(membershipPlans.id, id), eq(membershipPlans.tenantId, tenantId)));
