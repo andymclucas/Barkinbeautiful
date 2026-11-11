@@ -268,6 +268,7 @@ const ALLOWED_WHEN_EXPIRED = [
   "stripeConnect.", // so they can set up paying
   "trial.", // the screen telling them what happened
   "clients.exportCsv", // THE data export — see canExportData() in planEntitlements
+  "issueReports.submit", // a salon whose trial ended can still tell us something is wrong
 ];
 
 /**

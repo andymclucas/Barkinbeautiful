@@ -8,6 +8,8 @@ import { choosePetPhoto } from "@shared/petProfilePhoto";
 import { getPetThumb, setPetThumb, forgetPetThumb } from "./petThumbCache";
 import { requireApprovedStaffTenant } from "./staffAccess";
 import sharp from "sharp";
+import { canAdministerStaff } from "@shared/staffAdministrators";
+import { ISSUE_IMAGE_KEY_PREFIX, isIssueImageKey } from "@shared/issueReports";
 
 // TiDB rejects a single row/entry over ~6 MB (a TiKV-level limit, not
 // something we can raise). A base64-encoded image is ~33% larger than its
@@ -64,7 +66,117 @@ async function compressLogoForStorage(buffer: Buffer, contentType: string): Prom
   }
 }
 
+/**
+ * Screenshots and photos attached to a staff problem report
+ * (shared/issueReports.ts). Any signed-in staff login may upload — the
+ * report is open to all of them — but only the salon owners
+ * (canAdministerStaff) may look at one: a screenshot can show a client's
+ * details from any screen in the app.
+ */
+function registerIssueReportImageRoutes(app: Router) {
+  /*
+   * Hardened after review (11/11/2026). The sender may be any staff login
+   * and the viewer is always an owner, so an upload is untrusted input that
+   * ends up opened on the owners' screens:
+   *  - only real raster image types are accepted, and EVERY upload is
+   *    decoded and re-encoded to JPEG by sharp — an SVG or HTML file
+   *    labelled image/* never survives to be served back;
+   *  - the image is served with nosniff and a sandboxing CSP, so even a
+   *    stored oddity cannot run as a page on this origin;
+   *  - uploads are capped per person per hour, because the bytes live in
+   *    the same database as the bookings.
+   */
+  const ALLOWED = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
+  const PER_HOUR = 40;
+  const recent = new Map<number, number[]>();
+  const underLimit = (userId: number) => {
+    const now = Date.now();
+    const kept = (recent.get(userId) ?? []).filter((t) => now - t < 3_600_000);
+    if (kept.length >= PER_HOUR) { recent.set(userId, kept); return false; }
+    kept.push(now);
+    recent.set(userId, kept);
+    return true;
+  };
+
+  app.post("/api/upload/issue-report-image", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      try { await requireApprovedStaffTenant(db, user as any); } catch (e: any) {
+        res.status(403).json({ error: e?.message ?? "Not allowed" }); return;
+      }
+      const contentType = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+      if (!ALLOWED.has(contentType)) { res.status(400).json({ error: "Attach a photo or screenshot (JPEG, PNG, WebP, GIF or HEIC)." }); return; }
+      const buffer = req.body;
+      if (!Buffer.isBuffer(buffer) || buffer.length === 0) { res.status(400).json({ error: "Empty file" }); return; }
+      if (buffer.length > 15 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 15 MB)" }); return; }
+      if (!underLimit(user.id)) { res.status(429).json({ error: "Too many uploads in the last hour. Try again later." }); return; }
+
+      let jpeg: Buffer;
+      try {
+        // Decide by what the bytes ARE, not what the header claims: an SVG
+        // labelled image/png is refused rather than rendered.
+        const { format } = await sharp(buffer, { failOn: "error" }).metadata();
+        if (!format || !["jpeg", "png", "webp", "gif", "heif"].includes(format)) throw new Error("not a raster image");
+        jpeg = await sharp(buffer, { failOn: "error" })
+          .rotate()
+          .resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 80, mozjpeg: true })
+          .toBuffer();
+        if (jpeg.length > 3.5 * 1024 * 1024) {
+          jpeg = await sharp(jpeg).resize({ width: 1400, height: 1400, fit: "inside" }).jpeg({ quality: 60, mozjpeg: true }).toBuffer();
+        }
+      } catch {
+        res.status(400).json({ error: "That file couldn't be read as an image. Try a screenshot instead." });
+        return;
+      }
+
+      const key = `${ISSUE_IMAGE_KEY_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
+      await db.insert(uploadedImages).values({
+        storageKey: key,
+        photoData: jpeg.toString("base64"),
+        photoContentType: "image/jpeg",
+      });
+      res.json({ key });
+    } catch (err: any) {
+      console.error("[upload/issue-report-image]", err);
+      res.status(500).json({ error: "Upload failed" });
+    }
+  });
+
+  app.get("/api/issue-report-image", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).end(); return; }
+      if (!canAdministerStaff(user)) { res.status(403).end(); return; }
+      const key = String(req.query.key ?? "");
+      if (!isIssueImageKey(key)) { res.status(400).end(); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).end(); return; }
+      const [row] = await db.select({ photoData: uploadedImages.photoData })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!row) { res.status(404).end(); return; }
+      // Always served as a JPEG (every upload is re-encoded to one), never
+      // as whatever type was stored, and never as something that can run.
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self'");
+      res.setHeader("Content-Disposition", "inline");
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      res.send(Buffer.from(row.photoData, "base64"));
+    } catch (err) {
+      console.error("[issue-report-image]", err);
+      res.status(500).end();
+    }
+  });
+}
+
 export function registerUploadRoutes(app: Router) {
+  registerIssueReportImageRoutes(app);
   // POST /api/upload/style-note-photo
   // Accepts raw image bytes with Content-Type header, returns { url, key }
   app.post(

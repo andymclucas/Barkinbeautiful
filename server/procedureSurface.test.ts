@@ -286,6 +286,7 @@ const OPERATIONAL = [
   "groomingReportsRouter.getByAppointment",
   "groomingReportsRouter.getSessionReports",
   "groomingReportsRouter.upsert",
+  "issueReportsRouter.submit",
   "membershipsRouter.create",
   "membershipsRouter.getPackageOptions",
   "membershipsRouter.searchClients",
@@ -550,7 +551,10 @@ describe("tRPC procedure surface", () => {
     // signWithAgreementLink, the texted signing link — both in PUBLIC.
     // 421 since 11/11/2026: calendar.textBookingDetails, in OPERATIONAL.
     // 423 since 11/11/2026: clientPortal.todaysBill and payTodaysBill, in PUBLIC.
-    expect(surface).toHaveLength(423);
+    // 427 since 11/11/2026: issueReports — submit in OPERATIONAL (every
+    // staff login can report a problem); list, openCount and setStatus are
+    // protectedProcedure AND canAdministerStaff inside, owners only.
+    expect(surface).toHaveLength(427);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -608,7 +612,12 @@ describe("tRPC procedure surface", () => {
      * groomers should have access." Guarded so neither can cancel a
      * booking or touch a membership, and reversible.
      */
-    expect(OPERATIONAL).toHaveLength(154);
+    /*
+     * 155 since 11/11/2026: issueReports.submit. Andy: "all staff" — a
+     * report carries no data back, and the owner-only reading half is
+     * not operational.
+     */
+    expect(OPERATIONAL).toHaveLength(155);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

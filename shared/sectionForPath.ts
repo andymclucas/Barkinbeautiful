@@ -112,6 +112,13 @@ export const UNGATED_NAMESPACES: readonly string[] = [
    * price, and void only TODAY's sales (see server/routers/counterSale.ts).
    */
   "counterSale",
+  /**
+   * `issueReports.*` — "Report a problem" (11/11/2026). Every staff login
+   * may send one from any screen, so the namespace cannot hang off a
+   * section. The owner-only half (list, openCount, setStatus) is guarded
+   * by canAdministerStaff inside the router, not by a section.
+   */
+  "issueReports",
   /*
    * Which salon you are in cannot depend on a permission, for the same
    * reason signing in cannot: the header asks salons.mine on every page

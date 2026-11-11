@@ -54,7 +54,7 @@ export type PushPayload = {
   /** Same tag replaces rather than stacks. */
   tag: string;
   /** Which event produced this, for the service worker's own logging. */
-  kind: "call-ringing" | "missed-call" | "new-message";
+  kind: "call-ringing" | "missed-call" | "new-message" | "issue-report";
   /**
    * Re-alert for a notification that replaces one with the same tag.
    * A second message in a thread you have not looked at should buzz
@@ -82,6 +82,9 @@ export const PUSH_TTL_SECONDS: Record<PushPayload["kind"], number> = {
   "call-ringing": 45,
   "missed-call": 60 * 60 * 24,
   "new-message": 60 * 60 * 24,
+  // A staff problem report (shared/issueReports.ts): still worth knowing
+  // about tomorrow morning.
+  "issue-report": 60 * 60 * 24,
 };
 
 /**
@@ -95,6 +98,7 @@ export const PUSH_URGENCY: Record<PushPayload["kind"], "high" | "normal"> = {
   "call-ringing": "high",
   "missed-call": "normal",
   "new-message": "normal",
+  "issue-report": "normal",
 };
 
 /** Who is on the other end, in the order we would rather say it. */

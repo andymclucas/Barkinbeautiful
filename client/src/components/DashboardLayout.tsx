@@ -7,6 +7,7 @@ import NotificationBell from "@/components/NotificationBell";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { SalonSwitcher } from "@/components/SalonSwitcher";
 import SystemNotificationBell from "@/components/SystemNotificationBell";
+import { ReportProblemButton, useReportProblem } from "@/components/ReportProblem";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { TrialBanner } from "@/components/TrialBanner";
 import {
@@ -56,6 +57,7 @@ import {
   UserCog,
   DollarSign,
   MessageSquare,
+  MessageSquareWarning,
   MessageCircle,
   Mail,
   FileBarChart2,
@@ -178,6 +180,18 @@ function ChristmasTreeIcon({ className }: { className?: string }) {
     </span>
   );
 }
+
+/**
+ * The owners' inbox of staff problem reports (11/11/2026). Lauren and Andy
+ * only — canAdministerStaff, the same list the server checks — so it is
+ * appended for them rather than placed in menuItems, which every admin and
+ * granted section sees.
+ */
+const issueReportsMenuItem: NavItem = {
+  icon: MessageSquareWarning,
+  label: "Problem reports",
+  path: "/issues",
+};
 
 const christmasMenuItem: NavItem = {
   icon: ChristmasTreeIcon,
@@ -384,9 +398,15 @@ function DashboardLayoutContent({
     {},
     { refetchInterval: 60000, refetchOnWindowFocus: true },
   );
+  const isOwner = canAdministerStaff(user ?? null);
+  const { data: issueCounts } = trpc.issueReports.openCount.useQuery(
+    {},
+    { enabled: isOwner, refetchInterval: 60000, refetchOnWindowFocus: true },
+  );
   const navBadges: Record<string, number> = {
     "/messages": counts?.messages ?? 0,
     "/portal-messages": counts?.portalMessages ?? 0,
+    "/issues": issueCounts?.open ?? 0,
   };
 
   const permittedMenuItems =
@@ -453,9 +473,11 @@ function DashboardLayoutContent({
     });
 
   const inChristmasSeason = seasonYearFor(brisbaneDay(new Date()) ?? "") !== null;
-  const visibleMenuItems = inChristmasSeason
-    ? [...permittedMenuItems, christmasMenuItem]
-    : permittedMenuItems;
+  const visibleMenuItems = [
+    ...permittedMenuItems,
+    ...(isOwner ? [issueReportsMenuItem] : []),
+    ...(inChristmasSeason ? [christmasMenuItem] : []),
+  ];
 
   useEffect(() => {
     if (isCollapsed) setIsResizing(false);
@@ -496,8 +518,14 @@ function DashboardLayoutContent({
     ? myStaff.role.charAt(0).toUpperCase() + myStaff.role.slice(1)
     : null;
 
+  // "Report a problem", for every staff login. A header icon on a computer
+  // or tablet; on a phone the header has no room, so it is in the account
+  // menu instead (and in both places on larger screens).
+  const report = useReportProblem();
+
   const accountControls = (
     <div className="flex items-center gap-1.5">
+      <ReportProblemButton onClick={report.start} capturing={report.capturing} />
       {/* One tap for the common case. The three-way choice, including
           "follow my device", lives in the menu below. */}
       {/* Andy, 03/11/2026: "Add a little Christmas tree icon that then
@@ -569,6 +597,10 @@ function DashboardLayoutContent({
               <UserRound className="mr-2 h-4 w-4" />
               <span>My profile</span>
             </DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer" onSelect={() => { void report.start(); }}>
+              <MessageSquareWarning className="mr-2 h-4 w-4" />
+              <span>Report a problem</span>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             {/* Appearance. "System" is offered explicitly because a device
                 that switches at sunset should take the app with it, and that
@@ -633,6 +665,7 @@ function DashboardLayoutContent({
           </DropdownMenuContent>
         </DropdownMenu>
         <BrandColoursDialog open={brandDialogOpen} onOpenChange={setBrandDialogOpen} />
+        {report.dialog}
     </div>
   );
 
