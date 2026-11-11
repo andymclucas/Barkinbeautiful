@@ -9,17 +9,17 @@
  *
  * A preview only: the salon still approves, and the real series is planned
  * on approval (planMembershipSeries), which moves a visit that lands on a
- * day the groomer is away. Calendar-date arithmetic in UTC on "YYYY-MM-DD",
+ * day the groomer is away. The COUNT is the one approval books —
+ * occurrencesForMonths — so the client is never shown a ninth groom the
+ * salon will not create. Calendar-date arithmetic in UTC on "YYYY-MM-DD",
  * so no device time zone can shift a day.
  */
+import { occurrencesForMonths } from "./membershipSeries";
+
 export function cadencePreview(firstDateKey: string, intervalWeeks: number, months: number): string[] {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(firstDateKey) || !(intervalWeeks > 0) || !(months > 0)) return [];
   const first = Date.parse(`${firstDateKey}T00:00:00Z`);
-  const end = new Date(first);
-  end.setUTCMonth(end.getUTCMonth() + months);
-  const dates: string[] = [];
-  for (let at = first; at < end.getTime(); at += intervalWeeks * 7 * 86_400_000) {
-    dates.push(new Date(at).toISOString().slice(0, 10));
-  }
-  return dates;
+  const count = occurrencesForMonths(intervalWeeks, months);
+  return Array.from({ length: count }, (_, i) =>
+    new Date(first + i * intervalWeeks * 7 * 86_400_000).toISOString().slice(0, 10));
 }

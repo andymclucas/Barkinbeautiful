@@ -5,7 +5,9 @@ describe("cadencePreview", () => {
   it("lists every visit for the year, a fixed number of weeks apart", () => {
     const dates = cadencePreview("2027-01-06", 6, 12);
     expect(dates.slice(0, 3)).toEqual(["2027-01-06", "2027-02-17", "2027-03-31"]);
-    expect(dates).toHaveLength(9); // 52 weeks / 6, the "9 grooms" Lauren counted
+    // The number approval books (occurrencesForMonths), so the preview never
+    // promises a groom the series will not create.
+    expect(dates).toHaveLength(8);
   });
 
   it("keeps the weekday", () => {
