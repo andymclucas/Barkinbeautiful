@@ -29,9 +29,12 @@ export function topicForPath(path: string | null | undefined): string {
  */
 const ALSO_STALE: Record<string, string[]> = {
   // The board and the diary are two views of one set of appointments.
-  workflow: ["calendar", "tracker", "analytics", "analyticsExt"],
-  calendar: ["workflow", "tracker", "analytics", "analyticsExt"],
-  tracker: ["workflow", "calendar"],
+  // And the client page, which shows a client's visits, counts and money:
+  // finishing a dog on the board left Pat Grant's page frozen until Lauren
+  // refreshed it (11/11/2026).
+  workflow: ["calendar", "tracker", "clients", "analytics", "analyticsExt"],
+  calendar: ["workflow", "tracker", "clients", "analytics", "analyticsExt"],
+  tracker: ["workflow", "calendar", "clients"],
   // Money moving shows up on the appointment, the invoice list and the numbers.
   payments: ["calendar", "workflow", "clients", "analytics", "analyticsExt", "stripeBilling"],
   stripeBilling: ["payments", "memberships", "clients", "analytics", "analyticsExt"],

@@ -76,3 +76,11 @@ describe("shouldBroadcast", () => {
     expect(shouldBroadcast(null)).toBe(false);
   });
 });
+
+describe("the client page keeps up with the board and the diary (11/11/2026)", () => {
+  it("is refreshed when a dog moves on the board or a booking changes", () => {
+    expect(staleTopicsFor("workflow")).toContain("clients");
+    expect(staleTopicsFor("calendar")).toContain("clients");
+    expect(staleTopicsFor("tracker")).toContain("clients");
+  });
+});
