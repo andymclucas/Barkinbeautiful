@@ -1,3 +1,4 @@
+import { clientVisitDates } from "@shared/clientVisitDates";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
 import { presenceKey } from "@shared/presence";
@@ -832,8 +833,12 @@ export default function ClientDetail() {
     bookService as "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other",
     activeMemberships,
   );
-  const lastVisit = appointments[0]?.scheduledStart;
-  const nextVisit = appointments.find(a => new Date(a.scheduledStart) > new Date());
+  // Most recent past visit and soonest future one, skipping cancellations
+  // (shared/clientVisitDates.ts). The list is newest first, so taking its
+  // first entries showed the furthest-out booking as both (11/11/2026).
+  const visitDates = clientVisitDates(appointments);
+  const lastVisit = visitDates.last?.scheduledStart;
+  const nextVisit = visitDates.next;
 
   const handleBook = () => {
     if (!bookPetId) { toast.error("Please select a pet"); return; }
