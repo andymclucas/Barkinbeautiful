@@ -197,6 +197,9 @@ import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { counterSaleRouter } from "./routers/counterSale";
 import { issueReportsRouter } from "./routers/issueReports";
+import { clipLoadOf } from "@shared/groomerCapacity";
+import { loadCycleWindow } from "./cycleReschedule";
+import { isWithinWindow } from "@shared/cycleRescheduleWindow";
 import { findBlockoutsCovering } from "./groomerBlockout";
 import { recurringOccurrenceRefusal } from "@shared/recurringOccurrence";
 import { recurrenceWindow, type RecurrenceEnd } from "@shared/recurrenceRule";
@@ -1150,7 +1153,7 @@ const calendarRouter = router({
     }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) return { busyByStaff: [] as { staffId: number; staffName: string; busy: BusyInterval[] }[] };
+      if (!db) return { busyByStaff: [] as { staffId: number; staffName: string; busy: BusyInterval[]; clipLoad: number }[] };
       if (ctx.user.role === "staff") {
         const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
         if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
@@ -1187,6 +1190,9 @@ const calendarRouter = router({
         staffId: appointments.staffId,
         scheduledStart: appointments.scheduledStart,
         scheduledEnd: appointments.scheduledEnd,
+        serviceType: appointments.serviceType,
+        status: appointments.status,
+        workflowState: appointments.workflowState,
         petName: pets.name,
         clientLastName: clients.lastName,
       }).from(appointments)
@@ -1213,7 +1219,17 @@ const calendarRouter = router({
       const nameById = new Map(names.map((row) => [row.id, row.name]));
 
       const byStaff = new Map<number, BusyInterval[]>(staffIds.map((id) => [id, []]));
+      /* Clips already on each groomer's day, for the over-capacity warning.
+         Lauren, 11/11/2026: staff can book whenever, but it must still warn
+         when a groomer goes over their grooms for the day. The dialog used
+         to count only what the diary had loaded on screen, so booking a
+         January date while looking at November counted nothing and never
+         warned. This is the booked day, whatever is on screen. */
+      const serviceTypesByStaff = new Map<number, string[]>(staffIds.map((id) => [id, []]));
       for (const row of booked) {
+        // A dog that did not turn up is not a groom on the day.
+        const noShow = row.status === "no_show" || row.workflowState === "no_show";
+        if (row.staffId != null && !noShow) serviceTypesByStaff.get(row.staffId)?.push(row.serviceType ?? "");
         if (row.staffId == null || !row.scheduledStart || !row.scheduledEnd) continue;
         const startMinutes = minutesInDay(new Date(row.scheduledStart));
         const rawEnd = minutesInDay(new Date(row.scheduledEnd));
@@ -1242,6 +1258,7 @@ const calendarRouter = router({
           staffId,
           staffName: nameById.get(staffId) ?? "",
           busy: (byStaff.get(staffId) ?? []).sort((a, b) => a.startMinutes - b.startMinutes),
+          clipLoad: clipLoadOf(serviceTypesByStaff.get(staffId) ?? []),
         })),
       };
     }),
@@ -16140,6 +16157,29 @@ const clientPortalRouter = router({
         .orderBy(asc(staff.name));
     }),
 
+  /**
+   * How far this booking may move, when it belongs to a membership or a
+   * repeat series (shared/cycleRescheduleWindow.ts). Null for a one-off.
+   * The portal limits its date picker with it; rescheduleAppointment below
+   * is what enforces it.
+   */
+  rescheduleWindow: publicProcedure
+    .input(z.object({ token: z.string().optional(), appointmentId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      const [appt] = await db.select({
+        id: appointments.id, clientId: appointments.clientId, tenantId: appointments.tenantId,
+        petId: appointments.petId, membershipId: appointments.membershipId,
+        recurringGroupId: appointments.recurringGroupId, scheduledStart: appointments.scheduledStart,
+      }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+      if (!appt || appt.clientId !== clientId || appt.tenantId !== tenantId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found." });
+      }
+      return loadCycleWindow(db, appt);
+    }),
+
   rescheduleAppointment: publicProcedure
     .input(z.object({ token: z.string().optional(), appointmentId: z.number(), newStart: z.string() }))
     .mutation(async ({ input, ctx }) => {
@@ -16151,6 +16191,7 @@ const clientPortalRouter = router({
         id: appointments.id, clientId: appointments.clientId, tenantId: appointments.tenantId, staffId: appointments.staffId,
         scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd,
         workflowState: appointments.workflowState, status: appointments.status,
+        petId: appointments.petId, membershipId: appointments.membershipId, recurringGroupId: appointments.recurringGroupId,
       }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
 
       if (!appt || appt.clientId !== clientId || appt.tenantId !== tenantId) {
@@ -16173,6 +16214,18 @@ const clientPortalRouter = router({
       if (newStart.getTime() - Date.now() < 24 * 3600000) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "The new time needs to be at least 24 hours away \u2014 please call the salon for anything sooner." });
       }
+      // A booking in a membership or repeat series stays in its week, so the
+      // 4/6/8-week cycle holds (Andy and Lauren, 11/11/2026). Checked here,
+      // not only in the date picker, because the picker is not a lock.
+      const cycleWindow = await loadCycleWindow(db, appt);
+      if (cycleWindow && !isWithinWindow(brisbaneDateKey(newStart), cycleWindow)) {
+        const day = (key: string) => new Date(`${key}T12:00:00+10:00`).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short" });
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `To keep this booking in its regular cycle it can move between ${day(cycleWindow.from)} and ${day(cycleWindow.to)}. For anything else, please call the salon.`,
+        });
+      }
+
       const durationMs = new Date(appt.scheduledEnd).getTime() - new Date(appt.scheduledStart).getTime();
       const newEnd = new Date(newStart.getTime() + durationMs);
 

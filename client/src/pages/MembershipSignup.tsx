@@ -7,6 +7,9 @@ import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { cadencePreview } from "@shared/membershipCadencePreview";
+import { brisbaneDateKey } from "@shared/localDateTime";
 import { toast } from "sonner";
 import { MAX_SIGNUP_DOGS } from "@shared/membershipSignup";
 
@@ -165,13 +168,33 @@ export default function MembershipSignup() {
     { enabled: canLoadSlots },
   );
 
+  // "This will give you a booking every 6 weeks — do you want to confirm
+  // this?" (Andy, 11/11/2026). Pressing Request opens it; only Yes sends.
+  const [confirming, setConfirming] = useState(false);
   const submit = trpc.membershipSignup.submit.useMutation({
     onSuccess: (result) => {
+      setConfirming(false);
       setDone({ cardSetupUrl: result.cardSetupUrl, weeklyTotal: result.weeklyTotal });
       toast.success("Membership request sent");
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const sendRequest = () => submit.mutate({
+                  firstName: details.firstName.trim(),
+                  lastName: details.lastName.trim(),
+                  phone: details.phone.trim(),
+                  email: details.email.trim() || undefined,
+                  dogs: dogs.map((d) => ({
+                    name: d.name.trim(),
+                    breed: d.breed.trim() || undefined,
+                    weightKg: Number(d.weightKg),
+                    packageId: d.packageId,
+                  })),
+                  staffId: Number(staffId),
+                  scheduledStart: new Date(scheduledStart),
+                  note: details.note.trim() || undefined,
+});
 
   const ready = Boolean(
     priced && scheduledStart && details.firstName.trim() && details.lastName.trim() && details.phone.trim(),
@@ -379,21 +402,7 @@ export default function MembershipSignup() {
               <Button
                 className="w-full bg-violet-700 hover:bg-violet-800"
                 disabled={!ready || submit.isPending}
-                onClick={() => submit.mutate({
-                  firstName: details.firstName.trim(),
-                  lastName: details.lastName.trim(),
-                  phone: details.phone.trim(),
-                  email: details.email.trim() || undefined,
-                  dogs: dogs.map((d) => ({
-                    name: d.name.trim(),
-                    breed: d.breed.trim() || undefined,
-                    weightKg: Number(d.weightKg),
-                    packageId: d.packageId,
-                  })),
-                  staffId: Number(staffId),
-                  scheduledStart: new Date(scheduledStart),
-                  note: details.note.trim() || undefined,
-                })}
+                onClick={() => setConfirming(true)}
               >
                 {submit.isPending ? "Sending…" : "Request this membership"}
               </Button>
@@ -404,6 +413,48 @@ export default function MembershipSignup() {
           </section>
         )}
       </div>
+      <Dialog open={confirming} onOpenChange={(open) => { if (!submit.isPending) setConfirming(open); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Is this right?</DialogTitle>
+            <DialogDescription>
+              Nothing is booked or charged until the salon confirms it.
+            </DialogDescription>
+          </DialogHeader>
+          {priced && scheduledStart && (() => {
+            const start = new Date(scheduledStart);
+            const firstKey = brisbaneDateKey(start);
+            const dates = cadencePreview(firstKey, priced.intervalWeeks, options.data?.monthsAhead ?? 12);
+            const day = (key: string) => new Date(`${key}T12:00:00+10:00`).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short" });
+            const when = start.toLocaleString("en-AU", { timeZone: "Australia/Brisbane", weekday: "long", hour: "numeric", minute: "2-digit" });
+            const names = dogs.map((d) => d.name.trim()).filter(Boolean);
+            const who = names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names.at(-1) : names[0] || "your dog";
+            return (
+              <div className="space-y-3 text-sm">
+                <p className="text-base font-semibold">
+                  This will give {who} a booking every {priced.intervalWeeks} weeks — {when}.
+                </p>
+                <p className="text-muted-foreground">
+                  That's {dates.length} visits over the next {options.data?.monthsAhead ?? 12} months, starting{" "}
+                  {day(dates[0] ?? firstKey)}:
+                </p>
+                <ul className="flex flex-wrap gap-1.5">
+                  {dates.slice(0, 4).map((d) => (
+                    <li key={d} className="rounded-md border px-2 py-0.5 text-xs">{day(d)}</li>
+                  ))}
+                  {dates.length > 4 && <li className="px-1 py-0.5 text-xs text-muted-foreground">…and every {priced.intervalWeeks} weeks after</li>}
+                </ul>
+              </div>
+            );
+          })()}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirming(false)} disabled={submit.isPending}>Change something</Button>
+            <Button className="bg-violet-700 hover:bg-violet-800" disabled={submit.isPending} onClick={sendRequest}>
+              {submit.isPending ? "Sending…" : "Yes, request it"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

@@ -71,6 +71,9 @@ const PUBLIC = [
   // agreement is unsigned (server/portalAppointmentPayment.ts).
   "clientPortalRouter.payTodaysBill",
   "clientPortalRouter.rescheduleAppointment",
+  // The cycle window for a membership or repeat booking. Same portal-session
+  // check and ownership test as rescheduleAppointment beside it.
+  "clientPortalRouter.rescheduleWindow",
   "clientPortalRouter.sendChatMessage",
   // The service agreement, signed by the client themselves before the
   // portal opens (11/11/2026). AtSetup is identified by the emailed setup
@@ -558,7 +561,8 @@ describe("tRPC procedure surface", () => {
     // protectedProcedure AND canAdministerStaff inside, owners only.
     // 430 since 11/11/2026 (stage 2): issueReports.myUpdates and markSeen in
     // OPERATIONAL (a reporter's own outcomes only); retriage is owner-only.
-    expect(surface).toHaveLength(430);
+    // 431 since 11/11/2026: clientPortal.rescheduleWindow, in PUBLIC.
+    expect(surface).toHaveLength(431);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -567,7 +571,8 @@ describe("tRPC procedure surface", () => {
     // 53 since 06/11/2026: groomQuotes getByToken and answerByToken, the
     // owner's end of a mid-groom quote. Unauthenticated by design — the
     // note beside them in PUBLIC says what bounds them.
-    expect(PUBLIC).toHaveLength(58);
+    // 59 since 11/11/2026: clientPortal.rescheduleWindow.
+    expect(PUBLIC).toHaveLength(59);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
