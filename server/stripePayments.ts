@@ -136,6 +136,11 @@ export async function createPortalAppointmentCheckout(input: {
       ...(feeCents !== null && feeCents > 0 ? { application_fee_amount: feeCents } : {}),
     },
     allow_promotion_codes: false,
+    /* Card (which includes Apple Pay and Google Pay) and Link only: both
+       settle at once. A delayed method such as direct debit completes the
+       session unpaid and confirms later on an event this does not handle,
+       so the client would be charged and nothing recorded. */
+    payment_method_types: ["card", "link"],
     line_items: [{
       quantity: 1,
       price_data: {

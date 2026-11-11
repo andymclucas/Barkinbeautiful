@@ -15,7 +15,7 @@
  *    counter, lands on the client's account and the salon is told.
  */
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
-import { appointments, appointmentPayments, pets, storeCreditTransactions } from "../drizzle/schema";
+import { appointments, appointmentPayments, memberships, pets, storeCreditTransactions } from "../drizzle/schema";
 import { loadBillableTotals } from "./billableTotals";
 import { postPaymentToAppointments } from "./invoicePaymentPosting";
 import { notifyOwner } from "./ownerNotification";
@@ -58,10 +58,14 @@ export async function loadTodaysBill(db: any, tenantId: number, clientId: number
     .select({
       id: appointments.id,
       petName: pets.name,
-      membershipId: appointments.membershipId,
+      // Covered only by a LIVE plan. A paused or ended membership still
+      // linked to the booking must not make an unpriced groom read as
+      // "nothing to pay" (review, 11/11/2026).
+      membershipId: sql<number | null>`CASE WHEN ${memberships.status} = 'active' THEN ${appointments.membershipId} ELSE NULL END`,
     })
     .from(appointments)
     .leftJoin(pets, eq(pets.id, appointments.petId))
+    .leftJoin(memberships, eq(memberships.id, appointments.membershipId))
     .where(and(
       eq(appointments.tenantId, tenantId),
       eq(appointments.clientId, clientId),
@@ -121,31 +125,41 @@ export async function handlePortalAppointmentPayment(db: any, input: {
     const owingNow = owned.reduce((sum, id) => sum + (owed.get(id) ?? 0), 0);
     const split = splitArrivedPayment(input.paidCents, owingNow);
 
-    let unallocatedCents = 0;
-    if (split.toBookingCents > 0) {
-      const posting = await postPaymentToAppointments(db, {
-        tenantId: input.tenantId,
-        clientId: input.clientId,
-        appointmentIds: owned,
-        amount: split.toBookingCents / 100,
-        reference: input.reference,
-        note: "Paid online in the client portal",
-      });
-      unallocatedCents = Math.round(posting.unallocated * 100);
-    }
-
-    const creditCents = split.toCreditCents + unallocatedCents;
-    if (creditCents > 0) {
-      await db.insert(storeCreditTransactions).values({
-        tenantId: input.tenantId,
-        clientId: input.clientId,
-        amount: (creditCents / 100).toFixed(2),
-        type: "credit_added",
-        method: "card",
-        note: "Paid online in the client portal, over today's bill (Stripe " + input.reference + ")",
-        createdByUserId: null,
-      });
-    }
+    /*
+     * One transaction: the booking rows AND the credit row, or none.
+     * A review on 11/11/2026 found that a dropped connection part way
+     * through left some dogs posted and the credit missing, while the
+     * alert below said nothing had been recorded — so staff would record
+     * it again by hand and double it. All-or-nothing makes the alert true.
+     */
+    const creditCents = await db.transaction(async (tx: any) => {
+      let unallocatedCents = 0;
+      if (split.toBookingCents > 0) {
+        const posting = await postPaymentToAppointments(tx, {
+          tenantId: input.tenantId,
+          clientId: input.clientId,
+          appointmentIds: owned,
+          amount: split.toBookingCents / 100,
+          reference: input.reference,
+          note: "Paid online in the client portal",
+        });
+        unallocatedCents = Math.round(posting.unallocated * 100);
+      }
+      const credit = split.toCreditCents + unallocatedCents;
+      if (credit > 0) {
+        await tx.insert(storeCreditTransactions).values({
+          tenantId: input.tenantId,
+          clientId: input.clientId,
+          amount: (credit / 100).toFixed(2),
+          type: "credit_added",
+          method: "card",
+          note: "Paid online in the client portal, over today's bill (Stripe " + input.reference + ")",
+          createdByUserId: null,
+        });
+      }
+      return credit as number;
+    });
+    const unallocatedCents = creditCents - split.toCreditCents;
 
     // More went to credit than the client chose: the bill was already
     // partly or fully paid when this arrived (a second payment, or the
@@ -159,7 +173,9 @@ export async function handlePortalAppointmentPayment(db: any, input: {
           (input.intendedCreditCents > 0 ? "more than the " + money(input.intendedCreditCents) + " they chose to add, " : "") +
           "because today's bill was already paid (in part or in full) when the payment arrived — " +
           "usually a second payment, or one taken at the counter as well. " +
-          "Leave it on account or refund it in Stripe.\n\nStripe payment: " + input.reference,
+          "Leave it on account, or refund it in Stripe — and if you refund it, take the same amount " +
+          "off their store credit too (Groomigo does not reverse it on its own), or they keep both." +
+          "\n\nStripe payment: " + input.reference,
       }).catch(() => {});
     }
     return { handled: "portal_appointment" as const, postedCents: split.toBookingCents - unallocatedCents, creditCents };
@@ -169,7 +185,8 @@ export async function handlePortalAppointmentPayment(db: any, input: {
       title: "Portal payment received but NOT recorded — " + money(input.paidCents),
       content:
         "A client paid " + money(input.paidCents) + " online for today's appointment and Stripe has the money, " +
-        "but Groomigo could not record it, so the booking may still show as owing. Do not chase this client.\n\n" +
+        "but Groomigo could not record it — none of it, the recording is all-or-nothing — so the booking " +
+        "still shows as owing. Do not chase this client; record the payment against their booking by hand.\n\n" +
         "Stripe payment: " + input.reference + "\n\n" + (error instanceof Error ? error.message : String(error)),
     }).catch(() => {});
     return { handled: "portal_appointment" as const, postedCents: 0, creditCents: 0, failed: true };
