@@ -1022,8 +1022,8 @@ export default function ClientDetail() {
             {editingWaitlistEntry && (
               <>
                 <p className="text-sm text-muted-foreground">
-                  {editingWaitlistEntry.petName} is waiting for a cancellation. Change the
-                  window or the note, or take them off.
+                  {editingWaitlistEntry.petName} {(editingWaitlistEntry.petIds?.length ?? 1) > 1 ? "are" : "is"} waiting
+                  for a cancellation. Change the dogs, the window or the note, or take them off.
                 </p>
                 <EditWaitlistEntry
                   entry={{
@@ -1034,7 +1034,13 @@ export default function ClientDetail() {
                     timeOfDay: editingWaitlistEntry.timeOfDay,
                     preferredStaffId: editingWaitlistEntry.preferredStaffId ?? null,
                     note: editingWaitlistEntry.note ?? null,
+                    petIds: editingWaitlistEntry.petIds ?? [editingWaitlistEntry.petId],
                   }}
+                  // This client's current dogs, minus any already waiting on
+                  // a DIFFERENT entry, so one dog is never on the list twice.
+                  pets={activePets.filter((pet) =>
+                    (editingWaitlistEntry.petIds ?? [editingWaitlistEntry.petId]).includes(pet.id)
+                    || !waitlistedPetIds.has(pet.id))}
                   onSaved={() => setEditWaitlistId(null)}
                 />
               </>

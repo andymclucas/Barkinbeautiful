@@ -2,19 +2,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 const joinMutate = vi.fn();
+const updateMutate = vi.fn();
 let joinPending = false;
 
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({ waitlist: { listEntries: { invalidate: vi.fn() } } }),
     staff: { listOperational: { useQuery: () => ({ data: [{ id: 1, name: "Megan Graham" }] }) } },
-    waitlist: { join: { useMutation: () => ({ mutate: joinMutate, isPending: joinPending }) } },
+    waitlist: {
+      join: { useMutation: () => ({ mutate: joinMutate, isPending: joinPending }) },
+      update: { useMutation: () => ({ mutate: updateMutate, isPending: false }) },
+      remove: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+    },
   },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import {
-  AddKnownClientToWaitlist, defaultWaitlistWindow, waitlistJoinInput, emptyWaitlistFields,
+  AddKnownClientToWaitlist, EditWaitlistEntry, defaultWaitlistWindow, waitlistJoinInput, emptyWaitlistFields,
 } from "./WaitlistEntryFields";
 
 const LINK = { id: 1574, name: "Link" };
@@ -111,5 +116,35 @@ describe("waitlistJoinInput", () => {
     const sent = waitlistJoinInput(1162, 1574, { ...emptyWaitlistFields(), staffId: "7", note: " late pickup " });
     expect(sent.preferredStaffId).toBe(7);
     expect(sent.note).toBe("late pickup");
+  });
+});
+
+
+describe("changing the dogs on an entry (11/11/2026)", () => {
+  const entry = {
+    id: 90001, petName: "Link", petIds: [1574], earliestDate: "2026-11-11", latestDate: "2026-12-18",
+    timeOfDay: "any", preferredStaffId: null, note: null,
+  };
+  beforeEach(() => updateMutate.mockClear());
+
+  it("adds a second dog to the same entry, keeping its place", () => {
+    render(<EditWaitlistEntry entry={entry} pets={[LINK, BELLE]} />);
+    expect(screen.getByRole("checkbox", { name: "Link" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Belle" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    expect(updateMutate.mock.calls[0][0]).toMatchObject({ entryId: 90001, petIds: [1574, 2001] });
+  });
+
+  it("will not save an entry with no dog on it", () => {
+    render(<EditWaitlistEntry entry={entry} pets={[LINK, BELLE]} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Link" }));
+    expect(screen.getByRole("button", { name: /Save changes/ })).toBeDisabled();
+  });
+
+  it("leaves the dogs alone when there is only one to choose", () => {
+    render(<EditWaitlistEntry entry={entry} pets={[LINK]} />);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    expect(updateMutate.mock.calls[0][0].petIds).toBeUndefined();
   });
 });

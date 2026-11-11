@@ -203,6 +203,12 @@ export const waitlistRouter = router({
       latestDate: DATE_KEY,
       timeOfDay: z.enum(["any", "morning", "afternoon"]),
       note: z.string().trim().max(500).nullable().optional(),
+      /**
+       * Which dogs are waiting (Andy, 11/11/2026: "add dog editing to the
+       * waitlist"). Omitted = unchanged. Editing keeps created_at, so a
+       * household adding a second dog keeps its place in the queue.
+       */
+      petIds: z.array(z.number().int().positive()).min(1).max(MAX_DOGS_PER_WAITLIST_ENTRY).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -221,7 +227,7 @@ export const waitlistRouter = router({
         });
       }
 
-      const [existing] = await db.select({ id: waitlistEntries.id, status: waitlistEntries.status })
+      const [existing] = await db.select({ id: waitlistEntries.id, status: waitlistEntries.status, clientId: waitlistEntries.clientId })
         .from(waitlistEntries)
         .where(and(eq(waitlistEntries.id, input.entryId), eq(waitlistEntries.tenantId, tenantId)))
         .limit(1);
@@ -233,8 +239,25 @@ export const waitlistRouter = router({
         });
       }
 
+      // The dogs, checked the way join checks them: every one on this
+      // client's record, none passed away or archived.
+      let dogs: { petId: number; extraPetIds: number[] | null } | null = null;
+      if (input.petIds) {
+        dogs = splitEntryPets(input.petIds);
+        const allIds = [dogs.petId, ...(dogs.extraPetIds ?? [])];
+        const found = await db.select({ id: pets.id, name: pets.name, status: pets.status })
+          .from(pets)
+          .where(and(inArray(pets.id, allIds), eq(pets.clientId, existing.clientId), eq(pets.tenantId, tenantId)));
+        if (found.length !== allIds.length) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "One of those dogs is not on this client's record" });
+        }
+        const notBookable = departedBookingMessage(found);
+        if (notBookable) throw new TRPCError({ code: "BAD_REQUEST", message: notBookable });
+      }
+
       await db.update(waitlistEntries)
         .set({
+          ...(dogs ? { petId: dogs.petId, extraPetIds: dogs.extraPetIds } : {}),
           serviceType: input.serviceType ?? null,
           preferredStaffId: input.preferredStaffId ?? null,
           earliestDate: input.earliestDate,

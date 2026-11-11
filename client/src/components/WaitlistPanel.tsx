@@ -2,7 +2,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { isPetCurrent } from "@shared/petArchive";
 import {
-  WaitlistEntryFields, WaitlistDogChoice, emptyWaitlistFields, waitlistJoinInput, type WaitlistFields,
+  WaitlistEntryFields, WaitlistDogChoice, EditWaitlistEntry, emptyWaitlistFields, waitlistJoinInput, type WaitlistFields,
 } from "@/components/WaitlistEntryFields";
 import { Badge } from "@/components/ui/badge";
 import { ClientLink, PetLink } from "@/components/RecordLink";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarClock, Check, Clock3, Dog, Plus, Send, Trash2, X, Phone } from "lucide-react";
+import { CalendarClock, Check, Clock3, Dog, Pencil, Plus, Send, Trash2, X, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { describeWindow } from "@shared/waitlist";
 
@@ -259,6 +259,7 @@ export function WaitlistPanel() {
   const utils = trpc.useUtils();
   const claims = trpc.waitlist.listClaims.useQuery({});
   const entries = trpc.waitlist.listEntries.useQuery({ status: "active" });
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const refreshAll = () => {
     utils.waitlist.listClaims.invalidate();
@@ -335,7 +336,8 @@ export function WaitlistPanel() {
           ) : (
             <div className="mt-2 space-y-1.5">
               {entries.data.map((e: any) => (
-                <div key={e.id} className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+                <div key={e.id} className="rounded-lg border">
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
                   {/* Lauren, 06/11/2026: "can I also click on the people in
                       the waitlist so can quickly call to come in".
 
@@ -373,10 +375,28 @@ export function WaitlistPanel() {
                   <span className="ml-auto text-xs text-muted-foreground">
                     since {brisbane(e.createdAt, false)}
                   </span>
+                  {/* Edit here as well as on the client page (Andy,
+                      11/11/2026): adding a second dog, or widening the
+                      dates, keeps their place in the queue. */}
+                  <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Edit ${e.clientName}'s waitlist entry`}
+                    aria-expanded={editingId === e.id}
+                    onClick={() => setEditingId(editingId === e.id ? null : e.id)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Remove ${e.clientName}`}
                     disabled={remove.isPending} onClick={() => remove.mutate({ entryId: e.id })}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
+                </div>
+                {editingId === e.id && (
+                  <div className="border-t px-3 py-3">
+                    <EditEntryInPanel
+                      entry={e}
+                      otherWaitingPetIds={entries.data.filter((x: any) => x.id !== e.id).flatMap((x: any) => x.petIds ?? [x.petId])}
+                      onSaved={() => { setEditingId(null); refreshAll(); }}
+                    />
+                  </div>
+                )}
                 </div>
               ))}
             </div>
@@ -384,5 +404,39 @@ export function WaitlistPanel() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+
+/** The edit form inside the panel, with the client's dogs loaded for it. */
+function EditEntryInPanel({
+  entry, otherWaitingPetIds, onSaved,
+}: {
+  entry: any;
+  otherWaitingPetIds: number[];
+  onSaved: () => void;
+}) {
+  const clientPets = trpc.pets.listByClient.useQuery({ clientId: entry.clientId });
+  const mine: number[] = entry.petIds ?? [entry.petId];
+  // Current dogs only, and never one already waiting on another entry.
+  const pets = ((clientPets.data ?? []) as { id: number; name: string; status?: string | null }[])
+    .filter((p) => isPetCurrent(p.status ?? "active"))
+    .filter((p) => mine.includes(p.id) || !otherWaitingPetIds.includes(p.id));
+  if (clientPets.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  return (
+    <EditWaitlistEntry
+      entry={{
+        id: entry.id,
+        petName: entry.petName,
+        petIds: mine,
+        earliestDate: entry.earliestDate,
+        latestDate: entry.latestDate,
+        timeOfDay: entry.timeOfDay,
+        preferredStaffId: entry.preferredStaffId ?? null,
+        note: entry.note ?? null,
+      }}
+      pets={pets}
+      onSaved={onSaved}
+    />
   );
 }

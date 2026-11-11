@@ -215,20 +215,31 @@ export function AddKnownClientToWaitlist({
  * people who asked after them.
  */
 export function EditWaitlistEntry({
-  entry, onSaved,
+  entry, pets, onSaved,
 }: {
   entry: {
     id: number;
     petName: string;
+    /** The dogs on the entry now. */
+    petIds?: number[];
     earliestDate: string;
     latestDate: string;
     timeOfDay: string;
     preferredStaffId: number | null;
     note: string | null;
   };
+  /**
+   * The client's dogs to choose from (Andy, 11/11/2026: "add dog editing
+   * to the waitlist"). Omitted, or one dog, and the dogs are not offered
+   * for change. Editing keeps the entry's place in the queue, which
+   * removing and re-adding would lose.
+   */
+  pets?: { id: number; name: string }[];
   onSaved?: () => void;
 }) {
   const utils = trpc.useUtils();
+  const canChooseDogs = (pets?.length ?? 0) > 1;
+  const [petIds, setPetIds] = useState<number[]>(entry.petIds ?? []);
   const [form, setForm] = useState<WaitlistFields>({
     earliestDate: entry.earliestDate,
     latestDate: entry.latestDate,
@@ -257,13 +268,15 @@ export function EditWaitlistEntry({
 
   return (
     <div className="space-y-3">
+      {canChooseDogs && <WaitlistDogChoice pets={pets!} value={petIds} onChange={setPetIds} />}
       <WaitlistEntryFields value={form} onChange={setForm} />
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          disabled={update.isPending}
+          disabled={update.isPending || (canChooseDogs && petIds.length === 0)}
           onClick={() => update.mutate({
             entryId: entry.id,
+            ...(canChooseDogs ? { petIds } : {}),
             earliestDate: form.earliestDate,
             latestDate: form.latestDate,
             timeOfDay: form.timeOfDay as "any" | "morning" | "afternoon",
