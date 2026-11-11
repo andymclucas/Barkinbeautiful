@@ -173,8 +173,8 @@ export async function handlePortalAppointmentPayment(db: any, input: {
           (input.intendedCreditCents > 0 ? "more than the " + money(input.intendedCreditCents) + " they chose to add, " : "") +
           "because today's bill was already paid (in part or in full) when the payment arrived — " +
           "usually a second payment, or one taken at the counter as well. " +
-          "Leave it on account, or refund it in Stripe — and if you refund it, take the same amount " +
-          "off their store credit too (Groomigo does not reverse it on its own), or they keep both." +
+          "Leave it on account, or refund it in Stripe — Groomigo takes a Stripe refund off their store " +
+          "credit by itself, so do not adjust the credit by hand as well." +
           "\n\nStripe payment: " + input.reference,
       }).catch(() => {});
     }
