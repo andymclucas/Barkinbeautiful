@@ -632,15 +632,20 @@ export default function ClientDetail() {
     onError: (error) => toast.error(error.message),
   });
   const issuePortalAccountSetupLink = trpc.clientPortal.issueAccountSetupLink.useMutation({
-    onSuccess: async (result) => {
+    onSuccess: async (result, variables) => {
+      await utils.clientPortal.getAccountStatus.invalidate({ clientId });
+      // Emailed: say so and stay on the options. Not emailed — on purpose
+      // (Generate set up link) or because the email failed — show the
+      // link to copy, so it is never lost.
+      if (result.emailSent) {
+        toast.success(`Set-up email sent to ${result.loginEmail}.`);
+        return;
+      }
       setPortalSetupLink(result.setupUrl);
       setPortalSetupExpiresAt(result.expiresAt);
       setPortalSetupEmail(result.loginEmail);
       setPortalLink(null);
-      await utils.clientPortal.getAccountStatus.invalidate({ clientId });
-      toast.success(result.emailSent
-        ? `Setup link emailed to ${result.loginEmail}.`
-        : `Setup link created, but the email couldn't be sent \u2014 share it manually.`);
+      if (variables.sendEmail) toast.error("The email couldn't be sent — copy the link and send it another way.");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -1051,61 +1056,113 @@ export default function ClientDetail() {
         <Dialog open={portalLinkOpen} onOpenChange={setPortalLinkOpen}>
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader><DialogTitle>Client portal access</DialogTitle></DialogHeader>
-            {!portalLink && !portalSetupLink && !portalRevokeConfirm && !portalAccountRevokeConfirm && <div className="space-y-5">
-              {/* First, because it is the one that breaks nothing. Everything
-                  below either revokes a live link or clears a password. */}
-              <div className="rounded-xl border border-primary/25 bg-primary/5 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="font-semibold">Resend their portal link</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {portalAccount?.portalAccountStatus === "active"
-                        ? "Emails the sign-in page. Their password still works and nothing is reset."
-                        : "Emails a fresh link. Any link they already have keeps working — nothing is revoked."}
-                    </p>
+            {!portalLink && !portalSetupLink && !portalRevokeConfirm && !portalAccountRevokeConfirm && (() => {
+              /*
+               * Four options, in the order a client goes through them (Andy,
+               * 11/11/2026): set them up, resend if it did not arrive, make a
+               * link to send another way, and see what they see. The set-up
+               * link is the agreement-first onboarding — sign the service
+               * agreement, then choose a password.
+               *
+               * The quick-look link and the old "Resend their portal link"
+               * are no longer offered here. Quick-look links already in
+               * clients' hands keep working until they lapse.
+               */
+              const status = portalAccount?.portalAccountStatus ?? "not_enabled";
+              const isActive = status === "active";
+              const isPending = status === "setup_pending";
+              const isRevoked = status === "revoked";
+              const loginEmail = portalAccount?.portalLoginEmail ?? portalAccount?.email ?? null;
+              const day = (d: Date | string) => new Date(d).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" });
+              const statusLine = isActive
+                ? `Using the portal as ${loginEmail ?? "this client"}${portalAccount?.portalLastSignedInAt ? `, last signed in ${day(portalAccount.portalLastSignedInAt)}` : ""}.`
+                : isPending
+                  ? portalAccount?.setupExpired
+                    ? `A set-up link was sent to ${loginEmail ?? "them"} but it has expired. Resend it.`
+                    : `Set-up link sent to ${loginEmail ?? "them"}${portalAccount?.portalSetupExpiresAt ? `, works until ${day(portalAccount.portalSetupExpiresAt)}` : ""}. Not finished yet.`
+                  : isRevoked
+                    ? "Portal access was turned off. Setting them up again turns it back on."
+                    : "Not set up yet.";
+              const sending = issuePortalAccountSetupLink.isPending;
+              const sendingWhich = sending ? issuePortalAccountSetupLink.variables?.sendEmail : undefined;
+              const noEmail = !loginEmail;
+              const option = (title: string, body: string, action: React.ReactNode, tone = "") => (
+                <div className={`flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between ${tone}`}>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold">{title}</h3>
+                    <p className="text-sm text-muted-foreground">{body}</p>
                   </div>
-                  <Button
-                    size="sm"
-                    disabled={resendPortalLink.isPending}
-                    onClick={() => resendPortalLink.mutate({ clientId })}
-                    title="Sends to the email already on file. Changes no password, revokes no link."
-                  >
-                    <Mail className="mr-1.5 h-4 w-4" />
-                    {resendPortalLink.isPending ? "Sending…" : "Resend link"}
-                  </Button>
+                  <div className="shrink-0">{action}</div>
                 </div>
-              </div>
-              <div className="rounded-xl border bg-muted/30 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">Quick look &mdash; no password</h3><p className="text-sm text-muted-foreground">{portalAccess?.status === "active" ? `An active link expires ${new Date(portalAccess.expiresAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" })}${portalAccess.lastAccessedAt ? ` and was last opened ${new Date(portalAccess.lastAccessedAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}` : ""}.` : portalAccess ? `The latest link is ${portalAccess.status}. Create a new expiry-bound link when required.` : "No quick-look link has been issued yet."}</p></div><Badge variant="outline" className="capitalize">{portalAccess?.status ?? "not issued"}</Badge></div>
-                {/* This paragraph said, for most of 10/11/2026, that a
-                    client who saved the portal to their phone would be
-                    asked to sign in. That was true when it was written
-                    — Lauren had just watched it happen — and it stopped
-                    being true the same afternoon, once the saved icon
-                    started carrying the client's own token
-                    (shared/portalManifest.ts).
-
-                    Left as it was, it would have gone on steering staff
-                    to the login section to solve a problem that no
-                    longer exists, which is the more expensive of the
-                    two front doors for a client who only ever wanted
-                    their dog's appointments on their phone. A warning
-                    nobody re-reads after the bug is fixed is worse than
-                    no warning. */}
-                <p className="mt-2 text-xs text-muted-foreground">Good for their phone. They can save it to the Home Screen and it opens straight into their own portal &mdash; no password. It lapses 30 days after they last open it, so a link they use keeps working and one they ignore does not. Set up a login below only if they want it on more than one device, or somewhere an emailed link will not reach.</p>
-                <div className="mt-3 flex flex-wrap gap-2">{portalAccess?.status === "active" && <Button variant="destructive" size="sm" onClick={() => setPortalRevokeConfirm(true)}>Revoke the quick-look link</Button>}<Button size="sm" disabled={issuePortalLink.isPending} onClick={() => issuePortalLink.mutate({ clientId })}>{issuePortalLink.isPending ? "Creating link…" : portalAccess?.status === "active" ? "Replace the quick-look link" : "Create a quick-look link"}</Button></div>
-              </div>
-              <div className="rounded-xl border bg-muted/30 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">Their own login &mdash; they set a password</h3><p className="text-sm text-muted-foreground">{portalAccount?.portalAccountStatus === "active" ? `Active login for ${portalAccount.portalLoginEmail ?? portalAccount.email ?? "this client"}${portalAccount.portalLastSignedInAt ? `, last used ${new Date(portalAccount.portalLastSignedInAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}` : ""}.` : portalAccount?.portalAccountStatus === "setup_pending" ? `Setup pending for ${portalAccount.portalLoginEmail ?? portalAccount.email ?? "this client"}${portalAccount.portalSetupExpiresAt ? ` until ${new Date(portalAccount.portalSetupExpiresAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" })}` : ""}.` : portalAccount?.portalAccountStatus === "revoked" ? "Client login access is revoked. Create a new setup link only when access should be restored." : "No login has been set up for this client yet."}</p></div><Badge variant="outline" className="capitalize">{portalAccount?.setupExpired ? "setup expired" : portalAccount?.portalAccountStatus?.replace(/_/g, " ") ?? "not enabled"}</Badge></div>
-                <p className="mt-2 text-xs text-muted-foreground">Groomigo will not email or text setup links automatically. The client login uses a separate client-only session and cannot access staff or administrator screens. Use a separate browser profile or private window when demonstrating a client session on a staff device.</p>
-                <div className="mt-3 flex flex-wrap gap-2">{["active", "setup_pending"].includes(portalAccount?.portalAccountStatus ?? "") && <Button variant="destructive" size="sm" onClick={() => setPortalAccountRevokeConfirm(true)}>Revoke login access</Button>}<Button variant="outline" size="sm" onClick={() => window.open(`/portal/preview/${clientId}`, "_blank", "noopener")} title="Open the client's portal exactly as they see it. Changes nothing and does not touch their access links.">View client portal</Button><Button variant="outline" size="sm" disabled={issuePortalAccountSetupLink.isPending} onClick={() => issuePortalAccountSetupLink.mutate({ clientId, sendEmail: false })} title={portalAccount?.portalAccountStatus === "active" ? "Resets this client's portal login: clears their password and signs them out. They must use the new link to set a new password. Nothing is emailed." : "Creates the link and shows it here. Nothing is emailed to the client."}>{issuePortalAccountSetupLink.isPending ? "Creating…" : portalAccount?.portalAccountStatus === "active" ? "Reset password (don't send)" : "Create a login invite (don't send)"}</Button><Button size="sm" disabled={issuePortalAccountSetupLink.isPending} onClick={() => issuePortalAccountSetupLink.mutate({ clientId, sendEmail: true })} title={portalAccount?.portalAccountStatus === "active" ? "Resets this client's portal login and emails them a link to set a new password. Their current password stops working immediately." : "Creates the link and emails it to this client now."}>{issuePortalAccountSetupLink.isPending ? "Creating setup…" : portalAccount?.portalAccountStatus === "active" ? "Email password reset" : "Email a login invite"}</Button></div>
-              </div>
-              <DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button></DialogFooter>
-            </div>}
+              );
+              return <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                  <Badge variant="outline">{isActive ? "On the portal" : isPending ? (portalAccount?.setupExpired ? "Link expired" : "Invite sent") : isRevoked ? "Turned off" : "Not set up"}</Badge>
+                  <span className="text-muted-foreground">{statusLine}</span>
+                </div>
+                {noEmail && !isActive && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                    There's no email address on this client. Add one in Edit details first — their login is their email.
+                  </p>
+                )}
+                {option(
+                  "Set up first time",
+                  "Emails them a link to set up their portal. They read and sign the service agreement first, then choose a password.",
+                  <Button size="sm" disabled={sending || isActive || isPending || noEmail}
+                    title={isActive ? "They are already on the portal." : isPending ? "A set-up link has already gone out — use Resend set up." : undefined}
+                    onClick={() => issuePortalAccountSetupLink.mutate({ clientId, sendEmail: true })}>
+                    <Mail className="mr-1.5 h-4 w-4" />{sending && sendingWhich && !isPending ? "Sending…" : "Send set-up email"}
+                  </Button>,
+                  "border-primary/25 bg-primary/5",
+                )}
+                {option(
+                  "Resend set up",
+                  "In case they didn't get the first one. The same email again, with a fresh link — the earlier link stops working.",
+                  <Button size="sm" variant="outline" disabled={sending || !isPending || noEmail}
+                    title={!isPending ? "Nothing has been sent yet — use Set up first time." : undefined}
+                    onClick={() => issuePortalAccountSetupLink.mutate({ clientId, sendEmail: true })}>
+                    <Mail className="mr-1.5 h-4 w-4" />{sending && sendingWhich && isPending ? "Sending…" : "Resend set-up email"}
+                  </Button>,
+                )}
+                {option(
+                  "Generate set up link",
+                  "Makes the same link without sending anything, for you to copy and send however you like — text, Messenger, in person.",
+                  <Button size="sm" variant="outline" disabled={sending || isActive || noEmail}
+                    title={isActive ? "They are already on the portal." : undefined}
+                    onClick={() => issuePortalAccountSetupLink.mutate({ clientId, sendEmail: false })}>
+                    <Copy className="mr-1.5 h-4 w-4" />{sending && sendingWhich === false ? "Making link…" : "Generate link"}
+                  </Button>,
+                )}
+                {option(
+                  "View client portal",
+                  "Their portal as they see it once they're set up. Read-only — changes nothing for them.",
+                  <Button size="sm" variant="outline" onClick={() => window.open(`/portal/preview/${clientId}`, "_blank", "noopener")}>
+                    View portal
+                  </Button>,
+                )}
+                {(isActive || isPending) && (
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs">
+                    {isActive && (
+                      <button type="button" className="text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+                        disabled={sending}
+                        onClick={() => issuePortalAccountSetupLink.mutate({ clientId, sendEmail: true })}
+                        title="Emails a link to set a new password. Their current password keeps working until they do.">
+                        Email a password reset
+                      </button>
+                    )}
+                    <button type="button" className="text-destructive underline underline-offset-2"
+                      onClick={() => setPortalAccountRevokeConfirm(true)}>
+                      Turn off portal access
+                    </button>
+                  </div>
+                )}
+                <DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button></DialogFooter>
+              </div>;
+            })()}
             {!portalLink && portalRevokeConfirm && <div className="space-y-4"><p className="text-sm text-muted-foreground">Revoke the active client portal link now? It will stop working immediately and cannot be restored. Groomigo will not notify the client.</p><DialogFooter><Button variant="outline" onClick={() => setPortalRevokeConfirm(false)}>Keep active</Button><Button variant="destructive" disabled={revokePortalLink.isPending} onClick={() => revokePortalLink.mutate({ clientId })}>{revokePortalLink.isPending ? "Revoking…" : "Revoke link"}</Button></DialogFooter></div>}
             {!portalSetupLink && portalAccountRevokeConfirm && <div className="space-y-4"><p className="text-sm text-muted-foreground">Revoke this client’s portal login now? Their password will stop working and any pending setup link will be invalidated. Groomigo will not notify the client.</p><DialogFooter><Button variant="outline" onClick={() => setPortalAccountRevokeConfirm(false)}>Keep access</Button><Button variant="destructive" disabled={revokePortalAccount.isPending} onClick={() => revokePortalAccount.mutate({ clientId })}>{revokePortalAccount.isPending ? "Revoking…" : "Revoke login"}</Button></DialogFooter></div>}
             {portalLink && <div className="space-y-4"><p className="text-sm text-muted-foreground">Share this link manually. It expires {portalLinkExpiresAt ? new Date(portalLinkExpiresAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" }) : "in 30 days"}.</p><div className="rounded-lg border bg-muted/40 p-3 break-all text-xs">{portalLink}</div><DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button><Button onClick={() => { navigator.clipboard.writeText(portalLink); toast.success("Client portal link copied"); }}><Copy className="mr-1.5 h-4 w-4" /> Copy link</Button></DialogFooter></div>}
-            {portalSetupLink && <div className="space-y-4"><p className="text-sm text-muted-foreground">Share this setup link manually with {portalSetupEmail ?? "the client"}. It expires {portalSetupExpiresAt ? new Date(portalSetupExpiresAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" }) : "in 30 days"}. Any previous setup link has stopped working. If this client already had a portal login, their password has been cleared and they are signed out — they must use this link to set a new one.</p><div className="rounded-lg border bg-muted/40 p-3 break-all text-xs">{portalSetupLink}</div><DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button><Button onClick={() => { navigator.clipboard.writeText(portalSetupLink); toast.success("Client portal setup link copied"); }}><Copy className="mr-1.5 h-4 w-4" /> Copy setup link</Button></DialogFooter></div>}
+            {portalSetupLink && <div className="space-y-4"><p className="text-sm text-muted-foreground">Copy this set-up link and send it to {portalSetupEmail ?? "the client"} however suits. It expires {portalSetupExpiresAt ? new Date(portalSetupExpiresAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" }) : "in 30 days"}. It opens the agreement first, then they choose a password. Any earlier set-up link has stopped working.</p><div className="rounded-lg border bg-muted/40 p-3 break-all text-xs">{portalSetupLink}</div><DialogFooter><Button variant="outline" onClick={() => setPortalLinkOpen(false)}>Close</Button><Button onClick={() => { navigator.clipboard.writeText(portalSetupLink); toast.success("Client portal setup link copied"); }}><Copy className="mr-1.5 h-4 w-4" /> Copy setup link</Button></DialogFooter></div>}
           </DialogContent>
         </Dialog>
 
