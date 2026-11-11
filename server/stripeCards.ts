@@ -158,6 +158,8 @@ export async function emailCardSetupLink(clientId: number) {
     firstName: client.firstName,
     url: link.url,
     replacingExistingCard: Boolean(client.existingPaymentMethodId),
+    // So the short link on our own client host passes the email's check.
+    ownBaseUrl: getPortalBaseUrl(),
   });
 
   const { sendEmail } = await import("./email");
