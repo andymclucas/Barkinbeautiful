@@ -13,6 +13,8 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { RetailSection } from "@/components/RetailSection";
 import { CounterSale } from "@/components/CounterSale";
+import { MEMBERSHIP_WEIGHT_BANDS } from "@shared/membershipPackages";
+import { PLAN_SERVICES, PLAN_TIERS, normalisePlanService, normalisePlanTier, normalisePlanWeightBand } from "@shared/membershipPlanFields";
 
 type ServiceRecord = {
   id: number;
@@ -81,7 +83,7 @@ const emptyPlanForm = () => ({
   name: "",
   code: "",
   tier: "",
-  serviceVariant: "",
+  serviceVariant: "classic",
   weightBand: "",
   weeklyPriceAud: "",
   billingCycleWeeks: "1",
@@ -173,9 +175,12 @@ export default function Pricing() {
       form: record ? {
         name: record.name,
         code: record.code,
-        tier: record.tier,
-        serviceVariant: record.serviceVariant ?? "",
-        weightBand: record.weightBand ?? "",
+        // A plan saved before these were pick-lists may hold "Gold +" or
+        // "small 0-10kg"; open it on the value it means, so saving it
+        // stores the clean one (shared/membershipPlanFields.ts).
+        tier: normalisePlanTier(record.tier) ?? "",
+        serviceVariant: record.serviceVariant ? normalisePlanService(record.serviceVariant) ?? "" : "classic",
+        weightBand: normalisePlanWeightBand(record.weightBand).band ?? "",
         weeklyPriceAud: String(record.weeklyPriceAud),
         billingCycleWeeks: String(record.billingCycleWeeks),
         appointmentIntervalWeeks: String(record.appointmentIntervalWeeks),
@@ -273,7 +278,7 @@ function ServiceForm({ form, onChange }: { form: ServiceFormState; onChange: (fo
 
 function MembershipPlanForm({ form, onChange }: { form: ReturnType<typeof emptyPlanForm>; onChange: (form: ReturnType<typeof emptyPlanForm>) => void }) {
   const update = (key: keyof typeof form, value: string | boolean) => onChange({ ...form, [key]: value });
-  return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Plan name *</Label><Input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. Gold Classic Small" /></div><div className="space-y-1.5"><Label>Unique code *</Label><Input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="e.g. gold-classic-small" /></div><div className="space-y-1.5"><Label>Tier *</Label><Input value={form.tier} onChange={(event) => update("tier", event.target.value)} placeholder="e.g. Gold" /></div><div className="space-y-1.5"><Label>Service variant</Label><Input value={form.serviceVariant} onChange={(event) => update("serviceVariant", event.target.value)} placeholder="e.g. Classic" /></div><div className="space-y-1.5"><Label>Weight band</Label><Input value={form.weightBand} onChange={(event) => update("weightBand", event.target.value)} placeholder="e.g. Small 0–10kg" /></div><div className="space-y-1.5"><Label>Weekly price (AUD) *</Label><Input type="number" min="0" step="0.01" value={form.weeklyPriceAud} onChange={(event) => update("weeklyPriceAud", event.target.value)} /></div><div className="space-y-1.5"><Label>Appointment interval (weeks) *</Label><Input type="number" min="1" value={form.appointmentIntervalWeeks} onChange={(event) => update("appointmentIntervalWeeks", event.target.value)} /></div><div className="space-y-1.5"><Label>Billing cycle (weeks)</Label><Input type="number" min="1" value={form.billingCycleWeeks} onChange={(event) => update("billingCycleWeeks", event.target.value)} /></div><div className="space-y-1.5"><Label>Sort order</Label><Input type="number" min="0" value={form.sortOrder} onChange={(event) => update("sortOrder", event.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>Description</Label><textarea value={form.description} onChange={(event) => update("description", event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional internal description" /></div><label className="flex items-center gap-2 text-sm font-medium sm:col-span-2"><input type="checkbox" checked={form.isActive} onChange={(event) => update("isActive", event.target.checked)} /> Active and ready for future use</label></div>;
+  return <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="space-y-1.5 sm:col-span-2"><Label>Plan name *</Label><Input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="e.g. Gold Classic Small" /></div><div className="space-y-1.5"><Label>Unique code *</Label><Input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="e.g. gold-classic-small" /></div><div className="space-y-1.5"><Label>Tier *</Label><select value={form.tier} onChange={(event) => update("tier", event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Choose a tier</option>{PLAN_TIERS.map((tier) => <option key={tier} value={tier}>{tier.charAt(0).toUpperCase() + tier.slice(1)}</option>)}</select><p className="text-xs text-muted-foreground">The plan name is what the client sees, so a "Gold +" plan is tier Gold.</p></div><div className="space-y-1.5"><Label>Service *</Label><select value={form.serviceVariant} onChange={(event) => update("serviceVariant", event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm">{PLAN_SERVICES.map((service) => <option key={service} value={service}>{service === "classic" ? "Classic" : "Styled"}</option>)}</select></div><div className="space-y-1.5"><Label>Weight band</Label><select value={form.weightBand} onChange={(event) => update("weightBand", event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Any weight</option>{MEMBERSHIP_WEIGHT_BANDS.map((band) => <option key={band.id} value={band.id}>{band.label}</option>)}</select><p className="text-xs text-muted-foreground">Offered to dogs in this band when adding a membership.</p></div><div className="space-y-1.5"><Label>Weekly price (AUD) *</Label><Input type="number" min="0" step="0.01" value={form.weeklyPriceAud} onChange={(event) => update("weeklyPriceAud", event.target.value)} /></div><div className="space-y-1.5"><Label>Appointment interval (weeks) *</Label><Input type="number" min="1" value={form.appointmentIntervalWeeks} onChange={(event) => update("appointmentIntervalWeeks", event.target.value)} /></div><div className="space-y-1.5"><Label>Billing cycle (weeks)</Label><Input type="number" min="1" value={form.billingCycleWeeks} onChange={(event) => update("billingCycleWeeks", event.target.value)} /></div><div className="space-y-1.5"><Label>Sort order</Label><Input type="number" min="0" value={form.sortOrder} onChange={(event) => update("sortOrder", event.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label>Description</Label><textarea value={form.description} onChange={(event) => update("description", event.target.value)} className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Optional internal description" /></div><label className="flex items-center gap-2 text-sm font-medium sm:col-span-2"><input type="checkbox" checked={form.isActive} onChange={(event) => update("isActive", event.target.checked)} /> Active and ready for future use</label></div>;
 }
 
 /** The till, refreshing the product list's stock counts after each sale. */
