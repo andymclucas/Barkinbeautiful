@@ -201,12 +201,13 @@ describe("brisbaneDayGap", () => {
 });
 
 describe("occurrencesForMonths", () => {
-  it("floors to whole grooms", () => {
-    expect(occurrencesForMonths(5, 12)).toBe(10); // 52/5 = 10.4
-    expect(occurrencesForMonths(4, 12)).toBe(13);
+  it("counts every-N-weeks dates inside the window — by weeks, not per year", () => {
+    expect(occurrencesForMonths(6, 12)).toBe(9);  // weeks 0, 6 … 48: Lauren's nine
+    expect(occurrencesForMonths(5, 12)).toBe(11); // weeks 0 … 50
+    expect(occurrencesForMonths(4, 12)).toBe(13); // weeks 0 … 48 — week 52 is next year's
     expect(occurrencesForMonths(2, 12)).toBe(26);
-    expect(occurrencesForMonths(8, 12)).toBe(6);  // 6.5
-    expect(occurrencesForMonths(6, 6)).toBe(4);   // half a year at 6-weekly
+    expect(occurrencesForMonths(8, 12)).toBe(7);  // weeks 0 … 48
+    expect(occurrencesForMonths(6, 6)).toBe(5);   // weeks 0 … 24 of 26
   });
 
   it("always offers at least the first groom", () => {

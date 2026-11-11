@@ -181,7 +181,7 @@ export function AddMembershipButton({ clientId, pets, onChanged }: {
                 )}
                 {chosen && (
                   <p className="text-[11px] text-muted-foreground">
-                    ${chosen.weeklyPrice}/wk · a groom every {chosen.appointmentIntervalWeeks} weeks · {chosen.visitsPerYear} a year
+                    ${chosen.weeklyPrice}/wk · a groom every {chosen.appointmentIntervalWeeks} weeks
                   </p>
                 )}
               </div>

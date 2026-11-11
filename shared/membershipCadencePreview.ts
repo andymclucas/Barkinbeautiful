@@ -10,8 +10,8 @@
  * A preview only: the salon still approves, and the real series is planned
  * on approval (planMembershipSeries), which moves a visit that lands on a
  * day the groomer is away. The COUNT is the one approval books —
- * occurrencesForMonths — so the client is never shown a ninth groom the
- * salon will not create. Calendar-date arithmetic in UTC on "YYYY-MM-DD",
+ * occurrencesForMonths — so the client is shown exactly the grooms the
+ * salon will create. Calendar-date arithmetic in UTC on "YYYY-MM-DD",
  * so no device time zone can shift a day.
  */
 import { occurrencesForMonths } from "./membershipSeries";

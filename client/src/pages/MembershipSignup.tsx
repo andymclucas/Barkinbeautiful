@@ -294,7 +294,7 @@ export default function MembershipSignup() {
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="text-2xl font-bold tabular-nums">${priced.weeklyTotal.toFixed(2)}</span>
                   <span className="text-sm text-muted-foreground">
-                    a week · a groom every {priced.intervalWeeks} weeks · {priced.visitsPerYear}
+                    a week · a groom every {priced.intervalWeeks} weeks
                   </span>
                 </div>
                 <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
@@ -435,8 +435,7 @@ export default function MembershipSignup() {
                   This will give {who} a booking every {priced.intervalWeeks} weeks — {when}.
                 </p>
                 <p className="text-muted-foreground">
-                  That's {dates.length} visits over the next {options.data?.monthsAhead ?? 12} months, starting{" "}
-                  {day(dates[0] ?? firstKey)}:
+                  Starting {day(dates[0] ?? firstKey)}, then every {priced.intervalWeeks} weeks:
                 </p>
                 <ul className="flex flex-wrap gap-1.5">
                   {dates.slice(0, 4).map((d) => (
