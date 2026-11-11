@@ -7,12 +7,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ClientLink, PetLink } from "@/components/RecordLink";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CalendarClock, Check, Clock3, Dog, Pencil, Plus, Send, Trash2, X, Phone } from "lucide-react";
+import { CalendarClock, Check, Dog, Pencil, Plus, Send, Trash2, X, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { describeWindow } from "@shared/waitlist";
 
@@ -69,26 +68,26 @@ function OfferSlot({ onOffered }: { onOffered: () => void }) {
       <h3 className="flex items-center gap-2 text-sm font-semibold">
         <CalendarClock className="h-4 w-4 text-muted-foreground" />A slot has come free
       </h3>
-      <div className="mt-3 grid gap-3 sm:grid-cols-4">
+      <div className="@container mt-3"><div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
         <div>
           <Label className="text-xs">Date</Label>
-          <DateField className="mt-1 h-8" value={slot.date}
+          <DateField className="mt-1 h-9" value={slot.date}
             onChange={next => { setSlot((s) => ({ ...s, date: next })); setPicked([]); }} />
         </div>
         <div>
           <Label className="text-xs">Time</Label>
-          <Input className="mt-1 h-8" type="time" step="900" value={slot.time}
+          <Input className="mt-1 h-9" type="time" step="900" value={slot.time}
             onChange={(e) => { setSlot((s) => ({ ...s, time: e.target.value })); setPicked([]); }} />
         </div>
         <div>
           <Label className="text-xs">Minutes</Label>
-          <Input className="mt-1 h-8" type="number" min="15" step="15" value={slot.durationMinutes}
+          <Input className="mt-1 h-9" type="number" min="15" step="15" value={slot.durationMinutes}
             onChange={(e) => setSlot((s) => ({ ...s, durationMinutes: e.target.value }))} />
         </div>
         <div>
           <Label className="text-xs">Groomer</Label>
           <Select value={slot.staffId} onValueChange={(v) => { setSlot((s) => ({ ...s, staffId: v })); setPicked([]); }}>
-            <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="Any" /></SelectTrigger>
+            <SelectTrigger className="mt-1 h-9 w-full"><SelectValue placeholder="Any" /></SelectTrigger>
             <SelectContent>
               {groomers.data?.map((g: any) => (
                 <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
@@ -96,7 +95,7 @@ function OfferSlot({ onOffered }: { onOffered: () => void }) {
             </SelectContent>
           </Select>
         </div>
-      </div>
+      </div></div>
 
       {!ready ? (
         <p className="mt-3 text-sm text-muted-foreground">Enter the date and time to see who's waiting for it.</p>
@@ -211,7 +210,7 @@ function AddToWaitlist({ onAdded }: { onAdded: () => void }) {
 
       {!chosen ? (
         <>
-          <Input className="mt-2 h-8" value={search} placeholder="Search a client or dog…"
+          <Input className="mt-2 h-9" value={search} placeholder="Search a client or dog…"
             onChange={(e) => setSearch(e.target.value)} />
           {search.trim().length >= 2 && (
             <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
@@ -286,19 +285,19 @@ export function WaitlistPanel() {
   });
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-          <Clock3 className="h-4 w-4 text-muted-foreground" />
-          Waitlist
+    /* No card of its own (Andy, 11/11/2026, "fix alignment issues"): it
+       only ever opens inside the calendar's Waitlist dialog, which already
+       has the title, so a bordered box headed "Waitlist" inside it was a
+       second frame and a second title. The counts stay, as a line. */
+    <div className="space-y-4">
+      {((claims.data?.length ?? 0) > 0 || (entries.data?.length ?? 0) > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
           {(claims.data?.length ?? 0) > 0 && <Badge>{claims.data!.length} waiting on you</Badge>}
           {(entries.data?.length ?? 0) > 0 && (
             <Badge variant="secondary">{entries.data!.length} on the list</Badge>
           )}
-        </CardTitle>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
+        </div>
+      )}
         {/* Claims first: somebody has tapped and is waiting on an answer. */}
         {(claims.data?.length ?? 0) > 0 && (
           <div className="space-y-2">
@@ -337,7 +336,7 @@ export function WaitlistPanel() {
             <div className="mt-2 space-y-1.5">
               {entries.data.map((e: any) => (
                 <div key={e.id} className="rounded-lg border">
-                <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                <div className="px-3 py-2 text-sm">
                   {/* Lauren, 06/11/2026: "can I also click on the people in
                       the waitlist so can quickly call to come in".
 
@@ -352,8 +351,27 @@ export function WaitlistPanel() {
                       client names clickable across the whole platform
                       regardless of the screen they're on, same with dogs".
                       This screen was missed. */}
-                  <ClientLink clientId={e.clientId} className="font-medium">{e.clientName}</ClientLink>
-                  <span className="text-muted-foreground">· <PetLink clientId={e.clientId} petId={e.petId}>{e.petName}</PetLink></span>
+                  {/* Name and dog on top with the actions pinned top-right, the
+                      details underneath — so Edit and Remove sit in the same
+                      place on every row however long the details run. */}
+                  <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1 leading-7">
+                      <ClientLink clientId={e.clientId} className="font-medium">{e.clientName}</ClientLink>
+                      <span className="text-muted-foreground">· <PetLink clientId={e.clientId} petId={e.petId}>{e.petName}</PetLink></span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Edit ${e.clientName}'s waitlist entry`}
+                    aria-expanded={editingId === e.id}
+                    onClick={() => setEditingId(editingId === e.id ? null : e.id)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Remove ${e.clientName}`}
+                    disabled={remove.isPending} onClick={() => remove.mutate({ entryId: e.id })}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                    </div>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
                   {e.clientPhone ? (
                     <a
                       href={`tel:${String(e.clientPhone).replace(/\s/g, "")}`}
@@ -372,21 +390,10 @@ export function WaitlistPanel() {
                   <Badge variant="outline">{describeWindow(e)}</Badge>
                   {e.preferredStaffName && <Badge variant="secondary">{e.preferredStaffName}</Badge>}
                   {e.note && <span className="text-xs italic text-muted-foreground">"{e.note}"</span>}
-                  <span className="ml-auto text-xs text-muted-foreground">
+                  <span className="text-muted-foreground">
                     since {brisbane(e.createdAt, false)}
                   </span>
-                  {/* Edit here as well as on the client page (Andy,
-                      11/11/2026): adding a second dog, or widening the
-                      dates, keeps their place in the queue. */}
-                  <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Edit ${e.clientName}'s waitlist entry`}
-                    aria-expanded={editingId === e.id}
-                    onClick={() => setEditingId(editingId === e.id ? null : e.id)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Remove ${e.clientName}`}
-                    disabled={remove.isPending} onClick={() => remove.mutate({ entryId: e.id })}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  </div>
                 </div>
                 {editingId === e.id && (
                   <div className="border-t px-3 py-3">
@@ -402,8 +409,7 @@ export function WaitlistPanel() {
             </div>
           )}
         </div>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 

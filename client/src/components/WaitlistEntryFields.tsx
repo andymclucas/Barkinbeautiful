@@ -56,22 +56,25 @@ export function WaitlistEntryFields({
   const set = (patch: Partial<WaitlistFields>) => onChange({ ...value, ...patch });
 
   return (
-    <>
-      <div className="grid gap-3 sm:grid-cols-4">
+    <div className="@container">
+      {/* Two to a row, decided by the width of the box this sits in, not
+          the screen: it lives in dialogs, and four to a row there cut the
+          dates to "11/11/2" (Andy, 11/11/2026). */}
+      <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
         <div>
           <Label className="text-xs">From</Label>
-          <DateField className="mt-1 h-8" value={value.earliestDate}
+          <DateField className="mt-1 h-9" value={value.earliestDate}
             onChange={next => set({ earliestDate: next })} />
         </div>
         <div>
           <Label className="text-xs">Until</Label>
-          <DateField className="mt-1 h-8" value={value.latestDate}
+          <DateField className="mt-1 h-9" value={value.latestDate}
             onChange={next => set({ latestDate: next })} />
         </div>
         <div>
           <Label className="text-xs">Time of day</Label>
           <Select value={value.timeOfDay} onValueChange={(v) => set({ timeOfDay: v })}>
-            <SelectTrigger className="mt-1 h-8"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="mt-1 h-9 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="any">Any</SelectItem>
               <SelectItem value="morning">Mornings</SelectItem>
@@ -82,7 +85,7 @@ export function WaitlistEntryFields({
         <div>
           <Label className="text-xs">Groomer</Label>
           <Select value={value.staffId} onValueChange={(v) => set({ staffId: v })}>
-            <SelectTrigger className="mt-1 h-8"><SelectValue placeholder="No preference" /></SelectTrigger>
+            <SelectTrigger className="mt-1 h-9 w-full"><SelectValue placeholder="No preference" /></SelectTrigger>
             <SelectContent>
               {groomers.data?.map((g: any) => (
                 <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
@@ -91,10 +94,10 @@ export function WaitlistEntryFields({
           </Select>
         </div>
       </div>
-      <Input className="mt-3 h-8" value={value.note} maxLength={500}
+      <Input className="mt-3 h-9" value={value.note} maxLength={500}
         placeholder="Anything else they said — e.g. not Tuesdays, needs a late pickup"
         onChange={(e) => set({ note: e.target.value })} />
-    </>
+    </div>
   );
 }
 
