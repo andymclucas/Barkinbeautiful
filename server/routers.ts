@@ -1434,12 +1434,20 @@ const calendarRouter = router({
          * printed on, hiding the real previous groom. Excluding the rows
          * on screen gives the dog's actual last visit back.
          */
+        /*
+         * And never a visit on TODAY's date, by Brisbane calendar day
+         * (Andy, 11/11/2026): "If it is the appt on the day it still needs
+         * to show the previous appt as last. Once that day passes, it then
+         * shows that appt". So "before now" became "before the start of
+         * today in Brisbane" — shared/clientVisitDates.ts has the rule.
+         */
+        const startOfTodayBrisbane = brisbaneExplicitRange(brisbaneDateKey(now), brisbaneDateKey(now)).from;
         const priorAppointments = await db
-          .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart, status: appointments.status })
+          .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart, status: appointments.status, workflowState: appointments.workflowState })
           .from(appointments)
           .where(and(
             inArray(appointments.petId, petIds),
-            lt(appointments.scheduledStart, now),
+            lt(appointments.scheduledStart, startOfTodayBrisbane),
             appointmentIds.length > 0 ? notInArray(appointments.id, appointmentIds) : undefined,
             eq(appointments.tenantId, tenantOf(ctx, input))
           ))
@@ -5758,8 +5766,16 @@ const clientsRouter = router({
         // the data supports: clients.createdAt is 3 Aug 2026 for 10,075 of
         // 10,101 rows, the day the MoeGo merge ran.
         firstVisit: sql<Date | null>`MIN(${appointments.scheduledStart})`,
-        lastVisit: sql<Date | null>`MAX(CASE WHEN ${appointments.scheduledStart} <= NOW() AND ${appointments.workflowState} = 'complete' THEN ${appointments.scheduledStart} END)`,
-        nextVisit: sql<Date | null>`MIN(CASE WHEN ${appointments.scheduledStart} > NOW() AND ${appointments.status} <> 'cancelled' THEN ${appointments.scheduledStart} END)`,
+        /*
+         * By Brisbane calendar day, the same rule as the client page
+         * (shared/clientVisitDates.ts, Andy 11/11/2026): last = before
+         * today, next = after today; today's own booking is neither until
+         * the day passes. UTC_TIMESTAMP shifted +10, never NOW()/CURDATE(),
+         * which read the session's UTC clock and are a day behind Brisbane
+         * until 10am. No-shows are not visits.
+         */
+        lastVisit: sql<Date | null>`MAX(CASE WHEN DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')) < DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+10:00')) AND ${appointments.workflowState} <> 'no_show' AND ${appointments.status} <> 'no_show' THEN ${appointments.scheduledStart} END)`,
+        nextVisit: sql<Date | null>`MIN(CASE WHEN DATE(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00')) > DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+10:00')) AND ${appointments.workflowState} <> 'no_show' AND ${appointments.status} <> 'no_show' THEN ${appointments.scheduledStart} END)`,
       }).from(appointments)
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),

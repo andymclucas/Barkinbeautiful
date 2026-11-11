@@ -1,7 +1,6 @@
 import { CalendarDays, Dog, PawPrint, Scissors } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
-import { getActiveTimeZone } from "@/lib/timezone";
+import { clientVisitDates, BRISBANE_TIME_ZONE, brisbaneDayOf, isVisit } from "@shared/clientVisitDates";
 
 /**
  * Who is texting, beside their conversation.
@@ -48,14 +47,19 @@ export function ThreadClientContext({ clientId }: { clientId: number | null }) {
     return <div className="space-y-2 p-4">{[1, 2, 3].map((n) => <div key={n} className="h-12 animate-pulse rounded-lg bg-muted" />)}</div>;
   }
 
-  const { upcoming, past } = splitAppointmentsByTime(data ?? [], new Date());
-  const next = upcoming[0];
-  const last = past[0];
+  // Last / Today / Next by Brisbane calendar day (shared/clientVisitDates.ts):
+  // today's appointment is "today" until the day passes (Andy, 11/11/2026).
+  const { last, today, next } = clientVisitDates(data ?? []);
+  // Same Brisbane-day line for the counts: today and later is upcoming.
+  const todayKey = brisbaneDayOf(new Date());
+  const visits = (data ?? []).filter(isVisit);
+  const upcomingCount = visits.filter((a) => brisbaneDayOf(a.scheduledStart) >= todayKey).length;
+  const pastCount = visits.length - upcomingCount;
   const petNames = Array.from(new Set((data ?? []).map((a) => a.petName).filter(Boolean)));
 
   const when = (value: Date | string | number) =>
     new Date(value as string).toLocaleString("en-AU", {
-      timeZone: getActiveTimeZone(),
+      timeZone: BRISBANE_TIME_ZONE,
       weekday: "short", day: "numeric", month: "short",
       hour: "numeric", minute: "2-digit", hour12: true,
     });
@@ -74,6 +78,22 @@ export function ThreadClientContext({ clientId }: { clientId: number | null }) {
             value={`$${stats.outstanding.toFixed(2)}`}
             tone={stats.outstanding > 0 ? "warn" : undefined}
           />
+        </section>
+      )}
+
+      {today.length > 0 && (
+        <section>
+          <h4 className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+            <CalendarDays className="h-3.5 w-3.5" /> Today
+          </h4>
+          {today.map((t, i) => (
+            <div key={i} className="mb-1.5 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+              <p className="font-medium">{when(t.scheduledStart)}</p>
+              <p className="text-xs text-muted-foreground">
+                {t.petName ?? "Pet"}{t.staffName ? ` · ${t.staffName}` : ""}
+              </p>
+            </div>
+          ))}
         </section>
       )}
 
@@ -127,7 +147,7 @@ export function ThreadClientContext({ clientId }: { clientId: number | null }) {
       )}
 
       <p className="border-t pt-3 text-[11px] text-muted-foreground">
-        {upcoming.length} upcoming · {past.length} past
+        {upcomingCount} upcoming · {pastCount} past
       </p>
     </div>
   );
