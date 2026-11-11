@@ -82,6 +82,8 @@ import { createStaffInvitationToken, hashStaffInvitationToken, isLinkedStaffUser
 import { createInvoiceCheckout, createPortalAppointmentCheckout } from "./stripePayments";
 import { loadTodaysBill } from "./portalAppointmentPayment";
 import { checkPortalPayment, portalPayMaxCents } from "@shared/portalAppointmentPay";
+import { outstandingForInvoice } from "./invoicePaymentPosting";
+import { isMoegoInvoice, portalInvoicePayable } from "@shared/portalInvoicePay";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { CLIENT_PORTAL_ACCESS_TTL_MS, clientPortalLinkRenewal, createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
@@ -15016,6 +15018,7 @@ async function buildClientPortalPayload(db: any, access: {
       paidAt: invoices.paidAt,
       dueAt: invoices.dueAt,
       createdAt: invoices.createdAt,
+      appointmentId: invoices.appointmentId,
     })
       .from(invoices)
       .where(and(eq(invoices.tenantId, access.tenantId), eq(invoices.clientId, access.clientId)))
@@ -15054,7 +15057,7 @@ async function buildClientPortalPayload(db: any, access: {
     memberships: clientMemberships,
     groomingCards: clientReports,
     storeCreditBalance: creditBalanceRow[0]?.total ?? "0.00",
-    invoices: clientInvoices,
+    invoices: await withPortalPayability(db, access.tenantId, clientInvoices, access.clientId),
     payments: buildPaymentTimeline({
       invoices: clientInvoices,
       appointmentPayments: clientApptPayments,
@@ -15066,6 +15069,48 @@ async function buildClientPortalPayload(db: any, access: {
 // Resolves which client is making a portal request, whether they're using a
 // temporary token link or a full logged-in account. Both paths are supported
 // everywhere a client can act on their own data (e.g. reschedule/cancel).
+/**
+ * What a portal bill still owes, in cents, or null when it cannot be paid
+ * online (shared/portalInvoicePay.ts). Bills on dogs use the same figure
+ * the Stripe webhook pays off; a bill with no booking behind it — a
+ * counter sale billed later — is its total, as the invoice email sizes it.
+ */
+async function portalInvoiceOwedCents(
+  db: any, tenantId: number,
+  invoice: { id: number; invoiceNumber: string | null; status: string | null; total: string | null; appointmentId: number | null },
+  todaysAppointmentIds: ReadonlySet<number> = new Set(),
+): Promise<number | null> {
+  const status = String(invoice.status ?? "").toLowerCase();
+  if (status === "paid" || status === "cancelled" || isMoegoInvoice(invoice.invoiceNumber)) return null;
+  // Today's groom is paid through the "today's appointment" card, which
+  // covers every dog on the visit. Offering its bill here as well would
+  // put two Pay buttons on one groom.
+  if (invoice.appointmentId && todaysAppointmentIds.has(invoice.appointmentId)) return null;
+  if (invoice.appointmentId) {
+    const [appt] = await db.select({ moego: appointments.moegoAppointmentId })
+      .from(appointments).where(and(eq(appointments.id, invoice.appointmentId), eq(appointments.tenantId, tenantId))).limit(1);
+    if (isMoegoInvoice(invoice.invoiceNumber, appt?.moego)) return null;
+  }
+  const owed = await outstandingForInvoice(db, tenantId, invoice.id);
+  const cents = owed === null ? Math.round(Number(invoice.total ?? 0) * 100) : Math.round(owed * 100);
+  return portalInvoicePayable({ status: invoice.status, invoiceNumber: invoice.invoiceNumber, fromMoego: false, owedCents: cents })
+    ? cents : null;
+}
+
+/** Adds amountOwing (dollars) and payable to each portal invoice. */
+async function withPortalPayability<T extends { id: number; invoiceNumber: string | null; status: string | null; total: string | null; appointmentId: number | null }>(
+  db: any, tenantId: number, rows: T[],
+  clientId: number,
+): Promise<Array<T & { amountOwing: number | null; payable: boolean }>> {
+  const out: Array<T & { amountOwing: number | null; payable: boolean }> = [];
+  const today = new Set((await loadTodaysBill(db, tenantId, clientId)).appointmentIds);
+  for (const row of rows) {
+    const cents = await portalInvoiceOwedCents(db, tenantId, row, today);
+    out.push({ ...row, amountOwing: cents === null ? null : cents / 100, payable: cents !== null });
+  }
+  return out;
+}
+
 async function resolvePortalClient(db: any, input: { token?: string }, req: any) {
   if (input.token) {
     const [access] = await db.select({
@@ -16366,6 +16411,56 @@ const clientPortalRouter = router({
         cancelUrl: base + "/portal",
       });
       return { url: checkout.checkoutUrl };
+    }),
+
+  /**
+   * "Pay now" on a bill in the portal (Andy, 11/11/2026). Sizes the
+   * payment again at the moment of paying — never from the page — and
+   * opens Stripe's own checkout for exactly what is owing. Stripe's
+   * webhook posts it to the bill (server/stripePayments.ts), the same
+   * path the invoice email's pay link uses.
+   */
+  payMyInvoice: publicProcedure
+    .input(z.object({ token: z.string().optional(), invoiceId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      // Same gate as the rest of the portal: nothing is paid while the
+      // service agreement is unsigned.
+      if ((await loadPendingAgreements(db, tenantId, clientId)).length > 0) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Please sign the service agreement first." });
+      }
+      const [invoice] = await db.select({
+        id: invoices.id, invoiceNumber: invoices.invoiceNumber, status: invoices.status,
+        total: invoices.total, appointmentId: invoices.appointmentId,
+      })
+        .from(invoices)
+        .where(and(eq(invoices.id, input.invoiceId), eq(invoices.clientId, clientId), eq(invoices.tenantId, tenantId)))
+        .limit(1);
+      if (!invoice) throw new TRPCError({ code: "NOT_FOUND", message: "That bill isn't on your account." });
+      const today = await loadTodaysBill(db, tenantId, clientId);
+      const owedCents = await portalInvoiceOwedCents(db, tenantId, invoice, new Set(today.appointmentIds));
+      if (owedCents === null) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "There's nothing to pay on this bill. If you think that's wrong, please contact the salon." });
+      }
+      const [client] = await db.select({ firstName: clients.firstName, lastName: clients.lastName, email: clients.email })
+        .from(clients).where(eq(clients.id, clientId)).limit(1);
+      const base = getPortalBaseUrl();
+      const checkout = await createInvoiceCheckout({
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        totalCents: owedCents,
+        clientId,
+        clientName: [client?.firstName, client?.lastName].filter(Boolean).join(" "),
+        clientEmail: client?.email ?? null,
+        membershipId: null,
+        tenantId,
+        successUrl: `${base}/portal/invoice-paid`,
+        cancelUrl: `${base}/portal/invoice-cancelled`,
+      });
+      if (!checkout.checkoutUrl) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The payment page couldn't be opened. Please try again." });
+      return { url: checkout.checkoutUrl, amount: owedCents / 100 };
     }),
 
   getMyPaymentMethod: publicProcedure

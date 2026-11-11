@@ -65,6 +65,11 @@ const PUBLIC = [
   "clientPortalRouter.logout",
   "clientPortalRouter.markChatRead",
   "clientPortalRouter.me",
+  // Pay now on a bill in the portal (11/11/2026). The session or access
+  // link is the identity; it can only open a Stripe page for a bill on
+  // that client's own account, sized again from the database, and only
+  // for Groomigo's own open bills (shared/portalInvoicePay.ts).
+  "clientPortalRouter.payMyInvoice",
   // Pay for today's appointment (11/11/2026): the portal session or access
   // link is the identity; it only reports and pays THIS client's bookings
   // today, re-checked on the server, and refuses while the service
@@ -562,7 +567,8 @@ describe("tRPC procedure surface", () => {
     // 430 since 11/11/2026 (stage 2): issueReports.myUpdates and markSeen in
     // OPERATIONAL (a reporter's own outcomes only); retriage is owner-only.
     // 431 since 11/11/2026: clientPortal.rescheduleWindow, in PUBLIC.
-    expect(surface).toHaveLength(431);
+    // 432 since 12/11/2026: clientPortal.payMyInvoice, in PUBLIC.
+    expect(surface).toHaveLength(432);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -572,7 +578,8 @@ describe("tRPC procedure surface", () => {
     // owner's end of a mid-groom quote. Unauthenticated by design — the
     // note beside them in PUBLIC says what bounds them.
     // 59 since 11/11/2026: clientPortal.rescheduleWindow.
-    expect(PUBLIC).toHaveLength(59);
+    // 60 since 12/11/2026: clientPortal.payMyInvoice.
+    expect(PUBLIC).toHaveLength(60);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
