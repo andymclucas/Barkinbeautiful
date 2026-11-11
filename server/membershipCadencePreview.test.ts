@@ -7,7 +7,7 @@ describe("cadencePreview", () => {
     expect(dates.slice(0, 3)).toEqual(["2027-01-06", "2027-02-17", "2027-03-31"]);
     // The number approval books (occurrencesForMonths), so the preview never
     // promises a groom the series will not create.
-    expect(dates).toHaveLength(8);
+    expect(dates).toHaveLength(9); // every 6 weeks, weeks 0 … 48
   });
 
   it("keeps the weekday", () => {

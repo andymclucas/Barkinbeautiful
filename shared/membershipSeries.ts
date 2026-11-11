@@ -188,16 +188,21 @@ export function brisbaneDayGap(from: Date, to: Date): number {
 }
 
 /**
- * How many grooms a 12-month sign-up buys at this cadence.
+ * How many grooms a sign-up books: one every `intervalWeeks`, for as long as
+ * the window runs.
  *
- * Floor, not round: a 5-weekly membership delivers ten grooms in a year,
- * and quoting a client 10.4 grooms reads as a mistake. Matches
- * visitsPerYearFor in membershipAssignable, deliberately.
+ * Andy, 11/11/2026: "Just make it by weeks, not be 'per year'." So the count
+ * is how many every-N-weeks dates fall inside the window — week 0, N, 2N…
+ * while still before its end — not a yearly figure divided and rounded
+ * down. A 6-weekly year is weeks 0 to 48: nine grooms, which is what Lauren
+ * counts, where the old floor(52 / 6) booked eight and left the ninth for
+ * someone to add by hand. Weekly-even cadences (2, 4) are unchanged.
  */
 export function occurrencesForMonths(intervalWeeks: number, months: number): number {
   if (!Number.isFinite(intervalWeeks) || intervalWeeks <= 0) return 0;
   if (!Number.isFinite(months) || months <= 0) return 0;
-  return Math.max(1, Math.floor((months * 52) / (12 * intervalWeeks)));
+  const windowWeeks = (months * 52) / 12;
+  return Math.max(1, Math.ceil(windowWeeks / intervalWeeks - 1e-9));
 }
 
 /** One line a client can read: what they are actually getting. */
