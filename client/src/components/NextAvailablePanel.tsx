@@ -8,7 +8,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatAestDate } from "@shared/auditTimestamp";
-import { parseBrisbaneLocalDateTime } from "@shared/localDateTime";
+import { brisbaneDateKey, parseBrisbaneLocalDateTime } from "@shared/localDateTime";
+import { nextAvailableFrom } from "@shared/nextAvailableFrom";
 
 /**
  * "When's your next available booking?"
@@ -54,11 +55,22 @@ function readableSlot(date: string, time: string): string {
   return `${day}, ${clock}`;
 }
 
-export function NextAvailablePanel({ onPick }: {
+export function NextAvailablePanel({ onPick, viewingDate }: {
   /** Fills the New Appointment dialog, so the answer can become a booking. */
   onPick?: (date: string, time: string) => void;
+  /**
+   * The day the diary is showing, "YYYY-MM-DD". When it is ahead of today
+   * the search starts there — Lauren, 11/11/2026, on January and being
+   * shown November — with a one-tap way back to "from today".
+   */
+  viewingDate?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const todayKey = brisbaneDateKey(new Date());
+  const viewingFrom = nextAvailableFrom(viewingDate, todayKey);
+  const canStartLater = viewingFrom !== todayKey;
+  const [fromToday, setFromToday] = useState(false);
+  const fromDate = canStartLater && !fromToday ? viewingFrom : todayKey;
   const [petQuery, setPetQuery] = useState("");
   const [pet, setPet] = useState<{ id: number; name: string } | null>(null);
   const [duration, setDuration] = useState<number>(60);
@@ -72,12 +84,14 @@ export function NextAvailablePanel({ onPick }: {
   );
 
   const result = trpc.calendar.availability.useQuery(
-    { petId: pet?.id, durationMinutes: pet ? undefined : duration },
+    { petId: pet?.id, durationMinutes: pet ? undefined : duration, fromDate },
     // Reads up to 60 days of diary, so only when the panel is open.
     { enabled: open },
   );
 
-  const reset = () => { setPet(null); setPetQuery(""); setDuration(60); };
+  const reset = () => { setPet(null); setPetQuery(""); setDuration(60); setFromToday(false); };
+  const shortDay = (key: string) =>
+    formatAestDate(parseBrisbaneLocalDateTime(`${key}T09:00`), { weekday: "short", day: "numeric", month: "short" });
 
   return (
     <>
@@ -157,6 +171,30 @@ export function NextAvailablePanel({ onPick }: {
                       }`}
                     >
                       {minutes === 60 ? "1 hour" : minutes > 60 ? `${minutes / 60} hours` : `${minutes} min`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {canStartLater && (
+              <div className="space-y-1.5">
+                <Label>Starting from</Label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: shortDay(viewingFrom) + " (the day you're on)", today: false },
+                    { label: "Today", today: true },
+                  ].map((option) => (
+                    <button
+                      key={option.label} type="button"
+                      onClick={() => setFromToday(option.today)}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        fromToday === option.today
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border hover:bg-muted"
+                      }`}
+                    >
+                      {option.label}
                     </button>
                   ))}
                 </div>

@@ -141,6 +141,7 @@ import {
 import { agendaRows, describeGroup } from "@shared/agendaGrouping";
 import { QuickAppointmentDialog } from "@/components/QuickAppointmentDialog";
 import { toastBookingConfirmation } from "@/lib/confirmationToast";
+import { nextAvailableFrom } from "@shared/nextAvailableFrom";
 import { NextAvailablePanel } from "@/components/NextAvailablePanel";
 import {
   describeRecurrence, recurrenceStarts,
@@ -2469,7 +2470,10 @@ export default function Calendar() {
   const [findingSlot, setFindingSlot] = useState(false);
   const findNextSlot = useCallback(async () => {
     const { date } = splitLocalDateTime(newAppt.scheduledStart);
-    const from = date || new Date().toLocaleDateString("en-CA", { timeZone: getActiveTimeZone() });
+    // No date typed yet: start from the day on screen if it is ahead of
+    // today (Lauren, 11/11/2026 — on January, shown November).
+    const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: getActiveTimeZone() });
+    const from = date || nextAvailableFrom(dayDateKey(viewMode === "week" ? weekStart : dayDate), todayKey);
     setFindingSlot(true);
     setNextSlotNote(null);
     try {
@@ -2488,7 +2492,7 @@ export default function Calendar() {
     } finally {
       setFindingSlot(false);
     }
-  }, [newAppt.scheduledStart, bookingStaffIds, bookingDurationMinutes, utils]);
+  }, [newAppt.scheduledStart, bookingStaffIds, bookingDurationMinutes, utils, viewMode, weekStart, dayDate]);
 
   /**
    * How full the chosen groomer's chosen day already is.
@@ -2834,10 +2838,18 @@ export default function Calendar() {
     const addingLoad = clipLoadFor(newAppt.serviceType) * (newAppt.petIds.length || 1);
     if (bookingGroomer && capacity && addingLoad > 0 && newAppt.scheduledStart) {
       const dayKey = newAppt.scheduledStart.slice(0, 10);
-      const alreadyBooked = clipLoadOf(filteredAppts
-        .filter(a => a.staffId === bookingGroomer.id
-          && aestDateKey(new Date(a.scheduledStart)) === dayKey)
-        .map(a => a.serviceType));
+      // The booked day as the server has it (groomerDay is fetched for the
+      // dialog's own date and groomer), not just what the diary happens to
+      // have loaded on screen — booking January from November used to count
+      // nothing and never warn. The on-screen count is only the fallback
+      // while that is still loading.
+      const fromServer = groomerDay.data?.busyByStaff?.find(g => g.staffId === bookingGroomer.id);
+      const alreadyBooked = fromServer
+        ? fromServer.clipLoad
+        : clipLoadOf(filteredAppts
+          .filter(a => a.staffId === bookingGroomer.id
+            && aestDateKey(new Date(a.scheduledStart)) === dayKey)
+          .map(a => a.serviceType));
       const warning = overbookingWarning(
         groomerDayLoad(alreadyBooked, capacity),
         bookingGroomer.name,
@@ -4180,6 +4192,7 @@ export default function Calendar() {
                 here opens the booking dialog on it, so the answer can
                 still become a booking in one more press. */}
             <NextAvailablePanel
+              viewingDate={dayDateKey(viewMode === "week" ? weekStart : dayDate)}
               onPick={(date, time) => {
                 setNewAppt(p => ({ ...p, scheduledStart: joinLocalDateTime(date, time) }));
                 setShowNewAppt(true);

@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { DateField } from "@/components/DateField";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { brisbaneDateKey } from "@shared/localDateTime";
 
 import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 import { AgreementGate, type GateAgreement } from "@/components/portal/AgreementGate";
@@ -37,6 +38,11 @@ const SERVICE_LABELS: Record<string, string> = {
 
 function portalDate(value: Date | string | null) {
   return value ? new Date(value).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "Not scheduled";
+}
+
+/** "Tue 5 Jan" for a "YYYY-MM-DD" salon date. Noon, so no zone can shift the day. */
+function portalShortDay(key: string) {
+  return new Date(`${key}T12:00:00+10:00`).toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane", weekday: "short", day: "numeric", month: "short" });
 }
 
 function portalDateTime(value: Date | string) {
@@ -810,11 +816,19 @@ export default function ClientPortal() {
   const openReschedule = (appt: PortalAppointment) => {
     setRescheduleTarget(appt);
     setSelectedStaffId(appt.staffId ? String(appt.staffId) : "any");
-    setSelectedDate(new Date(appt.scheduledStart).toISOString().slice(0, 10));
+    // The salon's calendar day, not UTC's: an 8am Brisbane booking is still
+    // the day before in UTC, and the picker opened on the wrong date.
+    setSelectedDate(brisbaneDateKey(new Date(appt.scheduledStart)));
     setSelectedSlot("");
   };
 
   const groomerProfiles = trpc.clientPortal.listReschedulableStaff.useQuery({});
+  // A membership or repeat booking moves only within its week, so the
+  // cycle holds (shared/cycleRescheduleWindow.ts). Null for a one-off.
+  const cycleWindow = trpc.clientPortal.rescheduleWindow.useQuery(
+    { token: token ?? undefined, appointmentId: rescheduleTarget?.id ?? 0 },
+    { enabled: !!rescheduleTarget && !isPreview },
+  );
   const petWeightKg = rescheduleTarget?.petWeightKg ? Number(rescheduleTarget.petWeightKg) : 0;
   const specificSlots = trpc.clientPortal.listAvailableSlots.useQuery(
     { staffId: Number(selectedStaffId), serviceType: rescheduleTarget?.serviceType as any, petWeightKg, date: selectedDate, excludeAppointmentId: rescheduleTarget?.id ?? 0 },
@@ -1043,9 +1057,18 @@ export default function ClientPortal() {
             <Label>Date</Label>
             <DateField
               value={selectedDate}
-              min={new Date().toISOString().slice(0, 10)}
+              min={[brisbaneDateKey(new Date()), cycleWindow.data?.from ?? ""].sort().at(-1)}
+              max={cycleWindow.data?.to}
               onChange={(next) => { setSelectedDate(next); setSelectedSlot(""); }}
             />
+            {cycleWindow.data && (
+              <p className="text-xs text-muted-foreground">
+                {cycleWindow.data.intervalWeeks
+                  ? `${rescheduleTarget.petName} is booked every ${cycleWindow.data.intervalWeeks} weeks, so this visit can move within its week`
+                  : "This is a regular booking, so it can move within its week"}
+                {" "}({portalShortDay(cycleWindow.data.from)} – {portalShortDay(cycleWindow.data.to)}). For anything else, please call the salon.
+              </p>
+            )}
           </div>
 
           {selectedStaffId && selectedDate && (
