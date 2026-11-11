@@ -5574,7 +5574,16 @@ export default function Calendar() {
                         {showLast && editAppt.lastAppointmentDate ? (
                           <>
                             Last visit: {when(editAppt.lastAppointmentDate)}
-                            {describeWeeks(rhythm.sinceLastWeeks) && <> · {describeWeeks(rhythm.sinceLastWeeks)} ago</>}
+                            {describeWeeks(rhythm.sinceLastWeeks) && (() => {
+                              /* The gap is measured from THIS booking, not
+                                 from today. Andy, 11/11/2026: a 6 January
+                                 booking read "Last visit: 29 Oct · 10 weeks
+                                 ago" on 11 November. "Ago" only on today's
+                                 booking, where the two are the same day. */
+                              const dayOf = (d: Date | string) => new Date(d).toLocaleDateString("en-CA", { timeZone: getActiveTimeZone() });
+                              const isToday = dayOf(editAppt.scheduledStart) === dayOf(new Date());
+                              return <> · {describeWeeks(rhythm.sinceLastWeeks)} {isToday ? "ago" : "before this booking"}</>;
+                            })()}
                           </>
                         ) : "First visit on record"}
                       </p>
