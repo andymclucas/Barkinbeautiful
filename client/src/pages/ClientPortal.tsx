@@ -25,7 +25,7 @@ type PortalPet = { id: number; name: string; breed: string | null; species: stri
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
 type PortalGroomingCard = { id: number; petId: number; petName: string; appointmentDate: Date | string; overallRating: string | null; mood: string | null; additionalNote: string | null; beforePhotoUrl: string | null; afterPhotoUrl: string | null; recommendedFrequencyWeeks: number | null; coatCondition: string | null; skinCondition: string | null; eyeCondition: string | null; earCondition: string | null; nailCondition: string | null; teethCondition: string | null; serviceType: string | null; groomerName: string | null; sentAt: Date | string | null; shareToken?: string | null };
-type PortalInvoiceRow = { id: number; invoiceNumber: string | null; total: string | null; status: string | null; paymentMethod: string | null; paidAt: string | Date | null; dueAt: string | Date | null; createdAt: string | Date | null };
+type PortalInvoiceRow = { id: number; invoiceNumber: string | null; total: string | null; status: string | null; paymentMethod: string | null; paidAt: string | Date | null; dueAt: string | Date | null; createdAt: string | Date | null; amountOwing?: number | null; payable?: boolean };
 type PortalPaymentRow = { key: string; source: "invoice" | "membership" | "appointment"; amount: number; at: string | Date | number; method: string | null; description: string };
 
 type PortalData = { pendingAgreements?: GateAgreement[]; salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string; invoices: PortalInvoiceRow[]; payments: PortalPaymentRow[] };
@@ -469,8 +469,22 @@ function GroomingCardDetail({ card }: { card: PortalGroomingCard }) {
  * computed from completed work only — see the portal billing investigation
  * on 05/10/2026.
  */
-function InvoicesSection({ invoices, salon, client }: { invoices: PortalInvoiceRow[]; salon: PortalData["salon"]; client: PortalData["client"] }) {
+function InvoicesSection({ invoices, salon, client, token, readOnly }: { invoices: PortalInvoiceRow[]; salon: PortalData["salon"]; client: PortalData["client"]; token?: string; readOnly?: boolean }) {
   const [open, setOpen] = useState(false);
+  /*
+   * Pay now (Andy, 11/11/2026). Only bills the server marked payable —
+   * Groomigo's own, open, with money owing (shared/portalInvoicePay.ts).
+   * The amount is worked out again when they press it, and Stripe's own
+   * page takes the card. Not offered in staff preview.
+   */
+  const pay = trpc.clientPortal.payMyInvoice.useMutation({
+    onSuccess: (r) => {
+      try { sessionStorage.setItem("portalReturnTo", window.location.pathname + window.location.search); } catch { /* storage may be blocked */ }
+      window.location.href = r.url;
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const payable = invoices.filter((i) => i.payable && (i.amountOwing ?? 0) > 0);
   const [showAll, setShowAll] = useState(false);
   const visible = showAll ? invoices : invoices.slice(0, 5);
 
@@ -521,6 +535,34 @@ function InvoicesSection({ invoices, salon, client }: { invoices: PortalInvoiceR
         <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5 text-primary" /> Invoices</CardTitle>
       </CardHeader>
       <CardContent>
+        {payable.length > 0 && (
+          // Up front, not inside the folded list: a bill to pay is the one
+          // thing in here a client should not have to go looking for.
+          <div className="mb-3 space-y-2">
+            {payable.map((invoice) => (
+              <div key={`pay-${invoice.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
+                <span className="min-w-0">
+                  <span className="block font-medium">{formatMoney(String(invoice.amountOwing))} to pay</span>
+                  <span className="block text-xs text-muted-foreground">{invoice.invoiceNumber || `Invoice #${invoice.id}`} · issued {when(invoice.createdAt)}</span>
+                </span>
+                {readOnly ? (
+                  <span className="text-xs text-muted-foreground">Pay button shown to the client</span>
+                ) : (
+                  <Button size="sm" className="gap-2" disabled={pay.isPending}
+                    onClick={() => pay.mutate({ token, invoiceId: invoice.id })}>
+                    {pay.isPending && pay.variables?.invoiceId === invoice.id
+                      ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening secure page…</>
+                      : <><Lock className="h-4 w-4" /> Pay {formatMoney(String(invoice.amountOwing))}</>}
+                  </Button>
+                )}
+              </div>
+            ))}
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              You pay on Stripe's secure page. {salon.name} never sees your full card number.
+            </p>
+          </div>
+        )}
         {invoices.length === 0 ? (
           <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">No invoices yet.</p>
         ) : !open ? (
@@ -543,7 +585,8 @@ function InvoicesSection({ invoices, salon, client }: { invoices: PortalInvoiceR
                     <span className="flex shrink-0 items-center gap-2">
                       <span className="font-semibold">{formatMoney(invoice.total)}</span>
                       <Badge variant="outline" className={paid ? "text-emerald-700 dark:text-emerald-400" : ""}>
-                        {paid ? "Paid" : invoice.status ?? "Due"}
+                        {/* "draft" is the salon's word, not the client's. */}
+                        {paid ? "Paid" : (invoice.status ?? "").toLowerCase() === "cancelled" ? "Cancelled" : "Due"}
                       </Badge>
                       <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => printInvoice(invoice)}>
                         <FileDown className="h-3.5 w-3.5" /> PDF
@@ -860,7 +903,7 @@ export default function ClientPortal() {
       </Card>
     )}
 
-    <InvoicesSection invoices={data.invoices ?? []} salon={data.salon} client={data.client} />
+    <InvoicesSection invoices={data.invoices ?? []} salon={data.salon} client={data.client} token={token ?? undefined} readOnly={isPreview} />
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Dog className="h-5 w-5 text-primary" /> Your pets</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{data.pets.map(pet => <div key={pet.id} className="rounded-xl border bg-card p-4"><p className="font-semibold">{pet.name}</p><p className="text-sm text-muted-foreground">{pet.breed || pet.species}</p><Badge variant="outline" className="mt-2 capitalize">{pet.status}</Badge></div>)}</CardContent></Card>
 
