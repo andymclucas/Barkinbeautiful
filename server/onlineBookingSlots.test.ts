@@ -7,7 +7,8 @@ import {
 describe("online booking slot candidates", () => {
   it("builds half-hour AEST starts that allow a full service before closing", () => {
     const slots = buildOnlineBookingSlotStarts("2026-08-11", 120);
-    expect(slots).toHaveLength(15);
+    // 8:00 to 15:00 is fifteen half-hours, less 10:00 and 10:30.
+    expect(slots).toHaveLength(13);
     expect(slots[0]?.toISOString()).toBe("2026-08-10T22:00:00.000Z");
     expect(slots.at(-1)?.toISOString()).toBe("2026-08-11T05:00:00.000Z");
     expect(slots[1]!.getTime() - slots[0]!.getTime()).toBe(ONLINE_BOOKING_SLOT_INTERVAL_MINUTES * 60_000);
@@ -28,5 +29,15 @@ describe("online booking slot candidates", () => {
     expect(buildOnlineBookingSlotStarts("2026-08-12", 60).length).toBeGreaterThan(0); // Wednesday
     expect(buildOnlineBookingSlotStarts("2026-08-13", 60).length).toBeGreaterThan(0); // Thursday
     expect(buildOnlineBookingSlotStarts("2026-08-14", 60).length).toBeGreaterThan(0); // Friday
+  });
+
+  it("leaves out the 9:30-11 mid-morning gap, keeping 9:30 and 11:00 themselves", () => {
+    const brisbane = (d: Date) =>
+      d.toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "numeric", minute: "2-digit", hour12: false });
+    const times = buildOnlineBookingSlotStarts("2026-11-12", 60).map(brisbane);
+    expect(times).toContain("09:30");
+    expect(times).toContain("11:00");
+    expect(times).not.toContain("10:00");
+    expect(times).not.toContain("10:30");
   });
 });
