@@ -7,6 +7,7 @@ import { syncAccountStatus, tenantIdForStripeAccount } from "./stripeConnectAcco
 import { chargesOnConnectedAccount, platformFeeCents } from "../shared/stripeConnect";
 import { attachPaymentMethodToClient } from "./stripeCards";
 import { postInvoicePaymentToAppointments } from "./invoicePaymentPosting";
+import { handlePortalAppointmentPayment } from "./portalAppointmentPayment";
 import { notifyOwner } from "./ownerNotification";
 import { classifyFailure, fromStripeCents, planAfterFailure } from "@shared/stripeBilling";
 import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
@@ -57,6 +58,113 @@ export function buildInvoiceCheckoutMetadata(input: Pick<StripeCheckoutRequest, 
 export async function createInvoiceCheckout(input: StripeCheckoutRequest) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+  const { stripe, stripeAccount, feeCents, customerId } = await prepareCheckout(db, input);
+  const metadata = buildInvoiceCheckoutMetadata(input);
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    customer: customerId,
+    client_reference_id: String(input.clientId),
+    metadata,
+    payment_intent_data: {
+      metadata,
+      // Groomigo's cut, taken by Stripe at the moment of the charge.
+      // Undefined when no fee is set, which is every salon today.
+      ...(feeCents !== null && feeCents > 0 ? { application_fee_amount: feeCents } : {}),
+    },
+    allow_promotion_codes: true,
+    line_items: [{
+      quantity: 1,
+      price_data: {
+        currency: "aud",
+        unit_amount: input.totalCents,
+        product_data: { name: `Groomigo invoice ${input.invoiceNumber}` },
+      },
+    }],
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+  }, stripeAccount);
+  if (!session.url) throw new Error("Stripe did not return a Checkout URL");
+  await db.update(invoices).set({ stripeCheckoutSessionId: session.id, stripeCheckoutUrl: session.url }).where(eq(invoices.id, input.invoiceId));
+  return { checkoutUrl: session.url, checkoutSessionId: session.id, customerId };
+}
+
+/** The portal's "pay for today's appointment" marker in Checkout metadata. */
+export const PORTAL_APPOINTMENT_PAYMENT_KIND = "portal_appointment";
+
+/**
+ * Stripe's checkout for the portal's "pay for today's appointment"
+ * (Andy, 11/11/2026). Not an invoice: it pays the client's bookings today,
+ * and anything over what they owe becomes store credit when Stripe
+ * confirms the payment — see the webhook below and
+ * shared/portalAppointmentPay.ts.
+ *
+ * Promotion codes are OFF here. The invoice checkout allows them, and a
+ * code there lets the client pay less while the booking reads as paid;
+ * a client paying their own bill must pay the bill.
+ */
+export async function createPortalAppointmentCheckout(input: {
+  tenantId: number;
+  clientId: number;
+  clientName: string;
+  clientEmail: string | null;
+  appointmentIds: number[];
+  /** What was owing when they pressed Pay — for the record, not for posting. */
+  owedCents: number;
+  totalCents: number;
+  description: string;
+  successUrl: string;
+  cancelUrl: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { stripe, stripeAccount, feeCents, customerId } = await prepareCheckout(db, input);
+  const metadata = {
+    payment_kind: PORTAL_APPOINTMENT_PAYMENT_KIND,
+    tenant_id: String(input.tenantId),
+    client_id: String(input.clientId),
+    appointment_ids: input.appointmentIds.join(","),
+    owed_cents: String(input.owedCents),
+    credit_cents: String(Math.max(0, input.totalCents - input.owedCents)),
+  };
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    customer: customerId,
+    client_reference_id: String(input.clientId),
+    metadata,
+    payment_intent_data: {
+      metadata,
+      ...(feeCents !== null && feeCents > 0 ? { application_fee_amount: feeCents } : {}),
+    },
+    allow_promotion_codes: false,
+    /* Card (which includes Apple Pay and Google Pay) and Link only: both
+       settle at once. A delayed method such as direct debit completes the
+       session unpaid and confirms later on an event this does not handle,
+       so the client would be charged and nothing recorded. */
+    payment_method_types: ["card", "link"],
+    line_items: [{
+      quantity: 1,
+      price_data: {
+        currency: "aud",
+        unit_amount: input.totalCents,
+        product_data: { name: input.description },
+      },
+    }],
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+  }, stripeAccount);
+  if (!session.url) throw new Error("Stripe did not return a Checkout URL");
+  return { checkoutUrl: session.url, checkoutSessionId: session.id };
+}
+
+/**
+ * Which Stripe account the money goes to, the client's customer on it, and
+ * Groomigo's fee — the setup every one-off checkout needs. Lifted out of
+ * createInvoiceCheckout unchanged when the portal checkout needed it too.
+ */
+async function prepareCheckout(
+  db: any,
+  input: { tenantId: number; clientId: number; clientName: string; clientEmail: string | null; totalCents: number },
+) {
   const stripe = requireStripeClient();
 
   // Whose account does this money go to?
@@ -95,33 +203,7 @@ export async function createInvoiceCheckout(input: StripeCheckoutRequest) {
     customerId = customer.id;
     await db.update(clients).set({ stripeCustomerId: customerId }).where(eq(clients.id, input.clientId));
   }
-  const metadata = buildInvoiceCheckoutMetadata(input);
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer: customerId,
-    client_reference_id: String(input.clientId),
-    metadata,
-    payment_intent_data: {
-      metadata,
-      // Groomigo's cut, taken by Stripe at the moment of the charge.
-      // Undefined when no fee is set, which is every salon today.
-      ...(feeCents !== null && feeCents > 0 ? { application_fee_amount: feeCents } : {}),
-    },
-    allow_promotion_codes: true,
-    line_items: [{
-      quantity: 1,
-      price_data: {
-        currency: "aud",
-        unit_amount: input.totalCents,
-        product_data: { name: `Groomigo invoice ${input.invoiceNumber}` },
-      },
-    }],
-    success_url: input.successUrl,
-    cancel_url: input.cancelUrl,
-  }, stripeAccount);
-  if (!session.url) throw new Error("Stripe did not return a Checkout URL");
-  await db.update(invoices).set({ stripeCheckoutSessionId: session.id, stripeCheckoutUrl: session.url }).where(eq(invoices.id, input.invoiceId));
-  return { checkoutUrl: session.url, checkoutSessionId: session.id, customerId };
+  return { stripe, stripeAccount, feeCents, customerId: customerId as string };
 }
 
 /**
@@ -309,6 +391,20 @@ export async function processStripeEvent(event: Stripe.Event) {
         if (paymentMethodId) await attachPaymentMethodToClient(clientId, paymentMethodId);
       }
       return { duplicate: false, handled: "card_on_file" };
+    }
+
+    // The portal's "pay for today's appointment" (11/11/2026). Not an
+    // invoice: booking first, anything over on account as store credit.
+    if (metadata.payment_kind === PORTAL_APPOINTMENT_PAYMENT_KIND && session.payment_status === "paid" && clientId) {
+      const result = await handlePortalAppointmentPayment(db, {
+        tenantId,
+        clientId,
+        paidCents: session.amount_total ?? 0,
+        appointmentIdsCsv: String(metadata.appointment_ids ?? ""),
+        intendedCreditCents: Number(metadata.credit_cents || 0) || 0,
+        reference: typeof session.payment_intent === "string" ? session.payment_intent : session.id,
+      });
+      return { duplicate: false, ...result };
     }
 
     if (invoiceId && session.payment_status === "paid") {

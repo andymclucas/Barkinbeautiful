@@ -65,6 +65,11 @@ const PUBLIC = [
   "clientPortalRouter.logout",
   "clientPortalRouter.markChatRead",
   "clientPortalRouter.me",
+  // Pay for today's appointment (11/11/2026): the portal session or access
+  // link is the identity; it only reports and pays THIS client's bookings
+  // today, re-checked on the server, and refuses while the service
+  // agreement is unsigned (server/portalAppointmentPayment.ts).
+  "clientPortalRouter.payTodaysBill",
   "clientPortalRouter.rescheduleAppointment",
   "clientPortalRouter.sendChatMessage",
   // The service agreement, signed by the client themselves before the
@@ -76,6 +81,7 @@ const PUBLIC = [
   "clientPortalRouter.signAgreementsAtSetup",
   "clientPortalRouter.signMyAgreements",
   "clientPortalRouter.signWithAgreementLink",
+  "clientPortalRouter.todaysBill",
   "clientPortalRouter.updateMyProfile",
   // An owner answering a quote for extra work found mid-groom, from a
   // texted link. Public on purpose and not behind the portal login: the
@@ -543,7 +549,8 @@ describe("tRPC procedure surface", () => {
     // 420 since 11/11/2026 (later the same day): getAgreementLink and
     // signWithAgreementLink, the texted signing link — both in PUBLIC.
     // 421 since 11/11/2026: calendar.textBookingDetails, in OPERATIONAL.
-    expect(surface).toHaveLength(421);
+    // 423 since 11/11/2026: clientPortal.todaysBill and payTodaysBill, in PUBLIC.
+    expect(surface).toHaveLength(423);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -552,7 +559,7 @@ describe("tRPC procedure surface", () => {
     // 53 since 06/11/2026: groomQuotes getByToken and answerByToken, the
     // owner's end of a mid-groom quote. Unauthenticated by design — the
     // note beside them in PUBLIC says what bounds them.
-    expect(PUBLIC).toHaveLength(56);
+    expect(PUBLIC).toHaveLength(58);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
