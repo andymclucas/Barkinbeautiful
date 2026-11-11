@@ -16,7 +16,7 @@
  * The interval is shared with online booking rather than redeclared, so the
  * salon only ever changes it in one place.
  */
-import { ONLINE_BOOKING_SLOT_INTERVAL_MINUTES, inSalonQuietWindow } from "./onlineBookingSlots";
+import { ONLINE_BOOKING_SLOT_INTERVAL_MINUTES, SALON_LAST_DROP_OFF_MINUTES, inSalonQuietWindow } from "./onlineBookingSlots";
 
 /**
  * Staff can book an hour either side of the public online-booking window
@@ -50,7 +50,8 @@ export const STAFF_BOOKING_CLOSE_MINUTES = 18 * 60;
  * hours needs one; this is the constant it would come from.
  */
 export const SALON_FIRST_BOOKING_MINUTES = 7 * 60 + 30;
-export const SALON_LAST_BOOKING_MINUTES = 13 * 60;
+// Shared with online booking, so both sides stop at the same time.
+export const SALON_LAST_BOOKING_MINUTES = SALON_LAST_DROP_OFF_MINUTES;
 
 // The mid-morning quiet window lives in onlineBookingSlots.ts, beside the
 // other half of the offer rules, so online booking and the portal's
