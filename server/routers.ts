@@ -79,7 +79,9 @@ import { getReplacementWeightBand, isEligibleMembershipReplacement } from "../sh
 import { getStripePrototypeStatus } from "../shared/stripeMembershipReconciliation";
 import { calculateMembershipAccount } from "../shared/membershipAccountsReceivable";
 import { createStaffInvitationToken, hashStaffInvitationToken, isLinkedStaffUser, isStaffInvitationExpired } from "../shared/staffInvitation";
-import { createInvoiceCheckout } from "./stripePayments";
+import { createInvoiceCheckout, createPortalAppointmentCheckout } from "./stripePayments";
+import { loadTodaysBill } from "./portalAppointmentPayment";
+import { checkPortalPayment, portalPayMaxCents } from "@shared/portalAppointmentPay";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { CLIENT_PORTAL_ACCESS_TTL_MS, clientPortalLinkRenewal, createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
@@ -16218,6 +16220,71 @@ const clientPortalRouter = router({
    * No customer id, no payment-method id, nothing that would help anybody
    * who got hold of a portal link do more than they already could.
    */
+  /**
+   * Today's bill, for the portal's "pay for today's appointment" (Andy,
+   * 11/11/2026). Nothing is shown while the service agreement is unsigned,
+   * the same server-side gate the rest of the portal keeps.
+   */
+  todaysBill: publicProcedure
+    .input(z.object({ token: z.string().optional() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      if ((await loadPendingAgreements(db, tenantId, clientId)).length > 0) return null;
+      const bill = await loadTodaysBill(db, tenantId, clientId);
+      if (bill.appointmentIds.length === 0) return null;
+      return {
+        dogs: bill.dogs.map((d) => ({ petName: d.petName, owed: d.owedCents / 100, coveredByMembership: d.coveredByMembership })),
+        owed: bill.owedCents / 100,
+        ready: bill.ready,
+        max: portalPayMaxCents(bill.owedCents) / 100,
+      };
+    }),
+
+  /**
+   * Pay today's bill, and optionally more as store credit. The amount is
+   * checked against what is owing NOW, never the page; the webhook then
+   * re-splits against what is owing when the money arrives, so nothing is
+   * lost to a second payment (server/portalAppointmentPayment.ts).
+   */
+  payTodaysBill: publicProcedure
+    .input(z.object({ token: z.string().optional(), amountCents: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      if ((await loadPendingAgreements(db, tenantId, clientId)).length > 0) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Please sign the service agreement first." });
+      }
+      const bill = await loadTodaysBill(db, tenantId, clientId);
+      if (!bill.ready) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Today's bill isn't finished yet. Please try again shortly, or pay at the counter." });
+      }
+      const check = checkPortalPayment({ owedCents: bill.owedCents, amountCents: input.amountCents });
+      if (!check.ok) throw new TRPCError({ code: "BAD_REQUEST", message: check.error });
+
+      const [client] = await db.select({ firstName: clients.firstName, lastName: clients.lastName, email: clients.email })
+        .from(clients).where(eq(clients.id, clientId)).limit(1);
+      const [salon] = await db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+      const base = getPortalBaseUrl();
+      const names = bill.dogs.map((d) => d.petName).join(" & ");
+      const checkout = await createPortalAppointmentCheckout({
+        tenantId,
+        clientId,
+        clientName: [client?.firstName, client?.lastName].filter(Boolean).join(" "),
+        clientEmail: client?.email ?? null,
+        appointmentIds: bill.appointmentIds,
+        owedCents: bill.owedCents,
+        totalCents: input.amountCents,
+        description: (salon?.name ?? "Grooming") + " — today's appointment for " + names
+          + (check.toCreditCents > 0 ? " (includes $" + (check.toCreditCents / 100).toFixed(2) + " store credit)" : ""),
+        successUrl: base + "/portal",
+        cancelUrl: base + "/portal",
+      });
+      return { url: checkout.checkoutUrl };
+    }),
+
   getMyPaymentMethod: publicProcedure
     .input(z.object({ token: z.string().optional() }))
     .query(async ({ input, ctx }) => {

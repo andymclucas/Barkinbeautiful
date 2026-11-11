@@ -108,6 +108,37 @@ export async function postInvoicePaymentToAppointments(
   if (appointmentIds.length === 0) {
     return { posted: [], unallocated: input.amount, noAppointments: true };
   }
+  const { posted, unallocated } = await postPaymentToAppointments(db, {
+    tenantId: input.tenantId,
+    clientId: input.clientId,
+    appointmentIds,
+    amount: input.amount,
+    reference: input.reference,
+    note: `Paid online against invoice ${input.invoiceNumber ?? input.invoiceId}`,
+  });
+  return { posted, unallocated, noAppointments: false };
+}
+
+/**
+ * Put money that has been taken against these appointments, up to what
+ * each still owes, and say what is left over. Shared by the invoice pay
+ * link and the portal's "pay for today's appointment" (11/11/2026), so
+ * there is one copy of how a payment is spread across a booking's dogs.
+ */
+export async function postPaymentToAppointments(
+  db: any,
+  input: {
+    tenantId: number;
+    clientId: number;
+    appointmentIds: number[];
+    /** Dollars to put against the appointments. */
+    amount: number;
+    reference: string | null;
+    note: string;
+  },
+): Promise<{ posted: { appointmentId: number; amount: number }[]; unallocated: number }> {
+  const appointmentIds = input.appointmentIds;
+  if (appointmentIds.length === 0) return { posted: [], unallocated: input.amount };
 
   const totals = await loadBillableTotals(db, appointmentIds);
   const existing = await db
@@ -143,7 +174,7 @@ export async function postInvoicePaymentToAppointments(
       amount: amount.toFixed(2),
       method: "stripe",
       reference: input.reference,
-      note: `Paid online against invoice ${input.invoiceNumber ?? input.invoiceId}`,
+      note: input.note,
       // Nobody recorded it: the client paid Stripe directly.
       recordedByUserId: null,
     });
@@ -155,7 +186,7 @@ export async function postInvoicePaymentToAppointments(
     await refreshPaymentStatus(db, input.tenantId, appointmentId, totals.get(appointmentId) ?? null);
   }
 
-  return { posted, unallocated, noAppointments: false };
+  return { posted, unallocated };
 }
 
 /**

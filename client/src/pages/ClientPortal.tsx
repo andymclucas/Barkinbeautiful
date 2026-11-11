@@ -680,6 +680,90 @@ function YourDetailsCard({ client, onSaved }: {
   );
 }
 
+/**
+ * Pay for today's appointment (Andy, 11/11/2026).
+ *
+ * Only on the day, only once the bill is finished, and at least the bill.
+ * Anything over goes on their account as store credit for next time or for
+ * retail — Andy's example: a $300 bill paid with $500 leaves $200 credit.
+ * The amount is checked on the server when they press Pay, and Stripe's own
+ * page takes the card.
+ */
+function TodaysBillCard({ token, readOnly }: { token?: string; readOnly?: boolean }) {
+  const bill = trpc.clientPortal.todaysBill.useQuery({ token }, { enabled: !readOnly, retry: false });
+  const [amount, setAmount] = useState<string>("");
+  const pay = trpc.clientPortal.payTodaysBill.useMutation({
+    onSuccess: (r) => { window.location.href = r.url; },
+    onError: (e) => toast.error(e.message),
+  });
+  const data = bill.data;
+  if (readOnly || !data || data.owed <= 0) return null;
+
+  const money = (n: number) => "$" + n.toFixed(2);
+  const typed = amount.trim() === "" ? data.owed : Number(amount);
+  const valid = Number.isFinite(typed) && typed >= data.owed && typed <= data.max;
+  const credit = valid ? Math.round((typed - data.owed) * 100) / 100 : 0;
+
+  return (
+    <Card className="border-primary/30">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5 text-primary" /> Today's appointment</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ul className="space-y-1 text-sm">
+          {data.dogs.map((d, i) => (
+            <li key={i} className="flex justify-between gap-3">
+              <span>{d.petName}{d.coveredByMembership && d.owed === 0 ? <span className="text-muted-foreground"> · covered by membership</span> : null}</span>
+              <span className="tabular-nums">{money(d.owed)}</span>
+            </li>
+          ))}
+          <li className="flex justify-between gap-3 border-t pt-1 font-semibold">
+            <span>To pay today</span><span className="tabular-nums">{money(data.owed)}</span>
+          </li>
+        </ul>
+        {!data.ready ? (
+          <p className="text-sm text-muted-foreground">Your bill for today isn't finished yet. Check back after your groom, or pay at the counter.</p>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <label htmlFor="portal-pay-amount" className="text-sm font-medium">Amount to pay</label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">$</span>
+                <Input
+                  id="portal-pay-amount"
+                  inputMode="decimal"
+                  className="max-w-[10rem]"
+                  placeholder={data.owed.toFixed(2)}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {credit > 0
+                  ? money(credit) + " more than today's bill will go on your account as credit for your next visit or anything from our shop."
+                  : "Pay more than today's bill if you like — the extra goes on your account as credit."}
+              </p>
+              {!valid && amount.trim() !== "" && (
+                <p className="text-xs text-destructive">
+                  {typed < data.owed ? "Please pay at least " + money(data.owed) + "." : "The most you can pay here is " + money(data.max) + "."}
+                </p>
+              )}
+            </div>
+            <Button className="w-full gap-2 sm:w-auto" disabled={!valid || pay.isPending}
+              onClick={() => pay.mutate({ token, amountCents: Math.round(typed * 100) })}>
+              {pay.isPending ? <><Loader2 className="h-4 w-4 animate-spin" /> Opening secure page…</> : <><Lock className="h-4 w-4" /> Pay {money(valid ? typed : data.owed)}</>}
+            </Button>
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              You pay on Stripe's secure page. We never see your full card number.
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ClientPortal() {
   // This page is sent to the salon's own clients, so it wears the
   // salon's colours rather than stock Groomigo ones.
@@ -838,6 +922,8 @@ export default function ClientPortal() {
         )}
       </div>
     )}
+
+    <TodaysBillCard token={token ?? undefined} readOnly={isPreview} />
 
     {!isPreview && <YourDetailsCard client={data.client} onSaved={() => refetch()} />}
     {/*
