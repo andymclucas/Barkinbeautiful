@@ -225,6 +225,7 @@ export function NextAvailablePanel({ onPick, viewingDate }: {
                     title={`With ${result.data.withUsual.staffName ?? "their usual groomer"}`}
                     slots={result.data.withUsual.slots}
                     onPick={(d, t) => { onPick?.(d, t); setOpen(false); }}
+                    fromToday={fromDate === todayKey}
                   />
                 )}
 
@@ -233,6 +234,7 @@ export function NextAvailablePanel({ onPick, viewingDate }: {
                   slots={result.data.anyone.slots}
                   onPick={(d, t) => { onPick?.(d, t); setOpen(false); }}
                   emptyMessage={result.data.anyone.message}
+                  fromToday={fromDate === todayKey}
                 />
 
                 {/* "The 20th" means something different when the days
@@ -254,8 +256,13 @@ export function NextAvailablePanel({ onPick, viewingDate }: {
   );
 }
 
-function SlotList({ title, slots, onPick, emptyMessage }: {
+function SlotList({ title, slots, onPick, emptyMessage, fromToday = true }: {
   title: string;
+  /**
+   * daysAhead counts from where the search started. Started from a later
+   * day on screen, "today" would be wrong — it is that day, not today.
+   */
+  fromToday?: boolean;
   slots: ReadonlyArray<{ date: string; time: string; daysAhead: number }>;
   onPick: (date: string, time: string) => void;
   emptyMessage?: string;
@@ -278,7 +285,9 @@ function SlotList({ title, slots, onPick, emptyMessage }: {
                     what this screen is for. */}
                 <span className="font-medium">{readableSlot(slot.date, slot.time)}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {slot.daysAhead === 0 ? "today" : `in ${slot.daysAhead} day${slot.daysAhead === 1 ? "" : "s"}`}
+                  {fromToday
+                    ? slot.daysAhead === 0 ? "today" : `in ${slot.daysAhead} day${slot.daysAhead === 1 ? "" : "s"}`
+                    : slot.daysAhead === 0 ? "that day" : `${slot.daysAhead} day${slot.daysAhead === 1 ? "" : "s"} later`}
                 </span>
               </button>
             </li>
