@@ -18,6 +18,11 @@ export type CardLinkEmailInput = {
   salonName?: string | null;
   /** True when the client already has a card and this replaces it. */
   replacingExistingCard?: boolean;
+  /**
+   * The salon's own client host (getPortalBaseUrl). When given, the short
+   * signed card link on that host is accepted as well as a Stripe URL.
+   */
+  ownBaseUrl?: string | null;
 };
 
 export type BuiltEmail = { subject: string; html: string };
@@ -31,8 +36,38 @@ export type BuiltEmail = { subject: string; html: string };
  * tests and callers use it, and because "is this an acceptable card
  * link" reads better at those call sites than the general name.
  */
-export function isAcceptableCardLink(url: string): boolean {
-  return isStripeHostedUrl(url);
+export function isAcceptableCardLink(url: string, ownBaseUrl?: string | null): boolean {
+  return isStripeHostedUrl(url) || isOwnShortCardLink(url, ownBaseUrl);
+}
+
+/**
+ * The salon's own short card link: https, on the salon's client host,
+ * /card/<client>.<expiry>.<12 hex signature> — server/cardLinkToken.ts.
+ *
+ * Lauren, 11/11/2026: "Email it to ..." on Ask for a card failed with
+ * "Refusing to email a card link that is not a Stripe Checkout URL". The
+ * emailed link became the short one on 10/11/2026 (it makes the Stripe
+ * session when clicked, so it outlives Stripe's 24-hour expiry), and this
+ * check still only knew Stripe's hosts — so every card email was refused.
+ *
+ * Still strict: the exact host the server itself uses for client links,
+ * and a token of exactly the shape the server signs. It does not verify
+ * the signature — the redirect does that when the client clicks — but a
+ * link that is not shaped like ours on our own host is refused.
+ */
+export function isOwnShortCardLink(url: string, ownBaseUrl?: string | null): boolean {
+  if (!ownBaseUrl) return false;
+  let link: URL;
+  let base: URL;
+  try {
+    link = new URL(url);
+    base = new URL(ownBaseUrl);
+  } catch {
+    return false;
+  }
+  if (link.protocol !== "https:" || link.host.toLowerCase() !== base.host.toLowerCase()) return false;
+  if (link.search || link.hash) return false;
+  return /^\/card\/[0-9a-z]+\.[0-9a-z]+\.[0-9a-f]{12}$/.test(link.pathname);
 }
 
 function escapeHtml(value: string): string {
@@ -44,7 +79,7 @@ function escapeHtml(value: string): string {
 }
 
 export function buildCardLinkEmail(input: CardLinkEmailInput): BuiltEmail {
-  if (!isAcceptableCardLink(input.url)) {
+  if (!isAcceptableCardLink(input.url, input.ownBaseUrl)) {
     // Refuse rather than mail a client a link we cannot vouch for.
     throw new Error("Refusing to email a card link that is not a Stripe Checkout URL");
   }

@@ -64,3 +64,29 @@ describe("buildCardLinkEmail", () => {
     expect(html).toContain("Test Salon");
   });
 });
+
+describe("the short card link (11/11/2026)", () => {
+  const base = "https://staff.barkinbeautiful.com.au";
+  const short = `${base}/card/7tq.1abcdef.0123456789ab`;
+
+  it("emails the salon's own short link on its own host", () => {
+    const { html } = buildCardLinkEmail({ url: short, firstName: "Jane", ownBaseUrl: base });
+    expect(html).toContain(short);
+  });
+
+  it("still refuses it when the caller has not said which host is ours", () => {
+    expect(() => buildCardLinkEmail({ url: short, firstName: "Jane" })).toThrow(/Refusing/);
+  });
+
+  it("refuses look-alikes: another host, http, a bad token, a query string", () => {
+    for (const url of [
+      "https://evil.example/card/7tq.1abcdef.0123456789ab",
+      "http://staff.barkinbeautiful.com.au/card/7tq.1abcdef.0123456789ab",
+      `${base}/card/not-a-token`,
+      `${base}/card/7tq.1abcdef.0123456789ab?next=https://evil.example`,
+      `${base}/portal/7tq.1abcdef.0123456789ab`,
+    ]) {
+      expect(() => buildCardLinkEmail({ url, ownBaseUrl: base })).toThrow(/Refusing/);
+    }
+  });
+});
