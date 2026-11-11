@@ -153,15 +153,15 @@ describe("the hours the app may OFFER", () => {
     expect(labels).not.toContain("1:30 pm");
   });
 
-  it("is every half hour in between, and nothing else", () => {
+  it("is every half hour in between, except the 9:30–11 split", () => {
+    // Lauren, 11/11/2026: no drop-offs after 9:30 until 11, so the morning
+    // dogs are done before lunch. 9:30 and 11:00 themselves stay.
     expect(labels).toEqual([
       "7:30 am",
       "8:00 am",
       "8:30 am",
       "9:00 am",
       "9:30 am",
-      "10:00 am",
-      "10:30 am",
       "11:00 am",
       "11:30 am",
       "12:00 pm",
@@ -195,5 +195,22 @@ describe("the hours the app may OFFER", () => {
     // A zero or negative step would otherwise loop for ever.
     expect(salonBookingStarts(0)).toEqual([]);
     expect(salonBookingStarts(-30)).toEqual([]);
+  });
+});
+
+describe("the mid-morning split (11/11/2026)", () => {
+  it("keeps 9:30 and 11:00, and drops everything strictly between", async () => {
+    const { inSalonQuietWindow } = await import("@shared/bookingTimeSlots");
+    expect(inSalonQuietWindow(9 * 60 + 30)).toBe(false);
+    expect(inSalonQuietWindow(9 * 60 + 45)).toBe(true);
+    expect(inSalonQuietWindow(10 * 60 + 30)).toBe(true);
+    expect(inSalonQuietWindow(11 * 60)).toBe(false);
+  });
+  it("applies on a finer grid too", () => {
+    const quarterHours = salonBookingStarts(15).map(formatSlotLabel);
+    expect(quarterHours).toContain("9:30 am");
+    expect(quarterHours).not.toContain("9:45 am");
+    expect(quarterHours).not.toContain("10:45 am");
+    expect(quarterHours).toContain("11:00 am");
   });
 });
