@@ -19,10 +19,11 @@
  * CSP, and capped per person per hour.
  */
 import express, { type Router } from "express";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
 import { sdk } from "./_core/sdk";
+import { accessibleSalons } from "./_core/context";
 import { getDb } from "./db";
-import { issueReportVideoChunks } from "../drizzle/schema";
+import { issueReportVideoChunks, issueReports } from "../drizzle/schema";
 import { requireApprovedStaffTenant } from "./staffAccess";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import {
@@ -103,16 +104,59 @@ export async function completeVideo(db: any, key: string, userId?: number) {
   };
 }
 
+/*
+ * Per person per hour. Only pieces actually STORED count — a retried piece
+ * that was already there, or one that failed, does not — so a flaky phone
+ * connection cannot use up the allowance on its own retries (review,
+ * 11/11/2026).
+ */
 const PER_HOUR_BYTES = 200 * 1024 * 1024;
 const recentBytes = new Map<number, Array<{ at: number; bytes: number }>>();
-function underByteLimit(userId: number, bytes: number) {
+function bytesUsedLastHour(userId: number) {
   const now = Date.now();
   const kept = (recentBytes.get(userId) ?? []).filter((e) => now - e.at < 3_600_000);
-  const used = kept.reduce((s, e) => s + e.bytes, 0);
-  if (used + bytes > PER_HOUR_BYTES) { recentBytes.set(userId, kept); return false; }
-  kept.push({ at: now, bytes });
   recentBytes.set(userId, kept);
-  return true;
+  return kept.reduce((s, e) => s + e.bytes, 0);
+}
+function recordBytes(userId: number, bytes: number) {
+  const list = recentBytes.get(userId) ?? [];
+  list.push({ at: Date.now(), bytes });
+  recentBytes.set(userId, list);
+}
+
+/**
+ * Keys of every video a report actually holds. issue_reports is small (a
+ * few rows a week), so this is read whole rather than searched in JSON.
+ */
+async function attachedVideoKeys(db: any, onlyTenantIds?: number[]): Promise<Set<string>> {
+  const rows: Array<{ imageKeys: unknown }> = await db.select({ imageKeys: issueReports.imageKeys }).from(issueReports)
+    .where(onlyTenantIds ? inArray(issueReports.tenantId, onlyTenantIds) : sql`1 = 1`);
+  const keys = new Set<string>();
+  for (const r of rows) {
+    const list = (typeof r.imageKeys === "string" ? JSON.parse(r.imageKeys) : r.imageKeys) as Array<{ key: string; kind: string }> | null;
+    for (const item of list ?? []) if (item?.kind === "video") keys.add(item.key);
+  }
+  return keys;
+}
+
+/*
+ * Tidying: pieces from an upload that was abandoned, or whose report never
+ * got sent, are deleted after a day. Run at most hourly, from the upload
+ * route, so it costs nothing on a quiet day and needs no cron of its own.
+ */
+let lastSweep = 0;
+async function sweepOrphanVideos(db: any) {
+  if (Date.now() - lastSweep < 3_600_000) return;
+  lastSweep = Date.now();
+  const cutoff = new Date(Date.now() - 24 * 3_600_000);
+  const old: Array<{ videoKey: string }> = await db.selectDistinct({ videoKey: issueReportVideoChunks.videoKey })
+    .from(issueReportVideoChunks).where(lt(issueReportVideoChunks.createdAt, cutoff));
+  if (old.length === 0) return;
+  const attached = await attachedVideoKeys(db);
+  const orphans = old.map((o) => o.videoKey).filter((k) => !attached.has(k));
+  if (orphans.length === 0) return;
+  await db.delete(issueReportVideoChunks).where(inArray(issueReportVideoChunks.videoKey, orphans));
+  console.log(`[issueVideo] removed ${orphans.length} abandoned video upload(s)`);
 }
 
 const isDuplicateKey = (err: any) =>
@@ -138,7 +182,7 @@ export function registerIssueVideoRoutes(app: Router) {
         if (body.length > ISSUE_VIDEO_CHUNK_BYTES) { res.status(413).json({ error: "Piece too large" }); return; }
         const seq = Number(req.query.seq);
         if (!Number.isInteger(seq) || seq < 0 || seq >= ISSUE_VIDEO_MAX_CHUNKS) { res.status(400).json({ error: "Bad piece number" }); return; }
-        if (!underByteLimit(user.id, body.length)) { res.status(429).json({ error: "Too much video uploaded in the last hour. Try again later." }); return; }
+        if (bytesUsedLastHour(user.id) + body.length > PER_HOUR_BYTES) { res.status(429).json({ error: "Too much video uploaded in the last hour. Try again later." }); return; }
 
         let key: string;
         let total: number;
@@ -153,6 +197,7 @@ export function registerIssueVideoRoutes(app: Router) {
           if (!looksLikeVideoStart(body)) { res.status(400).json({ error: "That file doesn't look like a video." }); return; }
           contentType = type;
           key = `${ISSUE_VIDEO_KEY_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+          void sweepOrphanVideos(db).catch((err) => console.error("[issueVideo] sweep failed", err));
         } else {
           key = String(req.query.key ?? "");
           if (!isIssueVideoKey(key)) { res.status(400).json({ error: "Bad video key" }); return; }
@@ -179,6 +224,7 @@ export function registerIssueVideoRoutes(app: Router) {
             data: body.toString("base64"),
             createdByUserId: user.id,
           });
+          recordBytes(user.id, body.length);
         } catch (err) {
           // A retried piece that already landed is fine; anything else is not.
           if (!isDuplicateKey(err)) throw err;
@@ -198,8 +244,15 @@ export function registerIssueVideoRoutes(app: Router) {
       if (!user) { res.status(401).end(); return; }
       if (!canAdministerStaff(user)) { res.status(403).end(); return; }
       const key = String(req.query.key ?? "");
+      if (!isIssueVideoKey(key)) { res.status(400).end(); return; }
       const db = await getDb();
       if (!db) { res.status(503).end(); return; }
+      // Only a video a report actually holds, in a salon this owner runs —
+      // never an unattached upload, never another salon's (review, 11/11/2026).
+      // A <video> tag sends no salon header, so this is every salon the
+      // owner may open — the same list the salon switcher uses.
+      const ownTenants = await accessibleSalons(user);
+      if (ownTenants.length === 0 || !(await attachedVideoKeys(db, ownTenants)).has(key)) { res.status(404).end(); return; }
       const video = await completeVideo(db, key);
       if (!video) { res.status(404).end(); return; }
 
@@ -222,16 +275,28 @@ export function registerIssueVideoRoutes(app: Router) {
       res.setHeader("Content-Length", String(end - start + 1));
 
       // One piece at a time, so a 60 MB video never sits in memory whole.
+      // Safari abandons range requests constantly while scrubbing: stop
+      // reading the moment the connection goes, and never wait on a
+      // "drain" that a closed socket will not send.
+      let closed = false;
+      req.on("close", () => { closed = true; });
       for (const piece of piecesForRange(start, end)) {
+        if (closed || res.destroyed) return;
         const [row] = await db.select({ data: issueReportVideoChunks.data }).from(issueReportVideoChunks)
           .where(and(eq(issueReportVideoChunks.videoKey, key), eq(issueReportVideoChunks.seq, piece.seq))).limit(1);
-        if (!row) break;
+        // A piece gone after the length was promised: cut the connection
+        // rather than send a short body that claims to be whole.
+        if (!row) { res.destroy(); return; }
         const buf = Buffer.from(row.data, "base64");
         if (!res.write(buf.subarray(piece.from, piece.to + 1))) {
-          await new Promise((resolve) => res.once("drain", resolve));
+          await new Promise<void>((resolve) => {
+            const done = () => { res.off("drain", done); res.off("close", done); resolve(); };
+            res.once("drain", done);
+            res.once("close", done);
+          });
         }
       }
-      res.end();
+      if (!closed && !res.destroyed) res.end();
     } catch (err) {
       console.error("[issue-report-video]", err);
       if (!res.headersSent) res.status(500).end(); else res.end();

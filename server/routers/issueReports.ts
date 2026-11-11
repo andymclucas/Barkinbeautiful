@@ -128,7 +128,7 @@ export const issueReportsRouter = router({
           renotify: false,
           requireInteraction: false,
         }).catch((err) => console.error("[issueReports] push failed", uid, err))));
-      })();
+      })().catch((err) => console.error("[issueReports] after-submit work failed for report", id, err));
 
       return { id };
     }),
