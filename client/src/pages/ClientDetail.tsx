@@ -444,6 +444,8 @@ export default function ClientDetail() {
   const updateClientDetails = trpc.clients.updateDetails.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
+      // The portal window reads the login email too; refresh it with the rest.
+      void utils.clientPortal.getAccountStatus.invalidate({ clientId });
       setEditDetailsOpen(false);
       toast.success("Client details updated");
     },
@@ -1072,7 +1074,11 @@ export default function ClientDetail() {
               const isActive = status === "active";
               const isPending = status === "setup_pending";
               const isRevoked = status === "revoked";
-              const loginEmail = portalAccount?.portalLoginEmail ?? portalAccount?.email ?? null;
+              // The client record the page already shows first: it is refreshed
+              // by Edit details, where this window's own status query was not —
+              // so an email just added read as missing until a reload (Lauren,
+              // 11/11/2026).
+              const loginEmail = portalAccount?.portalLoginEmail || client.email || portalAccount?.email || null;
               const day = (d: Date | string) => new Date(d).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" });
               const statusLine = isActive
                 ? `Using the portal as ${loginEmail ?? "this client"}${portalAccount?.portalLastSignedInAt ? `, last signed in ${day(portalAccount.portalLastSignedInAt)}` : ""}.`
