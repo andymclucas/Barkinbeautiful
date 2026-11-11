@@ -23,7 +23,7 @@ import { clients, issueReports, pets, uploadedImages } from "../../drizzle/schem
 import { canAdministerStaff, STAFF_ADMINISTRATOR_USER_IDS } from "@shared/staffAdministrators";
 import {
   ISSUE_MAX_PHOTOS, ISSUE_MESSAGE_MAX, ISSUE_STATUSES, OPEN_ISSUE_STATUSES,
-  isIssueImageKey, issuePushText, recentIssueErrors,
+  isIssueImageKey, isSafeAppPath, isSafeQuery, issuePushText, recentIssueErrors,
   type IssueContext, type IssueImage, type IssueStatus,
 } from "@shared/issueReports";
 import { sendPushToUser } from "../webPush";
@@ -40,7 +40,7 @@ const contextInput = z.object({
   appointmentId: z.number().int().positive().optional(),
   staffId: z.number().int().positive().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  search: z.string().max(600).optional(),
+  search: z.string().max(600).refine(isSafeQuery, "Invalid query string").optional(),
   viewport: z.string().max(40).optional(),
   userAgent: z.string().max(400).optional(),
 }).strict();
@@ -50,7 +50,7 @@ export const issueReportsRouter = router({
     .input(z.object({
       tenantId: z.number().int().positive().optional(),
       message: z.string().trim().min(1, "Say what went wrong").max(ISSUE_MESSAGE_MAX),
-      pagePath: z.string().max(512).optional(),
+      pagePath: z.string().max(512).refine(isSafeAppPath, "Invalid page").optional(),
       pageTitle: z.string().max(255).optional(),
       context: contextInput.optional(),
       recentErrors: z.array(z.object({

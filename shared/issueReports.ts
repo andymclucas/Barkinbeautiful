@@ -125,6 +125,16 @@ export const ISSUE_IMAGE_KEY_PREFIX = "issue-reports/";
 export const isIssueImageKey = (key: string) =>
   key.startsWith(ISSUE_IMAGE_KEY_PREFIX) && /^[a-z0-9\-/.]+$/i.test(key) && !key.includes("..");
 
+/**
+ * A path inside this app: starts with one "/", no scheme, no "//host",
+ * no whitespace or backslash. The inbox turns a report's page into a link
+ * an owner clicks, and the page comes from the reporter's browser, so it
+ * is checked on the way in AND before it is rendered.
+ */
+export const isSafeAppPath = (path: string) => /^\/(?![\/\\])[^\s\\]*$/.test(path) && path.length <= 512;
+/** A query string for such a path: "?..." with no whitespace. */
+export const isSafeQuery = (search: string) => /^\?[^\s\\]*$/.test(search) && search.length <= 600;
+
 /** The phone notification: who, and the first line of what they said. */
 export function issuePushText(reporterName: string | null | undefined, message: string) {
   const who = (reporterName ?? "").trim() || "A staff member";

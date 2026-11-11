@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  ISSUE_STATUS_LABEL, type IssueContext, type IssueRecentError, type IssueStatus,
+  ISSUE_STATUS_LABEL, isSafeAppPath, isSafeQuery, type IssueContext, type IssueRecentError, type IssueStatus,
 } from "@shared/issueReports";
 
 /**
@@ -49,7 +49,10 @@ export function IssueReportCard({
     timeZone, weekday: "short", day: "numeric", month: "short",
     hour: "numeric", minute: "2-digit", hour12: true,
   });
-  const pageHref = report.pagePath ? report.pagePath + (c.search ?? "") : null;
+  // Checked again here: the page came from the reporter's browser.
+  const pageHref = report.pagePath && isSafeAppPath(report.pagePath)
+    ? report.pagePath + (c.search && isSafeQuery(c.search) ? c.search : "")
+    : null;
 
   return (
     <article
@@ -68,6 +71,7 @@ export function IssueReportCard({
       <p className="whitespace-pre-wrap break-words text-sm">{report.message}</p>
 
       <div className="flex flex-wrap gap-1.5 text-xs">
+        {!pageHref && report.pagePath && <span className="rounded-md border px-2 py-1">On {report.pagePath}</span>}
         {pageHref && (
           <Link href={pageHref} className="inline-flex items-center rounded-md border px-2 py-1 hover:bg-accent">
             On {report.pagePath} <ChevronRight className="ml-0.5 h-3 w-3" />

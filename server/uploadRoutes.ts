@@ -74,30 +74,76 @@ async function compressLogoForStorage(buffer: Buffer, contentType: string): Prom
  * details from any screen in the app.
  */
 function registerIssueReportImageRoutes(app: Router) {
+  /*
+   * Hardened after review (11/11/2026). The sender may be any staff login
+   * and the viewer is always an owner, so an upload is untrusted input that
+   * ends up opened on the owners' screens:
+   *  - only real raster image types are accepted, and EVERY upload is
+   *    decoded and re-encoded to JPEG by sharp — an SVG or HTML file
+   *    labelled image/* never survives to be served back;
+   *  - the image is served with nosniff and a sandboxing CSP, so even a
+   *    stored oddity cannot run as a page on this origin;
+   *  - uploads are capped per person per hour, because the bytes live in
+   *    the same database as the bookings.
+   */
+  const ALLOWED = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
+  const PER_HOUR = 40;
+  const recent = new Map<number, number[]>();
+  const underLimit = (userId: number) => {
+    const now = Date.now();
+    const kept = (recent.get(userId) ?? []).filter((t) => now - t < 3_600_000);
+    if (kept.length >= PER_HOUR) { recent.set(userId, kept); return false; }
+    kept.push(now);
+    recent.set(userId, kept);
+    return true;
+  };
+
   app.post("/api/upload/issue-report-image", async (req, res) => {
     try {
       let user;
       try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
       if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
-      const contentType = String(req.headers["content-type"] ?? "image/jpeg");
-      if (!contentType.startsWith("image/")) { res.status(400).json({ error: "Only image uploads are allowed" }); return; }
-      const buffer: Buffer = req.body;
-      if (!buffer || buffer.length === 0) { res.status(400).json({ error: "Empty file" }); return; }
-      if (buffer.length > 15 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 15 MB)" }); return; }
       const db = await getDb();
       if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
-      const compressed = await compressForStorage(buffer, contentType);
-      const ext = compressed.contentType.split("/")[1]?.split(";")[0]?.replace(/[^a-z0-9]/gi, "") || "jpg";
-      const key = `${ISSUE_IMAGE_KEY_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+      try { await requireApprovedStaffTenant(db, user as any); } catch (e: any) {
+        res.status(403).json({ error: e?.message ?? "Not allowed" }); return;
+      }
+      const contentType = String(req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+      if (!ALLOWED.has(contentType)) { res.status(400).json({ error: "Attach a photo or screenshot (JPEG, PNG, WebP, GIF or HEIC)." }); return; }
+      const buffer = req.body;
+      if (!Buffer.isBuffer(buffer) || buffer.length === 0) { res.status(400).json({ error: "Empty file" }); return; }
+      if (buffer.length > 15 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 15 MB)" }); return; }
+      if (!underLimit(user.id)) { res.status(429).json({ error: "Too many uploads in the last hour. Try again later." }); return; }
+
+      let jpeg: Buffer;
+      try {
+        // Decide by what the bytes ARE, not what the header claims: an SVG
+        // labelled image/png is refused rather than rendered.
+        const { format } = await sharp(buffer, { failOn: "error" }).metadata();
+        if (!format || !["jpeg", "png", "webp", "gif", "heif"].includes(format)) throw new Error("not a raster image");
+        jpeg = await sharp(buffer, { failOn: "error" })
+          .rotate()
+          .resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true })
+          .jpeg({ quality: 80, mozjpeg: true })
+          .toBuffer();
+        if (jpeg.length > 3.5 * 1024 * 1024) {
+          jpeg = await sharp(jpeg).resize({ width: 1400, height: 1400, fit: "inside" }).jpeg({ quality: 60, mozjpeg: true }).toBuffer();
+        }
+      } catch {
+        res.status(400).json({ error: "That file couldn't be read as an image. Try a screenshot instead." });
+        return;
+      }
+
+      const key = `${ISSUE_IMAGE_KEY_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
       await db.insert(uploadedImages).values({
         storageKey: key,
-        photoData: compressed.buffer.toString("base64"),
-        photoContentType: compressed.contentType,
+        photoData: jpeg.toString("base64"),
+        photoContentType: "image/jpeg",
       });
       res.json({ key });
     } catch (err: any) {
       console.error("[upload/issue-report-image]", err);
-      res.status(500).json({ error: err.message ?? "Upload failed" });
+      res.status(500).json({ error: "Upload failed" });
     }
   });
 
@@ -111,10 +157,15 @@ function registerIssueReportImageRoutes(app: Router) {
       if (!isIssueImageKey(key)) { res.status(400).end(); return; }
       const db = await getDb();
       if (!db) { res.status(503).end(); return; }
-      const [row] = await db.select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+      const [row] = await db.select({ photoData: uploadedImages.photoData })
         .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
       if (!row) { res.status(404).end(); return; }
-      res.setHeader("Content-Type", row.photoContentType);
+      // Always served as a JPEG (every upload is re-encoded to one), never
+      // as whatever type was stored, and never as something that can run.
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self'");
+      res.setHeader("Content-Disposition", "inline");
       res.setHeader("Cache-Control", "private, max-age=86400");
       res.send(Buffer.from(row.photoData, "base64"));
     } catch (err) {

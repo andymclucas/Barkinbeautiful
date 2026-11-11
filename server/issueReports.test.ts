@@ -87,3 +87,21 @@ describe("isOpenIssue", () => {
     expect(isOpenIssue("dismissed")).toBe(false);
   });
 });
+
+describe("isSafeAppPath / isSafeQuery", () => {
+  it("accepts the app's own paths and query strings", async () => {
+    const { isSafeAppPath, isSafeQuery } = await import("@shared/issueReports");
+    expect(isSafeAppPath("/clients/1162")).toBe(true);
+    expect(isSafeAppPath("/")).toBe(true);
+    expect(isSafeQuery("?date=2026-11-12&appointment=3")).toBe(true);
+  });
+
+  it("refuses anything that could leave the app or run", async () => {
+    const { isSafeAppPath, isSafeQuery } = await import("@shared/issueReports");
+    for (const bad of ["javascript:alert(1)", "//evil.example/x", "/\\evil.example", "https://evil.example", "clients/1", "/a b", ""]) {
+      expect(isSafeAppPath(bad), bad).toBe(false);
+    }
+    expect(isSafeQuery("javascript:alert(1)")).toBe(false);
+    expect(isSafeQuery("? x")).toBe(false);
+  });
+});
