@@ -57,7 +57,7 @@ import { notifyOnlineBooking } from "./onlineBookingNotify";
 import { getPetWeightBand, isEligibleOnlineBookingService, isEligibleOnlineBookingServiceForBand } from "../shared/onlineBookingWeightEligibility";
 import { bandForWeight, type DogSizeBand } from "../shared/dogSizeBand";
 import { buildOnlineBookingNotes } from "../shared/onlineBookingPreview";
-import { buildOnlineBookingSlotStarts } from "../shared/onlineBookingSlots";
+import { buildOnlineBookingSlotStarts, isOfferedOnlineStart } from "../shared/onlineBookingSlots";
 import { planMembershipSeries } from "../shared/membershipSeries";
 import { busyForStaff } from "./staffBusy";
 import { addWeeks, gapsBetween, manualInterval, rebookInterval } from "../shared/rebook";
@@ -12114,6 +12114,11 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   }
   if (input.scheduledStart.getTime() < Date.now() + tenant.leadHours * 3600000) return { available: false, reason: `Bookings require at least ${tenant.leadHours} hours notice` } as const;
   const durationMinutes = ONLINE_SERVICE_MINUTES[input.serviceType] ?? 60;
+  // Only a time the slot list would have shown: open day, 8am to the 1pm
+  // last drop-off, outside the 9:30-11 gap, on the half hour.
+  if (!isOfferedOnlineStart(input.scheduledStart, durationMinutes)) {
+    return { available: false, reason: "That time is not available for online booking" } as const;
+  }
   const scheduledEnd = new Date(input.scheduledStart.getTime() + durationMinutes * 60000);
   const dateKey = input.scheduledStart.toLocaleDateString("en-CA", { timeZone: "Australia/Brisbane" });
   const { start, end } = aestDayBounds(dateKey);
@@ -16224,6 +16229,14 @@ const clientPortalRouter = router({
           code: "BAD_REQUEST",
           message: `To keep this booking in its regular cycle it can move between ${day(cycleWindow.from)} and ${day(cycleWindow.to)}. For anything else, please call the salon.`,
         });
+      }
+      // And only a time the portal's list could have shown: an open day,
+      // on the half hour, outside 9:30-11, no later than the 1pm drop-off.
+      // A one-minute duration checks the start alone — the list is sized
+      // by service type, not this booking's own length, so checking the
+      // real length could refuse a time the list just offered.
+      if (!isOfferedOnlineStart(newStart, 1)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That time isn't available. Please pick one of the times shown." });
       }
 
       const durationMs = new Date(appt.scheduledEnd).getTime() - new Date(appt.scheduledStart).getTime();
