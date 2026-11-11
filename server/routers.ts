@@ -196,6 +196,7 @@ import { automatedMessagesRouter } from "./routers/automatedMessages";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { counterSaleRouter } from "./routers/counterSale";
+import { issueReportsRouter } from "./routers/issueReports";
 import { findBlockoutsCovering } from "./groomerBlockout";
 import { recurringOccurrenceRefusal } from "@shared/recurringOccurrence";
 import { recurrenceWindow, type RecurrenceEnd } from "@shared/recurrenceRule";
@@ -16469,6 +16470,7 @@ export const appRouter = router({
   storeCredit: storeCreditRouter,
   retail: retailRouter,
   counterSale: counterSaleRouter,
+  issueReports: issueReportsRouter,
   analytics: analyticsRouter,
   analyticsExt: analyticsRouterExtended,
   migration: migrationRouter,

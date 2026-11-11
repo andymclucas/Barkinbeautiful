@@ -9,6 +9,7 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 import { readActiveSalon, SALON_HEADER } from "./lib/activeSalon";
+import { rememberError } from "./lib/recentErrors";
 
 // Catches JS errors that happen outside React's own render cycle (e.g. a
 // timer callback or event handler), which the ErrorBoundary can't see.
@@ -21,12 +22,14 @@ declare global {
   }
 }
 window.addEventListener("error", (event) => {
+  rememberError("window_error", event.message);
   window.__gsosReportClientError?.("window_error", {
     message: event.message,
     stack: event.error?.stack,
   });
 });
 window.addEventListener("unhandledrejection", (event) => {
+  rememberError("unhandled_rejection", event.reason?.message ?? event.reason);
   window.__gsosReportClientError?.("unhandled_rejection", {
     message: String(event.reason?.message ?? event.reason ?? "Unknown rejection"),
     stack: event.reason?.stack,
@@ -87,6 +90,8 @@ const announcedFailures = new Map<string, number>();
 const reportQueryFailure = (error: unknown, kind: "query" | "mutation") => {
   if (!(error instanceof TRPCClientError)) return;
   const data = (error as { data?: { path?: string; httpStatus?: number } }).data;
+  // Every failure, the ordinary refusals included, for "Report a problem".
+  rememberError(`trpc_${kind}_error`, `${data?.path ?? "unknown"} (${data?.httpStatus ?? "?"}): ${error.message}`);
   const notice = failureNotice(
     { message: error.message, path: data?.path, httpStatus: data?.httpStatus },
     UNAUTHED_ERR_MSG,

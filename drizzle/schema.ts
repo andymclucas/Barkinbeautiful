@@ -2246,3 +2246,27 @@ export const salonAccess = mysqlTable("salon_access", {
 ]);
 
 export type SalonAccessRow = typeof salonAccess.$inferSelect;
+
+// ─── Report a problem (staff → owner inbox) ─────────────────────────────────
+// Andy, 11/11/2026. Any staff login sends one from any screen; Lauren and
+// Andy (canAdministerStaff) work through them. Images live in
+// uploaded_images and are referenced by key. See shared/issueReports.ts.
+export const issueReports = mysqlTable("issue_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  reporterUserId: int("reporter_user_id").notNull(),
+  reporterName: varchar("reporter_name", { length: 255 }),
+  message: text("message").notNull(),
+  pagePath: varchar("page_path", { length: 512 }),
+  pageTitle: varchar("page_title", { length: 255 }),
+  context: json("context").$type<import("../shared/issueReports").IssueContext | null>(),
+  recentErrors: json("recent_errors").$type<import("../shared/issueReports").IssueRecentError[] | null>(),
+  imageKeys: json("image_keys").$type<import("../shared/issueReports").IssueImage[] | null>(),
+  status: mysqlEnum("status", ["new", "in_progress", "fixed", "dismissed"]).default("new").notNull(),
+  resolutionNote: text("resolution_note"),
+  statusChangedAt: timestamp("status_changed_at"),
+  statusChangedByUserId: int("status_changed_by_user_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("idx_issue_reports_tenant_status").on(t.tenantId, t.status, t.createdAt)]);
+
+export type IssueReportRow = typeof issueReports.$inferSelect;

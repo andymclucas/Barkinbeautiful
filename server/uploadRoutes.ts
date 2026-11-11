@@ -8,6 +8,8 @@ import { choosePetPhoto } from "@shared/petProfilePhoto";
 import { getPetThumb, setPetThumb, forgetPetThumb } from "./petThumbCache";
 import { requireApprovedStaffTenant } from "./staffAccess";
 import sharp from "sharp";
+import { canAdministerStaff } from "@shared/staffAdministrators";
+import { ISSUE_IMAGE_KEY_PREFIX, isIssueImageKey } from "@shared/issueReports";
 
 // TiDB rejects a single row/entry over ~6 MB (a TiKV-level limit, not
 // something we can raise). A base64-encoded image is ~33% larger than its
@@ -64,7 +66,66 @@ async function compressLogoForStorage(buffer: Buffer, contentType: string): Prom
   }
 }
 
+/**
+ * Screenshots and photos attached to a staff problem report
+ * (shared/issueReports.ts). Any signed-in staff login may upload — the
+ * report is open to all of them — but only the salon owners
+ * (canAdministerStaff) may look at one: a screenshot can show a client's
+ * details from any screen in the app.
+ */
+function registerIssueReportImageRoutes(app: Router) {
+  app.post("/api/upload/issue-report-image", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+      const contentType = String(req.headers["content-type"] ?? "image/jpeg");
+      if (!contentType.startsWith("image/")) { res.status(400).json({ error: "Only image uploads are allowed" }); return; }
+      const buffer: Buffer = req.body;
+      if (!buffer || buffer.length === 0) { res.status(400).json({ error: "Empty file" }); return; }
+      if (buffer.length > 15 * 1024 * 1024) { res.status(413).json({ error: "File too large (max 15 MB)" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "Database unavailable" }); return; }
+      const compressed = await compressForStorage(buffer, contentType);
+      const ext = compressed.contentType.split("/")[1]?.split(";")[0]?.replace(/[^a-z0-9]/gi, "") || "jpg";
+      const key = `${ISSUE_IMAGE_KEY_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+      await db.insert(uploadedImages).values({
+        storageKey: key,
+        photoData: compressed.buffer.toString("base64"),
+        photoContentType: compressed.contentType,
+      });
+      res.json({ key });
+    } catch (err: any) {
+      console.error("[upload/issue-report-image]", err);
+      res.status(500).json({ error: err.message ?? "Upload failed" });
+    }
+  });
+
+  app.get("/api/issue-report-image", async (req, res) => {
+    try {
+      let user;
+      try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
+      if (!user) { res.status(401).end(); return; }
+      if (!canAdministerStaff(user)) { res.status(403).end(); return; }
+      const key = String(req.query.key ?? "");
+      if (!isIssueImageKey(key)) { res.status(400).end(); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).end(); return; }
+      const [row] = await db.select({ photoData: uploadedImages.photoData, photoContentType: uploadedImages.photoContentType })
+        .from(uploadedImages).where(eq(uploadedImages.storageKey, key)).limit(1);
+      if (!row) { res.status(404).end(); return; }
+      res.setHeader("Content-Type", row.photoContentType);
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      res.send(Buffer.from(row.photoData, "base64"));
+    } catch (err) {
+      console.error("[issue-report-image]", err);
+      res.status(500).end();
+    }
+  });
+}
+
 export function registerUploadRoutes(app: Router) {
+  registerIssueReportImageRoutes(app);
   // POST /api/upload/style-note-photo
   // Accepts raw image bytes with Content-Type header, returns { url, key }
   app.post(

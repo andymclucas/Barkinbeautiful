@@ -48,6 +48,8 @@ export const SIDEBAR_LAYOUT: readonly SidebarEntry[] = [
   },
   { kind: "group", key: "insights", label: "Insights", paths: ["/analytics", "/reporting"] },
   { kind: "item", path: "/staff" },
+  // Owners only (canAdministerStaff); everyone else never has it permitted.
+  { kind: "item", path: "/issues" },
   { kind: "item", path: "/christmas" },
 ];
 

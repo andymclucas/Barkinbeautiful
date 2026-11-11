@@ -682,6 +682,7 @@ Custom agents in `.claude/agents/` and skills in `.claude/skills/`:
 | Question a new feature against scale before building it   | `/build-for-scale`         |
 | Using Andy's Chrome without wrecking his sessions         | `/leave-the-browser-alone` |
 | Ship and verify unattended while Andy is asleep           | `/unattended-deploy`       |
+| Work through the team's "Report a problem" queue          | `/issue-queue`             |
 | Find things inside the `routers.ts` monolith             | `router-navigator` agent   |
 | Review business logic against grooming domain rules      | `domain-reviewer` agent    |
 | Review a schema/migration change for safety              | `schema-guardian` agent    |

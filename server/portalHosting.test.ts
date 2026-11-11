@@ -69,7 +69,7 @@ describe("which door a page belongs to", () => {
       "/": "staff", "/christmas": "staff", "/calendar": "staff", "/workflow": "staff",
       "/workflow/display": "staff", "/my-day": "staff", "/clients": "staff",
       "/clients/overdue": "staff", "/clients/:id": "staff", "/memberships": "staff",
-      "/pricing": "staff", "/retail": "staff", "/counter": "staff", "/analytics": "staff",
+      "/pricing": "staff", "/retail": "staff", "/counter": "staff", "/issues": "staff", "/analytics": "staff",
       "/staff/review/:staffId": "staff", "/staff": "staff", "/messages": "staff",
       "/portal-messages": "staff", "/email-campaigns": "staff", "/reporting": "staff",
       "/migration": "staff", "/settings": "staff", "/login": "staff", "/signup": "staff",
