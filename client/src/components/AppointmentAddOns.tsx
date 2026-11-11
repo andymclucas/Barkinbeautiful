@@ -41,11 +41,16 @@ export function AppointmentAddOns({ appointmentId, petName, siblings = [] }: {
   const [manualPrice, setManualPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
   /* Lauren, 29/10/2026: a teeth clean on a two-dog booking had to be
-     added twice, from two different dialogs. Most extras done on a
-     family are done on all of them, so this defaults ON when there is
-     more than one dog — but the button says how many it will charge
-     before it is pressed, because each one is an invoice line. */
-  const [applyToAll, setApplyToAll] = useState(true);
+     added twice, from two different dialogs, so this defaulted ON.
+
+     Andy, 11/11/2026: "fix the add-ons so each dog's box adds to that dog
+     only". Each dog now has its own box side by side in ONE dialog, and
+     with this on by default both boxes added to both dogs — two boxes
+     doing the same thing, and an extra meant for one dog charged on the
+     other unless somebody noticed the tick. So it is OFF: a dog's box adds
+     to that dog. Doing both is still one tick ("Also add to …"), and the
+     button still says how many it will charge before it is pressed. */
+  const [applyToAll, setApplyToAll] = useState(false);
 
   const refresh = () => {
     /* No input: an "add to all" writes to the siblings' lists too, and
@@ -246,9 +251,8 @@ export function AppointmentAddOns({ appointmentId, petName, siblings = [] }: {
             checked={applyToAll}
             onChange={e => setApplyToAll(e.target.checked)}
           />
-          Add to every dog on this booking
           <span className="truncate">
-            ({[petName ?? "this dog", ...siblings.map(s => s.petName)].join(", ")})
+            Also add to {siblings.map(s => s.petName).join(" & ")}
           </span>
         </label>
       )}
