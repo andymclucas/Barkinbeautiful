@@ -104,6 +104,7 @@ import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stri
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { nextVisitAfter } from "@shared/nextVisit";
 import { buildUpcomingDatesSms, upcomingDatesShown } from "@shared/upcomingDatesSms";
 import { calculateSmsCost } from "@shared/smsSegments";
 import { dogDayTiming, byArrival } from "../shared/dayTimingReport";
@@ -1396,22 +1397,30 @@ const calendarRouter = router({
       // Enrich each appointment with the pet's next future appointment date
       const now = new Date();
       const petIds = Array.from(new Set(rows.map(r => r.petId).filter((id): id is number => id !== null)));
-      const nextApptMap: Record<number, Date | null> = {};
+      const laterByPet: Record<number, Array<{ scheduledStart: Date; status: string | null; workflowState: string | null }>> = {};
       const lastAppointmentMap: Record<number, Date> = {};
       if (petIds.length > 0) {
-        const nextAppts = await db
-          .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart })
+        /*
+         * The visit after EACH ROW, not after now — see shared/nextVisit.ts.
+         * Candidates start from the earliest row on screen, so a past day's
+         * card still finds what came after it.
+         */
+        const earliestRow = rows.reduce<Date>((min, r) => {
+          const at = new Date(r.scheduledStart);
+          return at < min ? at : min;
+        }, now);
+        const laterAppts = await db
+          .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart, status: appointments.status, workflowState: appointments.workflowState })
           .from(appointments)
           .where(and(
             inArray(appointments.petId, petIds),
-            gt(appointments.scheduledStart, now),
+            gt(appointments.scheduledStart, earliestRow),
             eq(appointments.tenantId, tenantOf(ctx, input))
           ))
           .orderBy(asc(appointments.scheduledStart));
-        for (const na of nextAppts) {
-          if (na.petId !== null && !nextApptMap[na.petId]) {
-            nextApptMap[na.petId] = na.scheduledStart;
-          }
+        for (const la of laterAppts) {
+          if (la.petId === null) continue;
+          (laterByPet[la.petId] ??= []).push(la);
         }
 
         /*
@@ -1438,7 +1447,7 @@ const calendarRouter = router({
 
       return rows.map(r => ({
         ...r,
-        nextAppointmentDate: r.petId !== null ? (nextApptMap[r.petId] ?? null) : null,
+        nextAppointmentDate: r.petId !== null ? nextVisitAfter(r.scheduledStart, laterByPet[r.petId] ?? [], brisbaneDateKey) : null,
         lastAppointmentDate: r.petId !== null ? (lastAppointmentMap[r.petId] ?? null) : null,
         reminderStatus: reminderStatusByAppointment[r.id] ?? (r.reminderSentAt ? "sent" : null),
       }));
