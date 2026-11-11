@@ -47,4 +47,18 @@ describe("cycleRescheduleWindow", () => {
     const w = cycleRescheduleWindow({ currentDateKey: "2027-01-06" });
     expect([w.from, w.to, w.intervalWeeks]).toEqual(["2027-01-03", "2027-01-09", null]);
   });
+
+  it("never leaves the window in the past when the previous groom was long ago", () => {
+    // 4-weekly member last groomed 10 weeks back; staff booked the next visit
+    // well after the cycle date. Anchored on that old visit the window would
+    // have ended weeks ago.
+    const w = cycleRescheduleWindow({ currentDateKey: "2027-01-20", prevDateKey: "2026-11-11", intervalWeeks: 4 });
+    expect(w.idealDateKey).toBe("2027-01-20");
+    expect([w.from, w.to]).toEqual(["2027-01-17", "2027-01-23"]);
+  });
+
+  it("always includes the date the booking already has", () => {
+    const w = cycleRescheduleWindow({ currentDateKey: "2027-01-12", prevDateKey: "2026-11-25", nextDateKey: "2027-02-17", intervalWeeks: 6 });
+    expect(isWithinWindow("2027-01-12", w)).toBe(true);
+  });
 });

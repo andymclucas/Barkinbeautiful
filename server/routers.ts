@@ -1191,6 +1191,8 @@ const calendarRouter = router({
         scheduledStart: appointments.scheduledStart,
         scheduledEnd: appointments.scheduledEnd,
         serviceType: appointments.serviceType,
+        status: appointments.status,
+        workflowState: appointments.workflowState,
         petName: pets.name,
         clientLastName: clients.lastName,
       }).from(appointments)
@@ -1225,7 +1227,9 @@ const calendarRouter = router({
          warned. This is the booked day, whatever is on screen. */
       const serviceTypesByStaff = new Map<number, string[]>(staffIds.map((id) => [id, []]));
       for (const row of booked) {
-        if (row.staffId != null) serviceTypesByStaff.get(row.staffId)?.push(row.serviceType ?? "");
+        // A dog that did not turn up is not a groom on the day.
+        const noShow = row.status === "no_show" || row.workflowState === "no_show";
+        if (row.staffId != null && !noShow) serviceTypesByStaff.get(row.staffId)?.push(row.serviceType ?? "");
         if (row.staffId == null || !row.scheduledStart || !row.scheduledEnd) continue;
         const startMinutes = minutesInDay(new Date(row.scheduledStart));
         const rawEnd = minutesInDay(new Date(row.scheduledEnd));

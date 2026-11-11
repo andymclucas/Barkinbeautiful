@@ -79,9 +79,13 @@ export function cycleRescheduleWindow(input: CycleWindowInput): CycleWindow {
   let from = anchors.map((a) => addDays(a, -tol)).sort().at(-1)!;
   let to = anchors.map((a) => addDays(a, tol)).sort()[0]!;
   let ideal = anchors[0];
-  // ...and when staff have moved things so far that they cannot, around
-  // where it is now, rather than offering nothing at all.
-  if (from > to) {
+  // ...and when they cannot — staff moved things so far that the
+  // neighbours disagree, or booked this visit outside where the cycle would
+  // put it (a late groom, a holiday) — around where it is now. The window
+  // never shuts out the date the booking already has: staff put it there,
+  // and a window entirely in the past would leave the client nothing to
+  // pick at all (review, 11/11/2026).
+  if (from > to || current < from || current > to) {
     from = addDays(current, -tol);
     to = addDays(current, tol);
     ideal = current;
