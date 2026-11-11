@@ -8,6 +8,7 @@ import { chargesOnConnectedAccount, platformFeeCents } from "../shared/stripeCon
 import { attachPaymentMethodToClient } from "./stripeCards";
 import { postInvoicePaymentToAppointments } from "./invoicePaymentPosting";
 import { handlePortalAppointmentPayment } from "./portalAppointmentPayment";
+import { handleStripeRefund } from "./stripeRefunds";
 import { notifyOwner } from "./ownerNotification";
 import { classifyFailure, fromStripeCents, planAfterFailure } from "@shared/stripeBilling";
 import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
@@ -368,6 +369,23 @@ export async function processStripeEvent(event: Stripe.Event) {
       return { platformSubscription: "unchanged" };
     }
     // Not ours. Falls through to the membership handlers below.
+  }
+
+  /*
+   * A refund made in Stripe (Andy, 11/11/2026). Recorded here as negative
+   * lines against what the payment paid for — store credit first, then the
+   * bookings — so a refunded client no longer reads as paid or keeps the
+   * credit. server/stripeRefunds.ts. The event row is written first, like
+   * every handler here, so a repeat delivery is a no-op; the handler also
+   * works from Stripe's running total, so a second partial refund undoes
+   * only the new money.
+   */
+  if (event.type === "charge.refunded") {
+    const charge = event.data.object as Stripe.Charge;
+    const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id ?? null;
+    await db.insert(stripeEvents).values({ stripeEventId: event.id, eventType: event.type, tenantId: Number(charge.metadata?.tenant_id || 1) || 1 });
+    const result = await handleStripeRefund(db, { paymentIntentId, amountRefundedCents: charge.amount_refunded ?? 0 });
+    return { duplicate: false, ...result };
   }
 
   if (event.type === "checkout.session.completed") {
