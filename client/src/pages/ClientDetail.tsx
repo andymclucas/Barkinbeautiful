@@ -1,4 +1,4 @@
-import { clientVisitDates } from "@shared/clientVisitDates";
+import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
 import { presenceKey } from "@shared/presence";
@@ -833,11 +833,11 @@ export default function ClientDetail() {
     bookService as "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other",
     activeMemberships,
   );
-  // Most recent past visit and soonest future one, skipping cancellations
-  // (shared/clientVisitDates.ts). The list is newest first, so taking its
-  // first entries showed the furthest-out booking as both (11/11/2026).
+  // Last / Today / Next by Brisbane calendar day (shared/clientVisitDates.ts,
+  // Andy 11/11/2026): today's groom stays "today" until the day passes.
   const visitDates = clientVisitDates(appointments);
   const lastVisit = visitDates.last?.scheduledStart;
+  const todaysVisits = visitDates.today;
   const nextVisit = visitDates.next;
 
   const handleBook = () => {
@@ -1652,20 +1652,31 @@ export default function ClientDetail() {
             $3,838 actually paid, with nothing to say which was which. */}
 
         {/* Last / Next visit */}
-        {(lastVisit || nextVisit) && (
+        {(lastVisit || todaysVisits.length > 0 || nextVisit) && (
           <div className="flex gap-3 flex-wrap">
+            {/* Brisbane dates, always: "AEST timezone. No alternatives." */}
             {lastVisit && (
               <div className="flex items-center gap-2 text-sm bg-card border rounded-lg px-3 py-2">
                 <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-muted-foreground">Last visit:</span>
-                <span className="font-medium">{new Date(lastVisit).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</span>
+                <span className="font-medium">{new Date(lastVisit).toLocaleDateString("en-AU", { timeZone: BRISBANE_TIME_ZONE, day: "numeric", month: "short", year: "numeric" })}</span>
+              </div>
+            )}
+            {todaysVisits.length > 0 && (
+              <div className="flex items-center gap-2 text-sm bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 rounded-lg px-3 py-2">
+                <CalendarDays className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400" />
+                <span className="text-muted-foreground">Today:</span>
+                <span className="font-medium text-emerald-800 dark:text-emerald-300">
+                  {new Date(todaysVisits[0].scheduledStart).toLocaleTimeString("en-AU", { timeZone: BRISBANE_TIME_ZONE, hour: "numeric", minute: "2-digit", hour12: true })}
+                </span>
+                <span className="text-muted-foreground text-xs">({Array.from(new Set(todaysVisits.map((a) => a.petName).filter(Boolean))).join(" & ")})</span>
               </div>
             )}
             {nextVisit && (
               <div className="flex items-center gap-2 text-sm bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
                 <CalendarDays className="h-3.5 w-3.5 text-primary" />
                 <span className="text-muted-foreground">Next visit:</span>
-                <span className="font-medium text-primary">{new Date(nextVisit.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</span>
+                <span className="font-medium text-primary">{new Date(nextVisit.scheduledStart).toLocaleDateString("en-AU", { timeZone: BRISBANE_TIME_ZONE, day: "numeric", month: "short", year: "numeric" })}</span>
                 <span className="text-muted-foreground text-xs">({nextVisit.petName})</span>
               </div>
             )}

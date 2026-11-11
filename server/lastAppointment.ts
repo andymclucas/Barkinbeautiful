@@ -2,6 +2,8 @@ export type PriorAppointmentCandidate = {
   petId: number | null;
   scheduledStart: Date;
   status: string;
+  /** Checked too: the two columns drift (a MoeGo-sync cancellation left status pending, workflow cancelled). */
+  workflowState?: string | null;
 };
 
 /**
@@ -14,6 +16,7 @@ export function resolveLastAppointmentDates(rows: PriorAppointmentCandidate[]): 
   for (const row of rows) {
     if (row.petId === null || dates[row.petId]) continue;
     if (row.status === "cancelled" || row.status === "no_show") continue;
+    if (row.workflowState === "cancelled" || row.workflowState === "no_show") continue;
     dates[row.petId] = row.scheduledStart;
   }
   return dates;
