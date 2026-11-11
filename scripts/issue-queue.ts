@@ -63,7 +63,7 @@ async function main() {
     const [rows] = await db.query(
       all
         ? "SELECT * FROM issue_reports ORDER BY created_at DESC LIMIT 50"
-        : "SELECT * FROM issue_reports WHERE status IN ('new','in_progress') ORDER BY created_at ASC",
+        : "SELECT * FROM issue_reports WHERE status IN ('new','in_progress') ORDER BY FIELD(COALESCE(urgency,'normal'),'urgent','normal','low'), created_at ASC",
     );
     const reports = rows as Array<Record<string, any>>;
     if (reports.length === 0) {
@@ -89,6 +89,17 @@ async function main() {
 
       const files: string[] = [];
       for (const [i, img] of images.entries()) {
+        if (img.kind === "video") {
+          // Stored in pieces; stitch them back into one file.
+          const [pieces] = await db.query("SELECT data, content_type FROM issue_report_video_chunks WHERE video_key = ? ORDER BY seq", [img.key]);
+          const list = pieces as any[];
+          if (list.length === 0) continue;
+          const ext = String(list[0].content_type).includes("quicktime") ? "mov" : String(list[0].content_type).includes("webm") ? "webm" : "mp4";
+          const file = join(out, `report-${r.id}-${i + 1}-video.${ext}`);
+          writeFileSync(file, Buffer.concat(list.map((p) => Buffer.from(p.data, "base64"))));
+          files.push(file);
+          continue;
+        }
         const [found] = await db.query("SELECT photo_data, photo_content_type FROM uploaded_images WHERE storage_key = ? LIMIT 1", [img.key]);
         const row = (found as any[])[0];
         if (!row) continue;
@@ -98,8 +109,10 @@ async function main() {
         files.push(file);
       }
 
-      console.log(`## #${r.id} · ${r.status} · ${r.reporter_name ?? "unknown"} · ${brisbane(r.created_at)}${r.tenant_id !== 1 ? ` · tenant ${r.tenant_id}` : ""}`);
+      console.log(`## #${r.id} · ${r.status}${r.urgency ? ` · ${String(r.urgency).toUpperCase()}` : ""}${r.category ? ` · ${r.category}` : ""} · ${r.reporter_name ?? "unknown"} · ${brisbane(r.created_at)}${r.tenant_id !== 1 ? ` · tenant ${r.tenant_id}` : ""}`);
       console.log("");
+      if (r.summary) console.log(`**${r.summary}**\n`);
+      if (r.duplicate_of_id) console.log(`_Looks like the same problem as #${r.duplicate_of_id}_\n`);
       console.log(String(r.message).split("\n").map((l: string) => `> ${l}`).join("\n"));
       console.log("");
       console.log(`- Page: ${r.page_path ?? "?"}${context.search ?? ""}`);
@@ -113,7 +126,7 @@ async function main() {
       if (bits.length) console.log(`- About: ${bits.join(", ")}`);
       if (context.viewport || context.userAgent) console.log(`- Device: ${context.viewport ?? ""} ${context.userAgent ?? ""}`.trimEnd());
       for (const e of errors) console.log(`- Error ${brisbane(new Date(e.at))}: ${e.message}`);
-      for (const f of files) console.log(`- Image: ${f}`);
+      for (const f of files) console.log(`- ${/-video\./.test(f) ? "Video" : "Image"}: ${f}`);
       if (r.resolution_note) console.log(`- Note: ${r.resolution_note}`);
       console.log("");
     }

@@ -509,6 +509,8 @@ Required for the app to work: `DATABASE_URL`, `JWT_SECRET`, `VITE_APP_URL`,
 Integrations: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `STRIPE_SECRET_KEY`,
 `STRIPE_WEBHOOK_SECRET`, `CRON_SECRET`.
+Optional: `ANTHROPIC_API_KEY` turns on automatic sorting of staff problem
+reports (`server/issueTriage.ts`); unset, reports simply arrive unsorted.
 Push notifications: `VAPID_PRIVATE_KEY` (the only required one),
 `VAPID_SUBJECT`, and optionally `VAPID_PUBLIC_KEY` as a cross-check.
 Legacy/Manus, safe to leave unset: `VITE_APP_ID`, `OAUTH_SERVER_URL`,

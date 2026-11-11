@@ -2267,6 +2267,29 @@ export const issueReports = mysqlTable("issue_reports", {
   statusChangedAt: timestamp("status_changed_at"),
   statusChangedByUserId: int("status_changed_by_user_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Stage 2 (0172): Claude's sorting, NULL until it has run.
+  category: mysqlEnum("category", ["bug", "request", "question"]),
+  urgency: mysqlEnum("urgency", ["urgent", "normal", "low"]),
+  summary: varchar("summary", { length: 200 }),
+  duplicateOfId: int("duplicate_of_id"),
+  triagedAt: timestamp("triaged_at"),
+  /** When the reporter last looked at this report's outcome in their bell. */
+  reporterSeenAt: timestamp("reporter_seen_at"),
 }, (t) => [index("idx_issue_reports_tenant_status").on(t.tenantId, t.status, t.createdAt)]);
 
 export type IssueReportRow = typeof issueReports.$inferSelect;
+
+// A video attached to a problem report, in pieces of at most 3 MB (0173).
+// No file storage is configured, and one video is bigger than TiDB's
+// per-row limit. See server/issueVideo.ts.
+export const issueReportVideoChunks = mysqlTable("issue_report_video_chunks", {
+  id: int("id").autoincrement().primaryKey(),
+  videoKey: varchar("video_key", { length: 255 }).notNull(),
+  seq: int("seq").notNull(),
+  total: int("total").notNull(),
+  contentType: varchar("content_type", { length: 40 }).notNull(),
+  byteLength: int("byte_length").notNull(),
+  data: mediumtext("data").notNull(),
+  createdByUserId: int("created_by_user_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [uniqueIndex("uq_issue_video_chunk").on(t.videoKey, t.seq)]);

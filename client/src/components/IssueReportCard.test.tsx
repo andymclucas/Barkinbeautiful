@@ -50,4 +50,32 @@ describe("IssueReportCard", () => {
     expect(screen.queryByRole("button", { name: "Mark fixed" })).toBeNull();
     expect(screen.getByText("Done")).toBeInTheDocument();
   });
+
+  it("shows Claude's sorting, a duplicate link and a playable video", () => {
+    const { container } = render(
+      <IssueReportCard
+        report={report({
+          urgency: "urgent", category: "bug", summary: "Pickup text Send does nothing", duplicateOfId: 3, triaged: true,
+          images: [{ key: "issue-reports/video-1-abc", kind: "video", url: "/api/issue-report-video?key=issue-reports%2Fvideo-1-abc" }],
+        })}
+        timeZone="Australia/Brisbane"
+        onSetStatus={() => {}}
+        onRetriage={() => {}}
+      />,
+    );
+    expect(screen.getByText("Urgent")).toBeInTheDocument();
+    expect(screen.getByText("Bug")).toBeInTheDocument();
+    expect(screen.getByText("Pickup text Send does nothing")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /same problem as #3/ })).toHaveAttribute("href", "#report-3");
+    expect(container.querySelector("video")).toHaveAttribute("src", "/api/issue-report-video?key=issue-reports%2Fvideo-1-abc");
+    // Already sorted, so no "Sort it".
+    expect(screen.queryByRole("button", { name: "Sort it" })).toBeNull();
+  });
+
+  it("offers Sort it on a report sorting has not reached", () => {
+    const onRetriage = vi.fn();
+    render(<IssueReportCard report={report({ triaged: false })} timeZone="Australia/Brisbane" onSetStatus={() => {}} onRetriage={onRetriage} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sort it" }));
+    expect(onRetriage).toHaveBeenCalled();
+  });
 });

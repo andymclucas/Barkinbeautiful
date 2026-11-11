@@ -4,7 +4,8 @@ import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  ISSUE_STATUS_LABEL, isSafeAppPath, isSafeQuery, type IssueContext, type IssueRecentError, type IssueStatus,
+  ISSUE_CATEGORY_LABEL, ISSUE_STATUS_LABEL, ISSUE_URGENCY_LABEL, isSafeAppPath, isSafeQuery,
+  type IssueCategory, type IssueContext, type IssueRecentError, type IssueStatus, type IssueUrgency,
 } from "@shared/issueReports";
 
 /**
@@ -20,10 +21,22 @@ export type IssueReportView = {
   clientName: string | null;
   petName: string | null;
   recentErrors: IssueRecentError[];
-  images: Array<{ key: string; kind: "screenshot" | "photo"; url: string }>;
+  images: Array<{ key: string; kind: "screenshot" | "photo" | "video"; url: string }>;
   status: IssueStatus;
   resolutionNote: string | null;
   createdAt: string | Date;
+  // Stage 2: Claude's sorting. All null until it has run.
+  category?: IssueCategory | null;
+  urgency?: IssueUrgency | null;
+  summary?: string | null;
+  duplicateOfId?: number | null;
+  triaged?: boolean;
+};
+
+const URGENCY_TONE: Record<IssueUrgency, string> = {
+  urgent: "bg-red-600 text-white",
+  normal: "border text-foreground",
+  low: "border text-muted-foreground",
 };
 
 const STATUS_TONE: Record<IssueStatus, string> = {
@@ -34,13 +47,16 @@ const STATUS_TONE: Record<IssueStatus, string> = {
 };
 
 export function IssueReportCard({
-  report, timeZone, highlighted = false, busy = false, onSetStatus,
+  report, timeZone, highlighted = false, busy = false, onSetStatus, onRetriage, retriaging = false,
 }: {
   report: IssueReportView;
   timeZone: string;
   highlighted?: boolean;
   busy?: boolean;
   onSetStatus: (status: IssueStatus, note?: string) => void;
+  /** Ask for sorting again; shown only on a report that has not been sorted. */
+  onRetriage?: () => void;
+  retriaging?: boolean;
 }) {
   const [closing, setClosing] = useState<null | "fixed" | "dismissed">(null);
   const [note, setNote] = useState("");
@@ -65,8 +81,26 @@ export function IssueReportCard({
         </span>
         <span className="font-semibold">{report.reporterName || "Unknown"}</span>
         <span className="text-muted-foreground">{when}</span>
+        {report.urgency && (
+          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${URGENCY_TONE[report.urgency]}`}>
+            {ISSUE_URGENCY_LABEL[report.urgency]}
+          </span>
+        )}
+        {report.category && (
+          <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">{ISSUE_CATEGORY_LABEL[report.category]}</span>
+        )}
         <span className="ml-auto text-xs text-muted-foreground">#{report.id}</span>
       </header>
+
+      {report.summary && <p className="text-sm font-semibold">{report.summary}</p>}
+      {report.duplicateOfId && (
+        <a
+          href={`#report-${report.duplicateOfId}`}
+          className="inline-block rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900 hover:underline dark:bg-amber-950 dark:text-amber-200"
+        >
+          Looks like the same problem as #{report.duplicateOfId}
+        </a>
+      )}
 
       <p className="whitespace-pre-wrap break-words text-sm">{report.message}</p>
 
@@ -87,9 +121,20 @@ export function IssueReportCard({
         {c.date && <span className="rounded-md border px-2 py-1">Day {c.date}</span>}
       </div>
 
-      {report.images.length > 0 && (
+      {report.images.filter((img) => img.kind === "video").map((video) => (
+        <video
+          key={video.key}
+          src={video.url}
+          controls
+          playsInline
+          preload="metadata"
+          className="max-h-80 w-full rounded-md border bg-black"
+        />
+      ))}
+
+      {report.images.some((img) => img.kind !== "video") && (
         <div className="flex flex-wrap gap-2">
-          {report.images.map((img) => (
+          {report.images.filter((img) => img.kind !== "video").map((img) => (
             <a
               key={img.key}
               href={img.url}
@@ -165,6 +210,11 @@ export function IssueReportCard({
           )}
           {(report.status === "fixed" || report.status === "dismissed") && (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => onSetStatus("new")}>Reopen</Button>
+          )}
+          {onRetriage && report.triaged === false && (
+            <Button size="sm" variant="ghost" disabled={retriaging} onClick={onRetriage}>
+              {retriaging ? "Sorting…" : "Sort it"}
+            </Button>
           )}
         </div>
       )}

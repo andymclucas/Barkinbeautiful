@@ -286,6 +286,8 @@ const OPERATIONAL = [
   "groomingReportsRouter.getByAppointment",
   "groomingReportsRouter.getSessionReports",
   "groomingReportsRouter.upsert",
+  "issueReportsRouter.markSeen",
+  "issueReportsRouter.myUpdates",
   "issueReportsRouter.submit",
   "membershipsRouter.create",
   "membershipsRouter.getPackageOptions",
@@ -554,7 +556,9 @@ describe("tRPC procedure surface", () => {
     // 427 since 11/11/2026: issueReports — submit in OPERATIONAL (every
     // staff login can report a problem); list, openCount and setStatus are
     // protectedProcedure AND canAdministerStaff inside, owners only.
-    expect(surface).toHaveLength(427);
+    // 430 since 11/11/2026 (stage 2): issueReports.myUpdates and markSeen in
+    // OPERATIONAL (a reporter's own outcomes only); retriage is owner-only.
+    expect(surface).toHaveLength(430);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -617,7 +621,12 @@ describe("tRPC procedure surface", () => {
      * report carries no data back, and the owner-only reading half is
      * not operational.
      */
-    expect(OPERATIONAL).toHaveLength(155);
+    /*
+     * 157 since 11/11/2026: issueReports.myUpdates and markSeen — a
+     * reporter hears back about their own reports, filtered to their own
+     * user id on the server.
+     */
+    expect(OPERATIONAL).toHaveLength(157);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
