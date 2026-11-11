@@ -17,9 +17,15 @@ fifteen minutes before. Lauren and Andy see them at **/issues**.
 node --import tsx scripts/issue-queue.ts --out "<scratchpad>/issue-queue"
 ```
 
-It prints markdown, oldest first, and saves every image to `--out`. **Open
-the images with the Read tool** — the screenshot is usually the fastest way
-to understand the report. Use the scratchpad directory, never a folder inside
+It prints markdown, most urgent first, and saves every image and video to
+`--out`. **Open the images with the Read tool** — the screenshot is usually
+the fastest way to understand the report. A video cannot be read directly;
+say it exists and ask Andy what it shows if the text and screenshot are not
+enough.
+
+Each report may carry Claude's sorting (category, urgency, a one-line
+summary, "same problem as #N"). It is a first read, not a verdict: check it
+against the screenshot, and group duplicates yourself too. Use the scratchpad directory, never a folder inside
 the repo: screenshots show client details.
 
 ## 2. Rank it, then ask
@@ -49,8 +55,17 @@ The note is read by Lauren, so write it for her, not for a developer.
 If a status write is refused by the permission settings, mark it from the
 /issues page in Andy's browser instead, or tell Andy which ids to mark.
 
-## Stage 2 (not built yet)
+## Telling the reporter
 
-Video attachments, automatic sorting and duplicate spotting, and telling the
-reporter in-app when their report is fixed. Andy chose in-app notification,
-not SMS, on 11/11/2026.
+Marking a report **fixed** puts it in the sender's own bell ("Your problem
+reports") with the note, and pushes to their phone if it is signed up.
+"Working on it" and "Dismiss" show in the bell too. So the note is the reply
+to whoever sent it: one plain sentence, no commit hashes in the part a
+groomer reads.
+
+## Sorting needs a key
+
+Automatic sorting (server/issueTriage.ts) runs only when
+`ANTHROPIC_API_KEY` is set on the Render web service. Without it reports
+arrive unsorted and everything else works; "Sort it" on a card says it is
+unavailable.

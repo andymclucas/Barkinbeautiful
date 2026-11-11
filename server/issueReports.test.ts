@@ -105,3 +105,62 @@ describe("isSafeAppPath / isSafeQuery", () => {
     expect(isSafeQuery("? x")).toBe(false);
   });
 });
+
+describe("stage 2: sorting", () => {
+  it("normaliseTriage keeps known labels, trims the summary and only trusts a duplicate it was shown", async () => {
+    const { normaliseTriage } = await import("@shared/issueReports");
+    expect(normaliseTriage({ category: "bug", urgency: "urgent", summary: "  Send   does nothing ", duplicate_of: 4 }, [4, 5], 9))
+      .toEqual({ category: "bug", urgency: "urgent", summary: "Send does nothing", duplicateOfId: 4 });
+    expect(normaliseTriage({ category: "bug", urgency: "low", summary: "x", duplicate_of: 77 }, [4], 9)?.duplicateOfId).toBeNull();
+    expect(normaliseTriage({ category: "bug", urgency: "low", summary: "x", duplicate_of: 9 }, [9], 9)?.duplicateOfId).toBeNull();
+    expect(normaliseTriage({ category: "complaint", urgency: "low", summary: "x", duplicate_of: null }, [], 9)).toBeNull();
+    expect(normaliseTriage({ category: "bug", urgency: "low", summary: "   ", duplicate_of: null }, [], 9)).toBeNull();
+    expect(normaliseTriage({ category: "bug", urgency: "low", summary: "y".repeat(300), duplicate_of: null }, [], 9)!.summary.length).toBe(200);
+  });
+
+  it("sortReportsForInbox puts open urgent reports first, unsorted counts as normal, closed last", async () => {
+    const { sortReportsForInbox } = await import("@shared/issueReports");
+    const rows = [
+      { id: 1, status: "new" as const, urgency: "low" as const, createdAt: "2026-11-11T05:00:00Z" },
+      { id: 2, status: "fixed" as const, urgency: "urgent" as const, createdAt: "2026-11-11T06:00:00Z" },
+      { id: 3, status: "in_progress" as const, urgency: "urgent" as const, createdAt: "2026-11-10T00:00:00Z" },
+      { id: 4, status: "new" as const, urgency: null, createdAt: "2026-11-11T04:00:00Z" },
+      { id: 5, status: "new" as const, urgency: "normal" as const, createdAt: "2026-11-11T07:00:00Z" },
+    ];
+    expect(sortReportsForInbox(rows).map((r) => r.id)).toEqual([3, 5, 4, 1, 2]);
+  });
+
+  it("issuePushText says URGENT and uses the summary once sorted", async () => {
+    const { issuePushText } = await import("@shared/issueReports");
+    expect(issuePushText("Lauren", "long rambling message", { urgency: "urgent", summary: "Can't check dogs in" }))
+      .toEqual({ title: "URGENT — Lauren reported a problem", body: "Can't check dogs in" });
+    expect(issuePushText("Lauren", "msg", { urgency: "low", summary: "Button colour" }).title).toBe("Lauren reported a problem");
+  });
+});
+
+describe("stage 2: telling the reporter", () => {
+  it("shows an outcome the owners set that the reporter has not seen", async () => {
+    const { hasUnseenOutcome } = await import("@shared/issueReports");
+    const base = { reporterUserId: 7, statusChangedByUserId: 30001, statusChangedAt: "2026-11-11T05:00:00Z", reporterSeenAt: null };
+    expect(hasUnseenOutcome({ ...base, status: "fixed" })).toBe(true);
+    expect(hasUnseenOutcome({ ...base, status: "new" })).toBe(false);
+    expect(hasUnseenOutcome({ ...base, status: "fixed", reporterSeenAt: "2026-11-11T06:00:00Z" })).toBe(false);
+    // Seen while "working on it", then fixed later: news again.
+    expect(hasUnseenOutcome({ ...base, status: "fixed", reporterSeenAt: "2026-11-11T04:00:00Z" })).toBe(true);
+    // Their own change is not news to them.
+    expect(hasUnseenOutcome({ ...base, status: "dismissed", statusChangedByUserId: 7 })).toBe(false);
+  });
+});
+
+describe("stage 2: video", () => {
+  it("counts pieces and recognises video keys", async () => {
+    const { videoChunkCount, isIssueVideoKey, ISSUE_VIDEO_CHUNK_BYTES, isIssueVideoType } = await import("@shared/issueReports");
+    expect(videoChunkCount(1)).toBe(1);
+    expect(videoChunkCount(ISSUE_VIDEO_CHUNK_BYTES)).toBe(1);
+    expect(videoChunkCount(ISSUE_VIDEO_CHUNK_BYTES + 1)).toBe(2);
+    expect(isIssueVideoKey("issue-reports/video-1731300000-abc")).toBe(true);
+    expect(isIssueVideoKey("issue-reports/1.jpg")).toBe(false);
+    expect(isIssueVideoType("video/quicktime")).toBe(true);
+    expect(isIssueVideoType("image/svg+xml")).toBe(false);
+  });
+});

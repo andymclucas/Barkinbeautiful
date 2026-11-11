@@ -1,4 +1,4 @@
-import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare, UserCheck, RotateCcw } from "lucide-react";
+import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare, UserCheck, RotateCcw, MessageSquareWarning } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
@@ -52,6 +52,17 @@ export default function NotificationBell() {
     {},
     { refetchInterval: 30_000, refetchOnWindowFocus: true },
   );
+  // What happened to the problem reports THIS person sent (stage 2,
+  // 11/11/2026). Operational and scoped to the caller's own reports, so a
+  // groomer hears back about theirs and nobody else's.
+  const { data: reportUpdates } = trpc.issueReports.myUpdates.useQuery(
+    {},
+    { refetchInterval: 120_000, refetchOnWindowFocus: true },
+  );
+  const markReportsSeen = trpc.issueReports.markSeen.useMutation({
+    onSuccess: () => utils.issueReports.myUpdates.invalidate(),
+    onError: (error) => toast.error(error.message || "Could not clear that"),
+  });
   const markUnread = trpc.sms.markNotificationUnread.useMutation({
     onSuccess: () => {
       utils.sms.getUnreadPreview.invalidate();
@@ -107,7 +118,8 @@ export default function NotificationBell() {
   // Work handed to you personally belongs in your own badge; that is the
   // whole point of assigning it rather than leaving it in the shared pile.
   const assignedCount = mine?.total ?? 0;
-  const unreadCount = messageCount + failedPayments.length + assignedCount;
+  const updates = reportUpdates ?? [];
+  const unreadCount = messageCount + failedPayments.length + assignedCount + updates.length;
 
   // The same number as the badge on the bell, on the Home Screen icon.
   // Driving it from here rather than its own query means the two cannot
@@ -154,6 +166,39 @@ export default function NotificationBell() {
           </p>
         </div>
         <div className="overflow-y-auto flex-1 min-h-0">
+          {/* Answers to what you reported. First, because someone took the
+              trouble to report it and is waiting to hear. */}
+          {updates.length > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 bg-emerald-50 px-4 py-1.5 dark:bg-emerald-950/30">
+                <MessageSquareWarning className="h-3 w-3 shrink-0 text-emerald-700 dark:text-emerald-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+                  Your problem reports ({updates.length})
+                </span>
+              </div>
+              {updates.map((u) => (
+                <div key={`report-${u.id}`} className="flex items-start gap-1 border-b px-4 py-3 last:border-b-0">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">{u.headline}</span>
+                      {u.at && <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(u.at)}</span>}
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{u.what}</p>
+                    {u.note && <p className="mt-1 text-xs"><span className="font-medium">Note:</span> {u.note}</p>}
+                  </div>
+                  <button
+                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/20"
+                    title="Got it"
+                    aria-label="Got it"
+                    onClick={() => markReportsSeen.mutate({ ids: [u.id] })}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+
           {/* Yours first. Everything below this is the salon's shared pile;
               this section is the only part that was handed to you by name. */}
           {assignedCount > 0 && (
@@ -300,7 +345,7 @@ export default function NotificationBell() {
               </div>
             ))}
           </div>
-          ) : failedPayments.length === 0 ? (
+          ) : failedPayments.length === 0 && updates.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">No new notifications</p>
           ) : null}
         </div>

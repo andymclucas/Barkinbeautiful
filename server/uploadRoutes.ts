@@ -10,6 +10,7 @@ import { requireApprovedStaffTenant } from "./staffAccess";
 import sharp from "sharp";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { ISSUE_IMAGE_KEY_PREFIX, isIssueImageKey } from "@shared/issueReports";
+import { registerIssueVideoRoutes } from "./issueVideo";
 
 // TiDB rejects a single row/entry over ~6 MB (a TiKV-level limit, not
 // something we can raise). A base64-encoded image is ~33% larger than its
@@ -177,6 +178,7 @@ function registerIssueReportImageRoutes(app: Router) {
 
 export function registerUploadRoutes(app: Router) {
   registerIssueReportImageRoutes(app);
+  registerIssueVideoRoutes(app);
   // POST /api/upload/style-note-photo
   // Accepts raw image bytes with Content-Type header, returns { url, key }
   app.post(

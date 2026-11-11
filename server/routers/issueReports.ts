@@ -15,7 +15,7 @@
  * through /api/upload/issue-report-image and referenced here by key.
  */
 import { z } from "zod";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, operationalProcedure, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
@@ -23,10 +23,16 @@ import { clients, issueReports, pets, uploadedImages } from "../../drizzle/schem
 import { canAdministerStaff, STAFF_ADMINISTRATOR_USER_IDS } from "@shared/staffAdministrators";
 import {
   ISSUE_MAX_PHOTOS, ISSUE_MESSAGE_MAX, ISSUE_STATUSES, OPEN_ISSUE_STATUSES,
-  isIssueImageKey, isSafeAppPath, isSafeQuery, issuePushText, recentIssueErrors,
-  type IssueContext, type IssueImage, type IssueStatus,
+  hasUnseenOutcome, isIssueImageKey, isIssueVideoKey, isSafeAppPath, isSafeQuery,
+  issuePushText, outcomeHeadline, recentIssueErrors, sortReportsForInbox,
+  type IssueCategory, type IssueContext, type IssueImage, type IssueStatus, type IssueUrgency,
 } from "@shared/issueReports";
 import { sendPushToUser } from "../webPush";
+import { completeVideo } from "../issueVideo";
+import { triageIssueReport, withinMs } from "../issueTriage";
+
+/** How long the owners' phone notification waits for sorting before going anyway. */
+const TRIAGE_WAIT_MS = 20_000;
 
 const DENIED = "Problem reports are visible to the salon owner only.";
 
@@ -60,25 +66,34 @@ export const issueReportsRouter = router({
       })).max(50).optional(),
       images: z.array(z.object({
         key: z.string().max(255),
-        kind: z.enum(["screenshot", "photo"]),
-      })).max(ISSUE_MAX_PHOTOS + 1).default([]),
+        kind: z.enum(["screenshot", "photo", "video"]),
+      })).max(ISSUE_MAX_PHOTOS + 2).default([]),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const tenantId = tenantOf(ctx, input);
 
-      const images: IssueImage[] = input.images.filter((img) => isIssueImageKey(img.key));
-      if (images.length !== input.images.length) {
+      const pictures = input.images.filter((img) => img.kind !== "video");
+      const videos = input.images.filter((img) => img.kind === "video");
+      if (pictures.some((img) => !isIssueImageKey(img.key) || isIssueVideoKey(img.key)) || videos.some((v) => !isIssueVideoKey(v.key))) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "One of the attachments could not be used. Try attaching it again." });
       }
-      if (images.filter((i) => i.kind === "screenshot").length > 1 || images.filter((i) => i.kind === "photo").length > ISSUE_MAX_PHOTOS) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: `Up to ${ISSUE_MAX_PHOTOS} photos and one screenshot.` });
+      if (pictures.filter((i) => i.kind === "screenshot").length > 1 || pictures.filter((i) => i.kind === "photo").length > ISSUE_MAX_PHOTOS || videos.length > 1) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Up to ${ISSUE_MAX_PHOTOS} photos, one video and one screenshot.` });
       }
-      if (images.length > 0) {
+      const images: IssueImage[] = pictures.map((p) => ({ key: p.key, kind: p.kind as "screenshot" | "photo" }));
+      // A video's type and size come from what was stored, never from the
+      // browser — and it must be complete, and this person's own upload.
+      for (const v of videos) {
+        const stored = await completeVideo(db, v.key, ctx.user.id);
+        if (!stored) throw new TRPCError({ code: "BAD_REQUEST", message: "The video did not finish uploading. Try attaching it again." });
+        images.push({ key: v.key, kind: "video", contentType: stored.contentType, bytes: stored.bytes });
+      }
+      if (pictures.length > 0) {
         const found = await db.select({ key: uploadedImages.storageKey }).from(uploadedImages)
-          .where(inArray(uploadedImages.storageKey, images.map((i) => i.key)));
-        if (found.length !== new Set(images.map((i) => i.key)).size) {
+          .where(inArray(uploadedImages.storageKey, pictures.map((i) => i.key)));
+        if (found.length !== new Set(pictures.map((i) => i.key)).size) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "An attachment did not finish uploading. Try attaching it again." });
         }
       }
@@ -97,18 +112,23 @@ export const issueReportsRouter = router({
       });
       const id = Number((result as { insertId?: number }).insertId);
 
-      // Tell the owners' phones, but not the person who sent it. Never
-      // allowed to fail the report: the row is the record, the push is a nudge.
-      const { title, body } = issuePushText(reporterName, input.message);
+      // After the reply, in the background: sort it (stage 2), then tell the
+      // owners' phones — not the person who sent it. The push waits up to
+      // TRIAGE_WAIT_MS for the sorting so it can say URGENT, and goes anyway
+      // after that. Nothing here can fail the report: the row is the record.
       const recipients = STAFF_ADMINISTRATOR_USER_IDS.filter((uid) => uid !== ctx.user.id);
-      void Promise.all(recipients.map((uid) => sendPushToUser(tenantId, uid, {
-        title, body,
-        url: `/issues?report=${id}`,
-        tag: `issue:${id}`,
-        kind: "issue-report",
-        renotify: false,
-        requireInteraction: false,
-      }).catch((err) => console.error("[issueReports] push failed", uid, err))));
+      void (async () => {
+        const triage = await withinMs(triageIssueReport(db, id), TRIAGE_WAIT_MS).catch(() => null);
+        const { title, body } = issuePushText(reporterName, input.message, triage);
+        await Promise.all(recipients.map((uid) => sendPushToUser(tenantId, uid, {
+          title, body,
+          url: `/issues?report=${id}`,
+          tag: `issue:${id}`,
+          kind: "issue-report",
+          renotify: false,
+          requireInteraction: false,
+        }).catch((err) => console.error("[issueReports] push failed", uid, err))));
+      })().catch((err) => console.error("[issueReports] after-submit work failed for report", id, err));
 
       return { id };
     }),
@@ -146,7 +166,7 @@ export const issueReportsRouter = router({
       const clientName = new Map(clientRows.map((c) => [c.id, [c.firstName, c.lastName].filter(Boolean).join(" ")]));
       const petName = new Map(petRows.map((p) => [p.id, p.name]));
 
-      return rows.map((r) => ({
+      return sortReportsForInbox(rows.map((r) => ({
         id: r.id,
         reporterName: r.reporterName,
         reporterUserId: r.reporterUserId,
@@ -158,14 +178,22 @@ export const issueReportsRouter = router({
         petName: r.context?.petId ? petName.get(r.context.petId) ?? null : null,
         recentErrors: r.recentErrors ?? [],
         images: (r.imageKeys ?? []).map((img) => ({
-          ...img,
-          url: `/api/issue-report-image?key=${encodeURIComponent(img.key)}`,
+          key: img.key,
+          kind: img.kind,
+          url: img.kind === "video"
+            ? `/api/issue-report-video?key=${encodeURIComponent(img.key)}`
+            : `/api/issue-report-image?key=${encodeURIComponent(img.key)}`,
         })),
         status: r.status as IssueStatus,
         resolutionNote: r.resolutionNote,
         statusChangedAt: r.statusChangedAt,
         createdAt: r.createdAt,
-      }));
+        category: (r.category ?? null) as IssueCategory | null,
+        urgency: (r.urgency ?? null) as IssueUrgency | null,
+        summary: r.summary,
+        duplicateOfId: r.duplicateOfId,
+        triaged: r.triagedAt !== null,
+      })));
     }),
 
   /** For the sidebar badge. Zero, not an error, for anyone else. */
@@ -182,6 +210,76 @@ export const issueReportsRouter = router({
       }).from(issueReports)
         .where(and(eq(issueReports.tenantId, tenantId), inArray(issueReports.status, [...OPEN_ISSUE_STATUSES])));
       return { open: Number(row?.open ?? 0), unread: Number(row?.unread ?? 0) };
+    }),
+
+  /** Sort a report again — one from before stage 2, or one sorting missed. */
+  retriage: protectedProcedure
+    .input(z.object({ tenantId: z.number().int().positive().optional(), id: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      requireOwner(ctx.user);
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      const [row] = await db.select({ id: issueReports.id }).from(issueReports)
+        .where(and(eq(issueReports.id, input.id), eq(issueReports.tenantId, tenantId))).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "That report no longer exists." });
+      const triage = await triageIssueReport(db, row.id);
+      if (!triage) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Automatic sorting isn't available right now." });
+      return triage;
+    }),
+
+  /**
+   * The signed-in person's own reports that have an outcome they have not
+   * seen — for their bell. Every staff login; only ever their own rows.
+   */
+  myUpdates: operationalProcedure
+    .input(z.object({ tenantId: z.number().int().positive().optional() }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const tenantId = tenantOf(ctx, input ?? {});
+      const since = new Date(Date.now() - 60 * 86_400_000);
+      const rows = await db.select({
+        id: issueReports.id,
+        status: issueReports.status,
+        message: issueReports.message,
+        summary: issueReports.summary,
+        resolutionNote: issueReports.resolutionNote,
+        reporterUserId: issueReports.reporterUserId,
+        statusChangedAt: issueReports.statusChangedAt,
+        statusChangedByUserId: issueReports.statusChangedByUserId,
+        reporterSeenAt: issueReports.reporterSeenAt,
+      }).from(issueReports).where(and(
+        eq(issueReports.tenantId, tenantId),
+        eq(issueReports.reporterUserId, ctx.user.id),
+        inArray(issueReports.status, ["in_progress", "fixed", "dismissed"]),
+        gte(issueReports.statusChangedAt, since),
+      )).orderBy(desc(issueReports.statusChangedAt)).limit(20);
+      return rows
+        .filter((r) => hasUnseenOutcome({ ...r, status: r.status as IssueStatus }))
+        .map((r) => ({
+          id: r.id,
+          status: r.status as IssueStatus,
+          headline: outcomeHeadline(r.status as IssueStatus),
+          what: (r.summary || r.message).replace(/\s+/g, " ").slice(0, 160),
+          note: r.resolutionNote,
+          at: r.statusChangedAt,
+        }));
+    }),
+
+  /** The reporter has read these outcomes. Only their own rows move. */
+  markSeen: operationalProcedure
+    .input(z.object({ tenantId: z.number().int().positive().optional(), ids: z.array(z.number().int().positive()).min(1).max(50) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+      await db.update(issueReports).set({ reporterSeenAt: new Date() }).where(and(
+        eq(issueReports.tenantId, tenantId),
+        eq(issueReports.reporterUserId, ctx.user.id),
+        inArray(issueReports.id, input.ids),
+      ));
+      return { ok: true };
     }),
 
   setStatus: protectedProcedure
@@ -204,6 +302,26 @@ export const issueReportsRouter = router({
       }).where(and(eq(issueReports.id, input.id), eq(issueReports.tenantId, tenantId)));
       if (!(result as { affectedRows?: number }).affectedRows) {
         throw new TRPCError({ code: "NOT_FOUND", message: "That report no longer exists." });
+      }
+
+      // Stage 2: tell the person who sent it. In-app is the bell (myUpdates
+      // reads the status change above); a fix also reaches their phone if it
+      // is signed up for notifications. Not when they changed it themselves.
+      if (input.status === "fixed") {
+        const [row] = await db.select({ reporterUserId: issueReports.reporterUserId, summary: issueReports.summary, message: issueReports.message })
+          .from(issueReports).where(eq(issueReports.id, input.id)).limit(1);
+        if (row && row.reporterUserId !== ctx.user.id) {
+          const what = (row.summary || row.message).replace(/\s+/g, " ");
+          void sendPushToUser(tenantId, row.reporterUserId, {
+            title: "Your problem report is fixed",
+            body: (input.note?.trim() || what).slice(0, 140),
+            url: "/",
+            tag: `issue-fixed:${input.id}`,
+            kind: "issue-report",
+            renotify: false,
+            requireInteraction: false,
+          }).catch((err) => console.error("[issueReports] reporter push failed", err));
+        }
       }
       return { ok: true };
     }),

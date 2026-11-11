@@ -27,6 +27,10 @@ export default function IssueReports() {
     { filter },
     { enabled: allowed, refetchInterval: 60_000, refetchOnWindowFocus: true },
   );
+  const retriage = trpc.issueReports.retriage.useMutation({
+    onSuccess: () => utils.issueReports.list.invalidate(),
+    onError: (e) => toast.error(e.message || "Could not sort that report"),
+  });
   const setStatus = trpc.issueReports.setStatus.useMutation({
     onSuccess: () => {
       utils.issueReports.list.invalidate();
@@ -49,6 +53,7 @@ export default function IssueReports() {
           <h1 className="font-display text-2xl font-bold">Problem reports</h1>
           <p className="text-sm text-muted-foreground">
             Sent by the team from the <span className="font-medium">Report a problem</span> button, with the screen they were on.
+            Open reports are sorted most urgent first. When you mark one fixed, whoever sent it sees your note in their bell.
           </p>
         </div>
 
@@ -89,6 +94,8 @@ export default function IssueReports() {
                     highlighted={report.id === highlight}
                     busy={setStatus.isPending}
                     onSetStatus={(status, note) => setStatus.mutate({ id: report.id, status, note })}
+                    onRetriage={() => retriage.mutate({ id: report.id })}
+                    retriaging={retriage.isPending && retriage.variables?.id === report.id}
                   />
                 ))}
               </div>
