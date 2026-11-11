@@ -330,7 +330,11 @@ export function WaitlistPanel() {
 
         <div>
           <h3 className="text-sm font-semibold">On the waitlist</h3>
-          {!entries.data?.length ? (
+          {entries.isLoading ? (
+            // Not "nobody waiting": that is what it said for the second the
+            // list took to load, which reads as the list being empty.
+            <p className="mt-2 text-sm text-muted-foreground">Loading the waitlist…</p>
+          ) : !entries.data?.length ? (
             <p className="mt-2 text-sm text-muted-foreground">Nobody waiting at the moment.</p>
           ) : (
             <div className="mt-2 space-y-1.5">
@@ -357,7 +361,7 @@ export function WaitlistPanel() {
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1 leading-7">
                       <ClientLink clientId={e.clientId} className="font-medium">{e.clientName}</ClientLink>
-                      <span className="text-muted-foreground">· <PetLink clientId={e.clientId} petId={e.petId}>{e.petName}</PetLink></span>
+                      <span className="text-muted-foreground"> · <PetLink clientId={e.clientId} petId={e.petId}>{e.petName}</PetLink></span>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Edit ${e.clientName}'s waitlist entry`}
