@@ -16,7 +16,7 @@
  * The interval is shared with online booking rather than redeclared, so the
  * salon only ever changes it in one place.
  */
-import { ONLINE_BOOKING_SLOT_INTERVAL_MINUTES } from "./onlineBookingSlots";
+import { ONLINE_BOOKING_SLOT_INTERVAL_MINUTES, inSalonQuietWindow } from "./onlineBookingSlots";
 
 /**
  * Staff can book an hour either side of the public online-booking window
@@ -52,29 +52,14 @@ export const STAFF_BOOKING_CLOSE_MINUTES = 18 * 60;
 export const SALON_FIRST_BOOKING_MINUTES = 7 * 60 + 30;
 export const SALON_LAST_BOOKING_MINUTES = 13 * 60;
 
-/**
- * The mid-morning gap the salon keeps free of drop-offs.
- *
- * Lauren, 11/11/2026: "We try and block out after 9:30AM - then take more
- * dogs 11/11:30-1pm so the day is split - less customer interference and
- * having to do reception work bringing dogs in and also lets us complete
- * the morning dogs before lunch." Andy: "make next available respect the
- * 9:30–11 split".
- *
- * Starts strictly AFTER 9:30 and strictly BEFORE 11:00 are not offered —
- * 9:30 and 11:00 themselves are — so on the half-hour grid 10:00 and
- * 10:30 drop out. Like the hours above, an offer rule only: staff can
- * still type a 10am booking when they choose to.
- *
- * Hardcoded with the opening hours; a second salon would need these on
- * its own settings.
- */
-export const SALON_QUIET_AFTER_MINUTES = 9 * 60 + 30;
-export const SALON_QUIET_BEFORE_MINUTES = 11 * 60;
-
-export function inSalonQuietWindow(startMinutes: number): boolean {
-  return startMinutes > SALON_QUIET_AFTER_MINUTES && startMinutes < SALON_QUIET_BEFORE_MINUTES;
-}
+// The mid-morning quiet window lives in onlineBookingSlots.ts, beside the
+// other half of the offer rules, so online booking and the portal's
+// reschedule leave it out too. Re-exported here for the staff side.
+export {
+  SALON_QUIET_AFTER_MINUTES,
+  SALON_QUIET_BEFORE_MINUTES,
+  inSalonQuietWindow,
+} from "./onlineBookingSlots";
 
 /**
  * Every start time the app may offer, in salon minutes.

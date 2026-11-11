@@ -61,7 +61,9 @@ describe("planMembershipSeries", () => {
     const moved = result.occurrences[2];
     expect(brisbaneDateKey(moved.start!)).toBe("2027-01-12"); // same day
     expect(moved.shiftedDays).toBe(0);
-    expect(moved.shiftedMinutes).toBe(90); // first free 30-min start after the clash
+    // The clash ends at 10:30, inside the 9:30-11 quiet window, so the
+    // first start offered after it is 11:00.
+    expect(moved.shiftedMinutes).toBe(120);
   });
 
   it("moves to the next open day when the whole day is gone", () => {
@@ -149,7 +151,7 @@ describe("planMembershipSeries", () => {
     // A Friday start at 4-weekly stays on Fridays; nothing lands on the
     // Saturday/Sunday/Monday the slot builder refuses to open.
     const result = planMembershipSeries({
-      firstStart: bris("2026-11-06T10:00"),
+      firstStart: bris("2026-11-06T11:00"),
       durationMinutes: 60,
       intervalWeeks: 4,
       occurrenceCount: 6,
@@ -160,6 +162,24 @@ describe("planMembershipSeries", () => {
     for (const occurrence of result.occurrences) {
       const weekday = new Date(brisbaneDateKey(occurrence.start!) + "T00:00:00Z").getUTCDay();
       expect([2, 3, 4, 5]).toContain(weekday);
+    }
+  });
+});
+
+describe("planMembershipSeries and the mid-morning gap", () => {
+  it("never places a groom at 10:00 or 10:30, moving a 10am anchor to the nearest offered time", () => {
+    const result = planMembershipSeries({
+      firstStart: bris("2026-11-06T10:00"),
+      durationMinutes: 60,
+      intervalWeeks: 4,
+      occurrenceCount: 3,
+      busy: [],
+      slotsForDate,
+    });
+    for (const occurrence of result.occurrences) {
+      const hm = occurrence.start!.toLocaleTimeString("en-AU", { timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false });
+      expect(["10:00", "10:30"]).not.toContain(hm);
+      expect(brisbaneDateKey(occurrence.start!)).toBe(brisbaneDateKey(occurrence.idealStart)); // same day
     }
   });
 });
