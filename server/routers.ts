@@ -108,6 +108,7 @@ import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignmen
 import { cleanPlanFields } from "../shared/membershipPlanFields";
 import { portalAllSetEmail } from "../shared/portalAllSetEmail";
 import { loadVipMembers } from "./vipMembers";
+import { repeatBookingRefusal } from "../shared/repeatBookingRefusal";
 import {
   RESET_REQUESTED_MESSAGE, SELF_RESET_TTL_MS, ipRequestAllowed, portalPasswordResetEmail, resetEmailAllowed,
 } from "../shared/portalPasswordReset";
@@ -2544,19 +2545,10 @@ const calendarRouter = router({
         .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, tenantId)))
         .limit(1);
       if (!source) throw new Error("That booking no longer exists");
-      if (source.status === "cancelled" || source.workflowState === "cancelled") {
-        throw new Error("That booking is cancelled — repeating it would book a series nobody asked for");
-      }
-      /* A booking nobody has agreed to yet, or one the dog never turned
-         up for, is not a pattern to repeat for a year. Every row this
-         creates is `confirmed`, so repeating an unapproved online
-         request would confirm a year of them on its behalf. */
-      if (source.status === "pending") {
-        throw new Error("That booking has not been accepted yet — approve it before repeating it");
-      }
-      if (source.status === "no_show" || source.workflowState === "no_show") {
-        throw new Error("That dog did not turn up for this booking — repeating it would book a year from a no-show");
-      }
+      // Cancelled, a no-show, or an online request not yet accepted
+      // (shared/repeatBookingRefusal.ts — an imported "pending" is fine).
+      const refusal = repeatBookingRefusal(source);
+      if (refusal) throw new Error(refusal);
 
       /*
        * Every dog at that exact time for that client: a family booking is

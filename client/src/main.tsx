@@ -99,7 +99,14 @@ const reportQueryFailure = (error: unknown, kind: "query" | "mutation") => {
   if (!notice.report) return;
   if (!shouldAnnounce(announcedFailures, notice.key, Date.now())) return;
 
-  toast.error(notice.message);
+  /*
+   * Queries only. A failed SAVE already shows its own reason from the
+   * call site's onError — "That booking has not been accepted yet…" —
+   * and the "could not be loaded. It is not empty" line, written for
+   * reads, landed on top of it and was all Lauren saw on 12/11/2026.
+   * Mutations are still recorded below.
+   */
+  if (kind === "query") toast.error(notice.message);
   // path and httpStatus fold into `message`: client_error_logs has no
   // column for them, and a row saying only "Failed query" is not something
   // anybody can act on six weeks later.
