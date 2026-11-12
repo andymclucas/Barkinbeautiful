@@ -18,8 +18,10 @@ import {
   Plus, Search, User, Phone, Mail,
   ChevronUp, ChevronDown, ChevronsUpDown,
   ChevronLeft, ChevronRight, Download, Dog, Calendar,
-  Merge,
+  Merge, History,
 } from "lucide-react";
+import { useRecentSearches } from "@/hooks/useRecentSearches";
+import { clientIdFromHref } from "@shared/recentSearches";
 import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import { AddOnPicker, type StagedAddOn } from "@/components/BookingPetPricing";
@@ -220,6 +222,10 @@ function downloadCsv(content: string, filename: string) {
 export default function Clients() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  /* Recent searches (Andy, 12/11/2026): the last five clients opened from
+     a search here, offered when the empty box is clicked. */
+  const { recent, remember, clear: clearRecent, refresh: refreshRecent } = useRecentSearches("clients");
+  const [searchFocused, setSearchFocused] = useState(false);
   /*
    * Opens on Active, not on everybody.
    *
@@ -517,7 +523,50 @@ export default function Clients() {
               placeholder="Search by name, pet name, email or phone…"
               value={search}
               onChange={e => handleSearch(e.target.value)}
+              onFocus={() => { refreshRecent(); setSearchFocused(true); }}
+              onBlur={() => setSearchFocused(false)}
+              onKeyDown={e => { if (e.key === "Escape") (e.target as HTMLInputElement).blur(); }}
             />
+            {searchFocused && search.trim() === "" && recent.length > 0 && (
+              <div
+                role="listbox"
+                aria-label="Recent searches"
+                className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-lg border bg-popover shadow-lg"
+                /* Keep focus in the box, so the click lands before blur
+                   closes the list. */
+                onMouseDown={e => e.preventDefault()}
+              >
+                <div className="flex items-center justify-between px-3 pb-1 pt-2 text-[11px] font-medium text-muted-foreground">
+                  <span>Recent</span>
+                  <button type="button" onClick={clearRecent} className="rounded px-1 hover:text-foreground">Clear</button>
+                </div>
+                {recent.map(item => (
+                  <button
+                    key={item.href}
+                    type="button"
+                    role="option"
+                    aria-selected={false}
+                    onClick={() => {
+                      remember({ kind: item.kind, title: item.title, subtitle: item.subtitle, href: item.href, query: item.query });
+                      setSearchFocused(false);
+                      navigate(item.href);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-accent"
+                  >
+                    {item.kind === "pet" ? <Dog className="h-4 w-4 shrink-0 text-muted-foreground" /> : <User className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate font-medium">{item.title}</span>
+                      {item.subtitle && <span className="truncate text-xs text-muted-foreground">{item.subtitle}</span>}
+                    </span>
+                    {item.query && (
+                      <span className="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground sm:inline-flex">
+                        <History className="h-3 w-3" />{item.query}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2 sm:contents">
@@ -666,7 +715,32 @@ export default function Clients() {
           </DialogContent>
         </Dialog>
 
-        <div className="bg-card rounded-xl border overflow-auto flex-1 min-h-0">
+        <div
+          className="bg-card rounded-xl border overflow-auto flex-1 min-h-0"
+          /* A client opened while a search is applied becomes a recent
+             search. Caught here, once, so every link to a client — names,
+             dogs, the phone card, the hover preview — counts, and a phone
+             or email link does not. */
+          onClickCapture={e => {
+            const q = debouncedSearch.trim();
+            if (!q) return;
+            const link = (e.target as HTMLElement).closest?.("a[href]");
+            const id = clientIdFromHref(link?.getAttribute("href"));
+            const c = id === null ? undefined : data?.clients.find((row: any) => row.id === id);
+            if (!c) return;
+            const dogs = (c.pets ?? [])
+              .filter((p: any) => !p.passedAway && p.name)
+              .map((p: any) => p.name)
+              .join(", ");
+            remember({
+              kind: "client",
+              title: `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim(),
+              subtitle: dogs || null,
+              href: `/clients/${c.id}`,
+              query: q,
+            });
+          }}
+        >
           {/* Cards on a phone, the table from sm up. Seven columns cannot
               fit 375px, so every column past the surname was hidden and a
               phone showed two words against half a screen of white. */}
