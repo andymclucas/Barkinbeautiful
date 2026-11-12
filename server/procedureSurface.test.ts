@@ -599,7 +599,9 @@ describe("tRPC procedure surface", () => {
     // only the caller's own conversation); waitingCount, inbox, thread,
     // reply and closeThread are protectedProcedure AND canAnswerSupport
     // inside, Groomigo support only.
-    expect(surface).toHaveLength(447);
+    // 448 since 13/11/2026: sms.clientNumbers, the "To" picker in the
+    // Messages composer. protectedProcedure, like sms.send beside it.
+    expect(surface).toHaveLength(448);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

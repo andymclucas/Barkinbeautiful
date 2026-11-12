@@ -16,6 +16,8 @@ export type ThreadMessageInput = {
   receivedAt?: string | number | Date | null;
   createdAt?: string | number | Date | null;
   status?: string | null;
+  /** Who an outgoing text went to, when it was not the client's own number. */
+  sentToLabel?: string | null;
 };
 
 export type ThreadEntry<M extends ThreadMessageInput = ThreadMessageInput> =

@@ -58,6 +58,9 @@ function Bubble({
 }) {
   const { message, outbound, isFirstOfGroup, isLastOfGroup, at } = entry;
   const status = typeof message.status === "string" ? message.status : null;
+  // Set by the Messages page when a text went to a saved contact rather
+  // than the client's own number, so the thread says who received it.
+  const sentTo = typeof message.sentToLabel === "string" ? message.sentToLabel : null;
 
   return (
     <div className={`flex shrink-0 ${outbound ? "justify-end" : "justify-start"} ${isFirstOfGroup ? "mt-1.5" : "mt-0.5"}`}>
@@ -80,6 +83,7 @@ function Bubble({
           <p className="mt-0.5 px-1 text-[10px] text-muted-foreground">
             {bubbleTime(at)}
             {showStatus && outbound && status ? ` · ${status}` : ""}
+            {outbound && sentTo ? ` · to ${sentTo}` : ""}
           </p>
         )}
       </div>
