@@ -420,6 +420,11 @@ async function ensureMembershipProduct(stripe: Stripe, tenantId: number): Promis
  *   the salon sets it up today and it starts on the agreed day, instead of
  *   somebody having to remember to click the button that morning.
  */
+/** Whether a just-created Stripe subscription means the membership is live. */
+export function membershipLiveOnStart(subscriptionStatus: string | null | undefined): boolean {
+  return subscriptionStatus === "active" || subscriptionStatus === "trialing";
+}
+
 export async function startMembershipSubscription(membershipId: number, firstChargeOn?: string | null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -453,7 +458,17 @@ export async function startMembershipSubscription(membershipId: number, firstCha
    * subscription and charge at once — a client who had just been told
    * their billing was on hold.
    */
-  if (membership.status !== "active") {
+  /*
+   * Pending with no subscription is "Added — not billing yet"
+   * (shared/membershipBillingState.ts): the state Add membership and an
+   * approved online sign-up both create on purpose, and starting billing is
+   * exactly how it is meant to leave. Refusing it — once memberships really
+   * started pending on 12/11/2026 — stopped every new membership being
+   * billed. Pending WITH a subscription is a failed payment, and is still
+   * refused below by the existing-subscription return.
+   */
+  const addedNotBilling = membership.status === "pending_payment" && !membership.stripeSubscriptionId;
+  if (membership.status !== "active" && !addedNotBilling) {
     throw new Error(
       membership.status === "paused"
         ? "This membership is paused — resume it before starting billing"
@@ -527,6 +542,10 @@ export async function startMembershipSubscription(membershipId: number, firstCha
       gatewaySubscriptionId: subscription.id,
       paymentGateway: "stripe",
       nextBillingDate: subscriptionPeriodEnd(subscription),
+      // Live once Stripe has accepted it: trialing (first charge on a later
+      // day) or active (charged now). "incomplete" means the first charge
+      // failed, so it stays pending and reads "Payment failed".
+      ...(addedNotBilling && membershipLiveOnStart(subscription.status) ? { status: "active" as const } : {}),
     })
     .where(eq(memberships.id, membership.id));
 
