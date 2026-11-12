@@ -7,6 +7,7 @@ import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE, PORTAL_PERSON_REQUEST } from "@shared/portalChat";
 import { GuapoAvatar } from "@/components/GuapoAvatar";
+import { sortBookingsForBucket } from "@shared/bookingBuckets";
 import { clientFacingStage, isGroomInProgress, stageIcon, stageColourFor } from "@shared/groomingStage";
 import { GroomProgressBar } from "@/components/GroomProgressBar";
 import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle, CreditCard, Loader2, TriangleAlert, Lock, ChevronRight } from "lucide-react";
@@ -938,7 +939,13 @@ export default function ClientPortal() {
     />;
   }
 
-  const upcoming = data.appointments.filter(appointment => new Date(appointment.scheduledStart).getTime() >= Date.now() && !["cancelled", "no_show"].includes(appointment.status));
+  // Soonest first, the same rule as the staff Bookings tab. The server
+  // sends newest-first, so unsorted this read June, April, March, January
+  // (Andy, 13/11/2026: "Most recent upcoming at the top").
+  const upcoming = sortBookingsForBucket(
+    data.appointments.filter(appointment => new Date(appointment.scheduledStart).getTime() >= Date.now() && !["cancelled", "no_show"].includes(appointment.status)),
+    "upcoming",
+  );
   const past = data.appointments.filter(appointment => !upcoming.includes(appointment));
   const pastVisible = showAllHistory ? past : past.slice(0, 5);
   // In preview there is no client session, so these would fail if offered.
