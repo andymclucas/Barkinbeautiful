@@ -29,6 +29,20 @@ export function isCancelledAppointment(appointment: CancellableAppointment | nul
 }
 
 /**
+ * Cancelled OR a no-show: a dog that is not coming in.
+ *
+ * Used where a list should only hold the dogs actually arriving — the
+ * stack picker, from 12/11/2026 ("Only show the confirmed ones", Andy).
+ * Deliberately separate from isCancelledAppointment, whose job is the
+ * kept-slot rule: a no-show is not cancelled and keeps its card.
+ */
+export function isNotComing(appointment: CancellableAppointment | null | undefined): boolean {
+  if (!appointment) return false;
+  return isCancelledAppointment(appointment)
+    || appointment.status === "no_show" || appointment.workflowState === "no_show";
+}
+
+/**
  * A cancelled booking keeps its original slot.
  *
  * Also true when the edit in progress is CANCELLING it — the dog is being

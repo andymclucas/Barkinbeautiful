@@ -63,4 +63,25 @@ describe("appointmentStack", () => {
   it("pins the drawn minimum at the half hour the card layout uses", () => {
     expect(MIN_DRAWN_MINUTES).toBe(30);
   });
+
+  it("leaves out dogs that are not coming — Lauren's five at 8am, Ruby cancelled", () => {
+    const items = [
+      appt(1, "07:30", "09:30"),                          // Beau Nogaski
+      { ...appt(2, "08:00", "09:00"), notComing: true },  // Ruby, cancelled
+      appt(3, "08:30", "10:30"),                          // Hunter
+      appt(4, "09:30", "11:30"),                          // Beau Malloy
+    ];
+    expect(appointmentStack(items, 1).map((s) => s.id)).toEqual([1, 3]);
+    expect(appointmentStack(items, 3).map((s) => s.id)).toEqual([1, 3, 4]);
+  });
+
+  it("opens a cancelled card directly instead of offering a list", () => {
+    const items = [appt(1, "08:00", "10:00"), { ...appt(2, "08:00", "09:00"), notComing: true }];
+    expect(appointmentStack(items, 2)).toEqual([]);
+  });
+
+  it("needs no list when the only dog behind is not coming", () => {
+    const items = [appt(1, "08:00", "10:00"), { ...appt(2, "08:30", "09:30"), notComing: true }];
+    expect(appointmentStack(items, 1)).toEqual([]);
+  });
 });
