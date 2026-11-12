@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calendarDateFromSearch, parseCalendarDay } from "@shared/calendarDeepLink";
+import { calendarAppointmentFromSearch, calendarAppointmentHref, calendarDateFromSearch, parseCalendarDay } from "@shared/calendarDeepLink";
 import { appointmentHref } from "@shared/globalSearch";
 
 describe("parseCalendarDay", () => {
@@ -79,5 +79,25 @@ describe("calendarDateFromSearch", () => {
   it("has nothing to read on the workflow link", () => {
     expect(appointmentHref("bathing", "2026-11-03")).toBe("/workflow");
     expect(calendarDateFromSearch("")).toBeNull();
+  });
+});
+
+describe("linking to one booking on the calendar", () => {
+  it("builds a link to the booking's day with the booking itself", () => {
+    expect(calendarAppointmentHref(2610018, "2027-01-28")).toBe("/calendar?date=2027-01-28&appt=2610018");
+  });
+
+  it("reads the booking back out of the link, with or without the ?", () => {
+    expect(calendarAppointmentFromSearch("?date=2027-01-28&appt=2610018")).toBe(2610018);
+    expect(calendarAppointmentFromSearch("date=2027-01-28&appt=2610018")).toBe(2610018);
+    expect(calendarDateFromSearch("?date=2027-01-28&appt=2610018")?.getDate()).toBe(28);
+  });
+
+  it("ignores a missing or nonsense booking id, so the day still opens", () => {
+    expect(calendarAppointmentFromSearch("?date=2027-01-28")).toBeNull();
+    expect(calendarAppointmentFromSearch("?appt=abc")).toBeNull();
+    expect(calendarAppointmentFromSearch("?appt=-4")).toBeNull();
+    expect(calendarAppointmentFromSearch("?appt=0")).toBeNull();
+    expect(calendarAppointmentFromSearch("")).toBeNull();
   });
 });

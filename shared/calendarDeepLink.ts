@@ -70,3 +70,24 @@ export function parseCalendarDay(raw: string | null | undefined): Date | null {
   }
   return date;
 }
+
+/**
+ * The booking a calendar link asks to open, or null.
+ *
+ * Andy, 12/11/2026: "Make all these dates clickable in the bookings section
+ * so it takes you to that exact appointment in the calendar." The day alone
+ * leaves somebody hunting a column of cards for the right dog; `appt` opens
+ * that booking's dialog once the day has loaded.
+ */
+export function calendarAppointmentFromSearch(search: string | null | undefined): number | null {
+  if (!search) return null;
+  const raw = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("appt");
+  if (!raw || !/^\d+$/.test(raw.trim())) return null;
+  const id = Number(raw.trim());
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+/** The link that opens one booking: its Brisbane day, then the booking itself. */
+export function calendarAppointmentHref(appointmentId: number, brisbaneDay: string): string {
+  return `/calendar?date=${encodeURIComponent(brisbaneDay)}&appt=${appointmentId}`;
+}

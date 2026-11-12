@@ -1,4 +1,6 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { calendarAppointmentHref } from "@shared/calendarDeepLink";
+import { brisbaneDateKey } from "@shared/localDateTime";
 import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
@@ -2443,8 +2445,16 @@ export default function ClientDetail() {
                     return (
                       <tr key={a.id} className={`border-b last:border-0 hover:bg-muted/20 ${isFuture ? "bg-primary/3" : ""}`}>
                         <td className="p-3">
-                          <div className="font-medium">{new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</div>
-                          <div className="text-xs text-muted-foreground">{new Date(a.scheduledStart).toLocaleTimeString("en-AU", { timeZone: getActiveTimeZone(), hour: "2-digit", minute: "2-digit", hour12: true })}</div>
+                          {/* Straight to that booking on the calendar (Andy,
+                              12/11/2026): its day, with its dialog open. */}
+                          <Link
+                            href={calendarAppointmentHref(a.id, brisbaneDateKey(new Date(a.scheduledStart)))}
+                            className="group block"
+                            title="Open this booking on the calendar"
+                          >
+                            <div className="font-medium text-primary group-hover:underline">{new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</div>
+                            <div className="text-xs text-muted-foreground">{new Date(a.scheduledStart).toLocaleTimeString("en-AU", { timeZone: getActiveTimeZone(), hour: "2-digit", minute: "2-digit", hour12: true })}</div>
+                          </Link>
                         </td>
                         <td className="p-3">
                           <span className="font-medium">{a.petName}</span>

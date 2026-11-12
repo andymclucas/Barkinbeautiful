@@ -122,7 +122,7 @@ import { toast } from "sonner";
 import { Link, useLocation, useSearch } from "wouter";
 import { MassTextDialog } from "@/components/MassTextDialog";
 import { AppointmentRetail } from "@/components/AppointmentRetail";
-import { calendarDateFromSearch } from "@shared/calendarDeepLink";
+import { calendarAppointmentFromSearch, calendarDateFromSearch } from "@shared/calendarDeepLink";
 import { calendarTextLabel, calendarTextRange, canSendMassText } from "@shared/calendarMassText";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
@@ -1417,11 +1417,17 @@ export default function Calendar() {
    */
   const calendarSearch = useSearch();
   const [, navigateCalendar] = useLocation();
+  /* A booking a link asked to open (`&appt=`), held until that day's
+     bookings have loaded — see the effect after getAppointments. */
+  const [linkedApptId, setLinkedApptId] = useState<number | null>(
+    () => calendarAppointmentFromSearch(typeof window === "undefined" ? "" : window.location.search),
+  );
   useEffect(() => {
     const target = calendarDateFromSearch(calendarSearch);
     if (!target) return;
     setDayDate(target);
     setWeekStart(getWeekStart(target));
+    setLinkedApptId(calendarAppointmentFromSearch(calendarSearch));
     navigateCalendar("/calendar", { replace: true });
   }, [calendarSearch, navigateCalendar]);
 
@@ -1755,10 +1761,24 @@ export default function Calendar() {
     toast.success("Last completed style loaded. Review and save as a new style when ready.");
   };
 
-  const { data: weekAppts, refetch } = trpc.calendar.getAppointments.useQuery({
+  const { data: weekAppts, refetch, isFetching: weekApptsFetching } = trpc.calendar.getAppointments.useQuery({
     dateFrom: queryFrom.toISOString(),
     dateTo:   queryTo.toISOString(),
   });
+  /* Open the linked booking once it is on screen. From the whole day's
+     list, not the staff-filtered one, so a booking in a column that is
+     switched off still opens. A link to a booking not on that day just
+     lands on the day. */
+  useEffect(() => {
+    // Wait out a fetch: on a jump from another week the previous week's
+    // list is still here for a moment, and giving up on it would drop
+    // the link before the right day arrives.
+    if (linkedApptId === null || !weekAppts || weekApptsFetching) return;
+    const found = (weekAppts as unknown as Appt[]).find(a => a.id === linkedApptId);
+    if (found) openEdit(found);
+    setLinkedApptId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedApptId, weekAppts, weekApptsFetching]);
 
   const { data: apptSearchResults, isFetching: isApptSearchFetching } = trpc.calendar.searchAppointments.useQuery(
     { query: apptSearchTerm },
