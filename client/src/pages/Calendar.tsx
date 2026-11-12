@@ -5625,6 +5625,81 @@ export default function Calendar() {
                     <p className="w-full text-sm font-semibold">Press Save Changes to set it.</p>
                   )}
                 </div>
+                {/* Lauren, 12/11/2026, circling them on a screenshot: "Move
+                    this section to the top." Go-home time, discount and the
+                    per-dog prices, straight under the status, so checking a
+                    dog in and confirming what it costs needs no scrolling.
+                    The total is already pinned to the panel's footer. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    {/* A deadline the client gave us — "she has to be home
+                        by twelve". It shows on the workflow board so the
+                        bathers can order the queue around it, which is no
+                        use once the dog is already late. */}
+                    <Label htmlFor={`collect-by-${editAppt.id}`} className="text-base font-semibold">
+                      Must go home by
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id={`collect-by-${editAppt.id}`}
+                        type="time"
+                        className="h-8 w-28 text-sm"
+                        value={collectByDraft}
+                        onChange={e => setCollectByDraft(e.target.value)}
+                      />
+                      <Button
+                        type="button" size="sm" variant="outline" className="h-8 text-xs"
+                        disabled={collectByMutation.isPending}
+                        onClick={() => collectByMutation.mutate({
+                          appointmentId: editAppt.id,
+                          time: collectByDraft === "" ? null : collectByDraft,
+                        })}
+                      >
+                        {collectByDraft === "" ? "Clear" : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                  {/* A discount decided at booking time, not only at the
+                      counter. price becomes the net figure, so the family
+                      breakdown and the split bill both follow. */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                    <span className="text-xs text-muted-foreground">
+                      {describeDiscount(editAppt.discountPercent, editAppt.discountReason) ?? "No discount applied"}
+                    </span>
+                    <ApplyDiscountDialog
+                      appointmentId={editAppt.id}
+                      grossPrice={editAppt.preDiscountPrice ?? editAppt.price}
+                      currentPercent={editAppt.discountPercent}
+                      currentReason={editAppt.discountReason}
+                      sessionHasOtherPets={editSiblings.length > 0}
+                      onApplied={() => { closeEditDialog(); refetch(); }}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center gap-1.5 text-base font-semibold">
+                      Price ($)
+                      <MoegoBadge moegoAppointmentId={editAppt.moegoAppointmentId} />
+                    </Label>
+                    {editSiblings.length > 0 ? (
+                      <div className="space-y-2">
+                        {[editAppt, ...editSiblings].map(pet => (
+                          <div key={pet.id} className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground w-16 shrink-0 truncate">{pet.petName}:</span>
+                            <Input
+                              className="h-8 text-xs flex-1"
+                              placeholder="0.00"
+                              value={siblingPrices[pet.id] !== undefined ? siblingPrices[pet.id] : (pet.price ?? "")}
+                              onChange={e => setSiblingPrices(prev => ({ ...prev, [pet.id]: e.target.value }))}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <Input placeholder="0.00" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value }))} />
+                    )}
+                  </div>
+                </div>
                 {(() => {
                   const bookedPetIds = new Set([editAppt, ...editSiblings].map((appointment) => appointment.petId));
                   const availablePets = (editableAppointmentPets.data ?? []).filter((pet) => pet.status === "active" && !bookedPetIds.has(pet.id));
@@ -6082,78 +6157,6 @@ export default function Calendar() {
                   }
                   return null;
                 })()}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    {/* Status moved to the top of the dialog, 12/11/2026. */}
-                    {/* A deadline the client gave us — "she has to be home
-                        by twelve". It shows on the workflow board so the
-                        bathers can order the queue around it, which is no
-                        use once the dog is already late. */}
-                    <Label htmlFor={`collect-by-${editAppt.id}`} className="text-base font-semibold">
-                      Must go home by
-                    </Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id={`collect-by-${editAppt.id}`}
-                        type="time"
-                        className="h-8 w-28 text-sm"
-                        value={collectByDraft}
-                        onChange={e => setCollectByDraft(e.target.value)}
-                      />
-                      <Button
-                        type="button" size="sm" variant="outline" className="h-8 text-xs"
-                        disabled={collectByMutation.isPending}
-                        onClick={() => collectByMutation.mutate({
-                          appointmentId: editAppt.id,
-                          time: collectByDraft === "" ? null : collectByDraft,
-                        })}
-                      >
-                        {collectByDraft === "" ? "Clear" : "Save"}
-                      </Button>
-                    </div>
-                  </div>
-                  {/* A discount decided at booking time, not only at the
-                      counter. price becomes the net figure, so the family
-                      breakdown and the split bill both follow. */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                    <span className="text-xs text-muted-foreground">
-                      {describeDiscount(editAppt.discountPercent, editAppt.discountReason) ?? "No discount applied"}
-                    </span>
-                    <ApplyDiscountDialog
-                      appointmentId={editAppt.id}
-                      grossPrice={editAppt.preDiscountPrice ?? editAppt.price}
-                      currentPercent={editAppt.discountPercent}
-                      currentReason={editAppt.discountReason}
-                      sessionHasOtherPets={editSiblings.length > 0}
-                      onApplied={() => { closeEditDialog(); refetch(); }}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="flex items-center gap-1.5 text-base font-semibold">
-                      Price ($)
-                      <MoegoBadge moegoAppointmentId={editAppt.moegoAppointmentId} />
-                    </Label>
-                    {editSiblings.length > 0 ? (
-                      <div className="space-y-2">
-                        {[editAppt, ...editSiblings].map(pet => (
-                          <div key={pet.id} className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground w-16 shrink-0 truncate">{pet.petName}:</span>
-                            <Input
-                              className="h-8 text-xs flex-1"
-                              placeholder="0.00"
-                              value={siblingPrices[pet.id] !== undefined ? siblingPrices[pet.id] : (pet.price ?? "")}
-                              onChange={e => setSiblingPrices(prev => ({ ...prev, [pet.id]: e.target.value }))}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <Input placeholder="0.00" value={editForm.price} onChange={e => setEditForm(p => ({ ...p, price: e.target.value }))} />
-                    )}
-                  </div>
-                </div>
-
                 <div className="space-y-1.5">
                   <Label className="text-base font-semibold">Notes</Label>
                   <Textarea rows={2} value={editForm.notes} onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))} />
