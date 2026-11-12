@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { VipMark } from "@/components/VipMark";
 import { User, Phone, Mail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ClientPetList, type ClientListPet } from "@/components/ClientPetList";
@@ -66,7 +67,11 @@ export function ClientListCard({
 
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex min-w-0 items-start justify-between gap-2">
-            <p className="min-w-0 truncate font-medium">{name}</p>
+            <p className="flex min-w-0 items-center gap-1.5 font-medium">
+              <span className="truncate">{name}</span>
+              {/* VIP on every member (Andy, 12/11/2026); membership is active plans only. */}
+              {client.membership && <VipMark />}
+            </p>
             <Badge className={`shrink-0 text-[10px] ${statusClass}`}>{client.status}</Badge>
           </div>
 

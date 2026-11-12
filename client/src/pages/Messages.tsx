@@ -1,4 +1,5 @@
 import { collapseBySend } from "@shared/messageThreadGrouping";
+import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { AssignStaffPicker } from "@/components/AssignStaffPicker";
@@ -191,7 +192,7 @@ export default function Messages() {
   // Unread across both kinds, so "mark all" and the badge agree.
   const unreadThreadCount = (threads ?? []).filter((t: any) => (t.unreadCount ?? 0) > 0).length
     + (missedCallsList ?? []).filter((c: any) => !c.readAt).length;
-  const [openThread, setOpenThread] = useState<{ clientId: number | null; toNumber: string; clientName: string | null } | null>(null);
+  const [openThread, setOpenThread] = useState<{ clientId: number | null; toNumber: string; clientName: string | null; clientIsVip?: boolean } | null>(null);
 
   const markThreadReadMutation = trpc.sms.markThreadRead.useMutation({
     onSuccess: () => {
@@ -229,7 +230,7 @@ export default function Messages() {
     return collapseBySend((logs as any[]).filter(l => (thread.clientId ? l.clientId === thread.clientId : l.toNumber === thread.toNumber)));
   };
 
-  const openThreadDialog = (thread: { clientId: number | null; toNumber: string; clientName: string | null }) => {
+  const openThreadDialog = (thread: { clientId: number | null; toNumber: string; clientName: string | null; clientIsVip?: boolean }) => {
     setOpenThread(thread);
     markThreadReadMutation.mutate(thread.clientId ? { clientId: thread.clientId } : { toNumber: thread.toNumber });
   };
@@ -506,6 +507,7 @@ export default function Messages() {
                       >
                         {openThread?.clientName?.trim() || openThread?.toNumber}
                       </ClientLink>
+                      {openThread?.clientIsVip && <VipMark className="ml-1.5" />}
                     </p>
                     {openThread?.clientName && (
                       <p className="truncate text-[11px] font-normal text-muted-foreground">{openThread.toNumber}</p>
@@ -702,7 +704,7 @@ export default function Messages() {
                     />
                     <button
                       className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left"
-                      onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName })}
+                      onClick={() => openThreadDialog({ clientId: thread.clientId, toNumber: thread.toNumber, clientName: thread.clientName, clientIsVip: thread.clientIsVip })}
                     >
                       <span
                         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
@@ -713,7 +715,11 @@ export default function Messages() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-2">
-                          <span className={`truncate text-[15px] ${thread.unreadCount > 0 ? "font-semibold" : "font-medium"}`}>{displayName}</span>
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className={`truncate text-[15px] ${thread.unreadCount > 0 ? "font-semibold" : "font-medium"}`}>{displayName}</span>
+                            {/* VIP on every member (Andy, 12/11/2026). */}
+                            {thread.clientIsVip && <VipMark />}
+                          </span>
                           <span className="shrink-0 text-[11px] text-muted-foreground">
                             {new Date(thread.lastAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
                           </span>

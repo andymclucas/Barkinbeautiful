@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { VipMark } from "@/components/VipMark";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -758,6 +759,9 @@ export default function Clients() {
                           <span className="font-medium group-hover:text-primary group-hover:underline transition-colors">
                             {c.firstName}
                           </span>
+                          {/* VIP on every member (Andy, 12/11/2026). c.membership
+                              is active plans only. */}
+                          {c.membership && <VipMark />}
                         </span>
                       </Link>
                     </ClientHoverCard>

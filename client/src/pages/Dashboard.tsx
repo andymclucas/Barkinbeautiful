@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { useTimezone } from "@/lib/timezone";
@@ -296,7 +297,10 @@ export default function Dashboard() {
                       >
                         <div className="tabular-nums text-muted-foreground font-medium">{formatTime(a.scheduledStart)}</div>
                         <div className="min-w-0">
-                          <span className="font-semibold block truncate">{a.petName}</span>
+                          <span className="flex min-w-0 items-center gap-1.5 font-semibold">
+                            <span className="truncate">{a.petName}</span>
+                            {a.isVipMember && <VipMark />}
+                          </span>
                           <span className="text-xs text-muted-foreground block truncate">{a.clientFirstName} {a.clientLastName}</span>
                         </div>
                         <div className="text-muted-foreground truncate">{formatServiceType(a.serviceType)}</div>

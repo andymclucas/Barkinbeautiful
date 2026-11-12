@@ -38,6 +38,7 @@ import {
   waitlistEntries, waitlistOffers, smsLogs,
 } from "../../drizzle/schema";
 import { requireApprovedStaffTenant } from "../staffAccess";
+import { loadVipMembers } from "../vipMembers";
 import { sendSms } from "../sms";
 import { getPortalBaseUrl } from "../appUrl";
 import { nanoid } from "nanoid";
@@ -452,7 +453,10 @@ export const waitlistRouter = router({
           input.clientId ? eq(waitlistEntries.clientId, input.clientId) : undefined,
         ))
         .orderBy(asc(waitlistEntries.createdAt));
-      return withAllDogs(db, listed);
+      const withDogs = await withAllDogs(db, listed);
+      // VIP beside member clients (server/vipMembers.ts).
+      const vip = await loadVipMembers(db, tenantId, { clientIds: withDogs.map((e) => e.clientId) });
+      return withDogs.map((e) => ({ ...e, clientIsVip: vip.clients.has(e.clientId) }));
     }),
 
   /** Take a client off the list. */

@@ -360,6 +360,10 @@ function computeColumns<T extends { scheduledStart: Date; scheduledEnd: Date }>(
 // ── Types ────────────────────────────────────────────────────────────────────
 type Appt = {
   id: number;
+  /** The dog is on an active plan — a profile fact for the dialog header, not coverage. */
+  petIsVip?: boolean;
+  /** The client holds an active plan (SQL EXISTS, so 0/1 from the driver). */
+  clientHasMembership?: number | boolean | null;
   scheduledStart: Date;
   scheduledEnd: Date;
   workflowState: string;
@@ -1831,7 +1835,9 @@ export default function Calendar() {
     phone: string | null;
     /** active | inactive | lapsed | blocked. Only "blocked" warns. */
     clientStatus: string | null;
-    pets: Array<{ petId: number | null; petName: string | null; petBreed: string | null }>;
+    /** On an active plan — the VIP badge (server/vipMembers.ts). */
+    clientIsVip: boolean;
+    pets: Array<{ petId: number | null; petName: string | null; petBreed: string | null; petIsVip: boolean }>;
   };
   // Group search results by client, collecting all pets per client
   const clientSearchOptions = useMemo((): ClientOption[] => {
@@ -1845,13 +1851,14 @@ export default function Calendar() {
           lastName: r.lastName,
           phone: r.phone,
           clientStatus: r.clientStatus,
+          clientIsVip: Boolean(r.clientIsVip),
           pets: [],
         });
       }
       if (r.petId) {
         const entry = map.get(r.clientId)!;
         if (!entry.pets.find((p: ClientOption['pets'][0]) => p.petId === r.petId)) {
-          entry.pets.push({ petId: r.petId, petName: r.petName, petBreed: r.petBreed });
+          entry.pets.push({ petId: r.petId, petName: r.petName, petBreed: r.petBreed, petIsVip: Boolean(r.petIsVip) });
         }
       }
     }
@@ -4558,14 +4565,19 @@ export default function Calendar() {
                             }}
                           >
                             <div className="flex items-center justify-between">
-                              <span className="font-medium">{c.firstName} {c.lastName}</span>
+                              <span className="flex items-center gap-1.5 font-medium">
+                                {c.firstName} {c.lastName}
+                                {/* VIP on every member (Andy, 12/11/2026). */}
+                                {c.clientIsVip && <VipMark />}
+                              </span>
                               {c.phone && <span className="text-xs text-muted-foreground">{c.phone}</span>}
                             </div>
                             {c.pets.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-0.5">
                                 {c.pets.map((p: typeof c.pets[0]) => (
-                                  <span key={p.petId} className="text-[11px] bg-primary/10 text-primary rounded px-1.5 py-0.5">
+                                  <span key={p.petId} className="inline-flex items-center gap-1 text-[11px] bg-primary/10 text-primary rounded px-1.5 py-0.5">
                                     {p.petName}{p.petBreed ? ` · ${p.petBreed}` : ""}
+                                    {p.petIsVip && <VipMark className="scale-75" />}
                                   </span>
                                 ))}
                               </div>
@@ -4641,6 +4653,8 @@ export default function Calendar() {
                           <span className={passedAway ? "line-through decoration-amber-700/60" : undefined}>
                             {pet.name}{pet.breed ? ` (${pet.breed})` : ""}
                           </span>
+                          {/* On a plan — a profile fact, not "this booking is covered"; the coverage panel below says that. */}
+                          {pet.isVip && !passedAway && <VipMark className="ml-1.5" />}
                           {passedAway
                             ? <AngelWings className="ml-1.5 inline-block h-3.5 w-3.5 align-[-2px]" />
                             : <span className="ml-1.5 opacity-70">{selected ? "✓" : "+"}</span>}
@@ -5297,6 +5311,8 @@ export default function Calendar() {
                                 {p.name}
                                 <ExternalLink className="h-3.5 w-3.5 shrink-0" />
                               </Link>
+                              {/* The dog is on an active plan (Andy, 12/11/2026). */}
+                              {[editAppt, ...editSiblings].find(a => a.id === p.appointmentId)?.petIsVip && <VipMark />}
                               {rStatus === "sent" && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
                               {rStatus === "draft" && (
                                 <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
@@ -5330,6 +5346,7 @@ export default function Calendar() {
                       {editAppt.clientFirstName} {editAppt.clientLastName}
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Link>
+                    {Boolean(Number(editAppt.clientHasMembership)) && <VipMark />}
                     {editAppt.clientPhone
                       ? <a href={`tel:${editAppt.clientPhone}`} className="text-muted-foreground hover:underline">
                           · {editAppt.clientPhone}

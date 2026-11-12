@@ -623,6 +623,7 @@ export function WorkflowBoardTable({
                                 readyAt: appt.readyAt ?? null,
                                 completedAt: appt.completedAt ?? null,
                                 scheduledStart: appt.scheduledStart,
+                                isVipMember: Boolean((appt as any).isVipMember),
                               };
                               setPetPopup(popup);
                               setEditingNotes(appt.notes ?? "");

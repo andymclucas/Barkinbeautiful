@@ -12,6 +12,7 @@
  * Results are debounced, not fetched per keystroke: the query hits
  * three tables with LIKEs and the salon has 10,000 clients.
  */
+import { VipMark } from "@/components/VipMark";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { CalendarDays, Check, Dog, Loader2, Search, User } from "lucide-react";
@@ -209,7 +210,11 @@ export function GlobalSearch() {
                       * the full width and the context gives way instead.
                       */}
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="truncate font-medium leading-tight">{hit.title}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate font-medium leading-tight">{hit.title}</span>
+                        {/* Members wear VIP everywhere (Andy, 12/11/2026). */}
+                        {hit.vip && <VipMark />}
+                      </span>
                       {/* Why this row is here, when the reason is not the
                           name: "0412 345 678", "Cavoodle". */}
                       {hitMeta(hit) && (
@@ -259,6 +264,7 @@ export function GlobalSearch() {
                                 which is the escape it leaves open. */}
                             <Dog className="size-3.5" />
                             {dog.name}
+                            {dog.vip && <VipMark className="scale-75" />}
                           </button>
                         ))}
                       </span>
