@@ -19,7 +19,7 @@ const FILTERS = [
   { key: "closed", label: "Closed" },
 ] as const;
 
-const WHO: Record<string, string> = { user: "", ai: "Assistant", human: "You", system: "" };
+const WHO: Record<string, string> = { user: "", ai: "Guapo (AI)", human: "You", system: "" };
 
 export default function SupportInbox() {
   const { user } = useAuth();
@@ -76,7 +76,7 @@ export default function SupportInbox() {
         <div>
           <h1 className="font-display text-2xl font-bold">Support chats</h1>
           <p className="text-sm text-muted-foreground">
-            Conversations from the support bubble where somebody asked for a person. Replying takes the conversation over from the assistant.
+            Conversations from the support bubble where somebody asked for a person. Replying takes the conversation over from Guapo, the AI assistant.
           </p>
         </div>
 
