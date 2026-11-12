@@ -75,6 +75,10 @@ const PUBLIC = [
   // today, re-checked on the server, and refuses while the service
   // agreement is unsigned (server/portalAppointmentPayment.ts).
   "clientPortalRouter.payTodaysBill",
+  // Forgot password (12/11/2026). Answers the same whatever the address,
+  // only emails a live account, skips held clients, and is throttled per
+  // address and per IP (shared/portalPasswordReset.ts).
+  "clientPortalRouter.requestPasswordReset",
   "clientPortalRouter.rescheduleAppointment",
   // The cycle window for a membership or repeat booking. Same portal-session
   // check and ownership test as rescheduleAppointment beside it.
@@ -568,7 +572,8 @@ describe("tRPC procedure surface", () => {
     // OPERATIONAL (a reporter's own outcomes only); retriage is owner-only.
     // 431 since 11/11/2026: clientPortal.rescheduleWindow, in PUBLIC.
     // 432 since 12/11/2026: clientPortal.payMyInvoice, in PUBLIC.
-    expect(surface).toHaveLength(432);
+    // 433 since 12/11/2026: clientPortal.requestPasswordReset, in PUBLIC.
+    expect(surface).toHaveLength(433);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -579,7 +584,8 @@ describe("tRPC procedure surface", () => {
     // note beside them in PUBLIC says what bounds them.
     // 59 since 11/11/2026: clientPortal.rescheduleWindow.
     // 60 since 12/11/2026: clientPortal.payMyInvoice.
-    expect(PUBLIC).toHaveLength(60);
+    // 61 since 12/11/2026: clientPortal.requestPasswordReset.
+    expect(PUBLIC).toHaveLength(61);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

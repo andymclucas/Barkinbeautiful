@@ -105,6 +105,13 @@ import { resolveAppointmentMembershipCoverage, type AppointmentService } from ".
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
 import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
 import { cleanPlanFields } from "../shared/membershipPlanFields";
+import {
+  RESET_REQUESTED_MESSAGE, SELF_RESET_TTL_MS, ipRequestAllowed, portalPasswordResetEmail, resetEmailAllowed,
+} from "../shared/portalPasswordReset";
+
+/** Self-service reset throttles. In memory: one web process, and a restart only forgives. */
+const selfResetByEmail = new Map<string, number>();
+const selfResetByIp = new Map<string, number[]>();
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
@@ -15473,11 +15480,9 @@ const clientPortalRouter = router({
       let emailSent = false;
       if (input.sendEmail !== false) {
         if (isReset) {
-          emailSent = await sendEmail({
-            to: loginEmail,
-            subject: "Reset your Barkin' Beautiful client portal password",
-            html: `<p>Hi ${client.firstName || "there"},</p><p>Here's your link to set a new password for your Barkin' Beautiful client portal account.</p><p><a href="${setupUrl}">Reset my password</a></p><p>This link expires on ${setup.expiresAt.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Brisbane" })}. It does not create staff or administrator access.</p>`,
-          });
+          // Same wording as the reset a client asks for herself.
+          const reset = portalPasswordResetEmail({ firstName: client.firstName, resetUrl: setupUrl, expiresAt: setup.expiresAt });
+          emailSent = await sendEmail({ to: loginEmail, subject: reset.subject, html: reset.html });
         } else {
           const [salon] = await db.select({ name: tenants.name, phone: tenants.phone, email: tenants.email })
             .from(tenants).where(eq(tenants.id, client.tenantId)).limit(1);
@@ -15941,6 +15946,80 @@ const clientPortalRouter = router({
       });
       await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion + 1 });
       return { success: true, client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail } };
+    }),
+
+  /**
+   * "Forgot password?" on the client sign-in (Andy, 12/11/2026).
+   *
+   * Emails a two-hour reset link to a LIVE portal account at that address
+   * and says the same thing whatever happens, so the form cannot be used
+   * to learn which emails belong to clients. Never sends to a client the
+   * salon has on hold (portalInviteCampaign.ts), and is throttled per
+   * address and per IP (shared/portalPasswordReset.ts). The client's
+   * current password keeps working until the new one is set.
+   */
+  requestPasswordReset: publicProcedure
+    .input(z.object({ email: z.string().trim().email().max(320) }))
+    .mutation(async ({ input, ctx }) => {
+      const answer = { success: true as const, message: RESET_REQUESTED_MESSAGE };
+      const now = Date.now();
+      // Express does not trust the proxy here, so req.ip is Render's own
+      // address for everybody. The LAST X-Forwarded-For entry is the one
+      // Render's proxy appended; the ones before it are whatever the
+      // caller sent, so they are not used.
+      const forwarded = String((ctx.req as any)?.headers?.["x-forwarded-for"] ?? "").split(",").map((part) => part.trim()).filter(Boolean);
+      const ip = forwarded.at(-1) ?? String((ctx.req as any)?.socket?.remoteAddress ?? "unknown");
+      const ipCheck = ipRequestAllowed(selfResetByIp.get(ip) ?? [], now);
+      if (!ipCheck.allowed) {
+        selfResetByIp.set(ip, ipCheck.keep);
+        return answer;
+      }
+      selfResetByIp.set(ip, [...ipCheck.keep, now]);
+
+      const loginEmail = input.email.trim().toLowerCase();
+      if (!resetEmailAllowed(selfResetByEmail.get(loginEmail), now)) return answer;
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [client] = await db.select({
+        id: clients.id,
+        tenantId: clients.tenantId,
+        firstName: clients.firstName,
+        portalLoginEmail: clients.portalLoginEmail,
+        portalPasswordHash: clients.portalPasswordHash,
+        portalAccountStatus: clients.portalAccountStatus,
+      })
+        .from(clients)
+        .where(and(eq(clients.tenantId, 1), eq(clients.portalLoginEmail, loginEmail)))
+        .limit(1);
+      // Only a working account. Somebody who never finished setting up
+      // needs the salon's invitation, which carries the service agreement.
+      if (!client || client.portalAccountStatus !== "active" || !client.portalPasswordHash) return answer;
+      if (heldClientIds(client.tenantId).has(client.id)) return answer;
+
+      const setup = createClientPortalToken();
+      const expiresAt = new Date(now + SELF_RESET_TTL_MS);
+      // Same address, active account: a reset that keeps the password.
+      const effect = portalLinkIssueEffect({
+        currentStatus: client.portalAccountStatus as PortalAccountStatus,
+        currentLoginEmail: client.portalLoginEmail,
+        newLoginEmail: loginEmail,
+      });
+      if (!effect.keepPassword) return answer;
+      selfResetByEmail.set(loginEmail, now);
+      await db.update(clients).set({
+        portalSetupTokenHash: setup.tokenHash,
+        portalSetupExpiresAt: expiresAt,
+        updatedAt: new Date(),
+      }).where(and(eq(clients.id, client.id), eq(clients.portalAccountStatus, "active")));
+
+      const resetUrl = `${getPortalBaseUrl()}/portal/setup/${setup.token}`;
+      const email = portalPasswordResetEmail({ firstName: client.firstName, resetUrl, expiresAt });
+      const [salon] = await db.select({ email: tenants.email }).from(tenants).where(eq(tenants.id, client.tenantId)).limit(1);
+      const { sendEmail } = await import("./email");
+      await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, replyTo: salon?.email ?? null })
+        .catch((error: unknown) => { console.error("[portal] self-service reset email failed", error); return false; });
+      return answer;
     }),
 
   login: publicProcedure
