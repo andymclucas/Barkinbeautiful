@@ -3670,12 +3670,48 @@ const calendarRouter = router({
       scheduledStart: z.string(),
       scheduledEnd: z.string(),
       staffId: z.number().optional().nullable(),
+      /*
+       * Move the other dogs on the same booking too. For callers that
+       * act on ONE row of a per-dog list (the client's Bookings tab):
+       * without it, moving Maddie leaves Misha on the old day, still
+       * tied to her by sessionId. The calendar moves its own siblings
+       * and does not send this.
+       */
+      withBooking: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       { const lengthProblem = bookingLengthProblem(input.scheduledStart, input.scheduledEnd); if (lengthProblem) throw new TRPCError({ code: "BAD_REQUEST", message: lengthProblem }); }
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      /*
+       * The companions, found BEFORE anything moves: same booking, at
+       * the same time as this dog, and still to come. A dog already at
+       * the salon, or one somebody has deliberately put on another day,
+       * is left where it is.
+       */
+      const companions: Array<{ id: number; scheduledStart: Date; scheduledEnd: Date }> = [];
+      if (input.withBooking) {
+        const [anchor] = await db
+          .select({ tenantId: appointments.tenantId, sessionId: appointments.sessionId, scheduledStart: appointments.scheduledStart })
+          .from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+        if (anchor?.sessionId) {
+          const rows = await db
+            .select({ id: appointments.id, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd })
+            .from(appointments)
+            .where(and(
+              eq(appointments.tenantId, anchor.tenantId),
+              eq(appointments.sessionId, anchor.sessionId),
+              eq(appointments.scheduledStart, anchor.scheduledStart),
+              eq(appointments.workflowState, "scheduled"),
+              ne(appointments.id, input.appointmentId),
+            ));
+          for (const row of rows) {
+            await requireApprovedStaffAppointmentAccess(db, ctx.user, row.id);
+            companions.push(row);
+          }
+        }
+      }
       /*
        * Read BEFORE the update, because the whole decision is "did this
        * move to a different day" and afterwards there is nothing left to
@@ -3694,6 +3730,17 @@ const calendarRouter = router({
         scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
         staffId: input.staffId,
       })).where(eq(appointments.id, input.appointmentId));
+      // Each companion keeps its own length and its own groomer; only
+      // the start moves. Done before the notice so one text names them all.
+      for (const row of companions) {
+        const newStart = parseBrisbaneLocalDateTime(input.scheduledStart);
+        const length = new Date(row.scheduledEnd).getTime() - new Date(row.scheduledStart).getTime();
+        await db.update(appointments).set(buildRescheduleUpdate({
+          scheduledStart: newStart,
+          scheduledEnd: new Date(newStart.getTime() + length),
+          staffId: undefined,
+        })).where(and(eq(appointments.id, row.id), eq(appointments.workflowState, "scheduled")));
+      }
       /*
        * Andy, 04/11/2026: "Send auto cancellation and reschedule texts
        * also." Only a change of DAY reaches the client — staff drag
@@ -3707,7 +3754,7 @@ const calendarRouter = router({
       const notice = before
         ? await sendRescheduleNotice(db, input.appointmentId, before.scheduledStart)
         : { sent: false as const, reason: "appointment not found" };
-      return { success: true, notice };
+      return { success: true, notice, movedWith: companions.length };
     }),
 
   updateDetails: operationalProcedure
@@ -3772,7 +3819,12 @@ const calendarRouter = router({
     }),
 
   deleteAppointment: operationalProcedure
-    .input(z.object({ appointmentId: z.number() }))
+    .input(z.object({
+      appointmentId: z.number(),
+      // Just this dog, leaving the others on the booking. Omitted, a
+      // shared booking is deleted whole, as the calendar's Delete does.
+      onlyThisDog: z.boolean().optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
@@ -3791,7 +3843,7 @@ const calendarRouter = router({
             .from(appointments)
             .where(and(eq(appointments.tenantId, target.tenantId), eq(appointments.sessionId, target.sessionId)))
         : [];
-      const appointmentIds = resolveAppointmentDeletionIds(target.id, target.sessionId, sessionRows.map((row) => row.id));
+      const appointmentIds = resolveAppointmentDeletionIds(target.id, target.sessionId, sessionRows.map((row) => row.id), input.onlyThisDog === true);
 
       // Capture all records affected by this action before deletion. The snapshot is
       // retained only in the short-lived, one-use undo window returned to the admin.
@@ -6650,6 +6702,8 @@ const clientsRouter = router({
           notes: appointments.notes,
           staffId: appointments.staffId,
           petId: appointments.petId,
+          // Which rows are the same booking (shared/familyBookingRows.ts).
+          sessionId: appointments.sessionId,
           petName: pets.name,
           petBreed: pets.breed,
           staffName: staff.name,
