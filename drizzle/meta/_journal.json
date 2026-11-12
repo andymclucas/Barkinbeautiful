@@ -1219,6 +1219,20 @@
       "when": 1794380500000,
       "tag": "0173_issue_report_video_chunks",
       "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "5",
+      "when": 1794380600000,
+      "tag": "0174_support_conversations",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "5",
+      "when": 1794380700000,
+      "tag": "0175_support_messages",
+      "breakpoints": true
     }
   ]
 }

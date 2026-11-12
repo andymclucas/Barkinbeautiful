@@ -219,6 +219,7 @@ import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
 import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
 import { counterSaleRouter } from "./routers/counterSale";
 import { issueReportsRouter } from "./routers/issueReports";
+import { supportChatRouter } from "./routers/supportChat";
 import { clipLoadOf } from "@shared/groomerCapacity";
 import { loadCycleWindow } from "./cycleReschedule";
 import { isWithinWindow } from "@shared/cycleRescheduleWindow";
@@ -17073,6 +17074,7 @@ export const appRouter = router({
   retail: retailRouter,
   counterSale: counterSaleRouter,
   issueReports: issueReportsRouter,
+  supportChat: supportChatRouter,
   analytics: analyticsRouter,
   analyticsExt: analyticsRouterExtended,
   migration: migrationRouter,

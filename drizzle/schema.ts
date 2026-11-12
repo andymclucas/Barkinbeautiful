@@ -2279,6 +2279,37 @@ export const issueReports = mysqlTable("issue_reports", {
 
 export type IssueReportRow = typeof issueReports.$inferSelect;
 
+// ─── Support chat (0174, 0175) ────────────────────────────────────────────────
+// The chat bubble on every staff screen. The assistant answers first and a
+// person takes over when asked. The rules are in shared/supportChat.ts.
+export const supportConversations = mysqlTable("support_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  tenantId: int("tenant_id").notNull(),
+  userId: int("user_id").notNull(),
+  userName: varchar("user_name", { length: 255 }),
+  status: mysqlEnum("status", ["ai", "waiting", "human", "closed"]).default("ai").notNull(),
+  pagePath: varchar("page_path", { length: 512 }),
+  humanRequestedAt: timestamp("human_requested_at"),
+  lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
+  /** The newest message id each side has seen, for the unread badges. */
+  userReadMessageId: int("user_read_message_id").default(0).notNull(),
+  agentReadMessageId: int("agent_read_message_id").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_support_conversations_user").on(t.userId, t.status),
+  index("idx_support_conversations_status").on(t.status, t.lastMessageAt),
+]);
+
+export const supportMessages = mysqlTable("support_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversation_id").notNull(),
+  tenantId: int("tenant_id").notNull(),
+  sender: mysqlEnum("sender", ["user", "ai", "human", "system"]).notNull(),
+  senderUserId: int("sender_user_id"),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [index("idx_support_messages_conversation").on(t.conversationId, t.id)]);
+
 // A video attached to a problem report, in pieces of at most 3 MB (0173).
 // No file storage is configured, and one video is bigger than TiDB's
 // per-row limit. See server/issueVideo.ts.

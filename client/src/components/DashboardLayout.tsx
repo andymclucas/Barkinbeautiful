@@ -8,6 +8,8 @@ import { GlobalSearch } from "@/components/GlobalSearch";
 import { SalonSwitcher } from "@/components/SalonSwitcher";
 import SystemNotificationBell from "@/components/SystemNotificationBell";
 import { ReportProblemButton, useReportProblem } from "@/components/ReportProblem";
+import { SupportChat } from "@/components/SupportChat";
+import { canAnswerSupport } from "@shared/supportChat";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { TrialBanner } from "@/components/TrialBanner";
 import {
@@ -58,6 +60,7 @@ import {
   DollarSign,
   MessageSquare,
   MessageSquareWarning,
+  LifeBuoy,
   MessageCircle,
   Mail,
   FileBarChart2,
@@ -191,6 +194,13 @@ const issueReportsMenuItem: NavItem = {
   icon: MessageSquareWarning,
   label: "Problem reports",
   path: "/issues",
+};
+
+/** Groomigo support's inbox for the chat bubble. Support only, like the above. */
+const supportMenuItem: NavItem = {
+  icon: LifeBuoy,
+  label: "Support chats",
+  path: "/support",
 };
 
 const christmasMenuItem: NavItem = {
@@ -403,7 +413,13 @@ function DashboardLayoutContent({
     {},
     { enabled: isOwner, refetchInterval: 60000, refetchOnWindowFocus: true },
   );
+  const isSupport = canAnswerSupport(user ?? null);
+  const { data: supportCounts } = trpc.supportChat.waitingCount.useQuery(
+    undefined,
+    { enabled: isSupport, refetchInterval: 30000, refetchOnWindowFocus: true },
+  );
   const navBadges: Record<string, number> = {
+    "/support": supportCounts?.waiting ?? 0,
     "/messages": counts?.messages ?? 0,
     "/portal-messages": counts?.portalMessages ?? 0,
     "/issues": issueCounts?.open ?? 0,
@@ -476,6 +492,7 @@ function DashboardLayoutContent({
   const visibleMenuItems = [
     ...permittedMenuItems,
     ...(isOwner ? [issueReportsMenuItem] : []),
+    ...(isSupport ? [supportMenuItem] : []),
     ...(inChristmasSeason ? [christmasMenuItem] : []),
   ];
 
@@ -933,6 +950,7 @@ function DashboardLayoutContent({
         <TrialBanner />
         <main className="flex-1 p-4 md:p-6 gm-fade">{children}</main>
       </SidebarInset>
+      <SupportChat />
       {/*
         * My profile.
         *

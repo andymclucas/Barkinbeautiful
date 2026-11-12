@@ -120,6 +120,13 @@ export const UNGATED_NAMESPACES: readonly string[] = [
    */
   "issueReports",
   /*
+   * `supportChat.*` — the support bubble (13/11/2026). Every staff login
+   * may ask for help from any screen. Each staff-side procedure touches
+   * only the caller's own conversation, and the support inbox half is
+   * guarded by canAnswerSupport inside the router.
+   */
+  "supportChat",
+  /*
    * Which salon you are in cannot depend on a permission, for the same
    * reason signing in cannot: the header asks salons.mine on every page
    * load, and a groomer who could not read their own salon list would

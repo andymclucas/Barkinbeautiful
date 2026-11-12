@@ -422,6 +422,13 @@ const OPERATIONAL = [
   "staffRouter.updateBlockout",
   "staffRouter.updateMyPhoto",
   "staffRouter.updateMyProfile",
+  // The support bubble (13/11/2026): every staff login can ask for help.
+  // Each of these reads or writes only the caller's own conversation.
+  "supportChatRouter.close",
+  "supportChatRouter.markRead",
+  "supportChatRouter.mine",
+  "supportChatRouter.requestPerson",
+  "supportChatRouter.send",
   "trialRouter.get",
   // Putting a client on the waitlist, seeing who is waiting and offering
   // a freed slot are salon-floor work — whoever takes the call needs
@@ -587,7 +594,12 @@ describe("tRPC procedure surface", () => {
     // 434 since 12/11/2026: calendar.addRecurrenceOccurrence, in OPERATIONAL.
     // 436 since 12/11/2026: clientPortal.requestSignInLink and redeemSignInLink, in PUBLIC.
     // 437 since 12/11/2026: clientPortal.redeemSignInCode, in PUBLIC.
-    expect(surface).toHaveLength(437);
+    // 447 since 13/11/2026: supportChat, the support bubble. mine, send,
+    // requestPerson, markRead and close are in OPERATIONAL (each touches
+    // only the caller's own conversation); waitingCount, inbox, thread,
+    // reply and closeThread are protectedProcedure AND canAnswerSupport
+    // inside, Groomigo support only.
+    expect(surface).toHaveLength(447);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -662,7 +674,9 @@ describe("tRPC procedure surface", () => {
      */
     // 158 since 12/11/2026: calendar.addRecurrenceOccurrence — book one
     // skipped date of a repeat, staff-facing like the rest of the calendar.
-    expect(OPERATIONAL).toHaveLength(158);
+    // 163 since 13/11/2026: the staff half of supportChat. Every staff
+    // login can ask for help; the server keys each one to ctx.user.id.
+    expect(OPERATIONAL).toHaveLength(163);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
