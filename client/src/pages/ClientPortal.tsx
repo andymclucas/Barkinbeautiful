@@ -6,7 +6,7 @@ import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE, PORTAL_PERSON_REQUEST } from "@shared/portalChat";
-import { GuapoAvatar } from "@/components/GuapoAvatar";
+import { BruceAvatar } from "@/components/BruceAvatar";
 import { sortBookingsForBucket } from "@shared/bookingBuckets";
 import { clientFacingStage, isGroomInProgress, stageIcon, stageColourFor } from "@shared/groomingStage";
 import { GroomProgressBar } from "@/components/GroomProgressBar";
@@ -238,10 +238,10 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
         >
           <header className="flex shrink-0 items-center justify-between gap-2 bg-gradient-to-br from-violet-700 to-violet-500 px-4 py-3 text-white">
             <div className="flex min-w-0 items-center gap-2.5">
-              <GuapoAvatar size={36} />
+              <BruceAvatar size={36} />
               <div className="min-w-0">
-                <p className="text-sm font-bold">Guapo · Barkin&apos; Beautiful</p>
-                <p className="text-[11px] opacity-85">Ask Guapo, or talk to the team. We reply during salon hours.</p>
+                <p className="text-sm font-bold">Bruce · Barkin&apos; Beautiful</p>
+                <p className="text-[11px] opacity-85">Ask Bruce, or talk to the team. We reply during salon hours.</p>
               </div>
             </div>
             <Button
@@ -257,11 +257,11 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
           <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain bg-muted/30 p-3">
             {/* Shown, never stored — see the note above the component. */}
             <div className="flex items-end justify-start gap-1.5">
-              <GuapoAvatar size={26} />
+              <BruceAvatar size={26} />
               <div className="max-w-[85%] rounded-2xl border bg-card px-3.5 py-2 text-sm">
-                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">Guapo</p>
+                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">Bruce</p>
                 <p className="leading-relaxed">
-                  Hola{clientFirstName ? ` ${clientFirstName}` : ""}, I&rsquo;m Guapo! How can I help you today?
+                  Hi{clientFirstName ? ` ${clientFirstName}` : ""}, I&rsquo;m Bruce, your AI amigo! How can I help you today?
                 </p>
               </div>
             </div>
@@ -269,11 +269,11 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
               const mine = m.sender === "client";
               return (
                 <div key={m.id} className={`flex items-end gap-1.5 ${mine ? "justify-end" : "justify-start"}`}>
-                  {m.sender === "assistant" && <GuapoAvatar size={26} />}
+                  {m.sender === "assistant" && <BruceAvatar size={26} />}
                   <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "border bg-card"}`}>
                     {!mine && (
                       <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">
-                        {m.sender === "assistant" ? "Guapo" : (m.staffName ?? "Barkin' Beautiful")}
+                        {m.sender === "assistant" ? "Bruce" : (m.staffName ?? "Barkin' Beautiful")}
                       </p>
                     )}
                     <p className="whitespace-pre-wrap leading-relaxed">{m.body}</p>
@@ -283,7 +283,7 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
               );
             })}
             {send.isPending && (
-              <p className="px-1 text-xs text-muted-foreground">Guapo is typing…</p>
+              <p className="px-1 text-xs text-muted-foreground">Bruce is typing…</p>
             )}
           </div>
 
@@ -317,7 +317,7 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
         aria-label={open ? "Close chat" : "Message the salon"}
         className="fixed bottom-6 right-4 z-50 h-14 w-14 rounded-full p-0 shadow-xl sm:right-6"
       >
-        {open ? <X className="h-6 w-6" /> : <GuapoAvatar size={56} className="rounded-full" />}
+        {open ? <X className="h-6 w-6" /> : <BruceAvatar size={56} className="rounded-full" />}
         {!open && unread > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-bold text-destructive-foreground">
             {unread}

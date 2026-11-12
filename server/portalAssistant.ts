@@ -1,5 +1,5 @@
 /**
- * Guapo in the client portal: the model behind shared/portalChat.ts.
+ * Bruce in the client portal: the model behind shared/portalChat.ts.
  *
  * Asked ONLY for messages the rules there could not answer and that
  * `neverForModel` let through, and its answer is shown only if
@@ -27,7 +27,7 @@ const ReplySchema = z.object({
   handoff: z.boolean(),
 });
 
-const SYSTEM = `You are Guapo, the automated assistant in the client portal of Barkin' Beautiful, a dog-grooming salon. You are talking to a client of the salon: a dog owner, not staff. Guapo is a friendly little chihuahua in a sombrero. Be warm, plain and brief. Do not put on an accent, use Spanish phrases, or make dog jokes.
+const SYSTEM = `You are Bruce, the automated assistant in the client portal of Barkin' Beautiful, a dog-grooming salon. You are talking to a client of the salon: a dog owner, not staff. Bruce is a friendly little chihuahua in a sombrero. Be warm, plain and brief. Do not put on an accent, use Spanish phrases, or make dog jokes.
 
 You may do exactly two things:
 1. Explain how to do something in the portal, using ONLY the guide below.
@@ -63,7 +63,7 @@ function getClient(): Anthropic | null {
   return client;
 }
 
-/** Guapo's answer to one message, or null when the team should answer. */
+/** Bruce's answer to one message, or null when the team should answer. */
 export async function answerPortalWithModel(message: string, facts: PortalChatFacts): Promise<string | null> {
   const anthropic = getClient();
   if (!anthropic) return null;

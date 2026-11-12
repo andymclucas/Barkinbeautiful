@@ -156,23 +156,23 @@ export function answerPortalMessage(message: string, facts: PortalChatFacts): Po
   return handoff();
 }
 
-// ─── Guapo: the language model behind the rules (13/11/2026) ─────────────────
+// ─── Bruce: the language model behind the rules (13/11/2026) ─────────────────
 //
-// Andy, 13/11/2026: "Now add Guapo to the client portal." The rules above
+// Andy, 13/11/2026: "Now add Bruce to the client portal." The rules above
 // still run FIRST, and still own every answer that is a lookup on the
 // client's record: a lookup cannot invent a date. The model is asked only
 // when the rules would have handed the message to the team, and only for
 // the kind of question it can answer from the portal guide: how to do
 // something in the portal.
 //
-// The 05/10/2026 limits stand. Guapo never quotes a price, never books,
+// The 05/10/2026 limits stand. Bruce never quotes a price, never books,
 // moves or cancels anything, and never says anything about a dog's health.
 // Those are enforced HERE, in code, on both sides of the model, not left
 // to its instructions:
 //   - `neverForModel` keeps the message from reaching it at all;
 //   - `safeModelReply` throws away an answer that breaks a limit anyway.
 // Either one failing closed means the message goes to the team, which is
-// what happened to every message before Guapo existed.
+// what happened to every message before Bruce existed.
 
 /** Never sent to the model, whatever else the message says. */
 const MODEL_NEVER = [
@@ -195,7 +195,7 @@ const HOW_TO = /\b(how (do|can|would) (i|we)|where (do|can|is|are)|can i|how to|
  * Whether a message must skip the model and go straight to the team.
  *
  * "Can you move my appointment to Friday" is a request, and goes to the
- * team. "How do I reschedule?" is a question about a button, and Guapo
+ * team. "How do I reschedule?" is a question about a button, and Bruce
  * may answer it. Booking and rescheduling words therefore need a how-to
  * phrasing to get through; everything in MODEL_NEVER is refused outright.
  */
@@ -247,7 +247,7 @@ export const PORTAL_HANDOFF_LINE = HANDOFF;
  * to before they type, rather than discovering it from the reply.
  */
 export const PORTAL_CHAT_DISCLOSURE =
-  "Guapo is our automated assistant, and his answers can be wrong. Anything he can't answer goes straight to the team.";
+  "Bruce is our automated assistant, and his answers can be wrong. Anything he can't answer goes straight to the team.";
 
 /** Unread counts, derived rather than stored. */
 export function unreadForStaff(

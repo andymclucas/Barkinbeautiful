@@ -1,22 +1,24 @@
 /**
- * Guapo, the support assistant's face: a little chihuahua in a sombrero.
+ * Bruce, the support assistant's face: a little chihuahua in a sombrero.
  *
  * Andy, 13/11/2026: "have a little mexican dog wearing a sombrero as the
- * chat bot ID. His name can be Guapo."
+ * chat bot ID." He was first called Guapo; later the same day Andy
+ * renamed him: "Change Guapo's name to Bruce but start the chat with
+ * 'Hi, I'm Bruce, your AI amigo!'"
  *
  * Drawn inline rather than loaded as an image so it is crisp at 24px
  * beside a message and at 48px on the bubble, and costs no request.
  * The colours are fixed on purpose: he is a character, not an icon, and
  * should look the same in light, dark and the Christmas theme.
  */
-export function GuapoAvatar({ size = 32, className = "" }: { size?: number; className?: string }) {
+export function BruceAvatar({ size = 32, className = "" }: { size?: number; className?: string }) {
   return (
     <svg
       viewBox="0 0 64 64"
       width={size}
       height={size}
       role="img"
-      aria-label="Guapo"
+      aria-label="Bruce"
       className={`shrink-0 ${className}`}
     >
       <circle cx="32" cy="32" r="32" fill="#FFE8C2" />
