@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { LockKeyhole, Mail, PawPrint } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -18,6 +18,11 @@ export default function ClientPortalLogin() {
   const login = trpc.clientPortal.login.useMutation({
     onSuccess: () => navigate("/portal"),
   });
+  // Already signed in on this device: the sign-in page is a detour.
+  const session = trpc.clientPortal.me.useQuery(undefined, { retry: false });
+  useEffect(() => {
+    if (session.data) navigate("/portal", { replace: true });
+  }, [session.data, navigate]);
   /*
    * Forgot password (Andy, 12/11/2026). The server answers the same
    * whatever the address, so the page only ever shows that answer.
