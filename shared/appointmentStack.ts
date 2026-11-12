@@ -37,6 +37,14 @@ export type StackCandidate = {
   id: number;
   startMs: number;
   endMs: number;
+  /**
+   * Cancelled or a no-show. Lauren, 12/11/2026, with Ruby's cancelled
+   * groom listed among five: "can cancelled dogs not show up here.. its
+   * annoying." Andy: "Only show the confirmed ones." A dog that is not
+   * coming is never offered in the stack and never counted in it; its
+   * own card, tapped, opens that booking directly.
+   */
+  notComing?: boolean;
 };
 
 /** The span a card actually occupies on the board. */
@@ -58,13 +66,13 @@ export function appointmentStack(
   targetId: number,
 ): StackCandidate[] {
   const target = items.find((item) => item.id === targetId);
-  if (!target) return [];
+  if (!target || target.notComing) return [];
 
   const targetEnd = drawnEnd(target);
   const stack = items.filter(
     (item) =>
       item.id === targetId ||
-      (item.startMs < targetEnd && target.startMs < drawnEnd(item)),
+      (!item.notComing && item.startMs < targetEnd && target.startMs < drawnEnd(item)),
   );
 
   if (stack.length < 2) return [];

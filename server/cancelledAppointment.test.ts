@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  isNotComing,
   isCancelledAppointment,
   preservesOriginalSchedule,
   canDragAppointment,
@@ -27,6 +28,22 @@ describe("isCancelledAppointment", () => {
     expect(isCancelledAppointment({})).toBe(false);
     expect(isCancelledAppointment(null)).toBe(false);
     expect(isCancelledAppointment(undefined)).toBe(false);
+  });
+});
+
+describe("isNotComing", () => {
+  it("is true for a cancelled dog and a no-show, by either column", () => {
+    expect(isNotComing({ status: "cancelled" })).toBe(true);
+    expect(isNotComing({ workflowState: "cancelled" })).toBe(true);
+    expect(isNotComing({ status: "no_show" })).toBe(true);
+    expect(isNotComing({ status: "confirmed", workflowState: "no_show" })).toBe(true);
+  });
+
+  it("is false for a dog on its way, at the salon or done", () => {
+    expect(isNotComing({ status: "confirmed", workflowState: "scheduled" })).toBe(false);
+    expect(isNotComing({ status: "pending", workflowState: "checked_in" })).toBe(false);
+    expect(isNotComing({ status: "confirmed", workflowState: "complete" })).toBe(false);
+    expect(isNotComing(null)).toBe(false);
   });
 });
 
@@ -91,6 +108,8 @@ describe("the rule has one copy", () => {
     // cancelled, and the server would refuse the repeat.
     // The import carries no paren so it does not count.
     expect(calendar.split("isCancelledAppointment(").length - 1).toBe(9);
+    // The stack picker's list asks the wider "not coming" question, once.
+    expect(calendar.split("isNotComing(").length - 1).toBe(1);
     expect(calendar).toContain("preservesOriginalSchedule(editAppt, editForm.workflowState)");
   });
 });

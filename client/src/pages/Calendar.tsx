@@ -134,7 +134,7 @@ import { annotateSlots, blockingClashes, busyFromRows, clashesFor, concurrentDog
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
 import { familyRescheduleCalls } from "@shared/familyGroomerSave";
-import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
+import { isCancelledAppointment, isNotComing, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
 import {
   bookingAttendance, describeRemoval, describeAttendance,
   wholeBookingCancellation, describeWholeBookingCancellation,
@@ -3653,6 +3653,8 @@ export default function Calendar() {
                       id: a.id,
                       startMs: new Date(a.scheduledStart).getTime(),
                       endMs: new Date(a.scheduledEnd).getTime(),
+                      // Left out of the picker and its count (shared/appointmentStack.ts).
+                      notComing: isNotComing(a),
                     }));
                     return computeColumns(displayAppts).map(({ appt, col, totalCols }) => {
                       const cascaded = overlapPlacement({
