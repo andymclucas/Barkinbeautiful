@@ -156,12 +156,98 @@ export function answerPortalMessage(message: string, facts: PortalChatFacts): Po
   return handoff();
 }
 
+// ─── Guapo: the language model behind the rules (13/11/2026) ─────────────────
+//
+// Andy, 13/11/2026: "Now add Guapo to the client portal." The rules above
+// still run FIRST, and still own every answer that is a lookup on the
+// client's record: a lookup cannot invent a date. The model is asked only
+// when the rules would have handed the message to the team, and only for
+// the kind of question it can answer from the portal guide: how to do
+// something in the portal.
+//
+// The 05/10/2026 limits stand. Guapo never quotes a price, never books,
+// moves or cancels anything, and never says anything about a dog's health.
+// Those are enforced HERE, in code, on both sides of the model, not left
+// to its instructions:
+//   - `neverForModel` keeps the message from reaching it at all;
+//   - `safeModelReply` throws away an answer that breaks a limit anyway.
+// Either one failing closed means the message goes to the team, which is
+// what happened to every message before Guapo existed.
+
+/** Never sent to the model, whatever else the message says. */
+const MODEL_NEVER = [
+  // what something costs, or money back
+  "price", "cost", "how much", "quote", "charge", "refund", "discount", "owe",
+  // asking us to change the diary (how-to questions about the Reschedule
+  // button are let through; see HOW_TO below)
+  "cancel", "squeeze", "fit me in", "fit us in",
+  // anything health related
+  "sick", "unwell", "vet", "injur", "hurt", "bleed", "limp", "rash", "itch", "lump", "wound",
+  "medication", "allerg", "flea", "tick", "anxious", "aggressive", "bite",
+  // complaints
+  "complain", "unhappy", "disappointed", "wrong", "damage",
+];
+
+/** Phrasings that ask HOW to do something rather than asking us to do it. */
+const HOW_TO = /\b(how (do|can|would) (i|we)|where (do|can|is|are)|can i|how to|is there a way)\b/;
+
+/**
+ * Whether a message must skip the model and go straight to the team.
+ *
+ * "Can you move my appointment to Friday" is a request, and goes to the
+ * team. "How do I reschedule?" is a question about a button, and Guapo
+ * may answer it. Booking and rescheduling words therefore need a how-to
+ * phrasing to get through; everything in MODEL_NEVER is refused outright.
+ */
+export function neverForModel(message: string): boolean {
+  const text = message.toLowerCase();
+  if (has(text, MODEL_NEVER)) return true;
+  const changesDiary = has(text, ["reschedule", "move my", "change my appointment", "book", "booking in"]);
+  return changesDiary && !HOW_TO.test(text);
+}
+
+/**
+ * Whether the model should be tried for this message, given what the
+ * rules made of it.
+ *
+ * Always when the rules gave up. Also when the message is a how-to
+ * question that tripped one of the two loose keyword rules: "how do I
+ * sign in on my phone" contains "phone", and the contact rule would
+ * answer it with the salon's number. The lookups on the client's own
+ * record are never overridden.
+ */
+export function offerToModel(message: string, ruleIntent: PortalChatIntent): boolean {
+  if (neverForModel(message)) return false;
+  if (ruleIntent === "needs_human") return true;
+  return (ruleIntent === "contact" || ruleIntent === "hours") && HOW_TO.test(message.toLowerCase());
+}
+
+/**
+ * The model's answer, or null when it must not be shown.
+ *
+ * A dollar figure is a quote. A promise to do something is a booking
+ * nobody made. Both go to the team instead.
+ */
+export function safeModelReply(reply: string): string | null {
+  const text = reply.trim();
+  if (!text || text.length > 1200) return null;
+  if (/\$\s?\d/.test(text) || /\b\d+(\.\d{2})?\s?dollars\b/i.test(text)) return null;
+  if (/\b(i have|i've|i will|i'll) (booked|moved|cancelled|canceled|rescheduled|changed|refunded|charged|book|move|cancel|reschedule|change|refund|charge)\b/i.test(text)) return null;
+  return text;
+}
+
+/** What the "Talk to a person" button sends. Never shown to the model. */
+export const PORTAL_PERSON_REQUEST = "I'd like to talk to a person, please.";
+
+/** The handoff line, for callers that hand off without the rules. */
+export const PORTAL_HANDOFF_LINE = HANDOFF;
+
 /**
  * The line shown under the composer so a client knows what they are talking
  * to before they type, rather than discovering it from the reply.
  */
 export const PORTAL_CHAT_DISCLOSURE =
-  "Replies marked “Assistant” are automated. Anything we can't answer goes straight to the team.";
+  "Guapo is our automated assistant, and his answers can be wrong. Anything he can't answer goes straight to the team.";
 
 /** Unread counts, derived rather than stored. */
 export function unreadForStaff(

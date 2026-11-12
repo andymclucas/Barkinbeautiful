@@ -86,7 +86,9 @@ import { outstandingForInvoice } from "./invoicePaymentPosting";
 import { isMoegoInvoice, portalInvoicePayable } from "@shared/portalInvoicePay";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { CLIENT_PORTAL_ACCESS_TTL_MS, clientPortalLinkRenewal, createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
-import { answerPortalMessage, unreadForClient, unreadForStaff, type PortalChatFacts } from "../shared/portalChat";
+import { answerPortalMessage, offerToModel, PORTAL_HANDOFF_LINE, unreadForClient, unreadForStaff, type PortalChatFacts, type PortalChatReply } from "../shared/portalChat";
+import { asksForPerson } from "../shared/supportChat";
+import { answerPortalWithModel } from "./portalAssistant";
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
 import { groomQuotesRouter } from "./routers/groomQuotes";
@@ -17031,7 +17033,12 @@ const clientPortalRouter = router({
     }),
 
   sendChatMessage: publicProcedure
-    .input(z.object({ token: z.string().optional(), body: z.string().trim().min(1).max(2000) }))
+    .input(z.object({
+      token: z.string().optional(),
+      body: z.string().trim().min(1).max(2000),
+      // The "Talk to a person" button: straight to the team, no assistant.
+      wantsPerson: z.boolean().optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
@@ -17089,7 +17096,22 @@ const clientPortalRouter = router({
         openingHoursLabel: null,
       };
 
-      const reply = answerPortalMessage(input.body, facts);
+      /*
+       * The rules first, always: they own every answer that is a lookup.
+       * Guapo's model is asked only when they would have handed the
+       * message to the team, the message is one it is allowed to see,
+       * and nobody asked for a person. Its answer has already been
+       * through safeModelReply; null means the team answers, as before.
+       * See shared/portalChat.ts.
+       */
+      const wantsPerson = input.wantsPerson === true || asksForPerson(input.body);
+      let reply: PortalChatReply = wantsPerson
+        ? { body: PORTAL_HANDOFF_LINE, handedOff: true, intent: "needs_human" }
+        : answerPortalMessage(input.body, facts);
+      if (!wantsPerson && offerToModel(input.body, reply.intent)) {
+        const fromModel = await answerPortalWithModel(input.body, facts);
+        if (fromModel) reply = { body: fromModel, handedOff: false, intent: "needs_human" };
+      }
       await db.insert(portalMessages).values({
         tenantId, threadId: thread.id, sender: "assistant", body: reply.body, handedOff: reply.handedOff,
       });
