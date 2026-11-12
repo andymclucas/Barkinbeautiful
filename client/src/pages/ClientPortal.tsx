@@ -844,6 +844,14 @@ export default function ClientPortal() {
   const tokenPortal = trpc.clientPortal.getPortal.useQuery({ token: token ?? "" }, { enabled: Boolean(token) && !isPreview, retry: false, refetchInterval: livePolling });
   const accountPortal = trpc.clientPortal.getMyPortal.useQuery(undefined, { enabled: !token && !isPreview, retry: false, refetchInterval: livePolling });
   const logout = trpc.clientPortal.logout.useMutation({ onSuccess: () => navigate("/portal/login") });
+  // An expired access link on a phone that is still signed in opens the
+  // portal from the session rather than a dead end (12/11/2026, see
+  // ClientPortalSetup for why).
+  const tokenFailed = Boolean(token) && !isPreview && Boolean(tokenPortal.error);
+  const fallbackSession = trpc.clientPortal.me.useQuery(undefined, { enabled: tokenFailed, retry: false });
+  useEffect(() => {
+    if (tokenFailed && fallbackSession.data) navigate("/portal", { replace: true });
+  }, [tokenFailed, fallbackSession.data, navigate]);
   const data = (isPreview ? preview.data : token ? tokenPortal.data : accountPortal.data) as PortalData | undefined;
   const isLoading = isPreview ? preview.isLoading : token ? tokenPortal.isLoading : accountPortal.isLoading;
   const error = isPreview ? preview.error : token ? tokenPortal.error : accountPortal.error;
@@ -894,7 +902,7 @@ export default function ClientPortal() {
   });
   const signAgreements = trpc.clientPortal.signMyAgreements.useMutation({ onSuccess: () => refetch() });
 
-  if (isLoading) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 p-6"><div className="mx-auto max-w-4xl animate-pulse space-y-5"><div className="h-24 rounded-2xl bg-muted" /><div className="grid gap-4 sm:grid-cols-3">{[1, 2, 3].map(item => <div key={item} className="h-32 rounded-xl bg-muted" />)}</div></div></main>;
+  if (isLoading || (tokenFailed && (fallbackSession.isLoading || fallbackSession.data))) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 p-6"><div className="mx-auto max-w-4xl animate-pulse space-y-5"><div className="h-24 rounded-2xl bg-muted" /><div className="grid gap-4 sm:grid-cols-3">{[1, 2, 3].map(item => <div key={item} className="h-32 rounded-xl bg-muted" />)}</div></div></main>;
   if (error || !data) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 grid place-items-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>{token ? "Portal link unavailable" : "Client sign in required"}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{clientFacingPortalError(error?.message, Boolean(token))}</p>{token && <p className="text-sm font-medium">Already set a password? Sign in with your email and password instead.</p>}<Button onClick={() => navigate("/portal/login")}>Go to client sign in</Button></CardContent></Card></main>;
 
   /*

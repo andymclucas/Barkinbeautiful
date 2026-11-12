@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { ShieldCheck } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -17,8 +17,26 @@ export default function ClientPortalSetup() {
   const [, navigate] = useLocation();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const { data, isLoading, error } = trpc.clientPortal.getSetup.useQuery({ token: token ?? "" }, { enabled: Boolean(token) });
+  const { data, isLoading, error } = trpc.clientPortal.getSetup.useQuery({ token: token ?? "" }, {
+    enabled: Boolean(token),
+    // A used or expired link never comes good; three retries with backoff
+    // left clients on "Checking your setup link…" for about eight seconds.
+    retry: false,
+  });
   const completeSetup = trpc.clientPortal.completeSetup.useMutation({ onSuccess: () => navigate("/portal") });
+  /*
+   * Lauren, 12/11/2026: "Basically everyone we sent out the portal are
+   * coming back cause they can't get back into their portal." They open
+   * the setup email again, and a setup link only works once. But the
+   * phone they set up on is still signed in — the session lasts 30 days —
+   * so a used link takes them straight into their portal instead.
+   * Asked only once the link has failed: a live reset link must still
+   * show the password form, signed in or not.
+   */
+  const session = trpc.clientPortal.me.useQuery(undefined, { enabled: Boolean(error), retry: false });
+  useEffect(() => {
+    if (error && session.data) navigate("/portal", { replace: true });
+  }, [error, session.data, navigate]);
   /*
    * The service agreement is step one, before the password (Andy,
    * 11/11/2026). Signing does not use the setup link up, so a client who
@@ -34,7 +52,7 @@ export default function ClientPortalSetup() {
     completeSetup.mutate({ token: token ?? "", password });
   };
 
-  if (isLoading) return <main className="grid min-h-screen place-items-center bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 p-6"><Card className="w-full max-w-md"><CardContent className="p-6 text-sm text-muted-foreground">Checking your setup link…</CardContent></Card></main>;
+  if (isLoading || (error && (session.isLoading || session.data))) return <main className="grid min-h-screen place-items-center bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 p-6"><Card className="w-full max-w-md"><CardContent className="p-6 text-sm text-muted-foreground">Checking your setup link…</CardContent></Card></main>;
   if (error || !data) return <main className="grid min-h-screen place-items-center bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 p-6"><Card className="w-full max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>Setup link unavailable</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{error?.message ?? "Please ask the salon for a new client portal setup link."}</p>{/* Andy, 12/11/2026: a client who had already activated came back to this link and could not see how to get in. A used link is gone; her password is not. */}<p className="text-sm font-medium">Already set your password? Sign in with your email and password — setup links only work once.</p><Button onClick={() => navigate("/portal/login")}>Go to client sign in</Button></CardContent></Card></main>;
 
   const passwordsMatch = password === confirmPassword;
