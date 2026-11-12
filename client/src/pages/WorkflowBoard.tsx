@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { VipMark } from "@/components/VipMark";
 import { PetCodeWarningBox } from "@/components/PetCodeWarningBox";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
 import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCascade";
@@ -187,6 +188,8 @@ export default function WorkflowBoard() {
     groomStyleNote?: string | null;
     /** The dog's codes as stored, for the red Warnings box. */
     petMoegoCodeLabels?: string | null;
+    /** On an active plan — the VIP badge beside the name. */
+    isVipMember?: boolean;
   }>(null);
   const [editingNotes, setEditingNotes] = useState<string>("");
   const [savingNotes, setSavingNotes] = useState(false);
@@ -1189,6 +1192,7 @@ export default function WorkflowBoard() {
                 <h3 className="text-lg font-bold flex items-center gap-2">
                   <Dog className="h-5 w-5 text-primary" />
                   {petPopup.petName}
+                  {petPopup.isVipMember && <VipMark />}
                 </h3>
                 {petPopup.petBreed && <p className="text-sm text-muted-foreground">{petPopup.petBreed}</p>}
               </div>

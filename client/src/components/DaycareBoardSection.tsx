@@ -1,4 +1,5 @@
 import { Sun, LogIn, LogOut, AlertTriangle } from "lucide-react";
+import { VipMark } from "@/components/VipMark";
 import { fmtTime } from "@/components/WorkflowBoardTable";
 import { PetCodeChips } from "@/components/PetCodeChips";
 import { daycarePresence, daycareTimes, overdueForCollection } from "@shared/daycareBoard";
@@ -32,6 +33,8 @@ export type DaycareRow = {
   /** Epoch milliseconds from the board query, not a Date. */
   checkedInAt?: Date | string | number | null;
   notes?: string | null;
+  /** On an active plan (workflow.getBoard). */
+  isVipMember?: boolean;
 };
 
 export function DaycareBoardSection({
@@ -92,6 +95,7 @@ export function DaycareBoardSection({
               <div className="min-w-[8rem] flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-semibold">{row.petName ?? "Dog"}</span>
+                  {row.isVipMember && <VipMark />}
                   {presence === "here" && (
                     <span className="rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-semibold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
                       here

@@ -25,6 +25,7 @@ import { router, operationalProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { appointments, clients, pets } from "../../drizzle/schema";
 import { requireApprovedStaffTenant } from "../staffAccess";
+import { loadVipMembers } from "../vipMembers";
 import {
   appointmentHref, capPerKind, looksLikePhone, normalisePhone, rankHits, type SearchHit,
 } from "@shared/globalSearch";
@@ -60,6 +61,7 @@ export const searchRouter = router({
       const phoneSearch = looksLikePhone(q) && digits.length >= 3;
       const wanted = new Set(input.kinds ?? ["pet", "client", "appointment"]);
       const hits: SearchHit[] = [];
+      const apptOwner = new Map<number, { petId: number | null; clientId: number | null }>();
 
       // ── Clients ────────────────────────────────────────────────────
       // A phone typed with spaces must match a phone stored without
@@ -169,6 +171,8 @@ export const searchRouter = router({
           .select({
             id: appointments.id,
             workflowState: appointments.workflowState,
+            petId: appointments.petId,
+            clientId: appointments.clientId,
             petName: pets.name,
             clientFirst: clients.firstName,
             clientLast: clients.lastName,
@@ -200,6 +204,7 @@ export const searchRouter = router({
             href: appointmentHref(a.workflowState, a.day),
             workflowState: a.workflowState,
           });
+          apptOwner.set(a.id, { petId: a.petId, clientId: a.clientId });
         }
       }
 
@@ -217,6 +222,18 @@ export const searchRouter = router({
         client: wanted.has("client") ? 4 : 0,
         appointment: wanted.has("appointment") ? 4 : 0,
       };
-      return capPerKind(rankHits(hits, q), caps, input.limit);
+      const shown = capPerKind(rankHits(hits, q), caps, input.limit);
+      // The VIP badge on members (server/vipMembers.ts): a client with an
+      // active plan, a dog on one, and an appointment's dog or owner.
+      const vip = await loadVipMembers(db, tenantId, {
+        clientIds: shown.flatMap((h) => h.kind === "client" ? [h.id] : h.kind === "appointment" ? [apptOwner.get(h.id)?.clientId] : []),
+        petIds: shown.flatMap((h) => h.kind === "pet" ? [h.id] : h.kind === "client" ? (h.dogs ?? []).map((d) => d.id) : h.kind === "appointment" ? [apptOwner.get(h.id)?.petId] : []),
+      });
+      return shown.map((h) => {
+        if (h.kind === "client") return { ...h, vip: vip.clients.has(h.id), dogs: (h.dogs ?? []).map((d) => ({ ...d, vip: vip.pets.has(d.id) })) };
+        if (h.kind === "pet") return { ...h, vip: vip.pets.has(h.id) };
+        const owner = apptOwner.get(h.id);
+        return { ...h, vip: Boolean(owner?.petId && vip.pets.has(owner.petId)) };
+      });
     }),
 });

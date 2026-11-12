@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { VipMark } from "@/components/VipMark";
 import { trpc } from "@/lib/trpc";
 import { isPetCurrent } from "@shared/petArchive";
 import {
@@ -361,6 +362,8 @@ export function WaitlistPanel() {
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1 leading-7">
                       <ClientLink clientId={e.clientId} className="font-medium">{e.clientName}</ClientLink>
+                      {/* VIP on every member (Andy, 12/11/2026). */}
+                      {e.clientIsVip && <VipMark className="ml-1.5" />}
                       <span className="text-muted-foreground"> · <PetLink clientId={e.clientId} petId={e.petId}>{e.petName}</PetLink></span>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">

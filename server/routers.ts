@@ -107,6 +107,7 @@ import { initialMembershipStatus } from "../shared/membershipInitialStatus";
 import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
 import { cleanPlanFields } from "../shared/membershipPlanFields";
 import { portalAllSetEmail } from "../shared/portalAllSetEmail";
+import { loadVipMembers } from "./vipMembers";
 import {
   RESET_REQUESTED_MESSAGE, SELF_RESET_TTL_MS, ipRequestAllowed, portalPasswordResetEmail, resetEmailAllowed,
 } from "../shared/portalPasswordReset";
@@ -1485,8 +1486,13 @@ const calendarRouter = router({
         Object.assign(lastAppointmentMap, resolveLastAppointmentDates(priorAppointments));
       }
 
+      // petIsVip: the dog is on an active plan — a PROFILE fact for the
+      // booking dialog's header. The card's VIP stays membershipId
+      // ("this groom is covered"), see shared/membershipMark.ts.
+      const vip = await loadVipMembers(db, tenantOf(ctx, input), { petIds: rows.map(r => r.petId) });
       return rows.map(r => ({
         ...r,
+        petIsVip: r.petId !== null && vip.pets.has(r.petId),
         nextAppointmentDate: r.petId !== null ? nextVisitAfter(r.scheduledStart, laterByPet[r.petId] ?? [], brisbaneDateKey) : null,
         lastAppointmentDate: r.petId !== null ? (lastAppointmentMap[r.petId] ?? null) : null,
         reminderStatus: reminderStatusByAppointment[r.id] ?? (r.reminderSentAt ? "sent" : null),
@@ -3998,9 +4004,10 @@ const workflowRouter = router({
       // disagreed with both the calendar and the workflow board, which use the
       // Brisbane day. brisbaneDayRange() is the same boundary getBoard uses.
       const { start: today, endExclusive: tomorrow } = brisbaneDayRange();
-      return db
+      const todayRows = await db
         .select({
           id: appointments.id,
+          petId: appointments.petId,
           workflowState: appointments.workflowState,
           scheduledStart: appointments.scheduledStart,
           estimatedPickupAt: appointments.estimatedPickupAt,
@@ -4023,6 +4030,9 @@ const workflowRouter = router({
           lte(appointments.scheduledStart, tomorrow),
         ))
         .orderBy(asc(appointments.scheduledStart));
+      // VIP beside member dogs on the dashboard (server/vipMembers.ts).
+      const vip = await loadVipMembers(db, tenantOf(ctx, input), { petIds: todayRows.map((r) => r.petId) });
+      return todayRows.map((r) => ({ ...r, isVipMember: r.petId !== null && vip.pets.has(r.petId) }));
     }),
 
   getBoard: operationalProcedure
@@ -5151,9 +5161,11 @@ const clientsRouter = router({
         .where(and(eq(pets.tenantId, tenantId), inArray(pets.id, top.map((p: OverduePet) => p.petId))));
       const byPet = new Map(detail.map((d) => [d.petId, d]));
 
+      // A member dog overdue is worth seeing: their rebook was meant to be automatic.
+      const vip = await loadVipMembers(db, tenantId, { petIds: top.map((p: OverduePet) => p.petId) });
       return {
         total: overdue.length,
-        pets: top.map((p: OverduePet) => ({ ...p, ...(byPet.get(p.petId) ?? {}) })),
+        pets: top.map((p: OverduePet) => ({ ...p, ...(byPet.get(p.petId) ?? {}), isVipMember: vip.pets.has(p.petId) })),
       };
     }),
 
@@ -6858,7 +6870,11 @@ const petsRouter = router({
       // Archived dogs are left out: this list feeds the booking dialogs,
       // and an archived dog is one nobody should be offered. See
       // shared/petArchive.ts. Departed dogs stay, struck through.
-      return db.select().from(pets).where(and(eq(pets.clientId, input.clientId), ne(pets.status, "archived")));
+      const rows = await db.select().from(pets).where(and(eq(pets.clientId, input.clientId), ne(pets.status, "archived")));
+      // isVip: on an active plan, including the second dog on an x2 plan.
+      const tenantId = rows[0]?.tenantId;
+      const vip = tenantId ? await loadVipMembers(db, tenantId, { petIds: rows.map((p) => p.id) }) : { pets: new Set<number>() };
+      return rows.map((p) => ({ ...p, isVip: vip.pets.has(p.id) }));
     }),
 
   /**
@@ -8322,7 +8338,12 @@ const staffRouter = router({
         .orderBy(asc(appointments.scheduledStart));
       // A restricted staff account reading its own record. Their target is
       // not theirs to see either — owner only, as asked.
-      return { staff: withoutRevenueTarget(member), appointments: todaysAppointments };
+      const vip = await loadVipMembers(db, member.tenantId, { petIds: todaysAppointments.map((a) => a.petId) });
+      return {
+        staff: withoutRevenueTarget(member),
+        // VIP beside member dogs in the groomer's own list.
+        appointments: todaysAppointments.map((a) => ({ ...a, isVipMember: a.petId !== null && vip.pets.has(a.petId) })),
+      };
     }),
 
   getTimesheets: protectedProcedure
@@ -9433,7 +9454,9 @@ const membershipsRouter = router({
         ))
         .orderBy(asc(clients.firstName))
         .limit(30);
-      return rows;
+      // VIP on members in every picker this feeds (server/vipMembers.ts).
+      const vip = await loadVipMembers(db, tenantId, { clientIds: rows.map((r) => r.clientId), petIds: rows.map((r) => r.petId) });
+      return rows.map((r) => ({ ...r, clientIsVip: vip.clients.has(r.clientId), petIsVip: r.petId !== null && vip.pets.has(r.petId) }));
     }),
 
   getFailedPayments: protectedProcedure
@@ -13668,8 +13691,11 @@ const smsRouter = router({
       // names.
       const canSeeReaders = canAdministerStaff(ctx.user);
       const all = Array.from(threads.values()).sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
+      const page = all.slice(0, input.limit);
+      // VIP beside members in the thread list (server/vipMembers.ts).
+      const vip = await loadVipMembers(db, tenantOf(ctx, input), { clientIds: page.map((t) => t.clientId) });
       return {
-        threads: all.slice(0, input.limit).map((t) => (canSeeReaders ? t : { ...t, readByName: null })),
+        threads: page.map((t) => ({ ...(canSeeReaders ? t : { ...t, readByName: null }), clientIsVip: t.clientId !== null && t.clientId !== undefined && vip.clients.has(t.clientId) })),
         /**
          * How many there actually are. The list silently showed 50 of
          * 117 and gave no sign it had stopped — which is how a thread

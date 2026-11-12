@@ -1,4 +1,5 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
 import { presenceKey } from "@shared/presence";
@@ -1201,6 +1202,8 @@ export default function ClientDetail() {
                   * be relied on to contain a space in a useful place.
                   */}
                 <h1 className="text-2xl font-bold font-display break-words">{client.firstName} {client.lastName}</h1>
+                {/* VIP on every member's profile (Andy, 12/11/2026). */}
+                {activeMemberships.length > 0 && <VipMark className="scale-125" />}
                 <Badge className={
                   client.status === "active" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
                   client.status === "blocked" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/50" :
@@ -1859,7 +1862,11 @@ export default function ClientDetail() {
               </div>
 
               <div className="min-w-0">
-                <ClientPetsAside clientId={clientId} pets={pets} />
+                <ClientPetsAside
+                  clientId={clientId}
+                  pets={pets}
+                  vipPetIds={new Set(pets.filter(pet => (petMemberships[pet.id] ?? []).some(m => m.status === "active")).map(pet => pet.id))}
+                />
               </div>
             </div>
           </TabsContent>
@@ -1923,6 +1930,9 @@ export default function ClientDetail() {
                               and a letter appearing there. */}
                           <PetAvatar petId={pet.id} petName={pet.name} className="h-8 w-8" version={photoRefresh} />
                           <span className="truncate">{pet.name}</span>
+                          {/* Covered by an active plan, including the second
+                              dog on an x2 plan (membershipsByCoveredPet). */}
+                          {pMemberships.some(m => m.status === "active") && <VipMark />}
                           <button
                             type="button"
                             className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"

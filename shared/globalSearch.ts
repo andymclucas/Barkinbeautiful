@@ -28,6 +28,11 @@ export type SearchHit = {
   /** Only for appointments: where it is in the 12-state machine. */
   workflowState?: string | null;
   /**
+   * A member: the client holds an active plan, or the dog is on one (the
+   * dog's owner for an appointment). Shows the VIP badge (Andy, 12/11/2026).
+   */
+  vip?: boolean;
+  /**
    * Only for clients: their dogs, so a result can be taken straight to
    * the right animal.
    *
@@ -42,7 +47,7 @@ export type SearchHit = {
    * departed is how this salon retires a duplicate, so listing them
    * would offer dead links to records nobody wants reopened.
    */
-  dogs?: { id: number; name: string }[];
+  dogs?: { id: number; name: string; vip?: boolean }[];
 };
 
 /** Phone numbers are typed with spaces, dashes and brackets; none of it matters. */

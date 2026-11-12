@@ -1,4 +1,5 @@
 import { AlertTriangle, Dog, ShieldAlert, ShieldCheck } from "lucide-react";
+import { VipMark } from "@/components/VipMark";
 import { isPetCurrent } from "@shared/petArchive";
 import { sizeBandLabel, type DogSizeBand } from "@shared/dogSizeBand";
 import { trpc } from "@/lib/trpc";
@@ -27,7 +28,12 @@ type AsidePet = {
  * whether its paperwork has run out. Those sit together here; the full
  * pet records are still a section of their own.
  */
-export function ClientPetsAside({ clientId, pets }: { clientId: number; pets: AsidePet[] }) {
+export function ClientPetsAside({ clientId, pets, vipPetIds }: {
+  clientId: number;
+  pets: AsidePet[];
+  /** Dogs on an active plan, for the VIP badge (Andy, 12/11/2026). */
+  vipPetIds?: ReadonlySet<number>;
+}) {
   const { data: paperwork } = trpc.petPaperwork.forClient.useQuery({ clientId });
 
   // Current dogs only: neither passed away nor archived (shared/petArchive.ts).
@@ -73,7 +79,10 @@ export function ClientPetsAside({ clientId, pets }: { clientId: number; pets: As
                     * mid-word. The parent is already min-w-0 flex-1, so
                     * wrapping costs a line and loses nothing.
                     */}
-                  <p className="text-sm font-semibold">{pet.name}</p>
+                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                    {pet.name}
+                    {vipPetIds?.has(pet.id) && <VipMark />}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {[pet.breed, weight ? `${weight} kg` : null, band].filter(Boolean).join(" · ") || "No details recorded"}
                   </p>

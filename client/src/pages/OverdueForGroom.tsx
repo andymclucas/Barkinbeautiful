@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { VipMark } from "@/components/VipMark";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { describeOverdue, OVERDUE_BAND_LABEL, type OverdueBand } from "@shared/overdueForGroom";
@@ -83,6 +84,7 @@ export default function OverdueForGroom() {
                   <tr key={pet.petId} className="border-t">
                     <td className="p-3 font-medium text-slate-900 dark:text-white">
                       {pet.petName ?? `Pet ${pet.petId}`}
+                      {pet.isVipMember && <VipMark className="ml-1.5" />}
                       {pet.breed && (
                         <span className="block text-xs font-normal text-muted-foreground">{pet.breed}</span>
                       )}
