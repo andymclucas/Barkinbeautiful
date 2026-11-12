@@ -42,8 +42,13 @@ export type AttendanceDog = {
 };
 
 export type AttendanceDecision =
-  /** Still coming, and may be marked as not coming. */
-  | { action: "remove"; label: string }
+  /**
+   * Still coming, and may be marked as not coming.
+   *
+   * `checkedIn` is set when the dog has been checked in but nothing
+   * further — see CHECKED_IN_ONLY below.
+   */
+  | { action: "remove"; label: string; checkedIn?: true }
   /** Already not coming, and may be put back on. */
   | { action: "restore"; label: string }
   /**
@@ -55,9 +60,28 @@ export type AttendanceDecision =
 
 const NOT_COMING = new Set(["cancelled", "no_show"]);
 
-/** Arrived and not yet finished — on the floor, untouchable from here. */
+/**
+ * Checked in and nothing more. Still removable, one dog at a time.
+ *
+ * Andy, 13/11/2026, on a three-dog booking: "Chloe isn't coming, but
+ * the other dogs are in." The family had been checked in together, so
+ * Chloe read "At the salon" and the Not coming button was gone — for
+ * the one dog that was not there.
+ *
+ * Check-in is the step most often applied to the whole family at the
+ * door, so it is the one state where "at the salon" can simply be
+ * wrong. Once a dog is in the bath somebody has had hands on it, and
+ * those states stay blocked.
+ *
+ * The whole-booking cancel still leaves a checked-in dog alone: one
+ * press there would take every dog off the floor on the strength of a
+ * mistake about one of them.
+ */
+const CHECKED_IN_ONLY = "checked_in";
+
+/** In the bath or beyond — on the floor, untouchable from here. */
 const IN_SALON = new Set([
-  "checked_in", "waiting_for_bath", "bathing",
+  "waiting_for_bath", "bathing",
   "waiting_for_dry", "drying", "waiting_for_groom", "grooming", "ready",
 ]);
 
@@ -84,6 +108,9 @@ export function attendanceDecision(dog: AttendanceDog): AttendanceDecision {
   }
   if (states.some((s) => IN_SALON.has(s))) {
     return { action: "blocked", label: "At the salon", reason: `${name} is already at the salon.` };
+  }
+  if (states.includes(CHECKED_IN_ONLY)) {
+    return { action: "remove", label: "Not coming", checkedIn: true };
   }
   return { action: "remove", label: "Not coming" };
 }
@@ -115,7 +142,12 @@ export function bookingAttendance(dogs: readonly AttendanceDog[]): AttendanceRow
  * thing the button has been getting wrong: staff have every reason to
  * expect a control in a shared booking to touch the whole thing.
  */
-export function describeRemoval(name: string, remainingNames: readonly string[]): string {
+export function describeRemoval(name: string, remainingNames: readonly string[], checkedIn = false): string {
+  return (checkedIn ? `${name} is checked in. Only do this if ${name} did not arrive. ` : "")
+    + describePlainRemoval(name, remainingNames);
+}
+
+function describePlainRemoval(name: string, remainingNames: readonly string[]): string {
   if (remainingNames.length === 0) {
     return `${name} will be marked as not coming. That leaves no dogs on this booking — it will show as cancelled.`;
   }
@@ -193,8 +225,9 @@ export function wholeBookingCancellation(
 ): WholeBookingCancellation {
   const rows = bookingAttendance(dogs);
   return {
-    cancel: rows.filter((r) => r.action === "remove"),
-    blocked: rows.filter((r) => r.action === "blocked"),
+    // A checked-in dog can be taken off one at a time, never in bulk.
+    cancel: rows.filter((r) => r.action === "remove" && !r.checkedIn),
+    blocked: rows.filter((r) => r.action === "blocked" || (r.action === "remove" && r.checkedIn)),
     alreadyOff: rows.filter((r) => r.action === "restore"),
   };
 }

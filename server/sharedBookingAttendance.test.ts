@@ -50,11 +50,35 @@ describe("attendanceDecision", () => {
   });
 
   it("refuses a dog that is already at the salon, naming it", () => {
-    for (const state of ["checked_in", "waiting_for_bath", "bathing", "waiting_for_dry", "drying", "waiting_for_groom", "grooming", "ready"]) {
+    for (const state of ["waiting_for_bath", "bathing", "waiting_for_dry", "drying", "waiting_for_groom", "grooming", "ready"]) {
       const decision = attendanceDecision(dog({ workflowState: state }));
       expect(decision.action, state).toBe("blocked");
       if (decision.action === "blocked") expect(decision.reason).toContain("Teddy");
     }
+  });
+
+  /*
+   * A family is checked in together at the door, so "checked in" can be
+   * wrong about one of them. That dog must still be removable.
+   */
+  it("lets a dog that is only checked in be marked as not coming, flagged", () => {
+    const decision = attendanceDecision(dog({ status: "confirmed", workflowState: "checked_in" }));
+    expect(decision).toEqual({ action: "remove", label: "Not coming", checkedIn: true });
+    expect(attendanceDecision(dog({ workflowState: "scheduled" }))).toEqual({ action: "remove", label: "Not coming" });
+  });
+
+  it("warns on the confirm when the dog is checked in", () => {
+    expect(describeRemoval("Chloe", ["Mandy", "Misty"], true))
+      .toBe("Chloe is checked in. Only do this if Chloe did not arrive. Chloe will be marked as not coming. Mandy and Misty stay booked at the same time.");
+  });
+
+  it("never takes a checked-in dog off through the whole-booking cancel", () => {
+    const plan = wholeBookingCancellation([
+      { id: 1, petName: "Chloe", workflowState: "checked_in" },
+      { id: 2, petName: "Mandy", workflowState: "scheduled" },
+    ]);
+    expect(plan.cancel.map((r) => r.name)).toEqual(["Mandy"]);
+    expect(plan.blocked.map((r) => r.name)).toEqual(["Chloe"]);
   });
 
   it("refuses a dog whose groom has happened", () => {
