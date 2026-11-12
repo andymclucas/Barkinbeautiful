@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { PortalInvitePanel } from "@/components/PortalInvitePanel";
+import { rateOf } from "@shared/emailEventEffect";
 
 const AUDIENCE_OPTIONS = [
   { value: "all_active",         label: "All Active Clients" },
@@ -45,10 +46,8 @@ function statusLabel(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function openRate(opened: number | null, sent: number | null) {
-  if (!sent || sent === 0) return "—";
-  return `${Math.round(((opened ?? 0) / sent) * 100)}%`;
-}
+// One rule for both rates, shared with the server's tests.
+const openRate = (opened: number | null, sent: number | null) => rateOf(opened, sent);
 
 // ─── Composer Dialog ──────────────────────────────────────────────────────────
 interface ComposerProps {
@@ -238,12 +237,38 @@ function CampaignComposer({ open, onClose, editCampaignId, onSaved }: ComposerPr
 }
 
 // ─── Stats Dialog ─────────────────────────────────────────────────────────────
+/*
+ * Opens and clicks (Andy, 12/11/2026). Resend reports them back to
+ * /api/resend/webhook and server/emailEvents.ts writes them here, once per
+ * client. A click also counts as an open: tracking images are blocked by
+ * many mail apps, so opens are a floor, and a click proves it was read.
+ */
+type SendFilter = "all" | "opened" | "clicked" | "unopened";
+
 function StatsDialog({ campaignId, onClose }: { campaignId: number; onClose: () => void }) {
   const { data, isLoading } = trpc.campaigns.getStats.useQuery({ campaignId });
+  const [filter, setFilter] = useState<SendFilter>("all");
+  const tz = getActiveTimeZone();
+  const when = (d: Date | string | null) =>
+    d ? new Date(d).toLocaleString("en-AU", { timeZone: tz, day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "";
+
+  const sends = data?.sends ?? [];
+  const delivered = sends.filter(s => s.status === "sent");
+  const shown = sends.filter(s =>
+    filter === "all" ? true
+      : filter === "opened" ? Boolean(s.openedAt)
+      : filter === "clicked" ? Boolean(s.clickedAt)
+      : s.status === "sent" && !s.openedAt);
+  const counts: Record<SendFilter, number> = {
+    all: sends.length,
+    opened: sends.filter(s => s.openedAt).length,
+    clicked: sends.filter(s => s.clickedAt).length,
+    unopened: delivered.filter(s => !s.openedAt).length,
+  };
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Campaign Stats</DialogTitle>
         </DialogHeader>
@@ -251,12 +276,14 @@ function StatsDialog({ campaignId, onClose }: { campaignId: number; onClose: () 
           <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : data ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {[
-                { label: "Recipients", value: data.campaign.totalRecipients ?? 0 },
-                { label: "Sent", value: data.campaign.totalSent ?? 0 },
+                { label: "Sent", value: `${data.campaign.totalSent ?? 0} of ${data.campaign.totalRecipients ?? 0}` },
                 { label: "Opened", value: data.campaign.totalOpened ?? 0 },
-                { label: "Open Rate", value: openRate(data.campaign.totalOpened, data.campaign.totalSent) },
+                { label: "Open rate", value: rateOf(data.campaign.totalOpened, data.campaign.totalSent) },
+                { label: "Clicked", value: data.campaign.totalClicked ?? 0 },
+                { label: "Click rate", value: rateOf(data.campaign.totalClicked, data.campaign.totalSent) },
+                { label: "Bounced", value: sends.filter(s => s.status === "bounced").length },
               ].map(s => (
                 <div key={s.label} className="rounded-lg border border-border/60 p-3">
                   <p className="text-xs text-muted-foreground">{s.label}</p>
@@ -264,15 +291,36 @@ function StatsDialog({ campaignId, onClose }: { campaignId: number; onClose: () 
                 </div>
               ))}
             </div>
-            {data.sends.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">Recent sends</p>
-                <div className="divide-y divide-border/40 max-h-48 overflow-y-auto text-xs">
-                  {data.sends.slice(0, 20).map(s => (
-                    <div key={s.email} className="flex items-center justify-between py-1.5">
-                      <span className="truncate max-w-[200px]">{s.email}</span>
-                      <span className={`ml-2 shrink-0 ${s.status === "sent" ? "text-emerald-400" : "text-destructive"}`}>
-                        {s.status}
+            <p className="text-xs text-muted-foreground">
+              Opens are a minimum: some mail apps hide them. Anyone who clicked a link is counted as opened too.
+            </p>
+            {sends.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {([["all", "Everyone"], ["opened", "Opened"], ["clicked", "Clicked"], ["unopened", "Not opened"]] as const).map(([key, label]) => (
+                    <Button key={key} type="button" size="sm" variant={filter === key ? "default" : "outline"} className="h-7 text-xs" onClick={() => setFilter(key)}>
+                      {label} ({counts[key]})
+                    </Button>
+                  ))}
+                </div>
+                <div className="divide-y divide-border/40 max-h-72 overflow-y-auto text-xs">
+                  {shown.length === 0 ? (
+                    <p className="py-3 text-center text-muted-foreground">Nobody yet.</p>
+                  ) : shown.map(s => (
+                    <div key={s.id} className="flex items-center justify-between gap-2 py-1.5">
+                      <span className="min-w-0 truncate">{s.email}</span>
+                      <span className="shrink-0 text-right">
+                        {s.status === "failed" || s.status === "bounced" ? (
+                          <span className="text-destructive">{s.status === "bounced" ? "Bounced" : "Not sent"}</span>
+                        ) : s.clickedAt ? (
+                          <span className="font-medium text-emerald-600 dark:text-emerald-400">Clicked {when(s.clickedAt)}</span>
+                        ) : s.openedAt ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">Opened {when(s.openedAt)}</span>
+                        ) : s.status === "sent" ? (
+                          <span className="text-muted-foreground">Sent</span>
+                        ) : (
+                          <span className="text-muted-foreground">Sending…</span>
+                        )}
                       </span>
                     </div>
                   ))}
@@ -466,7 +514,7 @@ export default function EmailCampaigns() {
                       <p className="text-xs text-muted-foreground mt-0.5 truncate">{c.subject}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {c.status === "sent"
-                          ? `Sent ${c.sentAt ? new Date(c.sentAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }) : "—"} · ${c.totalSent ?? 0} sent · ${openRate(c.totalOpened, c.totalSent)} open rate`
+                          ? `Sent ${c.sentAt ? new Date(c.sentAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }) : "—"} · ${c.totalSent ?? 0} sent · ${openRate(c.totalOpened, c.totalSent)} opened · ${rateOf(c.totalClicked ?? null, c.totalSent)} clicked`
                           : c.status === "scheduled"
                           ? `Scheduled ${c.scheduledAt ? new Date(c.scheduledAt).toLocaleString("en-AU", { timeZone: getActiveTimeZone() }) : "—"}`
                           : `Created ${new Date(c.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}`}

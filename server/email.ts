@@ -30,7 +30,25 @@ function fromHeader(displayName?: string | null): string {
   return name ? `${name} <${FROM_EMAIL}>` : FROM_EMAIL;
 }
 
-export async function sendEmail({
+export type SendEmailInput = {
+  to: string;
+  subject: string;
+  html: string;
+  fromName?: string | null;
+  replyTo?: string | null;
+};
+
+/** True when the email was accepted. Most callers need nothing more. */
+export async function sendEmail(input: SendEmailInput): Promise<boolean> {
+  return (await sendEmailWithId(input)).ok;
+}
+
+/**
+ * Sends, and returns Resend's id for the message. Campaign sends keep it
+ * so the opened/clicked events Resend posts back can be matched to the
+ * client they were sent to (server/emailEvents.ts).
+ */
+export async function sendEmailWithId({
   to,
   subject,
   html,
@@ -47,14 +65,14 @@ export async function sendEmail({
    * "can I pay Friday?" — writes to noreply@ and nobody ever sees it.
    */
   replyTo?: string | null;
-}): Promise<boolean> {
+}): Promise<{ ok: boolean; id: string | null }> {
   if (!resend) {
     console.warn("[Email] RESEND_API_KEY not set — email not sent:", subject);
-    return false;
+    return { ok: false, id: null };
   }
   try {
     const cleanReplyTo = (replyTo ?? "").replace(/[\r\n]/g, "").trim();
-    const { error } = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: fromHeader(fromName),
       to,
       subject,
@@ -63,12 +81,12 @@ export async function sendEmail({
     });
     if (error) {
       console.error("[Email] Resend error:", error);
-      return false;
+      return { ok: false, id: null };
     }
-    return true;
+    return { ok: true, id: data?.id ?? null };
   } catch (err) {
     console.error("[Email] Failed to send email:", err);
-    return false;
+    return { ok: false, id: null };
   }
 }
 

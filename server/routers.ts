@@ -13002,7 +13002,7 @@ const emailCampaignsRouter = router({
       }).where(eq(emailCampaigns.id, input.campaignId));
 
       // Lazy import email helper
-      const { sendEmail } = await import("./email.js");
+      const { sendEmailWithId } = await import("./email.js");
 
       let sent = 0;
       // The client clicks this, so it belongs on the client host.
@@ -13031,15 +13031,17 @@ const emailCampaignsRouter = router({
         });
         const sendId = (sendResult as any).insertId as number;
 
-        const ok = await sendEmail({
+        const result = await sendEmailWithId({
           to: recipient.email,
           subject: campaign.subject,
           html: htmlWithUnsub,
         });
 
-        if (ok) {
+        if (result.ok) {
           sent++;
-          await db.update(emailCampaignSends).set({ status: "sent", sentAt: new Date() }).where(eq(emailCampaignSends.id, sendId));
+          // Resend's id, so its opened/clicked events find this row
+          // (server/emailEvents.ts).
+          await db.update(emailCampaignSends).set({ status: "sent", sentAt: new Date(), resendMessageId: result.id }).where(eq(emailCampaignSends.id, sendId));
         } else {
           await db.update(emailCampaignSends).set({ status: "failed", errorMessage: "Send failed" }).where(eq(emailCampaignSends.id, sendId));
         }
@@ -13062,7 +13064,7 @@ const emailCampaignsRouter = router({
 
   getStats: protectedProcedure
     .input(z.object({ campaignId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return null;
       const [campaign] = await db
@@ -13078,12 +13080,15 @@ const emailCampaignsRouter = router({
           totalClicked: emailCampaigns.totalClicked,
         })
         .from(emailCampaigns)
-        .where(eq(emailCampaigns.id, input.campaignId))
+        // The salon's own campaigns only.
+        .where(and(eq(emailCampaigns.id, input.campaignId), eq(emailCampaigns.tenantId, tenantOf(ctx))))
         .limit(1);
       if (!campaign) return null;
 
       const sends = await db
         .select({
+          id: emailCampaignSends.id,
+          clientId: emailCampaignSends.clientId,
           status: emailCampaignSends.status,
           email: emailCampaignSends.email,
           sentAt: emailCampaignSends.sentAt,
@@ -15817,8 +15822,9 @@ const clientPortalRouter = router({
       }
       await db.update(emailCampaigns).set({ status: "sending" }).where(eq(emailCampaigns.id, inserted.id));
 
-      const { sendEmail } = await import("./email");
-      runPortalInviteCampaign(db, inserted.id, tenantId, sendEmail);
+      // With Resend's id, so opens and clicks on the invite are counted.
+      const { sendEmailWithId } = await import("./email");
+      runPortalInviteCampaign(db, inserted.id, tenantId, sendEmailWithId);
       return { campaignId: inserted.id, queued: audience.recipients.length };
       }).catch((error: unknown) => {
         if (error instanceof TRPCError) throw error;
@@ -15843,8 +15849,8 @@ const clientPortalRouter = router({
       }
       if (campaign.status !== "sending") throw new TRPCError({ code: "BAD_REQUEST", message: "That send has already finished." });
       if (isPortalInviteRunning(campaign.id)) return { resumed: false, running: true };
-      const { sendEmail } = await import("./email");
-      return { resumed: runPortalInviteCampaign(db, campaign.id, tenantId, sendEmail), running: true };
+      const { sendEmailWithId } = await import("./email");
+      return { resumed: runPortalInviteCampaign(db, campaign.id, tenantId, sendEmailWithId), running: true };
     }),
 
   portalInviteStatus: adminProcedure

@@ -21,6 +21,7 @@ import { readCardLinkToken } from "../cardLinkToken";
 import { createCardSetupLink } from "../stripeCards";
 import { getPortalBaseUrl } from "../appUrl";
 import { portalHostRedirect } from "../portalHostRedirect";
+import { registerResendWebhook } from "../emailEvents";
 import {
   buildPortalManifest,
   portalAccessTokenIn,
@@ -119,6 +120,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  // Resend's opened/clicked/bounced events for campaign emails. Signed over
+  // the raw body, so it too comes before the global JSON parser.
+  registerResendWebhook(app);
   // Stripe requires the exact raw body for signature verification. This must be
   // registered before the global JSON parser.
   app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
