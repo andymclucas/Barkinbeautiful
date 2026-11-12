@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { PortalInstallTip } from "@/components/PortalInstallTip";
+import { PortalSignInLinkForm } from "@/components/PortalSignInLinkForm";
 import { useLocation, useParams } from "wouter";
 import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney } from "@shared/portalBilling";
@@ -903,7 +905,7 @@ export default function ClientPortal() {
   const signAgreements = trpc.clientPortal.signMyAgreements.useMutation({ onSuccess: () => refetch() });
 
   if (isLoading || (tokenFailed && (fallbackSession.isLoading || fallbackSession.data))) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 p-6"><div className="mx-auto max-w-4xl animate-pulse space-y-5"><div className="h-24 rounded-2xl bg-muted" /><div className="grid gap-4 sm:grid-cols-3">{[1, 2, 3].map(item => <div key={item} className="h-32 rounded-xl bg-muted" />)}</div></div></main>;
-  if (error || !data) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 grid place-items-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>{token ? "Portal link unavailable" : "Client sign in required"}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{clientFacingPortalError(error?.message, Boolean(token))}</p>{token && <p className="text-sm font-medium">Already set a password? Sign in with your email and password instead.</p>}<Button onClick={() => navigate("/portal/login")}>Go to client sign in</Button></CardContent></Card></main>;
+  if (error || !data) return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 grid place-items-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldCheck className="mx-auto h-9 w-9 text-primary" /><CardTitle>{token ? "Portal link unavailable" : "Client sign in required"}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">{clientFacingPortalError(error?.message, Boolean(token))}</p><p className="text-sm font-medium">Enter your email and we&rsquo;ll send you a link to sign in.</p><PortalSignInLinkForm autoFocus /><Button variant="ghost" className="w-full" onClick={() => navigate("/portal/login")}>Sign in with a password instead</Button></CardContent></Card></main>;
 
   /*
    * The agreement gate (Andy, 11/11/2026): until the service agreement is
@@ -940,6 +942,9 @@ export default function ClientPortal() {
   return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 py-8 px-4"><div className="mx-auto max-w-4xl space-y-6">
     <header className="rounded-2xl bg-primary p-6 text-primary-foreground"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm opacity-85">Welcome to</p><h1 className="font-display text-3xl font-bold">{data.salon.name}</h1><p className="mt-2 text-sm opacity-90">Hi {data.client.firstName}, here is a secure summary of your pets and grooming care.</p></div>{!token && <Button variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20" disabled={logout.isPending} onClick={() => logout.mutate()}>{logout.isPending ? "Signing out…" : "Sign out"}</Button>}</div></header>
 
+    {/* Signed in on their own account: worth saving to the Home Screen. Not
+        on a staff preview, and not on an access-token link. */}
+    {!isPreview && !token && <PortalInstallTip />}
     {inSalon.length > 0 && <section className="space-y-3">
       {inSalon.map(appointment => {
         const stage = clientFacingStage(appointment.workflowState);

@@ -75,10 +75,20 @@ const PUBLIC = [
   // today, re-checked on the server, and refuses while the service
   // agreement is unsigned (server/portalAppointmentPayment.ts).
   "clientPortalRouter.payTodaysBill",
+  // Use a sign-in link (12/11/2026): a signed 15-minute token that only
+  // works once and only for a live account; sets the client's own session.
+  // The six-digit code from the same email, for a portal saved to an
+  // iPhone Home Screen. Five wrong tries per address per 15 minutes.
+  "clientPortalRouter.redeemSignInCode",
+  "clientPortalRouter.redeemSignInLink",
   // Forgot password (12/11/2026). Answers the same whatever the address,
   // only emails a live account, skips held clients, and is throttled per
   // address and per IP (shared/portalPasswordReset.ts).
   "clientPortalRouter.requestPasswordReset",
+  // Email me a sign-in link (12/11/2026). Same shape as the reset: answers
+  // the same for any address, live accounts only, held clients skipped,
+  // throttled per address and per IP.
+  "clientPortalRouter.requestSignInLink",
   "clientPortalRouter.rescheduleAppointment",
   // The cycle window for a membership or repeat booking. Same portal-session
   // check and ownership test as rescheduleAppointment beside it.
@@ -575,7 +585,9 @@ describe("tRPC procedure surface", () => {
     // 432 since 12/11/2026: clientPortal.payMyInvoice, in PUBLIC.
     // 433 since 12/11/2026: clientPortal.requestPasswordReset, in PUBLIC.
     // 434 since 12/11/2026: calendar.addRecurrenceOccurrence, in OPERATIONAL.
-    expect(surface).toHaveLength(434);
+    // 436 since 12/11/2026: clientPortal.requestSignInLink and redeemSignInLink, in PUBLIC.
+    // 437 since 12/11/2026: clientPortal.redeemSignInCode, in PUBLIC.
+    expect(surface).toHaveLength(437);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -587,7 +599,9 @@ describe("tRPC procedure surface", () => {
     // 59 since 11/11/2026: clientPortal.rescheduleWindow.
     // 60 since 12/11/2026: clientPortal.payMyInvoice.
     // 61 since 12/11/2026: clientPortal.requestPasswordReset.
-    expect(PUBLIC).toHaveLength(61);
+    // 63 since 12/11/2026: the two sign-in link procedures.
+    // 64 since 12/11/2026: redeemSignInCode.
+    expect(PUBLIC).toHaveLength(64);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
