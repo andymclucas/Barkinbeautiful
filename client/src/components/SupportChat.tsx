@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
-import { LifeBuoy, Send, UserRound, X } from "lucide-react";
+import { Send, UserRound, X } from "lucide-react";
+import { GuapoAvatar } from "@/components/GuapoAvatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
@@ -24,7 +25,7 @@ import { SUPPORT_MESSAGE_MAX, isWithPerson, type SupportSender } from "@shared/s
 const SENDER_LABEL: Record<SupportSender, string> = {
   user: "You",
   system: "",
-  ai: "Assistant",
+  ai: "Guapo",
   human: "Andy · Groomigo support",
 };
 
@@ -100,13 +101,16 @@ export function SupportChat() {
           className="fixed bottom-20 right-4 z-40 flex max-h-[min(36rem,calc(100dvh-7rem))] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl sm:right-6 sm:w-96 print:hidden"
         >
           <header className="flex shrink-0 items-center justify-between gap-2 bg-primary px-4 py-3 text-primary-foreground">
-            <div>
-              <p className="text-sm font-bold">Groomigo support</p>
-              <p className="text-[11px] opacity-85">
-                {status === "waiting" ? "Waiting for Andy to reply"
-                  : status === "human" ? "You are talking to Andy"
-                  : "Ask how to do something. A person is one tap away."}
-              </p>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <GuapoAvatar size={36} />
+              <div className="min-w-0">
+                <p className="text-sm font-bold">{status === "human" || status === "waiting" ? "Groomigo support" : "Guapo · Groomigo support"}</p>
+                <p className="text-[11px] opacity-85">
+                  {status === "waiting" ? "Waiting for Andy to reply"
+                    : status === "human" ? "You are talking to Andy"
+                    : "Ask Guapo how to do something. A person is one tap away."}
+                </p>
+              </div>
             </div>
             <Button
               variant="ghost" size="icon"
@@ -120,11 +124,12 @@ export function SupportChat() {
 
           <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain bg-muted/30 p-3">
             {/* Shown, never stored: a greeting is not part of the conversation. */}
-            <div className="flex justify-start">
+            <div className="flex items-end justify-start gap-1.5">
+              <GuapoAvatar size={26} />
               <div className="max-w-[85%] rounded-2xl border bg-card px-3.5 py-2 text-sm">
-                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">Assistant</p>
+                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">Guapo</p>
                 <p className="leading-relaxed">
-                  Hi, what are you trying to do? I can explain how things work in Groomigo. I can&rsquo;t see your screen or change anything.
+                  Hola, I&rsquo;m Guapo! What are you trying to do? I can explain how things work in Groomigo. I can&rsquo;t see your screen or change anything.
                 </p>
               </div>
             </div>
@@ -138,7 +143,8 @@ export function SupportChat() {
               }
               const mine = m.sender === "user";
               return (
-                <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                <div key={m.id} className={`flex items-end gap-1.5 ${mine ? "justify-end" : "justify-start"}`}>
+                  {m.sender === "ai" && <GuapoAvatar size={26} />}
                   <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "border bg-card"}`}>
                     {!mine && (
                       <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">{SENDER_LABEL[m.sender]}</p>
@@ -156,7 +162,7 @@ export function SupportChat() {
                     <p className="whitespace-pre-wrap break-words leading-relaxed">{send.variables?.message}</p>
                   </div>
                 </div>
-                {!withPerson && <p className="px-1 text-xs text-muted-foreground">Assistant is typing…</p>}
+                {!withPerson && <p className="px-1 text-xs text-muted-foreground">Guapo is typing…</p>}
               </>
             )}
           </div>
@@ -205,7 +211,7 @@ export function SupportChat() {
             </div>
             {!withPerson && (
               <p className="text-[10px] leading-snug text-muted-foreground">
-                Answers are written by AI and can be wrong. Don&rsquo;t type client details you wouldn&rsquo;t want shared.
+                Guapo is an AI assistant and can be wrong. Don&rsquo;t type client details you wouldn&rsquo;t want shared.
               </p>
             )}
           </div>
@@ -217,7 +223,7 @@ export function SupportChat() {
         aria-label={open ? "Close support chat" : "Open support chat"}
         className="fixed bottom-5 right-4 z-40 h-12 w-12 rounded-full p-0 shadow-xl sm:right-6 print:hidden"
       >
-        {open ? <X className="h-5 w-5" /> : <LifeBuoy className="h-5 w-5" />}
+        {open ? <X className="h-5 w-5" /> : <GuapoAvatar size={48} className="rounded-full" />}
         {!open && unread > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-bold text-destructive-foreground">
             {unread}

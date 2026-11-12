@@ -5,6 +5,9 @@
  * right corner that will first try to resolve the issue using AI, then if
  * someone requests to speak to a human, it will setup a chat with me."
  *
+ * The assistant is called Guapo and is drawn as a chihuahua in a
+ * sombrero (client/src/components/GuapoAvatar.tsx). Andy, 13/11/2026.
+ *
  * A conversation is in one of four states:
  *
  *   ai       the assistant answers each message
@@ -66,7 +69,7 @@ export const HANDOVER_LINE =
 
 /** Used when the assistant cannot answer at all (no key, or an error). */
 export const ASSISTANT_UNAVAILABLE_LINE =
-  "The assistant isn't available right now, so this has gone straight to a person.";
+  "Guapo isn't available right now, so this has gone straight to a person.";
 
 /** The phone notification support gets. No more than the first line. */
 export function supportPushText(userName: string | null, salonName: string | null, message: string, isNewRequest: boolean) {
