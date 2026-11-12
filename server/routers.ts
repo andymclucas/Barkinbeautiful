@@ -88,6 +88,7 @@ import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { CLIENT_PORTAL_ACCESS_TTL_MS, clientPortalLinkRenewal, createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
 import { answerPortalMessage, offerToModel, PORTAL_HANDOFF_LINE, unreadForClient, unreadForStaff, type PortalChatFacts, type PortalChatReply } from "../shared/portalChat";
 import { asksForPerson } from "../shared/supportChat";
+import { textableNumbers } from "../shared/textableNumbers";
 import { answerPortalWithModel } from "./portalAssistant";
 import { decideAppointmentInvoice, groomInvoiceNumber, invoiceDueAt, invoiceStatusForPayments } from "../shared/appointmentInvoicing";
 import { buildInvoiceLines, addOnsTotal, addOnRequiresManualPrice } from "../shared/appointmentAddOns";
@@ -13379,6 +13380,40 @@ async function loadPickupSiblings(db: any, appointment: { id: number; tenantId: 
 }
 
 const smsRouter = router({
+  /**
+   * Every number a client can be texted on: their own, then each saved
+   * contact.
+   *
+   * Lauren, 13/11/2026: "I need to send a text message to the alternative
+   * number saved. Can we have a drop down box if there is an ALT number?"
+   * The Messages composer only ever knew the number the thread was
+   * opened with, so reaching a partner or a parent meant leaving the
+   * thread and typing the number by hand.
+   *
+   * protectedProcedure, the same as sms.send beside it: this is the
+   * owner/admin Messages screen, not something a restricted groomer opens.
+   */
+  clientNumbers: protectedProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const [client] = await db.select({ firstName: clients.firstName, lastName: clients.lastName, phone: clients.phone })
+        .from(clients)
+        .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, tenantId)))
+        .limit(1);
+      if (!client) return [];
+      const contacts = await db.select({ id: clientContacts.id, name: clientContacts.name, phone: clientContacts.phone, relationship: clientContacts.relationship })
+        .from(clientContacts)
+        .where(and(eq(clientContacts.clientId, input.clientId), eq(clientContacts.tenantId, tenantId)))
+        .orderBy(asc(clientContacts.name));
+      return textableNumbers(
+        { name: `${client.firstName ?? ""} ${client.lastName ?? ""}`.trim(), phone: client.phone },
+        contacts,
+      );
+    }),
+
   getPickupRecipients: operationalProcedure
     .input(z.object({ appointmentId: z.number() }))
     .query(async ({ input, ctx }) => {

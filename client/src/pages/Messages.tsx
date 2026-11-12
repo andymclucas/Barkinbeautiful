@@ -1,4 +1,5 @@
 import { collapseBySend } from "@shared/messageThreadGrouping";
+import { phoneKey } from "@shared/textableNumbers";
 import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
@@ -330,13 +331,40 @@ export default function Messages() {
     { enabled: !!openThread },
   );
 
+  /*
+   * Which number a reply goes to (Lauren, 13/11/2026: "can we have a drop
+   * down box if there is an ALT number?"). Every number on the client's
+   * record; the picker only appears when there is more than one. It
+   * resets to the thread's own number whenever another thread is opened,
+   * so a choice made for one client can never carry over to the next.
+   */
+  const { data: clientNumbers } = trpc.sms.clientNumbers.useQuery(
+    { clientId: openThread?.clientId ?? 0 },
+    { enabled: !!openThread?.clientId },
+  );
+  const [replyToPhone, setReplyToPhone] = useState<string | null>(null);
+  useEffect(() => { setReplyToPhone(null); }, [openThread?.clientId, openThread?.toNumber]);
+  const replyNumbers = openThread?.clientId ? (clientNumbers ?? []) : [];
+  const replyTarget = replyNumbers.find(n => n.phone === replyToPhone)
+    ?? replyNumbers.find(n => phoneKey(n.phone) === phoneKey(openThread?.toNumber))
+    ?? null;
+  const replyToNumber = replyTarget?.phone ?? openThread?.toNumber ?? "";
+
   const threadMessages = useMemo(() => {
     if (!openThread || !conversation) return [];
+    // Who an outgoing text went to, when it was not the client themselves.
+    const contactByPhone = new Map(
+      replyNumbers.filter(n => n.kind === "contact").map(n => [phoneKey(n.phone), n.name] as const),
+    );
     /* No `any` on this one. It is what let sms.getConversation stop
        selecting twilioSid without a single complaint, and collapseBySend
        below silently became a no-op. Inferred from the procedure, so
        dropping the field again is a compile error. */
-    const texts = conversation.sms.map((m) => ({ ...m, at: new Date(m.sentAt).getTime() }));
+    const texts = conversation.sms.map((m) => ({
+      ...m,
+      at: new Date(m.sentAt).getTime(),
+      sentToLabel: m.direction === "outbound" ? (contactByPhone.get(phoneKey(m.toNumber)) ?? null) : null,
+    }));
     /* A call is correspondence. Voicemails used to sit in their own
        panel at the top of the page, so a message and the call it
        answered were never beside each other. */
@@ -359,7 +387,7 @@ export default function Messages() {
        triggered land in the same second. */
     return [...collapsed, ...calls].sort((a: any, b: any) =>
       a.at - b.at || (a.isCall === b.isCall ? 0 : a.isCall ? -1 : 1));
-  }, [openThread, conversation]);
+  }, [openThread, conversation, clientNumbers]);
 
 
   const sendMutation = trpc.sms.send.useMutation({
@@ -461,7 +489,7 @@ export default function Messages() {
     sendMutation.mutate(
       {
         clientId: openThread.clientId ?? undefined,
-        toNumber: openThread.toNumber,
+        toNumber: replyToNumber || openThread.toNumber,
         body,
         type: "custom",
       },
@@ -477,7 +505,7 @@ export default function Messages() {
         onError: () => setReplySending(false),
       },
     );
-  }, [openThread, replyBody, replySending, sendMutation, refetch, refetchThreads]);
+  }, [openThread, replyBody, replySending, replyToNumber, sendMutation, refetch, refetchThreads]);
 
   // The conversation itself. Rendered in the centre pane on desktop and
   // inside the dialog on a phone — one definition, so the two cannot
@@ -540,6 +568,23 @@ export default function Messages() {
                 answering in — a photo of a cut belongs beside the message
                 reporting it, not on another screen. */}
             <ClientPhotoStrip clientId={openThread?.clientId ?? null} />
+            {replyNumbers.length > 1 && (
+              <div className="mb-2 flex items-center gap-2">
+                <span className="shrink-0 text-xs font-semibold text-muted-foreground">To</span>
+                <Select value={replyToNumber} onValueChange={setReplyToPhone} disabled={replySending}>
+                  <SelectTrigger aria-label="Send this text to" className={`h-9 flex-1 text-sm ${replyTarget?.kind === "contact" ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : ""}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {replyNumbers.map(n => (
+                      <SelectItem key={n.phone} value={n.phone}>
+                        {n.name} · {n.label} · {n.phone}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           <div className="flex items-end gap-2">
             <Button
               variant="ghost"
