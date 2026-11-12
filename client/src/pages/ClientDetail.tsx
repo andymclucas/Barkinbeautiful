@@ -15,6 +15,7 @@ import { PassingReviewDialog } from "@/components/PassingReviewDialog";
 import { PetEditorDialog, type EditablePet } from "@/components/PetEditorDialog";
 import type { PassingReview } from "@shared/petPassingReview";
 import { describeCancelledBookings } from "@shared/petPassingBookings";
+import { companionsOf, joinNames } from "@shared/familyBookingRows";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -379,7 +380,7 @@ export default function ClientDetail() {
   // Deleting a booking is irreversible and takes every pet in a shared
   // session with it, so it goes through a named confirm rather than a
   // window.confirm — the same shape the calendar's Delete booking uses.
-  const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string } | null>(null);
+  const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string; petName: string | null; companions: string } | null>(null);
   /*
    * Andy, 04/11/2026: "Add feature to be able to delete clients - just
    * in case there are duplicates etc." Owner-only and refuses the
@@ -419,7 +420,13 @@ export default function ClientDetail() {
    * is not where you would look for it.
    */
   const [editAppt, setEditAppt] = useState<
-    { id: number; petName: string | null; label: string; scheduledStart: string; scheduledEnd: string } | null
+    {
+      id: number; petName: string | null; label: string; scheduledStart: string; scheduledEnd: string;
+      /** The other dogs on this booking, already joined for display; "" when there are none. */
+      companions: string;
+      /** Whether Save moves them too. On by default: a family that arrives together moves together. */
+      moveTogether: boolean;
+    } | null
   >(null);
   const [bookingPage, setBookingPage] = useState(1);
   const [paymentFilter, setPaymentFilter] = useState("all");
@@ -475,10 +482,12 @@ export default function ClientDetail() {
   // The same procedure the calendar's own edit dialog uses, so a booking
   // moved from here behaves exactly as one moved by dragging it.
   const rescheduleAppointment = trpc.calendar.reschedule.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await utils.clients.getProfile.invalidate({ clientId });
       setEditAppt(null);
-      toast.success("Booking time updated");
+      toast.success(result.movedWith > 0
+        ? `Booking time updated for ${result.movedWith + 1} dogs`
+        : "Booking time updated");
     },
     onError: (error) => toast.error(error.message || "Could not change that booking"),
   });
@@ -2467,6 +2476,16 @@ export default function ClientDetail() {
                         <td className="p-3">
                           <span className="font-medium">{a.petName}</span>
                           {a.petBreed && <div className="text-xs text-muted-foreground">{a.petBreed}</div>}
+                          {/* One row per dog, so a two-dog booking is two
+                              rows with the same date. Say they belong
+                              together, or the second reads as a duplicate
+                              (shared/familyBookingRows.ts). */}
+                          {(() => {
+                            const others = companionsOf(a, appointments);
+                            return others.length > 0
+                              ? <div className="text-[11px] font-medium text-primary">Same booking as {joinNames(others.map(o => o.petName))}</div>
+                              : null;
+                          })()}
                           {/* Service, groomer and whether it was paid. All
                               three sat behind breakpoints, so a phone
                               reading a dog's history saw a date, a name and
@@ -2527,6 +2546,12 @@ export default function ClientDetail() {
                               label: `${a.petName} — ${SERVICE_LABELS[a.serviceType] ?? a.serviceType}`,
                               scheduledStart: brisbaneLocalInputValue(new Date(a.scheduledStart)),
                               scheduledEnd: brisbaneLocalInputValue(new Date(a.scheduledEnd)),
+                              // Only dogs at the SAME time move with it; one
+                              // already put on another day is left there.
+                              companions: joinNames(companionsOf(a, appointments)
+                                .filter(o => new Date(o.scheduledStart).getTime() === new Date(a.scheduledStart).getTime())
+                                .map(o => o.petName)),
+                              moveTogether: true,
                             })}
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -2537,6 +2562,8 @@ export default function ClientDetail() {
                             aria-label={`Delete ${a.petName}'s booking`}
                             onClick={() => setConfirmDeleteAppt({
                               id: a.id,
+                              petName: a.petName,
+                              companions: joinNames(companionsOf(a, appointments).map(o => o.petName)),
                               label: `${a.petName}'s booking on ${new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}`,
                             })}
                           >
@@ -3178,6 +3205,22 @@ export default function ClientDetail() {
             * for the button below, which is why it sits outside the
             * footer: "Save time" means the time.
             */}
+          {editAppt?.companions && (
+            <label className="flex cursor-pointer items-start gap-2 rounded-lg border bg-muted/40 p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4"
+                checked={editAppt.moveTogether}
+                onChange={e => setEditAppt(prev => prev ? { ...prev, moveTogether: e.target.checked } : prev)}
+              />
+              <span>
+                <span className="font-semibold">Move {editAppt.companions} too</span>
+                <span className="block text-xs text-muted-foreground">
+                  {editAppt.companions} is on the same booking. Untick to move only {editAppt.petName ?? "this dog"}, which puts them on different times.
+                </span>
+              </span>
+            </label>
+          )}
           {editAppt && (
             <div className="border-t pt-3">
               <AppointmentAddOns appointmentId={editAppt.id} petName={editAppt.petName} />
@@ -3198,6 +3241,7 @@ export default function ClientDetail() {
                 appointmentId: editAppt.id,
                 scheduledStart: editAppt.scheduledStart,
                 scheduledEnd: editAppt.scheduledEnd,
+                withBooking: editAppt.companions !== "" && editAppt.moveTogether,
               })}
             >
               {rescheduleAppointment.isPending ? "Saving…" : "Save time"}
@@ -3249,15 +3293,17 @@ export default function ClientDetail() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Are you sure you want to delete <strong className="text-foreground">{confirmDeleteAppt?.label}</strong>?
-            Any pets in this shared booking will be deleted together. Financial records are
-            retained without the appointment link. This cannot be undone.
+            {confirmDeleteAppt?.companions
+              ? <> Only {confirmDeleteAppt.petName ?? "this dog"} is removed. {confirmDeleteAppt.companions}, on the same booking, {confirmDeleteAppt.companions.includes(" and ") ? "stay" : "stays"} booked.</>
+              : null}
+            {" "}Financial records are retained without the appointment link. This cannot be undone.
           </p>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setConfirmDeleteAppt(null)}>Cancel</Button>
             <Button
               variant="destructive"
               disabled={deleteAppointment.isPending}
-              onClick={() => confirmDeleteAppt && deleteAppointment.mutate({ appointmentId: confirmDeleteAppt.id })}
+              onClick={() => confirmDeleteAppt && deleteAppointment.mutate({ appointmentId: confirmDeleteAppt.id, onlyThisDog: true })}
             >
               {deleteAppointment.isPending ? "Deleting…" : "Delete booking"}
             </Button>
