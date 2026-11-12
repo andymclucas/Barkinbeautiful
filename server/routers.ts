@@ -103,6 +103,7 @@ import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimin
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
 import { resolveAppointmentMembershipCoverage, type AppointmentService } from "../shared/appointmentMembershipCoverage";
 import { getMembershipPackageById, getMembershipPackagesForWeight, getMembershipWeightBand, MEMBERSHIP_PACKAGES, MEMBERSHIP_WEIGHT_BANDS } from "../shared/membershipPackages";
+import { initialMembershipStatus } from "../shared/membershipInitialStatus";
 import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
 import { cleanPlanFields } from "../shared/membershipPlanFields";
 import {
@@ -9144,10 +9145,6 @@ const membershipsRouter = router({
       if (!tierCheck.ok) throw new Error(tierCheck.reason);
 
       const [result] = await db.insert(memberships).values({
-        // pending_payment is already in the enum and nothing bills on it:
-        // the retry job selects on failedPaymentCount > 0, and a new row
-        // has none. So a pending membership cannot take a client's money.
-        ...(input.startPending ? { status: "pending_payment" as const } : {}),
         tenantId: tenantOf(ctx, input),
         clientId: input.clientId,
         petId: input.petId,
@@ -9159,7 +9156,14 @@ const membershipsRouter = router({
         pricePerCycle: membershipPackage.weeklyPrice.toFixed(2),
         paymentGateway: input.paymentGateway,
         nextBillingDate: input.nextBillingDate ? new Date(input.nextBillingDate) : undefined,
-        status: "active",
+        // pending_payment is already in the enum and nothing bills on it:
+        // the retry job selects on failedPaymentCount > 0, and a new row
+        // has none. So a pending membership cannot take a client's money.
+        //
+        // ONE key, from the shared rule. This used to be a spread at the
+        // top of the object and a literal `status: "active"` down here,
+        // which overwrote it — startPending did nothing for five weeks.
+        status: initialMembershipStatus(input),
         isTest: input.isTest,
       });
       return { id: (result as any).insertId };
