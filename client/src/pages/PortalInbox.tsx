@@ -111,7 +111,7 @@ export default function PortalInbox() {
                         <div key={m.id} className={`flex ${fromSalon ? "justify-end" : "justify-start"}`}>
                           <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${fromSalon ? "bg-primary text-primary-foreground" : "border bg-card"}`}>
                             <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">
-                              {m.sender === "client" ? "Client" : m.sender === "assistant" ? "Assistant" : (m.staffName ?? "Staff")}
+                              {m.sender === "client" ? "Client" : m.sender === "assistant" ? "Guapo (automated)" : (m.staffName ?? "Staff")}
                             </p>
                             <p className="whitespace-pre-wrap leading-relaxed">{m.body}</p>
                             <p className={`mt-1 text-[10px] ${fromSalon ? "opacity-70" : "text-muted-foreground"}`}>{when(m.createdAt)}</p>
