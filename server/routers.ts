@@ -126,7 +126,8 @@ const signInCodeAttempts = new Map<string, number[]>();
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
-import { brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { brisbaneDayBounds, brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
+import { bookingsCancelledByPassing } from "../shared/petPassingBookings";
 import { nextVisitAfter } from "@shared/nextVisit";
 import { buildUpcomingDatesSms, upcomingDatesShown } from "@shared/upcomingDatesSms";
 import { calculateSmsCost } from "@shared/smsSegments";
@@ -7491,7 +7492,7 @@ const petsRouter = router({
         .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!pet) throw new Error("Pet not found");
-      if (pet.status === "departed") return { success: true, alreadyRecorded: true, petName: pet.name };
+      if (pet.status === "departed") return { success: true, alreadyRecorded: true, petName: pet.name, review: null, cancelledBookings: 0 };
 
       await db.update(pets).set({ status: "departed", departedAt: new Date() }).where(eq(pets.id, pet.id));
       await db.insert(petMembershipEvents).values({
@@ -7502,6 +7503,47 @@ const petsRouter = router({
         note: input.note || null,
         changedByUserId: ctx.user.id,
       });
+
+      /*
+       * Take the dog's future bookings off the diary. The rule, and why
+       * it is automatic when the membership questions below are not, is
+       * in shared/petPassingBookings.ts.
+       *
+       * Written directly rather than through the cancel procedure on
+       * purpose: that one texts the client a cancellation notice.
+       *
+       * Caught for the same reason as the review below: a booking that
+       * fails to cancel must not undo a passing somebody just recorded.
+       */
+      let cancelledBookings = 0;
+      try {
+        const upcoming = await db
+          .select({ id: appointments.id, workflowState: appointments.workflowState, scheduledStart: appointments.scheduledStart })
+          .from(appointments)
+          .where(and(
+            eq(appointments.tenantId, pet.tenantId),
+            eq(appointments.petId, pet.id),
+            eq(appointments.workflowState, "scheduled"),
+            gte(appointments.scheduledStart, brisbaneDayBounds(new Date()).start),
+          ));
+        const ids = bookingsCancelledByPassing(upcoming, brisbaneDayBounds(new Date()).start).map((b) => b.id);
+        if (ids.length > 0) {
+          await db.update(appointments)
+            .set({ workflowState: "cancelled", status: "cancelled" })
+            // The state guard again, so a dog checked in between the read
+            // and the write is not pulled off the floor.
+            .where(and(inArray(appointments.id, ids), eq(appointments.workflowState, "scheduled")));
+          await db.insert(workflowLogs).values(ids.map((id) => ({
+            appointmentId: id,
+            fromState: "scheduled" as const,
+            toState: "cancelled" as const,
+            notes: "Cancelled when the pet's passing was recorded",
+          })));
+          cancelledBookings = ids.length;
+        }
+      } catch (err) {
+        console.error("[passing] could not cancel the future bookings", err);
+      }
 
       /**
        * What is still attached to this household, so the caller can put
@@ -7564,7 +7606,7 @@ const petsRouter = router({
         console.error("[passing] could not build the membership review", err);
       }
 
-      return { success: true, alreadyRecorded: false, petName: pet.name, review };
+      return { success: true, alreadyRecorded: false, petName: pet.name, review, cancelledBookings };
     }),
 });
 
