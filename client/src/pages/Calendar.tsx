@@ -5597,6 +5597,34 @@ export default function Calendar() {
                     </div>
                   );
                 })()}
+                {/*
+                  * Where the dog is — checked in, bathing, ready — first, and
+                  * loud. Lauren, 12/11/2026: "on the appointment page can the
+                  * check in status area be closer to the top and bolder." It
+                  * sat under the times and the repeat box, a plain dropdown
+                  * among a dozen others, on the dialog staff open to check a
+                  * dog in. It changes this one dog: on a family booking the
+                  * others are in "Dogs on this booking" just below, so it
+                  * says whose it is.
+                  */}
+                <div className={`flex flex-wrap items-center gap-3 rounded-xl border-2 p-3 ${WORKFLOW_COLOURS[editForm.workflowState] ?? "bg-muted/40"}`}>
+                  <Label htmlFor={`status-${editAppt.id}`} className="text-lg font-bold">
+                    Status{editSiblings.length > 0 ? ` · ${editAppt.petName}` : ""}
+                  </Label>
+                  <Select value={editForm.workflowState} onValueChange={v => setEditForm(p => ({ ...p, workflowState: v }))}>
+                    <SelectTrigger id={`status-${editAppt.id}`} className="h-11 min-w-[12rem] flex-1 bg-background text-base font-bold text-foreground">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(WORKFLOW_COLOURS).map(s => (
+                        <SelectItem key={s} value={s} className="text-base">{workflowStateLabel(s)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {editForm.workflowState !== editAppt.workflowState && (
+                    <p className="w-full text-sm font-semibold">Press Save Changes to set it.</p>
+                  )}
+                </div>
                 {(() => {
                   const bookedPetIds = new Set([editAppt, ...editSiblings].map((appointment) => appointment.petId));
                   const availablePets = (editableAppointmentPets.data ?? []).filter((pet) => pet.status === "active" && !bookedPetIds.has(pet.id));
@@ -5626,7 +5654,7 @@ export default function Calendar() {
                   * delete 1 dog from this booking. Teddy isn't coming this
                   * time." She could not. The calendar draws ONE card per
                   * session, so only the lowest-id dog has anything to
-                  * click, and the Status dropdown below applies to that
+                  * click, and the Status dropdown above applies to that
                   * dog alone. The one button that looked right does the
                   * opposite: Delete takes every dog in the session, and
                   * its own confirm says so.
@@ -6056,20 +6084,12 @@ export default function Calendar() {
                 })()}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-base font-semibold">Status</Label>
-                    <Select value={editForm.workflowState} onValueChange={v => setEditForm(p => ({ ...p, workflowState: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {Object.keys(WORKFLOW_COLOURS).map(s => (
-                          <SelectItem key={s} value={s}>{workflowStateLabel(s)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {/* Status moved to the top of the dialog, 12/11/2026. */}
                     {/* A deadline the client gave us — "she has to be home
                         by twelve". It shows on the workflow board so the
                         bathers can order the queue around it, which is no
                         use once the dog is already late. */}
-                    <Label htmlFor={`collect-by-${editAppt.id}`} className="pt-1 text-xs text-muted-foreground">
+                    <Label htmlFor={`collect-by-${editAppt.id}`} className="text-base font-semibold">
                       Must go home by
                     </Label>
                     <div className="flex items-center gap-2">
