@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { PortalSignInLinkForm } from "@/components/PortalSignInLinkForm";
 import { useLocation } from "wouter";
 import { LockKeyhole, Mail, PawPrint } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -28,6 +29,12 @@ export default function ClientPortalLogin() {
    * whatever the address, so the page only ever shows that answer.
    */
   const [resetOpen, setResetOpen] = useState(false);
+  /*
+   * The email link is the way in; a password is the alternative (Andy,
+   * 12/11/2026). Clients who come every six weeks forget passwords, and a
+   * link to their own inbox needs nothing remembered.
+   */
+  const [mode, setMode] = useState<"link" | "password">("link");
   const reset = trpc.clientPortal.requestPasswordReset.useMutation();
   const onReset = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -54,7 +61,13 @@ export default function ClientPortalLogin() {
           <CardTitle className="flex items-center gap-2 text-2xl"><LockKeyhole className="h-5 w-5 text-primary" /> Client sign in</CardTitle>
         </CardHeader>
         <CardContent>
-          {resetOpen ? (
+          {mode === "link" ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">Enter your email and we&rsquo;ll send you a link. Tap it and you&rsquo;re in &mdash; no password needed.</p>
+              <PortalSignInLinkForm autoFocus />
+              <button type="button" className="block w-full text-center text-sm font-medium text-primary underline-offset-4 hover:underline" onClick={() => setMode("password")}>Sign in with a password instead</button>
+            </div>
+          ) : resetOpen ? (
             <form onSubmit={onReset} className="space-y-4">
               <p className="text-sm text-muted-foreground">Enter the email you sign in with and we&rsquo;ll send you a link to set a new password.</p>
               <div className="space-y-2"><Label htmlFor="reset-email">Email</Label><div className="relative"><Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="reset-email" className="pl-9" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required /></div></div>
@@ -72,7 +85,10 @@ export default function ClientPortalLogin() {
             <button type="button" className="block w-full text-center text-sm font-medium text-primary underline-offset-4 hover:underline" onClick={() => { reset.reset(); setResetOpen(true); }}>Forgot password?</button>
           </form>
           )}
-          <p className="mt-4 text-center text-xs text-muted-foreground">Never set up a password? Ask the salon to send you a setup link.</p>
+          {mode === "password" && (
+            <button type="button" className="mt-3 block w-full text-center text-sm font-medium text-primary underline-offset-4 hover:underline" onClick={() => { setResetOpen(false); setMode("link"); }}>Email me a sign-in link instead</button>
+          )}
+          <p className="mt-4 text-center text-xs text-muted-foreground">New to the portal? Ask the salon to send you an invitation.</p>
         </CardContent>
       </Card>
     </section>

@@ -98,7 +98,7 @@ import {
   MIN_FREQUENCY_WEEKS, MAX_FREQUENCY_WEEKS, MAX_OCCURRENCES,
 } from "@shared/recurrenceRule";
 import { loadApprovedQuoteExtras, approvedQuoteExtrasTotal } from "./groomQuoteExtras";
-import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie } from "./clientPortalSession";
+import { clearClientPortalSessionCookie, readClientPortalSession, setClientPortalSessionCookie, createClientPortalSignInToken, verifyClientPortalSignInToken, clientPortalSignInCode, signInCodeWindow, signInCodeMatches } from "./clientPortalSession";
 import { DEFAULT_TIMING_REVIEW_THRESHOLDS, getTimingReviewScopeKey, resolveTimingReviewThreshold, TIMING_REVIEW_SIZE_PRESETS, type TimingReviewThresholdRule } from "../shared/workflowTimingReviewThresholds";
 import { getFamilySessionTimeAlignments } from "../shared/familyAppointmentAlignment";
 import { resolveAppointmentMembershipCoverage, type AppointmentService } from "../shared/appointmentMembershipCoverage";
@@ -107,6 +107,7 @@ import { initialMembershipStatus } from "../shared/membershipInitialStatus";
 import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
 import { cleanPlanFields } from "../shared/membershipPlanFields";
 import { portalAllSetEmail } from "../shared/portalAllSetEmail";
+import { SIGNIN_LINK_SENT_MESSAGE, portalSignInEmail } from "../shared/portalSignInEmail";
 import { loadVipMembers } from "./vipMembers";
 import { repeatBookingRefusal } from "../shared/repeatBookingRefusal";
 import { bookingLengthProblem } from "../shared/bookingLength";
@@ -117,6 +118,11 @@ import {
 /** Self-service reset throttles. In memory: one web process, and a restart only forgives. */
 const selfResetByEmail = new Map<string, number>();
 const selfResetByIp = new Map<string, number[]>();
+/** Same throttles for "email me a sign-in link". */
+const signInLinkByEmail = new Map<string, number>();
+const signInLinkByIp = new Map<string, number[]>();
+/** Wrong-code guesses per address, for redeemSignInCode. */
+const signInCodeAttempts = new Map<string, number[]>();
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
@@ -16113,6 +16119,144 @@ const clientPortalRouter = router({
       }
       await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion + 1 });
       return { success: true, client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail } };
+    }),
+
+  /**
+   * "Email me a sign-in link" — the main way back into the portal
+   * (Andy, 12/11/2026: nobody invited could get back in). A link to the
+   * address on the account, valid 15 minutes and once
+   * (server/clientPortalSession.ts). Answers the same whatever the
+   * address, only sends to a live account, skips held clients, and is
+   * throttled per address and per IP like the password reset.
+   */
+  requestSignInLink: publicProcedure
+    .input(z.object({ email: z.string().trim().email().max(320) }))
+    .mutation(async ({ input, ctx }) => {
+      const answer = { success: true as const, message: SIGNIN_LINK_SENT_MESSAGE };
+      const now = Date.now();
+      const forwarded = String((ctx.req as any)?.headers?.["x-forwarded-for"] ?? "").split(",").map((part) => part.trim()).filter(Boolean);
+      const ip = forwarded.at(-1) ?? String((ctx.req as any)?.socket?.remoteAddress ?? "unknown");
+      const ipCheck = ipRequestAllowed(signInLinkByIp.get(ip) ?? [], now);
+      signInLinkByIp.set(ip, ipCheck.allowed ? [...ipCheck.keep, now] : ipCheck.keep);
+      if (!ipCheck.allowed) return answer;
+
+      const loginEmail = input.email.trim().toLowerCase();
+      if (!resetEmailAllowed(signInLinkByEmail.get(loginEmail), now)) return answer;
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [client] = await db.select({
+        id: clients.id,
+        tenantId: clients.tenantId,
+        firstName: clients.firstName,
+        portalAccountStatus: clients.portalAccountStatus,
+        portalSessionVersion: clients.portalSessionVersion,
+        portalLastSignedInAt: clients.portalLastSignedInAt,
+      })
+        .from(clients)
+        .where(and(eq(clients.tenantId, 1), eq(clients.portalLoginEmail, loginEmail)))
+        .limit(1);
+      // A live account only. Somebody who never finished setting up still
+      // has their invitation, which carries the service agreement.
+      if (!client || client.portalAccountStatus !== "active") return answer;
+      if (heldClientIds(client.tenantId).has(client.id)) return answer;
+      signInLinkByEmail.set(loginEmail, now);
+
+      const claim = {
+        clientId: client.id,
+        tenantId: client.tenantId,
+        sessionVersion: client.portalSessionVersion,
+        lastSignedInMs: client.portalLastSignedInAt ? new Date(client.portalLastSignedInAt).getTime() : 0,
+      };
+      const token = await createClientPortalSignInToken(claim);
+      const code = clientPortalSignInCode(claim, signInCodeWindow());
+      const [salon] = await db.select({ name: tenants.name, email: tenants.email }).from(tenants).where(eq(tenants.id, client.tenantId)).limit(1);
+      const email = portalSignInEmail({
+        firstName: client.firstName,
+        signInUrl: `${getPortalBaseUrl()}/portal/signin/${token}`,
+        salonName: salon?.name ?? "Barkin' Beautiful",
+        code,
+      });
+      const { sendEmail } = await import("./email");
+      await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, replyTo: salon?.email ?? null })
+        .catch((error: unknown) => { console.error("[portal] sign-in link email failed", error); return false; });
+      return answer;
+    }),
+
+  /**
+   * Sign in with the six-digit code from the same email — for a portal
+   * saved to an iPhone Home Screen, which keeps its own sign-in apart from
+   * Safari where the link would open. Five wrong codes per address per 15
+   * minutes, then refused, so a million combinations cannot be walked.
+   */
+  redeemSignInCode: publicProcedure
+    .input(z.object({ email: z.string().trim().email().max(320), code: z.string().trim().min(6).max(12) }))
+    .mutation(async ({ input, ctx }) => {
+      const wrong = new TRPCError({ code: "UNAUTHORIZED", message: "That code didn't work. Check the latest email, or ask for a new one." });
+      const loginEmail = input.email.trim().toLowerCase();
+      const now = Date.now();
+      const attempts = (signInCodeAttempts.get(loginEmail) ?? []).filter((t) => now - t < 15 * 60 * 1000);
+      if (attempts.length >= 5) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many tries. Ask for a new code in a few minutes." });
+      }
+      signInCodeAttempts.set(loginEmail, [...attempts, now]);
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [client] = await db.select({
+        id: clients.id,
+        tenantId: clients.tenantId,
+        portalAccountStatus: clients.portalAccountStatus,
+        portalSessionVersion: clients.portalSessionVersion,
+        portalLastSignedInAt: clients.portalLastSignedInAt,
+      }).from(clients).where(and(eq(clients.tenantId, 1), eq(clients.portalLoginEmail, loginEmail))).limit(1);
+      if (!client || client.portalAccountStatus !== "active") throw wrong;
+      if (heldClientIds(client.tenantId).has(client.id)) throw wrong;
+      const lastMs = client.portalLastSignedInAt ? new Date(client.portalLastSignedInAt).getTime() : 0;
+      const claim = { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion, lastSignedInMs: lastMs };
+      if (!signInCodeMatches(claim, input.code, now)) throw wrong;
+
+      const result = await db.update(clients).set({ portalLastSignedInAt: new Date(Math.max(now, lastMs + 1000)), updatedAt: new Date() })
+        .where(and(
+          eq(clients.id, client.id),
+          client.portalLastSignedInAt ? eq(clients.portalLastSignedInAt, client.portalLastSignedInAt) : isNull(clients.portalLastSignedInAt),
+        ));
+      if (Number((result as any)?.[0]?.affectedRows ?? 0) !== 1) throw wrong;
+      signInCodeAttempts.delete(loginEmail);
+      await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion });
+      return { success: true };
+    }),
+
+  /** Use a sign-in link: one use, 15 minutes, a live account only. */
+  redeemSignInLink: publicProcedure
+    .input(z.object({ token: z.string().min(20).max(2048) }))
+    .mutation(async ({ input, ctx }) => {
+      const dead = new TRPCError({ code: "UNAUTHORIZED", message: "This sign-in link has expired or has already been used. Ask for a new one below." });
+      const claim = await verifyClientPortalSignInToken(input.token);
+      if (!claim) throw dead;
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [client] = await db.select({
+        id: clients.id,
+        tenantId: clients.tenantId,
+        portalAccountStatus: clients.portalAccountStatus,
+        portalSessionVersion: clients.portalSessionVersion,
+        portalLastSignedInAt: clients.portalLastSignedInAt,
+      }).from(clients).where(and(eq(clients.id, claim.clientId), eq(clients.tenantId, claim.tenantId))).limit(1);
+      if (!client || client.portalAccountStatus !== "active") throw dead;
+      if (client.portalSessionVersion !== claim.sessionVersion) throw dead;
+      const lastMs = client.portalLastSignedInAt ? new Date(client.portalLastSignedInAt).getTime() : 0;
+      // Any sign-in since the link was sent — this link or another — uses it up.
+      if (lastMs !== claim.lastSignedInMs) throw dead;
+      const signedInAt = new Date(Math.max(Date.now(), lastMs + 1000));
+      const result = await db.update(clients).set({ portalLastSignedInAt: signedInAt, updatedAt: new Date() })
+        .where(and(
+          eq(clients.id, client.id),
+          client.portalLastSignedInAt ? eq(clients.portalLastSignedInAt, client.portalLastSignedInAt) : isNull(clients.portalLastSignedInAt),
+        ));
+      if (Number((result as any)?.[0]?.affectedRows ?? 0) !== 1) throw dead;
+      await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion });
+      return { success: true };
     }),
 
   /**

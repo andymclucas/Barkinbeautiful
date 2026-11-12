@@ -81,7 +81,7 @@ describe("which door a page belongs to", () => {
       // business decision rather than a routing one.
       "/book": "staff", "/join": "staff", "/waitlist": "staff",
       // The client portal and everything we text a client.
-      "/portal": "client", "/portal/login": "client", "/portal/setup/:token": "client",
+      "/portal": "client", "/portal/login": "client", "/portal/setup/:token": "client", "/portal/signin/:token": "client",
       "/portal/invoice-paid": "client", "/portal/invoice-cancelled": "client",
       "/portal/card-saved": "client", "/portal/card-cancelled": "client",
       // Where /card/<token> lands a client whose link will not verify or

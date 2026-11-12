@@ -62,6 +62,7 @@ const ClientPortal = lazyPage(() => import("./pages/ClientPortal"));
 const GroomingCard = lazyPage(() => import("./pages/GroomingCard"));
 const ClientPortalLogin = lazyPage(() => import("./pages/ClientPortalLogin"));
 const ClientPortalSetup = lazyPage(() => import("./pages/ClientPortalSetup"));
+const ClientPortalSignIn = lazyPage(() => import("./pages/ClientPortalSignIn"));
 const ClientPortalCardResult = lazyPage(() => import("./pages/ClientPortalCardResult"));
 const ClientInvoiceResult = lazyPage(() => import("./pages/ClientInvoiceResult"));
 
@@ -140,6 +141,8 @@ function Router() {
       <Route path="/portal" component={ClientPortal} />
       <Route path="/portal/login" component={ClientPortalLogin} />
       <Route path="/portal/setup/:token" component={ClientPortalSetup} />
+      {/* Before /portal/:token, which would otherwise read "signin" as an access token. */}
+      <Route path="/portal/signin/:token" component={ClientPortalSignIn} />
       {/* Stripe returns here after a card setup link. These must stay above
           "/portal/:token", which would otherwise match "card-saved" as a
           token and show the client an error right after they handed over
