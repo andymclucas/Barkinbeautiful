@@ -15,7 +15,8 @@
 import { VipMark } from "@/components/VipMark";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { CalendarDays, Check, Dog, Loader2, Search, User } from "lucide-react";
+import { CalendarDays, Check, Dog, History, Loader2, Search, User } from "lucide-react";
+import { useRecentSearches } from "@/hooks/useRecentSearches";
 import { trpc } from "@/lib/trpc";
 import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
@@ -52,6 +53,11 @@ export function GlobalSearch() {
   const [kinds, setKinds] = useState<SearchKind[]>(["pet", "client", "appointment"]);
   const [, navigate] = useLocation();
   const debounced = useDebounced(query, 220);
+  const { recent, remember, clear: clearRecent, refresh: refreshRecent } = useRecentSearches("global");
+
+  // Re-read on every open: the clients page, or another tab, may have
+  // added one since.
+  useEffect(() => { if (open) refreshRecent(); }, [open, refreshRecent]);
 
   const { data, isFetching } = trpc.search.everything.useQuery(
     { query: debounced, kinds },
@@ -91,7 +97,17 @@ export function GlobalSearch() {
     setQuery("");
     navigate(href);
   };
-  const go = (hit: SearchHit) => goTo(hit.href);
+  /* Remembered only when something is opened (Andy, 12/11/2026: "the last
+     5 searches that something was clicked on"). */
+  const go = (hit: SearchHit) => {
+    remember({ kind: hit.kind, title: hit.title, subtitle: hit.subtitle, href: hit.href, query: debounced });
+    goTo(hit.href);
+  };
+  const goToDog = (hit: SearchHit, dog: { id: number; name: string }) => {
+    const href = `/clients/${hit.id}?pet=${dog.id}`;
+    remember({ kind: "pet", title: dog.name, subtitle: hit.title, href, query: debounced });
+    goTo(href);
+  };
 
   const short = debounced.trim().length > 0 && debounced.trim().length < 2;
 
@@ -165,7 +181,56 @@ export function GlobalSearch() {
               shouldFilter={false} on the dialog below. */}
           {/* The resting state. An empty box that says nothing makes
               people guess what it accepts; this says it outright. */}
-          {debounced.trim().length === 0 && (
+          {/* Recent: the last five results opened from here, one tap back
+              to each (Andy, 12/11/2026). Shown while the box is empty and
+              before anything is typed, in place of the explainer. */}
+          {query.trim().length === 0 && recent.length > 0 && (
+            <CommandGroup
+              heading={
+                <span className="flex items-center justify-between">
+                  <span>Recent</span>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={clearRecent}
+                    className="rounded px-1 text-[11px] font-normal normal-case text-muted-foreground hover:text-foreground"
+                  >
+                    Clear
+                  </button>
+                </span>
+              }
+            >
+              {recent.map((item) => {
+                const Icon = ICON[item.kind];
+                return (
+                  <CommandItem
+                    key={item.href}
+                    value={`recent-${item.href}`}
+                    onSelect={() => {
+                      remember({ kind: item.kind, title: item.title, subtitle: item.subtitle, href: item.href, query: item.query });
+                      goTo(item.href);
+                    }}
+                    className="gap-2.5"
+                  >
+                    <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate font-medium leading-tight">{item.title}</span>
+                      {item.subtitle && (
+                        <span className="truncate text-xs leading-tight text-muted-foreground">{item.subtitle}</span>
+                      )}
+                    </span>
+                    {item.query && (
+                      <span className="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground sm:inline-flex">
+                        <History className="size-3" />
+                        {item.query}
+                      </span>
+                    )}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          )}
+          {query.trim().length === 0 && recent.length === 0 && (
             <div className="px-6 py-10 text-center">
               <Search className="mx-auto mb-2 h-5 w-5 text-muted-foreground/60" />
               <p className="text-sm font-medium">Search the whole salon</p>
@@ -254,7 +319,7 @@ export function GlobalSearch() {
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={(e) => {
                               e.stopPropagation();
-                              goTo(`/clients/${hit.id}?pet=${dog.id}`);
+                              goToDog(hit, dog);
                             }}
                             className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
                           >
