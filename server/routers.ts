@@ -106,6 +106,7 @@ import { getMembershipPackageById, getMembershipPackagesForWeight, getMembership
 import { initialMembershipStatus } from "../shared/membershipInitialStatus";
 import { assignablePackagesFor, customPlanId, fromPlan, validatePlanForAssignment, STORABLE_TIERS, STORABLE_SERVICE_TYPES } from "../shared/membershipAssignable";
 import { cleanPlanFields } from "../shared/membershipPlanFields";
+import { portalAllSetEmail } from "../shared/portalAllSetEmail";
 import {
   RESET_REQUESTED_MESSAGE, SELF_RESET_TTL_MS, ipRequestAllowed, portalPasswordResetEmail, resetEmailAllowed,
 } from "../shared/portalPasswordReset";
@@ -15948,6 +15949,30 @@ const clientPortalRouter = router({
       await recordSystemNotification(db, {
         tenantId: client.tenantId, kind: "client_portal_activated", clientId: client.id,
       });
+      /*
+       * "You're all set" (Andy, 12/11/2026): the sign-in address, in their
+       * inbox, the moment the password exists — so nobody goes back to the
+       * one-use setup email. Worded as "password changed" when this
+       * replaced a working one. Not awaited and caught: an email outage
+       * must never stop a client finishing their own setup.
+       */
+      if (client.portalLoginEmail && !heldClientIds(client.tenantId).has(client.id)) {
+        const loginEmail = client.portalLoginEmail;
+        void (async () => {
+          const [salon] = await db.select({ name: tenants.name, phone: tenants.phone, email: tenants.email })
+            .from(tenants).where(eq(tenants.id, client.tenantId)).limit(1);
+          const allSet = portalAllSetEmail({
+            firstName: client.firstName,
+            signInUrl: `${getPortalBaseUrl()}/portal/login`,
+            loginEmail,
+            salonName: salon?.name ?? "Barkin' Beautiful",
+            salonPhone: salon?.phone ?? null,
+            wasReset: client.portalAccountStatus === "active",
+          });
+          const { sendEmail } = await import("./email");
+          await sendEmail({ to: loginEmail, subject: allSet.subject, html: allSet.html, replyTo: salon?.email ?? null });
+        })().catch((error: unknown) => console.error("[portal] all-set email failed", error));
+      }
       await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion + 1 });
       return { success: true, client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail } };
     }),
