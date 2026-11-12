@@ -17098,7 +17098,7 @@ const clientPortalRouter = router({
 
       /*
        * The rules first, always: they own every answer that is a lookup.
-       * Guapo's model is asked only when they would have handed the
+       * Bruce's model is asked only when they would have handed the
        * message to the team, the message is one it is allowed to see,
        * and nobody asked for a person. Its answer has already been
        * through safeModelReply; null means the team answers, as before.

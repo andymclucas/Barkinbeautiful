@@ -1,5 +1,5 @@
 /**
- * What Guapo knows about the CLIENT portal.
+ * What Bruce knows about the CLIENT portal.
  *
  * Hand-written and only what is true of the portal today. He is told to
  * hand over rather than guess, so a gap here becomes a message to the
