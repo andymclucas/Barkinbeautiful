@@ -18,6 +18,16 @@ export default function ClientPortalLogin() {
   const login = trpc.clientPortal.login.useMutation({
     onSuccess: () => navigate("/portal"),
   });
+  /*
+   * Forgot password (Andy, 12/11/2026). The server answers the same
+   * whatever the address, so the page only ever shows that answer.
+   */
+  const [resetOpen, setResetOpen] = useState(false);
+  const reset = trpc.clientPortal.requestPasswordReset.useMutation();
+  const onReset = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    reset.mutate({ email });
+  };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -39,13 +49,25 @@ export default function ClientPortalLogin() {
           <CardTitle className="flex items-center gap-2 text-2xl"><LockKeyhole className="h-5 w-5 text-primary" /> Client sign in</CardTitle>
         </CardHeader>
         <CardContent>
+          {resetOpen ? (
+            <form onSubmit={onReset} className="space-y-4">
+              <p className="text-sm text-muted-foreground">Enter the email you sign in with and we&rsquo;ll send you a link to set a new password.</p>
+              <div className="space-y-2"><Label htmlFor="reset-email">Email</Label><div className="relative"><Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="reset-email" className="pl-9" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required /></div></div>
+              {reset.data && <p role="status" className="rounded-lg bg-primary/10 p-3 text-sm">{reset.data.message}</p>}
+              {reset.error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{reset.error.message}</p>}
+              <Button type="submit" className="w-full" disabled={reset.isPending || !email}>{reset.isPending ? "Sending…" : reset.data ? "Send again" : "Email me a reset link"}</Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => setResetOpen(false)}>Back to sign in</Button>
+            </form>
+          ) : (
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2"><Label htmlFor="client-email">Email</Label><div className="relative"><Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="client-email" className="pl-9" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required /></div></div>
             <div className="space-y-2"><Label htmlFor="client-password">Password</Label><Input id="client-password" type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required /></div>
             {login.error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{login.error.message}</p>}
             <Button type="submit" className="w-full" disabled={login.isPending}>{login.isPending ? "Signing in…" : "Sign in to client portal"}</Button>
+            <button type="button" className="block w-full text-center text-sm font-medium text-primary underline-offset-4 hover:underline" onClick={() => { reset.reset(); setResetOpen(true); }}>Forgot password?</button>
           </form>
-          <p className="mt-4 text-center text-xs text-muted-foreground">Need access? Ask the salon to create a setup link for your account.</p>
+          )}
+          <p className="mt-4 text-center text-xs text-muted-foreground">Never set up a password? Ask the salon to send you a setup link.</p>
         </CardContent>
       </Card>
     </section>
