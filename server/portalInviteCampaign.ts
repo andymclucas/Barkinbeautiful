@@ -234,7 +234,7 @@ export function runPortalInviteCampaign(
   db: any,
   campaignId: number,
   tenantId: number,
-  sendEmail: (args: { to: string; subject: string; html: string; replyTo?: string | null }) => Promise<boolean>,
+  sendEmail: (args: { to: string; subject: string; html: string; replyTo?: string | null }) => Promise<boolean | { ok: boolean; id: string | null }>,
   wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
 ): boolean {
   if (running.has(campaignId)) return false;
@@ -255,7 +255,7 @@ async function processCampaign(
   db: any,
   campaignId: number,
   tenantId: number,
-  sendEmail: (args: { to: string; subject: string; html: string; replyTo?: string | null }) => Promise<boolean>,
+  sendEmail: (args: { to: string; subject: string; html: string; replyTo?: string | null }) => Promise<boolean | { ok: boolean; id: string | null }>,
   wait: (ms: number) => Promise<void>,
 ) {
   // Rows claimed by a run that died: not known whether they went.
@@ -291,6 +291,7 @@ async function processCampaign(
 
     let status: "sent" | "failed" = "failed";
     let errorMessage: string | null = null;
+    let resendMessageId: string | null = null;
     try {
       const issued = await issueSetupLinkForCampaign(db, row.clientId, tenantId, row.email);
       if ("skip" in issued) {
@@ -305,7 +306,11 @@ async function processCampaign(
           expiresAt: issued.setup.expiresAt,
           agreementTitles: pending.map((a) => a.title),
         });
-        const ok = await sendEmail({ to: row.email, subject: email.subject, html: email.html, replyTo: tenant?.email ?? null });
+        // The live sender returns Resend's id with the result; older or
+        // test senders return a bare boolean.
+        const sentResult = await sendEmail({ to: row.email, subject: email.subject, html: email.html, replyTo: tenant?.email ?? null });
+        const ok = typeof sentResult === "boolean" ? sentResult : sentResult.ok;
+        resendMessageId = typeof sentResult === "boolean" ? null : sentResult.id;
         if (ok) status = "sent";
         else errorMessage = "The email service refused it. The client's setup link was created; send it from their client page.";
       }
@@ -313,7 +318,8 @@ async function processCampaign(
       errorMessage = `Failed: ${(error as Error).message}`;
     }
 
-    await db.update(emailCampaignSends).set({ status, errorMessage })
+    // resendMessageId lets Resend's opened/clicked events find this row.
+    await db.update(emailCampaignSends).set({ status, errorMessage, ...(resendMessageId ? { resendMessageId } : {}) })
       .where(eq(emailCampaignSends.id, row.id));
     if (status === "sent") {
       await db.update(emailCampaigns).set({ totalSent: sql`COALESCE(${emailCampaigns.totalSent}, 0) + 1` })
