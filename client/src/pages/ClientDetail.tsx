@@ -14,6 +14,7 @@ import { PetCodePicker } from "@/components/PetCodePicker";
 import { PassingReviewDialog } from "@/components/PassingReviewDialog";
 import { PetEditorDialog, type EditablePet } from "@/components/PetEditorDialog";
 import type { PassingReview } from "@shared/petPassingReview";
+import { describeCancelledBookings } from "@shared/petPassingBookings";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -515,7 +516,14 @@ export default function ClientDetail() {
       await utils.clients.getProfile.invalidate({ clientId });
       setDepartedPet(null);
       setDepartureNote("");
-      toast.success(result.alreadyRecorded ? `${result.petName} is already recorded as passed away` : `${result.petName} has been recorded as passed away`);
+      await utils.calendar.invalidate();
+      toast.success(
+        result.alreadyRecorded
+          ? `${result.petName} is already recorded as passed away`
+          : result.cancelledBookings > 0
+            ? `${result.petName} has been recorded as passed away. ${describeCancelledBookings(result.cancelledBookings)} cancelled, with no text sent.`
+            : `${result.petName} has been recorded as passed away`,
+      );
       if (result.review && !result.review.isEmpty) setPassingReview(result.review);
     },
     onError: (error) => toast.error(error.message),
@@ -2945,6 +2953,7 @@ export default function ClientDetail() {
           </DialogHeader>
           <div className="space-y-3 py-1 text-sm">
             <p>This keeps <strong>{departedPet?.name}</strong> in the client’s history. It will not delete past appointments, grooming reports or payment records.</p>
+            <p>Any <strong>future bookings</strong> for {departedPet?.name} are cancelled when you save. The client is not sent a cancellation text.</p>
             <p className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-900 dark:text-amber-200">If there is an active membership, use its <strong>Manage</strong> button after saving to either transfer it to an eligible same-size replacement pet or remove it and stop future billing.</p>
             <div className="space-y-1.5">
               <Label htmlFor="departure-note">Private care note (optional)</Label>
