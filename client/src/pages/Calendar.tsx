@@ -133,6 +133,7 @@ import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { annotateSlots, blockingClashes, busyFromRows, clashesFor, concurrentDogs, describeClash, unavailableWarning } from "@shared/groomerAvailability";
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
+import { familyRescheduleCalls } from "@shared/familyGroomerSave";
 import { isCancelledAppointment, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
 import {
   bookingAttendance, describeRemoval, describeAttendance,
@@ -2996,25 +2997,18 @@ export default function Calendar() {
 
     const promises: Promise<unknown>[] = [];
     const keepOriginalCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
-    if (!keepOriginalCancelledSchedule) {
-      promises.push(rescheduleMutation.mutateAsync({
-        appointmentId:  editAppt.id,
-        scheduledStart: editForm.scheduledStart,
-        scheduledEnd:   editForm.scheduledEnd,
-        staffId: editForm.staffId && editForm.staffId !== "__unassigned__" ? parseInt(editForm.staffId) : null,
-      }));
-    }
-    // Save sibling groomer assignments if they were changed
     const siblings = getSiblings(editAppt);
-    for (const sib of siblings) {
-      const newStaffIdStr = siblingGroomers[sib.id];
-      if (!keepOriginalCancelledSchedule && newStaffIdStr !== undefined) {
-        promises.push(rescheduleMutation.mutateAsync({
-          appointmentId: sib.id,
-          scheduledStart: editForm.scheduledStart,
-          scheduledEnd: editForm.scheduledEnd,
-          staffId: newStaffIdStr ? parseInt(newStaffIdStr) : null,
-        }));
+    // Every dog's groomer, the first dog's included — on a family booking
+    // its choice is the per-dog dropdown, not the hidden single-dog field
+    // (shared/familyGroomerSave.ts).
+    if (!keepOriginalCancelledSchedule) {
+      for (const call of familyRescheduleCalls({
+        primary: editAppt,
+        siblings,
+        pickedGroomers: siblingGroomers,
+        form: { staffId: editForm.staffId, scheduledStart: editForm.scheduledStart, scheduledEnd: editForm.scheduledEnd },
+      })) {
+        promises.push(rescheduleMutation.mutateAsync(call));
       }
     }
     // For multi-pet sessions, per-dog price and service come from the sibling
@@ -5748,7 +5742,13 @@ export default function Calendar() {
                             <Select
                               value={siblingGroomers[pet.id] !== undefined ? (siblingGroomers[pet.id] || "__unassigned__") : (String(pet.staffId ?? "") || "__unassigned__")}
                               disabled={preservesCancelledSchedule}
-                              onValueChange={v => setSiblingGroomers(prev => ({ ...prev, [pet.id]: v === "__unassigned__" ? "" : v }))}
+                              onValueChange={v => {
+                                const picked = v === "__unassigned__" ? "" : v;
+                                setSiblingGroomers(prev => ({ ...prev, [pet.id]: picked }));
+                                // The first dog's groomer is also the one the
+                                // leave and capacity warnings check.
+                                if (pet.id === editAppt.id) setEditForm(p => ({ ...p, staffId: picked }));
+                              }}
                             >
                               <SelectTrigger className="h-8 text-xs flex-1"><SelectValue placeholder="Unassigned" /></SelectTrigger>
                               <SelectContent>

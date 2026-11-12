@@ -7,7 +7,12 @@ describe("cancelled appointment calendar visibility", () => {
   it("keeps a cancelled booking at its existing scheduled time rather than rescheduling it during status save", () => {
 
     expect(calendarSource).toContain("if (!keepOriginalCancelledSchedule) {");
-    expect(calendarSource).toContain("if (!keepOriginalCancelledSchedule && newStaffIdStr !== undefined)");
+    // Every dog's reschedule, the first dog's and its siblings', comes from
+    // one call that sits inside that guard (shared/familyGroomerSave.ts),
+    // so a cancelled booking moves none of them. Counted, so a second
+    // call site outside the guard fails here.
+    expect(calendarSource.match(/familyRescheduleCalls\(/g)).toHaveLength(1);
+    expect(calendarSource).toMatch(/if \(!keepOriginalCancelledSchedule\) \{\s*for \(const call of familyRescheduleCalls\(/);
     expect(calendarSource).toContain("Cancelled appointments stay at their original booked time for historical tracking.");
   });
 
