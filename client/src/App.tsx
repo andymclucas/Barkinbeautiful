@@ -35,6 +35,7 @@ const Pricing = lazyPage(() => import("./pages/Pricing"));
 const Retail = lazyPage(() => import("./pages/Retail"));
 const CounterSalePage = lazyPage(() => import("./pages/CounterSalePage"));
 const IssueReports = lazyPage(() => import("./pages/IssueReports"));
+const SupportInbox = lazyPage(() => import("./pages/SupportInbox"));
 const Analytics = lazyPage(() => import("./pages/Analytics"));
 const Staff = lazyPage(() => import("./pages/Staff").then(m => ({ default: m.default })));
 const StaffReviewProfile = lazyPage(() => import("./pages/Staff").then(m => ({ default: m.StaffReviewProfile })));
@@ -108,6 +109,7 @@ function Router() {
       <Route path="/retail" component={Retail} />
       <Route path="/counter" component={CounterSalePage} />
       <Route path="/issues" component={IssueReports} />
+      <Route path="/support" component={SupportInbox} />
       <Route path="/analytics" component={Analytics} />
       <Route path="/staff/review/:staffId" component={StaffReviewProfile} />
       <Route path="/staff" component={Staff} />

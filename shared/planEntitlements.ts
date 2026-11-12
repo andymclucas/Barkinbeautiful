@@ -269,6 +269,7 @@ const ALLOWED_WHEN_EXPIRED = [
   "trial.", // the screen telling them what happened
   "clients.exportCsv", // THE data export — see canExportData() in planEntitlements
   "issueReports.submit", // a salon whose trial ended can still tell us something is wrong
+  "supportChat.", // and can still ask support for help, which is when they most need it
 ];
 
 /**
