@@ -5894,6 +5894,7 @@ export default function Calendar() {
                                       message: describeRemoval(
                                         row.name,
                                         rows.filter(r => r.coming && r.id !== row.id).map(r => r.name),
+                                        row.checkedIn === true,
                                       ),
                                     });
                                   } else {
