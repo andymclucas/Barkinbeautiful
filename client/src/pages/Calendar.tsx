@@ -2775,6 +2775,33 @@ export default function Calendar() {
     [editRepeat.enabled, editRecurrenceRequest],
   );
 
+  /*
+   * Dates a repeat skipped, kept on screen to be sorted out with the
+   * client — another groomer, or another day (Andy, 12/11/2026). A toast
+   * listing them disappeared and left staff retyping each one.
+   */
+  type SkippedRepeatDate = { key: string; reason: string; date: string; time: string; staffId: string; booked?: string; error?: string };
+  const [skippedRepeat, setSkippedRepeat] = useState<SkippedRepeatDate[]>([]);
+  const bookSkippedMutation = trpc.calendar.addRecurrenceOccurrence.useMutation();
+  const bookSkippedDate = async (row: SkippedRepeatDate) => {
+    if (!editAppt) return;
+    setSkippedRepeat(rows => rows.map(r => r.key === row.key ? { ...r, error: undefined } : r));
+    try {
+      await bookSkippedMutation.mutateAsync({
+        appointmentId: editAppt.id,
+        scheduledStart: `${row.date}T${row.time}`,
+        staffId: row.staffId ? Number(row.staffId) : undefined,
+      });
+      const who = activeStaff.find(st => String(st.id) === row.staffId)?.name;
+      const label = `${formatAestDate(parseBrisbaneLocalDateTime(`${row.date}T${row.time}`), { weekday: "short", day: "numeric", month: "short" })}${who ? ` with ${who}` : ""}`;
+      setSkippedRepeat(rows => rows.map(r => r.key === row.key ? { ...r, booked: label } : r));
+      toast.success(`Booked ${label}`);
+      refetch();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "That date could not be booked";
+      setSkippedRepeat(rows => rows.map(r => r.key === row.key ? { ...r, error: message } : r));
+    }
+  };
   const addRecurrenceMutation = trpc.calendar.addRecurrenceToAppointment.useMutation({
     onSuccess: (r) => {
       /* Nothing created is not a success. Every date can be skipped —
@@ -2794,6 +2821,19 @@ export default function Calendar() {
        * is not actionable — somebody has to go and rebook each one.
        */
       if (r.skipped.length > 0) {
+        // Kept in the dialog with a groomer and a day to change, as well as named below.
+        setSkippedRepeat(r.skipped
+          .filter(x => x.reason !== "That date has already passed")
+          .map((x, i) => {
+            const local = brisbaneLocalInputValue(new Date(x.scheduledStart));
+            return {
+              key: `${local}-${i}`,
+              reason: x.reason,
+              date: local.slice(0, 10),
+              time: local.slice(11, 16),
+              staffId: editAppt?.staffId ? String(editAppt.staffId) : "",
+            };
+          }));
         /* Grouped by the server's OWN reason. There are four now — the
            groomer is booked, the groomer is away or the salon is shut,
            the dog is already in that day, or the date has passed — and
@@ -2966,6 +3006,7 @@ export default function Calendar() {
     setSiblingGroomers({});
     setSiblingPrices({});
     setSiblingServices({});
+    setSkippedRepeat([]);
     setAdditionalFamilyPetIds([]);
     // Drives "Copy to all", which overwrites every field of a grooming report,
     // before and after photos included. Left set, it would apply itself to the
@@ -6132,8 +6173,9 @@ export default function Calendar() {
                             <p className="text-xs text-muted-foreground">
                               This booking stays as it is — these are added after it, at the same
                               time, with the same {editSiblings.length > 0 ? "dogs and groomers" : "groomer"}.
-                              If the groomer is already booked on one of these dates, that date is
-                              skipped and named, and the rest are still created.
+                              If the groomer is away, the salon is closed or the dog is already in
+                              that day, that date is held back and listed below to rebook with
+                              another groomer or on another day; the rest are still created.
                             </p>
                           </div>
                         )}
@@ -6155,6 +6197,58 @@ export default function Calendar() {
                         </Button>
                       </div>
                     )}
+                  </div>
+                )}
+                {skippedRepeat.length > 0 && (
+                  <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
+                    <div>
+                      <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+                        {skippedRepeat.filter(r => !r.booked).length === 0
+                          ? "Every skipped date is now booked"
+                          : `${skippedRepeat.filter(r => !r.booked).length} date${skippedRepeat.filter(r => !r.booked).length === 1 ? "" : "s"} still to sort out`}
+                      </p>
+                      <p className="text-xs text-amber-900 dark:text-amber-200">
+                        Change the groomer or the day with the client, then book each one. The rest of the series is already in.
+                      </p>
+                    </div>
+                    {skippedRepeat.map(row => (
+                      <div key={row.key} className="space-y-1.5 rounded-md border border-amber-200 bg-background p-2 dark:border-amber-900/60">
+                        {row.booked ? (
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">✓ Booked {row.booked}</p>
+                        ) : (
+                          <>
+                            <p className="text-xs text-muted-foreground">{row.reason}</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <DateField
+                                value={row.date}
+                                aria-label="New date"
+                                wrapperClassName="w-[9.5rem]"
+                                className="h-8 text-xs"
+                                onChange={v => setSkippedRepeat(rows => rows.map(r => r.key === row.key ? { ...r, date: v, error: undefined } : r))}
+                              />
+                              <Input type="time" step={900} className="h-8 w-[7rem] text-xs" value={row.time}
+                                onChange={e => setSkippedRepeat(rows => rows.map(r => r.key === row.key ? { ...r, time: e.target.value, error: undefined } : r))} />
+                              <Select value={row.staffId || "__keep__"} onValueChange={v => setSkippedRepeat(rows => rows.map(r => r.key === row.key ? { ...r, staffId: v === "__keep__" ? "" : v, error: undefined } : r))}>
+                                <SelectTrigger className="h-8 w-[10rem] text-xs"><SelectValue placeholder="Same groomer" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__keep__">Same groomer{editSiblings.length > 0 ? "s" : ""}</SelectItem>
+                                  {activeStaff.map(st => <SelectItem key={st.id} value={String(st.id)}>{st.name}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                              <Button type="button" size="sm" className="h-8" disabled={bookSkippedMutation.isPending || !row.date || !row.time}
+                                onClick={() => void bookSkippedDate(row)}>
+                                Book
+                              </Button>
+                              <Button type="button" size="sm" variant="ghost" className="h-8 text-xs"
+                                onClick={() => setSkippedRepeat(rows => rows.filter(r => r.key !== row.key))}>
+                                Skip it
+                              </Button>
+                            </div>
+                            {row.error && <p className="text-xs font-medium text-destructive">{row.error}</p>}
+                          </>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
                 {(() => {

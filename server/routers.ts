@@ -109,6 +109,7 @@ import { cleanPlanFields } from "../shared/membershipPlanFields";
 import { portalAllSetEmail } from "../shared/portalAllSetEmail";
 import { loadVipMembers } from "./vipMembers";
 import { repeatBookingRefusal } from "../shared/repeatBookingRefusal";
+import { bookingLengthProblem } from "../shared/bookingLength";
 import {
   RESET_REQUESTED_MESSAGE, SELF_RESET_TTL_MS, ipRequestAllowed, portalPasswordResetEmail, resetEmailAllowed,
 } from "../shared/portalPasswordReset";
@@ -2264,6 +2265,7 @@ const calendarRouter = router({
       membershipId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      { const lengthProblem = bookingLengthProblem(input.scheduledStart, input.scheduledEnd); if (lengthProblem) throw new TRPCError({ code: "BAD_REQUEST", message: lengthProblem }); }
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
@@ -2362,6 +2364,7 @@ const calendarRouter = router({
       price: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      { const lengthProblem = bookingLengthProblem(input.scheduledStart, input.scheduledEnd); if (lengthProblem) throw new TRPCError({ code: "BAD_REQUEST", message: lengthProblem }); }
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
@@ -2667,26 +2670,16 @@ const calendarRouter = router({
       const notBefore = Date.now();
 
       /*
-       * Annual leave, public holidays and "salon closed", once for the
-       * whole window rather than per occurrence.
+       * Leave, public holidays and "salon closed" ONLY — the same
+       * findBlockoutsCovering the new-booking repeat uses, with its real
+       * reason ("Ashleigh is on annual leave").
        *
-       * busyForStaff is what rebook and membership sign-up already ask,
-       * and its own header says two copies of this is how features end
-       * up disagreeing about leave. Without it a fortnightly series from
-       * January 2027 books Good Friday and New Year's Eve, and the dogs
-       * get reminder texts for days nobody is in.
+       * This used busyForStaff, which also counts every dog the groomer
+       * already has. Overlapping another dog is how the salon runs (see
+       * the note below), and one mistyped booking ending a year later —
+       * Gizmo, 15/01/2027 to 15/01/2028 — refused every 2027 date with
+       * Ashleigh as "away or closed" (Hunter, 12/11/2026).
        */
-      const windowFrom = parseBrisbaneLocalDateTime(plan.starts[0]!);
-      const windowTo = new Date(parseBrisbaneLocalDateTime(plan.starts[plan.starts.length - 1]!).getTime() + 86_400_000);
-      /* BusyInterval carries start and end only — not WHY. Naming the
-         reason would mean a second query over staff_blockouts, which is
-         the duplication staffBusy.ts exists to prevent, so the skipped
-         date says "away or closed" and the diary shows which. */
-      const busyByGroomer = new Map<number, Array<{ start: Date | string; end: Date | string }>>();
-      for (const groomerId of groomerIds) {
-        busyByGroomer.set(groomerId, await busyForStaff(db, tenantId, groomerId, windowFrom, windowTo));
-      }
-
       const created: Date[] = [];
       const skipped: { scheduledStart: Date; reason: string }[] = [];
 
@@ -2725,13 +2718,12 @@ const calendarRouter = router({
          * and refusing on it refused nearly every date a series was
          * given. See shared/recurringOccurrence.ts.
          */
-        let clashReason: string | null = null;
-        for (const groomerId of groomerIds) {
-          const away = (busyByGroomer.get(groomerId) ?? []).find(b =>
-            new Date(b.start).getTime() < occurrenceEnd.getTime()
-            && new Date(b.end).getTime() > occurrenceStart.getTime());
-          if (away) { clashReason = "Groomer is away or the salon is closed"; break; }
-        }
+        const blockouts = await findBlockoutsCovering(db, {
+          tenantId, staffIds: groomerIds, start: occurrenceStart, end: occurrenceEnd,
+        });
+        let clashReason: string | null = blockouts.length > 0
+          ? recurringOccurrenceRefusal({ blockouts, dogsAlreadyBooked: [], duplicateMessage: null })
+          : null;
 
         if (!clashReason) {
           /* Nothing else live for these dogs that day — the same guard
@@ -2799,6 +2791,126 @@ const calendarRouter = router({
     }),
 
 
+  /**
+   * Book ONE date of a repeat that was skipped — on another day, or with
+   * another groomer.
+   *
+   * Andy, 12/11/2026: "Instead of this error ... show the dates that are
+   * clashing and offer an option to swap out a groomer, or choose a
+   * different day so the staff member can have this discussion with the
+   * client." Add bookings now lists what it skipped and each row offers
+   * this. Same rules as the series: leave and closures refuse, the dog
+   * already booked that day refuses, membership coverage is resolved for
+   * the new row, and it joins the same series.
+   */
+  addRecurrenceOccurrence: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      /** Any booking of the series — the one the dialog has open. */
+      appointmentId: z.number(),
+      /** Brisbane wall clock, "YYYY-MM-DDTHH:mm". */
+      scheduledStart: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+      /** A different groomer for every dog on it; omitted keeps each dog's own. */
+      staffId: z.number().int().positive().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+
+      const [source] = await db.select().from(appointments)
+        .where(and(eq(appointments.id, input.appointmentId), eq(appointments.tenantId, tenantId)))
+        .limit(1);
+      if (!source) throw new Error("That booking no longer exists");
+      const refusal = repeatBookingRefusal(source);
+      if (refusal) throw new Error(refusal);
+
+      const bookingRows = await db.select().from(appointments).where(and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.clientId, source.clientId),
+        eq(appointments.scheduledStart, source.scheduledStart),
+        ne(appointments.status, "cancelled"),
+        ne(appointments.workflowState, "cancelled"),
+        ne(appointments.status, "no_show"),
+        ne(appointments.workflowState, "no_show"),
+      ));
+      const booking = bookingRows.filter(
+        (row: { petId: number }, i: number) =>
+          bookingRows.findIndex((other: { petId: number }) => other.petId === row.petId) === i,
+      );
+      if (booking.length === 0) throw new Error("There is nothing on that booking to repeat");
+      const bookingPets = await db.select({ id: pets.id, name: pets.name, status: pets.status })
+        .from(pets).where(inArray(pets.id, booking.map((row: { petId: number }) => row.petId)));
+      const departedMessage = departedBookingMessage(bookingPets);
+      if (departedMessage) throw new Error(departedMessage);
+
+      if (input.staffId) {
+        const [groomer] = await db.select({ id: staff.id, isActive: staff.isActive }).from(staff)
+          .where(and(eq(staff.id, input.staffId), eq(staff.tenantId, tenantId))).limit(1);
+        if (!groomer || !groomer.isActive) throw new Error("That groomer isn't available to book");
+      }
+
+      const start = parseBrisbaneLocalDateTime(input.scheduledStart);
+      if (start.getTime() < Date.now()) throw new Error("That date has already passed");
+      const endFor = (row: { scheduledStart: Date | string; scheduledEnd: Date | string }) => {
+        const ms = new Date(row.scheduledEnd).getTime() - new Date(row.scheduledStart).getTime();
+        return new Date(start.getTime() + Math.min(Math.max(ms, 15 * 60_000), 12 * 3_600_000));
+      };
+      const end = new Date(Math.max(...booking.map((row: any) => endFor(row).getTime())));
+      const staffFor = (row: { staffId: number | null }) => input.staffId ?? row.staffId;
+      const groomerIds = Array.from(new Set(
+        booking.map(staffFor).filter((id: number | null): id is number => typeof id === "number"),
+      ));
+
+      const blockouts = await findBlockoutsCovering(db, { tenantId, staffIds: groomerIds, start, end });
+      if (blockouts.length > 0) {
+        throw new Error(recurringOccurrenceRefusal({ blockouts, dogsAlreadyBooked: [], duplicateMessage: null }) ?? "That groomer is away then");
+      }
+      const dogsBusy = await findDogsAlreadyBookedThatDay(db, {
+        tenantId, petIds: booking.map((row: { petId: number }) => row.petId), at: start,
+      });
+      if (dogsBusy.length > 0) throw new Error(duplicateBookingMessage(dogsBusy));
+
+      const recurringGroupId = source.recurringGroupId ?? nanoid(24);
+      const sessionId = booking.length > 1 ? nanoid(16) : null;
+      const coverageByService = new Map<string, Awaited<ReturnType<typeof getAppointmentMembershipCoverage>>>();
+      for (const row of booking) {
+        if (!coverageByService.has(row.serviceType)) {
+          coverageByService.set(row.serviceType, await getAppointmentMembershipCoverage(
+            db, tenantId, source.clientId, booking.map((r: { petId: number }) => r.petId), row.serviceType as AppointmentService,
+          ));
+        }
+      }
+      for (const row of booking) {
+        const coverage = coverageByService.get(row.serviceType)!;
+        await db.insert(appointments).values({
+          tenantId,
+          clientId: row.clientId,
+          petId: row.petId,
+          staffId: staffFor(row),
+          serviceType: row.serviceType,
+          scheduledStart: start,
+          scheduledEnd: endFor(row),
+          notes: row.notes,
+          price: priceForCoveredAppointment(coverage.fullyCovered, row.price),
+          membershipId: coverage.membershipByPetId[row.petId]?.id ?? null,
+          trackerToken: nanoid(32),
+          sessionId,
+          workflowState: "scheduled",
+          status: "confirmed",
+          recurringGroupId,
+        });
+      }
+      if (!source.recurringGroupId) {
+        await db.update(appointments).set({ recurringGroupId }).where(and(
+          eq(appointments.tenantId, tenantId),
+          inArray(appointments.id, booking.map((row: { id: number }) => row.id)),
+        ));
+      }
+      return { success: true, scheduledStart: start, staffId: input.staffId ?? null, dogs: booking.length };
+    }),
+
   createMultiPetAppointment: operationalProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -2853,6 +2965,7 @@ const calendarRouter = router({
       membershipId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      { const lengthProblem = bookingLengthProblem(input.scheduledStart, input.scheduledEnd); if (lengthProblem) throw new TRPCError({ code: "BAD_REQUEST", message: lengthProblem }); }
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
@@ -3551,6 +3664,7 @@ const calendarRouter = router({
       staffId: z.number().optional().nullable(),
     }))
     .mutation(async ({ input, ctx }) => {
+      { const lengthProblem = bookingLengthProblem(input.scheduledStart, input.scheduledEnd); if (lengthProblem) throw new TRPCError({ code: "BAD_REQUEST", message: lengthProblem }); }
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
