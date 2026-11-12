@@ -180,6 +180,7 @@ const OPERATIONAL = [
      the groomer standing with the client at the end of a groom is who
      books the next six. It repeats a booking the caller can already
      reach, through requireApprovedStaffAppointmentAccess. */
+  "calendarRouter.addRecurrenceOccurrence",
   "calendarRouter.addRecurrenceToAppointment",
   "calendarRouter.appointmentsForClient",
   /* Answering "when's your next available booking?" on the phone —
@@ -573,7 +574,8 @@ describe("tRPC procedure surface", () => {
     // 431 since 11/11/2026: clientPortal.rescheduleWindow, in PUBLIC.
     // 432 since 12/11/2026: clientPortal.payMyInvoice, in PUBLIC.
     // 433 since 12/11/2026: clientPortal.requestPasswordReset, in PUBLIC.
-    expect(surface).toHaveLength(433);
+    // 434 since 12/11/2026: calendar.addRecurrenceOccurrence, in OPERATIONAL.
+    expect(surface).toHaveLength(434);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -644,7 +646,9 @@ describe("tRPC procedure surface", () => {
      * reporter hears back about their own reports, filtered to their own
      * user id on the server.
      */
-    expect(OPERATIONAL).toHaveLength(157);
+    // 158 since 12/11/2026: calendar.addRecurrenceOccurrence — book one
+    // skipped date of a repeat, staff-facing like the rest of the calendar.
+    expect(OPERATIONAL).toHaveLength(158);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

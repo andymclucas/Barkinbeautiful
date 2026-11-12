@@ -112,7 +112,8 @@ describe("appointment membership coverage", () => {
      * the limit of the technique, and it is worth writing down beside
      * the number.
      */
-    expect(router.split("priceForCoveredAppointment(").length - 1).toBe(5);
+    // 6 since 12/11/2026: addRecurrenceOccurrence, one skipped date of a repeat.
+    expect(router.split("priceForCoveredAppointment(").length - 1).toBe(6);
     expect(router).not.toContain('coverage.fullyCovered ? "0.00"');
     expect(router).toContain("membershipId: coverage.membershipByPetId[petId]?.id ?? null");
     expect(router).toContain("getMembershipCoverage: operationalProcedure");

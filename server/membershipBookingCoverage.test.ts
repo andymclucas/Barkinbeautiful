@@ -33,6 +33,9 @@ const PRICED_AGAINST_MEMBERSHIP = [
   "createAppointment",
   "createRecurringAppointments",
   "addRecurrenceToAppointment",
+  // One skipped date of a repeat, rebooked with another groomer or day
+  // (12/11/2026). Resolves coverage for the new row, like the series.
+  "addRecurrenceOccurrence",
   "createMultiPetAppointment",
 ];
 
