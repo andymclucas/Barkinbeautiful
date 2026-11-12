@@ -1751,7 +1751,10 @@ export default function ClientDetail() {
             {[
               { value: "overview", label: "Overview", icon: LayoutDashboard },
               { value: "pets", label: `Pets (${cardPets.length})`, icon: Dog },
-              { value: "appointments", label: `Bookings (${appointments.length})`, icon: CalendarDays },
+              // Upcoming only (Lauren, 12/11/2026): "Bookings (22)" counted
+              // twenty past visits; History keeps its own count beneath.
+              // Same bucketing as the Upcoming sub-tab, so they always agree.
+              { value: "appointments", label: `Bookings (${bookingCounts.upcoming})`, icon: CalendarDays },
               { value: "memberships", label: `Memberships (${memberships.length})`, icon: Award },
               { value: "payments", label: `Payments (${payments.length})`, icon: CreditCard },
               { value: "agreements", label: "Agreements", icon: FileSignature },
