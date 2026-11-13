@@ -30,15 +30,16 @@
  */
 
 /**
- * TEMPORARY: while the shared payment is being proven against Stripe,
- * only memberships marked as test (`is_test = 1`) may use it. The server
- * refuses anything else and the Memberships tab does not offer it.
+ * Whether the shared payment is limited to test memberships (`is_test = 1`).
  *
- * Set on 13/11/2026 so the code could be deployed for a $2 test on
- * Andy's own record without a real client being put on it by a stray
- * click. Flip to false once that test has passed, and delete this.
+ * It was, from the day it shipped (13/11/2026) until a $2 test on Andy's
+ * own record passed the same day: one payment, booked per membership, a
+ * membership taken off and added back, and the payment cancelled. Andy
+ * then said "switch it on". Kept as a switch rather than deleted so it
+ * can be turned back to test-only in one line if a shared payment ever
+ * misbehaves. The failed-payment and pause paths have not been run live.
  */
-export const FAMILY_BILLING_TEST_ONLY = true;
+export const FAMILY_BILLING_TEST_ONLY: boolean = false;
 
 export type FamilyBillingCandidate = {
   id: number;
