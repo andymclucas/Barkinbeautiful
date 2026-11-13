@@ -6620,6 +6620,11 @@ const clientsRouter = router({
           status: memberships.status,
           pricePerCycle: memberships.pricePerCycle,
           billingCycleWeeks: memberships.billingCycleWeeks,
+          // Both read by the "one payment" offer (shared/familyBilling.ts):
+          // a monthly plan is not offered, and while the feature is being
+          // proven only test memberships are.
+          billingCycle: memberships.billingCycle,
+          isTest: memberships.isTest,
           nextBillingDate: memberships.nextBillingDate,
           // So the badge can say whether Groomigo can actually charge this,
           // rather than trusting the status column — see

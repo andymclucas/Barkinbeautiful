@@ -74,7 +74,7 @@ describe("paidInvoiceKeyFor", () => {
 
 describe("familyBillingOffer", () => {
   const row = (id: number, over: Record<string, unknown> = {}) => ({
-    id, status: "pending_payment", stripeSubscriptionId: null, billingCycle: "weekly", billingCycleWeeks: 1, pricePerCycle: "17.00", petName: `Dog ${id}`, ...over,
+    id, status: "pending_payment", stripeSubscriptionId: null, billingCycle: "weekly", billingCycleWeeks: 1, pricePerCycle: "17.00", petName: `Dog ${id}`, isTest: true, ...over,
   });
 
   it("offers one payment for two dogs not billing yet", async () => {
@@ -98,6 +98,11 @@ describe("familyBillingOffer", () => {
     expect(familyBillingOffer([row(1, { status: "active", stripeSubscriptionId: "sub_a" }), row(2, { status: "active", stripeSubscriptionId: "sub_b" }), row(3)])).toBeNull();
     expect(familyBillingOffer([row(1, { status: "pending_payment", stripeSubscriptionId: "sub_a" }), row(2)])).toBeNull();
     expect(familyBillingOffer([row(1, { status: "active", stripeSubscriptionId: "sub_a" }), row(2, { status: "active", stripeSubscriptionId: "sub_a" })])).toBeNull();
+  });
+
+  it("is offered only on test memberships while it is being proven", async () => {
+    const { familyBillingOffer, FAMILY_BILLING_TEST_ONLY } = await import("./familyBilling");
+    expect(familyBillingOffer([row(1), row(2, { isTest: false })]) === null).toBe(FAMILY_BILLING_TEST_ONLY);
   });
 
   it("names the other dogs on the same payment", async () => {

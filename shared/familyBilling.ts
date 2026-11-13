@@ -29,6 +29,17 @@
  * revenue by plan still adds up.
  */
 
+/**
+ * TEMPORARY: while the shared payment is being proven against Stripe,
+ * only memberships marked as test (`is_test = 1`) may use it. The server
+ * refuses anything else and the Memberships tab does not offer it.
+ *
+ * Set on 13/11/2026 so the code could be deployed for a $2 test on
+ * Andy's own record without a real client being put on it by a stray
+ * click. Flip to false once that test has passed, and delete this.
+ */
+export const FAMILY_BILLING_TEST_ONLY = true;
+
 export type FamilyBillingCandidate = {
   id: number;
   clientId: number | null;
@@ -164,6 +175,7 @@ export type FamilyBillingRow = {
   pricePerCycle: string | number | null;
   petName?: string | null;
   name?: string | null;
+  isTest?: boolean | null;
 };
 
 export type FamilyBillingOffer = {
@@ -204,6 +216,7 @@ export function familyBillingOffer(rows: readonly FamilyBillingRow[]): FamilyBil
   if (rows.some((r) => r.stripeSubscriptionId && r.status !== "active" && r.status !== "cancelled" && r.status !== "expired")) return null;
 
   const all = [...live, ...notBilling];
+  if (FAMILY_BILLING_TEST_ONLY && all.some((r) => !r.isTest)) return null;
   if (all.some((r) => r.billingCycle === "monthly")) return null;
   if (new Set(all.map(cadence)).size > 1) return null;
   return {

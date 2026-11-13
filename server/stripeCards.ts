@@ -29,7 +29,7 @@ import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
 import { toStripeCents, stripeRecurring } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
-import { planFamilyBilling } from "@shared/familyBilling";
+import { FAMILY_BILLING_TEST_ONLY, planFamilyBilling } from "@shared/familyBilling";
 import { resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
 import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 
@@ -582,11 +582,15 @@ export async function startFamilySubscription(membershipIds: number[], firstChar
       billingCycle: memberships.billingCycle,
       status: memberships.status,
       stripeSubscriptionId: memberships.stripeSubscriptionId,
+      isTest: memberships.isTest,
     })
     .from(memberships)
     .where(inArray(memberships.id, ids));
   // Same tenant guard as startMembershipSubscription: fail closed.
   if (rows.length !== ids.length || rows.some((r) => (r.tenantId ?? 1) !== 1)) throw new Error("Membership not found");
+  if (FAMILY_BILLING_TEST_ONLY && rows.some((r) => !r.isTest)) {
+    throw new Error("One payment for several memberships is still being tested and is not switched on for clients yet.");
+  }
 
   const charge = new Map(rows.map((r) => [r.id, resolveChargePlan(r)] as const));
   const unbillable = rows.find((r) => !charge.get(r.id)!.ok);
