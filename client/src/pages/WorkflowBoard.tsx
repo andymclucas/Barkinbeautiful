@@ -29,7 +29,7 @@ import { shouldShowWorkflowRow } from "@/lib/workflowTerminalStates";
 import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresholds";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
-import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, bathQueuePositionMeta, buildBathPriorityQueue, dogsOnTheSameBathNumber, isBathPriorityMutable } from "@shared/bathPriorityQueue";
+import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, bathQueuePositionMeta, buildBathPriorityQueue, canChangeBathOrder, dogsOnTheSameBathNumber, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
 import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Save, Star, Sun, Tv2, Unlink, UserPlus, Users, X } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -336,6 +336,15 @@ export default function WorkflowBoard() {
     },
     onError: (error) => toast.error(error.message),
   });
+  /*
+   * The bath team sees the bath order and cannot change it (Lauren,
+   * 13/11/2026). Decided by the salon role on the caller's own staff
+   * record; the server enforces the same rule on every bath-order write.
+   * Until the role has loaded nothing is locked, which only matters for
+   * the half-second before it arrives, and the server still refuses.
+   */
+  const { data: myStaffProfile } = trpc.staff.getMyProfile.useQuery(undefined, { retry: false });
+  const bathOrderLocked = !canChangeBathOrder(myStaffProfile?.role);
   const reorderBathQueue = trpc.workflow.reorderBathQueue.useMutation({
     onSuccess: () => { toast.success("Bath queue reordered"); setBathQueueDragId(null); refetch(); },
     onError: (error) => { setBathQueueDragId(null); toast.error(error.message); },
@@ -509,7 +518,7 @@ export default function WorkflowBoard() {
   const bathQueueRepresentativeIds = useMemo(() => bathQueue.map((item) => item.rows[0]!.id), [bathQueue]);
   const bathGroupCandidates = useMemo(() => (boardData ?? []).filter((appointment) => isBathPriorityMutable(appointment.workflowState)), [boardData]);
   const reorderBathQueueByRepresentative = useCallback((draggedId: number, targetId: number) => {
-    if (draggedId === targetId || reorderBathQueue.isPending) return;
+    if (bathOrderLocked || draggedId === targetId || reorderBathQueue.isPending) return;
     const nextIds = [...bathQueueRepresentativeIds];
     const fromIndex = nextIds.indexOf(draggedId);
     const targetIndex = nextIds.indexOf(targetId);
@@ -517,7 +526,7 @@ export default function WorkflowBoard() {
     nextIds.splice(fromIndex, 1);
     nextIds.splice(targetIndex, 0, draggedId);
     reorderBathQueue.mutate({ date: boardDate, orderedQueueRepresentativeIds: nextIds });
-  }, [bathQueueRepresentativeIds, boardDate, reorderBathQueue]);
+  }, [bathOrderLocked, bathQueueRepresentativeIds, boardDate, reorderBathQueue]);
   const moveBathQueueItem = useCallback((representativeId: number, direction: -1 | 1) => {
     const index = bathQueueRepresentativeIds.indexOf(representativeId);
     const nextId = bathQueueRepresentativeIds[index + direction];
@@ -858,7 +867,7 @@ export default function WorkflowBoard() {
                 const representativeId = item.rows[0]!.id;
                 const meta = bathQueuePositionMeta(item.position);
                 const isDragging = bathQueueDragId === representativeId;
-                return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} data-bath-queue-item={representativeId} role="listitem" tabIndex={0} draggable={!reorderBathQueue.isPending} aria-grabbed={isDragging} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; setBathQueueDragId(representativeId); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (bathQueueDragId) reorderBathQueueByRepresentative(bathQueueDragId, representativeId); }} onDragEnd={() => setBathQueueDragId(null)} onTouchStart={() => setBathQueueDragId(representativeId)} onTouchEnd={(event) => { const touch = event.changedTouches[0]; const target = touch ? document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-bath-queue-item]") as HTMLElement | null : null; const targetId = Number(target?.dataset.bathQueueItem); if (bathQueueDragId && Number.isFinite(targetId)) reorderBathQueueByRepresentative(bathQueueDragId, targetId); else setBathQueueDragId(null); }} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); moveBathQueueItem(representativeId, -1); } if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); moveBathQueueItem(representativeId, 1); } }} className={`touch-none group flex items-center gap-1.5 rounded-lg border bg-card px-2 py-1.5 text-xs text-violet-950 outline-none transition-[transform,opacity] duration-150 focus:ring-2 focus:ring-violet-500 ${isDragging ? "scale-95 opacity-50" : "cursor-grab active:cursor-grabbing"}`} style={{ borderColor: meta.colour, background: meta.softColour }} title="Drag to reorder. Use arrow keys when focused for a keyboard alternative."><GripVertical className="h-4 w-4 shrink-0 text-violet-700 dark:text-violet-300" aria-hidden="true" /><span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: meta.colour }}>{item.position}</span><span className="font-semibold">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300">together</span>}<span className="sr-only">{meta.label}. Position {item.position} of {bathQueue.length}. Set priority {item.priority}.</span><div className="ml-0.5 hidden gap-0.5 group-focus-within:flex group-hover:flex"><button type="button" className="rounded p-0.5 text-violet-800 dark:text-violet-300 hover:bg-card" disabled={index === 0 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, -1)} aria-label={`Move ${item.petNames.join(" and ")} earlier in bath queue`}><ArrowUp className="h-3 w-3" /></button><button type="button" className="rounded p-0.5 text-violet-800 dark:text-violet-300 hover:bg-card" disabled={index === bathQueue.length - 1 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, 1)} aria-label={`Move ${item.petNames.join(" and ")} later in bath queue`}><ArrowDown className="h-3 w-3" /></button></div></div>;
+                return <div key={`${item.priority}-${item.rows.map((row) => row.id).join("-")}`} data-bath-queue-item={representativeId} role="listitem" tabIndex={0} draggable={!bathOrderLocked && !reorderBathQueue.isPending} aria-grabbed={isDragging} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; setBathQueueDragId(representativeId); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (bathQueueDragId) reorderBathQueueByRepresentative(bathQueueDragId, representativeId); }} onDragEnd={() => setBathQueueDragId(null)} onTouchStart={() => setBathQueueDragId(representativeId)} onTouchEnd={(event) => { const touch = event.changedTouches[0]; const target = touch ? document.elementFromPoint(touch.clientX, touch.clientY)?.closest("[data-bath-queue-item]") as HTMLElement | null : null; const targetId = Number(target?.dataset.bathQueueItem); if (bathQueueDragId && Number.isFinite(targetId)) reorderBathQueueByRepresentative(bathQueueDragId, targetId); else setBathQueueDragId(null); }} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); moveBathQueueItem(representativeId, -1); } if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); moveBathQueueItem(representativeId, 1); } }} className={`touch-none group flex items-center gap-1.5 rounded-lg border bg-card px-2 py-1.5 text-xs text-violet-950 outline-none transition-[transform,opacity] duration-150 focus:ring-2 focus:ring-violet-500 ${isDragging ? "scale-95 opacity-50" : bathOrderLocked ? "" : "cursor-grab active:cursor-grabbing"}`} style={{ borderColor: meta.colour, background: meta.softColour }} title={bathOrderLocked ? "The bath order is set by the groomers." : "Drag to reorder. Use arrow keys when focused for a keyboard alternative."}>{!bathOrderLocked && <GripVertical className="h-4 w-4 shrink-0 text-violet-700 dark:text-violet-300" aria-hidden="true" />}<span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white" style={{ background: meta.colour }}>{item.position}</span><span className="font-semibold">{item.petNames.join(" & ")}</span>{item.isCoordinatedBooking && <span className="text-[10px] font-semibold text-violet-700 dark:text-violet-300">together</span>}<span className="sr-only">{meta.label}. Position {item.position} of {bathQueue.length}. Set priority {item.priority}.</span><div className={`ml-0.5 hidden gap-0.5 ${bathOrderLocked ? "" : "group-focus-within:flex group-hover:flex"}`}><button type="button" className="rounded p-0.5 text-violet-800 dark:text-violet-300 hover:bg-card" disabled={index === 0 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, -1)} aria-label={`Move ${item.petNames.join(" and ")} earlier in bath queue`}><ArrowUp className="h-3 w-3" /></button><button type="button" className="rounded p-0.5 text-violet-800 dark:text-violet-300 hover:bg-card" disabled={index === bathQueue.length - 1 || reorderBathQueue.isPending} onClick={() => moveBathQueueItem(representativeId, 1)} aria-label={`Move ${item.petNames.join(" and ")} later in bath queue`}><ArrowDown className="h-3 w-3" /></button></div></div>;
               })}
             </div>
           </section>
@@ -893,6 +902,7 @@ export default function WorkflowBoard() {
         <WorkflowBoardTable
             // The staff board is the one surface not hanging on a wall.
             showContact
+            bathOrderLocked={bathOrderLocked}
             rows={rows}
             now={now}
             bathers={bathers}

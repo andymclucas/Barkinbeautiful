@@ -79,6 +79,13 @@ export type WorkflowBoardTableProps = {
   reviewAppointmentId?: number | null;
   readOnly?: boolean;
   /**
+   * Show the bath numbers but do not let this login change them. True for
+   * the bath team (shared/bathPriorityQueue.ts, canChangeBathOrder). The
+   * server refuses them too; this just stops offering a control that
+   * would be refused.
+   */
+  bathOrderLocked?: boolean;
+  /**
    * Show who to ring about the dog.
    *
    * Off by default, deliberately. Two of the three surfaces using this
@@ -366,6 +373,7 @@ export function WorkflowBoardTable({
   hasReviewAppointmentFocus = false,
   reviewAppointmentId = null,
   readOnly = false,
+  bathOrderLocked = false,
   showContact = false,
   actions,
   onRestoreCompleted,
@@ -981,7 +989,7 @@ export function WorkflowBoardTable({
                         value={appt.bathPriority}
                         coordinated={Boolean(bathQueueItem?.isCoordinatedBooking)}
                         disabled={setBathPriority.isPending || !isBathPriorityMutable(appt.workflowState)}
-                        readOnly={readOnly}
+                        readOnly={readOnly || bathOrderLocked}
                         onSave={(bathPriority) => setBathPriority.mutate({ appointmentId: appt.id, bathPriority, applyToLinkedDogs: true })}
                         onManageGroup={() => {
                           const existingGroupIds = appt.bathGroupId ? bathGroupCandidates.filter((candidate) => candidate.bathGroupId === appt.bathGroupId).map((candidate) => candidate.id) : bathQueueItem?.rows.map((row) => row.id) ?? [appt.id];
