@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { failedPaymentDetail, failedPaymentHeadline, sortFailedPayments } from "@shared/failedPaymentNotice";
 import { notificationForEvent } from "@shared/notificationDelivery";
 import { useStaffNotifications } from "@/hooks/useStaffNotifications";
@@ -36,13 +37,23 @@ export default function NotificationBell() {
   });
   // Failed payments are protectedProcedure, the same level as the unread
   // preview below, so this adds no exposure: restricted staff see neither.
+  //
+  // So do not ASK for them on a restricted staff login. The server refuses
+  // every one, correctly, but the bell is on every page and polls: a
+  // bather's tablet was sending a refused request every 20 seconds all
+  // day, with retries, and filling its console with 403s (found testing
+  // as a bather, 13/11/2026). `protectedProcedure` refuses exactly
+  // `users.role === "staff"`, so that is the test here. Unknown until
+  // the login has loaded, and nothing is asked before then.
+  const { user } = useAuth();
+  const ownerFeeds = !!user && user.role !== "staff";
   const { data: failedPaymentsRaw } = trpc.memberships.getFailedPayments.useQuery(
     {},
-    { refetchInterval: 120_000 },
+    { enabled: ownerFeeds, refetchInterval: 120_000 },
   );
   const { data } = trpc.sms.getUnreadPreview.useQuery(
     { limit: 6 },
-    { refetchInterval: 20000, refetchOnWindowFocus: true }
+    { enabled: ownerFeeds, refetchInterval: 20000, refetchOnWindowFocus: true }
   );
   // What has been handed to THIS person. operationalProcedure and scoped to
   // the caller's own staff row, so unlike the two queries above a restricted
