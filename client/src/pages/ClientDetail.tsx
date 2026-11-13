@@ -534,6 +534,11 @@ export default function ClientDetail() {
             ? `${result.petName} has been recorded as passed away. ${describeCancelledBookings(result.cancelledBookings)} cancelled, with no text sent.`
             : `${result.petName} has been recorded as passed away`,
       );
+      if (result.heldPausedMemberships > 0) {
+        toast.info("A paused membership was due to restart", {
+          description: "Its restart date has been taken off, so nothing is charged until someone resumes or cancels it.",
+        });
+      }
       if (result.review && !result.review.isEmpty) setPassingReview(result.review);
     },
     onError: (error) => toast.error(error.message),

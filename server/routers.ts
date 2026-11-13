@@ -7558,7 +7558,7 @@ const petsRouter = router({
         .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
       if (!pet) throw new Error("Pet not found");
-      if (pet.status === "departed") return { success: true, alreadyRecorded: true, petName: pet.name, review: null, cancelledBookings: 0 };
+      if (pet.status === "departed") return { success: true, alreadyRecorded: true, petName: pet.name, review: null, cancelledBookings: 0, heldPausedMemberships: 0 };
 
       await db.update(pets).set({ status: "departed", departedAt: new Date() }).where(eq(pets.id, pet.id));
       await db.insert(petMembershipEvents).values({
@@ -7609,6 +7609,36 @@ const petsRouter = router({
         }
       } catch (err) {
         console.error("[passing] could not cancel the future bookings", err);
+      }
+
+      /*
+       * A paused membership with a restart date would start charging
+       * again by itself, and the review below only looks at ACTIVE
+       * memberships, so a paused one was invisible here. Take the
+       * restart off now, at Stripe as well, so nothing bills a
+       * bereaved client on a timer. Caught for the same reason as the
+       * bookings above: it must not undo the passing.
+       */
+      let heldPaused: Array<{ id: number; name: string | null; wasDueAt: Date | null }> = [];
+      try {
+        const { holdPausedMembershipsAfterPassing } = await import("./stripeCards");
+        heldPaused = (await holdPausedMembershipsAfterPassing(pet.clientId, pet.tenantId)).held;
+        if (heldPaused.length > 0) {
+          await db.insert(systemNotifications).values({
+            tenantId: pet.tenantId,
+            kind: "pet_passed_membership_review",
+            clientId: pet.clientId,
+            detail: `${heldPaused.length === 1 ? `${heldPaused[0].name ?? "A paused membership"} was` : `${heldPaused.length} paused memberships were`} due to restart billing on a set date. The restart has been taken off after ${pet.name}'s passing, so nothing is charged until someone resumes or cancels ${heldPaused.length === 1 ? "it" : "them"}.`,
+          });
+        }
+      } catch (err) {
+        console.error("[passing] could not hold the paused memberships", err);
+        await db.insert(systemNotifications).values({
+          tenantId: pet.tenantId,
+          kind: "pet_passed_membership_review",
+          clientId: pet.clientId,
+          detail: `A paused membership for this client may restart billing by itself, and the restart could not be taken off automatically after ${pet.name}'s passing. Check this client's memberships now.`,
+        }).catch(() => undefined);
       }
 
       /**
@@ -7672,7 +7702,7 @@ const petsRouter = router({
         console.error("[passing] could not build the membership review", err);
       }
 
-      return { success: true, alreadyRecorded: false, petName: pet.name, review, cancelledBookings };
+      return { success: true, alreadyRecorded: false, petName: pet.name, review, cancelledBookings, heldPausedMemberships: heldPaused.length };
     }),
 });
 

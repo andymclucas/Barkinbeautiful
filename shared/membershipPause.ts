@@ -221,6 +221,20 @@ export function isDueToResume(membership: PausableMembership, now: Date): boolea
   return membership.pauseResumesAt.getTime() <= now.getTime();
 }
 
+/**
+ * Whether a paused membership has a restart on the calendar.
+ *
+ * These are the ones that must be HELD when a dog in the household dies
+ * during the pause: left alone, the restart date arrives and billing
+ * starts again by itself, and Stripe does that on its own clock whatever
+ * Groomigo decides. A manual pause has no date, so there is nothing to
+ * stop. A row paused by a failed payment is not a deliberate pause and is
+ * not touched.
+ */
+export function hasScheduledRestart(membership: PausableMembership): boolean {
+  return isDeliberatePause(membership) && membership.pauseMode !== "manual" && !!membership.pauseResumesAt;
+}
+
 /** Those of a set of memberships whose pause has run out. */
 export function membershipsDueToResume<T extends PausableMembership>(rows: readonly T[], now: Date): T[] {
   return rows.filter((row) => isDueToResume(row, now));

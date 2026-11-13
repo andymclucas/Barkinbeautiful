@@ -22,7 +22,7 @@ import { memberships, clients, pets, tenants, smsLogs } from "../drizzle/schema"
 import { eq, lte, and, gt, sql } from "drizzle-orm";
 import { membershipsDueToResume } from "@shared/membershipPause";
 import { groomsToRecover, totalPrice } from "@shared/membershipCoverageDrift";
-import { resumeMembershipSubscription } from "./stripeCards";
+import { holdPausedMembershipsAfterPassing, resumeMembershipSubscription } from "./stripeCards";
 import {
   sendEmail,
   buildAdminFailedPaymentEmail,
@@ -202,6 +202,7 @@ async function resumePausedMembershipsDue(
     .select({
       id: memberships.id,
       clientId: memberships.clientId,
+      tenantId: memberships.tenantId,
       name: memberships.name,
       pausedAt: memberships.pausedAt,
       status: memberships.status,
@@ -259,12 +260,31 @@ async function resumePausedMembershipsDue(
         .limit(1);
 
       if (bereaved.length > 0) {
+        /*
+         * Declining to mark it active is not enough: Stripe restarts a
+         * dated pause by itself, on its own clock, and would charge the
+         * client while this row still read "paused". Take the restart
+         * off at Stripe and make the pause open-ended, for every
+         * membership in the household that had one. That also stops
+         * this notice repeating every morning, because a manual pause
+         * is never "due". Recording a passing does the same thing at
+         * the time (pets.markDeparted); this is the backstop for a
+         * passing recorded before that existed.
+         */
+        let heldNote = "The restart has been taken off, so nothing will be charged until someone resumes it by hand.";
+        try {
+          const { held } = await holdPausedMembershipsAfterPassing(membership.clientId!, membership.tenantId ?? 1);
+          if (held.length > 1) heldNote = `The restart has been taken off all ${held.length} of this client's paused memberships, so nothing will be charged until someone resumes them by hand.`;
+        } catch (holdError) {
+          heldNote = "The restart could NOT be taken off at Stripe, so Stripe may start charging again on its own. Check the subscription in Stripe now.";
+          console.error(`[scheduled] could not hold membership ${membership.id} after a passing:`, holdError instanceof Error ? holdError.message : holdError);
+        }
         await notifyOwner({
           title: "⏸️ Paused membership not restarted — a dog has passed",
           content:
             `${membership.name ?? "A membership"} was due to restart billing today, but ` +
             `${bereaved[0].name ?? "a dog"} was marked as departed during the pause. ` +
-            `Nothing has been charged. Cancel the membership, or restart it by hand if it is for another dog.`,
+            `${heldNote} Cancel the membership, or resume it if it is for another dog.`,
         });
         continue;
       }

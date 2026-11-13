@@ -30,7 +30,7 @@ import { cardLinkUrl } from "./cardLinkToken";
 import { toStripeCents, stripeRecurring } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { FAMILY_BILLING_TEST_ONLY, planFamilyBilling } from "@shared/familyBilling";
-import { resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
+import { hasScheduledRestart, resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
 import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 
 /** Find or create the Stripe customer that represents this client. */
@@ -991,6 +991,73 @@ export async function pauseMembershipSubscription(
       : eq(memberships.id, membership.id));
 
   return { paused: true, resumesAt, onStripe: Boolean(membership.stripeSubscriptionId) };
+}
+
+/**
+ * Take the restart date off a household's paused memberships because one
+ * of its dogs has died.
+ *
+ * A pause with an end date restarts by itself: Stripe is given
+ * `resumes_at` and starts collecting again on its own clock. The sweep
+ * used to notice the death and decline to mark the membership active,
+ * but Stripe had already restarted, so a bereaved client was charged
+ * while Groomigo still said "paused". On a shared payment that charge
+ * covered the surviving dog too.
+ *
+ * So the restart is removed at the source: the Stripe pause is made
+ * open-ended, and the rows become a manual pause, which nothing resumes
+ * until a person does. It decides nothing about the membership itself.
+ * Cancel, keep or move it is still a person's call
+ * (shared/petPassingReview.ts).
+ *
+ * Whole household, not `memberships.petId`: the MoeGo import filed
+ * plans under the wrong dog often enough that the link cannot decide
+ * this, and one payment can cover several dogs.
+ */
+export async function holdPausedMembershipsAfterPassing(clientId: number, tenantId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const rows = await db
+    .select({
+      id: memberships.id,
+      name: memberships.name,
+      status: memberships.status,
+      pauseMode: memberships.pauseMode,
+      pauseResumesAt: memberships.pauseResumesAt,
+      failedPaymentCount: memberships.failedPaymentCount,
+      bookingSuspended: memberships.bookingSuspended,
+      stripeSubscriptionId: memberships.stripeSubscriptionId,
+    })
+    .from(memberships)
+    .where(and(eq(memberships.clientId, clientId), eq(memberships.tenantId, tenantId), eq(memberships.status, "paused")));
+  const toHold = rows.filter(hasScheduledRestart);
+  if (toHold.length === 0) return { held: [] as Array<{ id: number; name: string | null; wasDueAt: Date | null }> };
+
+  const subscriptions = Array.from(new Set(toHold.map((r) => r.stripeSubscriptionId).filter((id): id is string => !!id)));
+  if (subscriptions.length > 0) {
+    const stripe = requireStripeClient();
+    for (const subscriptionId of subscriptions) {
+      // An open-ended pause: no `resumes_at`. This also re-pauses a
+      // subscription Stripe has already restarted on its own.
+      let subscription = await stripe.subscriptions.update(subscriptionId, { pause_collection: { behavior: "void" } });
+      if (subscription.pause_collection?.resumes_at) {
+        // The date survived the update. Clear the pause and set it again
+        // so it cannot.
+        await stripe.subscriptions.update(subscriptionId, { pause_collection: "" });
+        subscription = await stripe.subscriptions.update(subscriptionId, { pause_collection: { behavior: "void" } });
+      }
+      if (!subscription.pause_collection || subscription.pause_collection.resumes_at) {
+        throw new Error(`Could not make the pause on ${subscriptionId} open-ended`);
+      }
+    }
+  }
+
+  await db
+    .update(memberships)
+    .set({ pauseMode: "manual", pauseResumesAt: null })
+    .where(and(inArray(memberships.id, toHold.map((r) => r.id)), eq(memberships.status, "paused")));
+
+  return { held: toHold.map((r) => ({ id: r.id, name: r.name, wasDueAt: r.pauseResumesAt ?? null })) };
 }
 
 /** Start charging a paused membership again from its next cycle. */
