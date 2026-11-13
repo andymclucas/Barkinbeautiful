@@ -16,7 +16,7 @@ import { PetEditorDialog, type EditablePet } from "@/components/PetEditorDialog"
 import type { PassingReview } from "@shared/petPassingReview";
 import { describeCancelledBookings } from "@shared/petPassingBookings";
 import { companionsOf, joinNames } from "@shared/familyBookingRows";
-import { billedTogetherWith, familyBillingOffer } from "@shared/familyBilling";
+import { billedTogetherWith, familyBillingOffer, formatCents, groupPayments } from "@shared/familyBilling";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -1781,7 +1781,7 @@ export default function ClientDetail() {
               // Same bucketing as the Upcoming sub-tab, so they always agree.
               { value: "appointments", label: `Bookings (${bookingCounts.upcoming})`, icon: CalendarDays },
               { value: "memberships", label: `Memberships (${memberships.length})`, icon: Award },
-              { value: "payments", label: `Payments (${payments.length})`, icon: CreditCard },
+              { value: "payments", label: `Payments (${groupPayments(payments).length})`, icon: CreditCard },
               { value: "agreements", label: "Agreements", icon: FileSignature },
               { value: "packages", label: "Packages", icon: PackageOpen },
               { value: "paperwork", label: "Vaccinations", icon: Syringe },
@@ -2761,12 +2761,32 @@ export default function ClientDetail() {
                   {payments.length === 0 && (
                     <tr><td colSpan={4} className="text-center py-10 text-muted-foreground">No payment records.</td></tr>
                   )}
-                  {payments.map(p => (
-                    <tr key={p.id} className="border-b last:border-0 hover:bg-muted/20">
+                  {/* One row per PAYMENT, as the card was charged. A family
+                      payment is booked per dog but taken as one amount, so
+                      it shows the total with each dog's share under it
+                      (shared/familyBilling.ts, groupPayments). */}
+                  {groupPayments(payments).map(p => (
+                    <tr key={p.key} className="border-b last:border-0 hover:bg-muted/20 align-top">
                       <td className="p-3">
                         {p.paidAt ? new Date(p.paidAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" }) : "—"}
                       </td>
-                      <td className="p-3 text-muted-foreground">{p.membershipName ?? "—"}</td>
+                      <td className="p-3 text-muted-foreground">
+                        {p.lines.length > 1 ? (
+                          <>
+                            <span className="font-medium text-foreground">Family payment · {p.lines.length} dogs</span>
+                            <ul className="mt-1 space-y-0.5 text-xs">
+                              {p.lines.map(line => (
+                                <li key={line.id} className="flex justify-between gap-4">
+                                  <span>{line.petName ? `${line.petName} · ` : ""}{line.membershipName ?? "Membership"}</span>
+                                  <span className="shrink-0 tabular-nums">{formatCents(line.cents)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        ) : (
+                          <>{p.lines[0]?.petName ? `${p.lines[0].petName} · ` : ""}{p.lines[0]?.membershipName ?? "—"}</>
+                        )}
+                      </td>
                       <td className="p-3">
                         <Badge className={
                           p.status === "paid" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
@@ -2777,7 +2797,7 @@ export default function ClientDetail() {
                           {p.status === "paid" ? "✓ Paid" : p.status === "failed" ? "✗ Failed" : p.status}
                         </Badge>
                       </td>
-                      <td className="p-3 text-right font-medium">${parseFloat(p.amount).toFixed(2)}</td>
+                      <td className="p-3 text-right font-medium tabular-nums">{formatCents(p.totalCents)}</td>
                     </tr>
                   ))}
                 </tbody>
