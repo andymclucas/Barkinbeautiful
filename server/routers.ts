@@ -128,7 +128,7 @@ const signInLinkByIp = new Map<string, number[]>();
 const signInCodeAttempts = new Map<string, number[]>();
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
-import { buildBathPriorityQueue, isBathPriorityMutable } from "../shared/bathPriorityQueue";
+import { BATH_ORDER_LOCKED_MESSAGE, buildBathPriorityQueue, canChangeBathOrder, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { brisbaneDayBounds, brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { bookingsCancelledByPassing } from "../shared/petPassingBookings";
 import { nextVisitAfter } from "@shared/nextVisit";
@@ -4744,6 +4744,7 @@ const workflowRouter = router({
         .where(eq(appointments.id, input.appointmentId)).limit(1);
       if (!appointment) throw new Error("Appointment not found");
       const portalStaff = await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId);
+      if (!canChangeBathOrder(portalStaff?.role)) throw new TRPCError({ code: "FORBIDDEN", message: BATH_ORDER_LOCKED_MESSAGE });
       if (!isBathPriorityMutable(appointment.workflowState) || appointment.status === "cancelled" || appointment.status === "no_show") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Bath priority cannot be changed after a terminal workflow outcome." });
       }
@@ -4836,6 +4837,7 @@ const workflowRouter = router({
       }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
       if (!anchor) throw new Error("Appointment not found");
       const portalStaff = await requireApprovedStaffAppointmentAccess(db, ctx.user, anchor.id);
+      if (!canChangeBathOrder(portalStaff?.role)) throw new TRPCError({ code: "FORBIDDEN", message: BATH_ORDER_LOCKED_MESSAGE });
       if (!isBathPriorityMutable(anchor.workflowState) || anchor.status === "cancelled" || anchor.status === "no_show") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Bath groups cannot be changed after a terminal workflow outcome." });
       }
@@ -4907,6 +4909,7 @@ const workflowRouter = router({
       const [firstAppointment] = await db.select({ id: appointments.id, tenantId: appointments.tenantId }).from(appointments).where(eq(appointments.id, firstAppointmentId)).limit(1);
       if (!firstAppointment) throw new Error("Appointment not found");
       const portalStaff = await requireApprovedStaffAppointmentAccess(db, ctx.user, firstAppointmentId);
+      if (!canChangeBathOrder(portalStaff?.role)) throw new TRPCError({ code: "FORBIDDEN", message: BATH_ORDER_LOCKED_MESSAGE });
       const [year, month, day] = input.date.split("-").map(Number);
       const dayStart = new Date(Date.UTC(year!, month! - 1, day! - 1, 14, 0, 0, 0));
       const dayEnd = new Date(Date.UTC(year!, month! - 1, day!, 13, 59, 59, 999));

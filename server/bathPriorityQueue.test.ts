@@ -616,3 +616,14 @@ describe("who else is on this bath number", () => {
     expect(dogsOnTheSameBathNumber(1, [a, b])).toEqual([]);
   });
 });
+
+describe("canChangeBathOrder", () => {
+  it("refuses the bath team and nobody else", async () => {
+    const { canChangeBathOrder } = await import("../shared/bathPriorityQueue");
+    expect(canChangeBathOrder("bather")).toBe(false);
+    for (const role of ["groomer", "receptionist", "manager", "owner"]) expect(canChangeBathOrder(role), role).toBe(true);
+    // The owners' admin logins reach the server with no staff role at all.
+    expect(canChangeBathOrder(undefined)).toBe(true);
+    expect(canChangeBathOrder(null)).toBe(true);
+  });
+});

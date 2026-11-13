@@ -83,6 +83,27 @@ export function isBathPriorityEligible(workflowState: string) {
   return BATH_QUEUE_STATES.has(workflowState);
 }
 
+/**
+ * Who may change the bath order: the priority numbers, the bath groups
+ * and the order of the queue.
+ *
+ * Lauren, 13/11/2026: "can we stop the bathers having access to changing
+ * the priority bath numbers... they changed the numbers we put in then
+ * missed Teddy who came in at 8am." The numbers are how the groomers
+ * tell the bath team what they need next, so the bath team following
+ * them is the point; the bath team rewriting them defeats it.
+ *
+ * Decided by the salon role on the staff record, not the login's
+ * platform role. Everyone else, including a login with no staff record
+ * at all (the owners' admin accounts), may still set it.
+ */
+export function canChangeBathOrder(staffRole: string | null | undefined): boolean {
+  return staffRole !== "bather";
+}
+
+export const BATH_ORDER_LOCKED_MESSAGE =
+  "The bath order is set by the groomers. Ask a groomer or the front desk to change it.";
+
 export function isBathPriorityMutable(workflowState: string) {
   return (
     workflowState !== "complete" &&
