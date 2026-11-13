@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { clients, invoices, membershipLedgerEntries, membershipPayments, memberships, stripeEvents, tenants } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
@@ -13,6 +13,8 @@ import { notifyOwner } from "./ownerNotification";
 import { classifyFailure, fromStripeCents, planAfterFailure } from "@shared/stripeBilling";
 import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
 import { isDuplicateEntryError } from "./dbErrors";
+import { resolveChargePlan } from "@shared/membershipBillingCycle";
+import { paidInvoiceKeyFor, splitInvoiceCents } from "@shared/familyBilling";
 import { isPlatformSubscriptionMetadata } from "@shared/platformBilling";
 import { syncPlatformSubscription, tenantIdForPlatformSubscription } from "./platformBilling";
 
@@ -229,10 +231,28 @@ async function prepareCheckout(
  * payment or double-count a failure into a suspension.
  */
 
-/** Which membership, if any, a subscription invoice belongs to. */
-async function membershipForSubscription(db: any, subscriptionId: string | null) {
-  if (!subscriptionId) return null;
-  const [row] = await db
+type SubscriptionMembership = {
+  id: number;
+  tenantId: number | null;
+  clientId: number | null;
+  name: string | null;
+  failedPaymentCount: number | null;
+  billingCycle: "weekly" | "monthly" | null;
+  billingCycleWeeks: number | null;
+  pricePerCycle: string | null;
+};
+
+/**
+ * Every membership a subscription pays for.
+ *
+ * Usually one. A household billed as one payment has several rows on the
+ * same subscription (shared/familyBilling.ts), and a payment event is
+ * about all of them. Ordered by id so "the first" is stable: it is the
+ * one the audit row names and the one that takes any odd cent.
+ */
+async function membershipsForSubscription(db: any, subscriptionId: string | null): Promise<SubscriptionMembership[]> {
+  if (!subscriptionId) return [];
+  return db
     .select({
       id: memberships.id,
       tenantId: memberships.tenantId,
@@ -240,11 +260,20 @@ async function membershipForSubscription(db: any, subscriptionId: string | null)
       name: memberships.name,
       failedPaymentCount: memberships.failedPaymentCount,
       billingCycle: memberships.billingCycle,
+      billingCycleWeeks: memberships.billingCycleWeeks,
+      pricePerCycle: memberships.pricePerCycle,
     })
     .from(memberships)
     .where(eq(memberships.stripeSubscriptionId, subscriptionId))
-    .limit(1);
-  return row ?? null;
+    .orderBy(asc(memberships.id));
+}
+
+/** One invoice amount, in cents, split across the memberships it paid for. */
+function splitAcross(all: SubscriptionMembership[], totalCents: number) {
+  return splitInvoiceCents(totalCents, all.map((row) => {
+    const plan = resolveChargePlan(row);
+    return { membershipId: row.id, expectedCents: plan.ok ? plan.amountCents : 0 };
+  }));
 }
 
 /**
@@ -520,13 +549,17 @@ export async function processStripeEvent(event: Stripe.Event) {
 
   if (event.type === "invoice.paid" || event.type === "invoice.payment_succeeded") {
     const invoice = event.data.object as Stripe.Invoice;
-    const membership = await membershipForSubscription(db, subscriptionIdOf(invoice));
+    const paidFor = await membershipsForSubscription(db, subscriptionIdOf(invoice));
+    const membership = paidFor[0] ?? null;
     await db.insert(stripeEvents).values({
       stripeEventId: event.id, eventType: event.type,
       tenantId: membership?.tenantId ?? 1, clientId: membership?.clientId ?? null,
       membershipId: membership?.id ?? null, invoiceId: null,
     });
     if (!membership) return { duplicate: false, handled: "invoice_paid_unmatched" };
+    // Several memberships on one payment: a household billed together.
+    const shared = paidFor.length > 1;
+    const paidForIds = paidFor.map((row) => row.id);
 
     // Book the money against the INVOICE, not the event.
     //
@@ -537,17 +570,20 @@ export async function processStripeEvent(event: Stripe.Event) {
     // payment gets counted once or twice. A payment row already existing for
     // this invoice is the reliable signal, and it holds against Stripe's
     // delivery retries and a manual replay from the dashboard too.
-    const amount = fromStripeCents(invoice.amount_paid);
-    const [alreadyBooked] = invoice.id
+    const bookedRows: Array<{ membershipId: number }> = invoice.id
       ? await db
-          .select({ id: membershipPayments.id })
+          .select({ membershipId: membershipPayments.membershipId })
           .from(membershipPayments)
           .where(and(
             eq(membershipPayments.stripeInvoiceId, invoice.id),
             eq(membershipPayments.status, "paid"),
           ))
-          .limit(1)
       : [];
+    const bookedFor = new Set(bookedRows.map((row) => row.membershipId));
+    // Every membership on the payment has its row. On a shared payment a
+    // half-finished booking (one row in, then a crash) is finished on the
+    // retry rather than left short.
+    const alreadyBooked = paidForIds.every((id) => bookedFor.has(id));
 
     // Keep the Next Billing column honest as each cycle is paid. The
     // subscription period lives on the LINE, not on the invoice's own
@@ -557,7 +593,7 @@ export async function processStripeEvent(event: Stripe.Event) {
     if (nextBilling) {
       await db.update(memberships)
         .set({ nextBillingDate: nextBilling })
-        .where(eq(memberships.id, membership.id));
+        .where(inArray(memberships.id, paidForIds));
     }
 
     if (!alreadyBooked) {
@@ -568,25 +604,39 @@ export async function processStripeEvent(event: Stripe.Event) {
       // the same second. The unique index on the paid invoice is what makes
       // this safe; the loser of the race lands here as a duplicate-key
       // error, which means "already booked" and nothing more.
-      try {
-        await db.insert(membershipPayments).values({
-          membershipId: membership.id,
-          amount: String(amount),
-          status: "paid",
-          stripeInvoiceId: invoice.id ?? null,
-          // The unique half. Set only here, on the row that books the
-          // money, so the second of two simultaneous events collides.
-          paidInvoiceKey: invoice.id ?? null,
-          paidAt: new Date(),
-        });
-        await db.insert(membershipLedgerEntries).values({
-          tenantId: membership.tenantId ?? 1, membershipId: membership.id, invoiceId: null,
-          entryType: "payment", amount: String(amount), source: "stripe",
-          note: "Stripe subscription payment",
-          externalReference: invoice.id ?? null,
-        });
-      } catch (error) {
-        if (!isDuplicateEntryError(error)) throw error;
+      /*
+       * One row per membership. Billed alone, that is one row for the
+       * whole amount, with the bare invoice id as its unique key, exactly
+       * as before. On a shared payment the amount is split by each
+       * membership's own price (shared/familyBilling.ts) and each row
+       * gets its own key, so the unique index still stops a double
+       * booking, per membership. The parts always sum to what Stripe took.
+       */
+      const parts = splitAcross(paidFor, invoice.amount_paid ?? 0);
+      for (const part of parts) {
+        if (bookedFor.has(part.membershipId)) continue;
+        const row = paidFor.find((r) => r.id === part.membershipId)!;
+        const amount = fromStripeCents(part.cents);
+        try {
+          await db.insert(membershipPayments).values({
+            membershipId: row.id,
+            amount: String(amount),
+            status: "paid",
+            stripeInvoiceId: invoice.id ?? null,
+            // The unique half. Set only here, on the row that books the
+            // money, so the second of two simultaneous events collides.
+            paidInvoiceKey: invoice.id ? paidInvoiceKeyFor(invoice.id, row.id, shared) : null,
+            paidAt: new Date(),
+          });
+          await db.insert(membershipLedgerEntries).values({
+            tenantId: row.tenantId ?? 1, membershipId: row.id, invoiceId: null,
+            entryType: "payment", amount: String(amount), source: "stripe",
+            note: shared ? "Stripe subscription payment (shared family payment)" : "Stripe subscription payment",
+            externalReference: invoice.id ?? null,
+          });
+        } catch (error) {
+          if (!isDuplicateEntryError(error)) throw error;
+        }
       }
     }
     // A successful charge clears the whole failure state, including a retry
@@ -604,20 +654,28 @@ export async function processStripeEvent(event: Stripe.Event) {
       pauseMode: null,
       pauseResumesAt: null,
       pausedAt: null,
-    }).where(eq(memberships.id, membership.id));
+    }).where(inArray(memberships.id, paidForIds));
     // Clearing the failure state is idempotent, so it runs either way.
     return { duplicate: false, handled: alreadyBooked ? "subscription_paid_already_booked" : "subscription_paid" };
   }
 
   if (event.type === "invoice.payment_failed") {
     const invoice = event.data.object as Stripe.Invoice;
-    const membership = await membershipForSubscription(db, subscriptionIdOf(invoice));
+    const failedFor = await membershipsForSubscription(db, subscriptionIdOf(invoice));
+    const membership = failedFor[0] ?? null;
     await db.insert(stripeEvents).values({
       stripeEventId: event.id, eventType: event.type,
       tenantId: membership?.tenantId ?? 1, clientId: membership?.clientId ?? null,
       membershipId: membership?.id ?? null, invoiceId: null,
     });
     if (!membership) return { duplicate: false, handled: "invoice_failed_unmatched" };
+    /*
+     * A shared payment fails as a whole, so every membership on it takes
+     * the same strike, the same retry date and the same hold. The failure
+     * count is read from the first; they move together from the day they
+     * are joined.
+     */
+    const failedForIds = failedFor.map((row) => row.id);
 
     const now = new Date();
     const failedCount = (membership.failedPaymentCount ?? 0) + 1;
@@ -627,13 +685,15 @@ export async function processStripeEvent(event: Stripe.Event) {
       failedCount, classifyFailure(declineCode), now, membership.billingCycle ?? "weekly",
     );
 
-    await db.insert(membershipPayments).values({
-      membershipId: membership.id,
-      amount: String(fromStripeCents(invoice.amount_due)),
-      status: "failed",
-      stripeInvoiceId: invoice.id ?? null,
-      failureReason: plan.reason,
-    });
+    for (const part of splitAcross(failedFor, invoice.amount_due ?? 0)) {
+      await db.insert(membershipPayments).values({
+        membershipId: part.membershipId,
+        amount: String(fromStripeCents(part.cents)),
+        status: "failed",
+        stripeInvoiceId: invoice.id ?? null,
+        failureReason: plan.reason,
+      });
+    }
     await db.update(memberships).set({
       failedPaymentCount: failedCount,
       lastFailedPaymentAt: now,
@@ -647,19 +707,21 @@ export async function processStripeEvent(event: Stripe.Event) {
       pauseMode: null,
       pauseResumesAt: null,
       pausedAt: null,
-    }).where(eq(memberships.id, membership.id));
+    }).where(inArray(memberships.id, failedForIds));
 
     // Lights the Dashboard's failed-payments alert, and emails the owner.
+    // One notice for the payment, naming every membership on it.
     await notifyOwner({
       title: plan.suspend ? "⛔ Membership payment failed - suspended" : "⚠️ Membership payment failed",
-      content: `${membership.name ?? "Membership"} - ${plan.reason}`,
+      content: `${failedFor.map((row) => row.name ?? "Membership").join(" + ")} - ${plan.reason}`,
     }).catch(() => undefined);
     return { duplicate: false, handled: "subscription_failed" };
   }
 
   if (event.type === "customer.subscription.deleted") {
     const subscription = event.data.object as Stripe.Subscription;
-    let membership = await membershipForSubscription(db, subscription.id);
+    const endedFor = await membershipsForSubscription(db, subscription.id);
+    let membership: { id: number; tenantId: number | null; clientId: number | null; name: string | null; failedPaymentCount: number | null } | null = endedFor[0] ?? null;
 
     // When WE cancelled, the subscription id was already cleared, so the
     // lookup above misses and the audit row would say nothing about who it
@@ -700,7 +762,8 @@ export async function processStripeEvent(event: Stripe.Event) {
           // would ever charge it again.
           paymentGateway: "other",
         })
-        .where(eq(memberships.id, membership.id));
+        // Every membership the ended subscription was paying for.
+        .where(endedFor.length > 0 ? inArray(memberships.id, endedFor.map((row) => row.id)) : eq(memberships.id, membership.id));
     }
     return { duplicate: false, handled: "subscription_deleted" };
   }

@@ -16,6 +16,7 @@ import { PetEditorDialog, type EditablePet } from "@/components/PetEditorDialog"
 import type { PassingReview } from "@shared/petPassingReview";
 import { describeCancelledBookings } from "@shared/petPassingBookings";
 import { companionsOf, joinNames } from "@shared/familyBookingRows";
+import { billedTogetherWith, familyBillingOffer } from "@shared/familyBilling";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
 } from "@shared/membershipBillingState";
@@ -26,7 +27,7 @@ import { membershipsByCoveredPet } from "@shared/membershipCoveredPets";
 import { parseClientTags, clientTagTone } from "@shared/clientTags";
 import { describePetCode, petCodeMeaning } from "@shared/petCodeMeanings";
 import { canChargeOffSession } from "@shared/stripeBilling";
-import { AddMembershipButton, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
+import { AddMembershipButton, FamilyBillingPanel, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
 import {
   SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
   type DogSizeBand, type SizeBandSource,
@@ -2611,6 +2612,18 @@ export default function ClientDetail() {
                   onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
                 />
               </div>
+              {/* One payment for the household (shared/familyBilling.ts).
+                  Owners only, like Set Weekly Billing: it starts a charge. */}
+              {isOwner && (() => {
+                const offer = familyBillingOffer(memberships);
+                return offer
+                  ? <FamilyBillingPanel
+                      offer={offer}
+                      hasCardOnFile={clientHasCardOnFile}
+                      onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
+                    />
+                  : null;
+              })()}
               {memberships.map(m => {
                 const colours = TIER_COLOURS[m.tier] ?? TIER_COLOURS.bronze;
                 const icon = TIER_ICONS[m.tier] ?? "🏅";
@@ -2653,6 +2666,14 @@ export default function ClientDetail() {
                               {m.petName && <span>For <strong>{m.petName}</strong> · </span>}
                               ${m.pricePerCycle}/wk · {m.billingCycleWeeks}wk billing cycle
                             </p>
+                            {(() => {
+                              const together = billedTogetherWith(m, memberships);
+                              return together.length > 0
+                                ? <p className="text-xs font-medium text-primary">
+                                    One payment with {joinNames(together.map(o => o.petName ?? o.name))}
+                                  </p>
+                                : null;
+                            })()}
                           </div>
                         </div>
                         <Badge className={tone} title={billingStateHint(billing) ?? undefined}>

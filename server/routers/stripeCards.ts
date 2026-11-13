@@ -25,6 +25,7 @@ import {
   emailCardSetupLink,
   detachClientCard,
   startMembershipSubscription,
+  startFamilySubscription,
   cancelMembershipSubscription,
   pauseMembershipSubscription,
   resumeMembershipSubscription,
@@ -135,6 +136,23 @@ export const stripeCardsRouter = router({
       firstChargeOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     }))
     .mutation(async ({ input }) => startMembershipSubscription(input.membershipId, input.firstChargeOn)),
+
+  /**
+   * Bill several of one client's memberships as ONE payment, or add
+   * memberships to a payment that is already running.
+   *
+   * Andy, 13/11/2026. Each dog keeps its own membership; only the charge
+   * is shared. The rules are in shared/familyBilling.ts and the server
+   * re-checks every one of them, so a stale screen cannot group
+   * memberships that should not share a card.
+   */
+  startFamilyBilling: adminProcedure
+    .input(z.object({
+      membershipIds: z.array(z.number().int().positive()).min(2).max(10),
+      /** yyyy-mm-dd, Brisbane. Omitted charges now. Ignored when joining a running payment. */
+      firstChargeOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    }))
+    .mutation(async ({ input }) => startFamilySubscription(input.membershipIds, input.firstChargeOn)),
 
   cancelSubscription: adminProcedure
     .input(z.object({ membershipId: z.number() }))
