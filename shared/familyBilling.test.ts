@@ -112,3 +112,38 @@ describe("familyBillingOffer", () => {
     expect(billedTogetherWith(rows[3], rows)).toEqual([]);
   });
 });
+
+describe("groupPayments", () => {
+  it("shows one family payment with each dog's share under it", async () => {
+    const { groupPayments } = await import("./familyBilling");
+    const groups = groupPayments([
+      { id: 2, amount: "17.00", status: "paid", paidAt: "2026-11-13", membershipName: "Silver", petName: "Leia", stripeInvoiceId: "in_1" },
+      { id: 1, amount: "17.00", status: "paid", paidAt: "2026-11-13", membershipName: "Silver", petName: "Luke", stripeInvoiceId: "in_1" },
+      { id: 0, amount: "22.00", status: "paid", paidAt: "2026-11-06", membershipName: "Gold", petName: "Luke", stripeInvoiceId: "in_0" },
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toMatchObject({ totalCents: 3400, status: "paid" });
+    expect(groups[0].lines.map((l) => [l.petName, l.cents])).toEqual([["Leia", 1700], ["Luke", 1700]]);
+    expect(groups[1]).toMatchObject({ totalCents: 2200 });
+    expect(groups[1].lines).toHaveLength(1);
+  });
+
+  it("keeps a failed attempt apart from the later success on the same invoice", async () => {
+    const { groupPayments } = await import("./familyBilling");
+    const groups = groupPayments([
+      { id: 4, amount: "17.00", status: "paid", paidAt: "2026-11-14", membershipName: "A", stripeInvoiceId: "in_1" },
+      { id: 3, amount: "17.00", status: "paid", paidAt: "2026-11-14", membershipName: "B", stripeInvoiceId: "in_1" },
+      { id: 2, amount: "17.00", status: "failed", paidAt: null, membershipName: "A", stripeInvoiceId: "in_1" },
+      { id: 1, amount: "17.00", status: "failed", paidAt: null, membershipName: "B", stripeInvoiceId: "in_1" },
+    ]);
+    expect(groups.map((g) => [g.status, g.totalCents])).toEqual([["paid", 3400], ["failed", 3400]]);
+  });
+
+  it("never merges rows that have no invoice", async () => {
+    const { groupPayments } = await import("./familyBilling");
+    expect(groupPayments([
+      { id: 2, amount: "17.00", status: "paid", paidAt: null, membershipName: "A" },
+      { id: 1, amount: "17.00", status: "paid", paidAt: null, membershipName: "B" },
+    ])).toHaveLength(2);
+  });
+});

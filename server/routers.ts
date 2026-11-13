@@ -6774,7 +6774,7 @@ const clientsRouter = router({
 
       // Membership payments (last 50)
       const membershipIds = clientMemberships.map(m => m.id);
-      let payments: { id: number; amount: string; status: string; paidAt: Date | null; membershipName: string | null }[] = [];
+      let payments: { id: number; amount: string; status: string; paidAt: Date | null; membershipName: string | null; petName: string | null; stripeInvoiceId: string | null }[] = [];
       if (membershipIds.length > 0) {
         payments = await db
           .select({
@@ -6783,9 +6783,14 @@ const clientsRouter = router({
             status: membershipPayments.status,
             paidAt: membershipPayments.paidAt,
             membershipName: memberships.name,
+            // Which dog, and which Stripe invoice: rows from one invoice are
+            // one payment on the client's card (shared/familyBilling.ts).
+            petName: pets.name,
+            stripeInvoiceId: membershipPayments.stripeInvoiceId,
           })
           .from(membershipPayments)
           .leftJoin(memberships, eq(membershipPayments.membershipId, memberships.id))
+          .leftJoin(pets, eq(memberships.petId, pets.id))
           .where(inArray(membershipPayments.membershipId, membershipIds))
           .orderBy(desc(membershipPayments.paidAt))
           .limit(50);

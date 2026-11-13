@@ -234,3 +234,59 @@ export function billedTogetherWith<T extends FamilyBillingRow>(row: FamilyBillin
   if (!row.stripeSubscriptionId) return [];
   return rows.filter((other) => other.id !== row.id && other.stripeSubscriptionId === row.stripeSubscriptionId);
 }
+
+// ─── Showing a shared payment as what was actually paid ──────────────────────
+
+export type PaymentRow = {
+  id: number;
+  amount: string | number;
+  status: string;
+  paidAt: Date | string | null;
+  membershipName: string | null;
+  petName?: string | null;
+  stripeInvoiceId?: string | null;
+};
+
+export type PaymentGroup = {
+  /** Stable key for the list. */
+  key: string;
+  status: string;
+  paidAt: Date | string | null;
+  /** What Stripe took (or tried to take), in cents. */
+  totalCents: number;
+  /** One line per dog. A payment for one membership has exactly one. */
+  lines: Array<{ id: number; petName: string | null; membershipName: string | null; cents: number }>;
+};
+
+/**
+ * The client's payments as the client was charged.
+ *
+ * Andy, 13/11/2026: one $34.00 family payment was listed as two $17.00
+ * payments. That is how it is BOOKED, one row per membership, so revenue
+ * by plan adds up. It is not what happened on the card. Rows from the
+ * same Stripe invoice with the same outcome are one payment: shown once,
+ * with the total that was taken and each dog's share under it.
+ *
+ * Order is kept as given (newest first from the server). Rows with no
+ * invoice id, such as a hand-recorded payment, are never merged.
+ */
+export function groupPayments(rows: readonly PaymentRow[]): PaymentGroup[] {
+  const groups: PaymentGroup[] = [];
+  const byKey = new Map<string, PaymentGroup>();
+  for (const row of rows) {
+    const rowCents = Math.round(Number(row.amount ?? 0) * 100);
+    const line = { id: row.id, petName: row.petName ?? null, membershipName: row.membershipName, cents: rowCents };
+    const key = row.stripeInvoiceId ? `${row.stripeInvoiceId}:${row.status}` : `row:${row.id}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.lines.push(line);
+      existing.totalCents += rowCents;
+      existing.paidAt = existing.paidAt ?? row.paidAt;
+      continue;
+    }
+    const group: PaymentGroup = { key, status: row.status, paidAt: row.paidAt, totalCents: rowCents, lines: [line] };
+    byKey.set(key, group);
+    groups.push(group);
+  }
+  return groups;
+}
