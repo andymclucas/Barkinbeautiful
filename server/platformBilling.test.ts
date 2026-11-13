@@ -160,7 +160,7 @@ describe("the webhook cannot confuse our subscription with a membership", () => 
     // subscription — which would simply stop updating, with the salon
     // still being charged.
     const platform = source.indexOf("tenantIdForPlatformSubscription(");
-    const membershipInvoice = source.indexOf("membershipForSubscription(db, subscriptionIdOf(invoice))");
+    const membershipInvoice = source.indexOf("membershipsForSubscription(db, subscriptionIdOf(invoice))");
     expect(platform, "the platform handler should exist").toBeGreaterThan(-1);
     expect(membershipInvoice, "the membership handler should exist").toBeGreaterThan(-1);
     expect(platform, "platform handling must come first").toBeLessThan(membershipInvoice);

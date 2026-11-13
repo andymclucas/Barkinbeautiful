@@ -7,11 +7,14 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { DateField } from "@/components/DateField";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { brisbaneDateKey } from "@shared/localDateTime";
+import { formatCents, type FamilyBillingOffer } from "@shared/familyBilling";
+import { joinNames } from "@shared/familyBookingRows";
 import type { MembershipWeightClass } from "@shared/membershipPackages";
 
 type Pet = { id: number; name: string; breed?: string | null };
@@ -478,6 +481,114 @@ export function SendCardLinkButton({ clientId, clientEmail, hasCardOnFile, varia
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => { setOpen(false); setLink(null); }}>
               Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/**
+ * One payment for a household's memberships (shared/familyBilling.ts).
+ *
+ * Andy, 13/11/2026: two dogs, two memberships, and the client should see
+ * ONE weekly charge. Each dog keeps its own membership, so one of them
+ * changing weight class changes only that dog's plan.
+ *
+ * Shown on the Memberships tab only when the offer is clear-cut. It
+ * takes money, so it sits behind a confirm that states the amount, and
+ * the server re-checks everything the offer was built from.
+ */
+export function FamilyBillingPanel({ offer, hasCardOnFile, onChanged }: {
+  offer: FamilyBillingOffer;
+  hasCardOnFile: boolean;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [firstCharge, setFirstCharge] = useState(() => brisbaneDateKey());
+  const total = formatCents(offer.totalCents);
+  const cycle = (offer.all[0]?.billingCycleWeeks ?? 1) === 2 ? "fortnight" : "week";
+  const dogs = joinNames(offer.all.map((r) => r.petName ?? r.name));
+  const addingDogs = joinNames(offer.adding.map((r) => r.petName ?? r.name));
+
+  const start = trpc.stripeCards.startFamilyBilling.useMutation({
+    onSuccess: (result) => {
+      toast.success("Billing as one payment", {
+        description: result.joinedExisting
+          ? `${addingDogs} added. The payment is now ${formatCents(result.totalCents)} a ${cycle}, from the next charge.`
+          : `Stripe will take one payment of ${formatCents(result.totalCents)} a ${cycle} for ${dogs}.`,
+      });
+      onChanged();
+      setOpen(false);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+        <div className="min-w-[14rem] flex-1">
+          <p className="text-sm font-semibold">
+            {offer.joinsExisting
+              ? `Add ${addingDogs} to the payment already running`
+              : `Bill ${dogs} as one payment`}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            One charge of {total} a {cycle} instead of {offer.all.length}. Each dog keeps its own membership, so a change of weight class only changes that dog&rsquo;s plan.
+          </p>
+        </div>
+        <Button size="sm" className="gap-1.5" disabled={!hasCardOnFile} onClick={() => setOpen(true)}>
+          <CreditCard className="h-3.5 w-3.5" /> One payment · {total}/{cycle === "week" ? "wk" : "fn"}
+        </Button>
+        {!hasCardOnFile && <p className="w-full text-xs text-muted-foreground">Needs a card on file first. Send the card link.</p>}
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">{offer.joinsExisting ? "Add to the family payment" : "Start one family payment"}</DialogTitle>
+            <DialogDescription className="text-xs">
+              One charge to the card on file, with a line for each dog.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1.5 text-sm">
+            {offer.all.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                <span className="min-w-0">
+                  <span className="font-medium">{r.petName ?? "Membership"}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{r.name}</span>
+                </span>
+                <span className="shrink-0 font-medium">${Number(r.pricePerCycle ?? 0).toFixed(2)}</span>
+              </li>
+            ))}
+            <li className="flex items-center justify-between gap-3 px-3 pt-1 font-semibold">
+              <span>One payment each {cycle}</span><span>{total}</span>
+            </li>
+          </ul>
+          {offer.joinsExisting ? (
+            <p className="text-xs text-muted-foreground">
+              {addingDogs} is added from the next charge. Nothing extra is taken today, and there is no part-{cycle} charge.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              <Label className="text-xs">First charge on</Label>
+              <DateField value={firstCharge} onChange={next => setFirstCharge(next)} />
+              <p className="text-xs text-muted-foreground">
+                Today charges the card {total} straight away. A later date takes nothing until 9am that day.
+              </p>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button
+              disabled={start.isPending}
+              onClick={() => start.mutate({
+                membershipIds: offer.membershipIds,
+                firstChargeOn: offer.joinsExisting ? undefined : firstCharge,
+              })}
+            >
+              {start.isPending ? "Starting…" : offer.joinsExisting ? `Add to the payment` : `Start ${total} a ${cycle}`}
             </Button>
           </DialogFooter>
         </DialogContent>

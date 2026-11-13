@@ -601,7 +601,9 @@ describe("tRPC procedure surface", () => {
     // inside, Groomigo support only.
     // 448 since 13/11/2026: sms.clientNumbers, the "To" picker in the
     // Messages composer. protectedProcedure, like sms.send beside it.
-    expect(surface).toHaveLength(448);
+    // 449 since 13/11/2026: stripeCards.startFamilyBilling, one payment for
+    // a household's memberships. adminProcedure, like startSubscription.
+    expect(surface).toHaveLength(449);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

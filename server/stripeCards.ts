@@ -21,7 +21,7 @@
  * can be tested without a Stripe key.
  */
 import type Stripe from "stripe";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, notInArray, or } from "drizzle-orm";
 import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
@@ -29,6 +29,7 @@ import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
 import { toStripeCents, stripeRecurring } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
+import { FAMILY_BILLING_TEST_ONLY, planFamilyBilling } from "@shared/familyBilling";
 import { resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
 import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 
@@ -512,7 +513,12 @@ export async function startMembershipSubscription(membershipId: number, firstCha
     collection_method: "charge_automatically",
     ...(trialEnd ? { trial_end: trialEnd } : {}),
     items: [{
-      metadata: { groomigo_membership_name: membership.name ?? "Grooming membership" },
+      // The id is what lets this line be found again if another membership
+      // later joins the payment (shared/familyBilling.ts).
+      metadata: {
+        groomigo_membership_id: String(membership.id),
+        groomigo_membership_name: membership.name ?? "Grooming membership",
+      },
       price_data: {
         currency: "aud",
         unit_amount: amount,
@@ -550,6 +556,224 @@ export async function startMembershipSubscription(membershipId: number, firstCha
     .where(eq(memberships.id, membership.id));
 
   return { subscriptionId: subscription.id, alreadyExisted: false };
+}
+
+/**
+ * Put several of one client's memberships onto ONE Stripe payment, or add
+ * memberships to a payment that is already running.
+ *
+ * One subscription, one line per membership (shared/familyBilling.ts).
+ * Each line carries its membership id, which is how a single dog is
+ * later taken off the payment without touching the others.
+ *
+ * A membership added to a running payment is charged from the NEXT
+ * invoice, with no part-week: `proration_behavior: "none"`. A surprise
+ * part-charge on the day somebody ticks a box is exactly what a client
+ * rings about.
+ */
+export async function startFamilySubscription(membershipIds: number[], firstChargeOn?: string | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const stripe = requireStripeClient();
+  const ids = Array.from(new Set(membershipIds));
+  const rows = await db
+    .select({
+      id: memberships.id,
+      tenantId: memberships.tenantId,
+      clientId: memberships.clientId,
+      name: memberships.name,
+      pricePerCycle: memberships.pricePerCycle,
+      billingCycleWeeks: memberships.billingCycleWeeks,
+      billingCycle: memberships.billingCycle,
+      status: memberships.status,
+      stripeSubscriptionId: memberships.stripeSubscriptionId,
+      isTest: memberships.isTest,
+    })
+    .from(memberships)
+    .where(inArray(memberships.id, ids));
+  // Same tenant guard as startMembershipSubscription: fail closed.
+  if (rows.length !== ids.length || rows.some((r) => (r.tenantId ?? 1) !== 1)) throw new Error("Membership not found");
+  if (FAMILY_BILLING_TEST_ONLY && rows.some((r) => !r.isTest)) {
+    throw new Error("One payment for several memberships is still being tested and is not switched on for clients yet.");
+  }
+
+  const charge = new Map(rows.map((r) => [r.id, resolveChargePlan(r)] as const));
+  const unbillable = rows.find((r) => !charge.get(r.id)!.ok);
+  if (unbillable) {
+    const plan = charge.get(unbillable.id)!;
+    throw new Error(plan.ok ? "This membership cannot be billed" : plan.error);
+  }
+  const plan = planFamilyBilling(rows.map((r) => {
+    const c = charge.get(r.id)!;
+    return {
+      id: r.id, clientId: r.clientId, tenantId: r.tenantId, status: r.status,
+      stripeSubscriptionId: r.stripeSubscriptionId,
+      cycle: c.ok ? c.cycle : null,
+      amountCents: c.ok ? c.amountCents : 0,
+    };
+  }));
+  if (!plan.ok) throw new Error(plan.error);
+
+  const [first] = rows;
+  const [client] = await db
+    .select({ stripeCustomerId: clients.stripeCustomerId, paymentMethodId: clients.stripeDefaultPaymentMethodId })
+    .from(clients)
+    .where(eq(clients.id, first.clientId!))
+    .limit(1);
+  if (!client?.stripeCustomerId || !client.paymentMethodId) {
+    throw new Error("This client has no card on file yet. Send them a card link first.");
+  }
+
+  const productId = await ensureMembershipProduct(stripe, first.tenantId ?? 1);
+  const byId = new Map(rows.map((r) => [r.id, r] as const));
+  const lineFor = (id: number) => {
+    const row = byId.get(id)!;
+    const c = charge.get(id)!;
+    if (!c.ok) throw new Error(c.error);
+    return {
+      metadata: {
+        groomigo_membership_id: String(id),
+        groomigo_membership_name: row.name ?? "Grooming membership",
+      },
+      price_data: {
+        currency: "aud",
+        unit_amount: c.amountCents,
+        recurring: stripeRecurring(c.cycle),
+        product: productId,
+      },
+    };
+  };
+  const addedIds = plan.toAdd.map((c) => c.id).sort((a, b) => a - b);
+
+  let subscriptionId = plan.existingSubscriptionId;
+  let liveOnStart = true;
+  let nextBilling: Date | null = null;
+
+  if (subscriptionId) {
+    // Joining a running payment. One line each, charged from the next invoice.
+    const existing = await stripe.subscriptionItems.list({ subscription: subscriptionId, limit: 100 });
+    /*
+     * A payment started before 13/11/2026 has a line with no membership id
+     * on it. Left like that, the ORIGINAL dog could never be taken off the
+     * shared payment: its line could not be told apart. Label it now, while
+     * there is exactly one membership it can belong to. If that is not
+     * certain, refuse before adding anything.
+     */
+    const unlabelled = existing.data.filter((item) => !item.metadata?.groomigo_membership_id);
+    if (unlabelled.length > 0) {
+      if (unlabelled.length !== 1 || plan.alreadyOn.length !== 1 || existing.data.length !== 1) {
+        throw new Error("The payment these would join has lines Groomigo cannot match to a membership. Nothing was changed. Check the subscription in Stripe.");
+      }
+      await stripe.subscriptionItems.update(unlabelled[0].id, {
+        metadata: { ...unlabelled[0].metadata, groomigo_membership_id: String(plan.alreadyOn[0].id) },
+      });
+    }
+    /*
+     * No idempotency key here, deliberately. A fixed key made Stripe hand
+     * back the line it had already deleted when a dog was taken off and
+     * added again within a day, which is exactly the weight-class change
+     * this exists for. Double-adding is prevented by looking first.
+     */
+    const onPayment = new Set(existing.data.map((item) => item.metadata?.groomigo_membership_id).filter(Boolean));
+    for (const id of addedIds) {
+      if (onPayment.has(String(id))) continue;
+      await stripe.subscriptionItems.create({
+        subscription: subscriptionId,
+        ...lineFor(id),
+        proration_behavior: "none",
+      });
+    }
+    const [sibling] = await db.select({ nextBillingDate: memberships.nextBillingDate })
+      .from(memberships).where(eq(memberships.stripeSubscriptionId, subscriptionId)).limit(1);
+    nextBilling = sibling?.nextBillingDate ?? null;
+  } else {
+    const trialEnd = firstChargeStamp(firstChargeOn);
+    const subscription = await stripe.subscriptions.create({
+      customer: client.stripeCustomerId,
+      default_payment_method: client.paymentMethodId,
+      collection_method: "charge_automatically",
+      ...(trialEnd ? { trial_end: trialEnd } : {}),
+      items: addedIds.map(lineFor),
+      metadata: {
+        // The first id keeps the single-membership readers working (the
+        // subscription.deleted fallback reads it); the list is the truth.
+        groomigo_membership_id: String(addedIds[0]),
+        groomigo_membership_ids: addedIds.join(","),
+        groomigo_client_id: String(first.clientId),
+        tenant_id: String(first.tenantId ?? 1),
+        payment_kind: "membership_subscription",
+      },
+      payment_behavior: "allow_incomplete",
+    }, {
+      // Two admins clicking at once, or a retry after a failed DB write,
+      // must not create a second live payment that bills for ever.
+      // Bucketed to ten minutes: long enough to absorb a double click or
+      // a retried request, short enough that stopping a payment and
+      // starting it again later creates a NEW one rather than returning
+      // the cancelled one Stripe still remembers. The conditional write
+      // below is the real guard against two payments.
+      idempotencyKey: `groomigo-family-sub-${addedIds.join("-")}-${Math.floor(Date.now() / 600_000)}`,
+    });
+    subscriptionId = subscription.id;
+    liveOnStart = membershipLiveOnStart(subscription.status);
+    nextBilling = subscriptionPeriodEnd(subscription);
+  }
+
+  /*
+   * Claim each membership only if nothing else has put it on a payment in
+   * the meantime (two people starting billing at once). A membership that
+   * was claimed elsewhere must not end up on two payments, so undo what
+   * was just created at Stripe and say so.
+   */
+  const lost: number[] = [];
+  for (const id of addedIds) {
+    const row = byId.get(id)!;
+    const addedNotBilling = row.status === "pending_payment" && !row.stripeSubscriptionId;
+    const [written] = await db.update(memberships).set({
+      stripeSubscriptionId: subscriptionId,
+      gatewaySubscriptionId: subscriptionId,
+      paymentGateway: "stripe",
+      nextBillingDate: nextBilling,
+      ...(addedNotBilling && liveOnStart ? { status: "active" as const } : {}),
+    }).where(and(eq(memberships.id, id), isNull(memberships.stripeSubscriptionId)));
+    if ((written as unknown as { affectedRows?: number }).affectedRows === 0) lost.push(id);
+  }
+  if (lost.length > 0) {
+    if (plan.existingSubscriptionId) {
+      const items = await stripe.subscriptionItems.list({ subscription: subscriptionId!, limit: 100 });
+      for (const item of items.data) {
+        if (lost.includes(Number(item.metadata?.groomigo_membership_id))) {
+          await stripe.subscriptionItems.del(item.id, { proration_behavior: "none" }).catch(() => undefined);
+        }
+      }
+    } else {
+      await stripe.subscriptions.cancel(subscriptionId!).catch(() => undefined);
+      await db.update(memberships)
+        .set({ stripeSubscriptionId: null, gatewaySubscriptionId: null, paymentGateway: "other" })
+        .where(eq(memberships.stripeSubscriptionId, subscriptionId!));
+    }
+    throw new Error("Billing was started on one of these memberships by someone else at the same moment. Nothing was left half-done. Refresh and check before trying again.");
+  }
+
+  return {
+    subscriptionId,
+    joinedExisting: Boolean(plan.existingSubscriptionId),
+    memberships: plan.toAdd.length + plan.alreadyOn.length,
+    totalCents: plan.totalCents,
+  };
+}
+
+/** The other memberships paid for by the same Stripe subscription. */
+async function membershipsSharingSubscription(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, subscriptionId: string, exceptId: number) {
+  // Closed memberships do not count. A cancelled row that still carries
+  // the id would otherwise make the LAST live dog look like one of two,
+  // and stopping its billing would leave the payment running.
+  return db.select({ id: memberships.id }).from(memberships)
+    .where(and(
+      eq(memberships.stripeSubscriptionId, subscriptionId),
+      ne(memberships.id, exceptId),
+      notInArray(memberships.status, ["cancelled", "expired"]),
+    ));
 }
 
 /**
@@ -602,6 +826,27 @@ export async function cancelMembershipSubscription(membershipId: number) {
   if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
   if (!membership.stripeSubscriptionId) return { cancelled: false };
   const stripe = requireStripeClient();
+  /*
+   * On a shared payment (shared/familyBilling.ts) stopping ONE dog must
+   * not stop the others. Take just this membership's line off, with no
+   * part-week credit, and leave the subscription running. If the line
+   * cannot be found, refuse: cancelling the whole payment on a guess
+   * would silently stop charging for the other dogs.
+   */
+  const sharing = await membershipsSharingSubscription(db, membership.stripeSubscriptionId, membership.id);
+  if (sharing.length > 0) {
+    const items = await stripe.subscriptionItems.list({ subscription: membership.stripeSubscriptionId, limit: 100 });
+    const line = items.data.find((item) => item.metadata?.groomigo_membership_id === String(membership.id));
+    if (!line) {
+      throw new Error("This membership shares a payment with another, and its line could not be found on Stripe. Nothing was changed. Check the subscription in Stripe.");
+    }
+    await stripe.subscriptionItems.del(line.id, { proration_behavior: "none" });
+    await db
+      .update(memberships)
+      .set({ stripeSubscriptionId: null, gatewaySubscriptionId: null, paymentGateway: "other" })
+      .where(eq(memberships.id, membership.id));
+    return { cancelled: true, leftRunningFor: sharing.length };
+  }
   await stripe.subscriptions.cancel(membership.stripeSubscriptionId).catch(() => undefined);
   await db
     .update(memberships)
@@ -613,7 +858,7 @@ export async function cancelMembershipSubscription(membershipId: number) {
       paymentGateway: "other",
     })
     .where(eq(memberships.id, membership.id));
-  return { cancelled: true };
+  return { cancelled: true, leftRunningFor: 0 };
 }
 
 /**
@@ -732,7 +977,18 @@ export async function pauseMembershipSubscription(
       pauseResumesAt: resumesAt,
       pausedAt: now,
     })
-    .where(eq(memberships.id, membership.id));
+    /*
+     * Stripe pauses the PAYMENT, so on a shared payment every membership
+     * on it has stopped being charged (shared/familyBilling.ts). Mark
+     * the active ones paused too, or Groomigo would show a dog as
+     * billing while nothing is being taken for it.
+     */
+    .where(membership.stripeSubscriptionId
+      ? or(
+          eq(memberships.id, membership.id),
+          and(eq(memberships.stripeSubscriptionId, membership.stripeSubscriptionId), eq(memberships.status, "active")),
+        )
+      : eq(memberships.id, membership.id));
 
   return { paused: true, resumesAt, onStripe: Boolean(membership.stripeSubscriptionId) };
 }
@@ -765,6 +1021,13 @@ export async function resumeMembershipSubscription(membershipId: number) {
    * counted by every `status = "active"` revenue report.
    */
   if (membership.status !== "paused") {
+    // On a shared payment, resuming one membership resumes them all. The
+    // sweep then reaches the next one and finds it already active: that
+    // is the job done, not a membership somebody changed underneath it.
+    if (membership.status === "active" && membership.stripeSubscriptionId
+      && (await membershipsSharingSubscription(db, membership.stripeSubscriptionId, membership.id)).length > 0) {
+      return { resumed: true, onStripe: true };
+    }
     throw new Error(`This membership is ${membership.status}, not paused`);
   }
 
@@ -791,7 +1054,21 @@ export async function resumeMembershipSubscription(membershipId: number) {
   const [updated] = await db
     .update(memberships)
     .set({ status: "active", pauseMode: null, pauseResumesAt: null, pausedAt: null })
-    .where(and(eq(memberships.id, membership.id), eq(memberships.status, "paused")));
+    /*
+     * The other memberships on a shared payment come back with it. Only
+     * the ones paused DELIBERATELY (pauseMode set): a row paused by a
+     * failed payment has no pauseMode and must not be waved back to
+     * active here.
+     */
+    .where(and(
+      eq(memberships.status, "paused"),
+      membership.stripeSubscriptionId
+        ? or(
+            eq(memberships.id, membership.id),
+            and(eq(memberships.stripeSubscriptionId, membership.stripeSubscriptionId), isNotNull(memberships.pauseMode)),
+          )
+        : eq(memberships.id, membership.id),
+    ));
   if ((updated as unknown as { affectedRows?: number }).affectedRows === 0) {
     throw new Error("This membership changed while it was being resumed — check it and try again");
   }

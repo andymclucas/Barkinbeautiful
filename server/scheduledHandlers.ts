@@ -66,6 +66,8 @@ interface ChargeAttempt {
   declineCode: string | null;
   /** True when Stripe settled a subscription invoice; the webhook books it. */
   viaInvoice: boolean;
+  /** The invoice that was tried, when there was one. */
+  invoiceId?: string | null;
 }
 
 /**
@@ -81,6 +83,14 @@ async function attemptMembershipCharge(
   db: any,
   membership: { id: number; clientId: number | null; pricePerCycle: string | null; name: string | null; tenantId: number | null },
   now: Date,
+  /**
+   * Every membership on a shared payment (shared/familyBilling.ts), or
+   * empty when this one is billed alone. A shared payment is only ever
+   * retried by paying its WHOLE open invoice. Charging one membership's
+   * price would take part of what is owed, mark every dog as paid, and
+   * leave the invoice open for Stripe to collect in full later.
+   */
+  familyMembershipIds: number[] = [],
 ): Promise<ChargeAttempt> {
   if (!membership.clientId) {
     return { ok: false, skipped: true, reason: "Membership has no client attached", declineCode: null, viaInvoice: false };
@@ -108,16 +118,34 @@ async function attemptMembershipCharge(
     return { ok: false, skipped: false, reason: `${describeCard(client) ?? "The card"} has expired`, declineCode: "expired_card", viaInvoice: false };
   }
 
-  const [lastFailure] = await db
-    .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
-    .from(membershipPayments)
-    .where(and(eq(membershipPayments.membershipId, membership.id), eq(membershipPayments.status, "failed")))
-    .orderBy(desc(membershipPayments.id))
-    .limit(1);
+  const isFamilyPayment = familyMembershipIds.length > 1;
+  const [lastFailure] = isFamilyPayment
+    // The newest failed row on the payment that names its invoice, across
+    // every membership on it. A later retry's own failed row may not.
+    ? await db
+        .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
+        .from(membershipPayments)
+        .where(and(
+          inArray(membershipPayments.membershipId, familyMembershipIds),
+          eq(membershipPayments.status, "failed"),
+          isNotNull(membershipPayments.stripeInvoiceId),
+        ))
+        .orderBy(desc(membershipPayments.id))
+        .limit(1)
+    : await db
+        .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
+        .from(membershipPayments)
+        .where(and(eq(membershipPayments.membershipId, membership.id), eq(membershipPayments.status, "failed")))
+        .orderBy(desc(membershipPayments.id))
+        .limit(1);
 
   if (lastFailure?.stripeInvoiceId) {
     const result = await payOpenInvoice(lastFailure.stripeInvoiceId);
-    return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true };
+    return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true, invoiceId: lastFailure.stripeInvoiceId };
+  }
+  if (isFamilyPayment) {
+    // Never fall through to charging one membership's price.
+    return { ok: false, skipped: true, reason: "This is a shared family payment and its unpaid invoice could not be found, so nothing was charged. Check the subscription in Stripe", declineCode: null, viaInvoice: false };
   }
 
   // The amount for ONE cycle, not the weekly rate. A monthly member's
@@ -411,6 +439,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         clientId: memberships.clientId,
         petId: memberships.petId,
         name: memberships.name,
+        stripeSubscriptionId: memberships.stripeSubscriptionId,
       })
       .from(memberships)
       .where(
@@ -434,8 +463,34 @@ export async function paymentRetryHandler(req: Request, res: Response) {
     }
 
     let processed = 0;
+    /*
+     * A household billed as one payment (shared/familyBilling.ts) has
+     * several memberships due for the SAME failed invoice. It is retried
+     * once, the outcome is written to every membership on the payment,
+     * and the client and the owner hear about it once. Without this the
+     * second membership would retry an invoice the first had just paid,
+     * and a declined card would send two emails and cost two strikes.
+     */
+    const familyPaymentsHandled = new Set<string>();
 
     for (const m of dueRetries) {
+      if (m.stripeSubscriptionId && familyPaymentsHandled.has(m.stripeSubscriptionId)) {
+        processed++;
+        continue;
+      }
+      const family = m.stripeSubscriptionId
+        ? await db
+            .select({ id: memberships.id, name: memberships.name, pricePerCycle: memberships.pricePerCycle, petId: memberships.petId })
+            .from(memberships)
+            .where(eq(memberships.stripeSubscriptionId, m.stripeSubscriptionId))
+        : [];
+      const isFamilyPayment = family.length > 1;
+      if (isFamilyPayment) familyPaymentsHandled.add(m.stripeSubscriptionId!);
+      /** This membership, or every membership on its shared payment. */
+      const onThisPayment = isFamilyPayment
+        ? inArray(memberships.id, family.map((row) => row.id))
+        : eq(memberships.id, m.id);
+
       // Get client and pet info
       const [clientRow] = await db
         .select({
@@ -466,11 +521,25 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         .limit(1);
 
       const clientName = `${clientRow?.firstName ?? ""} ${clientRow?.lastName ?? ""}`.trim();
-      const petName = petRow?.name ?? "your pet";
-      const membershipName = m.membershipName ?? "Membership";
-      const priceStr = m.pricePerCycle ? String(m.pricePerCycle) : "0.00";
+      const familyPetRows = isFamilyPayment
+        ? await db.select({ name: pets.name }).from(pets)
+            .where(inArray(pets.id, family.map((row) => row.petId).filter((id): id is number => typeof id === "number")))
+        : [];
+      // What the client and the owner are told is about the PAYMENT, so on
+      // a shared one it names every dog and the whole amount.
+      const petName = isFamilyPayment && familyPetRows.length > 0
+        ? familyPetRows.map((row) => row.name).filter(Boolean).join(" & ")
+        : petRow?.name ?? "your pet";
+      const membershipName = isFamilyPayment
+        ? "family membership"
+        : m.membershipName ?? "Membership";
+      // This membership's own price, for rows written against it alone.
+      const ownPriceStr = m.pricePerCycle ? String(m.pricePerCycle) : "0.00";
+      const priceStr = isFamilyPayment
+        ? family.reduce((sum, row) => sum + Number(row.pricePerCycle ?? 0), 0).toFixed(2)
+        : m.pricePerCycle ? String(m.pricePerCycle) : "0.00";
       // ── Attempt the payment ────────────────────────────────────────────
-      const attempt = await attemptMembershipCharge(db, m as any, now);
+      const attempt = await attemptMembershipCharge(db, m as any, now, isFamilyPayment ? family.map((row) => row.id) : []);
 
       if (attempt.skipped) {
         // Nothing was charged and nothing declined. Clear the due date so the
@@ -480,7 +549,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         await db
           .update(memberships)
           .set({ paymentRetryScheduledAt: null })
-          .where(eq(memberships.id, m.id));
+          .where(onThisPayment);
         await notifyOwner({
           title: "⚠️ Membership payment could not be attempted",
           content: `${clientName} (${petName}) — ${membershipName}. ${attempt.reason ?? "Unknown reason"}.`,
@@ -502,12 +571,12 @@ export async function paymentRetryHandler(req: Request, res: Response) {
             bookingSuspended: false,
             status: "active",
           })
-          .where(eq(memberships.id, m.id));
+          .where(onThisPayment);
 
         if (!attempt.viaInvoice) {
           await db.insert(membershipPayments).values({
             membershipId: m.id,
-            amount: priceStr,
+            amount: ownPriceStr,
             status: "paid",
             paidAt: now,
           });
@@ -515,7 +584,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
             tenantId: m.tenantId ?? 1,
             membershipId: m.id,
             entryType: "payment",
-            amount: priceStr,
+            amount: ownPriceStr,
             source: "stripe",
             note: "Retry payment on saved card",
           });
@@ -542,8 +611,10 @@ export async function paymentRetryHandler(req: Request, res: Response) {
 
       await db.insert(membershipPayments).values({
         membershipId: m.id,
-        amount: priceStr,
+        amount: ownPriceStr,
         status: "failed",
+        // Kept on a shared payment so the next retry pays the same invoice.
+        ...(isFamilyPayment && attempt.invoiceId ? { stripeInvoiceId: attempt.invoiceId } : {}),
         failureReason: attempt.reason ?? plan.reason,
       });
 
@@ -565,7 +636,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
             pauseResumesAt: null,
             pausedAt: null,
           })
-          .where(eq(memberships.id, m.id));
+          .where(onThisPayment);
 
         // Email client
         if (clientRow?.email) {
@@ -601,7 +672,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
             paymentRetryScheduledAt: plan.retryAt,
             status: "pending_payment",
           })
-          .where(eq(memberships.id, m.id));
+          .where(onThisPayment);
 
         // Notify admin
         await notifyOwner({
