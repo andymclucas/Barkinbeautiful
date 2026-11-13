@@ -261,3 +261,18 @@ describe("describePause", () => {
     expect(describePause({ ...deliberate, status: "active" }, fmt)).toBe("Not paused");
   });
 });
+
+describe("hasScheduledRestart", () => {
+  it("is true only for a deliberate pause with a date on it", async () => {
+    const { hasScheduledRestart } = await import("../shared/membershipPause");
+    const at = new Date("2026-12-01T00:00:00Z");
+    expect(hasScheduledRestart({ status: "paused", pauseMode: "date", pauseResumesAt: at })).toBe(true);
+    expect(hasScheduledRestart({ status: "paused", pauseMode: "cycles", pauseResumesAt: at })).toBe(true);
+    // Nothing to stop: a manual pause never restarts by itself.
+    expect(hasScheduledRestart({ status: "paused", pauseMode: "manual", pauseResumesAt: null })).toBe(false);
+    // Paused by a failed payment, not on purpose.
+    expect(hasScheduledRestart({ status: "paused", pauseMode: null, pauseResumesAt: null })).toBe(false);
+    expect(hasScheduledRestart({ status: "paused", pauseMode: "date", pauseResumesAt: at, failedPaymentCount: 1 })).toBe(false);
+    expect(hasScheduledRestart({ status: "active", pauseMode: "date", pauseResumesAt: at })).toBe(false);
+  });
+});
