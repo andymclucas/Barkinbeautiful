@@ -119,11 +119,15 @@ export default function Dashboard() {
   // they poll rather than sitting on whatever was true at page load.
   const live = { refetchInterval: 60_000, refetchOnWindowFocus: true } as const;
 
+  // The owner-only feeds are not asked for on a restricted staff login.
+  // Such a login is sent on from this page at once, but the queries used
+  // to fire first and come back refused (see NotificationBell.tsx).
+  const ownerFeeds = !!user && user.role !== "staff";
   const { data: boardData } = trpc.workflow.getTodayBoard.useQuery({}, live);
-  const { data: analytics } = trpc.analytics.summary.useQuery({ dateFrom: monthStart.toISOString(), dateTo: tomorrow.toISOString() }, live);
-  const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({});
+  const { data: analytics } = trpc.analytics.summary.useQuery({ dateFrom: monthStart.toISOString(), dateTo: tomorrow.toISOString() }, { ...live, enabled: ownerFeeds });
+  const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({}, { enabled: ownerFeeds });
   const { data: timingReviewAlerts } = trpc.workflowReview.getAlerts.useQuery({ date: dashboardDate }, { ...live, enabled: user?.role === "admin" });
-  const { data: messagePreview } = trpc.sms.getUnreadPreview.useQuery({ limit: 5 }, live);
+  const { data: messagePreview } = trpc.sms.getUnreadPreview.useQuery({ limit: 5 }, { ...live, enabled: ownerFeeds });
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-background">
