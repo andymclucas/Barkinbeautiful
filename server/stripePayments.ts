@@ -252,8 +252,9 @@ type SubscriptionMembership = {
  */
 async function membershipsForSubscription(db: any, subscriptionId: string | null): Promise<SubscriptionMembership[]> {
   if (!subscriptionId) return [];
-  return db
+  const rows: Array<SubscriptionMembership & { status: string }> = await db
     .select({
+      status: memberships.status,
       id: memberships.id,
       tenantId: memberships.tenantId,
       clientId: memberships.clientId,
@@ -266,6 +267,15 @@ async function membershipsForSubscription(db: any, subscriptionId: string | null
     .from(memberships)
     .where(eq(memberships.stripeSubscriptionId, subscriptionId))
     .orderBy(asc(memberships.id));
+  /*
+   * On a shared payment, a membership that has been closed is no longer
+   * part of it, even if its row still carries the id: it must not be
+   * waved back to "active" by the other dogs' payment or given a share
+   * of the money. A membership billed ALONE is returned whatever its
+   * status, exactly as before this existed.
+   */
+  const open = rows.filter((row) => row.status !== "cancelled" && row.status !== "expired");
+  return rows.length > 1 && open.length > 0 ? open : rows;
 }
 
 /** One invoice amount, in cents, split across the memberships it paid for. */
@@ -570,9 +580,9 @@ export async function processStripeEvent(event: Stripe.Event) {
     // payment gets counted once or twice. A payment row already existing for
     // this invoice is the reliable signal, and it holds against Stripe's
     // delivery retries and a manual replay from the dashboard too.
-    const bookedRows: Array<{ membershipId: number }> = invoice.id
+    const bookedRows: Array<{ membershipId: number; paidInvoiceKey: string | null }> = invoice.id
       ? await db
-          .select({ membershipId: membershipPayments.membershipId })
+          .select({ membershipId: membershipPayments.membershipId, paidInvoiceKey: membershipPayments.paidInvoiceKey })
           .from(membershipPayments)
           .where(and(
             eq(membershipPayments.stripeInvoiceId, invoice.id),
@@ -583,7 +593,13 @@ export async function processStripeEvent(event: Stripe.Event) {
     // Every membership on the payment has its row. On a shared payment a
     // half-finished booking (one row in, then a crash) is finished on the
     // retry rather than left short.
-    const alreadyBooked = paidForIds.every((id) => bookedFor.has(id));
+    //
+    // An invoice already booked WHOLE under its bare id was paid while the
+    // membership was billed alone. If another dog has joined the payment
+    // since and the event is delivered again, it is still fully booked:
+    // giving the newcomer a share would count that money twice.
+    const bookedWhole = bookedRows.some((row) => row.paidInvoiceKey === invoice.id);
+    const alreadyBooked = bookedWhole || paidForIds.every((id) => bookedFor.has(id));
 
     // Keep the Next Billing column honest as each cycle is paid. The
     // subscription period lives on the LINE, not on the invoice's own

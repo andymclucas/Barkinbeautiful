@@ -66,6 +66,8 @@ interface ChargeAttempt {
   declineCode: string | null;
   /** True when Stripe settled a subscription invoice; the webhook books it. */
   viaInvoice: boolean;
+  /** The invoice that was tried, when there was one. */
+  invoiceId?: string | null;
 }
 
 /**
@@ -81,6 +83,14 @@ async function attemptMembershipCharge(
   db: any,
   membership: { id: number; clientId: number | null; pricePerCycle: string | null; name: string | null; tenantId: number | null },
   now: Date,
+  /**
+   * Every membership on a shared payment (shared/familyBilling.ts), or
+   * empty when this one is billed alone. A shared payment is only ever
+   * retried by paying its WHOLE open invoice. Charging one membership's
+   * price would take part of what is owed, mark every dog as paid, and
+   * leave the invoice open for Stripe to collect in full later.
+   */
+  familyMembershipIds: number[] = [],
 ): Promise<ChargeAttempt> {
   if (!membership.clientId) {
     return { ok: false, skipped: true, reason: "Membership has no client attached", declineCode: null, viaInvoice: false };
@@ -108,16 +118,34 @@ async function attemptMembershipCharge(
     return { ok: false, skipped: false, reason: `${describeCard(client) ?? "The card"} has expired`, declineCode: "expired_card", viaInvoice: false };
   }
 
-  const [lastFailure] = await db
-    .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
-    .from(membershipPayments)
-    .where(and(eq(membershipPayments.membershipId, membership.id), eq(membershipPayments.status, "failed")))
-    .orderBy(desc(membershipPayments.id))
-    .limit(1);
+  const isFamilyPayment = familyMembershipIds.length > 1;
+  const [lastFailure] = isFamilyPayment
+    // The newest failed row on the payment that names its invoice, across
+    // every membership on it. A later retry's own failed row may not.
+    ? await db
+        .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
+        .from(membershipPayments)
+        .where(and(
+          inArray(membershipPayments.membershipId, familyMembershipIds),
+          eq(membershipPayments.status, "failed"),
+          isNotNull(membershipPayments.stripeInvoiceId),
+        ))
+        .orderBy(desc(membershipPayments.id))
+        .limit(1)
+    : await db
+        .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
+        .from(membershipPayments)
+        .where(and(eq(membershipPayments.membershipId, membership.id), eq(membershipPayments.status, "failed")))
+        .orderBy(desc(membershipPayments.id))
+        .limit(1);
 
   if (lastFailure?.stripeInvoiceId) {
     const result = await payOpenInvoice(lastFailure.stripeInvoiceId);
-    return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true };
+    return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true, invoiceId: lastFailure.stripeInvoiceId };
+  }
+  if (isFamilyPayment) {
+    // Never fall through to charging one membership's price.
+    return { ok: false, skipped: true, reason: "This is a shared family payment and its unpaid invoice could not be found, so nothing was charged. Check the subscription in Stripe", declineCode: null, viaInvoice: false };
   }
 
   // The amount for ONE cycle, not the weekly rate. A monthly member's
@@ -511,7 +539,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         ? family.reduce((sum, row) => sum + Number(row.pricePerCycle ?? 0), 0).toFixed(2)
         : m.pricePerCycle ? String(m.pricePerCycle) : "0.00";
       // ── Attempt the payment ────────────────────────────────────────────
-      const attempt = await attemptMembershipCharge(db, m as any, now);
+      const attempt = await attemptMembershipCharge(db, m as any, now, isFamilyPayment ? family.map((row) => row.id) : []);
 
       if (attempt.skipped) {
         // Nothing was charged and nothing declined. Clear the due date so the
@@ -585,6 +613,8 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         membershipId: m.id,
         amount: ownPriceStr,
         status: "failed",
+        // Kept on a shared payment so the next retry pays the same invoice.
+        ...(isFamilyPayment && attempt.invoiceId ? { stripeInvoiceId: attempt.invoiceId } : {}),
         failureReason: attempt.reason ?? plan.reason,
       });
 

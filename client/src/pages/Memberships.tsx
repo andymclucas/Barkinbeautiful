@@ -41,6 +41,8 @@ type MembershipItem = {
   failedPaymentCount: number | null;
   bookingSuspended: boolean | null;
   stripeSubscriptionId: string | null;
+  /** Other open memberships paid by the same Stripe payment (shared/familyBilling.ts). */
+  sharedPaymentWith?: number;
   isTest: boolean | null;
   clientFirstName: string | null;
   clientLastName: string | null;
@@ -792,6 +794,24 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
             : firstChargeOn
             ? <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, with the <strong>first charge on {firstChargeOn}</strong>. Nothing is taken before then.</>
             : <>This bills {clientName}&rsquo;s saved card <strong>{amount}</strong> {cadence}, starting with a charge right now. It cannot be undone from here.</>}
+        {/* A shared family payment: say what the action does to the OTHER
+            dogs on it, because pausing, resuming and retrying act on the
+            payment, and stopping billing does not. */}
+        {(m.sharedPaymentWith ?? 0) > 0 && confirming && (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+            {(() => {
+              const n = m.sharedPaymentWith ?? 0;
+              const others = `${n} other membership${n === 1 ? "" : "s"}`;
+              return confirming === "cancel"
+                ? <>This is one payment shared with {others} for {clientName}. Only this membership&rsquo;s line comes off; the rest keeps billing.</>
+                : confirming === "pause"
+                ? <>This is one payment shared with {others} for {clientName}. Pausing it pauses billing for <strong>all</strong> of them.</>
+                : confirming === "resume"
+                ? <>This is one payment shared with {others} for {clientName}. Resuming restarts billing for <strong>all</strong> of them.</>
+                : <>This is one payment shared with {others} for {clientName}, so it acts on the whole payment.</>;
+            })()}
+          </p>
+        )}
         {confirming === "pause" && (
           <div className="grid gap-2 pt-1">
             <Label className="text-xs">When should billing restart?</Label>

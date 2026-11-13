@@ -9186,7 +9186,36 @@ const membershipsRouter = router({
           }
         })())
         .limit(input.pageSize).offset((input.page - 1) * input.pageSize);
-      return { items, total: Number(countRow?.total ?? 0) };
+      /*
+       * How many OTHER open memberships are paid by the same Stripe
+       * payment (shared/familyBilling.ts). Pausing, resuming or retrying
+       * one of them acts on the payment, so the row's confirm has to be
+       * able to say so. Counted here because the siblings may be on
+       * another page. Grouped by a plain column (CLAUDE.md §6).
+       */
+      const pageSubscriptions = Array.from(new Set(
+        (items as Array<{ stripeSubscriptionId: string | null }>).map((row) => row.stripeSubscriptionId).filter((id): id is string => !!id),
+      ));
+      const shareCounts = pageSubscriptions.length > 0
+        ? await db.select({ subscriptionId: memberships.stripeSubscriptionId, n: sql<number>`COUNT(*)`.as("n") })
+            .from(memberships)
+            .where(and(
+              eq(memberships.tenantId, tenantOf(ctx, input)),
+              inArray(memberships.stripeSubscriptionId, pageSubscriptions),
+              notInArray(memberships.status, ["cancelled", "expired"]),
+            ))
+            .groupBy(memberships.stripeSubscriptionId)
+        : [];
+      const openOnPayment = new Map(shareCounts.map((row) => [row.subscriptionId, Number(row.n)] as const));
+      return {
+        items: (items as Array<(typeof items)[number]>).map((row) => ({
+          ...row,
+          sharedPaymentWith: row.stripeSubscriptionId
+            ? Math.max(0, (openOnPayment.get(row.stripeSubscriptionId) ?? 1) - 1)
+            : 0,
+        })),
+        total: Number(countRow?.total ?? 0),
+      };
     }),
 
   /**
@@ -9578,6 +9607,15 @@ const membershipsRouter = router({
       if (membership.status === "cancelled" || membership.status === "expired") throw new Error("This membership is already closed");
 
       if (input.action === "remove") {
+        // Stop the money before changing the status, the same as
+        // cancelMembership does. This path set the row to cancelled and
+        // left its Stripe subscription running, so a membership removed
+        // for a dog that had died went on being charged. On a shared
+        // payment it takes just this dog's line off.
+        {
+          const { cancelMembershipSubscription } = await import("./stripeCards");
+          await cancelMembershipSubscription(membership.id);
+        }
         await db.update(memberships).set({
           status: "cancelled",
           cancelledAt: new Date(),

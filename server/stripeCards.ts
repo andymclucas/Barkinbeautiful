@@ -21,7 +21,7 @@
  * can be tested without a Stripe key.
  */
 import type Stripe from "stripe";
-import { and, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, notInArray, or } from "drizzle-orm";
 import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
@@ -513,7 +513,12 @@ export async function startMembershipSubscription(membershipId: number, firstCha
     collection_method: "charge_automatically",
     ...(trialEnd ? { trial_end: trialEnd } : {}),
     items: [{
-      metadata: { groomigo_membership_name: membership.name ?? "Grooming membership" },
+      // The id is what lets this line be found again if another membership
+      // later joins the payment (shared/familyBilling.ts).
+      metadata: {
+        groomigo_membership_id: String(membership.id),
+        groomigo_membership_name: membership.name ?? "Grooming membership",
+      },
       price_data: {
         currency: "aud",
         unit_amount: amount,
@@ -646,12 +651,37 @@ export async function startFamilySubscription(membershipIds: number[], firstChar
 
   if (subscriptionId) {
     // Joining a running payment. One line each, charged from the next invoice.
+    const existing = await stripe.subscriptionItems.list({ subscription: subscriptionId, limit: 100 });
+    /*
+     * A payment started before 13/11/2026 has a line with no membership id
+     * on it. Left like that, the ORIGINAL dog could never be taken off the
+     * shared payment: its line could not be told apart. Label it now, while
+     * there is exactly one membership it can belong to. If that is not
+     * certain, refuse before adding anything.
+     */
+    const unlabelled = existing.data.filter((item) => !item.metadata?.groomigo_membership_id);
+    if (unlabelled.length > 0) {
+      if (unlabelled.length !== 1 || plan.alreadyOn.length !== 1 || existing.data.length !== 1) {
+        throw new Error("The payment these would join has lines Groomigo cannot match to a membership. Nothing was changed. Check the subscription in Stripe.");
+      }
+      await stripe.subscriptionItems.update(unlabelled[0].id, {
+        metadata: { ...unlabelled[0].metadata, groomigo_membership_id: String(plan.alreadyOn[0].id) },
+      });
+    }
+    /*
+     * No idempotency key here, deliberately. A fixed key made Stripe hand
+     * back the line it had already deleted when a dog was taken off and
+     * added again within a day, which is exactly the weight-class change
+     * this exists for. Double-adding is prevented by looking first.
+     */
+    const onPayment = new Set(existing.data.map((item) => item.metadata?.groomigo_membership_id).filter(Boolean));
     for (const id of addedIds) {
+      if (onPayment.has(String(id))) continue;
       await stripe.subscriptionItems.create({
         subscription: subscriptionId,
         ...lineFor(id),
         proration_behavior: "none",
-      }, { idempotencyKey: `groomigo-family-item-${subscriptionId}-${id}` });
+      });
     }
     const [sibling] = await db.select({ nextBillingDate: memberships.nextBillingDate })
       .from(memberships).where(eq(memberships.stripeSubscriptionId, subscriptionId)).limit(1);
@@ -677,23 +707,52 @@ export async function startFamilySubscription(membershipIds: number[], firstChar
     }, {
       // Two admins clicking at once, or a retry after a failed DB write,
       // must not create a second live payment that bills for ever.
-      idempotencyKey: `groomigo-family-sub-${addedIds.join("-")}`,
+      // Bucketed to ten minutes: long enough to absorb a double click or
+      // a retried request, short enough that stopping a payment and
+      // starting it again later creates a NEW one rather than returning
+      // the cancelled one Stripe still remembers. The conditional write
+      // below is the real guard against two payments.
+      idempotencyKey: `groomigo-family-sub-${addedIds.join("-")}-${Math.floor(Date.now() / 600_000)}`,
     });
     subscriptionId = subscription.id;
     liveOnStart = membershipLiveOnStart(subscription.status);
     nextBilling = subscriptionPeriodEnd(subscription);
   }
 
+  /*
+   * Claim each membership only if nothing else has put it on a payment in
+   * the meantime (two people starting billing at once). A membership that
+   * was claimed elsewhere must not end up on two payments, so undo what
+   * was just created at Stripe and say so.
+   */
+  const lost: number[] = [];
   for (const id of addedIds) {
     const row = byId.get(id)!;
     const addedNotBilling = row.status === "pending_payment" && !row.stripeSubscriptionId;
-    await db.update(memberships).set({
+    const [written] = await db.update(memberships).set({
       stripeSubscriptionId: subscriptionId,
       gatewaySubscriptionId: subscriptionId,
       paymentGateway: "stripe",
       nextBillingDate: nextBilling,
       ...(addedNotBilling && liveOnStart ? { status: "active" as const } : {}),
-    }).where(eq(memberships.id, id));
+    }).where(and(eq(memberships.id, id), isNull(memberships.stripeSubscriptionId)));
+    if ((written as unknown as { affectedRows?: number }).affectedRows === 0) lost.push(id);
+  }
+  if (lost.length > 0) {
+    if (plan.existingSubscriptionId) {
+      const items = await stripe.subscriptionItems.list({ subscription: subscriptionId!, limit: 100 });
+      for (const item of items.data) {
+        if (lost.includes(Number(item.metadata?.groomigo_membership_id))) {
+          await stripe.subscriptionItems.del(item.id, { proration_behavior: "none" }).catch(() => undefined);
+        }
+      }
+    } else {
+      await stripe.subscriptions.cancel(subscriptionId!).catch(() => undefined);
+      await db.update(memberships)
+        .set({ stripeSubscriptionId: null, gatewaySubscriptionId: null, paymentGateway: "other" })
+        .where(eq(memberships.stripeSubscriptionId, subscriptionId!));
+    }
+    throw new Error("Billing was started on one of these memberships by someone else at the same moment. Nothing was left half-done. Refresh and check before trying again.");
   }
 
   return {
@@ -706,8 +765,15 @@ export async function startFamilySubscription(membershipIds: number[], firstChar
 
 /** The other memberships paid for by the same Stripe subscription. */
 async function membershipsSharingSubscription(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, subscriptionId: string, exceptId: number) {
+  // Closed memberships do not count. A cancelled row that still carries
+  // the id would otherwise make the LAST live dog look like one of two,
+  // and stopping its billing would leave the payment running.
   return db.select({ id: memberships.id }).from(memberships)
-    .where(and(eq(memberships.stripeSubscriptionId, subscriptionId), ne(memberships.id, exceptId)));
+    .where(and(
+      eq(memberships.stripeSubscriptionId, subscriptionId),
+      ne(memberships.id, exceptId),
+      notInArray(memberships.status, ["cancelled", "expired"]),
+    ));
 }
 
 /**
