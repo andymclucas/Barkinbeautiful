@@ -21,7 +21,11 @@ import { z } from "zod";
 import { SUPPORT_KNOWLEDGE } from "@shared/supportKnowledge";
 import { historyForModel, type HistoryMessage } from "@shared/supportChat";
 
-const MODEL = "claude-opus-5-5";
+// Sonnet 5.5 (Andy, 13/11/2026: "Switch Bruce to Sonnet 5.5"). Short
+// how-to answers from a fixed guide do not need Opus, and Sonnet is half
+// the price and quicker. Problem-report sorting (issueTriage.ts) stays
+// on Opus; it reads screenshots and is not waiting on a person typing.
+const MODEL = "claude-sonnet-5-5";
 
 const ReplySchema = z.object({
   reply: z.string(),
