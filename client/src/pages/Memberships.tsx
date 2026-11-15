@@ -367,7 +367,7 @@ function AddMembershipModal({ open, onClose, onSuccess }: { open: boolean; onClo
                 <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">Appointment schedule</p>
                 <p className="mt-1 text-sm font-semibold">Every {selectedPackage.appointmentIntervalWeeks} weeks</p>
               </div>
-              <p className="col-span-2 text-xs text-emerald-800 dark:text-emerald-300">Billed weekly. Package name, weekly price and appointment frequency come from the approved VIP schedule.</p>
+              <p className="sm:col-span-2 text-xs text-emerald-800 dark:text-emerald-300">Billed weekly. Package name, weekly price and appointment frequency come from the approved VIP schedule.</p>
             </div>
           )}
 

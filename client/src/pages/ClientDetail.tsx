@@ -1929,7 +1929,7 @@ export default function ClientDetail() {
               </Button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {cardPets.length === 0 && <p className="text-muted-foreground text-sm col-span-3">No pets on file.</p>}
+              {cardPets.length === 0 && <p className="text-muted-foreground text-sm sm:col-span-2 lg:col-span-3">No pets on file.</p>}
               {cardPets.map(pet => {
                 const pMemberships = petMemberships[pet.id] ?? [];
                 const activePetMembership = pMemberships.find(m => m.status === "active");

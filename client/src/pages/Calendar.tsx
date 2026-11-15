@@ -5030,7 +5030,7 @@ export default function Calendar() {
                         <DateField value={repeatForm.untilDate} onChange={next => setRepeatForm(f => ({ ...f, untilDate: next }))} />
                       </div>
                     )}
-                    <p className="col-span-2 text-xs text-muted-foreground">
+                    <p className="sm:col-span-2 text-xs text-muted-foreground">
                       Creates a booking every {repeatForm.frequencyWeeks} week{repeatForm.frequencyWeeks === "1" ? "" : "s"} at the same time
                       {newAppt.petIds.length > 1 ? ` for all ${newAppt.petIds.length} selected dogs together` : ""}, starting from the date above
                       {repeatForm.endKind === "count"
