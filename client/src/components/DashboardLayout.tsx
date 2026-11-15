@@ -9,7 +9,6 @@ import { SalonSwitcher } from "@/components/SalonSwitcher";
 import SystemNotificationBell from "@/components/SystemNotificationBell";
 import { ReportProblemButton, useReportProblem } from "@/components/ReportProblem";
 import { SupportChat } from "@/components/SupportChat";
-import { canAnswerSupport } from "@shared/supportChat";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
 import { TrialBanner } from "@/components/TrialBanner";
 import {
@@ -60,7 +59,6 @@ import {
   DollarSign,
   MessageSquare,
   MessageSquareWarning,
-  LifeBuoy,
   MessageCircle,
   Mail,
   FileBarChart2,
@@ -184,24 +182,13 @@ function ChristmasTreeIcon({ className }: { className?: string }) {
   );
 }
 
-/**
- * The owners' inbox of staff problem reports (11/11/2026). Lauren and Andy
- * only — canAdministerStaff, the same list the server checks — so it is
- * appended for them rather than placed in menuItems, which every admin and
- * granted section sees.
+/*
+ * "Problem reports" and "Support chats" are no longer sidebar entries.
+ * Andy, 16/11/2026: they "don't need to live in the side bar", and are for
+ * him alone for now. Both are reached from the Inbox switch inside the
+ * Bruce chat window (SupportChat.tsx), which also carries their counts.
+ * The pages themselves, /issues and /support, are unchanged.
  */
-const issueReportsMenuItem: NavItem = {
-  icon: MessageSquareWarning,
-  label: "Problem reports",
-  path: "/issues",
-};
-
-/** Groomigo support's inbox for the chat bubble. Support only, like the above. */
-const supportMenuItem: NavItem = {
-  icon: LifeBuoy,
-  label: "Support chats",
-  path: "/support",
-};
 
 const christmasMenuItem: NavItem = {
   icon: ChristmasTreeIcon,
@@ -408,21 +395,9 @@ function DashboardLayoutContent({
     {},
     { refetchInterval: 60000, refetchOnWindowFocus: true },
   );
-  const isOwner = canAdministerStaff(user ?? null);
-  const { data: issueCounts } = trpc.issueReports.openCount.useQuery(
-    {},
-    { enabled: isOwner, refetchInterval: 60000, refetchOnWindowFocus: true },
-  );
-  const isSupport = canAnswerSupport(user ?? null);
-  const { data: supportCounts } = trpc.supportChat.waitingCount.useQuery(
-    undefined,
-    { enabled: isSupport, refetchInterval: 30000, refetchOnWindowFocus: true },
-  );
   const navBadges: Record<string, number> = {
-    "/support": supportCounts?.waiting ?? 0,
     "/messages": counts?.messages ?? 0,
     "/portal-messages": counts?.portalMessages ?? 0,
-    "/issues": issueCounts?.open ?? 0,
   };
 
   const permittedMenuItems =
@@ -491,8 +466,6 @@ function DashboardLayoutContent({
   const inChristmasSeason = seasonYearFor(brisbaneDay(new Date()) ?? "") !== null;
   const visibleMenuItems = [
     ...permittedMenuItems,
-    ...(isOwner ? [issueReportsMenuItem] : []),
-    ...(isSupport ? [supportMenuItem] : []),
     ...(inChristmasSeason ? [christmasMenuItem] : []),
   ];
 

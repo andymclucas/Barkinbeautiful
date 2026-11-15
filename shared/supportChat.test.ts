@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksForPerson, canAnswerSupport, historyForModel, isWithPerson, supportPushText, unreadCount } from "./supportChat";
+import { asksForPerson, canAnswerSupport, historyForModel, isWithPerson, supportBubbleCount, supportPushText, unreadCount } from "./supportChat";
 
 describe("asksForPerson", () => {
   it("catches plain requests for a person", () => {
@@ -70,5 +70,16 @@ describe("the rest", () => {
       .toEqual({ title: "Megan wants to talk to a person", body: "Barkin' Beautiful: The board won't load" });
     expect(supportPushText(null, null, "ok", false))
       .toEqual({ title: "Someone replied in support chat", body: "ok" });
+  });
+});
+
+describe("supportBubbleCount", () => {
+  it("is just unread replies for everyone else", () => {
+    expect(supportBubbleCount({ unread: 2, isSupport: false, chatsWaiting: 5, openReports: 7 })).toBe(2);
+  });
+
+  it("adds waiting chats and open problem reports for Groomigo support", () => {
+    expect(supportBubbleCount({ unread: 1, isSupport: true, chatsWaiting: 2, openReports: 3 })).toBe(6);
+    expect(supportBubbleCount({ unread: 0, isSupport: true, chatsWaiting: 0, openReports: 0 })).toBe(0);
   });
 });

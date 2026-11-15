@@ -122,3 +122,20 @@ export function unreadCount(
 ): number {
   return messages.filter((m) => m.id > readUpToId && (side === "user" ? m.sender !== "user" : m.sender === "user")).length;
 }
+
+/**
+ * The number on the chat bubble.
+ *
+ * For everyone it is replies they have not read. For Groomigo support it
+ * also counts what is waiting on them, because the sidebar entries that
+ * used to carry those counts are gone (Andy, 16/11/2026) and the bubble
+ * is now the only place they show.
+ */
+export function supportBubbleCount(input: {
+  unread: number;
+  isSupport: boolean;
+  chatsWaiting: number;
+  openReports: number;
+}): number {
+  return input.unread + (input.isSupport ? input.chatsWaiting + input.openReports : 0);
+}
