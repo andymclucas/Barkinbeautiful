@@ -25,7 +25,7 @@ import { accessibleSalons } from "./_core/context";
 import { getDb } from "./db";
 import { issueReportVideoChunks, issueReports } from "../drizzle/schema";
 import { requireApprovedStaffTenant } from "./staffAccess";
-import { canAdministerStaff } from "@shared/staffAdministrators";
+import { canReadProblemReports } from "@shared/issueReports";
 import {
   ISSUE_VIDEO_CHUNK_BYTES, ISSUE_VIDEO_KEY_PREFIX, ISSUE_VIDEO_MAX_BYTES, ISSUE_VIDEO_MAX_CHUNKS,
   isIssueVideoKey, isIssueVideoType, videoChunkCount, type IssueVideoType,
@@ -242,7 +242,7 @@ export function registerIssueVideoRoutes(app: Router) {
       let user;
       try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
       if (!user) { res.status(401).end(); return; }
-      if (!canAdministerStaff(user)) { res.status(403).end(); return; }
+      if (!canReadProblemReports(user)) { res.status(403).end(); return; }
       const key = String(req.query.key ?? "");
       if (!isIssueVideoKey(key)) { res.status(400).end(); return; }
       const db = await getDb();

@@ -1,3 +1,4 @@
+import { canReadProblemReports } from "@shared/issueReports";
 import { Router } from "express";
 import { sdk } from "./_core/sdk";
 import { getDb } from "./db";
@@ -153,7 +154,7 @@ function registerIssueReportImageRoutes(app: Router) {
       let user;
       try { user = await sdk.authenticateRequest(req as any); } catch { user = null; }
       if (!user) { res.status(401).end(); return; }
-      if (!canAdministerStaff(user)) { res.status(403).end(); return; }
+      if (!canReadProblemReports(user)) { res.status(403).end(); return; }
       const key = String(req.query.key ?? "");
       if (!isIssueImageKey(key)) { res.status(400).end(); return; }
       const db = await getDb();
