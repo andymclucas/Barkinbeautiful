@@ -72,6 +72,74 @@ function getClient(): Anthropic | null {
 
 export const supportAssistantConfigured = () => getClient() !== null;
 
+/*
+ * Whether Bruce can actually answer right now, so the chat can say he is
+ * out BEFORE somebody types a question (Andy, 15/11/2026: "Still not
+ * showing as the new text" — the walk message only appeared after a
+ * message had been sent and failed).
+ *
+ * A key being set is not enough: the account had a key and no credit, and
+ * every call came back refused. So this remembers how the last real call
+ * went, and when nothing is known yet, or he has been down for a while,
+ * it asks Anthropic with a one-word request in the background. That is
+ * also how he comes back by himself when the account is topped up, with
+ * no deploy and nobody having to try him first.
+ *
+ * In memory, per running copy of the server. A restart forgets it, and
+ * the first look after a restart checks again.
+ */
+let health: { ok: boolean; at: number } | null = null;
+let probing: Promise<void> | null = null;
+const RECHECK_WHEN_DOWN_MS = 5 * 60_000;
+
+function probe(anthropic: Anthropic): Promise<void> {
+  if (probing) return probing;
+  probing = anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 16,
+    output_config: { effort: "low" },
+    messages: [{ role: "user", content: "ping" }],
+  }, { timeout: 8_000, maxRetries: 0 }).then(
+    () => { health = { ok: true, at: Date.now() }; },
+    (err) => {
+      health = { ok: false, at: Date.now() };
+      if (err instanceof Anthropic.APIError) console.warn(`[supportAssistant] not available: ${err.status} ${err.message}`.slice(0, 300));
+    },
+  ).finally(() => { probing = null; });
+  return probing;
+}
+
+/**
+ * True when Bruce can answer.
+ *
+ * Waits only when nothing is known yet (the first look after a restart),
+ * so the chat never opens saying he is in and then bounces the question.
+ * After that it answers from memory, and re-checks in the background
+ * every few minutes while he is down.
+ */
+/**
+ * The same answer without ever waiting, for the query every staff page
+ * polls. That query travels in a batch with the rest of the page's first
+ * requests, so waiting on Anthropic here would hold the whole page up.
+ * Unknown reads as OUT: the chat is checked again within the minute, and
+ * "coming soon" for a few seconds is better than accepting a question
+ * he cannot answer.
+ */
+export function supportAssistantAvailableNow(): boolean {
+  const anthropic = getClient();
+  if (!anthropic) return false;
+  if (health === null || (!health.ok && Date.now() - health.at > RECHECK_WHEN_DOWN_MS)) void probe(anthropic);
+  return health?.ok ?? false;
+}
+
+export async function supportAssistantAvailable(): Promise<boolean> {
+  const anthropic = getClient();
+  if (!anthropic) return false;
+  if (health === null) await probe(anthropic);
+  else if (!health.ok && Date.now() - health.at > RECHECK_WHEN_DOWN_MS) void probe(anthropic);
+  return health?.ok ?? false;
+}
+
 export type AssistantAnswer = { reply: string; handoff: boolean };
 
 /** One answer to the conversation so far, or null when it cannot answer. */
@@ -99,10 +167,13 @@ export async function answerSupportMessage(input: {
       console.warn("[supportAssistant] no usable answer", response.stop_reason);
       return null;
     }
+    health = { ok: true, at: Date.now() };
     const reply = response.parsed_output.reply.trim();
     if (!reply) return null;
     return { reply: reply.slice(0, 4000), handoff: response.parsed_output.handoff === true };
   } catch (err) {
+    // The call itself failed (no credit, a bad key, an outage): he is out.
+    health = { ok: false, at: Date.now() };
     if (err instanceof Anthropic.APIError) console.error(`[supportAssistant] API error ${err.status}:`, err.message);
     else console.error("[supportAssistant] failed", err);
     return null;
