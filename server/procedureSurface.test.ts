@@ -603,7 +603,11 @@ describe("tRPC procedure surface", () => {
     // Messages composer. protectedProcedure, like sms.send beside it.
     // 449 since 13/11/2026: stripeCards.startFamilyBilling, one payment for
     // a household's memberships. adminProcedure, like startSubscription.
-    expect(surface).toHaveLength(449);
+    // 450 since 15/11/2026: appointmentAddOns.addToSeries, an extra onto
+    // every later booking in a repeat series. protectedProcedure, unlike
+    // the rest of that router: it writes onto bookings months away, which
+    // is the front desk's call, so it is NOT in OPERATIONAL below.
+    expect(surface).toHaveLength(450);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

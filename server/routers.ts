@@ -219,7 +219,7 @@ import {
 import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { automatedMessagesRouter } from "./routers/automatedMessages";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
-import { appointmentAddOnsRouter, loadAddOnsForInvoice } from "./routers/appointmentAddOns";
+import { appointmentAddOnsRouter, loadAddOnsForInvoice, loadExtrasForRepeats, copyExtrasToRepeat } from "./routers/appointmentAddOns";
 import { counterSaleRouter } from "./routers/counterSale";
 import { issueReportsRouter } from "./routers/issueReports";
 import { supportChatRouter } from "./routers/supportChat";
@@ -2693,6 +2693,8 @@ const calendarRouter = router({
        */
       const created: Date[] = [];
       const skipped: { scheduledStart: Date; reason: string }[] = [];
+      /* Extras follow the booking onto its repeats (shared/repeatBookingExtras.ts). */
+      const extrasForRepeats = await loadExtrasForRepeats(db, tenantId, booking.map((row: { id: number }) => row.id));
 
       for (const localStart of plan.starts) {
         const occurrenceStart = parseBrisbaneLocalDateTime(localStart);
@@ -2758,7 +2760,7 @@ const calendarRouter = router({
         const sessionId = booking.length > 1 ? nanoid(16) : null;
         for (const row of booking) {
           const coverage = coverageByService.get(row.serviceType)!;
-          await db.insert(appointments).values({
+          const [made] = await db.insert(appointments).values({
             tenantId,
             clientId: row.clientId,
             petId: row.petId,
@@ -2775,6 +2777,12 @@ const calendarRouter = router({
             workflowState: "scheduled",
             status: "confirmed",
             recurringGroupId,
+          });
+          await copyExtrasToRepeat(db, {
+            tenantId,
+            appointmentId: Number((made as any)?.insertId ?? 0),
+            extras: extrasForRepeats.get(row.id) ?? [],
+            userId: ctx.user?.id ?? null,
           });
         }
         created.push(occurrenceStart);
@@ -2893,9 +2901,10 @@ const calendarRouter = router({
           ));
         }
       }
+      const extrasForRepeat = await loadExtrasForRepeats(db, tenantId, booking.map((row: { id: number }) => row.id));
       for (const row of booking) {
         const coverage = coverageByService.get(row.serviceType)!;
-        await db.insert(appointments).values({
+        const [made] = await db.insert(appointments).values({
           tenantId,
           clientId: row.clientId,
           petId: row.petId,
@@ -2911,6 +2920,12 @@ const calendarRouter = router({
           workflowState: "scheduled",
           status: "confirmed",
           recurringGroupId,
+        });
+        await copyExtrasToRepeat(db, {
+          tenantId,
+          appointmentId: Number((made as any)?.insertId ?? 0),
+          extras: extrasForRepeat.get(row.id) ?? [],
+          userId: ctx.user?.id ?? null,
         });
       }
       if (!source.recurringGroupId) {

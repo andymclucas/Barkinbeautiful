@@ -12,15 +12,16 @@
  * price list and it moves; an invoice is what was charged on the day.
  */
 import { z } from "zod";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, operationalProcedure, tenantOf } from "../_core/trpc";
+import { router, operationalProcedure, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
-import { appointmentAddOns, pricingServices, retailProducts, staff } from "../../drizzle/schema";
+import { appointmentAddOns, appointments, pricingServices, retailProducts, staff } from "../../drizzle/schema";
 import { requireApprovedStaffAppointmentAccess } from "../staffAccess";
 import { validateLineDiscount, MAX_DISCOUNT_REASON } from "../../shared/lineDiscount";
 import { describeStockWarning, isRetailLine, stockAfterSale } from "../../shared/retailSale";
 import { addOnRequiresManualPrice, addOnsTotal } from "../../shared/appointmentAddOns";
+import { carriesToRepeats, extrasCarriedToRepeat, seriesBookingsNeedingExtra, type CarriedExtra } from "../../shared/repeatBookingExtras";
 
 export const appointmentAddOnsRouter = router({
   /** The add-ons the salon offers, for the picker. */
@@ -57,7 +58,63 @@ export const appointmentAddOnsRouter = router({
         eq(appointmentAddOns.appointmentId, input.appointmentId),
       )).orderBy(asc(appointmentAddOns.id));
 
-      return { addOns, total: addOnsTotal(addOns) };
+      return {
+        addOns,
+        total: addOnsTotal(addOns),
+        /** Later bookings for this dog in the same repeat series. Drives "Add to later bookings". */
+        laterInSeries: (await laterSeriesBookings(db, tenantOf(ctx, input), input.appointmentId)).length,
+      };
+    }),
+
+  /**
+   * Put one extra onto every later booking in the series.
+   *
+   * Lauren, 14/11/2026: free teeth brushing on a fortnightly groom had to
+   * be re-added, discount and all, on each booking. A series made from
+   * now on carries its extras (see copyExtrasToRepeats); this is for the
+   * series that already exists.
+   *
+   * protectedProcedure, unlike everything else here: the rest of this
+   * router records work on the dog in front of you, which is the
+   * groomer's job. This writes lines onto the bills of bookings months
+   * away, usually somebody else's, and is a front-desk decision.
+   */
+  addToSeries: protectedProcedure
+    .input(z.object({ tenantId: z.number().int().positive().default(1), id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Database unavailable" });
+      const tenantId = tenantOf(ctx, input);
+
+      const [line] = await db.select().from(appointmentAddOns).where(and(
+        eq(appointmentAddOns.id, input.id),
+        eq(appointmentAddOns.tenantId, tenantId),
+      )).limit(1);
+      if (!line) throw new TRPCError({ code: "NOT_FOUND", message: "That extra is no longer on the booking" });
+      if (!carriesToRepeats(line)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Shop items are sold on the day and are not repeated" });
+      }
+
+      const later = await laterSeriesBookings(db, tenantId, line.appointmentId);
+      if (later.length === 0) return { success: true, name: line.name as string, added: 0 };
+
+      const has = await db.select({ appointmentId: appointmentAddOns.appointmentId }).from(appointmentAddOns).where(and(
+        eq(appointmentAddOns.tenantId, tenantId),
+        eq(appointmentAddOns.pricingServiceId, line.pricingServiceId as number),
+        inArray(appointmentAddOns.appointmentId, later.map((b) => b.id)),
+      ));
+      const targets = later.filter((b) => !has.some((h: { appointmentId: number }) => h.appointmentId === b.id));
+
+      const [copy] = extrasCarriedToRepeat([line]);
+      for (const target of targets) {
+        await db.insert(appointmentAddOns).values({
+          ...copy,
+          tenantId,
+          appointmentId: target.id,
+          createdByUserId: ctx.user?.id ?? null,
+        });
+      }
+      return { success: true, name: line.name as string, added: targets.length };
     }),
 
   add: operationalProcedure
@@ -366,4 +423,68 @@ export async function loadAddOnsForInvoice(db: any, tenantId: number, appointmen
     name: string; unitPrice: string; quantity: number;
     discountPercent: string | null; discountAmount: string | null; discountReason: string | null;
   }[];
+}
+
+/**
+ * This dog's later, still-scheduled bookings in the same repeat series.
+ * Empty when the booking is not part of a series.
+ */
+async function laterSeriesBookings(db: any, tenantId: number, appointmentId: number) {
+  const [source] = await db.select({
+    id: appointments.id,
+    petId: appointments.petId,
+    scheduledStart: appointments.scheduledStart,
+    recurringGroupId: appointments.recurringGroupId,
+  }).from(appointments).where(and(eq(appointments.id, appointmentId), eq(appointments.tenantId, tenantId))).limit(1);
+  if (!source?.recurringGroupId) return [];
+
+  const series = await db.select({
+    id: appointments.id,
+    petId: appointments.petId,
+    workflowState: appointments.workflowState,
+    scheduledStart: appointments.scheduledStart,
+  }).from(appointments).where(and(
+    eq(appointments.tenantId, tenantId),
+    eq(appointments.recurringGroupId, source.recurringGroupId),
+    eq(appointments.petId, source.petId),
+    gt(appointments.scheduledStart, source.scheduledStart),
+  ));
+  return seriesBookingsNeedingExtra({
+    source: { id: source.id, petId: source.petId, scheduledStart: new Date(source.scheduledStart) },
+    series: series.map((b: any) => ({ ...b, scheduledStart: new Date(b.scheduledStart) })),
+    alreadyHaveIt: new Set(),
+  });
+}
+
+/**
+ * The extras each source booking hands on to its repeats, keyed by the
+ * source appointment id. Loaded once, before a series is written.
+ */
+export async function loadExtrasForRepeats(db: any, tenantId: number, sourceAppointmentIds: number[]) {
+  const byAppointment = new Map<number, CarriedExtra[]>();
+  if (sourceAppointmentIds.length === 0) return byAppointment;
+  const rows = await db.select().from(appointmentAddOns).where(and(
+    eq(appointmentAddOns.tenantId, tenantId),
+    inArray(appointmentAddOns.appointmentId, sourceAppointmentIds),
+  )).orderBy(asc(appointmentAddOns.id));
+  for (const id of sourceAppointmentIds) {
+    byAppointment.set(id, extrasCarriedToRepeat(rows.filter((r: { appointmentId: number }) => r.appointmentId === id)));
+  }
+  return byAppointment;
+}
+
+/** Write a source booking's carried extras onto one new repeat of it. */
+export async function copyExtrasToRepeat(
+  db: any,
+  input: { tenantId: number; appointmentId: number; extras: readonly CarriedExtra[]; userId: number | null },
+) {
+  if (!input.appointmentId) return;
+  for (const extra of input.extras) {
+    await db.insert(appointmentAddOns).values({
+      ...extra,
+      tenantId: input.tenantId,
+      appointmentId: input.appointmentId,
+      createdByUserId: input.userId,
+    });
+  }
 }
