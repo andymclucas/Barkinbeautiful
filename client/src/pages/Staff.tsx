@@ -499,11 +499,18 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
 
       {editing ? (
         <div className="space-y-3">
+          {/* One column on a phone, two from `sm` up. The full-width rows
+              are `sm:col-span-2`, not `col-span-2`: spanning two columns
+              of a ONE-column grid makes the browser invent a second,
+              content-sized column, and every single-width field is then
+              squeezed into what is left. That is what stacked "Emergency
+              Contact" on top of "Emergency Phone" on Lauren's phone
+              (13/11/2026). */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="col-span-2"><Label>Full Name</Label><Input className="mt-1" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+            <div className="sm:col-span-2"><Label>Full Name</Label><Input className="mt-1" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
             <div><Label>Phone</Label><Input className="mt-1" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="+61 4xx xxx xxx" /></div>
             <div><Label>Email</Label><Input className="mt-1" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
-            <div className="col-span-2"><Label>Address</Label><Input className="mt-1" value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="Street, Suburb, State, Postcode" /></div>
+            <div className="sm:col-span-2"><Label>Address</Label><Input className="mt-1" value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="Street, Suburb, State, Postcode" /></div>
             <div><Label>Date of Birth</Label><DateField className="mt-1" value={form.dateOfBirth} onChange={next => setForm(p => ({ ...p, dateOfBirth: next }))} /></div>
             <div><Label>Salon role</Label>
               <Select value={form.role} onValueChange={v => setForm(p => ({ ...p, role: v }))}>
@@ -516,10 +523,10 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
             <div><Label>Emergency Phone</Label><Input className="mt-1" value={form.emergencyPhone} onChange={e => setForm(p => ({ ...p, emergencyPhone: e.target.value }))} /></div>
             <div><Label>Xero Employee ID</Label><Input className="mt-1" value={form.xeroEmployeeId} onChange={e => setForm(p => ({ ...p, xeroEmployeeId: e.target.value }))} /></div>
             <div><Label>Colour</Label><div className="flex items-center gap-2 mt-1"><input type="color" value={form.colourHex} onChange={e => setForm(p => ({ ...p, colourHex: e.target.value }))} className="h-9 w-16 rounded border cursor-pointer" /></div></div>
-            <div className="col-span-2 mt-2 border-t pt-3"><p className="text-sm font-semibold text-violet-800 dark:text-violet-300">Online booking profile</p><p className="text-xs text-muted-foreground mt-0.5">Keep this disabled until this groomer is approved for customer-selected online bookings.</p></div>
-            <label className="col-span-2 flex items-center gap-2 rounded-lg border bg-violet-50/50 dark:bg-violet-950/50 px-3 py-2 text-sm cursor-pointer"><input type="checkbox" checked={form.onlineBookable === "true"} onChange={e => setForm(p => ({ ...p, onlineBookable: String(e.target.checked) }))} className="h-4 w-4 accent-violet-600" /><span className="font-medium">Available for online booking</span></label>
-            <div className="col-span-2"><Label>Customer-facing bio</Label><textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none h-16 focus:outline-none focus:ring-2 focus:ring-ring" value={form.onlineBio} onChange={e => setForm(p => ({ ...p, onlineBio: e.target.value }))} placeholder="A short introduction that customers can read when choosing a groomer." /></div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2 mt-2 border-t pt-3"><p className="text-sm font-semibold text-violet-800 dark:text-violet-300">Online booking profile</p><p className="text-xs text-muted-foreground mt-0.5">Keep this disabled until this groomer is approved for customer-selected online bookings.</p></div>
+            <label className="sm:col-span-2 flex items-center gap-2 rounded-lg border bg-violet-50/50 dark:bg-violet-950/50 px-3 py-2 text-sm cursor-pointer"><input type="checkbox" checked={form.onlineBookable === "true"} onChange={e => setForm(p => ({ ...p, onlineBookable: String(e.target.checked) }))} className="h-4 w-4 accent-violet-600" /><span className="font-medium">Available for online booking</span></label>
+            <div className="sm:col-span-2"><Label>Customer-facing bio</Label><textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none h-16 focus:outline-none focus:ring-2 focus:ring-ring" value={form.onlineBio} onChange={e => setForm(p => ({ ...p, onlineBio: e.target.value }))} placeholder="A short introduction that customers can read when choosing a groomer." /></div>
+            <div className="sm:col-span-2">
               <Label>Profile photo</Label>
               <p className="text-xs text-muted-foreground mt-0.5">Shown beside this person's name on the Appointments calendar and the Workflow board, and on the online booking page.</p>
               <div className="mt-2 flex items-center gap-3">
@@ -544,7 +551,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
               </div>
               <Input className="mt-2" value={form.onlineProfilePhotoUrl} onChange={e => setForm(p => ({ ...p, onlineProfilePhotoUrl: e.target.value }))} placeholder="…or paste an image URL" />
             </div>
-            <div className="col-span-2"><Label>Online services</Label><Input className="mt-1" value={form.onlineServices} onChange={e => setForm(p => ({ ...p, onlineServices: e.target.value }))} placeholder="classic_groom, styled_groom, bath_only" /><p className="mt-1 text-xs text-muted-foreground">Leave blank to allow every service. Use service names separated by commas.</p></div>
+            <div className="sm:col-span-2"><Label>Online services</Label><Input className="mt-1" value={form.onlineServices} onChange={e => setForm(p => ({ ...p, onlineServices: e.target.value }))} placeholder="classic_groom, styled_groom, bath_only" /><p className="mt-1 text-xs text-muted-foreground">Leave blank to allow every service. Use service names separated by commas.</p></div>
             <div><Label>Dogs per time slot</Label><Input className="mt-1" type="number" min="1" max="10" value={form.onlineMaxDogsPerSlot} onChange={e => setForm(p => ({ ...p, onlineMaxDogsPerSlot: e.target.value }))} /></div>
             {/* A day's work, per person. Both were set straight in the
                 database until 30/10/2026 and could not be corrected
@@ -568,7 +575,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
               </p>
             </div>
             <div><Label>Online dogs per day</Label><Input className="mt-1" type="number" min="0" max="50" value={form.onlineMaxDogsPerDay} onChange={e => setForm(p => ({ ...p, onlineMaxDogsPerDay: e.target.value }))} /><p className="mt-1 text-xs text-muted-foreground">0 = no daily cap</p></div>
-            <div className="col-span-2"><Label>Notes</Label><textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-ring" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Internal notes..." /></div>
+            <div className="sm:col-span-2"><Label>Notes</Label><textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-ring" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Internal notes..." /></div>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setEditing(false)} className="flex-1">Cancel</Button>
