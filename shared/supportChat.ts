@@ -68,11 +68,15 @@ export const HANDOVER_LINE =
   "Passed to a person. Andy has been notified and will reply here. You can keep typing, and you can close this window: the reply will be waiting when you come back.";
 
 /**
- * Used when the assistant cannot answer at all (no key, no credit on the
- * Anthropic account, or an error). Bruce's own words, chosen by Andy on
- * 15/11/2026 while the account had no credit: "I'm currently out on a
- * walk - I'll be back soon!" The handover line follows it, so the person
- * still learns their message has gone to a human.
+ * Shown when the assistant cannot answer at all (no key, no credit on
+ * the Anthropic account, or an outage). Bruce's own words, chosen by
+ * Andy on 15/11/2026 while the account had no credit: "I'm currently out
+ * on a walk - I'll be back soon!"
+ *
+ * While he is out the chat is "coming soon": the window shows this and
+ * takes no messages, and the server refuses them with the same line. It
+ * is also the lead on the handover note for the rare call that fails
+ * while he is otherwise in.
  */
 export const ASSISTANT_UNAVAILABLE_LINE =
   "I'm currently out on a walk - I'll be back soon!";

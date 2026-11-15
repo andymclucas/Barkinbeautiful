@@ -26,7 +26,7 @@ import {
 } from "@shared/supportChat";
 import { isSafeAppPath } from "@shared/issueReports";
 import { sendPushToUser } from "../webPush";
-import { answerSupportMessage, supportAssistantConfigured } from "../supportAssistant";
+import { answerSupportMessage, supportAssistantAvailable, supportAssistantAvailableNow } from "../supportAssistant";
 
 /** A ceiling on one person's messages, so a stuck loop cannot run up a bill. */
 const MAX_USER_MESSAGES_PER_HOUR = 60;
@@ -111,15 +111,31 @@ async function handOver(db: Db, conv: { id: number; tenantId: number; userName: 
   notifyAgents(db, conv, lastUserMessage, true, userId);
 }
 
+/**
+ * While Bruce cannot answer, the chat is "coming soon": it shows that he
+ * is out and takes no messages at all (Andy, 15/11/2026: "not allow any
+ * messages to be sent — basically this is a feature that is coming
+ * soon"). The window hides its message box; this is the same rule on the
+ * server, so a tab that has not refreshed cannot send one either.
+ *
+ * A conversation a person has already picked up is left alone: that is
+ * somebody mid-conversation with Andy, not a new question for Bruce.
+ */
+async function refuseWhileBruceIsOut(status: SupportStatus | undefined) {
+  if (status && isWithPerson(status)) return;
+  if (await supportAssistantAvailable()) return;
+  throw new TRPCError({ code: "PRECONDITION_FAILED", message: ASSISTANT_UNAVAILABLE_LINE });
+}
+
 async function viewForUser(db: Db, tenantId: number, userId: number) {
   const conv = await openConversation(db, tenantId, userId);
-  if (!conv) return { conversation: null, messages: [], unread: 0, assistantAvailable: supportAssistantConfigured() };
+  if (!conv) return { conversation: null, messages: [], unread: 0, assistantAvailable: supportAssistantAvailableNow() };
   const messages = await messagesOf(db, conv.id);
   return {
     conversation: { id: conv.id, status: conv.status as SupportStatus },
     messages,
     unread: unreadCount(messages, conv.userReadMessageId, "user"),
-    assistantAvailable: supportAssistantConfigured(),
+    assistantAvailable: supportAssistantAvailableNow(),
   };
 }
 
@@ -154,6 +170,7 @@ export const supportChatRouter = router({
       }
 
       let conv = await openConversation(db, tenantId, userId);
+      await refuseWhileBruceIsOut(conv?.status as SupportStatus | undefined);
       if (!conv) {
         const userName = (ctx.user.name ?? "").trim() || ctx.user.email || null;
         const [result] = await db.insert(supportConversations).values({
@@ -205,6 +222,7 @@ export const supportChatRouter = router({
       const db = await requireDb();
       const tenantId = tenantOf(ctx, input ?? {});
       let conv = await openConversation(db, tenantId, ctx.user.id);
+      await refuseWhileBruceIsOut(conv?.status as SupportStatus | undefined);
       if (!conv) {
         const userName = (ctx.user.name ?? "").trim() || ctx.user.email || null;
         const [result] = await db.insert(supportConversations).values({ tenantId, userId: ctx.user.id, userName });

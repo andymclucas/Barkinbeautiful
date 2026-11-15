@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { getActiveTimeZone } from "@/lib/timezone";
-import { SUPPORT_MESSAGE_MAX, isWithPerson, type SupportSender } from "@shared/supportChat";
+import { ASSISTANT_UNAVAILABLE_LINE, SUPPORT_MESSAGE_MAX, isWithPerson, type SupportSender } from "@shared/supportChat";
 
 /**
  * The support bubble, bottom-right on every staff screen
@@ -65,6 +65,11 @@ export function SupportChat() {
   const status = data?.conversation?.status ?? null;
   const withPerson = status !== null && isWithPerson(status);
   const unread = data?.unread ?? 0;
+  // Bruce cannot answer right now (no credit on the AI account, or an
+  // outage). The chat is then "coming soon": it says he is out and offers
+  // nothing to type into (Andy, 15/11/2026). The server refuses messages
+  // too. A conversation a person has already picked up carries on.
+  const bruceOut = data?.assistantAvailable === false && !withPerson;
   const newestId = messages.length ? messages[messages.length - 1].id : 0;
 
   // A push for support's reply lands on ?support=open.
@@ -108,6 +113,7 @@ export function SupportChat() {
                 <p className="text-[11px] opacity-85">
                   {status === "waiting" ? "Waiting for Andy to reply"
                     : status === "human" ? "You are talking to Andy"
+                    : bruceOut ? "Coming soon"
                     : "Ask Bruce how to do something. A person is one tap away."}
                 </p>
               </div>
@@ -129,7 +135,9 @@ export function SupportChat() {
               <div className="max-w-[85%] rounded-2xl border bg-card px-3.5 py-2 text-sm">
                 <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">Bruce</p>
                 <p className="leading-relaxed">
-                  Hi, I&rsquo;m Bruce, your AI amigo! What are you trying to do? I can explain how things work in Groomigo. I can&rsquo;t see your screen or change anything.
+                  {bruceOut
+                    ? <>{ASSISTANT_UNAVAILABLE_LINE}</>
+                    : <>Hi, I&rsquo;m Bruce, your AI amigo! What are you trying to do? I can explain how things work in Groomigo. I can&rsquo;t see your screen or change anything.</>}
                 </p>
               </div>
             </div>
@@ -162,11 +170,18 @@ export function SupportChat() {
                     <p className="whitespace-pre-wrap break-words leading-relaxed">{send.variables?.message}</p>
                   </div>
                 </div>
-                {!withPerson && <p className="px-1 text-xs text-muted-foreground">Bruce is typing…</p>}
+                {!withPerson && !bruceOut && <p className="px-1 text-xs text-muted-foreground">Bruce is typing…</p>}
               </>
             )}
           </div>
 
+          {bruceOut ? (
+            <div className="shrink-0 border-t bg-card p-3">
+              <p className="text-center text-xs text-muted-foreground">
+                Bruce isn&rsquo;t taking questions yet. For anything broken, use <span className="font-medium">Report a problem</span> in the top bar.
+              </p>
+            </div>
+          ) : (
           <div className="shrink-0 space-y-2 border-t bg-card p-3">
             <div className="flex items-end gap-2">
               <Textarea
@@ -215,6 +230,7 @@ export function SupportChat() {
               </p>
             )}
           </div>
+          )}
         </div>
       )}
 
