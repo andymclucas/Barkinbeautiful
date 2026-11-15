@@ -173,10 +173,10 @@ export default function Settings() {
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="col-span-2 space-y-1.5"><Label>Business Name</Label><Input defaultValue="Barkin Beautiful Grooming Studio" /></div>
+                  <div className="sm:col-span-2 space-y-1.5"><Label>Business Name</Label><Input defaultValue="Barkin Beautiful Grooming Studio" /></div>
                   <div className="space-y-1.5"><Label>Phone</Label><Input defaultValue="07 3823 4567" /></div>
                   <div className="space-y-1.5"><Label>Email</Label><Input defaultValue="info@barkinbeautiful.com.au" /></div>
-                  <div className="col-span-2 space-y-1.5"><Label>Address</Label><Input defaultValue="Brisbane, QLD" /></div>
+                  <div className="sm:col-span-2 space-y-1.5"><Label>Address</Label><Input defaultValue="Brisbane, QLD" /></div>
                   <div className="space-y-1.5"><Label>Currency</Label><Input defaultValue="AUD" /></div>
                 </div>
                 <Button onClick={() => toast.success("Settings saved")}>Save Changes</Button>

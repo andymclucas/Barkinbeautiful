@@ -90,7 +90,7 @@ export function SalonSetup() {
       </CardHeader>
       <CardContent className="space-y-4 px-4 pb-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="col-span-2 space-y-1.5">
+          <div className="sm:col-span-2 space-y-1.5">
             <Label htmlFor="salon-name">Salon name</Label>
             <Input id="salon-name" value={name} onChange={e => setName(e.target.value)} placeholder="The Pet Pad" />
           </div>
