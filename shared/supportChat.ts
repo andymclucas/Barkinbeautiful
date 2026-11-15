@@ -67,9 +67,15 @@ export function asksForPerson(text: string): boolean {
 export const HANDOVER_LINE =
   "Passed to a person. Andy has been notified and will reply here. You can keep typing, and you can close this window: the reply will be waiting when you come back.";
 
-/** Used when the assistant cannot answer at all (no key, or an error). */
+/**
+ * Used when the assistant cannot answer at all (no key, no credit on the
+ * Anthropic account, or an error). Bruce's own words, chosen by Andy on
+ * 15/11/2026 while the account had no credit: "I'm currently out on a
+ * walk - I'll be back soon!" The handover line follows it, so the person
+ * still learns their message has gone to a human.
+ */
 export const ASSISTANT_UNAVAILABLE_LINE =
-  "Bruce isn't available right now, so this has gone straight to a person.";
+  "I'm currently out on a walk - I'll be back soon!";
 
 /** The phone notification support gets. No more than the first line. */
 export function supportPushText(userName: string | null, salonName: string | null, message: string, isNewRequest: boolean) {
