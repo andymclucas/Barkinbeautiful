@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, Sparkles, Pencil } from "lucide-react";
+import { Plus, Trash2, Sparkles, Pencil, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { addOnRequiresManualPrice, addOnsTotal, addOnTargets, describeAddOnWrite } from "@shared/appointmentAddOns";
+import { carriesToRepeats, describeSeriesAdd } from "@shared/repeatBookingExtras";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { applyLineDiscount, discountFromColumns, describeLineDiscount, validateLineDiscount } from "@shared/lineDiscount";
 
 /**
@@ -63,6 +65,14 @@ export function AppointmentAddOns({ appointmentId, petName, siblings = [] }: {
      three toasts for one press reads as three mistakes. The call sites
      below report once, for however many dogs they wrote to. */
   const addMutation = trpc.appointmentAddOns.add.useMutation();
+  /* Front desk only: it writes onto bookings months away. The server
+     refuses restricted staff too; this just keeps the button off. */
+  const { user } = useAuth();
+  const laterInSeries = user?.role !== "staff" ? (data?.laterInSeries ?? 0) : 0;
+  const addToSeries = trpc.appointmentAddOns.addToSeries.useMutation({
+    onSuccess: (r) => { toast.success(describeSeriesAdd(r.name, r.added)); refresh(); },
+    onError: (e) => toast.error(e.message),
+  });
   const removeMutation = trpc.appointmentAddOns.remove.useMutation({
     onSuccess: () => { toast.success("Add-on removed"); refresh(); },
     onError: (e) => toast.error(e.message),
@@ -159,6 +169,17 @@ export function AppointmentAddOns({ appointmentId, petName, siblings = [] }: {
                   )}
                   ${(broken.netCents / 100).toFixed(2)}
                 </span>
+                {laterInSeries > 0 && carriesToRepeats(a as any) && (
+                  <button
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                    title={`Add ${a.name} to the ${laterInSeries} later booking${laterInSeries === 1 ? "" : "s"} in this series`}
+                    aria-label={`Add ${a.name} to later bookings in this series`}
+                    disabled={addToSeries.isPending}
+                    onClick={() => addToSeries.mutate({ id: a.id })}
+                  >
+                    <Repeat className="h-3 w-3" />
+                  </button>
+                )}
                 <button
                   className="shrink-0 text-muted-foreground hover:text-foreground"
                   title={`Edit ${a.name}`}
