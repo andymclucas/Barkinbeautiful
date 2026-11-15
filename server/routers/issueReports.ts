@@ -6,10 +6,10 @@
  *    included, can report from any screen they can reach. It is not gated
  *    on a section (see UNGATED_NAMESPACES) — a problem with the Workflow
  *    Board is exactly the kind a bather should be able to send.
- *  - list / openCount / setStatus are for the salon owners only:
- *    canAdministerStaff (Lauren and Andy), NOT users.role === "admin",
- *    which four groomers hold. A report carries a screenshot of whatever
- *    was on screen, client details included.
+ *  - list / openCount / setStatus are for Andy only since 16/11/2026
+ *    (canReadProblemReports in shared/issueReports.ts), NOT
+ *    users.role === "admin", which four groomers hold. A report carries
+ *    a screenshot of whatever was on screen, client details included.
  *
  * The rules are in shared/issueReports.ts; images are uploaded first
  * through /api/upload/issue-report-image and referenced here by key.
@@ -20,9 +20,9 @@ import { TRPCError } from "@trpc/server";
 import { router, operationalProcedure, protectedProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { clients, issueReports, pets, uploadedImages } from "../../drizzle/schema";
-import { canAdministerStaff, STAFF_ADMINISTRATOR_USER_IDS } from "@shared/staffAdministrators";
 import {
   ISSUE_MAX_PHOTOS, ISSUE_MESSAGE_MAX, ISSUE_STATUSES, OPEN_ISSUE_STATUSES,
+  PROBLEM_REPORT_READER_USER_IDS, canReadProblemReports,
   hasUnseenOutcome, isIssueImageKey, isIssueVideoKey, isSafeAppPath, isSafeQuery,
   issuePushText, outcomeHeadline, recentIssueErrors, sortReportsForInbox,
   type IssueCategory, type IssueContext, type IssueImage, type IssueStatus, type IssueUrgency,
@@ -34,10 +34,10 @@ import { triageIssueReport, withinMs } from "../issueTriage";
 /** How long the owners' phone notification waits for sorting before going anyway. */
 const TRIAGE_WAIT_MS = 20_000;
 
-const DENIED = "Problem reports are visible to the salon owner only.";
+const DENIED = "Problem reports are read by Groomigo support only.";
 
 const requireOwner = (user: { id: number; email?: string | null }) => {
-  if (!canAdministerStaff(user)) throw new TRPCError({ code: "FORBIDDEN", message: DENIED });
+  if (!canReadProblemReports(user)) throw new TRPCError({ code: "FORBIDDEN", message: DENIED });
 };
 
 const contextInput = z.object({
@@ -116,7 +116,7 @@ export const issueReportsRouter = router({
       // owners' phones — not the person who sent it. The push waits up to
       // TRIAGE_WAIT_MS for the sorting so it can say URGENT, and goes anyway
       // after that. Nothing here can fail the report: the row is the record.
-      const recipients = STAFF_ADMINISTRATOR_USER_IDS.filter((uid) => uid !== ctx.user.id);
+      const recipients = PROBLEM_REPORT_READER_USER_IDS.filter((uid) => uid !== ctx.user.id);
       void (async () => {
         const triage = await withinMs(triageIssueReport(db, id), TRIAGE_WAIT_MS).catch(() => null);
         const { title, body } = issuePushText(reporterName, input.message, triage);
@@ -200,7 +200,7 @@ export const issueReportsRouter = router({
   openCount: protectedProcedure
     .input(z.object({ tenantId: z.number().int().positive().optional() }).optional())
     .query(async ({ input, ctx }) => {
-      if (!canAdministerStaff(ctx.user)) return { open: 0, unread: 0 };
+      if (!canReadProblemReports(ctx.user)) return { open: 0, unread: 0 };
       const db = await getDb();
       if (!db) return { open: 0, unread: 0 };
       const tenantId = tenantOf(ctx, input ?? {});

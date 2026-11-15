@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   issueContextFromLocation, recentIssueErrors, isIssueImageKey, issuePushText,
-  isOpenIssue, ISSUE_MAX_RECENT_ERRORS,
+  isOpenIssue, ISSUE_MAX_RECENT_ERRORS, canReadProblemReports,
 } from "@shared/issueReports";
 
 describe("issueContextFromLocation", () => {
@@ -162,5 +162,14 @@ describe("stage 2: video", () => {
     expect(isIssueVideoKey("issue-reports/1.jpg")).toBe(false);
     expect(isIssueVideoType("video/quicktime")).toBe(true);
     expect(isIssueVideoType("image/svg+xml")).toBe(false);
+  });
+});
+
+describe("canReadProblemReports", () => {
+  it("is Andy alone, not the other salon owner or any admin", () => {
+    expect(canReadProblemReports({ id: 30001 })).toBe(true);
+    expect(canReadProblemReports({ id: 1 })).toBe(false);
+    expect(canReadProblemReports({ id: 60001 })).toBe(false);
+    expect(canReadProblemReports(null)).toBe(false);
   });
 });

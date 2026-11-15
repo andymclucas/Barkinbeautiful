@@ -281,3 +281,20 @@ export function issuePushText(
   const title = `${triage?.urgency === "urgent" ? "URGENT — " : ""}${who} reported a problem`;
   return { title, body: body || "(no description)" };
 }
+
+/**
+ * Who may read the problem-reports inbox.
+ *
+ * It began as both salon owners (canAdministerStaff). Andy, 16/11/2026:
+ * "Lock problem reports to me alone." He is the one who works through
+ * them, and a report carries a screenshot of whatever was on screen. So
+ * this is its own list rather than a borrowed one, and it holds one id.
+ * Everybody can still SEND a report and see the outcome of their own.
+ */
+export const PROBLEM_REPORT_READER_USER_IDS: readonly number[] = [
+  30001, // Andy McLucas
+];
+
+export function canReadProblemReports(user: { id?: number | null } | null | undefined): boolean {
+  return typeof user?.id === "number" && PROBLEM_REPORT_READER_USER_IDS.includes(user.id);
+}

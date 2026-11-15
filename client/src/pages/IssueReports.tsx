@@ -6,7 +6,7 @@ import { IssueReportCard } from "@/components/IssueReportCard";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getActiveTimeZone } from "@/lib/timezone";
-import { canAdministerStaff } from "@shared/staffAdministrators";
+import { canReadProblemReports } from "@shared/issueReports";
 
 /**
  * The owners' inbox of staff problem reports (shared/issueReports.ts).
@@ -20,7 +20,7 @@ const FILTERS = [
 
 export default function IssueReports() {
   const { user } = useAuth();
-  const allowed = canAdministerStaff(user ?? null);
+  const allowed = canReadProblemReports(user ?? null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("open");
   const utils = trpc.useUtils();
   const { data, isLoading, isError } = trpc.issueReports.list.useQuery(
@@ -58,7 +58,7 @@ export default function IssueReports() {
         </div>
 
         {!allowed ? (
-          <p className="rounded-lg border p-4 text-sm text-muted-foreground">Problem reports are visible to the salon owner only.</p>
+          <p className="rounded-lg border p-4 text-sm text-muted-foreground">Problem reports are read by Groomigo support only.</p>
         ) : (
           <>
             <div className="inline-flex rounded-lg border p-0.5">
