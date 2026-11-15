@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
-import { Send, UserRound, X } from "lucide-react";
+import { ChevronRight, LifeBuoy, MessageSquareWarning, Send, UserRound, X } from "lucide-react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { BruceAvatar } from "@/components/BruceAvatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { getActiveTimeZone } from "@/lib/timezone";
-import { ASSISTANT_UNAVAILABLE_LINE, SUPPORT_MESSAGE_MAX, isWithPerson, type SupportSender } from "@shared/supportChat";
+import { ASSISTANT_UNAVAILABLE_LINE, SUPPORT_MESSAGE_MAX, canAnswerSupport, isWithPerson, supportBubbleCount, type SupportSender } from "@shared/supportChat";
 
 /**
  * The support bubble, bottom-right on every staff screen
@@ -36,6 +37,27 @@ export function SupportChat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const utils = trpc.useUtils();
+
+  /*
+   * Groomigo support's own view (Andy, 16/11/2026): "when I click on AI
+   * chat bot there is an option to switch to see what chats or requests
+   * have been sent/started." The two inboxes used to be sidebar entries;
+   * they are reached from here now, and only by support. The counts are
+   * what the sidebar badges used to show.
+   */
+  const { user } = useAuth();
+  const isSupport = canAnswerSupport(user ?? null);
+  const [view, setViewMode] = useState<"chat" | "inbox">("chat");
+  const { data: waitingChats } = trpc.supportChat.waitingCount.useQuery(
+    undefined,
+    { enabled: isSupport, refetchInterval: 30_000, refetchOnWindowFocus: true },
+  );
+  const { data: openReports } = trpc.issueReports.openCount.useQuery(
+    {},
+    { enabled: isSupport, refetchInterval: 60_000, refetchOnWindowFocus: true },
+  );
+  const chatsWaiting = waitingChats?.waiting ?? 0;
+  const reportsOpen = openReports?.open ?? 0;
 
   // Fast while the window is open, slow otherwise: closed, it only feeds
   // the unread count on the bubble.
@@ -85,7 +107,10 @@ export function SupportChat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, newestId, unread, send.isPending]);
 
-  useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
+  useEffect(() => { if (open && view === "chat") inputRef.current?.focus(); }, [open, view]);
+
+  const bubbleCount = supportBubbleCount({ unread, isSupport, chatsWaiting, openReports: reportsOpen });
+  const inboxWaiting = chatsWaiting + reportsOpen;
 
   const submit = () => {
     const message = draft.trim();
@@ -128,6 +153,52 @@ export function SupportChat() {
             </Button>
           </header>
 
+          {isSupport && (
+            <div role="tablist" aria-label="Support views" className="flex shrink-0 border-b bg-card text-xs font-semibold">
+              {(["chat", "inbox"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === tab}
+                  onClick={() => setViewMode(tab)}
+                  className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 ${view === tab ? "border-b-2 border-primary text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {tab === "chat" ? "Bruce" : "Inbox"}
+                  {tab === "inbox" && inboxWaiting > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                      {inboxWaiting}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {isSupport && view === "inbox" ? (
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-muted/30 p-3">
+              <InboxLink
+                href="/support"
+                icon={<LifeBuoy className="h-4 w-4" />}
+                title="Support chats"
+                detail={chatsWaiting > 0 ? `${chatsWaiting} waiting for a reply` : "Nobody is waiting"}
+                count={chatsWaiting}
+                onOpen={() => setOpen(false)}
+              />
+              <InboxLink
+                href="/issues"
+                icon={<MessageSquareWarning className="h-4 w-4" />}
+                title="Problem reports"
+                detail={reportsOpen > 0 ? `${reportsOpen} open` : "Nothing open"}
+                count={reportsOpen}
+                onOpen={() => setOpen(false)}
+              />
+              <p className="px-1 pt-1 text-[11px] leading-snug text-muted-foreground">
+                Only you see this tab. Chats the team start with Bruce and problems they report both land here.
+              </p>
+            </div>
+          ) : (
+          <>
           <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain bg-muted/30 p-3">
             {/* Shown, never stored: a greeting is not part of the conversation. */}
             <div className="flex items-end justify-start gap-1.5">
@@ -231,6 +302,8 @@ export function SupportChat() {
             )}
           </div>
           )}
+          </>
+          )}
         </div>
       )}
 
@@ -240,12 +313,41 @@ export function SupportChat() {
         className="fixed bottom-5 right-4 z-40 h-12 w-12 rounded-full p-0 shadow-xl sm:right-6 print:hidden"
       >
         {open ? <X className="h-5 w-5" /> : <BruceAvatar size={48} className="rounded-full" />}
-        {!open && unread > 0 && (
+        {!open && bubbleCount > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-bold text-destructive-foreground">
-            {unread}
+            {bubbleCount}
           </span>
         )}
       </Button>
     </>
+  );
+}
+
+function InboxLink({ href, icon, title, detail, count, onOpen }: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  detail: string;
+  count: number;
+  onOpen: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onOpen}
+      className="flex items-center gap-3 rounded-xl border bg-card px-3 py-3 text-sm hover:bg-muted"
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold">{title}</span>
+        <span className="block text-xs text-muted-foreground">{detail}</span>
+      </span>
+      {count > 0 && (
+        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-bold text-destructive-foreground">
+          {count}
+        </span>
+      )}
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+    </Link>
   );
 }
