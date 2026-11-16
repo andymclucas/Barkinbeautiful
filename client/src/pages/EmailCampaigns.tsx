@@ -111,6 +111,10 @@ function CampaignComposer({ open, onClose, editCampaignId, onSaved }: ComposerPr
   const updateMutation = trpc.campaigns.update.useMutation({
     onSuccess: () => {
       utils.campaigns.list.invalidate();
+      // The edit dialog fills itself from campaigns.get. Left stale, the
+      // next open shows the campaign as it was BEFORE this save, and a quick
+      // Save Changes would write that old audience back.
+      utils.campaigns.get.invalidate();
       toast.success("Campaign updated");
       onSaved();
     },
