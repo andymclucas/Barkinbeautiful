@@ -38,6 +38,7 @@
  * assumed — so a copied row is self-contained and cannot point back at
  * the salon it came from.
  */
+import { trialEndsAfter } from "../shared/planEntitlements";
 import { eq } from "drizzle-orm";
 import { getDb } from "./db";
 import {
@@ -139,6 +140,13 @@ export async function provisionSalon(input: {
      */
     subscriptionPlan: "trial",
     subscriptionStatus: "trialing",
+    /*
+     * The same seven days as a salon that signs itself up. Left out
+     * until 17/11/2026, which made "a trial like any other salon" a
+     * trial with no end: every feature, free, indefinitely, with no
+     * banner and no reason ever to open the billing page.
+     */
+    trialEndsAt: trialEndsAfter(),
     onlineBookingEnabled: false,
   });
   const tenantId = Number((created as { insertId?: number } | undefined)?.insertId ?? 0);
