@@ -4573,9 +4573,9 @@ const workflowRouter = router({
 
       // Marking one dog from a joined/family booking as OUT (picked up) means
       // the whole party has gone \u2014 staff shouldn't have to click each dog
-      // individually. Same linked-dog cascade used elsewhere (bath priority,
-      // bath grouping): shared bath group, else shared booking session,
-      // else same pet-family at the same scheduled time.
+      // individually. The party is the shared booking session, else the
+      // same pet-family at the same scheduled time. A shared bath group is
+      // NOT a party (partyKeyOf, shared/linkedWorkflowCascade.ts).
       let linkedCompleteIds: number[] = [];
       /**
        * Only check-in and completion ever move a linked dog, and they do
