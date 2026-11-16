@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  stageCanCascade, cascadesAutomatically, shouldCascadeTo, cascadeEligible, describeCascadePrompt,
+  stageCanCascade, cascadesAutomatically, shouldCascadeTo, cascadeEligible, describeCascadePrompt, shouldAskAboutLinkedCheckIn,
 } from "../shared/linkedWorkflowCascade";
 
 describe("which stages may cascade", () => {
@@ -63,5 +63,26 @@ describe("describeCascadePrompt", () => {
   it("says nothing when there is nobody to add", () => {
     expect(describeCascadePrompt([])).toBeNull();
     expect(describeCascadePrompt(["  "])).toBeNull();
+  });
+});
+
+describe("asking about the rest of the party on check-in", () => {
+  it("asks when nobody has answered yet and somebody is still to arrive", () => {
+    expect(shouldAskAboutLinkedCheckIn({ workflowState: "checked_in" }, 1)).toBe(true);
+  });
+
+  it("does not ask again once the answer is 'just this dog'", () => {
+    // 17/11/2026: false was read as 'not asked', so the dialog reopened forever.
+    expect(shouldAskAboutLinkedCheckIn({ workflowState: "checked_in", alsoCheckInLinked: false }, 1)).toBe(false);
+  });
+
+  it("does not ask again once the answer is 'check in all'", () => {
+    expect(shouldAskAboutLinkedCheckIn({ workflowState: "checked_in", alsoCheckInLinked: true }, 2)).toBe(false);
+  });
+
+  it("does not ask when there is nobody to add, or the change is not a check-in", () => {
+    expect(shouldAskAboutLinkedCheckIn({ workflowState: "checked_in" }, 0)).toBe(false);
+    expect(shouldAskAboutLinkedCheckIn({ workflowState: "bathing" }, 3)).toBe(false);
+    expect(shouldAskAboutLinkedCheckIn({}, 3)).toBe(false);
   });
 });
