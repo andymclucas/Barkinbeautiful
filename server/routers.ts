@@ -4579,8 +4579,15 @@ const workflowRouter = router({
       if (fields.completedAt !== undefined) updateData.completedAt = fields.completedAt;
       if (fields.pickedUpAt !== undefined) updateData.pickedUpAt = fields.pickedUpAt;
       if (fields.notes !== undefined) updateData.notes = fields.notes;
-      if (Object.keys(updateData).length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a workflow detail to update." });
-      await db.update(appointments).set(updateData).where(eq(appointments.id, appointmentId));
+      if (Object.keys(updateData).length === 0) {
+        // A repeat stage press that carried nothing else has nothing to
+        // write for THIS dog, and that is fine: it still falls through to
+        // the party cascade below. Anything else with nothing to write is
+        // a caller's mistake, as before.
+        if (repeatedStage === undefined) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a workflow detail to update." });
+      } else {
+        await db.update(appointments).set(updateData).where(eq(appointments.id, appointmentId));
+      }
 
       /*
        * The board can cancel too, and this path sent nothing.
