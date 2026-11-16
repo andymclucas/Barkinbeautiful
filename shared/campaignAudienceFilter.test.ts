@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  campaignsWithAudience,
   audienceFilterIs,
   audienceTypeForDisplay,
   audienceTypeForSend,
@@ -57,5 +58,28 @@ describe("the audience a send will use", () => {
     const r = audienceTypeForSend({ type: "everyone_ever" });
     expect(r.ok).toBe(false);
     expect(audienceTypeForSend({ type: "portal_invite" }).ok).toBe(false);
+  });
+});
+
+describe("finding campaigns by audience", () => {
+  const rows = [
+    { id: 9, audienceFilter: { type: "portal_invite" } },
+    { id: 8, audienceFilter: '{"type":"portal_no_card"}' },
+    { id: 7, audienceFilter: '{"type":"portal_invite"}' },
+    { id: 6, audienceFilter: null },
+    { id: 5, audienceFilter: "garbage" },
+  ];
+
+  it("matches the parsed object the live database returns, which a SQL text comparison cannot", () => {
+    expect(campaignsWithAudience(rows, "portal_invite").map((r) => r.id)).toEqual([9, 7]);
+  });
+
+  it("keeps the order it was given, so the first is the latest", () => {
+    expect(campaignsWithAudience(rows, "portal_invite")[0]?.id).toBe(9);
+  });
+
+  it("finds nothing among unrelated, empty or unreadable audiences", () => {
+    expect(campaignsWithAudience(rows, "all_active")).toEqual([]);
+    expect(campaignsWithAudience([], "portal_invite")).toEqual([]);
   });
 });
