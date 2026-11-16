@@ -26,6 +26,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 import { PortalInvitePanel } from "@/components/PortalInvitePanel";
 import { rateOf } from "@shared/emailEventEffect";
 import { PORTAL_NO_CARD_AUDIENCE_LABEL, PORTAL_NO_CARD_AUDIENCE_TYPE } from "@shared/portalNoCardAudience";
+import { audienceTypeForDisplay } from "@shared/campaignAudienceFilter";
 
 const AUDIENCE_OPTIONS = [
   { value: "all_active",         label: "All Active Clients" },
@@ -81,12 +82,15 @@ function CampaignComposer({ open, onClose, editCampaignId, onSaved }: ComposerPr
       setSubject(existing.subject);
       setPreviewText(existing.previewText ?? "");
       setBodyHtml(existing.bodyHtml);
-      try {
-        const f = JSON.parse(existing.audienceFilter ?? "{}");
-        setAudience(f.type ?? "all_active");
-      } catch { /* ignore */ }
+      // The saved audience can arrive as JSON text or already parsed
+      // (shared/campaignAudienceFilter.ts). Reading only the text form
+      // showed "All Active Clients" for every campaign, and Save Changes
+      // then wrote that over the real audience.
+      setAudience(audienceTypeForDisplay(existing.audienceFilter));
     }
-  }, [existing]);
+    // `open` too: closing resets the form, and reopening the SAME campaign
+    // can hand back the same cached object, which would not re-run this.
+  }, [existing, open]);
 
   // Audience preview
   const { data: preview, isFetching: previewLoading } = trpc.campaigns.getAudiencePreview.useQuery(
@@ -107,6 +111,10 @@ function CampaignComposer({ open, onClose, editCampaignId, onSaved }: ComposerPr
   const updateMutation = trpc.campaigns.update.useMutation({
     onSuccess: () => {
       utils.campaigns.list.invalidate();
+      // The edit dialog fills itself from campaigns.get. Left stale, the
+      // next open shows the campaign as it was BEFORE this save, and a quick
+      // Save Changes would write that old audience back.
+      utils.campaigns.get.invalidate();
       toast.success("Campaign updated");
       onSaved();
     },
@@ -351,9 +359,7 @@ function SendConfirmDialog({
   onClose: () => void;
   isSending: boolean;
 }) {
-  const audienceType = (() => {
-    try { return JSON.parse(campaign.audienceFilter ?? "{}").type ?? "all_active"; } catch { return "all_active"; }
-  })();
+  const audienceType = audienceTypeForDisplay(campaign.audienceFilter);
   const audienceLabel = AUDIENCE_OPTIONS.find(o => o.value === audienceType)?.label ?? audienceType;
 
   const { data: preview } = trpc.campaigns.getAudiencePreview.useQuery({

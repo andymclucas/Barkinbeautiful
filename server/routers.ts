@@ -210,6 +210,7 @@ import { agreementLinkUrl, readAgreementLinkToken } from "./agreementLinkToken";
 import { agreementsAwaitingSignature } from "@shared/portalAgreements";
 import { hasUsableEmail } from "@shared/portalInviteAudience";
 import { PORTAL_NO_CARD_AUDIENCE_TYPE, portalNoCardRecipients } from "@shared/portalNoCardAudience";
+import { audienceFilterIs, audienceTypeForDisplay, audienceTypeForSend } from "@shared/campaignAudienceFilter";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
 import { randomUUID } from "node:crypto";
@@ -13211,8 +13212,8 @@ const emailCampaignsRouter = router({
       const db = await getDb();
       if (!db) return { count: 0, sampleNames: [] };
 
-      let filter: { type: string } = { type: "all_active" };
-      try { filter = JSON.parse(input.audienceFilter); } catch {}
+      // One reader for every shape (shared/campaignAudienceFilter.ts).
+      const filter: { type: string } = { type: audienceTypeForDisplay(input.audienceFilter) };
 
       // Get unsubscribed emails for this tenant
       const unsubRows = await db
@@ -13313,7 +13314,7 @@ const emailCampaignsRouter = router({
       if (campaign.status === "sending") throw new Error("Campaign is already sending");
       // The portal invitation is recorded here but sent by its own runner:
       // its body is a description with no per-client link.
-      if ((campaign.audienceFilter ?? "").includes(`"${PORTAL_INVITE_AUDIENCE_TYPE}"`)) {
+      if (audienceFilterIs(campaign.audienceFilter, PORTAL_INVITE_AUDIENCE_TYPE)) {
         throw new Error("Portal invitations are sent from the Portal invitation card, not here");
       }
 
@@ -13324,9 +13325,13 @@ const emailCampaignsRouter = router({
         .where(eq(emailUnsubscribes.tenantId, tenantOf(ctx, input)));
       const unsubEmails = new Set(unsubRows.map(r => r.email.toLowerCase()));
 
-      // Determine audience
-      let filter: { type: string } = { type: "all_active" };
-      try { if (campaign.audienceFilter) filter = JSON.parse(campaign.audienceFilter); } catch {}
+      // Determine audience. The live database hands this column back
+      // already parsed; JSON.parse of that threw, was swallowed, and the
+      // send fell back to every active client. An audience that cannot be
+      // read, or is not one this send knows, now stops the send.
+      const sendAudience = audienceTypeForSend(campaign.audienceFilter);
+      if (!sendAudience.ok) throw new TRPCError({ code: "BAD_REQUEST", message: sendAudience.message });
+      const filter: { type: string } = { type: sendAudience.type };
 
       let audienceRows: Array<{ id: number; firstName: string; lastName: string; email: string | null }>;
 
@@ -16251,7 +16256,7 @@ const clientPortalRouter = router({
         .from(emailCampaigns)
         .where(and(eq(emailCampaigns.id, input.campaignId), eq(emailCampaigns.tenantId, tenantId)))
         .limit(1);
-      if (!campaign || campaign.audienceFilter !== JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE })) {
+      if (!campaign || !audienceFilterIs(campaign.audienceFilter, PORTAL_INVITE_AUDIENCE_TYPE)) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Invitation send not found" });
       }
       if (campaign.status !== "sending") throw new TRPCError({ code: "BAD_REQUEST", message: "That send has already finished." });
