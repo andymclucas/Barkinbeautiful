@@ -1031,14 +1031,14 @@ export default function Clients() {
               </DialogFooter>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <p className="text-sm text-muted-foreground">Add the first pet for <strong>{form.firstName} {form.lastName}</strong>. You can add more pets from their client profile later.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Pet Name *</Label><Input placeholder="e.g. Buddy" value={petForm.name} onChange={e => setPetForm(p => ({ ...p, name: e.target.value }))} /></div>
                 <div className="space-y-1.5">
                   <Label>Species</Label>
                   <Select value={petForm.species} onValueChange={v => setPetForm(p => ({ ...p, species: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {/* Cat is gone: Barkin' Beautiful grooms dogs
                           (Andy, 23/10/2026). "Other" stays for the
@@ -1057,7 +1057,7 @@ export default function Clients() {
                 <div className="space-y-1.5">
                   <Label>Gender</Label>
                   <Select value={petForm.gender} onValueChange={v => setPetForm(p => ({ ...p, gender: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="male">Male</SelectItem>
                       <SelectItem value="female">Female</SelectItem>
@@ -1079,7 +1079,7 @@ export default function Clients() {
                 <div className="space-y-1.5">
                   <Label>Size category</Label>
                   <Select value={petForm.sizeBand} onValueChange={v => setPetForm(p => ({ ...p, sizeBand: v }))}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder={petForm.weightKg ? "Worked out from the weight" : "Pick a size to price the groom"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1092,7 +1092,7 @@ export default function Clients() {
                 <div className="space-y-1.5">
                   <Label>First groom</Label>
                   <Select value={petForm.serviceType} onValueChange={v => setPetForm(p => ({ ...p, serviceType: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {Object.entries(SERVICE_LABELS).map(([value, label]) => (
                         <SelectItem key={value} value={value}>{label}</SelectItem>
@@ -1129,8 +1129,8 @@ export default function Clients() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label>Colour</Label><Input placeholder="e.g. Apricot, Black" value={petForm.colour} onChange={e => setPetForm(p => ({ ...p, colour: e.target.value }))} /></div>
-                <div className="space-y-1.5 flex flex-col justify-end">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                <div className="flex items-end">
+                  <label className="flex h-9 items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={petForm.desexed} onChange={e => setPetForm(p => ({ ...p, desexed: e.target.checked }))} className="rounded" />
                     <span className="text-sm">Desexed</span>
                   </label>
@@ -1138,7 +1138,10 @@ export default function Clients() {
               </div>
               <div className="space-y-1.5"><Label>Behaviour Notes</Label><Input placeholder="e.g. Anxious, needs extra time" value={petForm.behaviourNotes} onChange={e => setPetForm(p => ({ ...p, behaviourNotes: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>Grooming Notes</Label><Input placeholder="e.g. #7f blade, teddy bear face" value={petForm.groomingNotes} onChange={e => setPetForm(p => ({ ...p, groomingNotes: e.target.value }))} /></div>
-              <DialogFooter className="gap-2">
+              {/* Four buttons do not fit on one line of this dialog. Without
+                  the wrap the row could not shrink, and it stretched every
+                  field above it past the dialog's right edge. */}
+              <DialogFooter className="flex-wrap gap-2">
                 <Button variant="outline" onClick={() => setAddStep(1)}>← Back</Button>
                 <Button
                   variant="ghost"
