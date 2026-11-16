@@ -279,6 +279,16 @@ const ALLOWED_WHEN_EXPIRED = [
    * that narrow.
    */
   "platformBilling.",
+  /*
+   * The salon switcher. An owner with two salons who is standing in the
+   * expired one has to be able to step back into the other — without
+   * these the switcher gets no data, renders nothing, and Lauren is
+   * stuck in The Pet Pad with Barkin' Beautiful's diary out of reach.
+   * Both only read the caller's own list of salons. Exact paths: the
+   * rest of `salons.` creates salons and grants access.
+   */
+  "salons.mine",
+  "salons.canAccess",
   "trial.", // the screen telling them what happened
   "clients.exportCsv", // THE data export — see canExportData() in planEntitlements
   "issueReports.submit", // a salon whose trial ended can still tell us something is wrong

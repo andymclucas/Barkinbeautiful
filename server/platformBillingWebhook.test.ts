@@ -281,12 +281,45 @@ describe("the salon's subscription changing", () => {
   it("follows a change to the subscription the salon is on", async () => {
     const f = fakeStore({
       tenants: { 7: { platformStripeCustomerId: "cus_salon7", platformStripeSubscriptionId: "sub_salon7" } },
+      subscriptions: { sub_salon7: subscription({ status: "canceled" }) },
     });
     const result = await handlePlatformStripeEvent(
       event("customer.subscription.deleted", subscription({ status: "canceled" })), f.store,
     );
     expect(result).toEqual({ platformSubscription: "cancelled" });
     expect(f.salonRows[7].platformStripeSubscriptionId).toBeNull();
+  });
+
+  it("writes Stripe's current state when an older change arrives late", async () => {
+    // The event says active; Stripe, asked now, says past_due.
+    const f = fakeStore({
+      tenants: { 7: { platformStripeCustomerId: "cus_salon7", platformStripeSubscriptionId: "sub_salon7" } },
+      subscriptions: { sub_salon7: subscription({ status: "past_due" }) },
+    });
+    const result = await handlePlatformStripeEvent(
+      event("customer.subscription.updated", subscription({ status: "active" })), f.store,
+    );
+    expect(result).toEqual({ platformSubscription: "past_due" });
+  });
+
+  it("still cancels when the deleted subscription can no longer be read", async () => {
+    const f = fakeStore({
+      tenants: { 7: { platformStripeCustomerId: "cus_salon7", platformStripeSubscriptionId: "sub_salon7" } },
+      subscriptions: {},
+    });
+    const result = await handlePlatformStripeEvent(
+      event("customer.subscription.deleted", subscription({ status: "canceled" })), f.store,
+    );
+    expect(result).toEqual({ platformSubscription: "cancelled" });
+    // An unreadable subscription on a mere "updated" is a fault to retry.
+    const g = fakeStore({
+      tenants: { 7: { platformStripeCustomerId: "cus_salon7", platformStripeSubscriptionId: "sub_salon7" } },
+      subscriptions: {},
+    });
+    await expect(handlePlatformStripeEvent(
+      event("customer.subscription.updated", subscription()), g.store,
+    )).rejects.toThrow("No such subscription");
+    expect(g.recorded).toEqual([]);
   });
 
   it("does not let an OLD subscription's cancellation cancel the new one", async () => {

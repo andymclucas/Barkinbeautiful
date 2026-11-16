@@ -182,7 +182,20 @@ export async function handlePlatformStripeEvent(
     const byId = await store.tenantIdForSubscription(subscription.id);
     if (byId !== null) {
       // The id is sitting in tenants because we put it there: proof enough.
-      const { status } = await store.sync(byId, subscription);
+      //
+      // Re-read rather than trusted from the event. Stripe does not
+      // deliver in order, and this now writes the PLAN as well as the
+      // status: an older "updated" arriving after a newer one would put a
+      // salon back on the plan it just upgraded from, or back to active
+      // after a failed payment. A subscription that can no longer be
+      // read at all has ended, and for a "deleted" the event says so.
+      let current = subscription;
+      try {
+        current = await store.retrieveSubscription(subscription.id);
+      } catch (error) {
+        if (event.type !== "customer.subscription.deleted") throw error;
+      }
+      const { status } = await store.sync(byId, current);
       await store.recordEvent(event, byId);
       console.log(`[stripe] platform subscription for tenant ${byId} is now ${status}`);
       return { platformSubscription: status };

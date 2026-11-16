@@ -74,6 +74,7 @@ async function loadTenantBilling(tenantId: number) {
     subscriptionPlan: tenants.subscriptionPlan,
     subscriptionCurrentPeriodEnd: tenants.subscriptionCurrentPeriodEnd,
     trialEndsAt: tenants.trialEndsAt,
+    billingExempt: tenants.billingExempt,
   }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
   if (!row) throw new Error("That salon does not exist");
   return { db, tenant: row };
@@ -127,6 +128,12 @@ export async function createPlatformSubscriptionCheckout(input: {
   }
 
   const { tenant } = await loadTenantBilling(input.tenantId);
+  // Barkin' Beautiful. The billing card is on its Settings page like any
+  // salon's, and one click must not start charging the salon this was
+  // built for — see isBillable() in shared/planEntitlements.ts.
+  if (tenant.billingExempt) {
+    throw new Error("This salon is not billed for Groomigo, so there is no plan to choose.");
+  }
   if (tenant.platformStripeSubscriptionId) {
     throw new Error("This salon already has a subscription. Use Manage billing to change it.");
   }

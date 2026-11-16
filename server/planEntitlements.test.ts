@@ -236,6 +236,15 @@ describe("what an expired trial may still reach", () => {
     expect(allowedWhileExpired("platformBillingAdmin.anything")).toBe(false);
   });
 
+  it("lets an owner of two salons switch out of the expired one", () => {
+    expect(allowedWhileExpired("salons.mine")).toBe(true);
+    expect(allowedWhileExpired("salons.canAccess")).toBe(true);
+    // Creating salons and handing out access is not switching.
+    for (const path of ["salons.provision", "salons.grant", "salons.revoke", "salons.eligibleOwners"]) {
+      expect(allowedWhileExpired(path), path).toBe(false);
+    }
+  });
+
   it("refuses the rest of the product", () => {
     for (const path of [
       "calendar.getAppointments",

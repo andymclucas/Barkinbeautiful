@@ -227,6 +227,16 @@ describe("Barkin' Beautiful", () => {
     await expect(caller().sidebarCounts.get()).resolves.toBeDefined();
   });
 
+  it("cannot be put on a paid plan by a stray click", async () => {
+    vi.stubEnv("STRIPE_PRICE_STARTER", "price_test_starter");
+    getDb.mockResolvedValue(
+      databaseWithTenant({ billingExempt: 1, trialEndsAt: null, platformStripeSubscriptionId: null })
+    );
+    await expect(caller().platformBilling.startCheckout({ plan: "starter" }))
+      .rejects.toThrow(/not billed for Groomigo/);
+    vi.unstubAllEnvs();
+  });
+
   it("is shown no banner at all", async () => {
     getDb.mockResolvedValue(
       databaseWithTenant({
