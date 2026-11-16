@@ -225,6 +225,17 @@ describe("what an expired trial may still reach", () => {
     expect(allowedWhileExpired("trial.get")).toBe(true);
   });
 
+  it("lets them pay Groomigo, which is the way out of being expired", () => {
+    // Missing until 17/11/2026: the banner said "Choose a plan" and every
+    // call behind the plan page was refused.
+    for (const path of ["platformBilling.status", "platformBilling.startCheckout", "platformBilling.managePortal"]) {
+      expect(allowedWhileExpired(path), path).toBe(true);
+    }
+    // The salon's CLIENT billing is a different thing and stays shut.
+    expect(allowedWhileExpired("stripeBilling.getStatus")).toBe(false);
+    expect(allowedWhileExpired("platformBillingAdmin.anything")).toBe(false);
+  });
+
   it("refuses the rest of the product", () => {
     for (const path of [
       "calendar.getAppointments",

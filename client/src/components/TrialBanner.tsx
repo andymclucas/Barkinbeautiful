@@ -2,6 +2,12 @@ import { Link } from "wouter";
 import { Clock, TriangleAlert } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import { settingsTabHref } from "@shared/settingsTab";
+
+// Straight to the bill. /settings alone opens on the Salon tab, which for
+// an expired salon is a page of refused requests with the way to pay one
+// tab over and nothing saying so.
+const BILLING_HREF = settingsTabHref("billing");
 
 /**
  * How long is left of the trial, and what happened when it ran out.
@@ -65,7 +71,7 @@ export function TrialBannerView({
           yours — choose a plan to pick up exactly where you left off.
         </span>
         <Button asChild size="sm" variant="destructive" className="ml-auto">
-          <Link href="/settings">Choose a plan</Link>
+          <Link href={BILLING_HREF}>Choose a plan</Link>
         </Button>
       </div>
     );
@@ -113,7 +119,7 @@ export function TrialBannerView({
         variant={urgent ? "default" : "outline"}
         className="ml-auto"
       >
-        <Link href="/settings">Choose a plan</Link>
+        <Link href={BILLING_HREF}>Choose a plan</Link>
       </Button>
     </div>
   );

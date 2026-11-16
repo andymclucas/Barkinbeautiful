@@ -149,6 +149,40 @@ describe("a trial that has run out", () => {
   });
 });
 
+describe("an expired salon paying its way back in", () => {
+  const expired = {
+    plan: "trial", status: "trialing", customerId: null, subscriptionId: null, currentPeriodEnd: null,
+    subscriptionPlan: "trial", subscriptionStatus: "trialing", billingExempt: 0, trialEndsAt: YESTERDAY,
+  };
+
+  it("can open its own bill", async () => {
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    const status = await caller().platformBilling.status();
+    expect(status.subscribed).toBe(false);
+    expect(status.description).toMatch(/^Free trial ended .* choose a plan/);
+  });
+
+  it("is not refused by the trial check when it starts a checkout", async () => {
+    // No Stripe price is configured in a test, so the call stops there —
+    // which is the point: it got past enforceTrial to say so.
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    const attempt = caller().platformBilling.startCheckout({ plan: "starter" });
+    await expect(attempt).rejects.toThrow(/no Stripe price configured/);
+    await expect(attempt).rejects.not.toThrow(TRIAL_ENDED_MESSAGE);
+  });
+
+  it("still cannot reach the rest of Settings", async () => {
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    await expect(caller().stripeBilling.getStatus({})).rejects.toThrow(TRIAL_ENDED_MESSAGE);
+  });
+
+  it("keeps the money buttons to administrators", async () => {
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    await expect(caller(staff).platformBilling.startCheckout({ plan: "starter" })).rejects.toThrow();
+    await expect(caller(staff).platformBilling.status()).rejects.toThrow();
+  });
+});
+
 describe("a trial that is still running", () => {
   it("does not get in the way", async () => {
     getDb.mockResolvedValue(

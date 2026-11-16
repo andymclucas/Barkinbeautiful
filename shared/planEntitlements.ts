@@ -265,7 +265,20 @@ const ALLOWED_WHEN_EXPIRED = [
   "system.", // health and version
   "salonSignup.", // public anyway, but harmless here
   "settings.getTenantInfo",
-  "stripeConnect.", // so they can set up paying
+  "stripeConnect.", // so their CLIENTS can pay them — not how they pay us
+  /*
+   * How the salon pays Groomigo. Missing until 17/11/2026, which meant
+   * the "Choose a plan" button led to a page whose every call was
+   * refused: an expired salon could not pay to stop being expired.
+   *
+   * The whole namespace, because all of it is the salon's own bill —
+   * every procedure acts on the caller's own tenant (tenantOf(ctx)) and
+   * takes no salon id, `status` only reads, and the two that spend money
+   * only open Stripe's hosted pages. Anything added to platformBilling
+   * later is reachable by a salon that has not paid, so it must stay
+   * that narrow.
+   */
+  "platformBilling.",
   "trial.", // the screen telling them what happened
   "clients.exportCsv", // THE data export — see canExportData() in planEntitlements
   "issueReports.submit", // a salon whose trial ended can still tell us something is wrong

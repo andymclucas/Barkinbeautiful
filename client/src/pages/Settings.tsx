@@ -18,10 +18,28 @@ import { trpc } from "@/lib/trpc";
 import { applyBrandTheme, readLogoColours, readLogoColoursFromUrl } from "@/lib/brandTheme";
 import { deriveAccent, deriveSidebar } from "@shared/brandPalette";
 import { useEffect, useState } from "react";
+import { useSearch } from "wouter";
+import { DEFAULT_SETTINGS_TAB, requestedSettingsTab } from "@shared/settingsTab";
 import { BreedInput } from "@/components/BreedInput";
 
 export default function Settings() {
   const utils = trpc.useUtils();
+  /*
+   * The tab comes from the address when it names one — ?tab=billing from
+   * the trial banner, ?billing=started from Stripe's return — and is
+   * otherwise whatever was last clicked. Read on first render, before the
+   * subscription card tidies ?billing= out of the address, and again
+   * whenever the address changes, because the banner's button is on this
+   * page too and following it does not remount anything.
+   */
+  const search = useSearch();
+  const [tab, setTab] = useState<string>(
+    () => requestedSettingsTab(typeof window === "undefined" ? "" : window.location.search) ?? DEFAULT_SETTINGS_TAB,
+  );
+  useEffect(() => {
+    const asked = requestedSettingsTab(search);
+    if (asked) setTab(asked);
+  }, [search]);
   const { data: tenant } = trpc.settings.getTenantInfo.useQuery({});
   const { data: stripeBilling, isLoading: stripeBillingLoading } = trpc.stripeBilling.getStatus.useQuery({});
   const { data: timingReviewSettings, isLoading: timingReviewSettingsLoading } = trpc.workflowReview.getThresholds.useQuery({});
@@ -151,7 +169,7 @@ export default function Settings() {
           <p className="text-sm text-muted-foreground">Manage your salon configuration and integrations</p>
         </div>
 
-        <Tabs defaultValue="salon">
+        <Tabs value={tab} onValueChange={setTab}>
           {/* Tabs are an inline-flex row: on a phone they ran past the
               right edge and took the page with them. Scroll instead. */}
           <TabsList className="max-w-full justify-start overflow-x-auto">
