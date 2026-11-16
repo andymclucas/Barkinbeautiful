@@ -210,7 +210,7 @@ import { agreementLinkUrl, readAgreementLinkToken } from "./agreementLinkToken";
 import { agreementsAwaitingSignature } from "@shared/portalAgreements";
 import { hasUsableEmail } from "@shared/portalInviteAudience";
 import { PORTAL_NO_CARD_AUDIENCE_TYPE, portalNoCardRecipients } from "@shared/portalNoCardAudience";
-import { audienceFilterIs, audienceTypeForDisplay, audienceTypeForSend } from "@shared/campaignAudienceFilter";
+import { audienceFilterIs, audienceTypeForDisplay, audienceTypeForSend, campaignsWithAudience } from "@shared/campaignAudienceFilter";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
 import { randomUUID } from "node:crypto";
@@ -16150,11 +16150,13 @@ const clientPortalRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const tenantId = tenantOf(ctx, input);
       const audience = await portalInviteAudience(db, tenantId);
-      const [latest] = await db.select({ id: emailCampaigns.id })
+      // Not `audience_filter = '<json text>'` in SQL: where the column is a
+      // JSON type that never matches (shared/campaignAudienceFilter.ts).
+      const campaignRows = await db.select({ id: emailCampaigns.id, audienceFilter: emailCampaigns.audienceFilter })
         .from(emailCampaigns)
-        .where(and(eq(emailCampaigns.tenantId, tenantId), eq(emailCampaigns.audienceFilter, JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE }))))
-        .orderBy(desc(emailCampaigns.id))
-        .limit(1);
+        .where(eq(emailCampaigns.tenantId, tenantId))
+        .orderBy(desc(emailCampaigns.id));
+      const [latest] = campaignsWithAudience(campaignRows, PORTAL_INVITE_AUDIENCE_TYPE);
       const sample = audience.recipients[0];
       const exampleEmail = portalInviteEmail({
         firstName: sample?.firstName ?? "Jane",
@@ -16196,10 +16198,13 @@ const clientPortalRouter = router({
       const filter = JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE });
 
       return withPortalInviteStartLock(tenantId, async () => {
-      const [inFlight] = await db.select({ id: emailCampaigns.id })
+      // The guard against emailing everybody twice. The audience is read in
+      // code, not compared in SQL: as SQL text it never matched a JSON
+      // column, so this could never fire.
+      const sendingRows = await db.select({ id: emailCampaigns.id, audienceFilter: emailCampaigns.audienceFilter })
         .from(emailCampaigns)
-        .where(and(eq(emailCampaigns.tenantId, tenantId), eq(emailCampaigns.audienceFilter, filter), eq(emailCampaigns.status, "sending")))
-        .limit(1);
+        .where(and(eq(emailCampaigns.tenantId, tenantId), eq(emailCampaigns.status, "sending")));
+      const [inFlight] = campaignsWithAudience(sendingRows, PORTAL_INVITE_AUDIENCE_TYPE);
       if (inFlight) {
         throw new TRPCError({ code: "CONFLICT", message: "An invitation send is already running. Resume or wait for it rather than starting another." });
       }

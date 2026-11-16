@@ -100,3 +100,21 @@ export function audienceTypeForSend(
   }
   return { ok: true, type: read.type as SendableAudienceType };
 }
+
+/**
+ * The campaigns, of those given, whose saved audience is this type.
+ *
+ * For lookups that used to be done in SQL as
+ * `audience_filter = '{"type":"portal_invite"}'`. Where the column is a
+ * JSON type that comparison never matches, because the text is compared as
+ * a JSON string and the stored value is an object. So the guard "an
+ * invitation send is already running" could never fire, and a second start
+ * would have emailed everybody twice. Fetch the candidate rows by tenant
+ * (and status), then ask this; it reads either shape. Order is kept.
+ */
+export function campaignsWithAudience<T extends { audienceFilter: unknown }>(
+  rows: readonly T[],
+  type: string,
+): T[] {
+  return rows.filter((row) => audienceFilterIs(row.audienceFilter, type));
+}
