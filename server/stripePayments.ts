@@ -15,8 +15,8 @@ import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/st
 import { isDuplicateEntryError } from "./dbErrors";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { paidInvoiceKeyFor, splitInvoiceCents } from "@shared/familyBilling";
-import { isPlatformSubscriptionMetadata } from "@shared/platformBilling";
-import { syncPlatformSubscription, tenantIdForPlatformSubscription } from "./platformBilling";
+import { subscriptionIdOf } from "@shared/stripeInvoiceSubscription";
+import { handlePlatformStripeEvent } from "./platformBillingWebhook";
 
 export type StripeCheckoutRequest = {
   invoiceId: number;
@@ -286,31 +286,9 @@ function splitAcross(all: SubscriptionMembership[], totalCents: number) {
   }));
 }
 
-/**
- * Which subscription produced this invoice.
- *
- * Stripe MOVED this. Up to API version 2025-03-31 the invoice carried a
- * top-level `subscription`; after it, the same id lives at
- * `parent.subscription_details.subscription`, and the old field is simply
- * absent. The SDK here (22.5, 2026-07-29.dahlia) only knows the new shape.
- *
- * Reading only one of them is a silent failure, not a crash: an unmatched
- * invoice event returns 200 to Stripe and does nothing at all - no payment
- * recorded, no Dashboard alert, no retry scheduled - so weekly billing would
- * look configured and heal nothing. Both paths are read, because the webhook
- * endpoint's API version is chosen in the Stripe dashboard and can be moved
- * by someone who has no idea this function exists.
- */
-export function subscriptionIdOf(invoice: Stripe.Invoice): string | null {
-  const parent = (invoice as unknown as {
-    parent?: { subscription_details?: { subscription?: string | { id?: string } | null } | null } | null;
-  }).parent;
-  const fromParent = parent?.subscription_details?.subscription;
-  const legacy = (invoice as unknown as { subscription?: string | { id?: string } | null }).subscription;
-  const value = fromParent ?? legacy;
-  if (!value) return null;
-  return typeof value === "string" ? value : (value.id ?? null);
-}
+// Moved to shared/ so the platform-billing webhook can read an invoice the
+// same way without importing this file. Re-exported for existing callers.
+export { subscriptionIdOf };
 
 export async function processStripeEvent(event: Stripe.Event) {
   const db = await getDb();
@@ -342,73 +320,25 @@ export async function processStripeEvent(event: Stripe.Event) {
   /*
    * ── Groomigo's OWN subscription: a salon paying us ───────────────────
    *
-   * Placed BEFORE the membership handlers below, and that order is
+   * Asked BEFORE the client handlers below, and that order is
    * load-bearing.
    *
    * Memberships run Stripe subscriptions too — a client paying the salon
-   * weekly — and they raise the same invoice.* and customer.subscription.*
-   * events on this same endpoint. Barkin' Beautiful has no connected
-   * account, so those membership subscriptions live on the PLATFORM
+   * weekly — and they raise the same checkout, invoice.* and
+   * customer.subscription.* events on this same endpoint. Barkin'
+   * Beautiful has no connected account, so those live on the PLATFORM
    * account as well and `event.account` does not separate them.
    *
-   * This block claims an event ONLY when it can prove the event is ours:
-   * either the subscription id matches a tenant's own
-   * platform_stripe_subscription_id, or the object carries the marker we
-   * put there ourselves. Anything else falls through untouched.
-   *
-   * The strictness matters in both directions. Each event id is recorded
-   * once and processStripeEvent returns early on a duplicate, so a
-   * handler that wrongly claimed a membership invoice would permanently
-   * stop that membership's billing from being processed — with no error
-   * anywhere to notice.
+   * handlePlatformStripeEvent claims an event ONLY when it can prove the
+   * event is ours, and returns null for everything else, which then
+   * carries on to the client handlers untouched. The strictness matters
+   * in both directions: a platform event that reached the handlers below
+   * would be filed under tenant 1 by their default, and a membership
+   * event claimed up here would never be processed at all.
+   * server/platformBillingWebhook.ts.
    */
-  if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
-    const subscription = event.data.object as Stripe.Subscription;
-    const byId = await tenantIdForPlatformSubscription(subscription.id);
-    const byMarker = isPlatformSubscriptionMetadata(subscription.metadata as Record<string, string>)
-      ? Number((subscription.metadata ?? {}).groomigo_tenant_id || 0) || null
-      : null;
-    const tenantId = byId ?? byMarker;
-    if (tenantId !== null) {
-      await db.insert(stripeEvents).values({ stripeEventId: event.id, eventType: event.type, tenantId });
-      const { status } = await syncPlatformSubscription(tenantId, subscription);
-      console.log(`[stripe] platform subscription for tenant ${tenantId} is now ${status}`);
-      return { platformSubscription: status };
-    }
-    // Not ours. Falls through to the membership handlers below.
-  }
-
-  if (event.type === "invoice.paid" || event.type === "invoice.payment_succeeded" || event.type === "invoice.payment_failed") {
-    const invoice = event.data.object as Stripe.Invoice;
-    /*
-     * Matched on the subscription id against our OWN column, not on
-     * metadata. Stripe does not reliably copy subscription metadata onto
-     * every invoice, and an id that is sitting in tenants is proof enough
-     * — we put it there.
-     */
-    const platformTenantId = await tenantIdForPlatformSubscription(subscriptionIdOf(invoice));
-    if (platformTenantId !== null) {
-      await db.insert(stripeEvents).values({
-        stripeEventId: event.id, eventType: event.type, tenantId: platformTenantId,
-      });
-      /*
-       * Re-read the subscription rather than inferring a status from the
-       * invoice. A failed invoice does not necessarily mean past_due —
-       * Stripe may still be retrying, and it is Stripe's own view of the
-       * subscription that decides, not ours.
-       */
-      const stripe = requireStripeClient();
-      const subId = subscriptionIdOf(invoice);
-      if (subId) {
-        const subscription = await stripe.subscriptions.retrieve(subId);
-        const { status } = await syncPlatformSubscription(platformTenantId, subscription);
-        console.log(`[stripe] ${event.type} for tenant ${platformTenantId}; subscription now ${status}`);
-        return { platformSubscription: status };
-      }
-      return { platformSubscription: "unchanged" };
-    }
-    // Not ours. Falls through to the membership handlers below.
-  }
+  const platform = await handlePlatformStripeEvent(event);
+  if (platform !== null) return platform;
 
   /*
    * A refund made in Stripe (Andy, 11/11/2026). Recorded here as negative

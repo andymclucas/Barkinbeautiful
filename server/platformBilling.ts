@@ -37,8 +37,9 @@ import { getDb } from "./db";
 import { tenants } from "../drizzle/schema";
 import { requireStripeClient } from "./stripeClient";
 import { getAppBaseUrl } from "./appUrl";
+import { forgetTrialState } from "./trialState";
 import {
-  platformSubscriptionMetadata, salonStatusFromStripe,
+  planForPriceId, platformSubscriptionMetadata, salonStatusFromStripe,
   type SalonSubscriptionStatus,
 } from "@shared/platformBilling";
 
@@ -165,7 +166,7 @@ export async function createPlatformBillingPortal(tenantId: number): Promise<{ u
   const stripe = requireStripeClient();
   const session = await stripe.billingPortal.sessions.create({
     customer: tenant.platformStripeCustomerId,
-    return_url: `${getAppBaseUrl()}/settings`,
+    return_url: `${getAppBaseUrl()}/settings?tab=billing`,
   });
   return { url: session.url };
 }
@@ -187,6 +188,30 @@ export async function syncPlatformSubscription(
   const status = salonStatusFromStripe(subscription.status);
   const periodEnd = (subscription as unknown as { current_period_end?: number }).current_period_end;
 
+  /*
+   * What they are paying for, read off the price Stripe is charging.
+   *
+   * Until 17/11/2026 nothing wrote subscription_plan when a salon paid,
+   * so every salon stayed on "trial" — which is every feature — whichever
+   * plan it bought. The cheapest plan bought the workflow board.
+   *
+   * A price that matches none of ours leaves the plan alone and says so:
+   * guessing would either give a plan away or take one off a salon that
+   * paid for it.
+   */
+  const priceId = subscription.items?.data?.[0]?.price?.id ?? null;
+  const plan = planForPriceId(priceId, {
+    starter: priceIdForPlan("starter"),
+    professional: priceIdForPlan("professional"),
+    enterprise: priceIdForPlan("enterprise"),
+  });
+  if (plan === null) {
+    console.error(
+      `[stripe] tenant ${tenantId}: subscription ${subscription.id} is on price ${priceId ?? "(none)"}, ` +
+      `which is none of STRIPE_PRICE_STARTER / _PROFESSIONAL / _ENTERPRISE. The salon's plan was left unchanged.`,
+    );
+  }
+
   await db.update(tenants).set({
     subscriptionStatus: status,
     // Cleared when the subscription ends, so a cancelled salon cannot be
@@ -202,7 +227,12 @@ export async function syncPlatformSubscription(
      * of this feature.
      */
     ...(status === "active" ? { trialEndsAt: null } : {}),
+    ...(plan !== null ? { subscriptionPlan: plan } : {}),
   }).where(eq(tenants.id, tenantId));
+
+  // enforceTrial caches the trial state for thirty seconds. Somebody who
+  // has just paid should not be refused by a cached "expired".
+  forgetTrialState(tenantId);
 
   return { status };
 }

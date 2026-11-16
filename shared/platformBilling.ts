@@ -109,9 +109,12 @@ export function describeSalonSubscription(input: {
         ? `Active — renews ${day(input.currentPeriodEnd)}`
         : "Active";
     case "trialing":
-      return input.trialEndsAt
-        ? `Free trial — ends ${day(input.trialEndsAt)}`
-        : "Free trial";
+      if (!input.trialEndsAt) return "Free trial";
+      // Once it has run out this is the first line of the one page the
+      // salon can still open, so it says what happened and what to do.
+      return input.trialEndsAt.getTime() <= now.getTime()
+        ? `Free trial ended ${day(input.trialEndsAt)} — choose a plan to carry on`
+        : `Free trial — ends ${day(input.trialEndsAt)}`;
     case "past_due":
       // Says what to do, not just what is wrong. "Past due" on its own
       // sends somebody looking for a phone number.
@@ -151,4 +154,154 @@ export function platformSubscriptionMetadata(tenantId: number): Record<string, s
     [PLATFORM_SUBSCRIPTION_MARKER]: "1",
     groomigo_tenant_id: String(tenantId),
   };
+}
+
+/**
+ * Which salon a marked Stripe object belongs to, or null.
+ *
+ * Null is the important answer. A missing, zero, negative or garbled
+ * tenant id is NOT "tenant 1" — tenant 1 is Barkin' Beautiful, and the
+ * generic checkout handler's `Number(metadata.tenant_id || 1)` default is
+ * exactly how a platform payment would be filed under the one salon that
+ * never pays. There is no default here at all.
+ */
+export function platformTenantIdFromMetadata(
+  metadata: Record<string, string> | null | undefined,
+): number | null {
+  if (!isPlatformSubscriptionMetadata(metadata)) return null;
+  const raw = (metadata ?? {}).groomigo_tenant_id;
+  if (typeof raw !== "string" || !/^[1-9]\d{0,9}$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
+/**
+ * Metadata keys that only a salon's OWN client payments carry — a
+ * membership, an invoice link, a card on file, the portal's pay-today.
+ * platformSubscriptionMetadata() never writes any of them.
+ */
+export const CLIENT_PAYMENT_METADATA_KEYS = [
+  "tenant_id", "client_id", "groomigo_client_id", "membership_id",
+  "groomigo_membership_id", "invoice_id", "payment_kind", "appointment_ids",
+] as const;
+
+type StripeRef = string | { id?: string | null } | null | undefined;
+const refId = (ref: StripeRef): string | null => {
+  if (!ref) return null;
+  const id = typeof ref === "string" ? ref : ref.id;
+  return typeof id === "string" && id.trim() ? id : null;
+};
+
+export type PlatformCheckoutDecision =
+  /** A salon's own client paying the salon. Not ours; the other handlers take it. */
+  | { kind: "not_platform" }
+  /** A salon paying Groomigo, and everything needed to link it. */
+  | { kind: "platform"; tenantId: number; subscriptionId: string; customerId: string }
+  /** Carries our marker but cannot be trusted. Handled by NOBODY. */
+  | { kind: "refused"; reason: string };
+
+/**
+ * Is this completed Checkout a salon subscribing to Groomigo, and which
+ * salon?
+ *
+ * Asked before any other checkout handler, because the two directions of
+ * money share one webhook and one Stripe account:
+ *
+ *   - no marker            -> not ours, whatever else it looks like. A
+ *                             client's membership or one-off payment can
+ *                             never be claimed here.
+ *   - marker, and sound    -> ours, for the tenant the marker names.
+ *   - marker, but unsound  -> refused. It is not handed on to the client
+ *                             handlers either, because their default
+ *                             tenant is 1 and a platform payment must
+ *                             never be filed under Barkin' Beautiful.
+ *
+ * "Unsound" includes a marked session that ALSO carries client-payment
+ * keys. No code writes both, so one that has both is a bug somewhere, and
+ * guessing which half to believe is how money gets filed under the wrong
+ * party.
+ */
+export function classifyPlatformCheckout(session: {
+  mode?: string | null;
+  metadata?: Record<string, string> | null;
+  subscription?: StripeRef;
+  customer?: StripeRef;
+}): PlatformCheckoutDecision {
+  const metadata = session.metadata ?? {};
+  if (!isPlatformSubscriptionMetadata(metadata)) return { kind: "not_platform" };
+
+  const mixed = CLIENT_PAYMENT_METADATA_KEYS.filter((key) => key in metadata);
+  if (mixed.length > 0) {
+    return { kind: "refused", reason: `carries the platform marker and client-payment metadata (${mixed.join(", ")})` };
+  }
+  if (session.mode !== "subscription") {
+    return { kind: "refused", reason: `platform marker on a "${session.mode ?? "unknown"}" checkout, not a subscription` };
+  }
+  const tenantId = platformTenantIdFromMetadata(metadata);
+  if (tenantId === null) return { kind: "refused", reason: "platform marker without a usable salon id" };
+  const subscriptionId = refId(session.subscription);
+  if (!subscriptionId) return { kind: "refused", reason: "platform checkout completed without a subscription id" };
+  const customerId = refId(session.customer);
+  if (!customerId) return { kind: "refused", reason: "platform checkout completed without a customer id" };
+
+  return { kind: "platform", tenantId, subscriptionId, customerId };
+}
+
+/**
+ * May this salon's record be pointed at this subscription?
+ *
+ * The marker says which salon; this checks the claim against things only
+ * we could have written. The customer was created by us for this salon
+ * and stored before Checkout opened, and the subscription carries its own
+ * copy of the marker. All three have to name the same salon.
+ *
+ * A salon that already has a DIFFERENT live subscription keeps it. Two
+ * completed checkouts means two things charging one salon, which a person
+ * has to untangle in Stripe — silently swapping which one the app follows
+ * would hide the one it stopped looking at.
+ */
+export function platformLinkProblem(input: {
+  tenantId: number;
+  subscriptionId: string;
+  customerId: string | null;
+  tenant: { platformStripeCustomerId: string | null; platformStripeSubscriptionId: string | null } | null;
+  subscriptionMetadata: Record<string, string> | null | undefined;
+}): { problem: null } | { problem: "refuse" | "second_subscription"; reason: string } {
+  if (!input.tenant) return { problem: "refuse", reason: `salon ${input.tenantId} does not exist` };
+  if (!input.tenant.platformStripeCustomerId || input.tenant.platformStripeCustomerId !== input.customerId) {
+    return { problem: "refuse", reason: `Stripe customer ${input.customerId ?? "(none)"} is not salon ${input.tenantId}'s billing customer` };
+  }
+  if (platformTenantIdFromMetadata(input.subscriptionMetadata) !== input.tenantId) {
+    return { problem: "refuse", reason: `subscription ${input.subscriptionId} is not marked for salon ${input.tenantId}` };
+  }
+  const existing = input.tenant.platformStripeSubscriptionId;
+  if (existing && existing !== input.subscriptionId) {
+    return {
+      problem: "second_subscription",
+      reason: `salon ${input.tenantId} already follows ${existing}; ${input.subscriptionId} is a second subscription and needs cancelling or refunding in Stripe`,
+    };
+  }
+  return { problem: null };
+}
+
+/**
+ * Which plan a Stripe price buys.
+ *
+ * The price on the subscription is the truth about what the salon is
+ * paying for — it is what Stripe charges, and it follows a plan change
+ * made in Stripe's own portal. Null for a price we do not recognise, and
+ * the caller then leaves the plan alone: guessing a plan in either
+ * direction either gives the workflow board away or takes it off a salon
+ * that paid for it.
+ */
+export function planForPriceId(
+  priceId: string | null | undefined,
+  prices: Partial<Record<"starter" | "professional" | "enterprise", string | null | undefined>>,
+): "starter" | "professional" | "enterprise" | null {
+  if (!priceId) return null;
+  for (const plan of ["starter", "professional", "enterprise"] as const) {
+    const configured = prices[plan]?.trim();
+    if (configured && configured === priceId) return plan;
+  }
+  return null;
 }

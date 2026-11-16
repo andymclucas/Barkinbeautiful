@@ -136,58 +136,11 @@ describe("telling a PLATFORM subscription from a membership one", () => {
   });
 });
 
-describe("the webhook cannot confuse our subscription with a membership", () => {
-  /*
-   * A structural check, which CLAUDE.md §7 allows to prove delegation —
-   * and the thing being proved here cannot be reached without a Stripe
-   * account, a webhook and a database, while its failure is silent.
-   *
-   * Memberships run Stripe subscriptions for CLIENTS paying the salon.
-   * They raise the same invoice.* and customer.subscription.* events, on
-   * the same endpoint, and — because Barkin' Beautiful has no connected
-   * account — on the same Stripe account. processStripeEvent records each
-   * event id once and returns early on a duplicate, so whichever handler
-   * runs first consumes it.
-   *
-   * Two things therefore have to stay true, and neither is visible from
-   * reading one function.
-   */
-  const source = readFileSync(resolve(process.cwd(), "server/stripePayments.ts"), "utf8");
-
-  it("handles platform subscriptions BEFORE the membership handlers", () => {
-    // Were it the other way round, a platform invoice would be claimed by
-    // the membership path, recorded, and never reach the salon's
-    // subscription — which would simply stop updating, with the salon
-    // still being charged.
-    const platform = source.indexOf("tenantIdForPlatformSubscription(");
-    const membershipInvoice = source.indexOf("membershipsForSubscription(db, subscriptionIdOf(invoice))");
-    expect(platform, "the platform handler should exist").toBeGreaterThan(-1);
-    expect(membershipInvoice, "the membership handler should exist").toBeGreaterThan(-1);
-    expect(platform, "platform handling must come first").toBeLessThan(membershipInvoice);
-  });
-
-  it("claims an event only on a proven match, and otherwise falls through", () => {
-    /*
-     * The converse, and the more expensive direction. If the platform
-     * block claimed anything subscription-shaped, it would swallow every
-     * membership invoice in the salon — permanently, because the event id
-     * is already recorded by the time anyone notices.
-     *
-     * So both branches must be inside a null check on the resolved
-     * tenant, and must say out loud that a non-match falls through.
-     */
-    expect(source).toContain("if (tenantId !== null) {");
-    expect(source).toContain("if (platformTenantId !== null) {");
-    expect(source.match(/Falls through to the membership handlers below/g) ?? [])
-      .toHaveLength(2);
-  });
-
-  it("re-reads the subscription rather than inferring status from an invoice", () => {
-    // A failed invoice does not mean past_due — Stripe may still be
-    // retrying. Its own view of the subscription is what decides.
-    expect(source).toContain("stripe.subscriptions.retrieve(subId)");
-  });
-});
+/*
+ * "The webhook cannot confuse our subscription with a membership" used to
+ * be three assertions here over the TEXT of stripePayments.ts. They are
+ * now run for real, against the handler, in platformBillingWebhook.test.ts.
+ */
 
 describe("the platform account is never the salon's own", () => {
   /*
@@ -196,9 +149,11 @@ describe("the platform account is never the salon's own", () => {
    * fails on the explanation rather than on the code — which is how a
    * structural test ends up pinning its own documentation.
    */
-  const source = readFileSync(resolve(process.cwd(), "server/platformBilling.ts"), "utf8")
+  const strip = (file: string) => readFileSync(resolve(process.cwd(), file), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\/\/.*$/gm, "");
+  // Both halves: starting the subscription, and the webhook that follows it.
+  const source = strip("server/platformBilling.ts") + strip("server/platformBillingWebhook.ts");
 
   it("passes no stripeAccount option anywhere", () => {
     /*
