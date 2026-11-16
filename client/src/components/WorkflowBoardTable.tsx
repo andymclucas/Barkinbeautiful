@@ -47,7 +47,7 @@ export type BoardActions = {
    * showed which extras a dog needed but not whether any were done.
    */
   toggleAddOnDone: (addOnId: number, done: boolean) => void;
-  update: (id: number, patch: Record<string, unknown>, meta?: { petName?: string | null }) => void;
+  update: (id: number, patch: Record<string, unknown>, meta?: { petName?: string | null }) => boolean | void;
   updateStagePending: boolean;
   advanceStage: (appt: any) => void;
   revertStage: (appt: any) => void;
@@ -471,7 +471,8 @@ export function WorkflowBoardTable({
                           const timeFields: Record<string, number | null> = {};
                           if (s.key === "checked_in") timeFields.checkedInAt = Date.now();
                           if (s.key === "ready") timeFields.readyAt = Date.now();
-                          update(id, { workflowState: s.key, ...timeFields }, { petName: appt.petName });
+                          // false = the dog's buttons are being held; nothing was sent.
+                          if (update(id, { workflowState: s.key, ...timeFields }, { petName: appt.petName }) === false) return;
                           toast.success(`🐾 ${appt.petName ?? "Dog"} → ${s.label}`, {
                             description: `Stage updated successfully`,
                             duration: 2500,
