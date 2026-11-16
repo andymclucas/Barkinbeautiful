@@ -65,3 +65,24 @@ export function describeCascadePrompt(petNames: readonly string[]): string | nul
     : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   return `Also check in ${list}?`;
 }
+
+/**
+ * Whether checking a dog in should stop to ask about the rest of its party.
+ *
+ * Only when the question has not been answered yet. The answer arrives as
+ * `alsoCheckInLinked`: true for "check in all", false for "just this dog",
+ * and absent when nobody has been asked.
+ *
+ * Until 17/11/2026 the board asked whenever the answer was not `true`, so
+ * "Just Olive" (false) was treated as never having been asked: the dialog
+ * closed and reopened at once, and the dog could not be checked in alone.
+ * Lauren hit it with two unrelated dogs linked only to share a bath.
+ */
+export function shouldAskAboutLinkedCheckIn(
+  fields: { workflowState?: string | null; alsoCheckInLinked?: boolean | null },
+  linkedStillToArrive: number,
+): boolean {
+  if (fields.workflowState !== "checked_in") return false;
+  if (fields.alsoCheckInLinked === true || fields.alsoCheckInLinked === false) return false;
+  return linkedStillToArrive > 0;
+}

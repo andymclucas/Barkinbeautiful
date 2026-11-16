@@ -2,7 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { VipMark } from "@/components/VipMark";
 import { PetCodeWarningBox } from "@/components/PetCodeWarningBox";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
-import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCascade";
+import { cascadeEligible, describeCascadePrompt, shouldAskAboutLinkedCheckIn } from "@shared/linkedWorkflowCascade";
 import { trpc } from "@/lib/trpc";
 import { splitDaycare } from "@shared/daycareBoard";
 import { useBuildVersionReload, buildReloadMode } from "@/hooks/useBuildVersionReload";
@@ -384,9 +384,11 @@ export default function WorkflowBoard() {
 
   const update = useCallback((appointmentId: number, fields: Omit<Parameters<typeof updateStage.mutate>[0], 'appointmentId'>, options?: { petName?: string | null }) => {
     // Ask before bringing the rest of the party in with this dog.
-    if (fields.workflowState === "checked_in" && !(fields as any).alsoCheckInLinked) {
+    // Only when it has not been answered: "Just this dog" arrives as false,
+    // and asking again on false made that button reopen the question forever.
+    if (fields.workflowState === "checked_in" && (fields as any).alsoCheckInLinked === undefined) {
       const linked = linkedStillToArrive(appointmentId);
-      if (linked.length > 0) {
+      if (shouldAskAboutLinkedCheckIn(fields as any, linked.length)) {
         setCheckInFamilyPrompt({
           appointmentId,
           fields,
