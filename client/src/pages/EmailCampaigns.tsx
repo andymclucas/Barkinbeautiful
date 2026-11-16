@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { PortalInvitePanel } from "@/components/PortalInvitePanel";
 import { rateOf } from "@shared/emailEventEffect";
+import { PORTAL_NO_CARD_AUDIENCE_LABEL, PORTAL_NO_CARD_AUDIENCE_TYPE } from "@shared/portalNoCardAudience";
 
 const AUDIENCE_OPTIONS = [
   { value: "all_active",         label: "All Active Clients" },
@@ -32,6 +33,7 @@ const AUDIENCE_OPTIONS = [
   { value: "inactive_8w",        label: "Inactive 8+ Weeks" },
   { value: "inactive_12w",       label: "Inactive 12+ Weeks" },
   { value: "all_clients",        label: "All Clients (including inactive)" },
+  { value: PORTAL_NO_CARD_AUDIENCE_TYPE, label: PORTAL_NO_CARD_AUDIENCE_LABEL },
 ];
 
 const STATUS_COLOURS: Record<string, string> = {
