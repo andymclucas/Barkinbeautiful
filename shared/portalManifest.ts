@@ -152,3 +152,35 @@ export function buildPortalManifest(startUrl: string): PortalManifest {
     ],
   };
 }
+
+/**
+ * The page shell a CLIENT page is served, with the portal's own identity
+ * already in it.
+ *
+ * `index.html` is one file shared by staff and clients, and it names the
+ * staff manifest, the staff icon and "Groomigo". `usePortalManifest`
+ * swaps those once React has started, which is too late to rely on: on
+ * 16/11/2026 a client's iPhone saved the portal with the staff
+ * manifest's `start_url: "/"` anyway, and her icon opened the staff
+ * sign-in. A phone may read these tags before any script runs.
+ *
+ * So the server rewrites them before the page leaves, and the hook stays
+ * for navigation inside the app. Pure, and a no-op on a shell that does
+ * not contain the staff tags, so a changed index.html degrades to today's
+ * behaviour rather than a broken page.
+ */
+export function portalShellHtml(html: string, pathname: string): string {
+  return html
+    .replace(
+      `<link rel="manifest" href="${STAFF_MANIFEST_PATH}" />`,
+      `<link rel="manifest" href="${portalManifestHrefFor(pathname)}" />`
+    )
+    .replace(
+      '<link rel="apple-touch-icon" href="/icon-192.png" />',
+      '<link rel="apple-touch-icon" href="/portal-icon-192.png" />'
+    )
+    .replace(
+      '<meta name="apple-mobile-web-app-title" content="Groomigo" />',
+      '<meta name="apple-mobile-web-app-title" content="Barkin\' Beautiful" />'
+    );
+}
