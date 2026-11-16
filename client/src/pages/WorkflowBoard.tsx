@@ -2,7 +2,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { VipMark } from "@/components/VipMark";
 import { PetCodeWarningBox } from "@/components/PetCodeWarningBox";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
-import { cascadeEligible, describeCascadePrompt, shouldAskAboutLinkedCheckIn } from "@shared/linkedWorkflowCascade";
+import { cascadeEligible, describeCascadePrompt, shouldAskAboutLinkedCheckIn, inSameParty } from "@shared/linkedWorkflowCascade";
 import { trpc } from "@/lib/trpc";
 import { splitDaycare } from "@shared/daycareBoard";
 import { useBuildVersionReload, buildReloadMode } from "@/hooks/useBuildVersionReload";
@@ -359,8 +359,9 @@ export default function WorkflowBoard() {
    * own, because two dogs share a car and not a bath.
    *
    * The linked dogs are worked out from the board rows already in hand,
-   * using the same keys the server uses: shared bath group, else shared
-   * booking session, else same family at the same time. Only dogs still
+   * using the same rule the server uses (inSameParty): shared booking
+   * session, else same family at the same time. A shared bath is NOT a
+   * party; see shared/linkedWorkflowCascade.ts. Only dogs still
    * at "scheduled" are offered — one already in the bath must not be
    * dragged backwards.
    */
@@ -368,13 +369,7 @@ export default function WorkflowBoard() {
     const rows = boardData ?? [];
     const self = rows.find(r => r.id === appointmentId);
     if (!self) return [];
-    const sameParty = (r: typeof self) =>
-      (self as any).bathGroupId ? (r as any).bathGroupId === (self as any).bathGroupId
-      : (self as any).sessionId ? (r as any).sessionId === (self as any).sessionId
-      : (self as any).petFamilyGroupId
-        ? (r as any).petFamilyGroupId === (self as any).petFamilyGroupId
-          && r.scheduledStart === self.scheduledStart
-        : false;
+    const sameParty = (r: typeof self) => inSameParty(self as any, r as any);
     return rows.filter(r =>
       r.id !== appointmentId && sameParty(r)
       && r.workflowState === "scheduled"

@@ -86,3 +86,71 @@ export function shouldAskAboutLinkedCheckIn(
   if (fields.alsoCheckInLinked === true || fields.alsoCheckInLinked === false) return false;
   return linkedStillToArrive > 0;
 }
+
+/**
+ * What makes dogs one PARTY, for check-in and for going home.
+ *
+ * A party is dogs that arrive and leave together: the same booking
+ * session, else the same family booked at the same time. Nothing else.
+ *
+ * A shared BATH GROUP is deliberately not a party. Until 17/11/2026 it
+ * was the first thing asked, ahead of the booking and the family, and
+ * that was wrong twice over:
+ *
+ *  - Lauren, 12/11/2026: "so many dogs have been marked out when they are
+ *    finished being dried." Marking one dog out marked every dog in its
+ *    bath group out, whatever stage it was at, and a bath group can hold
+ *    dogs from different households.
+ *  - Lauren, 17/11/2026: Olive and Lulu, two families, linked only to be
+ *    bathed together. Checking Olive in asked "Also check in Lulu? ...
+ *    Families usually arrive together."
+ *
+ * It also contradicts what the bath dialog promises staff: "This does not
+ * change family links, appointment times or workflow stages." Two dogs
+ * can share a bath without sharing a car.
+ *
+ * So a dog given a bath of its own, or put in a bath with a stranger,
+ * still belongs to its own booking or family and to nobody else.
+ */
+export type PartyKey =
+  | { kind: "session"; sessionId: string }
+  | { kind: "family"; familyGroupId: number | string; scheduledStart: number };
+
+type PartyRow = {
+  sessionId?: string | null;
+  petFamilyGroupId?: number | string | null;
+  scheduledStart?: Date | string | number | null;
+};
+
+function startMs(value: PartyRow["scheduledStart"]): number | null {
+  if (value === null || value === undefined) return null;
+  const ms = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** The party this dog belongs to, or null when it came alone. */
+export function partyKeyOf(row: PartyRow): PartyKey | null {
+  const sessionId = row.sessionId?.trim();
+  if (sessionId) return { kind: "session", sessionId };
+  const family = row.petFamilyGroupId;
+  const start = startMs(row.scheduledStart);
+  if (family !== null && family !== undefined && family !== "" && start !== null) {
+    return { kind: "family", familyGroupId: family, scheduledStart: start };
+  }
+  return null;
+}
+
+/**
+ * Whether `other` is in the same party as `self`.
+ *
+ * Asked from `self`'s side, as the server does: a dog on a booking
+ * session is matched by session and never falls back to family.
+ */
+export function inSameParty(self: PartyRow, other: PartyRow): boolean {
+  const key = partyKeyOf(self);
+  if (!key) return false;
+  if (key.kind === "session") return other.sessionId?.trim() === key.sessionId;
+  return other.petFamilyGroupId !== null && other.petFamilyGroupId !== undefined
+    && String(other.petFamilyGroupId) === String(key.familyGroupId)
+    && startMs(other.scheduledStart) === key.scheduledStart;
+}

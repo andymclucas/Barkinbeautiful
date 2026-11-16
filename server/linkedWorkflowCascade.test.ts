@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  stageCanCascade, cascadesAutomatically, shouldCascadeTo, cascadeEligible, describeCascadePrompt, shouldAskAboutLinkedCheckIn,
+  stageCanCascade, cascadesAutomatically, shouldCascadeTo, cascadeEligible, describeCascadePrompt, shouldAskAboutLinkedCheckIn, partyKeyOf, inSameParty,
 } from "../shared/linkedWorkflowCascade";
 
 describe("which stages may cascade", () => {
@@ -84,5 +84,51 @@ describe("asking about the rest of the party on check-in", () => {
     expect(shouldAskAboutLinkedCheckIn({ workflowState: "checked_in" }, 0)).toBe(false);
     expect(shouldAskAboutLinkedCheckIn({ workflowState: "bathing" }, 3)).toBe(false);
     expect(shouldAskAboutLinkedCheckIn({}, 3)).toBe(false);
+  });
+});
+
+describe("what makes dogs one party", () => {
+  const nine = new Date("2026-11-17T23:00:00Z");
+
+  it("is the booking session first", () => {
+    expect(partyKeyOf({ sessionId: "s1", petFamilyGroupId: 4, scheduledStart: nine })).toEqual({ kind: "session", sessionId: "s1" });
+    expect(inSameParty({ sessionId: "s1" }, { sessionId: "s1" })).toBe(true);
+    expect(inSameParty({ sessionId: "s1" }, { sessionId: "s2" })).toBe(false);
+  });
+
+  it("else the same family at the same time", () => {
+    const a = { petFamilyGroupId: 4, scheduledStart: nine };
+    expect(inSameParty(a, { petFamilyGroupId: 4, scheduledStart: new Date(nine) })).toBe(true);
+    expect(inSameParty(a, { petFamilyGroupId: 4, scheduledStart: nine.toISOString() })).toBe(true);
+    expect(inSameParty(a, { petFamilyGroupId: 4, scheduledStart: new Date("2026-11-18T01:00:00Z") })).toBe(false);
+    expect(inSameParty(a, { petFamilyGroupId: 5, scheduledStart: nine })).toBe(false);
+  });
+
+  it("a dog on a session is not matched to family dogs outside it", () => {
+    expect(inSameParty(
+      { sessionId: "s1", petFamilyGroupId: 4, scheduledStart: nine },
+      { sessionId: null, petFamilyGroupId: 4, scheduledStart: nine },
+    )).toBe(false);
+  });
+
+  it("a dog that came alone has no party", () => {
+    expect(partyKeyOf({ sessionId: null, petFamilyGroupId: null, scheduledStart: nine })).toBeNull();
+    expect(partyKeyOf({ sessionId: "  ", petFamilyGroupId: null })).toBeNull();
+    expect(inSameParty({}, {})).toBe(false);
+  });
+
+  it("a shared bath is not a party", () => {
+    // Olive and Lulu, 17/11/2026: two households linked only to share a bath.
+    const olive = { bathGroupId: "bath-x", sessionId: null, petFamilyGroupId: null, scheduledStart: nine };
+    const lulu = { bathGroupId: "bath-x", sessionId: null, petFamilyGroupId: 9, scheduledStart: nine };
+    expect(partyKeyOf(olive)).toBeNull();
+    expect(inSameParty(olive, lulu)).toBe(false);
+    expect(inSameParty(lulu, olive)).toBe(false);
+  });
+
+  it("a bath of its own does not take a dog out of its family", () => {
+    const ruby = { bathGroupId: "bath-solo", petFamilyGroupId: 4, scheduledStart: nine };
+    const charlie = { bathGroupId: null, petFamilyGroupId: 4, scheduledStart: nine };
+    expect(inSameParty(ruby, charlie)).toBe(true);
   });
 });
