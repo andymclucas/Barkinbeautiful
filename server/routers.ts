@@ -129,6 +129,7 @@ const signInCodeAttempts = new Map<string, number[]>();
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { BATH_ORDER_LOCKED_MESSAGE, buildBathPriorityQueue, canChangeBathOrder, isBathPriorityMutable } from "../shared/bathPriorityQueue";
+import { partyKeyOf } from "../shared/linkedWorkflowCascade";
 import { brisbaneDayBounds, brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { bookingsCancelledByPassing } from "../shared/petPassingBookings";
 import { nextVisitAfter } from "@shared/nextVisit";
@@ -4572,9 +4573,9 @@ const workflowRouter = router({
 
       // Marking one dog from a joined/family booking as OUT (picked up) means
       // the whole party has gone \u2014 staff shouldn't have to click each dog
-      // individually. Same linked-dog cascade used elsewhere (bath priority,
-      // bath grouping): shared bath group, else shared booking session,
-      // else same pet-family at the same scheduled time.
+      // individually. The party is the shared booking session, else the
+      // same pet-family at the same scheduled time. A shared bath group is
+      // NOT a party (partyKeyOf, shared/linkedWorkflowCascade.ts).
       let linkedCompleteIds: number[] = [];
       /**
        * Only check-in and completion ever move a linked dog, and they do
@@ -4596,7 +4597,6 @@ const workflowRouter = router({
         : null;
       if (cascadeStage !== null) {
         const [linkKeys] = await db.select({
-          bathGroupId: appointments.bathGroupId,
           sessionId: appointments.sessionId,
           scheduledStart: appointments.scheduledStart,
           petFamilyGroupId: pets.familyGroupId,
@@ -4604,26 +4604,22 @@ const workflowRouter = router({
           .where(eq(appointments.id, appointmentId)).limit(1);
         if (linkKeys) {
           let linkedRows: { id: number }[] = [];
-          if (linkKeys.bathGroupId?.trim()) {
+          // Session, else family at the same time. A shared bath group is
+          // not a party: see partyKeyOf in shared/linkedWorkflowCascade.ts.
+          const party = partyKeyOf(linkKeys);
+          if (party?.kind === "session") {
             linkedRows = await db.select({ id: appointments.id }).from(appointments).where(and(
               eq(appointments.tenantId, currentAppointment.tenantId),
-              eq(appointments.bathGroupId, linkKeys.bathGroupId),
+              eq(appointments.sessionId, party.sessionId),
               sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
               cascadeFilter(cascadeStage),
             ));
-          } else if (linkKeys.sessionId?.trim()) {
-            linkedRows = await db.select({ id: appointments.id }).from(appointments).where(and(
-              eq(appointments.tenantId, currentAppointment.tenantId),
-              eq(appointments.sessionId, linkKeys.sessionId),
-              sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
-              cascadeFilter(cascadeStage),
-            ));
-          } else if (linkKeys.petFamilyGroupId) {
+          } else if (party?.kind === "family") {
             linkedRows = await db.select({ id: appointments.id }).from(appointments)
               .leftJoin(pets, eq(appointments.petId, pets.id))
               .where(and(
                 eq(appointments.tenantId, currentAppointment.tenantId),
-                eq(pets.familyGroupId, linkKeys.petFamilyGroupId),
+                eq(pets.familyGroupId, Number(party.familyGroupId)),
                 eq(appointments.scheduledStart, linkKeys.scheduledStart),
                 sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
                 cascadeFilter(cascadeStage),
