@@ -92,6 +92,25 @@ export function audienceForPath(pathname: string): PortalAudience {
 export type HostRedirect = { to: string } | null;
 
 /**
+ * The portal host's own front door.
+ *
+ * Renee Gannon, 16/11/2026: set her portal password three times in
+ * twenty minutes and was told "Invalid email or password" each time she
+ * opened the icon on her Home Screen. Her password was right every time.
+ * The icon opened `clients.…/`, and "/" is a staff page, so the rule
+ * below it sent her to the STAFF sign-in, which has never heard of her.
+ * The wrong door again, reached from the right address.
+ *
+ * Nobody arrives at the bare client address looking for the salon's
+ * dashboard. So on the portal host, the front door and the sign-in
+ * address both mean the client sign-in, and stay on that host. Every
+ * other staff path still goes back across, for a staff member who
+ * followed an old link.
+ */
+export const PORTAL_HOST_FRONT_DOORS: readonly string[] = ["/", "/login"];
+export const PORTAL_FRONT_DOOR_TARGET = "/portal/login";
+
+/**
  * Where this request should actually be served, or null to leave it alone.
  *
  * Returns null — deliberately, and in this order — when:
@@ -119,6 +138,10 @@ export function hostRedirectFor(input: {
 
   const path = input.pathAndQuery.split(/[?#]/)[0] ?? "/";
   if (!isRoutablePage(path)) return null;
+
+  if (host === portalHost && PORTAL_HOST_FRONT_DOORS.includes(normalise(path))) {
+    return { to: `${input.portalBaseUrl.replace(/\/+$/, "")}${PORTAL_FRONT_DOOR_TARGET}` };
+  }
 
   const wantBase = audienceForPath(path) === "client" ? input.portalBaseUrl : input.appBaseUrl;
   const wantHost = hostOf(wantBase);

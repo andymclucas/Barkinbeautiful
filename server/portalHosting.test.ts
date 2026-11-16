@@ -173,6 +173,34 @@ describe("the redirect decision", () => {
   });
 });
 
+describe("the client host's own front door", () => {
+  const base = { appBaseUrl: APP, portalBaseUrl: PORTAL };
+
+  it("opens the client sign-in, on the client host, not the staff one", () => {
+    // A Home Screen icon saved with start_url "/" opened the staff
+    // sign-in, which refused a correct client password three times.
+    for (const pathAndQuery of ["/", "/login", "/login/", "/?source=pwa"]) {
+      expect(hostRedirectFor({ ...base, requestHost: "client.barkinbeautiful.com.au", pathAndQuery }), pathAndQuery)
+        .toEqual({ to: "https://client.barkinbeautiful.com.au/portal/login" });
+    }
+  });
+
+  it("leaves the staff host's front door and sign-in alone", () => {
+    expect(hostRedirectFor({ ...base, requestHost: "staff.barkinbeautiful.com.au", pathAndQuery: "/" })).toBeNull();
+    expect(hostRedirectFor({ ...base, requestHost: "staff.barkinbeautiful.com.au", pathAndQuery: "/login" })).toBeNull();
+  });
+
+  it("still sends any other staff page back to the staff host", () => {
+    expect(hostRedirectFor({ ...base, requestHost: "client.barkinbeautiful.com.au", pathAndQuery: "/calendar" }))
+      .toEqual({ to: "https://staff.barkinbeautiful.com.au/calendar" });
+  });
+
+  it("does nothing when the two hosts are the same or unknown", () => {
+    expect(hostRedirectFor({ requestHost: "staff.barkinbeautiful.com.au", pathAndQuery: "/", appBaseUrl: APP, portalBaseUrl: APP })).toBeNull();
+    expect(hostRedirectFor({ ...base, requestHost: "localhost:3000", pathAndQuery: "/" })).toBeNull();
+  });
+});
+
 describe("which helper each link is built from", () => {
   /** Source with comments removed, so a comment naming a helper cannot trip these. */
   function code(path: string): string {

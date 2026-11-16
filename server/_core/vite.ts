@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import viteConfig from "../../vite.config";
+import { audienceForPath } from "@shared/portalHosting";
+import { portalShellHtml } from "@shared/portalManifest";
 
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
@@ -96,8 +98,23 @@ export function serveStatic(app: Express) {
   }));
 
   // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
+  // A client page gets the portal's manifest, icon and name written into
+  // the shell before it leaves — see portalShellHtml. Read once: the file
+  // is fixed for the life of a deploy. Any failure falls back to the plain
+  // file, because a wrong icon is better than no page.
+  const indexPath = path.resolve(distPath, "index.html");
+  let shell: string | null = null;
+  app.use("*", (req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.sendFile(path.resolve(distPath, "index.html"));
+    if (audienceForPath(req.originalUrl) === "client") {
+      try {
+        shell ??= fs.readFileSync(indexPath, "utf8");
+        res.type("html").send(portalShellHtml(shell, req.originalUrl));
+        return;
+      } catch (error) {
+        console.error("[portal] could not build the client page shell", error);
+      }
+    }
+    res.sendFile(indexPath);
   });
 }

@@ -7,6 +7,7 @@ import {
   portalManifestHrefFor,
   portalStartUrlFor,
   STATIC_PORTAL_MANIFEST_PATH,
+  portalShellHtml,
 } from "./portalManifest";
 
 const TOKEN = "a".repeat(64);
@@ -138,5 +139,31 @@ describe("the manifest document", () => {
       )
     );
     expect(buildPortalManifest(onDisk.start_url)).toEqual(onDisk);
+  });
+});
+
+describe("the page shell a client page is served", () => {
+  // The real file, so this fails the day somebody edits those tags and
+  // the server-side swap quietly stops matching.
+  const shell = readFileSync(resolve(__dirname, "../client/index.html"), "utf8");
+
+  it("names the portal manifest, icon and salon before any script runs", () => {
+    const html = portalShellHtml(shell, "/portal/login");
+    expect(html).toContain('<link rel="manifest" href="/portal.webmanifest" />');
+    expect(html).toContain('<link rel="apple-touch-icon" href="/portal-icon-192.png" />');
+    expect(html).toContain(`<meta name="apple-mobile-web-app-title" content="Barkin' Beautiful" />`);
+    expect(html).not.toContain('href="/manifest.webmanifest"');
+    expect(html).not.toContain('content="Groomigo"');
+  });
+
+  it("gives a token page the manifest that opens that page", () => {
+    const token = "a".repeat(64);
+    expect(portalShellHtml(shell, `/portal/${token}`))
+      .toContain(`<link rel="manifest" href="/portal/${token}/app.webmanifest" />`);
+  });
+
+  it("changes nothing else, and nothing at all in a shell without the staff tags", () => {
+    expect(portalShellHtml(shell, "/portal").length).toBeGreaterThan(shell.length - 200);
+    expect(portalShellHtml("<html></html>", "/portal")).toBe("<html></html>");
   });
 });
