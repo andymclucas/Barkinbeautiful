@@ -209,6 +209,7 @@ import { usesCardLink, usesAgreementLink, renderMassTextBody } from "@shared/mas
 import { agreementLinkUrl, readAgreementLinkToken } from "./agreementLinkToken";
 import { agreementsAwaitingSignature } from "@shared/portalAgreements";
 import { hasUsableEmail } from "@shared/portalInviteAudience";
+import { PORTAL_NO_CARD_AUDIENCE_TYPE, portalNoCardRecipients } from "@shared/portalNoCardAudience";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
 import { randomUUID } from "node:crypto";
@@ -13047,6 +13048,34 @@ const migrationRouter = router({
  * preview Lauren uses — which is exactly how calendar.nextAvailable and
  * staff.closeSalon shipped broken on 30/10/2026.
  */
+/**
+ * The "On the portal, no card yet" audience (shared/portalNoCardAudience.ts).
+ *
+ * One query, asked by BOTH the preview and the send, so the number on the
+ * confirm dialog is the number of people mailed. The rule itself is the
+ * pure function; this only fetches the columns it needs, for one tenant.
+ */
+async function portalNoCardAudienceRows(
+  db: any, tenantId: number,
+): Promise<Array<{ id: number; firstName: string; lastName: string; email: string | null }>> {
+  const rows = await db
+    .select({
+      id: clients.id,
+      firstName: clients.firstName,
+      lastName: clients.lastName,
+      email: clients.email,
+      status: clients.status,
+      portalAccountStatus: clients.portalAccountStatus,
+      stripeCustomerId: clients.stripeCustomerId,
+      stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId,
+    })
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.portalAccountStatus, "active")));
+  return portalNoCardRecipients(rows, heldClientIds(tenantId)).map(
+    ({ id, firstName, lastName, email }: any) => ({ id, firstName, lastName, email }),
+  );
+}
+
 async function withoutWalkIns<T extends { id?: number; clientId?: number }>(
   db: any, tenantId: number, rows: T[],
 ): Promise<T[]> {
@@ -13176,7 +13205,7 @@ const emailCampaignsRouter = router({
   getAudiencePreview: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
-      audienceFilter: z.string(), // JSON: { type: "all_active" | "membership_holders" | "inactive_8w" | "inactive_12w" | "all_clients" }
+      audienceFilter: z.string(), // JSON: { type: "all_active" | "membership_holders" | "inactive_8w" | "inactive_12w" | "all_clients" | "portal_no_card" }
     }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
@@ -13216,7 +13245,9 @@ const emailCampaignsRouter = router({
          not reach, which is the drift the helper exists to stop. */
       let rows: Array<{ id: number; firstName: string; lastName: string; email: string | null }>;
 
-      if (filter.type === "membership_holders") {
+      if (filter.type === PORTAL_NO_CARD_AUDIENCE_TYPE) {
+        rows = await portalNoCardAudienceRows(db, tenantOf(ctx, input));
+      } else if (filter.type === "membership_holders") {
         rows = await db
           .selectDistinct({
             id: clients.id,
@@ -13299,7 +13330,9 @@ const emailCampaignsRouter = router({
 
       let audienceRows: Array<{ id: number; firstName: string; lastName: string; email: string | null }>;
 
-      if (filter.type === "membership_holders") {
+      if (filter.type === PORTAL_NO_CARD_AUDIENCE_TYPE) {
+        audienceRows = await portalNoCardAudienceRows(db, tenantOf(ctx, input));
+      } else if (filter.type === "membership_holders") {
         audienceRows = await db
           .selectDistinct({
             id: clients.id,
