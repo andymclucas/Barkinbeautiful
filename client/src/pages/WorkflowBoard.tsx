@@ -500,7 +500,9 @@ export default function WorkflowBoard() {
     const next = NEXT_STAGE[appt.workflowState as StageKey];
     if (!next) return;
     if (appt.workflowState === "ready") {
-      completeAppointment(appt);
+      // Going home always asks first: the same "Mark as Out?" question the
+      // OUT button opens, instead of marking the dog out on one press.
+      setOutConfirm({ id: appt.id, petName: appt.petName ?? "this dog" });
       return;
     }
     const now = Date.now();
@@ -509,7 +511,7 @@ export default function WorkflowBoard() {
     if (next === "ready") timeFields.readyAt = now;
     if (next === "complete") timeFields.completedAt = now;
     update(appt.id, { workflowState: next, ...timeFields }, { petName: appt.petName });
-  }, [completeAppointment, update]);
+  }, [update]);
 
   const revertStage = useCallback((appt: { id: number; workflowState: string }) => {
     const prev = PREV_STAGE[appt.workflowState as StageKey];
