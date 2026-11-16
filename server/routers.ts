@@ -4527,7 +4527,10 @@ const workflowRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const { appointmentId, alsoCheckInLinked, expectedFromState, ...fields } = input;
+      const { appointmentId, alsoCheckInLinked, expectedFromState, ...sentFields } = input;
+      let fields = sentFields;
+      /** Set when this is a repeat of a stage press that already landed. */
+      let repeatedStage: typeof sentFields.workflowState;
       const [currentAppointment] = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
       if (!currentAppointment) throw new Error("Appointment not found");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, appointmentId);
@@ -4540,9 +4543,18 @@ const workflowRouter = router({
         if (verdict === "stale") {
           throw new TRPCError({ code: "CONFLICT", message: STALE_STAGE_PRESS_MESSAGE });
         }
-        // A repeat of a press that already landed. Writing it again would
-        // restamp the stage's start time and log a move that did not happen.
-        if (verdict === "already_there") return { success: true, linkedCompleted: 0 };
+        // A repeat of a press that already landed. The STAGE is not written
+        // again: that would restamp its start time and log a move that did
+        // not happen. Everything else the press carried still is — the OUT
+        // dialog's pickedUpAt, a cage number — and so is the party cascade
+        // below, because "check in all" pressed on a dog somebody else has
+        // just checked in must still bring the rest of the party in.
+        if (verdict === "already_there") {
+          repeatedStage = fields.workflowState;
+          // The stage's own timestamps are part of the stage write: a repeat
+          // must not move the time the dog was checked in or went home.
+          fields = { ...sentFields, workflowState: undefined, checkedInAt: undefined, completedAt: undefined };
+        }
       }
       const updateData: Record<string, unknown> = {};
       let workflowChangedAtMs: number | null = null;
@@ -4612,9 +4624,10 @@ const workflowRouter = router({
        * yes. Completion keeps the automatic behaviour it has always had:
        * one dog of a party being collected means the party has gone.
        */
+      const cascadeFrom = fields.workflowState ?? repeatedStage;
       const cascadeStage =
-        fields.workflowState === "complete" ? "complete" as const
-        : fields.workflowState === "checked_in" && alsoCheckInLinked ? "checked_in" as const
+        cascadeFrom === "complete" ? "complete" as const
+        : cascadeFrom === "checked_in" && alsoCheckInLinked ? "checked_in" as const
         : null;
       if (cascadeStage !== null) {
         const [linkKeys] = await db.select({
