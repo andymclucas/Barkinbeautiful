@@ -3,6 +3,7 @@ import { VipMark } from "@/components/VipMark";
 import { PetCodeWarningBox } from "@/components/PetCodeWarningBox";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
 import { cascadeEligible, describeCascadePrompt, shouldAskAboutLinkedCheckIn, inSameParty } from "@shared/linkedWorkflowCascade";
+import { stagePressLocked, STAGE_PRESS_MAX_HOLD_MS, STAGE_PRESS_SETTLE_MS } from "@shared/stagePressGuard";
 import { trpc } from "@/lib/trpc";
 import { splitDaycare } from "@shared/daycareBoard";
 import { useBuildVersionReload, buildReloadMode } from "@/hooks/useBuildVersionReload";
@@ -281,9 +282,29 @@ export default function WorkflowBoard() {
     return () => window.clearTimeout(timer);
   }, [boardData, hasReviewAppointmentFocus, reviewAppointmentId]);
 
+  /*
+   * Each dog's stage buttons are held from a press until the board has
+   * redrawn, and a moment longer, so the second tap of an impatient
+   * double-press cannot land on the NEXT stage's button. Keyed by
+   * appointment; the value is when the hold ends. shared/stagePressGuard.ts.
+   */
+  const stageHoldUntil = useRef(new Map<number, number>());
   const updateStage = trpc.workflow.updateStage.useMutation({
-    onSuccess: () => refetch(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      // A press from a screen that was behind: not an error to shout about.
+      if (e.data?.code === "CONFLICT") toast.info(e.message, { duration: 8000 });
+      else toast.error(e.message);
+    },
+    // Hook-level, not per-call: per-call callbacks only fire for the most
+    // recent press, and a hold that is never released is a dog nobody can move.
+    onSettled: (_data, _error, variables) => {
+      const release = () => {
+        if (variables?.workflowState !== undefined) {
+          stageHoldUntil.current.set(variables.appointmentId, Date.now() + STAGE_PRESS_SETTLE_MS);
+        }
+      };
+      Promise.resolve(refetch()).then(release, release);
+    },
   });
   /**
    * Ticking an extra off from the board.
@@ -393,7 +414,15 @@ export default function WorkflowBoard() {
         return;
       }
     }
-    updateStage.mutate({ appointmentId, ...fields }, {
+    let expectedFromState: string | undefined;
+    if (fields.workflowState !== undefined) {
+      if (stagePressLocked(stageHoldUntil.current.get(appointmentId), Date.now())) return;
+      stageHoldUntil.current.set(appointmentId, Date.now() + STAGE_PRESS_MAX_HOLD_MS);
+      // The stage this screen is showing, so the server can refuse the
+      // press if somebody else has already moved the dog.
+      expectedFromState = (boardData ?? []).find(row => row.id === appointmentId)?.workflowState;
+    }
+    updateStage.mutate({ appointmentId, ...fields, ...(expectedFromState ? { expectedFromState } : {}) }, {
       onSuccess: () => {
         // Send the "ready for pickup" text prompt the moment a dog actually
         // becomes ready — not after they've already been marked OUT, since
@@ -432,7 +461,7 @@ export default function WorkflowBoard() {
         }
       },
     });
-  }, [updateStage, linkedStillToArrive]);
+  }, [updateStage, linkedStillToArrive, boardData]);
 
   const sendPickupMessage = trpc.sms.sendPickupMessage.useMutation({
     onSuccess: result => {
@@ -444,15 +473,17 @@ export default function WorkflowBoard() {
   });
 
   const completeAppointment = useCallback((appointment: { id: number; petName?: string | null }, extraFields: Record<string, unknown> = {}) => {
+    if (stagePressLocked(stageHoldUntil.current.get(appointment.id), Date.now())) return;
+    stageHoldUntil.current.set(appointment.id, Date.now() + STAGE_PRESS_MAX_HOLD_MS);
+    const expectedFromState = (boardData ?? []).find(row => row.id === appointment.id)?.workflowState;
     updateStage.mutate({
       appointmentId: appointment.id,
       workflowState: "complete",
       completedAt: Date.now(),
       ...extraFields,
-    } as Parameters<typeof updateStage.mutate>[0], {
-      onSuccess: () => refetch(),
-    });
-  }, [refetch, updateStage]);
+      ...(expectedFromState ? { expectedFromState } : {}),
+    } as Parameters<typeof updateStage.mutate>[0]);
+  }, [boardData, updateStage]);
 
   const advanceStage = useCallback((appt: { id: number; petName?: string | null; workflowState: string }) => {
     const next = NEXT_STAGE[appt.workflowState as StageKey];

@@ -130,6 +130,7 @@ import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stri
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { BATH_ORDER_LOCKED_MESSAGE, buildBathPriorityQueue, canChangeBathOrder, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { partyKeyOf } from "../shared/linkedWorkflowCascade";
+import { judgeStagePress, STALE_STAGE_PRESS_MESSAGE } from "../shared/stagePressGuard";
 import { brisbaneDayBounds, brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { bookingsCancelledByPassing } from "../shared/petPassingBookings";
 import { nextVisitAfter } from "@shared/nextVisit";
@@ -4515,14 +4516,34 @@ const workflowRouter = router({
        * sends this; nothing happens to a linked dog otherwise.
        */
       alsoCheckInLinked: z.boolean().default(false),
+      /**
+       * The stage the pressing screen was showing for this dog. Lets the
+       * server refuse a press made on a screen that is behind. Optional
+       * so a tab loaded before this shipped keeps working. See
+       * shared/stagePressGuard.ts.
+       */
+      expectedFromState: z.string().max(40).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const { appointmentId, alsoCheckInLinked, ...fields } = input;
+      const { appointmentId, alsoCheckInLinked, expectedFromState, ...fields } = input;
       const [currentAppointment] = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
       if (!currentAppointment) throw new Error("Appointment not found");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, appointmentId);
+      if (fields.workflowState !== undefined) {
+        const verdict = judgeStagePress({
+          expectedFromState,
+          currentState: String(currentAppointment.workflowState),
+          targetState: fields.workflowState,
+        });
+        if (verdict === "stale") {
+          throw new TRPCError({ code: "CONFLICT", message: STALE_STAGE_PRESS_MESSAGE });
+        }
+        // A repeat of a press that already landed. Writing it again would
+        // restamp the stage's start time and log a move that did not happen.
+        if (verdict === "already_there") return { success: true, linkedCompleted: 0 };
+      }
       const updateData: Record<string, unknown> = {};
       let workflowChangedAtMs: number | null = null;
       if (fields.workflowState !== undefined) {
