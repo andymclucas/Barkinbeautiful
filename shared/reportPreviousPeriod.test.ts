@@ -95,6 +95,13 @@ describe("a period from before revenue was recorded", () => {
     expect(revenueGapStart({ periodFromKey: "2020-01-01", bookingsFrom: "2026-03-02", revenueRecordedFrom: "2026-03-02" })).toBeNull();
   });
 
+  it("does not call a few weeks of ordinary lag a gap", () => {
+    // A new salon: first visits free or not yet completed for three weeks.
+    expect(revenueGapStart({ periodFromKey: "2026-03-01", bookingsFrom: "2026-03-02", revenueRecordedFrom: "2026-03-23" })).toBeNull();
+    // A month or more is missing history.
+    expect(revenueGapStart({ periodFromKey: "2026-03-01", bookingsFrom: "2026-03-02", revenueRecordedFrom: "2026-04-02" })).toBe("2026-04-02");
+  });
+
   it("says nothing while the dates are unknown", () => {
     expect(revenueGapStart({ periodFromKey: "2025-01-01", bookingsFrom: null, revenueRecordedFrom: null })).toBeNull();
     expect(revenueGapStart({ periodFromKey: "2025-01-01", bookingsFrom: "2023-02-01", revenueRecordedFrom: undefined })).toBeNull();

@@ -321,11 +321,10 @@ export default function Reporting() {
             <p className="text-muted-foreground text-xs">Compared with the {previous.name}: {previousDates}</p>
             {(previousGap || currentGap) && (
               <p role="note" className="mt-2 max-w-xl rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-                Revenue is only recorded from {gapDay((currentGap ?? previousGap)!)}. Bookings before then came across without prices, so{" "}
+                Revenue is only counted from {gapDay((currentGap ?? previousGap)!)}: no earlier booking is recorded as a completed, priced visit. So{" "}
                 {currentGap
-                  ? "revenue for these dates is understated."
-                  : `revenue for the ${previous.name} is understated and the change in revenue shown here is larger than it really was.`}{" "}
-                Appointment counts are not affected.
+                  ? "revenue for these dates is understated, and the change in revenue shown here cannot be relied on."
+                  : `revenue for the ${previous.name} is understated, and the change in revenue shown here is larger than it really was.`}
               </p>
             )}
           </div>
