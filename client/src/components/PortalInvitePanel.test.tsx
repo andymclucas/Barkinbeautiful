@@ -44,4 +44,26 @@ describe("PortalInvitePanelView", () => {
     expect(screen.getByRole("button", { name: /Resume sending/ })).toBeInTheDocument();
     expect(screen.getByText(/200 sent, 2 not sent, 410 waiting of 612/)).toBeInTheDocument();
   });
+
+  it("the weekly stage says it is this week's bookings and sends that count", () => {
+    const onScopeChange = vi.fn();
+    const { onStart } = view({
+      scope: "this_week", onScopeChange,
+      preview: preview({ count: 12, activeClients: 40, scope: "this_week", weekEndsOn: "2026-11-22" }),
+    });
+    expect(screen.getByText(/12/, { selector: "[data-testid=invite-count]" })).toBeInTheDocument();
+    expect(screen.getByText(/clients booked for the rest of this week/)).toBeInTheDocument();
+    expect(screen.getByText(/Sunday 22 November/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Send invitations to 12 clients/ }));
+    expect(onStart).toHaveBeenCalledWith(12);
+    fireEvent.click(screen.getByRole("button", { name: "Everyone" }));
+    expect(onScopeChange).toHaveBeenCalledWith("everyone");
+  });
+
+  it("never offers to send one stage's count while the other stage is chosen", () => {
+    // The count on hand is for everyone; the weekly stage is selected.
+    view({ scope: "this_week", onScopeChange: vi.fn(), preview: preview({ scope: "everyone" }) });
+    expect(screen.queryByRole("button", { name: /Send invitations/ })).toBeNull();
+    expect(screen.getByText(/Counting clients/)).toBeInTheDocument();
+  });
 });

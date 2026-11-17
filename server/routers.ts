@@ -191,7 +191,7 @@ import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/client
 import { getAppointmentMembershipCoverage } from "./appointmentCoverage";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, portalSetupAddress, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { loadPendingAgreements, recordPortalSignatures, requestIp } from "./portalAgreements";
-import { PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
+import { PORTAL_INVITE_SCOPES, PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, restOfBrisbaneWeek, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
 import {
   PORTAL_INVITE_AUDIENCE_TYPE, portalInviteAudience, portalInviteEmail, portalInviteProgress,
   runPortalInviteCampaign, isPortalInviteRunning, withPortalInviteStartLock, heldClientIds,
@@ -16046,12 +16046,14 @@ const clientPortalRouter = router({
    * adminProcedure, like issuing a single setup link.
    */
   portalInvitePreview: adminProcedure
-    .input(z.object({ tenantId: z.number().default(1) }))
+    // `scope` defaults to everyone so an older open tab keeps counting
+    // what it always counted; the screen asks for this_week by name.
+    .input(z.object({ tenantId: z.number().default(1), scope: z.enum(PORTAL_INVITE_SCOPES).default("everyone") }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const tenantId = tenantOf(ctx, input);
-      const audience = await portalInviteAudience(db, tenantId);
+      const audience = await portalInviteAudience(db, tenantId, input.scope);
       // Not `audience_filter = '<json text>'` in SQL: where the column is a
       // JSON type that never matches (shared/campaignAudienceFilter.ts).
       const campaignRows = await db.select({ id: emailCampaigns.id, audienceFilter: emailCampaigns.audienceFilter })
@@ -16071,6 +16073,9 @@ const clientPortalRouter = router({
       return {
         count: audience.recipients.length,
         activeClients: audience.activeClients,
+        scope: input.scope,
+        // The last day the weekly stage covers, for the screen to name.
+        weekEndsOn: restOfBrisbaneWeek().lastDayKey,
         skipped: (Object.keys(audience.skipped) as PortalInviteSkipReason[])
           .filter((k) => audience.skipped[k] > 0)
           .map((k) => ({ reason: k, label: PORTAL_INVITE_SKIP_LABELS[k], count: audience.skipped[k] })),
@@ -16091,13 +16096,19 @@ const clientPortalRouter = router({
    * only one invitation campaign may be sending at a time.
    */
   startPortalInvite: adminProcedure
-    .input(z.object({ tenantId: z.number().default(1), confirmedCount: z.number().int().min(1) }))
+    .input(z.object({
+      tenantId: z.number().default(1),
+      confirmedCount: z.number().int().min(1),
+      scope: z.enum(PORTAL_INVITE_SCOPES).default("everyone"),
+    }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       requireMassTextEnabled();
       const tenantId = tenantOf(ctx, input);
-      const filter = JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE });
+      // Same `type` for both scopes, so the one-send-at-a-time check and
+      // "latest invitation" lookups see a weekly send as an invitation.
+      const filter = JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE, scope: input.scope });
 
       return withPortalInviteStartLock(tenantId, async () => {
       // The guard against emailing everybody twice. The audience is read in
@@ -16111,13 +16122,13 @@ const clientPortalRouter = router({
         throw new TRPCError({ code: "CONFLICT", message: "An invitation send is already running. Resume or wait for it rather than starting another." });
       }
 
-      const audience = await portalInviteAudience(db, tenantId);
+      const audience = await portalInviteAudience(db, tenantId, input.scope);
       const guard = guardPortalInviteSend({ recipientCount: audience.recipients.length, confirmedCount: input.confirmedCount });
       if (!guard.ok) throw new TRPCError({ code: "BAD_REQUEST", message: guard.error });
 
       const [inserted] = await db.insert(emailCampaigns).values({
         tenantId,
-        name: `Portal invitation + service agreement (${new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })})`,
+        name: `Portal invitation + service agreement${input.scope === "this_week" ? ", this week's bookings" : ""} (${new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })})`,
         subject: "Set up your client portal",
         // A description, not a sendable body: each client's email carries
         // their own setup link, built at send time.

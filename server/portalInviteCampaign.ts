@@ -32,16 +32,18 @@
  * client page; two copies of a setup link, the first already dead, is
  * exactly the confusing email this is trying not to send.
  */
-import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { clients, emailCampaigns, emailCampaignSends, emailUnsubscribes, tenants } from "../drizzle/schema";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, ne, notInArray, sql } from "drizzle-orm";
+import { appointments, clients, emailCampaigns, emailCampaignSends, emailUnsubscribes, tenants } from "../drizzle/schema";
 import { createClientPortalToken } from "@shared/clientPortalAccess";
 import { portalLinkIssueEffect, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { escapeHtml } from "@shared/escapeHtml";
 import {
   inviteGreeting,
   normaliseEmail,
+  restOfBrisbaneWeek,
   selectPortalInviteRecipients,
   type PortalInviteCandidate,
+  type PortalInviteScope,
 } from "@shared/portalInviteAudience";
 import { getPortalBaseUrl } from "./appUrl";
 import { loadPendingAgreements } from "./portalAgreements";
@@ -67,8 +69,8 @@ export function heldClientIds(tenantId: number): Set<number> {
 }
 
 /** Who the invitation would reach today, and why everybody else is not. */
-export async function portalInviteAudience(db: any, tenantId: number) {
-  const candidates: PortalInviteCandidate[] = await db.select({
+export async function portalInviteAudience(db: any, tenantId: number, scope: PortalInviteScope = "everyone", now: Date = new Date()) {
+  const everyActiveClient: PortalInviteCandidate[] = await db.select({
     id: clients.id,
     firstName: clients.firstName,
     lastName: clients.lastName,
@@ -79,6 +81,26 @@ export async function portalInviteAudience(db: any, tenantId: number) {
   })
     .from(clients)
     .where(and(eq(clients.tenantId, tenantId), eq(clients.status, "active")));
+
+  // The weekly stage: only clients with a live booking still to come this
+  // week (shared/portalInviteAudience.ts, restOfBrisbaneWeek). Narrowed
+  // BEFORE the exclusions, so the "not included" counts on screen are
+  // about this week's clients and not the whole list.
+  let candidates = everyActiveClient;
+  if (scope === "this_week") {
+    const week = restOfBrisbaneWeek(now);
+    const bookedRows: { clientId: number }[] = await db.selectDistinct({ clientId: appointments.clientId })
+      .from(appointments)
+      .where(and(
+        eq(appointments.tenantId, tenantId),
+        gte(appointments.scheduledStart, week.from),
+        lt(appointments.scheduledStart, week.to),
+        notInArray(appointments.status, ["cancelled", "no_show"]),
+        notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+      ));
+    const booked = new Set(bookedRows.map((r) => r.clientId));
+    candidates = everyActiveClient.filter((c) => booked.has(c.id));
+  }
 
   const unsubRows: { email: string }[] = await db.select({ email: emailUnsubscribes.email })
     .from(emailUnsubscribes)
@@ -99,6 +121,8 @@ export async function portalInviteAudience(db: any, tenantId: number) {
     heldClientIds: heldClientIds(tenantId),
     portalLoginOwners,
   });
+  // `activeClients` is the pool the count is "of": every active client,
+  // or the active clients booked for the rest of this week.
   return { ...result, activeClients: candidates.length };
 }
 
