@@ -11,6 +11,8 @@
  * without explanation reads as a bug and gets "fixed".
  */
 
+import { portalSetupAddress, type PortalAccountStatus } from "./portalSetupLink";
+
 export type PortalInviteCandidate = {
   id: number;
   firstName: string | null;
@@ -102,8 +104,19 @@ export function selectPortalInviteRecipients(input: {
       skipped.invitation_outstanding += 1; continue;
     }
 
-    // A half-finished setup keeps the address it was set up with.
-    const email = normaliseEmail(c.portalLoginEmail) || normaliseEmail(c.email);
+    /*
+     * The same rule the button on the client's page uses
+     * (portalSetupAddress): nobody is signing in yet, so the email on the
+     * client record is the truth. A half-finished setup used to keep the
+     * address it was first sent to, which meant a client whose email had
+     * since been corrected was invited at the OLD address again, and the
+     * old address was saved back as their login (review, 17/11/2026).
+     */
+    const email = portalSetupAddress({
+      status: c.portalAccountStatus as PortalAccountStatus,
+      portalLoginEmail: c.portalLoginEmail,
+      clientEmail: c.email,
+    });
     if (!EMAIL.test(email)) { skipped.no_email += 1; continue; }
     if (input.unsubscribedEmails.has(email)) { skipped.unsubscribed += 1; continue; }
 

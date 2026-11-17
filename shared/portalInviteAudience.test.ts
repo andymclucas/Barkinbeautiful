@@ -15,8 +15,17 @@ describe("selectPortalInviteRecipients", () => {
     expect(r.recipients).toEqual([{ clientId: 1, email: "jane@example.com", firstName: "A", lastName: "B" }]);
   });
 
-  it("re-invites a half-finished setup at the address it was set up with", () => {
+  it("re-invites a half-finished setup at the email now on the client, not the one first used", () => {
+    // 17/11/2026: a client's email was corrected after the first set-up email
+    // went to an old address. The button on her page and this bulk send must
+    // agree, or the campaign would invite her at the old address again and
+    // save it back as her login.
     const r = run([c(2, { portalAccountStatus: "setup_pending", portalLoginEmail: "login@example.com", email: "other@example.com" })]);
+    expect(r.recipients[0].email).toBe("other@example.com");
+  });
+
+  it("still uses the address first used when the client record has no email", () => {
+    const r = run([c(2, { portalAccountStatus: "setup_pending", portalLoginEmail: "login@example.com", email: null })]);
     expect(r.recipients[0].email).toBe("login@example.com");
   });
 

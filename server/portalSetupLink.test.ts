@@ -136,6 +136,11 @@ describe("which address a portal set-up email goes to", () => {
     expect(portalSetupAddress({ explicitEmail: "Chosen@Example.com", status: "active", portalLoginEmail: "login@example.com", clientEmail: "other@example.com" })).toBe("chosen@example.com");
   });
 
+  it("treats an unknown status like an account nobody is using", () => {
+    expect(portalSetupAddress({ status: null, portalLoginEmail: "saved@example.com", clientEmail: "record@example.com" })).toBe("record@example.com");
+    expect(portalSetupAddress({ status: undefined, portalLoginEmail: "saved@example.com", clientEmail: "" })).toBe("saved@example.com");
+  });
+
   it("returns nothing when there is no address anywhere", () => {
     expect(portalSetupAddress({ status: null, portalLoginEmail: null, clientEmail: null })).toBe("");
   });
