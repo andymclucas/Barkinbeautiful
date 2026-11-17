@@ -2,7 +2,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { VipMark } from "@/components/VipMark";
 import { PetCodeWarningBox } from "@/components/PetCodeWarningBox";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
-import { cascadeEligible, describeCascadePrompt } from "@shared/linkedWorkflowCascade";
+import { cascadeEligible, describeCascadePrompt, shouldAskAboutLinkedCheckIn, inSameParty } from "@shared/linkedWorkflowCascade";
+import { stagePressLocked, STAGE_PRESS_MAX_HOLD_MS, STAGE_PRESS_SETTLE_MS } from "@shared/stagePressGuard";
 import { trpc } from "@/lib/trpc";
 import { splitDaycare } from "@shared/daycareBoard";
 import { useBuildVersionReload, buildReloadMode } from "@/hooks/useBuildVersionReload";
@@ -281,9 +282,29 @@ export default function WorkflowBoard() {
     return () => window.clearTimeout(timer);
   }, [boardData, hasReviewAppointmentFocus, reviewAppointmentId]);
 
+  /*
+   * Each dog's stage buttons are held from a press until the board has
+   * redrawn, and a moment longer, so the second tap of an impatient
+   * double-press cannot land on the NEXT stage's button. Keyed by
+   * appointment; the value is when the hold ends. shared/stagePressGuard.ts.
+   */
+  const stageHoldUntil = useRef(new Map<number, number>());
   const updateStage = trpc.workflow.updateStage.useMutation({
-    onSuccess: () => refetch(),
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      // A press from a screen that was behind: not an error to shout about.
+      if (e.data?.code === "CONFLICT") toast.info(e.message, { duration: 8000 });
+      else toast.error(e.message);
+    },
+    // Hook-level, not per-call: per-call callbacks only fire for the most
+    // recent press, and a hold that is never released is a dog nobody can move.
+    onSettled: (_data, _error, variables) => {
+      const release = () => {
+        if (variables?.workflowState !== undefined) {
+          stageHoldUntil.current.set(variables.appointmentId, Date.now() + STAGE_PRESS_SETTLE_MS);
+        }
+      };
+      Promise.resolve(refetch()).then(release, release);
+    },
   });
   /**
    * Ticking an extra off from the board.
@@ -359,8 +380,9 @@ export default function WorkflowBoard() {
    * own, because two dogs share a car and not a bath.
    *
    * The linked dogs are worked out from the board rows already in hand,
-   * using the same keys the server uses: shared bath group, else shared
-   * booking session, else same family at the same time. Only dogs still
+   * using the same rule the server uses (inSameParty): shared booking
+   * session, else same family at the same time. A shared bath is NOT a
+   * party; see shared/linkedWorkflowCascade.ts. Only dogs still
    * at "scheduled" are offered — one already in the bath must not be
    * dragged backwards.
    */
@@ -368,13 +390,7 @@ export default function WorkflowBoard() {
     const rows = boardData ?? [];
     const self = rows.find(r => r.id === appointmentId);
     if (!self) return [];
-    const sameParty = (r: typeof self) =>
-      (self as any).bathGroupId ? (r as any).bathGroupId === (self as any).bathGroupId
-      : (self as any).sessionId ? (r as any).sessionId === (self as any).sessionId
-      : (self as any).petFamilyGroupId
-        ? (r as any).petFamilyGroupId === (self as any).petFamilyGroupId
-          && r.scheduledStart === self.scheduledStart
-        : false;
+    const sameParty = (r: typeof self) => inSameParty(self as any, r as any);
     return rows.filter(r =>
       r.id !== appointmentId && sameParty(r)
       && r.workflowState === "scheduled"
@@ -384,20 +400,36 @@ export default function WorkflowBoard() {
 
   const update = useCallback((appointmentId: number, fields: Omit<Parameters<typeof updateStage.mutate>[0], 'appointmentId'>, options?: { petName?: string | null }) => {
     // Ask before bringing the rest of the party in with this dog.
-    if (fields.workflowState === "checked_in" && !(fields as any).alsoCheckInLinked) {
+    // Only when it has not been answered: "Just this dog" arrives as false,
+    // and asking again on false made that button reopen the question forever.
+    if (fields.workflowState === "checked_in" && (fields as any).alsoCheckInLinked === undefined) {
       const linked = linkedStillToArrive(appointmentId);
-      if (linked.length > 0) {
+      if (shouldAskAboutLinkedCheckIn(fields as any, linked.length)) {
         setCheckInFamilyPrompt({
           appointmentId,
           fields,
           petName: options?.petName ?? "this dog",
           linked: linked.map(r => ({ id: r.id, petName: r.petName ?? "a dog" })),
         });
-        return;
+        return true;
       }
     }
-    updateStage.mutate({ appointmentId, ...fields }, {
-      onSuccess: () => {
+    let expectedFromState: string | undefined;
+    if (fields.workflowState !== undefined) {
+      if (stagePressLocked(stageHoldUntil.current.get(appointmentId), Date.now())) {
+        toast.info("One moment. The board is still updating that dog.", { id: "stage-hold", duration: 2500 });
+        return false;
+      }
+      stageHoldUntil.current.set(appointmentId, Date.now() + STAGE_PRESS_MAX_HOLD_MS);
+      // The stage this screen is showing, so the server can refuse the
+      // press if somebody else has already moved the dog.
+      expectedFromState = (boardData ?? []).find(row => row.id === appointmentId)?.workflowState;
+    }
+    // mutateAsync, not per-call onSuccess: per-call callbacks only fire for
+    // the most recent press, so moving a second dog before the first reply
+    // came back used to lose the first dog's pickup-text prompt.
+    updateStage.mutateAsync({ appointmentId, ...fields, ...(expectedFromState ? { expectedFromState } : {}) }).then(() => {
+      {
         // Send the "ready for pickup" text prompt the moment a dog actually
         // becomes ready — not after they've already been marked OUT, since
         // by then they may already be gone.
@@ -433,9 +465,10 @@ export default function WorkflowBoard() {
             );
           }
         }
-      },
-    });
-  }, [updateStage, linkedStillToArrive]);
+      }
+    }, () => { /* the mutation's own onError has already told the user */ });
+    return true;
+  }, [updateStage, linkedStillToArrive, boardData]);
 
   const sendPickupMessage = trpc.sms.sendPickupMessage.useMutation({
     onSuccess: result => {
@@ -447,21 +480,29 @@ export default function WorkflowBoard() {
   });
 
   const completeAppointment = useCallback((appointment: { id: number; petName?: string | null }, extraFields: Record<string, unknown> = {}) => {
+    if (stagePressLocked(stageHoldUntil.current.get(appointment.id), Date.now())) {
+      toast.info("One moment. The board is still updating that dog.", { id: "stage-hold", duration: 2500 });
+      return false;
+    }
+    stageHoldUntil.current.set(appointment.id, Date.now() + STAGE_PRESS_MAX_HOLD_MS);
+    const expectedFromState = (boardData ?? []).find(row => row.id === appointment.id)?.workflowState;
     updateStage.mutate({
       appointmentId: appointment.id,
       workflowState: "complete",
       completedAt: Date.now(),
       ...extraFields,
-    } as Parameters<typeof updateStage.mutate>[0], {
-      onSuccess: () => refetch(),
-    });
-  }, [refetch, updateStage]);
+      ...(expectedFromState ? { expectedFromState } : {}),
+    } as Parameters<typeof updateStage.mutate>[0]);
+    return true;
+  }, [boardData, updateStage]);
 
   const advanceStage = useCallback((appt: { id: number; petName?: string | null; workflowState: string }) => {
     const next = NEXT_STAGE[appt.workflowState as StageKey];
     if (!next) return;
     if (appt.workflowState === "ready") {
-      completeAppointment(appt);
+      // Going home always asks first: the same "Mark as Out?" question the
+      // OUT button opens, instead of marking the dog out on one press.
+      setOutConfirm({ id: appt.id, petName: appt.petName ?? "this dog" });
       return;
     }
     const now = Date.now();
@@ -470,7 +511,7 @@ export default function WorkflowBoard() {
     if (next === "ready") timeFields.readyAt = now;
     if (next === "complete") timeFields.completedAt = now;
     update(appt.id, { workflowState: next, ...timeFields }, { petName: appt.petName });
-  }, [completeAppointment, update]);
+  }, [update]);
 
   const revertStage = useCallback((appt: { id: number; workflowState: string }) => {
     const prev = PREV_STAGE[appt.workflowState as StageKey];
@@ -1161,10 +1202,10 @@ export default function WorkflowBoard() {
               <button
                 className="flex-1 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors"
                 onClick={() => {
-                  completeAppointment(outConfirm, { pickedUpAt: Date.now(), ...(outMarkPaid ? { isPaid: true } : {}) });
+                  const sent = completeAppointment(outConfirm, { pickedUpAt: Date.now(), ...(outMarkPaid ? { isPaid: true } : {}) });
                   setOutConfirm(null);
                   setOutMarkPaid(false);
-                  toast.success(`${outConfirm.petName} marked as out`);
+                  if (sent) toast.success(`${outConfirm.petName} marked as out`);
                 }}
               >
                 {outMarkPaid ? "Paid & OUT" : "OUT (payment pending)"}

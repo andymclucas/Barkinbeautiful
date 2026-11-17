@@ -8,7 +8,7 @@ import type { DogSizeBand } from "@shared/dogSizeBand";
 import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
 import { PresenceIndicator } from "@/components/PresenceIndicator";
-import { clipLoadFor, clipLoadOf, groomerDayLoad, isClip, overbookingWarning } from "@shared/groomerCapacity";
+import { addsToGroomerDay, clipLoadFor, clipLoadOf, groomerDayLoad, isClip, overbookingWarning } from "@shared/groomerCapacity";
 import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentValidation";
 import { preferredGroomerDefaults } from "@shared/preferredGroomerDefaults";
 import { formatCollectBy } from "@shared/collectBy";
@@ -2131,7 +2131,18 @@ export default function Calendar() {
           && !isCancelledAppointment(other)
           && aestDateKey(new Date(other.scheduledStart)) === dayKey)
         .map(other => other.serviceType));
-      const capacityWarning = groomer && capacity && adding > 0
+      // Dragging a dog to another time in its own groomer's day adds
+      // nothing to that day, so there is nothing to warn about.
+      const arrives = addsToGroomerDay({
+        from: {
+          staffId: appt.staffId === null || appt.staffId === undefined ? null : Number(appt.staffId),
+          dateKey: aestDateKey(new Date(appt.scheduledStart)),
+          serviceType: appt.serviceType,
+          cancelled: isCancelledAppointment(appt),
+        },
+        to: { staffId: targetStaffId, dateKey: dayKey, serviceType: appt.serviceType },
+      });
+      const capacityWarning = groomer && capacity && adding > 0 && arrives
         ? overbookingWarning(groomerDayLoad(booked, capacity), groomer.name, adding)
         : null;
 
@@ -2615,6 +2626,17 @@ export default function Calendar() {
     if (!groomer || !capacity) return null;
     const adding = clipLoadFor(editForm.serviceType ?? editAppt.serviceType);
     if (adding <= 0) return null;
+    // Only a change that makes this groomer's day heavier is a "move" to
+    // warn about. Saving a note on a dog already on an over-full day is not.
+    if (!addsToGroomerDay({
+      from: {
+        staffId: editAppt.staffId === null || editAppt.staffId === undefined ? null : Number(editAppt.staffId),
+        dateKey: aestDateKey(new Date(editAppt.scheduledStart)),
+        serviceType: editAppt.serviceType,
+        cancelled: isCancelledAppointment(editAppt),
+      },
+      to: { staffId: editStaffId, dateKey: editDateKey, serviceType: editForm.serviceType ?? editAppt.serviceType },
+    })) return null;
     // The day's load comes from the calendar rows, which carry a service
     // type; groomerDay returns time intervals and cannot say what each
     // booking is. The appointment being moved is excluded so moving it

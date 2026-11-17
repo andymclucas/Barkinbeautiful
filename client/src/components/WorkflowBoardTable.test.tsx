@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { WorkflowBoardTable, type BoardActions, type StaffLite } from "./WorkflowBoardTable";
 
 /**
@@ -353,5 +353,32 @@ describe("the service cell", () => {
       expect(cell.className).toContain("text-xs");
       expect(cell.className).not.toContain("text-[11px]");
     }
+  });
+});
+
+describe("going home always asks first", () => {
+  it("dragging a dog onto the Out chip opens the question instead of marking it out", () => {
+    const dog = row({ workflowState: "grooming" });
+    const setOutConfirm = vi.fn();
+    const actions = boardActions({ setOutConfirm, dragApptId: { current: dog.id }, boardData: [dog] as never });
+    renderBoard({ actions }, [dog]);
+    const chip = screen.getAllByText("OUT").find((el) => el.className.includes("meter-seg"));
+    expect(chip).toBeDefined();
+    fireEvent.drop(chip!);
+    expect(setOutConfirm).toHaveBeenCalledWith({ id: dog.id, petName: "Marlo" });
+    expect(actions.completeAppointment).not.toHaveBeenCalled();
+    expect(actions.update).not.toHaveBeenCalled();
+  });
+
+  it("dragging onto any other chip still moves the dog straight away", () => {
+    const dog = row({ workflowState: "grooming" });
+    const setOutConfirm = vi.fn();
+    const actions = boardActions({ setOutConfirm, dragApptId: { current: dog.id }, boardData: [dog] as never });
+    renderBoard({ actions }, [dog]);
+    const chip = screen.getAllByText("READY").find((el) => el.className.includes("meter-seg"));
+    expect(chip).toBeDefined();
+    fireEvent.drop(chip!);
+    expect(setOutConfirm).not.toHaveBeenCalled();
+    expect(actions.update).toHaveBeenCalledWith(dog.id, expect.objectContaining({ workflowState: "ready" }), expect.anything());
   });
 });

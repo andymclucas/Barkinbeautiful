@@ -47,7 +47,7 @@ export type BoardActions = {
    * showed which extras a dog needed but not whether any were done.
    */
   toggleAddOnDone: (addOnId: number, done: boolean) => void;
-  update: (id: number, patch: Record<string, unknown>, meta?: { petName?: string | null }) => void;
+  update: (id: number, patch: Record<string, unknown>, meta?: { petName?: string | null }) => boolean | void;
   updateStagePending: boolean;
   advanceStage: (appt: any) => void;
   revertStage: (appt: any) => void;
@@ -413,6 +413,16 @@ export function WorkflowBoardTable({
     setFamilyLinkPopup, setFamilySearch, setBathPriority, bathGroupCandidates,
     setBathGroupPopup, setBathGroupSelectedIds, setBathGroupPriority,
   } = a;
+  /**
+   * A dog never goes home from the board without the "Mark as Out?"
+   * question. The OUT button always asked; the advance button, dragging a
+   * row onto the Out chip and the stage list did not, so one slip of a
+   * finger took a dog off the board with nothing to confirm (Lauren,
+   * 12/11/2026: dogs "marked out when they are finished being dried").
+   * The question also records whether the visit was paid.
+   */
+  const askBeforeOut = (appt: { id: number; petName?: string | null }) =>
+    setOutConfirm({ id: appt.id, petName: appt.petName ?? "this dog" });
   const updateStage = { isPending: a.updateStagePending };
 
   return (
@@ -465,13 +475,15 @@ export function WorkflowBoardTable({
                           const appt = boardData?.find(a => a.id === id);
                           if (!appt || appt.workflowState === s.key) return;
                           if (s.key === "complete") {
-                            completeAppointment(appt);
+                            // Going home always asks first. See askBeforeOut.
+                            askBeforeOut(appt);
                             return;
                           }
                           const timeFields: Record<string, number | null> = {};
                           if (s.key === "checked_in") timeFields.checkedInAt = Date.now();
                           if (s.key === "ready") timeFields.readyAt = Date.now();
-                          update(id, { workflowState: s.key, ...timeFields }, { petName: appt.petName });
+                          // false = the dog's buttons are being held; nothing was sent.
+                          if (update(id, { workflowState: s.key, ...timeFields }, { petName: appt.petName }) === false) return;
                           toast.success(`🐾 ${appt.petName ?? "Dog"} → ${s.label}`, {
                             description: `Stage updated successfully`,
                             duration: 2500,
@@ -1052,6 +1064,11 @@ export function WorkflowBoardTable({
                             if (nextState === appt.workflowState) return;
                             const now = Date.now();
                             const timeFields: Record<string, number | null> = {};
+                            if (nextState === "complete") {
+                              // Going home always asks first. See askBeforeOut.
+                              askBeforeOut(appt);
+                              return;
+                            }
                             if (nextState === "checked_in") timeFields.checkedInAt = now;
                             if (nextState === "ready") timeFields.readyAt = now;
                             if (nextState === "complete") timeFields.completedAt = now;

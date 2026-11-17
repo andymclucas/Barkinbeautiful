@@ -107,7 +107,12 @@ describe("the rule has one copy", () => {
     // cancelled booking that flag goes false while the row is still
     // cancelled, and the server would refuse the repeat.
     // The import carries no paren so it does not count.
-    expect(calendar.split("isCancelledAppointment(").length - 1).toBe(9);
+    //
+    // Eleven since 17/11/2026: the two long-day checks (the edit form and
+    // drag-and-drop) each ask whether the booking being changed was
+    // cancelled, because a cancelled dog was not being counted in its
+    // groomer's day and so "arrives" wherever it is put back.
+    expect(calendar.split("isCancelledAppointment(").length - 1).toBe(11);
     // The stack picker's list asks the wider "not coming" question, once.
     expect(calendar.split("isNotComing(").length - 1).toBe(1);
     expect(calendar).toContain("preservesOriginalSchedule(editAppt, editForm.workflowState)");

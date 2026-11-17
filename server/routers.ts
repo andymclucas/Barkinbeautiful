@@ -129,6 +129,8 @@ const signInCodeAttempts = new Map<string, number[]>();
 import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
 import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { BATH_ORDER_LOCKED_MESSAGE, buildBathPriorityQueue, canChangeBathOrder, isBathPriorityMutable } from "../shared/bathPriorityQueue";
+import { partyKeyOf } from "../shared/linkedWorkflowCascade";
+import { judgeStagePress, STALE_STAGE_PRESS_MESSAGE } from "../shared/stagePressGuard";
 import { brisbaneDayBounds, brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { bookingsCancelledByPassing } from "../shared/petPassingBookings";
 import { nextVisitAfter } from "@shared/nextVisit";
@@ -4514,14 +4516,46 @@ const workflowRouter = router({
        * sends this; nothing happens to a linked dog otherwise.
        */
       alsoCheckInLinked: z.boolean().default(false),
+      /**
+       * The stage the pressing screen was showing for this dog. Lets the
+       * server refuse a press made on a screen that is behind. Optional
+       * so a tab loaded before this shipped keeps working. See
+       * shared/stagePressGuard.ts.
+       */
+      expectedFromState: z.string().max(40).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
-      const { appointmentId, alsoCheckInLinked, ...fields } = input;
+      const { appointmentId, alsoCheckInLinked, expectedFromState, ...sentFields } = input;
+      let fields = sentFields;
+      /** Set when this is a repeat of a stage press that already landed. */
+      let repeatedStage: typeof sentFields.workflowState;
       const [currentAppointment] = await db.select().from(appointments).where(eq(appointments.id, appointmentId)).limit(1);
       if (!currentAppointment) throw new Error("Appointment not found");
       await requireApprovedStaffAppointmentAccess(db, ctx.user, appointmentId);
+      if (fields.workflowState !== undefined) {
+        const verdict = judgeStagePress({
+          expectedFromState,
+          currentState: String(currentAppointment.workflowState),
+          targetState: fields.workflowState,
+        });
+        if (verdict === "stale") {
+          throw new TRPCError({ code: "CONFLICT", message: STALE_STAGE_PRESS_MESSAGE });
+        }
+        // A repeat of a press that already landed. The STAGE is not written
+        // again: that would restamp its start time and log a move that did
+        // not happen. Everything else the press carried still is — the OUT
+        // dialog's pickedUpAt, a cage number — and so is the party cascade
+        // below, because "check in all" pressed on a dog somebody else has
+        // just checked in must still bring the rest of the party in.
+        if (verdict === "already_there") {
+          repeatedStage = fields.workflowState;
+          // The stage's own timestamps are part of the stage write: a repeat
+          // must not move the time the dog was checked in or went home.
+          fields = { ...sentFields, workflowState: undefined, checkedInAt: undefined, completedAt: undefined };
+        }
+      }
       const updateData: Record<string, unknown> = {};
       let workflowChangedAtMs: number | null = null;
       if (fields.workflowState !== undefined) {
@@ -4545,8 +4579,15 @@ const workflowRouter = router({
       if (fields.completedAt !== undefined) updateData.completedAt = fields.completedAt;
       if (fields.pickedUpAt !== undefined) updateData.pickedUpAt = fields.pickedUpAt;
       if (fields.notes !== undefined) updateData.notes = fields.notes;
-      if (Object.keys(updateData).length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a workflow detail to update." });
-      await db.update(appointments).set(updateData).where(eq(appointments.id, appointmentId));
+      if (Object.keys(updateData).length === 0) {
+        // A repeat stage press that carried nothing else has nothing to
+        // write for THIS dog, and that is fine: it still falls through to
+        // the party cascade below. Anything else with nothing to write is
+        // a caller's mistake, as before.
+        if (repeatedStage === undefined) throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a workflow detail to update." });
+      } else {
+        await db.update(appointments).set(updateData).where(eq(appointments.id, appointmentId));
+      }
 
       /*
        * The board can cancel too, and this path sent nothing.
@@ -4572,9 +4613,9 @@ const workflowRouter = router({
 
       // Marking one dog from a joined/family booking as OUT (picked up) means
       // the whole party has gone \u2014 staff shouldn't have to click each dog
-      // individually. Same linked-dog cascade used elsewhere (bath priority,
-      // bath grouping): shared bath group, else shared booking session,
-      // else same pet-family at the same scheduled time.
+      // individually. The party is the shared booking session, else the
+      // same pet-family at the same scheduled time. A shared bath group is
+      // NOT a party (partyKeyOf, shared/linkedWorkflowCascade.ts).
       let linkedCompleteIds: number[] = [];
       /**
        * Only check-in and completion ever move a linked dog, and they do
@@ -4590,13 +4631,13 @@ const workflowRouter = router({
        * yes. Completion keeps the automatic behaviour it has always had:
        * one dog of a party being collected means the party has gone.
        */
+      const cascadeFrom = fields.workflowState ?? repeatedStage;
       const cascadeStage =
-        fields.workflowState === "complete" ? "complete" as const
-        : fields.workflowState === "checked_in" && alsoCheckInLinked ? "checked_in" as const
+        cascadeFrom === "complete" ? "complete" as const
+        : cascadeFrom === "checked_in" && alsoCheckInLinked ? "checked_in" as const
         : null;
       if (cascadeStage !== null) {
         const [linkKeys] = await db.select({
-          bathGroupId: appointments.bathGroupId,
           sessionId: appointments.sessionId,
           scheduledStart: appointments.scheduledStart,
           petFamilyGroupId: pets.familyGroupId,
@@ -4604,26 +4645,22 @@ const workflowRouter = router({
           .where(eq(appointments.id, appointmentId)).limit(1);
         if (linkKeys) {
           let linkedRows: { id: number }[] = [];
-          if (linkKeys.bathGroupId?.trim()) {
+          // Session, else family at the same time. A shared bath group is
+          // not a party: see partyKeyOf in shared/linkedWorkflowCascade.ts.
+          const party = partyKeyOf(linkKeys);
+          if (party?.kind === "session") {
             linkedRows = await db.select({ id: appointments.id }).from(appointments).where(and(
               eq(appointments.tenantId, currentAppointment.tenantId),
-              eq(appointments.bathGroupId, linkKeys.bathGroupId),
+              eq(appointments.sessionId, party.sessionId),
               sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
               cascadeFilter(cascadeStage),
             ));
-          } else if (linkKeys.sessionId?.trim()) {
-            linkedRows = await db.select({ id: appointments.id }).from(appointments).where(and(
-              eq(appointments.tenantId, currentAppointment.tenantId),
-              eq(appointments.sessionId, linkKeys.sessionId),
-              sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
-              cascadeFilter(cascadeStage),
-            ));
-          } else if (linkKeys.petFamilyGroupId) {
+          } else if (party?.kind === "family") {
             linkedRows = await db.select({ id: appointments.id }).from(appointments)
               .leftJoin(pets, eq(appointments.petId, pets.id))
               .where(and(
                 eq(appointments.tenantId, currentAppointment.tenantId),
-                eq(pets.familyGroupId, linkKeys.petFamilyGroupId),
+                eq(pets.familyGroupId, Number(party.familyGroupId)),
                 eq(appointments.scheduledStart, linkKeys.scheduledStart),
                 sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
                 cascadeFilter(cascadeStage),
@@ -5978,7 +6015,7 @@ const clientsRouter = router({
        * many times they have been.
        *
        * Two grouped queries for the PAGE, not a pair per client.
-       * getDebtSummary did the per-row version and took 64 seconds; the
+       * the old debt summary (removed 17/11/2026) did the per-row version and took 64 seconds; the
        * same shape here over 10,101 clients would be far worse.
        *
        * Deliberately no money column. 6,182 invoices are marked paid,
@@ -6040,7 +6077,7 @@ const clientsRouter = router({
        *
        * The same shape as the pets and visits above, and for the same
        * reason: a query per client over 10,101 of them is what made
-       * getDebtSummary take 64 seconds. Only the rows a membership
+       * the old debt summary take 64 seconds. Only the rows a membership
        * column could show are selected, and `activeMembership` decides
        * which one — so the list and the client record cannot disagree
        * about who is a member.
@@ -9802,134 +9839,6 @@ const membershipsRouter = router({
         .orderBy(desc(memberships.lastFailedPaymentAt));
     }),
 
-  // Debt tracking: for each active membership, count paid billing cycles vs. completed grooms
-  getDebtSummary: protectedProcedure
-    .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db) return [];
-      // Get all active memberships with client/pet info
-      const activeMemberships = await db
-        .select({
-          id: memberships.id,
-          name: memberships.name,
-          tier: memberships.tier,
-          serviceType: memberships.serviceType,
-          pricePerCycle: memberships.pricePerCycle,
-          billingCycleWeeks: memberships.billingCycleWeeks,
-          status: memberships.status,
-          startedAt: memberships.startedAt,
-          clientId: memberships.clientId,
-          petId: memberships.petId,
-          clientFirstName: clients.firstName,
-          clientLastName: clients.lastName,
-          clientPhone: clients.phone,
-          petName: pets.name,
-        })
-        .from(memberships)
-        .leftJoin(clients, eq(memberships.clientId, clients.id))
-        .leftJoin(pets, eq(memberships.petId, pets.id))
-        .where(and(
-          eq(memberships.tenantId, tenantOf(ctx, input)),
-          sql`${memberships.status} IN ('active', 'paused', 'pending_payment')`
-        ));
-
-      if (activeMemberships.length === 0) return [];
-
-      // Two grouped queries, not two per membership.
-      //
-      // This was a Promise.all firing a pair of COUNT(*)s for every active
-      // membership: 153 of them on 15/10/2026, so 306 round trips down one
-      // mysql2 connection, which serialises them. Neither
-      // appointments.membership_id nor membership_payments.membership_id
-      // is indexed, so each one was a full scan as well. Measured end to
-      // end it took 64.5 seconds and the page gave up before it returned —
-      // "Debt summary could not be loaded".
-      //
-      // The same answer as two GROUP BYs takes 0.42 seconds. Scoped by the
-      // membership ids already fetched, so it stays inside this tenant by
-      // construction rather than by remembering a predicate.
-      const membershipIds = activeMemberships.map((m) => m.id);
-
-      const paidRows = await db
-        .select({ membershipId: membershipPayments.membershipId, count: sql<number>`COUNT(*)` })
-        .from(membershipPayments)
-        .where(and(
-          inArray(membershipPayments.membershipId, membershipIds),
-          eq(membershipPayments.status, "paid"),
-        ))
-        .groupBy(membershipPayments.membershipId);
-
-      const groomRows = await db
-        .select({ membershipId: appointments.membershipId, count: sql<number>`COUNT(*)` })
-        .from(appointments)
-        .where(and(
-          inArray(appointments.membershipId, membershipIds),
-          sql`${appointments.workflowState} IN ('complete', 'ready')`,
-        ))
-        .groupBy(appointments.membershipId);
-
-      const paidByMembership = new Map(paidRows.map((r: any) => [Number(r.membershipId), Number(r.count)]));
-      const groomsByMembership = new Map(groomRows.map((r: any) => [Number(r.membershipId), Number(r.count)]));
-
-      const results = activeMemberships.map((m) => {
-        // A membership with no rows is absent from the grouped result, not
-        // a zero in it — which is the whole reason for the ?? 0.
-        const paidCycles = paidByMembership.get(m.id) ?? 0;
-        const groomsDelivered = groomsByMembership.get(m.id) ?? 0;
-        const debtGrooms = Math.max(0, paidCycles - groomsDelivered);
-        const debtAmount = debtGrooms * parseFloat(m.pricePerCycle ?? "0");
-        return {
-          ...m,
-          paidCycles,
-          groomsDelivered,
-          debtGrooms,
-          debtAmount,
-        };
-      });
-      return results.filter(r => r.debtGrooms > 0 || r.paidCycles > 0);
-    }),
-
-  generateDebtInvoice: protectedProcedure
-    .input(z.object({
-      tenantId: z.number().default(1),
-      membershipId: z.number(),
-      debtGrooms: z.number(),
-      pricePerGroom: z.string(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
-      const [m] = await db
-        .select({ clientId: memberships.clientId, name: memberships.name })
-        .from(memberships)
-        .where(eq(memberships.id, input.membershipId))
-        .limit(1);
-      if (!m) throw new Error("Membership not found");
-      const subtotal = (input.debtGrooms * parseFloat(input.pricePerGroom)).toFixed(2);
-      const invNum = `DEBT-${Date.now().toString(36).toUpperCase()}`;
-      const [result] = await db.insert(invoices).values({
-        tenantId: tenantOf(ctx, input),
-        clientId: m.clientId,
-        invoiceNumber: invNum,
-        subtotal,
-        taxAmount: "0",
-        total: subtotal,
-        status: "draft",
-        notes: `Membership debt: ${input.debtGrooms} outstanding groom(s) for "${m.name}"`,
-        dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      });
-      const invoiceId = (result as any).insertId;
-      await db.insert(invoiceLineItems).values({
-        invoiceId,
-        description: `Outstanding grooms owed — ${m.name} (${input.debtGrooms} × $${input.pricePerGroom})`,
-        quantity: String(input.debtGrooms),
-        unitPrice: input.pricePerGroom,
-        lineTotal: subtotal,
-      });
-      return { success: true, invoiceNumber: invNum };
-    }),
-
   recordPaymentFailure: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -10105,36 +10014,6 @@ const membershipsRouter = router({
       }
 
       return { success: true, outcome: input.outcome };
-    }),
-
-  markDebtPaid: protectedProcedure
-    .input(z.object({
-      tenantId: z.number().default(1),
-      membershipId: z.number(),
-      debtGrooms: z.number(),
-      pricePerGroom: z.string(),
-      paymentMethod: z.enum(["cash", "eftpos", "bank_transfer", "square"]).default("cash"),
-    }))
-    .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
-      const [m] = await db
-        .select({ id: memberships.id, name: memberships.name, pricePerCycle: memberships.pricePerCycle })
-        .from(memberships)
-        .where(eq(memberships.id, input.membershipId))
-        .limit(1);
-      if (!m) throw new Error("Membership not found");
-      const amount = (input.debtGrooms * parseFloat(input.pricePerGroom)).toFixed(2);
-      // Insert one paid payment record per owed groom to balance the books
-      const paymentRows = Array.from({ length: input.debtGrooms }, () => ({
-        membershipId: input.membershipId,
-        amount: input.pricePerGroom,
-        status: "paid" as const,
-        gatewayPaymentId: `MANUAL-${Date.now().toString(36).toUpperCase()}`,
-        paidAt: new Date(),
-      }));
-      await db.insert(membershipPayments).values(paymentRows);
-      return { success: true, clearedGrooms: input.debtGrooms, totalAmount: amount };
     }),
 
   getAccountsReceivable: adminProcedure
