@@ -7,12 +7,20 @@
  * locale, so the salon's US-configured machine showed 11/03/2026 for the
  * 3rd of November.
  *
- * **The time half stays a native `<input type="time">`, deliberately.**
- * A native time input also follows the locale — 14:30 against 2:30 PM —
- * but unlike a date that is a difference in STYLE, not in meaning. Nobody
- * misreads 2:30 PM. The native picker is also better than anything worth
- * hand-rolling here, particularly on a phone. The rule is: control what
- * can be misread, leave what cannot.
+ * **The time half is a list of half-hour times** (Lauren, 17/11/2026:
+ * "can we change this to 1/2 hour slots instead of scrolling"). It was a
+ * native `<input type="time">`, whose picker offers every minute of the
+ * day; the New Booking form already used a half-hour list, so editing a
+ * booking was the odd one out. The list comes from the same
+ * `buildTimeSlots`, so the two cannot drift.
+ *
+ * Two things keep it from ever losing a time:
+ *   - the field's current time is always in the list, on the half hour or
+ *     not, so opening a 9:15 booking never moves it;
+ *   - "Other time" swaps in the native time box for the rare odd time
+ *     (a 75-minute groom from 9:00 ends at 10:15).
+ * A native `<select>` rather than a styled one, because on a phone it is
+ * the system's own wheel, which is the best picker there is.
  *
  * A drop-in for `<Input type="datetime-local">`: value and onChange both
  * speak the same `YYYY-MM-DDTHH:mm` string, so a call site converts in one
@@ -22,7 +30,7 @@ import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
 import { cn } from "@/lib/utils";
-import { joinLocalDateTime, splitLocalDateTime } from "@shared/bookingTimeSlots";
+import { buildTimeSlots, joinLocalDateTime, splitLocalDateTime } from "@shared/bookingTimeSlots";
 
 /**
  * Show the fallback day only while the date half is genuinely empty.
@@ -35,6 +43,9 @@ function withFallback(parts: { date: string; time: string }, fallbackDate?: stri
   if (parts.date || !fallbackDate) return parts;
   return { date: fallbackDate, time: parts.time };
 }
+
+/** The list's last entry; never a time, never emitted. */
+const OTHER_TIME = "__other__";
 
 export function DateTimeField({
   value,
@@ -102,6 +113,11 @@ export function DateTimeField({
 
   const { date, time } = parts;
 
+  /** True while the native time box is showing, after "Other time". */
+  const [otherTime, setOtherTime] = useState(false);
+  // The current time is always offered, so nothing is moved by opening it.
+  const slots = buildTimeSlots({ include: time || null });
+
   const emit = (nextDate: string, nextTime: string) => {
     setParts({ date: nextDate, time: nextTime });
     onChange(joinLocalDateTime(nextDate, nextTime));
@@ -130,14 +146,50 @@ export function DateTimeField({
         wrapperClassName="min-w-[9rem] flex-1"
         className={className}
       />
-      <Input
-        type="time"
-        value={time}
-        disabled={disabled}
-        aria-label={ariaLabel ? `${ariaLabel} time` : "Time"}
-        className={cn("w-[7rem] shrink-0", className)}
-        onChange={(e) => emit(date, e.target.value)}
-      />
+      {otherTime ? (
+        <div className="flex shrink-0 items-center gap-1">
+          <Input
+            type="time"
+            value={time}
+            disabled={disabled}
+            aria-label={ariaLabel ? `${ariaLabel} time` : "Time"}
+            className={cn("w-[7rem] shrink-0", className)}
+            onChange={(e) => emit(date, e.target.value)}
+          />
+          <button
+            type="button"
+            disabled={disabled}
+            className="rounded px-1.5 py-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground disabled:opacity-50"
+            onClick={() => setOtherTime(false)}
+          >
+            Half hours
+          </button>
+        </div>
+      ) : (
+        <select
+          value={time}
+          disabled={disabled}
+          aria-label={ariaLabel ? `${ariaLabel} time` : "Time"}
+          className={cn(
+            "border-input dark:bg-input/30 h-9 w-[7.5rem] shrink-0 rounded-md border bg-transparent px-2 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] md:text-sm",
+            "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+            "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+            className,
+          )}
+          onChange={(e) => {
+            if (e.target.value === OTHER_TIME) { setOtherTime(true); return; }
+            emit(date, e.target.value);
+          }}
+        >
+          {/* Nothing chosen yet. Not selectable once a time is set, so a
+              time cannot be cleared by accident. */}
+          {!time && <option value="">Time</option>}
+          {slots.map((slot) => (
+            <option key={slot.value} value={slot.value}>{slot.label}</option>
+          ))}
+          <option value={OTHER_TIME}>Other time…</option>
+        </select>
+      )}
     </div>
   );
 }
