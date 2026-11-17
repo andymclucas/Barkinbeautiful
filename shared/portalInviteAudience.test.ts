@@ -84,3 +84,35 @@ describe("inviteGreeting", () => {
     expect(inviteGreeting("Jo")).toBe("Hi Jo,");
   });
 });
+
+import { restOfBrisbaneWeek } from "./portalInviteAudience";
+
+describe("restOfBrisbaneWeek", () => {
+  // Brisbane is UTC+10 all year.
+  const at = (iso: string) => new Date(iso);
+
+  it("on a Monday morning covers the whole week, up to Sunday midnight", () => {
+    const now = at("2026-11-22T22:00:00Z"); // Mon 23 Nov, 8am Brisbane
+    const week = restOfBrisbaneWeek(now);
+    expect(week.from).toEqual(now);
+    expect(week.to.toISOString()).toBe("2026-11-29T14:00:00.000Z"); // Mon 30 Nov 00:00 Brisbane
+    expect(week.lastDayKey).toBe("2026-11-29");
+  });
+
+  it("mid-week covers only the days that are left", () => {
+    const now = at("2026-11-17T07:00:00Z"); // Tue 17 Nov, 5pm Brisbane
+    const week = restOfBrisbaneWeek(now);
+    expect(week.from).toEqual(now);
+    expect(week.to.toISOString()).toBe("2026-11-22T14:00:00.000Z"); // Mon 23 Nov 00:00 Brisbane
+    expect(week.lastDayKey).toBe("2026-11-22");
+  });
+
+  it("goes by the Brisbane day, not the UTC one", () => {
+    // Sunday 11pm UTC is already Monday 9am in Brisbane: a new week.
+    expect(restOfBrisbaneWeek(at("2026-11-22T23:00:00Z")).lastDayKey).toBe("2026-11-29");
+    // Sunday 1pm UTC is Sunday 11pm in Brisbane: still the old week.
+    const sunday = restOfBrisbaneWeek(at("2026-11-22T13:00:00Z"));
+    expect(sunday.lastDayKey).toBe("2026-11-22");
+    expect(sunday.to.toISOString()).toBe("2026-11-22T14:00:00.000Z");
+  });
+});
