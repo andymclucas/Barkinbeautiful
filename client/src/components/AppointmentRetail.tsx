@@ -5,9 +5,7 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
-} from "@/components/ui/select";
+import { RetailProductPicker } from "@/components/RetailProductPicker";
 
 /**
  * Selling a product at the counter, onto this booking's cart.
@@ -79,35 +77,12 @@ export function AppointmentRetail({ appointmentId, onChanged }: {
         Anything sold at the counter goes on this booking's bill.
       </p>
 
-      <div className="flex items-end gap-2">
-        <div className="min-w-0 flex-1">
-          <Select value={picked} onValueChange={setPicked}>
-            <SelectTrigger className="h-10 text-sm">
-              <SelectValue placeholder="Add a product…" />
-            </SelectTrigger>
-            <SelectContent>
-              {(products ?? []).length === 0 && (
-                <div className="px-2 py-3 text-xs text-muted-foreground">
-                  Nothing in the Retail catalogue yet.
-                </div>
-              )}
-              {(products ?? []).map((p: any) => (
-                <SelectItem key={p.id} value={String(p.id)}>
-                  <span className="flex w-full items-center justify-between gap-3">
-                    <span>{p.name}</span>
-                    <span className="text-muted-foreground">
-                      ${p.priceAud ?? "0.00"}
-                      {/* Shown, never enforced — see the note above. */}
-                      {Number(p.stockQty) <= 0
-                        ? " · none left"
-                        : Number(p.stockQty) <= 3 ? ` · ${p.stockQty} left` : ""}
-                    </span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      {/* items-start: the product list opens downwards in the flow, and
+          How many and Add should stay level with the button, not sink. */}
+      <div className="flex items-start gap-2">
+        <RetailProductPicker
+          className="flex-1" products={products ?? []} value={picked} onChange={setPicked}
+        />
 
         <Input
           className="h-10 w-16 text-sm" inputMode="numeric" title="How many"
