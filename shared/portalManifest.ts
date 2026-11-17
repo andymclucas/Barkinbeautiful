@@ -47,6 +47,15 @@ export const STATIC_PORTAL_MANIFEST_PATH = "/portal.webmanifest";
 export const STAFF_MANIFEST_PATH = "/manifest.webmanifest";
 
 /**
+ * The staff app's home-screen icon, exactly as client/index.html names it.
+ * The file name carries a version (scripts/make-app-icon.mjs says why), so
+ * it changes whenever the icon does, and the swap below has to follow or
+ * a client page keeps the staff icon. portalManifest.test.ts reads the
+ * real index.html and fails if the two drift.
+ */
+export const STAFF_TOUCH_ICON_PATH = "/icon-180-v3.png";
+
+/**
  * Where a portal page's `start_url` should point.
  *
  * A token page points at itself. Anything else keeps `/portal/login`,
@@ -176,7 +185,7 @@ export function portalShellHtml(html: string, pathname: string): string {
       `<link rel="manifest" href="${portalManifestHrefFor(pathname)}" />`
     )
     .replace(
-      '<link rel="apple-touch-icon" href="/icon-192.png" />',
+      `<link rel="apple-touch-icon" href="${STAFF_TOUCH_ICON_PATH}" />`,
       '<link rel="apple-touch-icon" href="/portal-icon-192.png" />'
     )
     .replace(

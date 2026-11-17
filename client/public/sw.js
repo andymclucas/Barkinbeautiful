@@ -51,7 +51,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: "/icon-192.png",
+      icon: "/icon-192-v3.png",
       badge: "/badge-96.png",
       // Same tag replaces rather than stacks, and is shared with the
       // in-page alert so one event cannot produce two notifications.
