@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { GroomigoLogo } from "@/components/GroomigoLogo";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -158,12 +159,12 @@ export default function Login() {
                 : "drop-shadow(0 2px 8px rgba(124,58,237,0.14)) brightness(1)",
             }}
           >
-            <img src="/groomigo_logo.png" alt="Groomigo" style={{ height: "80px", width: "auto" }} />
+            {/* The logo carries the word itself now, in ink that shows on
+                this light screen. The old drawing's lettering was white, so
+                "Groomigo" had been typed again underneath it. */}
+            <GroomigoLogo height={132} />
           </div>
-          <p className="mt-3 text-sm font-medium tracking-widest uppercase" style={{ color: "var(--auth-text-brand-mid)", letterSpacing: "0.2em" }}>
-            Groomigo
-          </p>
-          <p className="mt-1.5 text-sm italic" style={{ color: "var(--auth-text-faint)" }}>
+          <p className="mt-3 text-sm italic" style={{ color: "var(--auth-text-faint)" }}>
             {GROOMIGO_TAGLINE}
           </p>
         </div>

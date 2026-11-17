@@ -106,7 +106,8 @@ export function useStaffNotifications() {
       try {
         const notification = new window.Notification(input.title, {
           body,
-          icon: "/groomigo_logo.png",
+          // The app icon: at this size a lockup with a word under it is a smudge.
+          icon: "/icon-192-v3.png",
           // Same tag replaces rather than stacks, so twenty messages from
           // one thread are one notification, not twenty.
           tag: input.tag,
