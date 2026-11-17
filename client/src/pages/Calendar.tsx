@@ -3133,7 +3133,11 @@ export default function Calendar() {
           const dog = dogs.find(candidate => candidate.id === call.appointmentId);
           return {
             petName: dog?.petName,
-            serviceType: dog?.serviceType,
+            // The service as this save leaves it, so a booking being
+            // changed to day care is not asked about.
+            serviceType: siblings.length > 0
+              ? (dog ? siblingServices[dog.id] ?? dog.serviceType : undefined)
+              : editForm.serviceType,
             usualGroomerId: dog?.petPreferredGroomerId,
             currentGroomerId: dog?.staffId === null || dog?.staffId === undefined ? null : Number(dog.staffId),
             newGroomerId: call.staffId,

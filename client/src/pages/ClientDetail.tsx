@@ -3057,7 +3057,10 @@ export default function ClientDetail() {
                 onRepeatLast={last => {
                   // Only fill a groomer nobody has chosen yet, so
                   // repeating last time cannot undo a deliberate pick.
-                  if (last.staffId && !bookStaffId) setBookStaffId(String(last.staffId));
+                  // The usual groomer the form opened on is not a pick:
+                  // "repeat last" still means last time's groomer, and
+                  // Book then asks if that is not the usual one.
+                  if (last.staffId && (!bookStaffId || bookStaffId === usualGroomerOf(bookPetId))) setBookStaffId(String(last.staffId));
                 }}
               />
             )}
