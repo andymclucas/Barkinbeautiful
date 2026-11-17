@@ -121,9 +121,10 @@ export function prepareClientProfile(input: ClientProfileInput): ClientProfileRe
  *
  * The same `client_contacts` rows staff keep on the client's page, so a
  * contact a client adds shows up on the booking's contact picker with no
- * further work. A client may add one and correct one. Removing stays with
- * the salon: a booking can point at the row, and removeContact is
- * owner-only for exactly that reason.
+ * further work. A client may add one, correct one and remove one (Andy,
+ * 18/11/2026: "Let clients remove a contact too"). Removing takes the
+ * contact off the client's upcoming bookings as well, the same as when
+ * the salon removes one; see clientPortal.removeMyContact.
  */
 export type ClientContactInput = {
   name?: string | null;

@@ -45,7 +45,7 @@ const PUBLIC = [
   // there — SMS cannot carry a picture here, so the link is the way in.
   "clientPhotosRouter.getByToken",
   // The client's own other contacts (18/11/2026), scoped by the portal
-  // session like updateMyProfile: add one, correct one, never remove.
+  // session like updateMyProfile: add one, correct one, remove one.
   "clientPortalRouter.addMyContact",
   "clientPortalRouter.cancelAppointment",
   "clientPortalRouter.completeSetup",
@@ -85,6 +85,7 @@ const PUBLIC = [
   // iPhone Home Screen. Five wrong tries per address per 15 minutes.
   "clientPortalRouter.redeemSignInCode",
   "clientPortalRouter.redeemSignInLink",
+  "clientPortalRouter.removeMyContact",
   // Forgot password (12/11/2026). Answers the same whatever the address,
   // only emails a live account, skips held clients, and is throttled per
   // address and per IP (shared/portalPasswordReset.ts).
@@ -617,7 +618,7 @@ describe("tRPC procedure surface", () => {
     // weekly payments against grooms done, which is always positive for a
     // weekly-billed member, and its two buttons invoiced clients for money
     // already paid and wrote payment rows with no money behind them.
-    expect(surface).toHaveLength(450);
+    expect(surface).toHaveLength(451);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -631,7 +632,7 @@ describe("tRPC procedure surface", () => {
     // 61 since 12/11/2026: clientPortal.requestPasswordReset.
     // 63 since 12/11/2026: the two sign-in link procedures.
     // 64 since 12/11/2026: redeemSignInCode.
-    expect(PUBLIC).toHaveLength(67);
+    expect(PUBLIC).toHaveLength(68);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

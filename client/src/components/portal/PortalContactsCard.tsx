@@ -13,29 +13,39 @@ export type PortalContactDraft = { name: string; phone: string; relationship: st
 /**
  * "Other contacts" on the client's own portal (Lauren, 18/11/2026).
  *
- * Somebody else the salon may ring about the dogs. A client can add one
- * and correct one; taking one off is the salon's, and the card says so
- * rather than leaving them looking for a button.
+ * Somebody else the salon may ring about the dogs. A client can add one,
+ * correct one and remove one. Remove sits inside the edit form and asks
+ * once before it goes, because it cannot be undone from here.
  *
  * Plain props and no tRPC, so it can be rendered in a test: the page
- * hands it the list and the two saves. `onAdd` and `onUpdate` resolve to
- * true when the save went through, which is what closes the form.
+ * hands it the list and the three saves. Each resolves to true when it
+ * went through, which is what closes the form.
  */
-export function PortalContactsCard({ contacts, canAdd, saving, onAdd, onUpdate }: {
+export function PortalContactsCard({ contacts, canAdd, saving, onAdd, onUpdate, onRemove }: {
   contacts: PortalContact[];
   /** False once the client holds as many as the portal allows. */
   canAdd: boolean;
   saving: boolean;
   onAdd: (draft: PortalContactDraft) => Promise<boolean>;
   onUpdate: (contactId: number, draft: PortalContactDraft) => Promise<boolean>;
+  onRemove: (contactId: number) => Promise<boolean>;
 }) {
   /** null = closed, "new" = adding, a number = correcting that contact. */
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [form, setForm] = useState<PortalContactDraft>({ name: "", phone: "", relationship: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  /** True once Remove has been pressed and is waiting for a yes. */
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const editedContact = typeof editing === "number" ? contacts.find((contact) => contact.id === editing) : undefined;
+
+  const remove = async () => {
+    if (typeof editing !== "number") return;
+    if (await onRemove(editing)) setEditing(null);
+  };
 
   const open = (target: PortalContact | "new") => {
     setErrors({});
+    setConfirmingRemove(false);
     setForm(target === "new"
       ? { name: "", phone: "", relationship: "" }
       : { name: target.name, phone: target.phone, relationship: target.relationship ?? "" });
@@ -94,9 +104,6 @@ export function PortalContactsCard({ contacts, canAdd, saving, onAdd, onUpdate }
             ))}
           </ul>
         )}
-        {contacts.length > 0 && (
-          <p className="text-xs text-muted-foreground">To take a contact off, please ask the salon.</p>
-        )}
       </CardContent>
 
       <Dialog open={editing !== null} onOpenChange={(next) => { if (!next && !saving) setEditing(null); }}>
@@ -119,10 +126,32 @@ export function PortalContactsCard({ contacts, canAdd, saving, onAdd, onUpdate }
               {errors.relationship && <p role="alert" className="text-xs text-destructive">{errors.relationship}</p>}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" disabled={saving} onClick={() => setEditing(null)}>Cancel</Button>
-            <Button disabled={saving} onClick={submit}>{saving ? "Saving…" : "Save contact"}</Button>
-          </DialogFooter>
+          {confirmingRemove ? (
+            <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+              <p className="font-medium">Remove {editedContact?.name ?? "this contact"}?</p>
+              <p className="mt-1 text-muted-foreground">
+                We will no longer ring them about your dog, and they come off any upcoming bookings.
+              </p>
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <Button variant="outline" size="sm" disabled={saving} onClick={() => setConfirmingRemove(false)}>Keep</Button>
+                <Button variant="destructive" size="sm" disabled={saving} onClick={remove}>
+                  {saving ? "Removing…" : "Yes, remove"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <DialogFooter className="sm:justify-between">
+              {typeof editing === "number" ? (
+                <Button variant="ghost" className="text-destructive hover:text-destructive" disabled={saving} onClick={() => setConfirmingRemove(true)}>
+                  Remove contact
+                </Button>
+              ) : <span />}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button variant="outline" disabled={saving} onClick={() => setEditing(null)}>Cancel</Button>
+                <Button disabled={saving} onClick={submit}>{saving ? "Saving…" : "Save contact"}</Button>
+              </div>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
     </Card>

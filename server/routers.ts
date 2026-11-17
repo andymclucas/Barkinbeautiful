@@ -16795,9 +16795,9 @@ const clientPortalRouter = router({
    * only their own. Name, phone and relationship only — the contact's
    * email stays a staff field.
    *
-   * There is deliberately no remove. A booking can point at a contact,
-   * and clients.removeContact is owner-only for that reason; a client
-   * who needs one taken off asks the salon.
+   * removeMyContact was added the same day (Andy: "Let clients remove a
+   * contact too"). It does what clients.removeContact does, scoped to the
+   * session's client.
    */
   myContacts: publicProcedure.query(async ({ ctx }) => {
     const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
@@ -16887,6 +16887,51 @@ const clientPortalRouter = router({
           eq(clientContacts.tenantId, tenantId),
         ));
       return { saved: true };
+    }),
+
+  /**
+   * A client taking one of their own contacts off.
+   *
+   * The same two steps as clients.removeContact, in one transaction:
+   * UPCOMING bookings pointing at the contact are released back to the
+   * client, then the row goes. Past bookings keep their id on purpose —
+   * clearing it would say the client collected a dog somebody else did,
+   * and the read helpers already tolerate a contact that has gone.
+   *
+   * Every statement carries the session's client and tenant, so a
+   * contact id belonging to anyone else reads as not found and touches
+   * nothing.
+   */
+  removeMyContact: publicProcedure
+    .input(z.object({ contactId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
+      const [contact] = await db.select({ id: clientContacts.id })
+        .from(clientContacts)
+        .where(and(
+          eq(clientContacts.id, input.contactId),
+          eq(clientContacts.clientId, clientId),
+          eq(clientContacts.tenantId, tenantId),
+        ))
+        .limit(1);
+      if (!contact) throw new TRPCError({ code: "NOT_FOUND", message: "We couldn't find that contact. Please refresh and try again." });
+      await db.transaction(async (tx) => {
+        await tx.update(appointments)
+          .set({ contactId: null, updatedAt: new Date() })
+          .where(and(
+            eq(appointments.contactId, contact.id),
+            eq(appointments.clientId, clientId),
+            eq(appointments.tenantId, tenantId),
+            gte(appointments.scheduledStart, new Date()),
+          ));
+        await tx.delete(clientContacts)
+          .where(and(
+            eq(clientContacts.id, contact.id),
+            eq(clientContacts.clientId, clientId),
+            eq(clientContacts.tenantId, tenantId),
+          ));
+      });
+      return { removed: true };
     }),
 
   cancelAppointment: publicProcedure
