@@ -1,4 +1,5 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { canCancelFromClientPage } from "@shared/cancelFromClientPage";
 import { calendarAppointmentHref } from "@shared/calendarDeepLink";
 import { brisbaneDateKey } from "@shared/localDateTime";
 import { VipMark } from "@/components/VipMark";
@@ -382,6 +383,7 @@ export default function ClientDetail() {
   // session with it, so it goes through a named confirm rather than a
   // window.confirm — the same shape the calendar's Delete booking uses.
   const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string; petName: string | null; companions: string } | null>(null);
+  const [confirmCancelAppt, setConfirmCancelAppt] = useState<{ id: number; label: string; petName: string | null; companions: string } | null>(null);
   /*
    * Andy, 04/11/2026: "Add feature to be able to delete clients - just
    * in case there are duplicates etc." Owner-only and refuses the
@@ -491,6 +493,23 @@ export default function ClientDetail() {
         : "Booking time updated");
     },
     onError: (error) => toast.error(error.message || "Could not change that booking"),
+  });
+  /*
+   * Cancelling from the client's own page (Lauren, 17/11/2026: "need to
+   * have a click button on status to cancel. she texted"). This list
+   * only had a pencil and a bin, and a bin DELETES: no cancellation on
+   * the dog's history, nothing to undo. This is the calendar's own
+   * cancel (calendar.updateWorkflowState), so everything that follows a
+   * cancellation there follows it here, the text to the client included.
+   */
+  const cancelAppointment = trpc.calendar.updateWorkflowState.useMutation({
+    onSuccess: async () => {
+      await utils.clients.getProfile.invalidate({ clientId });
+      await utils.calendar.invalidate();
+      setConfirmCancelAppt(null);
+      toast.success("Booking cancelled");
+    },
+    onError: (error) => toast.error(error.message || "Could not cancel that booking"),
   });
   const deleteAppointment = trpc.calendar.deleteAppointment.useMutation({
     onSuccess: async () => {
@@ -2528,6 +2547,22 @@ export default function ClientDetail() {
                           } variant="outline">
                             {isFuture ? "Upcoming" : a.workflowState === "complete" ? "Complete" : a.status}
                           </Badge>
+                          {canCancelFromClientPage({ scheduledStart: a.scheduledStart, status: a.status, workflowState: a.workflowState }, new Date()) && (
+                            <button
+                              type="button"
+                              className="ml-2 rounded border border-red-200 px-1.5 py-0.5 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+                              title="Cancel this booking. It stays on the dog's history and can be undone from the calendar."
+                              aria-label={`Cancel ${a.petName}'s booking`}
+                              onClick={() => setConfirmCancelAppt({
+                                id: a.id,
+                                petName: a.petName,
+                                companions: joinNames(companionsOf(a, appointments).map(o => o.petName)),
+                                label: `${a.petName}'s booking on ${new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}`,
+                              })}
+                            >
+                              Cancel
+                            </button>
+                          )}
                         </td>
                         <td className="p-3 hidden sm:table-cell">
                           {a.paymentStatus
@@ -3328,6 +3363,32 @@ export default function ClientDetail() {
               onClick={() => clientId && deleteClient.mutate({ clientId })}
             >
               {deleteClient.isPending ? "Deleting…" : "Delete client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!confirmCancelAppt} onOpenChange={open => { if (!open) setConfirmCancelAppt(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel this booking?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Cancel <strong className="text-foreground">{confirmCancelAppt?.label}</strong>?
+            {confirmCancelAppt?.companions
+              ? <> Only {confirmCancelAppt.petName ?? "this dog"} is cancelled. {confirmCancelAppt.companions}, on the same booking, {confirmCancelAppt.companions.includes(" and ") ? "stay" : "stays"} booked.</>
+              : null}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            It is recorded as a cancellation, so it stays on {confirmCancelAppt?.petName ?? "the dog"}&rsquo;s history and can be undone from the calendar.
+            The client is texted that it is cancelled, unless they have that text switched off.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmCancelAppt(null)}>Keep booked</Button>
+            <Button
+              disabled={cancelAppointment.isPending}
+              onClick={() => confirmCancelAppt && cancelAppointment.mutate({ appointmentId: confirmCancelAppt.id, newState: "cancelled" })}
+            >
+              {cancelAppointment.isPending ? "Cancelling…" : "Cancel the booking"}
             </Button>
           </DialogFooter>
         </DialogContent>
