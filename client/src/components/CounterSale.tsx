@@ -5,13 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RetailProductPicker } from "@/components/RetailProductPicker";
 import {
   Loader2,
   Minus,
@@ -351,22 +345,16 @@ export function CounterSale({ onSold }: { onSold?: () => void }) {
           <Label className="text-xs text-muted-foreground">
             What they are buying
           </Label>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={productId} onValueChange={setProductId}>
-              {/* Its own row on a phone. Sharing one with the quantity and
-                    Add left the trigger 116px wide at 375px, which is not
-                    enough to read a product name and its price. */}
-              <SelectTrigger className="w-full sm:w-auto sm:min-w-[12rem] sm:flex-1">
-                <SelectValue placeholder="Add a product…" />
-              </SelectTrigger>
-              <SelectContent>
-                {sellable.map((p: any) => (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    {p.name} · {money(p.priceAud ?? 0)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-start gap-2">
+            {/* Its own row on a phone. Sharing one with the quantity and
+                  Add left the trigger 116px wide at 375px, which is not
+                  enough to read a product name and its price. */}
+            <RetailProductPicker
+              className="w-full sm:w-auto sm:min-w-[12rem] sm:flex-1"
+              products={sellable}
+              value={productId}
+              onChange={setProductId}
+            />
             <Input
               type="number"
               min={1}
