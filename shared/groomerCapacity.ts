@@ -126,3 +126,33 @@ export function overbookingWarning(
   const amount = by === 0.5 ? "half a clip" : `${formatLoad(by)} clip${by === 1 ? "" : "s"}`;
   return `${groomerName} would be ${amount} over ${indefiniteArticle(load.capacity)} ${load.capacity}-dog day (${formatLoad(after)} booked).`;
 }
+
+/**
+ * Does this change put MORE on that groomer's day than is there now?
+ *
+ * The long-day warning asks "Move it there anyway?". Until 17/11/2026 it
+ * asked on every save and every drag for a dog whose groomer was already
+ * over, because the day was counted without the dog and the dog added
+ * back, with no check that anything had changed. A dog already on an
+ * over-full day could not have a note or a price saved without pressing
+ * "Move anyway", and "Leave it where it is" just returned to the unsaved
+ * form. Lauren, 17/11/2026: "still only lets you close the box if you
+ * select move anyway."
+ *
+ * The day only gets heavier when the dog arrives on it (a different
+ * groomer, a different day, or a booking that was not counted because it
+ * was cancelled) or when its service grows (a tidy becoming a clip).
+ * Retiming a dog within its own groomer's day, or editing anything else
+ * about it, changes nothing the warning is about.
+ */
+export function addsToGroomerDay(input: {
+  from: { staffId: number | null | undefined; dateKey: string | null | undefined; serviceType: string | null | undefined; cancelled?: boolean };
+  to: { staffId: number | null | undefined; dateKey: string | null | undefined; serviceType: string | null | undefined };
+}): boolean {
+  const { from, to } = input;
+  // A cancelled booking is not on anybody's day, so wherever it lands it arrives.
+  if (from.cancelled) return true;
+  if ((from.staffId ?? null) !== (to.staffId ?? null)) return true;
+  if (!from.dateKey || !to.dateKey || from.dateKey !== to.dateKey) return true;
+  return clipLoadFor(to.serviceType) > clipLoadFor(from.serviceType);
+}
