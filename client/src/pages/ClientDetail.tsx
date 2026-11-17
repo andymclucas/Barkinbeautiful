@@ -1,4 +1,5 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { portalSetupAddress, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { cleanClientName } from "@shared/clientName";
 import { canCancelFromClientPage } from "@shared/cancelFromClientPage";
 import { calendarAppointmentHref } from "@shared/calendarDeepLink";
@@ -1151,14 +1152,25 @@ export default function ClientDetail() {
               // by Edit details, where this window's own status query was not —
               // so an email just added read as missing until a reload (Lauren,
               // 11/11/2026).
-              const loginEmail = portalAccount?.portalLoginEmail || client.email || portalAccount?.email || null;
+              // The address the next set-up email will go to, by the same rule
+              // the server uses: the client's own email until the portal is in
+              // use (Lauren, 17/11/2026: the panel kept showing an old address).
+              const loginEmail = portalSetupAddress({
+                status: status as PortalAccountStatus,
+                portalLoginEmail: portalAccount?.portalLoginEmail,
+                clientEmail: client.email || portalAccount?.email,
+              }) || null;
+              // Where the LAST set-up email actually went, which can differ from
+              // where the next one will go once the client's email is corrected.
+              const sentTo = isPending ? (portalAccount?.portalLoginEmail ?? "").trim().toLowerCase() || null : null;
+              const addressChanged = Boolean(sentTo && loginEmail && sentTo !== loginEmail);
               const day = (d: Date | string) => new Date(d).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "long", year: "numeric" });
               const statusLine = isActive
                 ? `Using the portal as ${loginEmail ?? "this client"}${portalAccount?.portalLastSignedInAt ? `, last signed in ${day(portalAccount.portalLastSignedInAt)}` : ""}.`
                 : isPending
                   ? portalAccount?.setupExpired
-                    ? `A set-up link was sent to ${loginEmail ?? "them"} but it has expired. Resend it.`
-                    : `Set-up link sent to ${loginEmail ?? "them"}${portalAccount?.portalSetupExpiresAt ? `, works until ${day(portalAccount.portalSetupExpiresAt)}` : ""}. Not finished yet.`
+                    ? `A set-up link was sent to ${sentTo ?? loginEmail ?? "them"} but it has expired. Resend it.`
+                    : `Set-up link sent to ${sentTo ?? loginEmail ?? "them"}${portalAccount?.portalSetupExpiresAt ? `, works until ${day(portalAccount.portalSetupExpiresAt)}` : ""}. Not finished yet.`
                   : isRevoked
                     ? "Portal access was turned off. Setting them up again turns it back on."
                     : "Not set up yet.";
@@ -1179,6 +1191,11 @@ export default function ClientDetail() {
                   <Badge variant="outline">{isActive ? "On the portal" : isPending ? (portalAccount?.setupExpired ? "Link expired" : "Invite sent") : isRevoked ? "Turned off" : "Not set up"}</Badge>
                   <span className="text-muted-foreground">{statusLine}</span>
                 </div>
+                {addressChanged && (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                    That link went to {sentTo}. The email on this client is now {loginEmail}, so Resend set up will send a fresh link there and make it their login.
+                  </p>
+                )}
                 {noEmail && !isActive && (
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                     There's no email address on this client. Add one in Edit details first — their login is their email.

@@ -189,7 +189,7 @@ import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
 import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
 import { getAppointmentMembershipCoverage } from "./appointmentCoverage";
-import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
+import { portalLinkIssueEffect, portalLinkExpiryEffect, portalSetupAddress, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { loadPendingAgreements, recordPortalSignatures, requestIp } from "./portalAgreements";
 import { PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
 import {
@@ -15723,7 +15723,14 @@ const clientPortalRouter = router({
         .limit(1);
       if (!client || client.tenantId !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
 
-      const loginEmail = (input.email ?? client.portalLoginEmail ?? client.email ?? "").trim().toLowerCase();
+      // The email on the client record, until somebody is actually using
+      // the portal: see portalSetupAddress in shared/portalSetupLink.ts.
+      const loginEmail = portalSetupAddress({
+        explicitEmail: input.email,
+        status: client.portalAccountStatus as PortalAccountStatus,
+        portalLoginEmail: client.portalLoginEmail,
+        clientEmail: client.email,
+      });
       if (!loginEmail) throw new TRPCError({ code: "BAD_REQUEST", message: "Add a client email before creating a portal account setup link" });
 
       const [matchingPortalLogin] = await db.select({ id: clients.id })

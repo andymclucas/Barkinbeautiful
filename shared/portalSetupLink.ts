@@ -91,3 +91,42 @@ export function portalLinkExpiryEffect(currentStatus: PortalAccountStatus): { wi
 
 /** Which statuses a setup token may be redeemed against. */
 export const REDEEMABLE_PORTAL_STATUSES: readonly PortalAccountStatus[] = ["setup_pending", "active"];
+
+/**
+ * Which address a portal set-up email goes to, and so becomes the login.
+ *
+ * Lauren, 17/11/2026: "I emailed a portal link and updated to the new email
+ * address above. she didn't get it. So I resent it but noticed the top
+ * right corner had her old address written again."
+ *
+ * The first send saved the client's email as their portal login, and every
+ * later send looked for that saved login FIRST. Edit details changes the
+ * client's email only, so once one set-up email had gone to a wrong or old
+ * address, every resend went there too, and no screen could change it.
+ *
+ * The saved login only deserves to win once somebody is actually using it:
+ *
+ *  - ACTIVE account: the login the client signs in with. Changing it under
+ *    them is how people get locked out, and `portalLinkIssueEffect` treats
+ *    a changed address on a live account as a brand-new account. So an
+ *    active account keeps its login, exactly as before.
+ *  - Anything else (never set up, set-up pending, turned off): nobody is
+ *    signing in with it, so the email on the client record is the truth,
+ *    and the saved login is only a fallback for a record with no email.
+ *
+ * An address given explicitly by the caller always wins.
+ */
+export function portalSetupAddress(input: {
+  explicitEmail?: string | null;
+  status: PortalAccountStatus | null | undefined;
+  portalLoginEmail: string | null | undefined;
+  clientEmail: string | null | undefined;
+}): string {
+  const clean = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
+  const explicit = clean(input.explicitEmail);
+  if (explicit) return explicit;
+  const login = clean(input.portalLoginEmail);
+  const onRecord = clean(input.clientEmail);
+  if (input.status === "active") return login || onRecord;
+  return onRecord || login;
+}
