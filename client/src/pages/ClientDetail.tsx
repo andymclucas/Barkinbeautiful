@@ -1,4 +1,5 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { usualGroomerChangeQuestion } from "@shared/usualGroomerChange";
 import { portalSetupAddress, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { cleanClientName } from "@shared/clientName";
 import { canCancelFromClientPage } from "@shared/cancelFromClientPage";
@@ -855,6 +856,8 @@ export default function ClientDetail() {
    */
   const [alreadyArranged, setAlreadyArranged] = useState(false);
   const [bookStaffId, setBookStaffId] = useState<string>("");
+  /** "Bella is usually groomed by Charlie…", while it waits for an answer. */
+  const [usualGroomerQuestion, setUsualGroomerQuestion] = useState<string | null>(null);
   const { data: staffList } = trpc.staff.list.useQuery({});
   const createAppt = trpc.calendar.createMultiPetAppointment.useMutation({
     onSuccess: () => {
@@ -909,8 +912,30 @@ export default function ClientDetail() {
   const todaysVisits = visitDates.today;
   const nextVisit = visitDates.next;
 
-  const handleBook = () => {
+  /**
+   * The dog's usual groomer as the booking form holds it ("" for none),
+   * so booking from the client's page opens on them just as the calendar
+   * does. Somebody who has left the roster is not a usual groomer.
+   */
+  const usualGroomerOf = (petId: string): string => {
+    const usual = activePets.find(pet => String(pet.id) === petId)?.preferredGroomerId ?? null;
+    return usual !== null && staffList?.some(s => s.id === usual && s.isActive) ? String(usual) : "";
+  };
+  const handleBook = (groomerConfirmed = false) => {
     if (!bookPetId) { toast.error("Please select a pet"); return; }
+    if (!groomerConfirmed) {
+      const chosen = new Set([bookPetId, ...bookFamilyPetIds]);
+      const question = usualGroomerChangeQuestion(
+        activePets.filter(pet => chosen.has(String(pet.id))).map(pet => ({
+          petName: pet.name,
+          serviceType: bookService,
+          usualGroomerId: pet.preferredGroomerId,
+          newGroomerId: bookStaffId ? parseInt(bookStaffId) : null,
+        })),
+        id => staffList?.find(s => s.id === id && s.isActive)?.name,
+      );
+      if (question) { setUsualGroomerQuestion(question); return; }
+    }
     const start = new Date(`${bookDate}T${bookTime}:00`);
     const end = resolveBookingEnd({ start, serviceType: bookService, endTime: bookEndTime });
     if (!end) {
@@ -1070,7 +1095,7 @@ export default function ClientDetail() {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Button size="sm" className="w-full gap-1.5 sm:w-auto" disabled={activePets.length === 0} onClick={() => { setBookPetId(activePets[0] ? String(activePets[0].id) : ""); setBookFamilyPetIds([]); setBookOpen(true); }}>
+            <Button size="sm" className="w-full gap-1.5 sm:w-auto" disabled={activePets.length === 0} onClick={() => { setBookPetId(activePets[0] ? String(activePets[0].id) : ""); setBookFamilyPetIds([]); setBookStaffId(usualGroomerOf(activePets[0] ? String(activePets[0].id) : "")); setBookOpen(true); }}>
               <Plus className="h-4 w-4" /> Book Appointment
             </Button>
           </div>
@@ -2979,7 +3004,12 @@ export default function ClientDetail() {
             {/* Pet selector */}
             <div className="space-y-1.5">
               <Label>Pet</Label>
-	              <Select value={bookPetId} onValueChange={value => { setBookPetId(value); setBookFamilyPetIds([]); }}>
+	              <Select value={bookPetId} onValueChange={value => {
+	                // Follow the newly chosen dog's usual groomer, unless
+	                // somebody has picked a groomer by hand.
+	                if (bookStaffId === usualGroomerOf(bookPetId)) setBookStaffId(usualGroomerOf(value));
+	                setBookPetId(value); setBookFamilyPetIds([]);
+	              }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select pet..." />
                 </SelectTrigger>
@@ -3027,7 +3057,10 @@ export default function ClientDetail() {
                 onRepeatLast={last => {
                   // Only fill a groomer nobody has chosen yet, so
                   // repeating last time cannot undo a deliberate pick.
-                  if (last.staffId && !bookStaffId) setBookStaffId(String(last.staffId));
+                  // The usual groomer the form opened on is not a pick:
+                  // "repeat last" still means last time's groomer, and
+                  // Book then asks if that is not the usual one.
+                  if (last.staffId && (!bookStaffId || bookStaffId === usualGroomerOf(bookPetId))) setBookStaffId(String(last.staffId));
                 }}
               />
             )}
@@ -3088,9 +3121,24 @@ export default function ClientDetail() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBookOpen(false)}>Cancel</Button>
-            <Button onClick={handleBook} disabled={createAppt.isPending}>
+            <Button onClick={() => handleBook()} disabled={createAppt.isPending}>
               {createAppt.isPending ? "Booking..." : "Book Appointment"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Booking a dog with somebody other than its usual groomer asks
+          first, as the calendar does (shared/usualGroomerChange.ts). */}
+      <Dialog open={usualGroomerQuestion !== null} onOpenChange={open => { if (!open) setUsualGroomerQuestion(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change the groomer?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">{usualGroomerQuestion}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUsualGroomerQuestion(null)}>Go back</Button>
+            <Button onClick={() => { setUsualGroomerQuestion(null); handleBook(true); }}>Change anyway</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
