@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  portalLinkIssueEffect,
-  portalLinkExpiryEffect,
-  REDEEMABLE_PORTAL_STATUSES,
-  type PortalAccountStatus,
-} from "@shared/portalSetupLink";
+import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus, portalSetupAddress } from "@shared/portalSetupLink";
 
 const ALL: PortalAccountStatus[] = ["not_enabled", "setup_pending", "active", "revoked"];
 
@@ -111,5 +106,37 @@ describe("which accounts may redeem a token", () => {
     // must not undo it.
     expect(REDEEMABLE_PORTAL_STATUSES).not.toContain("revoked");
     expect(REDEEMABLE_PORTAL_STATUSES).not.toContain("not_enabled");
+  });
+});
+
+describe("which address a portal set-up email goes to", () => {
+  it("follows the email on the client record while the portal is not in use", () => {
+    // Lauren, 17/11/2026: the first email went to an old address, she
+    // corrected the client's email, and the resend went to the old one again.
+    for (const status of ["setup_pending", "not_enabled", "revoked"] as const) {
+      expect(portalSetupAddress({ status, portalLoginEmail: "old@example.com", clientEmail: "new@example.com" })).toBe("new@example.com");
+    }
+  });
+
+  it("keeps the login of somebody who is actually using the portal", () => {
+    // Changing it under them locks them out; that stays a deliberate act.
+    expect(portalSetupAddress({ status: "active", portalLoginEmail: "login@example.com", clientEmail: "other@example.com" })).toBe("login@example.com");
+  });
+
+  it("uses the client's email the first time, when no login is saved yet", () => {
+    expect(portalSetupAddress({ status: "not_enabled", portalLoginEmail: null, clientEmail: " Becky@Example.com " })).toBe("becky@example.com");
+    expect(portalSetupAddress({ status: "active", portalLoginEmail: null, clientEmail: "a@example.com" })).toBe("a@example.com");
+  });
+
+  it("falls back to the saved login when the client record has no email", () => {
+    expect(portalSetupAddress({ status: "setup_pending", portalLoginEmail: "saved@example.com", clientEmail: "" })).toBe("saved@example.com");
+  });
+
+  it("lets an address given explicitly win, whatever is saved", () => {
+    expect(portalSetupAddress({ explicitEmail: "Chosen@Example.com", status: "active", portalLoginEmail: "login@example.com", clientEmail: "other@example.com" })).toBe("chosen@example.com");
+  });
+
+  it("returns nothing when there is no address anywhere", () => {
+    expect(portalSetupAddress({ status: null, portalLoginEmail: null, clientEmail: null })).toBe("");
   });
 });
