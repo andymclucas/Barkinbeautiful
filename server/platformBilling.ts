@@ -3,27 +3,30 @@
  *
  * The rules are in shared/platformBilling.ts. This is the Stripe half.
  *
- * ## Every call here is on the PLATFORM account, with no exceptions
+ * ## Every call here is on GROOMIGO'S OWN Stripe account
  *
- * `requireStripeClient()` is built from STRIPE_SECRET_KEY, and nothing in
- * this file passes Stripe's `{ stripeAccount }` option. That is the whole
- * difference from stripePayments.ts, which passes it whenever the salon
- * has a working connected account so a dog owner's money lands with the
- * salon rather than with us.
+ * `requirePlatformStripeClient()` (server/platformStripe.ts) is built
+ * from GROOMIGO_STRIPE_SECRET_KEY — a different account from
+ * STRIPE_SECRET_KEY, which is the one client payments run through.
+ * Nothing in this file touches that key or passes Stripe's
+ * `{ stripeAccount }` option, which is what stripePayments.ts uses to
+ * land a dog owner's money with the salon.
  *
- * Get that backwards and the salon's subscription fee is charged on the
- * salon's own account — Lauren would be billing herself, into her own
+ * Get that backwards and a salon's subscription fee is charged on a
+ * salon's account — Lauren would be billing herself, into her own
  * balance, and Groomigo would be paid nothing. It would look like it
  * worked.
+ *
+ * Until that account exists and is configured, billing is closed and
+ * every entry point here says so rather than reaching Stripe.
  *
  * ## The customer id is its own column for the same reason
  *
  * A Stripe customer belongs to the account it was created on.
- * `clients.stripe_customer_id` is a dog owner, often minted on a connected
- * account; `tenants.stripe_account_id` is the salon's own account. Neither
- * is usable here, and reusing either produces "No such customer" or bills
- * the wrong party. `tenants.platform_stripe_customer_id` exists so the
- * obvious name is the wrong one.
+ * `clients.stripe_customer_id` is a dog owner; `tenants.stripe_account_id`
+ * is the salon's own account. Neither is usable here.
+ * `tenants.platform_stripe_customer_id` is the salon as a customer of
+ * Groomigo's account, and only ever created by this file.
  *
  * ## Card changes and cancellation go to Stripe's own portal
  *
@@ -35,7 +38,7 @@ import type Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { getDb } from "./db";
 import { tenants } from "../drizzle/schema";
-import { requireStripeClient } from "./stripeClient";
+import { isPlatformBillingOpen, priceIdForPlan, requirePlatformStripeClient, type SalonPlan } from "./platformStripe";
 import { getAppBaseUrl } from "./appUrl";
 import { forgetTrialState } from "./trialState";
 import {
@@ -43,23 +46,7 @@ import {
   type SalonSubscriptionStatus,
 } from "@shared/platformBilling";
 
-export type SalonPlan = "starter" | "professional" | "enterprise";
-
-/**
- * The Stripe price for each plan, from the environment.
- *
- * Not hardcoded and not in the database: a price id is configuration that
- * differs between Stripe's test and live modes, and baking the live one
- * into the repo is how a test deploy charges somebody real money.
- *
- * Unset means that plan cannot be sold yet, and says so rather than
- * failing somewhere inside Stripe with a less useful message.
- */
-export function priceIdForPlan(plan: SalonPlan): string | null {
-  const key = `STRIPE_PRICE_${plan.toUpperCase()}`;
-  const value = process.env[key];
-  return value && value.trim() ? value.trim() : null;
-}
+export { priceIdForPlan, type SalonPlan };
 
 async function loadTenantBilling(tenantId: number) {
   const db = await getDb();
@@ -91,7 +78,7 @@ async function ensurePlatformCustomer(tenantId: number): Promise<string> {
   const { db, tenant } = await loadTenantBilling(tenantId);
   if (tenant.platformStripeCustomerId) return tenant.platformStripeCustomerId;
 
-  const stripe = requireStripeClient();
+  const stripe = requirePlatformStripeClient();
   // No { stripeAccount } — see the note at the top of this file.
   const customer = await stripe.customers.create({
     name: tenant.name,
@@ -120,12 +107,13 @@ export async function createPlatformSubscriptionCheckout(input: {
   tenantId: number;
   plan: SalonPlan;
 }): Promise<{ url: string }> {
-  const priceId = priceIdForPlan(input.plan);
-  if (!priceId) {
-    throw new Error(
-      `The ${input.plan} plan has no Stripe price configured (STRIPE_PRICE_${input.plan.toUpperCase()}).`,
-    );
+  // Closed until Groomigo's own Stripe account, webhook and prices are
+  // all in place. Checked before anything is read or created.
+  if (!isPlatformBillingOpen()) {
+    throw new Error("Plans are not open yet. Talk to us and we will set your subscription up with you.");
   }
+  const priceId = priceIdForPlan(input.plan);
+  if (!priceId) throw new Error(`The ${input.plan} plan is not on sale yet.`);
 
   const { tenant } = await loadTenantBilling(input.tenantId);
   // Barkin' Beautiful. The billing card is on its Settings page like any
@@ -139,7 +127,7 @@ export async function createPlatformSubscriptionCheckout(input: {
   }
 
   const customerId = await ensurePlatformCustomer(input.tenantId);
-  const stripe = requireStripeClient();
+  const stripe = requirePlatformStripeClient();
   const base = getAppBaseUrl();
   const metadata = platformSubscriptionMetadata(input.tenantId);
 
@@ -170,7 +158,8 @@ export async function createPlatformBillingPortal(tenantId: number): Promise<{ u
   if (!tenant.platformStripeCustomerId) {
     throw new Error("This salon has no billing set up yet.");
   }
-  const stripe = requireStripeClient();
+  if (!isPlatformBillingOpen()) throw new Error("Billing is not open yet.");
+  const stripe = requirePlatformStripeClient();
   const session = await stripe.billingPortal.sessions.create({
     customer: tenant.platformStripeCustomerId,
     return_url: `${getAppBaseUrl()}/settings?tab=billing`,
@@ -215,7 +204,7 @@ export async function syncPlatformSubscription(
   if (plan === null) {
     console.error(
       `[stripe] tenant ${tenantId}: subscription ${subscription.id} is on price ${priceId ?? "(none)"}, ` +
-      `which is none of STRIPE_PRICE_STARTER / _PROFESSIONAL / _ENTERPRISE. The salon's plan was left unchanged.`,
+      `which is none of GROOMIGO_STRIPE_PRICE_STARTER / _PROFESSIONAL / _ENTERPRISE. The salon's plan was left unchanged.`,
     );
   }
 

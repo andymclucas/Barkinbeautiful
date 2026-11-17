@@ -125,6 +125,27 @@ export function trialHasEnded(
   return now.getTime() >= ends.getTime();
 }
 
+/**
+ * Does an ended trial actually lock this salon out?
+ *
+ * Only when there is something to buy. Groomigo's own Stripe account and
+ * its prices arrive after the product does (Andy, 17/11/2026), and until
+ * they do a salon whose seven days have passed would be shut out of a
+ * product it has no way to pay for. So while billing is closed the trial
+ * date is kept but not enforced, and the day billing opens it bites.
+ *
+ * Exemption wins over everything: no date and no configuration can
+ * switch off Barkin' Beautiful.
+ */
+export function trialLocksSalon(input: {
+  trialEnded: boolean;
+  billingExempt: boolean;
+  billingOpen: boolean;
+}): boolean {
+  if (input.billingExempt) return false;
+  return input.trialEnded && input.billingOpen;
+}
+
 /** Whole days left, floored. Zero once it has gone. */
 export function trialDaysLeft(
   tenant: TenantEntitlementState,

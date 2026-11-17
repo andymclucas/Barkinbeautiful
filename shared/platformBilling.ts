@@ -97,6 +97,8 @@ export function describeSalonSubscription(input: {
   status: SalonSubscriptionStatus;
   currentPeriodEnd?: Date | null;
   trialEndsAt?: Date | null;
+  /** False while Groomigo cannot take payment yet. Defaults to open. */
+  plansOpen?: boolean;
   now?: Date;
 }): string {
   const now = input.now ?? new Date();
@@ -109,7 +111,9 @@ export function describeSalonSubscription(input: {
         ? `Active — renews ${day(input.currentPeriodEnd)}`
         : "Active";
     case "trialing":
-      if (!input.trialEndsAt) return "Free trial";
+      // No date to count down to, or nothing to buy yet: a deadline
+      // nobody can act on is not worth printing.
+      if (!input.trialEndsAt || input.plansOpen === false) return "Free trial";
       // Once it has run out this is the first line of the one page the
       // salon can still open, so it says what happened and what to do.
       return input.trialEndsAt.getTime() <= now.getTime()
@@ -304,4 +308,55 @@ export function planForPriceId(
     if (configured && configured === priceId) return plan;
   }
   return null;
+}
+
+/**
+ * The Stripe events the platform webhook endpoint must be subscribed to.
+ *
+ * Stripe only delivers what an endpoint subscribes to, and an event that
+ * is not subscribed fails silently — nothing arrives and nothing errors.
+ * Listed here so the handler, the checklist and the test agree.
+ */
+export const PLATFORM_WEBHOOK_EVENTS = [
+  "checkout.session.completed",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+  "invoice.paid",
+  "invoice.payment_failed",
+] as const;
+
+export type PlatformBillingReadiness = {
+  /** Salons can be charged: a plan can be bought AND the payment will be heard. */
+  open: boolean;
+  /** Which plans have a price. Empty while closed, whatever is configured. */
+  purchasablePlans: Array<"starter" | "professional" | "enterprise">;
+  /** What is still to be set, in words, for a log line or an admin. */
+  missing: string[];
+};
+
+/**
+ * Is Groomigo ready to take a salon's money?
+ *
+ * All three are needed, and the webhook secret is not a nicety: without
+ * it a salon could pay in Stripe and this app would never hear about it,
+ * so they would be charged and still locked out. Half-configured counts
+ * as closed.
+ *
+ * "Closed" is a safe state, not an error. While closed no plan is
+ * offered, no checkout can start and no trial locks a salon out — a
+ * salon must never be locked out of a product it has no way to pay for.
+ */
+export function platformBillingReadiness(config: {
+  secretKey: string | null | undefined;
+  webhookSecret: string | null | undefined;
+  prices: Partial<Record<"starter" | "professional" | "enterprise", string | null | undefined>>;
+}): PlatformBillingReadiness {
+  const set = (value: string | null | undefined) => Boolean(value && value.trim());
+  const priced = (["starter", "professional", "enterprise"] as const).filter((plan) => set(config.prices[plan]));
+  const missing: string[] = [];
+  if (!set(config.secretKey)) missing.push("Groomigo's Stripe secret key");
+  if (!set(config.webhookSecret)) missing.push("the platform webhook signing secret");
+  if (priced.length === 0) missing.push("a price for at least one plan");
+  const open = missing.length === 0;
+  return { open, purchasablePlans: open ? priced : [], missing };
 }

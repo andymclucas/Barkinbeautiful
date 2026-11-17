@@ -40,6 +40,8 @@ import { classifyInboundReply, normaliseAustralianMobile, phoneMatchesInboundNum
 import { sendSms } from "../sms";
 import Stripe from "stripe";
 import { processStripeEvent } from "../stripePayments";
+import { processPlatformStripeEvent } from "../platformBillingWebhook";
+import { isPlatformBillingOpen, platformBillingState, platformWebhookSecret, requirePlatformStripeClient } from "../platformStripe";
 import { eventTransport, emitNewMessage, emitCallRinging, emitCallEnded, emitMissedCall } from "../eventBus";
 import { tenantForUser } from "./context";
 import { sdk } from "./sdk";
@@ -140,6 +142,38 @@ async function startServer() {
     } catch (error) {
       console.error("[Stripe] Webhook verification failed", error);
       return res.status(400).send("Webhook verification failed");
+    }
+  });
+  /*
+   * Groomigo's OWN Stripe account: salons paying their subscription.
+   *
+   * A second endpoint with its own signing secret, because it is a second
+   * Stripe account (server/platformStripe.ts). 503 until that account is
+   * configured, which is the state it ships in. Unlike the endpoint
+   * above, a handler failure is a 500 rather than a 400 so it is not
+   * mistaken for a bad signature — Stripe retries either way.
+   */
+  app.post("/api/stripe/platform-webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    const secret = platformWebhookSecret();
+    if (!secret || !isPlatformBillingOpen()) {
+      return res.status(503).json({ error: "Groomigo billing webhook is not configured" });
+    }
+    let event: Stripe.Event;
+    try {
+      const signature = req.headers["stripe-signature"];
+      if (typeof signature !== "string") return res.status(400).send("Missing Stripe signature");
+      event = requirePlatformStripeClient().webhooks.constructEvent(req.body, signature, secret);
+    } catch (error) {
+      console.error("[Stripe] Platform webhook verification failed", error);
+      return res.status(400).send("Webhook verification failed");
+    }
+    try {
+      if (event.id.startsWith("evt_test_")) return res.json({ verified: true });
+      await processPlatformStripeEvent(event);
+      return res.json({ received: true });
+    } catch (error) {
+      console.error(`[Stripe] Platform webhook ${event.type} ${event.id} failed`, error);
+      return res.status(500).send("Webhook handler failed");
     }
   });
   // Opening the webhook URL in a browser sends a GET, which otherwise falls
@@ -1073,6 +1107,15 @@ async function startServer() {
     // VITE_APP_URL is unset, so a misconfiguration is visible in the deploy log
     // instead of being discovered via a customer's dead link.
     logAppUrlConfiguration();
+  // One line at boot, so "why can no salon buy a plan" is answered by the
+  // Render log rather than by reading code. Closed is the expected state
+  // until Groomigo's own Stripe account exists.
+  {
+    const billing = platformBillingState();
+    console.log(billing.open
+      ? `[billing] Groomigo salon billing is OPEN: ${billing.purchasablePlans.join(", ")}`
+      : `[billing] Groomigo salon billing is closed (no trial locks anyone out). Still to set: ${billing.missing.join("; ")}`);
+  }
     // Clears presence entries whose browser never said goodbye — a tab
     // that was killed, a laptop that slept, a network that dropped. The
     // timer is unref'd, so it never holds up a shutdown.

@@ -40,7 +40,7 @@ import type Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { getDb } from "./db";
 import { stripeEvents, tenants } from "../drizzle/schema";
-import { requireStripeClient } from "./stripeClient";
+import { requirePlatformStripeClient } from "./platformStripe";
 import { isDuplicateEntryError } from "./dbErrors";
 import { notifyOwner } from "./ownerNotification";
 import { syncPlatformSubscription, tenantIdForPlatformSubscription } from "./platformBilling";
@@ -62,7 +62,7 @@ export type PlatformWebhookStore = {
     platformStripeSubscriptionId: string | null;
   } | null>;
   tenantIdForSubscription(subscriptionId: string | null): Promise<number | null>;
-  /** On the PLATFORM account: no { stripeAccount }, ever. */
+  /** On Groomigo's own account: no { stripeAccount }, ever. */
   retrieveSubscription(subscriptionId: string): Promise<Stripe.Subscription>;
   sync(tenantId: number, subscription: Stripe.Subscription): Promise<{ status: SalonSubscriptionStatus }>;
   recordEvent(event: { id: string; type: string }, tenantId: number): Promise<void>;
@@ -80,7 +80,7 @@ const realStore: PlatformWebhookStore = {
     return row ?? null;
   },
   tenantIdForSubscription: (subscriptionId) => tenantIdForPlatformSubscription(subscriptionId),
-  retrieveSubscription: (subscriptionId) => requireStripeClient().subscriptions.retrieve(subscriptionId),
+  retrieveSubscription: (subscriptionId) => requirePlatformStripeClient().subscriptions.retrieve(subscriptionId),
   sync: (tenantId, subscription) => syncPlatformSubscription(tenantId, subscription),
   async recordEvent(event, tenantId) {
     const db = await getDb();
@@ -251,4 +251,24 @@ export async function handlePlatformStripeEvent(
   }
 
   return null;
+}
+
+/**
+ * An event from GROOMIGO'S OWN Stripe account, at /api/stripe/platform-webhook.
+ *
+ * That account holds nothing but salons' subscriptions, so anything this
+ * cannot prove is one is ignored — there are no client handlers to hand
+ * it on to. The duplicate check is the same stripe_events ledger the
+ * client endpoint uses; Stripe's event ids are unique across accounts.
+ */
+export async function processPlatformStripeEvent(event: Stripe.Event) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [seen] = await db.select({ id: stripeEvents.id }).from(stripeEvents)
+    .where(eq(stripeEvents.stripeEventId, event.id)).limit(1);
+  if (seen) return { duplicate: true as const };
+
+  const result = await handlePlatformStripeEvent(event);
+  if (result === null) return { ignored: true as const };
+  return result;
 }

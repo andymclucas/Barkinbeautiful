@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CLIENT_PAYMENT_METADATA_KEYS, PLATFORM_SUBSCRIPTION_MARKER, classifyPlatformCheckout,
-  describeSalonSubscription, planForPriceId, platformLinkProblem, platformSubscriptionMetadata,
+  describeSalonSubscription, planForPriceId, platformBillingReadiness, platformLinkProblem,
+  platformSubscriptionMetadata,
   platformTenantIdFromMetadata,
 } from "./platformBilling";
 
@@ -200,5 +201,49 @@ describe("what an expired trial is told on the billing page", () => {
     expect(describeSalonSubscription({
       status: "trialing", trialEndsAt: new Date("2026-11-27T03:00:00Z"), now: NOW,
     })).toBe("Free trial — ends 27 November");
+  });
+});
+
+describe("is Groomigo ready to take a salon's money", () => {
+  const ready = {
+    secretKey: "sk_live_groomigo", webhookSecret: "whsec_groomigo",
+    prices: { starter: "price_s", professional: "price_p", enterprise: null },
+  };
+
+  it("is open with a key, a webhook secret and at least one price", () => {
+    expect(platformBillingReadiness(ready)).toEqual({
+      open: true, purchasablePlans: ["starter", "professional"], missing: [],
+    });
+  });
+
+  it("is closed, offering nothing, when any one of them is missing", () => {
+    for (const config of [
+      { ...ready, secretKey: null },
+      { ...ready, secretKey: "  " },
+      // Without this a salon could pay and never be unlocked.
+      { ...ready, webhookSecret: "" },
+      { ...ready, prices: {} },
+      { ...ready, prices: { starter: "", professional: null } },
+      { secretKey: null, webhookSecret: null, prices: {} },
+    ]) {
+      const state = platformBillingReadiness(config);
+      expect(state.open, JSON.stringify(config)).toBe(false);
+      expect(state.purchasablePlans).toEqual([]);
+      expect(state.missing.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("says everything that is still to be set, not just the first thing", () => {
+    expect(platformBillingReadiness({ secretKey: null, webhookSecret: null, prices: {} }).missing).toHaveLength(3);
+  });
+});
+
+describe("the billing page before plans exist", () => {
+  it("does not print a trial deadline nobody can act on", () => {
+    const NOW = new Date("2026-11-23T00:00:00+10:00");
+    for (const trialEndsAt of [new Date("2026-11-20T03:00:00Z"), new Date("2026-11-27T03:00:00Z")]) {
+      expect(describeSalonSubscription({ status: "trialing", trialEndsAt, plansOpen: false, now: NOW }))
+        .toBe("Free trial");
+    }
   });
 });

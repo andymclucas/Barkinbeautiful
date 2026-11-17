@@ -509,6 +509,14 @@ Required for the app to work: `DATABASE_URL`, `JWT_SECRET`, `VITE_APP_URL`,
 Integrations: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `TWILIO_ACCOUNT_SID`,
 `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, `STRIPE_SECRET_KEY`,
 `STRIPE_WEBHOOK_SECRET`, `CRON_SECRET`.
+Salon billing (a salon paying Groomigo) runs on **Groomigo's own Stripe
+account**, not `STRIPE_SECRET_KEY`: `GROOMIGO_STRIPE_SECRET_KEY`,
+`GROOMIGO_STRIPE_WEBHOOK_SECRET` and `GROOMIGO_STRIPE_PRICE_STARTER` /
+`_PROFESSIONAL` / `_ENTERPRISE`, with its own endpoint at
+`/api/stripe/platform-webhook`. All unset is the normal state until that
+account exists: billing is closed, no plan is offered and **no trial locks a
+salon out**. There is deliberately no fallback to `STRIPE_SECRET_KEY`.
+Checklist: `docs/groomigo-billing-switch-on.md`.
 Optional: `ANTHROPIC_API_KEY` turns on automatic sorting of staff problem
 reports (`server/issueTriage.ts`); unset, reports simply arrive unsorted.
 Push notifications: `VAPID_PRIVATE_KEY` (the only required one),

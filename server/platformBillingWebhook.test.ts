@@ -7,9 +7,15 @@ const { getDb, stripe } = vi.hoisted(() => ({
 }));
 vi.mock("./db", () => ({ getDb }));
 vi.mock("./stripeClient", () => ({ requireStripeClient: () => stripe }));
+vi.mock("./platformStripe", async (original) => ({
+  ...(await original<typeof import("./platformStripe")>()),
+  requirePlatformStripeClient: () => stripe,
+}));
 vi.mock("./ownerNotification", () => ({ notifyOwner: vi.fn(async () => true) }));
 
-import { handlePlatformStripeEvent, type PlatformWebhookStore } from "./platformBillingWebhook";
+import {
+  handlePlatformStripeEvent, processPlatformStripeEvent, type PlatformWebhookStore,
+} from "./platformBillingWebhook";
 import { processStripeEvent } from "./stripePayments";
 import { stripeEvents, tenants } from "../drizzle/schema";
 import { platformSubscriptionMetadata } from "@shared/platformBilling";
@@ -383,7 +389,7 @@ describe("processStripeEvent", () => {
       current_period_end: 1_800_000_000,
       items: { data: [{ price: { id: "price_pro_test" } }] },
     }));
-    vi.stubEnv("STRIPE_PRICE_PROFESSIONAL", "price_pro_test");
+    vi.stubEnv("GROOMIGO_STRIPE_PRICE_PROFESSIONAL", "price_pro_test");
 
     const result = await processStripeEvent(platformCheckout());
 
@@ -438,6 +444,73 @@ describe("processStripeEvent", () => {
     });
     getDb.mockResolvedValue(d.db);
     expect(await processStripeEvent(platformCheckout())).toEqual({ duplicate: true });
+    expect(d.updates).toEqual([]);
+    expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
+  });
+});
+
+/** Groomigo's own account, at /api/stripe/platform-webhook. */
+describe("processPlatformStripeEvent", () => {
+  const database = (tenantRow: Record<string, unknown> | null, alreadySeen = false) => {
+    const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+    const make = (table?: unknown): any => {
+      const rows = () =>
+        table === tenants && tenantRow ? [tenantRow]
+        : table === stripeEvents && alreadySeen ? [{ id: 1 }]
+        : [];
+      const chain: any = {
+        from: (t: unknown) => make(t), where: () => chain,
+        limit: () => Promise.resolve(rows()),
+      };
+      return chain;
+    };
+    return {
+      inserts, updates,
+      db: {
+        select: () => make(),
+        insert: (table: unknown) => ({
+          values: async (values: Record<string, unknown>) => { inserts.push({ table, values }); },
+        }),
+        update: (table: unknown) => ({
+          set: (values: Record<string, unknown>) => ({ where: async () => { updates.push({ table, values }); } }),
+        }),
+      },
+    };
+  };
+  const salon7 = { id: 7, platformStripeCustomerId: "cus_salon7", platformStripeSubscriptionId: null };
+
+  it("links a salon's completed checkout", async () => {
+    const d = database(salon7);
+    getDb.mockResolvedValue(d.db);
+    stripe.subscriptions.retrieve.mockResolvedValue(subscription());
+    expect(await processPlatformStripeEvent(platformCheckout())).toEqual({ platformSubscription: "active" });
+    expect(d.updates.find((u) => u.table === tenants)?.values)
+      .toMatchObject({ platformStripeSubscriptionId: "sub_salon7", subscriptionStatus: "active" });
+    expect(d.inserts.filter((i) => i.table === stripeEvents).map((i) => i.values.tenantId)).toEqual([7]);
+  });
+
+  it("ignores anything on that account that is not a salon's subscription", async () => {
+    // No client handlers behind this endpoint, so nothing is filed
+    // anywhere — least of all under tenant 1. (No salon follows these
+    // subscriptions, so the tenant lookup comes back empty.)
+    const d = database(null);
+    getDb.mockResolvedValue(d.db);
+    for (const e of [
+      event("checkout.session.completed", { mode: "payment", metadata: { tenant_id: "1", invoice_id: "5" } }),
+      event("invoice.paid", { id: "in_1", subscription: "sub_unknown" }),
+      event("charge.refunded", { id: "ch_1" }),
+    ]) {
+      expect(await processPlatformStripeEvent(e)).toEqual({ ignored: true });
+    }
+    expect(d.inserts).toEqual([]);
+    expect(d.updates).toEqual([]);
+  });
+
+  it("does nothing for an event it has already processed", async () => {
+    const d = database(salon7, true);
+    getDb.mockResolvedValue(d.db);
+    expect(await processPlatformStripeEvent(platformCheckout())).toEqual({ duplicate: true });
     expect(d.updates).toEqual([]);
     expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
   });

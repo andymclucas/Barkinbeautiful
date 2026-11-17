@@ -3,6 +3,7 @@ import {
   PLANS, FEATURES, PLAN_FEATURES, effectivePlan, hasFeature,
   smallestPlanWith, upgradeMessage, tenantFeatures, tenantHasFeature, isBillable,
   TRIAL_DAYS, trialEndsAfter, trialHasEnded, trialDaysLeft, canExportData,
+  trialLocksSalon,
   allowedWhileExpired,
 } from "@shared/planEntitlements";
 
@@ -279,5 +280,25 @@ describe("what an expired trial may still reach", () => {
     expect(allowedWhileExpired("clientsExport.everything")).toBe(false);
     expect(allowedWhileExpired("authority.grantSelfAdmin")).toBe(false);
     expect(allowedWhileExpired("systematicOverride.run")).toBe(false);
+  });
+});
+
+describe("when an ended trial actually locks a salon out", () => {
+  it("only once there is a plan to buy", () => {
+    expect(trialLocksSalon({ trialEnded: true, billingExempt: false, billingOpen: true })).toBe(true);
+    // Groomigo's Stripe account and prices arrive after the product. A
+    // salon must not be shut out of something it has no way to pay for.
+    expect(trialLocksSalon({ trialEnded: true, billingExempt: false, billingOpen: false })).toBe(false);
+  });
+
+  it("never while the trial is still running", () => {
+    expect(trialLocksSalon({ trialEnded: false, billingExempt: false, billingOpen: true })).toBe(false);
+    expect(trialLocksSalon({ trialEnded: false, billingExempt: false, billingOpen: false })).toBe(false);
+  });
+
+  it("never for Barkin' Beautiful, whatever else is true", () => {
+    for (const trialEnded of [true, false]) for (const billingOpen of [true, false]) {
+      expect(trialLocksSalon({ trialEnded, billingExempt: true, billingOpen })).toBe(false);
+    }
   });
 });
