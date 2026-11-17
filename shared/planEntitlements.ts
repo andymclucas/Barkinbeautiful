@@ -185,6 +185,16 @@ export function canExportData(): boolean {
 export function tenantFeatures(tenant: TenantEntitlementState, now: Date = new Date()): readonly Feature[] {
   if (tenant.billingExempt) return FEATURES;
 
+  /*
+   * CAUTION for a new caller: this reads the trial date alone and does
+   * not know whether billing is open. The lockout itself (enforceTrial,
+   * via getTrialState) goes through trialLocksSalon, which does. The two
+   * agree today only because the one caller, smsUsage, never selects
+   * trial_ends_at. Pass a full tenant row here and an ended trial takes
+   * every feature away even while there is nothing to buy — decide the
+   * lock with trialLocksSalon first.
+   */
+
   // An expired trial loses EVERYTHING, core included — and that is the
   // one place core is gated.
   //

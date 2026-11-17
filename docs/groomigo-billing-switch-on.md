@@ -58,6 +58,23 @@ each such salon should subscribe immediately, or have its
 `tenants.trial_ends_at` moved. Barkin' Beautiful is `billing_exempt` and is
 never affected.
 
+## Before step 4: check nothing is left over from the old account
+
+Before 17/11/2026 a salon's billing customer would have been created on
+the client-payments Stripe account. A Stripe id only exists on the account
+that made it, so a leftover one fails at checkout with "No such customer".
+None are expected — no price was ever set, and the customer was only made
+after the price check — but confirm it:
+
+```sql
+SELECT id, name, platform_stripe_customer_id, platform_stripe_subscription_id
+FROM tenants
+WHERE platform_stripe_customer_id IS NOT NULL
+   OR platform_stripe_subscription_id IS NOT NULL;
+```
+
+Any row returned needs those two columns cleared before billing opens.
+
 ## Test it once, in Stripe test mode
 
 Do steps 1–4 with the new account's **test** keys on a non-production
