@@ -1,4 +1,5 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { cleanClientName } from "@shared/clientName";
 import { calendarAppointmentHref } from "@shared/calendarDeepLink";
 import { brisbaneDateKey } from "@shared/localDateTime";
 import { VipMark } from "@/components/VipMark";
@@ -453,7 +454,7 @@ export default function ClientDetail() {
   const [contactForm, setContactForm] = useState({ name: "", phone: "", email: "", relationship: "" });
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
-  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false, status: "active" as string });
+  const [editDetailsForm, setEditDetailsForm] = useState({ firstName: "", lastName: "", email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false, status: "active" as string });
   const updateClientDetails = trpc.clients.updateDetails.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -1299,6 +1300,8 @@ export default function ClientDetail() {
                   variant="outline" size="sm"
                   onClick={() => {
                     setEditDetailsForm({
+                      firstName: client.firstName ?? "",
+                      lastName: client.lastName ?? "",
                       email: client.email ?? "",
                       phone: client.phone ?? "",
                       address: client.address ?? "",
@@ -1418,6 +1421,8 @@ export default function ClientDetail() {
                 className="text-left text-sm text-muted-foreground/70 hover:text-muted-foreground italic underline decoration-dotted underline-offset-2"
                 onClick={() => {
                   setEditDetailsForm({
+                    firstName: client.firstName ?? "",
+                    lastName: client.lastName ?? "",
                     email: client.email ?? "",
                     phone: client.phone ?? "",
                     address: client.address ?? "",
@@ -1464,6 +1469,19 @@ export default function ClientDetail() {
           <DialogContent className="sm:max-w-md">
             <DialogHeader><DialogTitle>Edit client details</DialogTitle></DialogHeader>
             <div className="space-y-3">
+              {/* Lauren, 17/11/2026: "wont let me edit the last name
+                  spelling". There were no name fields here, and nowhere
+                  else to fix one either. */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="edit-client-first-name">First name</Label>
+                  <Input id="edit-client-first-name" value={editDetailsForm.firstName} maxLength={100} onChange={e => setEditDetailsForm(f => ({ ...f, firstName: e.target.value }))} />
+                </div>
+                <div>
+                  <Label htmlFor="edit-client-last-name">Last name</Label>
+                  <Input id="edit-client-last-name" value={editDetailsForm.lastName} maxLength={100} onChange={e => setEditDetailsForm(f => ({ ...f, lastName: e.target.value }))} />
+                </div>
+              </div>
               <div>
                 <Label>Email</Label>
                 <Input value={editDetailsForm.email} onChange={e => setEditDetailsForm(f => ({ ...f, email: e.target.value }))} placeholder="client@example.com" />
@@ -1575,7 +1593,8 @@ export default function ClientDetail() {
                     ...(isSettableClientStatus(status) ? { status } : {}),
                   });
                 }}
-                disabled={updateClientDetails.isPending}
+                disabled={updateClientDetails.isPending || !cleanClientName(editDetailsForm.firstName)}
+                title={cleanClientName(editDetailsForm.firstName) ? undefined : "A client needs a first name"}
               >
                 {updateClientDetails.isPending ? "Saving…" : "Save changes"}
               </Button>
