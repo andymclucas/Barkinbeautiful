@@ -758,6 +758,7 @@ function YourContactsCard() {
   const onSettled = () => utils.clientPortal.myContacts.invalidate();
   const add = trpc.clientPortal.addMyContact.useMutation({ onSettled });
   const update = trpc.clientPortal.updateMyContact.useMutation({ onSettled });
+  const remove = trpc.clientPortal.removeMyContact.useMutation({ onSettled });
   if (!contacts.data) return null;
   const attempt = async (save: () => Promise<unknown>, done: string) => {
     try {
@@ -773,9 +774,10 @@ function YourContactsCard() {
     <PortalContactsCard
       contacts={contacts.data.contacts}
       canAdd={contacts.data.canAdd}
-      saving={add.isPending || update.isPending}
+      saving={add.isPending || update.isPending || remove.isPending}
       onAdd={(draft) => attempt(() => add.mutateAsync(draft), "Contact added")}
       onUpdate={(contactId, draft) => attempt(() => update.mutateAsync({ contactId, ...draft }), "Contact updated")}
+      onRemove={(contactId) => attempt(() => remove.mutateAsync({ contactId }), "Contact removed")}
     />
   );
 }

@@ -7,8 +7,9 @@ const sam: PortalContact = { id: 7, name: "Sam Example", phone: "0412345678", re
 function setup(over: Partial<Parameters<typeof PortalContactsCard>[0]> = {}) {
   const onAdd = vi.fn().mockResolvedValue(true);
   const onUpdate = vi.fn().mockResolvedValue(true);
-  render(<PortalContactsCard contacts={[]} canAdd saving={false} onAdd={onAdd} onUpdate={onUpdate} {...over} />);
-  return { onAdd, onUpdate };
+  const onRemove = vi.fn().mockResolvedValue(true);
+  render(<PortalContactsCard contacts={[]} canAdd saving={false} onAdd={onAdd} onUpdate={onUpdate} onRemove={onRemove} {...over} />);
+  return { onAdd, onUpdate, onRemove };
 }
 
 describe("PortalContactsCard", () => {
@@ -18,12 +19,11 @@ describe("PortalContactsCard", () => {
     expect(screen.getByRole("button", { name: "Add a contact" })).toBeInTheDocument();
   });
 
-  it("lists each contact with who they are, and how to have one removed", () => {
+  it("lists each contact with who they are", () => {
     setup({ contacts: [sam] });
     expect(screen.getByText("Sam Example")).toBeInTheDocument();
     expect(screen.getByText("(Daughter)")).toBeInTheDocument();
     expect(screen.getByText("0412345678")).toBeInTheDocument();
-    expect(screen.getByText(/To take a contact off, please ask the salon/)).toBeInTheDocument();
   });
 
   it("hides Add once the client holds as many as allowed", () => {
@@ -65,6 +65,27 @@ describe("PortalContactsCard", () => {
     fireEvent.change(screen.getByLabelText("Their name"), { target: { value: "Sam Sample" } });
     fireEvent.click(screen.getByRole("button", { name: "Save contact" }));
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(7, { name: "Sam Sample", phone: "4152 1234 (work)", relationship: "Daughter" }));
+  });
+
+  it("asks before removing, and removes nothing until the answer is yes", async () => {
+    const { onRemove } = setup({ contacts: [sam] });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Sam Example" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove contact" }));
+    expect(screen.getByText("Remove Sam Example?")).toBeInTheDocument();
+    expect(onRemove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(screen.queryByText("Remove Sam Example?")).toBeNull();
+    expect(onRemove).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove contact" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, remove" }));
+    await waitFor(() => expect(onRemove).toHaveBeenCalledWith(7));
+    await waitFor(() => expect(screen.queryByLabelText("Their name")).toBeNull());
+  });
+
+  it("offers no Remove while adding a new contact", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Add a contact" }));
+    expect(screen.queryByRole("button", { name: "Remove contact" })).toBeNull();
   });
 
   it("keeps the form open when the save did not go through", async () => {
