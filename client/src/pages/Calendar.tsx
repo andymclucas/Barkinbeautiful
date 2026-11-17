@@ -3,7 +3,7 @@ import { applyStaffOrder, moveStaff } from "@shared/staffColumnOrder";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
 import { MoegoBadge } from "@/components/MoegoBadge";
-import { repriceForService } from "@shared/repricing";
+import { priceAfterServiceChange, notRepricedMessage } from "@shared/repricing";
 import type { DogSizeBand } from "@shared/dogSizeBand";
 import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
@@ -2316,18 +2316,55 @@ export default function Calendar() {
     { clientId: editAppt?.clientId ?? 0, petIds: editPetIds },
     { enabled: !!editAppt && !!editAppt.clientId && editPetIds.length > 0 },
   );
+  // Which dogs a membership covers, from the procedure the new-booking
+  // form uses, for each service a plan can cover. No retry: it refuses a
+  // dog that has passed away, and no answer means "not covered", as before.
+  const coverageEnabled = !!editAppt && !!editAppt.clientId && editPetIds.length > 0;
+  const editClassicCoverage = trpc.calendar.getMembershipCoverage.useQuery(
+    { clientId: editAppt?.clientId ?? 0, petIds: editPetIds, serviceType: "classic_groom" },
+    { enabled: coverageEnabled, retry: false },
+  );
+  const editStyledCoverage = trpc.calendar.getMembershipCoverage.useQuery(
+    { clientId: editAppt?.clientId ?? 0, petIds: editPetIds, serviceType: "styled_groom" },
+    { enabled: coverageEnabled, retry: false },
+  );
   const repriceFor = (petId: number, serviceType: string, currentPrice: string | null | undefined) => {
     const pet = repriceContext.data?.pets?.find((row: { petId: number }) => row.petId === petId);
     const catalogue = repriceCatalogue.data ?? [];
     if (!pet || catalogue.length === 0) return null;
-    const outcome = repriceForService({
+    const coverage =
+      serviceType === "classic_groom" ? editClassicCoverage.data
+      : serviceType === "styled_groom" ? editStyledCoverage.data
+      : undefined;
+    return priceAfterServiceChange({
       serviceType,
       sizeBand: pet.sizeBand as DogSizeBand | null,
       tier: pet.tier,
       catalogue,
       currentPrice,
+      coveredByMembership: coverage?.coveredPetIds.includes(petId) ?? false,
     });
-    return outcome.repriced ? outcome : null;
+  };
+  /** Says what a service change did to the price; returns the new figure, if any. */
+  const announceReprice = (
+    outcome: ReturnType<typeof repriceFor>,
+    serviceType: string,
+    currentPrice: string | null | undefined,
+    petName?: string | null,
+  ): string | null => {
+    if (!outcome || outcome.kind === "unchanged") return null;
+    const serviceLabel = SERVICE_LABELS[serviceType] ?? serviceType;
+    const lead = petName ? `${petName}: price` : "Price";
+    if (outcome.kind === "not-repriced") {
+      toast.warning(notRepricedMessage({ reason: outcome.reason, serviceLabel, petName, currentPrice }), { duration: 10000 });
+      return null;
+    }
+    if (outcome.kind === "covered") {
+      toast.success(`${lead} set to $0.00, the membership covers this ${serviceLabel}`);
+    } else {
+      toast.success(`${lead} updated to $${outcome.price} for ${serviceLabel}`);
+    }
+    return outcome.price;
   };
 
   const selectedClientPets = trpc.pets.listByClient.useQuery(
@@ -5986,11 +6023,9 @@ export default function Calendar() {
                               value={siblingServices[pet.id] ?? pet.serviceType}
                               onValueChange={v => {
                                 setSiblingServices(prev => ({ ...prev, [pet.id]: v }));
-                                const moved = repriceFor(pet.petId, v, siblingPrices[pet.id] ?? pet.price);
-                                if (moved) {
-                                  setSiblingPrices(prev => ({ ...prev, [pet.id]: moved.price }));
-                                  toast.success(`${pet.petName}: price updated to $${moved.price}`);
-                                }
+                                const current = siblingPrices[pet.id] ?? pet.price;
+                                const price = announceReprice(repriceFor(pet.petId, v, current), v, current, pet.petName);
+                                if (price !== null) setSiblingPrices(prev => ({ ...prev, [pet.id]: price }));
                               }}
                             >
                               <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
@@ -6004,14 +6039,12 @@ export default function Calendar() {
                     ) : (
                       <Select
                         value={editForm.serviceType}
-                        onValueChange={v => setEditForm(p => {
-                          const moved = editAppt ? repriceFor(editAppt.petId, v, p.price) : null;
-                          if (moved) {
-                            toast.success(`Price updated to $${moved.price} for ${SERVICE_LABELS[v as keyof typeof SERVICE_LABELS] ?? v}`);
-                            return { ...p, serviceType: v, price: moved.price };
-                          }
-                          return { ...p, serviceType: v };
-                        })}
+                        onValueChange={v => {
+                          // Not inside the updater: React may run that twice.
+                          const current = editForm.price;
+                          const price = editAppt ? announceReprice(repriceFor(editAppt.petId, v, current), v, current) : null;
+                          setEditForm(p => (price !== null ? { ...p, serviceType: v, price } : { ...p, serviceType: v }));
+                        }}
                       >
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>

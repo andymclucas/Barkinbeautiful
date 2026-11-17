@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { catalogueePriceFor, repriceForService } from "../shared/repricing";
+import { catalogueePriceFor, repriceForService, priceAfterServiceChange, notRepricedMessage } from "../shared/repricing";
 import type { PriceCatalogueItem } from "../shared/groomPricing";
 
 function row(p: Partial<PriceCatalogueItem> & { id: number; name: string }): PriceCatalogueItem {
@@ -89,5 +89,74 @@ describe("repriceForService", () => {
       catalogue: CATALOGUE, currentPrice: "200.00",
     });
     expect(out).toEqual({ repriced: false, reason: "no-catalogue-price" });
+  });
+});
+
+describe("priceAfterServiceChange", () => {
+  const base = { sizeBand: "medium" as const, tier: "vip" as const, catalogue: CATALOGUE };
+
+  it("sets a covered member groom to zero, not the members' rate", () => {
+    // Fix desk 0009: a member's dog moved onto a groom its plan covers
+    // was re-priced to $176 when a covered groom carries no price.
+    const out = priceAfterServiceChange({
+      ...base, serviceType: "classic_groom", currentPrice: "110.00", coveredByMembership: true,
+    });
+    expect(out).toEqual({ kind: "covered", price: "0.00", from: "110.00" });
+  });
+
+  it("sets a covered groom to zero even with no size or list price", () => {
+    const out = priceAfterServiceChange({
+      serviceType: "styled_groom", sizeBand: null, tier: "vip", catalogue: CATALOGUE,
+      currentPrice: "110.00", coveredByMembership: true,
+    });
+    expect(out).toEqual({ kind: "covered", price: "0.00", from: "110.00" });
+  });
+
+  it("stays quiet when a covered groom is already at zero", () => {
+    const out = priceAfterServiceChange({
+      ...base, serviceType: "classic_groom", currentPrice: "0", coveredByMembership: true,
+    });
+    expect(out).toEqual({ kind: "unchanged" });
+  });
+
+  it("uses the list price when the membership does not cover the service", () => {
+    const out = priceAfterServiceChange({
+      ...base, serviceType: "fft", currentPrice: "0.00", coveredByMembership: false,
+    });
+    expect(out).toEqual({ kind: "repriced", price: "110.00", from: "0.00" });
+  });
+
+  it("says a dog with no size could not be re-priced, and why", () => {
+    const out = priceAfterServiceChange({
+      serviceType: "fft", sizeBand: null, tier: "new", catalogue: CATALOGUE,
+      currentPrice: "200.00", coveredByMembership: false,
+    });
+    expect(out).toEqual({ kind: "not-repriced", reason: "no-size" });
+  });
+
+  it("says a service with no list price could not be re-priced, and why", () => {
+    const out = priceAfterServiceChange({
+      ...base, serviceType: "deshed", currentPrice: "200.00", coveredByMembership: false,
+    });
+    expect(out).toEqual({ kind: "not-repriced", reason: "no-list-price" });
+  });
+
+  it("stays quiet when the figure is already the list price", () => {
+    const out = priceAfterServiceChange({
+      ...base, serviceType: "fft", currentPrice: "110", coveredByMembership: false,
+    });
+    expect(out).toEqual({ kind: "unchanged" });
+  });
+});
+
+describe("notRepricedMessage", () => {
+  it("tells staff the old figure is still there and to check it", () => {
+    expect(notRepricedMessage({ reason: "no-size", serviceLabel: "Deshed", currentPrice: "200.00" }))
+      .toBe("Price not changed (no size on file for this dog). The price is still $200.00, so check it before saving.");
+  });
+
+  it("names the dog on a family booking and the service with no list price", () => {
+    expect(notRepricedMessage({ reason: "no-list-price", serviceLabel: "Deshed", petName: "Biscuit", currentPrice: "" }))
+      .toBe("Biscuit: price not changed (no list price for Deshed at this dog's size). The price is still empty, so check it before saving.");
   });
 });
