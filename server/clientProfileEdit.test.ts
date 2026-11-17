@@ -106,3 +106,46 @@ describe("prepareClientProfile", () => {
     });
   });
 });
+
+import { prepareClientContact, canAddPortalContact, MAX_PORTAL_CONTACTS } from "@shared/clientProfileEdit";
+
+describe("prepareClientContact", () => {
+  it("tidies a contact the way the salon's records hold them", () => {
+    const result = prepareClientContact({ name: "  Sam Example ", phone: "+61 412 345 678", relationship: " Daughter " });
+    expect(result).toEqual({ ok: true, value: { name: "Sam Example", phone: "0412345678", relationship: "Daughter" } });
+  });
+
+  it("leaves a blank relationship genuinely empty", () => {
+    const result = prepareClientContact({ name: "Sam", phone: "0412345678", relationship: "  " });
+    expect(result.ok && result.value.relationship).toBeNull();
+  });
+
+  it("needs a name and a number the salon can ring", () => {
+    const blank = prepareClientContact({ name: " ", phone: "" });
+    expect(blank.ok).toBe(false);
+    if (!blank.ok) expect(Object.keys(blank.errors).sort()).toEqual(["name", "phone"]);
+    const bad = prepareClientContact({ name: "Sam", phone: "12345" });
+    expect(bad.ok).toBe(false);
+  });
+
+  it("keeps a number the salon entered in its own shape when the client has not changed it", () => {
+    const kept = prepareClientContact({ name: "Sam Example", phone: "4152 1234 (work)" }, { storedPhone: "4152 1234 (work)" });
+    expect(kept).toEqual({ ok: true, value: { name: "Sam Example", phone: "4152 1234 (work)", relationship: null } });
+    // Changing it is judged like any number the client types.
+    expect(prepareClientContact({ name: "Sam", phone: "4152 9999" }, { storedPhone: "4152 1234 (work)" }).ok).toBe(false);
+    expect(prepareClientContact({ name: "Sam", phone: "0412 345 678" }, { storedPhone: "4152 1234 (work)" }).ok).toBe(true);
+  });
+
+  it("refuses text too long for the columns", () => {
+    expect(prepareClientContact({ name: "x".repeat(256), phone: "0412345678" }).ok).toBe(false);
+    expect(prepareClientContact({ name: "Sam", phone: "0412345678", relationship: "x".repeat(101) }).ok).toBe(false);
+  });
+});
+
+describe("canAddPortalContact", () => {
+  it("stops at the ceiling", () => {
+    expect(canAddPortalContact(0)).toBe(true);
+    expect(canAddPortalContact(MAX_PORTAL_CONTACTS - 1)).toBe(true);
+    expect(canAddPortalContact(MAX_PORTAL_CONTACTS)).toBe(false);
+  });
+});

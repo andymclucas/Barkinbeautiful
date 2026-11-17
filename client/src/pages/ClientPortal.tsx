@@ -26,6 +26,7 @@ import { brisbaneDateKey } from "@shared/localDateTime";
 
 import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 import { AgreementGate, type GateAgreement } from "@/components/portal/AgreementGate";
+import { PortalContactsCard } from "@/components/portal/PortalContactsCard";
 type PortalPet = { id: number; name: string; breed: string | null; species: string; status: string };
 type PortalAppointment = { id: number; scheduledStart: Date | string; scheduledEnd: Date | string; serviceType: string; status: string; workflowState: string; petId: number; petName: string; petWeightKg: string | number | null; staffId: number | null; staffName: string | null };
 type PortalMembership = { id: number; petId: number | null; name: string; tier: string; status: string; nextBillingDate: Date | string | null };
@@ -746,6 +747,40 @@ function YourDetailsCard({ client, onSaved }: {
 }
 
 /**
+ * The client's other contacts, wired to their own session.
+ *
+ * Only shown to the signed-in client: a staff preview and the old token
+ * link have no portal session for these calls to answer.
+ */
+function YourContactsCard() {
+  const utils = trpc.useUtils();
+  const contacts = trpc.clientPortal.myContacts.useQuery(undefined, { retry: false });
+  const onSettled = () => utils.clientPortal.myContacts.invalidate();
+  const add = trpc.clientPortal.addMyContact.useMutation({ onSettled });
+  const update = trpc.clientPortal.updateMyContact.useMutation({ onSettled });
+  if (!contacts.data) return null;
+  const attempt = async (save: () => Promise<unknown>, done: string) => {
+    try {
+      await save();
+      toast.success(done);
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "That didn't save. Please try again.");
+      return false;
+    }
+  };
+  return (
+    <PortalContactsCard
+      contacts={contacts.data.contacts}
+      canAdd={contacts.data.canAdd}
+      saving={add.isPending || update.isPending}
+      onAdd={(draft) => attempt(() => add.mutateAsync(draft), "Contact added")}
+      onUpdate={(contactId, draft) => attempt(() => update.mutateAsync({ contactId, ...draft }), "Contact updated")}
+    />
+  );
+}
+
+/**
  * Pay for today's appointment (Andy, 11/11/2026).
  *
  * Only on the day, only once the bill is finished, and at least the bill.
@@ -1016,6 +1051,7 @@ export default function ClientPortal() {
     <TodaysBillCard token={token ?? undefined} readOnly={isPreview} />
 
     {!isPreview && <YourDetailsCard client={data.client} onSaved={() => refetch()} />}
+    {!isPreview && !token && <YourContactsCard />}
     {/*
       The preview is a read-only copy of the client's own card, so it carries
       the client's heading. It said "Their details", which contradicted the

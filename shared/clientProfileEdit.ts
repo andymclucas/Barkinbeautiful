@@ -111,3 +111,84 @@ export function prepareClientProfile(input: ClientProfileInput): ClientProfileRe
     },
   };
 }
+
+// ─── The client's other contacts ─────────────────────────────────────────────
+
+/**
+ * Somebody else the salon may ring about this client's dogs — a partner,
+ * a daughter who does the pickup — entered by the client from their portal
+ * (Lauren, 18/11/2026: "put their alternative contact details in there").
+ *
+ * The same `client_contacts` rows staff keep on the client's page, so a
+ * contact a client adds shows up on the booking's contact picker with no
+ * further work. A client may add one and correct one. Removing stays with
+ * the salon: a booking can point at the row, and removeContact is
+ * owner-only for exactly that reason.
+ */
+export type ClientContactInput = {
+  name?: string | null;
+  phone?: string | null;
+  relationship?: string | null;
+};
+
+export type ClientContactValue = {
+  name: string;
+  phone: string;
+  relationship: string | null;
+};
+
+export type ClientContactResult =
+  | { ok: true; value: ClientContactValue }
+  | { ok: false; errors: Record<string, string> };
+
+export const MAX_CONTACT_NAME = 255;
+export const MAX_CONTACT_RELATIONSHIP = 100;
+
+/**
+ * How many contacts one client may hold through the portal. Generous for
+ * a household, and a ceiling on what a signed-in session can write.
+ */
+export const MAX_PORTAL_CONTACTS = 6;
+
+/**
+ * `storedPhone` is the number already on a contact being corrected. Staff
+ * may enter a contact's number in any shape (clients.addContact enforces
+ * no format), so a number the client has not changed is kept exactly as
+ * it is held and not judged: otherwise fixing the spelling of a name
+ * would be refused over a number the client never typed.
+ */
+export function prepareClientContact(
+  input: ClientContactInput,
+  options: { storedPhone?: string | null } = {},
+): ClientContactResult {
+  const errors: Record<string, string> = {};
+
+  const name = (input.name ?? "").trim();
+  const typedPhone = normaliseAustralianPhoneForStorage(input.phone);
+  const stored = (options.storedPhone ?? "").trim();
+  const phoneUnchanged = stored !== "" && typedPhone === normaliseAustralianPhoneForStorage(stored);
+  const phone = phoneUnchanged ? stored : typedPhone;
+  const relationship = (input.relationship ?? "").trim();
+
+  if (!name) errors.name = "Please enter their name.";
+  else if (name.length > MAX_CONTACT_NAME) errors.name = "That name is too long.";
+
+  // Unlike the client's own number, this one is required: a contact the
+  // salon cannot ring is not a contact.
+  if (!phone) errors.phone = "Please enter their phone number.";
+  else if (!phoneUnchanged && !isPlausibleAustralianPhone(phone)) {
+    errors.phone = "Please enter an Australian number, like 0412 345 678.";
+  }
+
+  if (relationship.length > MAX_CONTACT_RELATIONSHIP) {
+    errors.relationship = "Please keep how you know them a little shorter.";
+  }
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+  return { ok: true, value: { name, phone, relationship: relationship || null } };
+}
+
+/** Whether one more contact may be added, given how many are held now. */
+export function canAddPortalContact(heldNow: number): boolean {
+  return heldNow < MAX_PORTAL_CONTACTS;
+}

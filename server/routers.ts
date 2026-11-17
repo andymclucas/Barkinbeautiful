@@ -16,7 +16,7 @@ import { DOG_BREED_CATALOGUE } from "@shared/dogBreedCatalogue";
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { buildPaymentTimeline } from "@shared/portalBilling";
-import { prepareClientProfile } from "@shared/clientProfileEdit";
+import { prepareClientProfile, prepareClientContact, canAddPortalContact, normaliseAustralianPhoneForStorage } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { findDuplicateGroups, suggestSurvivor } from "@shared/clientMerge";
@@ -15497,6 +15497,33 @@ async function resolvePortalClient(db: any, input: { token?: string }, req: any)
   return { clientId: client.id as number, tenantId: client.tenantId as number };
 }
 
+/**
+ * The signed-in portal client, or UNAUTHORIZED.
+ *
+ * The guard getMyPortal and updateMyProfile each spell out inline: a
+ * session cookie, an ACTIVE portal account, and a sessionVersion that
+ * still matches, so a revoked or signed-out-everywhere client is refused.
+ * The ids it returns come from the session and the row it found, never
+ * from the request.
+ */
+async function requireSignedInPortalClient(req: Parameters<typeof readClientPortalSession>[0]) {
+  const session = await readClientPortalSession(req);
+  if (!session) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId })
+    .from(clients)
+    .where(and(
+      eq(clients.id, session.clientId),
+      eq(clients.tenantId, session.tenantId),
+      eq(clients.portalAccountStatus, "active"),
+      eq(clients.portalSessionVersion, session.sessionVersion),
+    ))
+    .limit(1);
+  if (!client) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
+  return { db, clientId: client.id, tenantId: client.tenantId };
+}
+
 const clientPortalRouter = router({
   getAccessStatus: adminProcedure
     .input(z.object({ clientId: z.number().int().positive() }))
@@ -16755,6 +16782,111 @@ const clientPortalRouter = router({
         .where(and(eq(clients.id, existing.id), eq(clients.tenantId, session.tenantId)));
 
       return { saved: true, profile: prepared.value };
+    }),
+
+  /**
+   * The client's other contacts, from their own portal (Lauren,
+   * 18/11/2026: "put their alternative contact details in there").
+   *
+   * These are the same client_contacts rows staff keep on the client's
+   * page. All three procedures share updateMyProfile's guard, through
+   * requireSignedInPortalClient: the client is whoever the session says,
+   * never anything the request supplies, so a client reads and writes
+   * only their own. Name, phone and relationship only — the contact's
+   * email stays a staff field.
+   *
+   * There is deliberately no remove. A booking can point at a contact,
+   * and clients.removeContact is owner-only for that reason; a client
+   * who needs one taken off asks the salon.
+   */
+  myContacts: publicProcedure.query(async ({ ctx }) => {
+    const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
+    const contacts = await db.select({
+      id: clientContacts.id,
+      name: clientContacts.name,
+      phone: clientContacts.phone,
+      relationship: clientContacts.relationship,
+    })
+      .from(clientContacts)
+      .where(and(eq(clientContacts.clientId, clientId), eq(clientContacts.tenantId, tenantId)))
+      .orderBy(asc(clientContacts.name));
+    return { contacts, canAdd: canAddPortalContact(contacts.length) };
+  }),
+
+  addMyContact: publicProcedure
+    .input(z.object({
+      name: z.string().max(400),
+      phone: z.string().max(60),
+      relationship: z.string().max(200).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
+      const prepared = prepareClientContact(input);
+      if (!prepared.ok) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: Object.values(prepared.errors)[0] ?? "Please check the details you entered.",
+        });
+      }
+      const held = await db.select({ id: clientContacts.id, phone: clientContacts.phone })
+        .from(clientContacts)
+        .where(and(eq(clientContacts.clientId, clientId), eq(clientContacts.tenantId, tenantId)));
+      if (!canAddPortalContact(held.length)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That's as many contacts as we can hold here. Please ask the salon if one needs changing." });
+      }
+      // The same number twice is a double-tap or a second go at a typo,
+      // not a second person.
+      if (held.some((row: { phone: string }) => normaliseAustralianPhoneForStorage(row.phone) === prepared.value.phone)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That number is already one of your contacts." });
+      }
+      const [result] = await db.insert(clientContacts).values({
+        tenantId,
+        clientId,
+        name: prepared.value.name,
+        phone: prepared.value.phone,
+        relationship: prepared.value.relationship,
+      });
+      return { saved: true, id: Number((result as any).insertId) };
+    }),
+
+  updateMyContact: publicProcedure
+    .input(z.object({
+      contactId: z.number().int().positive(),
+      name: z.string().max(400),
+      phone: z.string().max(60),
+      relationship: z.string().max(200).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
+      // Every contact this client holds, by the session's client: somebody
+      // else's contact id is simply not among them, and reads as not
+      // found, the same as one that never existed.
+      const held = await db.select({ id: clientContacts.id, phone: clientContacts.phone })
+        .from(clientContacts)
+        .where(and(eq(clientContacts.clientId, clientId), eq(clientContacts.tenantId, tenantId)));
+      const contact = held.find((row: { id: number }) => row.id === input.contactId);
+      if (!contact) throw new TRPCError({ code: "NOT_FOUND", message: "We couldn't find that contact. Please refresh and try again." });
+      // A number the client did not change is kept as the salon holds it,
+      // whatever its shape. See prepareClientContact.
+      const prepared = prepareClientContact(input, { storedPhone: contact.phone });
+      if (!prepared.ok) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: Object.values(prepared.errors)[0] ?? "Please check the details you entered.",
+        });
+      }
+      const newNumber = normaliseAustralianPhoneForStorage(prepared.value.phone);
+      if (held.some((row: { id: number; phone: string }) => row.id !== contact.id && normaliseAustralianPhoneForStorage(row.phone) === newNumber)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That number is already one of your contacts." });
+      }
+      await db.update(clientContacts)
+        .set({ name: prepared.value.name, phone: prepared.value.phone, relationship: prepared.value.relationship })
+        .where(and(
+          eq(clientContacts.id, contact.id),
+          eq(clientContacts.clientId, clientId),
+          eq(clientContacts.tenantId, tenantId),
+        ));
+      return { saved: true };
     }),
 
   cancelAppointment: publicProcedure
