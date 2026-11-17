@@ -129,3 +129,45 @@ export function changeVersus(current: number, previous: number): ChangeVersus {
   if (then === 0) return { direction, percent: null };
   return { direction, percent: Math.round((Math.abs(now - then) / Math.abs(then)) * 1000) / 10 };
 }
+
+/**
+ * A period that reaches back before revenue was being recorded.
+ *
+ * Andy, 17/11/2026: "Add the yearly warning to Reporting". Barkin'
+ * Beautiful's 7,008 bookings before 8 August 2025 came across from the
+ * old system as bare bookings: still "scheduled", no price. Revenue only
+ * counts completed, priced visits, so January to July 2025 holds 4,526
+ * bookings and $0, and set against that this year reads as revenue up
+ * 160%, which is not real.
+ *
+ * Nothing here knows that date. It compares the first day with a past
+ * booking against the first day with any revenue, both read from the
+ * salon's own data, so it is right for any salon and goes quiet by
+ * itself if the history is ever filled in.
+ *
+ * A gap shorter than REVENUE_GAP_MIN_DAYS is ordinary life, not missing
+ * history: a new salon's first visits may be free, or not yet marked
+ * complete, for days. Only a gap of a month or more is called one.
+ *
+ * Known limit: one stray completed, priced booking early in the history
+ * moves the boundary back to it and hides the gap.
+ *
+ * Returns the day revenue starts, when the period begins before it;
+ * otherwise null.
+ */
+export const REVENUE_GAP_MIN_DAYS = 31;
+
+export function revenueGapStart(input: {
+  periodFromKey: string;
+  bookingsFrom: string | null | undefined;
+  revenueRecordedFrom: string | null | undefined;
+}): string | null {
+  const { periodFromKey, bookingsFrom, revenueRecordedFrom } = input;
+  const key = /^\d{4}-\d{2}-\d{2}$/;
+  if (!bookingsFrom || !revenueRecordedFrom) return null;
+  if (!key.test(bookingsFrom) || !key.test(revenueRecordedFrom) || !key.test(periodFromKey)) return null;
+  // Revenue from (about) the first booking on: no gap to warn about.
+  const gapDays = Math.round((toUtc(revenueRecordedFrom) - toUtc(bookingsFrom)) / DAY);
+  if (gapDays < REVENUE_GAP_MIN_DAYS) return null;
+  return periodFromKey < revenueRecordedFrom ? revenueRecordedFrom : null;
+}

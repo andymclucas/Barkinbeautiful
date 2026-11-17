@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeVersus, previousReportPeriod } from "./reportPreviousPeriod";
+import { changeVersus, previousReportPeriod, revenueGapStart } from "./reportPreviousPeriod";
 
 const prev = (kind: Parameters<typeof previousReportPeriod>[0]["kind"], fromKey: string, toKey: string) =>
   previousReportPeriod({ kind, fromKey, toKey });
@@ -75,5 +75,36 @@ describe("how a figure moved", () => {
   it("gives no percentage against nothing", () => {
     expect(changeVersus(500, 0)).toEqual({ direction: "up", percent: null });
     expect(changeVersus(0, 0)).toEqual({ direction: "flat", percent: null });
+  });
+});
+
+describe("a period from before revenue was recorded", () => {
+  const data = { bookingsFrom: "2023-02-01", revenueRecordedFrom: "2025-08-01" };
+
+  it("is flagged when it starts before the first day with revenue", () => {
+    expect(revenueGapStart({ periodFromKey: "2025-01-01", ...data })).toBe("2025-08-01");
+    expect(revenueGapStart({ periodFromKey: "2025-07-31", ...data })).toBe("2025-08-01");
+  });
+
+  it("is left alone when it starts on or after that day", () => {
+    expect(revenueGapStart({ periodFromKey: "2025-08-01", ...data })).toBeNull();
+    expect(revenueGapStart({ periodFromKey: "2026-10-01", ...data })).toBeNull();
+  });
+
+  it("never fires for a salon whose revenue starts with its bookings", () => {
+    expect(revenueGapStart({ periodFromKey: "2020-01-01", bookingsFrom: "2026-03-02", revenueRecordedFrom: "2026-03-02" })).toBeNull();
+  });
+
+  it("does not call a few weeks of ordinary lag a gap", () => {
+    // A new salon: first visits free or not yet completed for three weeks.
+    expect(revenueGapStart({ periodFromKey: "2026-03-01", bookingsFrom: "2026-03-02", revenueRecordedFrom: "2026-03-23" })).toBeNull();
+    // A month or more is missing history.
+    expect(revenueGapStart({ periodFromKey: "2026-03-01", bookingsFrom: "2026-03-02", revenueRecordedFrom: "2026-04-02" })).toBe("2026-04-02");
+  });
+
+  it("says nothing while the dates are unknown", () => {
+    expect(revenueGapStart({ periodFromKey: "2025-01-01", bookingsFrom: null, revenueRecordedFrom: null })).toBeNull();
+    expect(revenueGapStart({ periodFromKey: "2025-01-01", bookingsFrom: "2023-02-01", revenueRecordedFrom: undefined })).toBeNull();
+    expect(revenueGapStart({ periodFromKey: "garbage", ...data })).toBeNull();
   });
 });

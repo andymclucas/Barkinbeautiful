@@ -10,7 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
-import { previousReportPeriod } from "@shared/reportPreviousPeriod";
+import { previousReportPeriod, revenueGapStart } from "@shared/reportPreviousPeriod";
 import { brisbaneExplicitRange } from "@shared/localDateTime";
 import { VersusPrevious } from "@/components/VersusPrevious";
 import { WorkflowTimingChart } from "@/components/WorkflowTimingChart";
@@ -226,6 +226,20 @@ export default function Reporting() {
     dateFrom: from, dateTo: to,
   });
 
+  /* Revenue for days before the salon's first priced booking is
+     understated, so a period reaching back that far is flagged rather
+     than compared in silence. Same query the range picker already runs. */
+  const { data: dataSpan } = trpc.analytics.dataYears.useQuery({});
+  const gapFor = (periodFromKey: string) => revenueGapStart({
+    periodFromKey, bookingsFrom: dataSpan?.bookingsFrom, revenueRecordedFrom: dataSpan?.revenueRecordedFrom,
+  });
+  const previousGap = gapFor(previous.fromKey);
+  const currentGap = gapFor(range.fromKey);
+  const gapDay = (key: string) => {
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  };
+
   const { data: previousSummary, isError: previousSummaryFailed } = trpc.analytics.summary.useQuery({
     dateFrom: previousFrom, dateTo: previousTo,
   });
@@ -305,6 +319,14 @@ export default function Reporting() {
                 does not cover. */}
             <p className="text-muted-foreground text-sm">{range.dates}</p>
             <p className="text-muted-foreground text-xs">Compared with the {previous.name}: {previousDates}</p>
+            {(previousGap || currentGap) && (
+              <p role="note" className="mt-2 max-w-xl rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                Revenue is only counted from {gapDay((currentGap ?? previousGap)!)}: no earlier booking is recorded as a completed, priced visit. So{" "}
+                {currentGap
+                  ? "revenue for these dates is understated, and the change in revenue shown here cannot be relied on."
+                  : `revenue for the ${previous.name} is understated, and the change in revenue shown here is larger than it really was.`}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" className="h-9 gap-1.5" disabled={exporting} onClick={handleExport}>

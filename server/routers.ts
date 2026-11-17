@@ -10719,7 +10719,7 @@ const analyticsRouter = router({
     .input(z.object({ tenantId: z.number().default(1) }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) return { years: yearOptions(null, null) };
+      if (!db) return { years: yearOptions(null, null), bookingsFrom: null, revenueRecordedFrom: null };
 
       const [row] = await db
         .select({
@@ -10729,7 +10729,33 @@ const analyticsRouter = router({
         .from(appointments)
         .where(eq(appointments.tenantId, tenantOf(ctx, input)));
 
-      return { years: yearOptions(Number(row?.earliest) || null, Number(row?.latest) || null) };
+      // The first Brisbane day with a booking that has already happened,
+      // and the first with any revenue (a completed, priced visit). Where
+      // a salon's history was imported as bare bookings, never completed
+      // and never priced, the second is much later than the first and
+      // every revenue figure for the days in between is understated
+      // (shared/reportPreviousPeriod.ts, revenueGapStart). Read from the
+      // data, so it is right for any salon and moves if the history is
+      // ever filled in. Bookings still to come are left out: a salon that
+      // opened yesterday has future bookings and no revenue, and no gap.
+      const now = new Date();
+      const [span] = await db
+        .select({
+          bookingsFrom: sql<string | null>`DATE_FORMAT(MIN(CASE WHEN ${appointments.scheduledStart} < ${now} THEN CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00') END), '%Y-%m-%d')`,
+          revenueFrom: sql<string | null>`DATE_FORMAT(MIN(CASE WHEN ${appointments.workflowState} = 'complete' AND ${appointments.price} > 0 THEN CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00') END), '%Y-%m-%d')`,
+        })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantOf(ctx, input)),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
+        ));
+
+      return {
+        years: yearOptions(Number(row?.earliest) || null, Number(row?.latest) || null),
+        bookingsFrom: span?.bookingsFrom ?? null,
+        revenueRecordedFrom: span?.revenueFrom ?? null,
+      };
     }),
 
   summary: protectedProcedure
