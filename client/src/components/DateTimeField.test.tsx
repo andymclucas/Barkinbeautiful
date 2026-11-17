@@ -20,13 +20,25 @@ describe("DateTimeField — what it shows", () => {
     expect(timeBox().value).toBe("09:00");
   });
 
-  it("leaves the time half native, since a time cannot be misread", () => {
-    // 14:30 against 2:30 PM is a difference in style, not in meaning - and
-    // the native picker beats anything worth hand-rolling, on a phone most
-    // of all. Control what can be misread; leave what cannot.
+  it("offers the time as a list of half hours, not a minute picker", () => {
+    // Lauren, 17/11/2026: "can we change this to 1/2 hour slots instead of
+    // scrolling". The native time box offered every minute of the day.
     show("2026-11-03T09:00");
-    expect(timeBox().type).toBe("time");
+    expect(timeBox().tagName).toBe("SELECT");
+    const times = Array.from(timeBox().querySelectorAll("option")).map((o) => o.value);
+    expect(times).toContain("07:00");
+    expect(times).toContain("09:30");
+    expect(times).toContain("18:00");
+    expect(times).not.toContain("09:01");
+    expect(times).not.toContain("09:15");
     expect(dateBox().type).toBe("text");
+  });
+
+  it("keeps a booking's own time in the list when it is not on the half hour", () => {
+    // Opening a 9:15 booking must never move it to 9:00 or 9:30.
+    show("2026-11-03T09:15");
+    expect(timeBox().value).toBe("09:15");
+    expect(screen.getByRole("option", { name: "9:15 am" })).toBeInTheDocument();
   });
 
   it("shows both halves empty for an empty value", () => {
@@ -48,9 +60,26 @@ describe("DateTimeField — editing", () => {
   it("keeps the date when the time is changed", async () => {
     const user = setupUser();
     show("2026-11-03T09:00");
-    await user.clear(timeBox());
-    await user.type(timeBox(), "14:30");
+    await user.selectOptions(timeBox(), "14:30");
     expect(onChange).toHaveBeenLastCalledWith("2026-11-03T14:30");
+  });
+
+  it("lets an odd time be typed through Other time, and goes back to the list", async () => {
+    // A 75-minute groom from 9:00 ends at 10:15.
+    const user = setupUser();
+    show("2026-11-03T09:00");
+    await user.selectOptions(timeBox(), "__other__");
+    // Choosing "Other time" is not a time: nothing is saved by it.
+    expect(onChange).not.toHaveBeenCalled();
+    expect(timeBox().tagName).toBe("INPUT");
+    expect(timeBox().type).toBe("time");
+    expect(timeBox().value).toBe("09:00");
+    await user.clear(timeBox());
+    await user.type(timeBox(), "10:15");
+    expect(onChange).toHaveBeenLastCalledWith("2026-11-03T10:15");
+    await user.click(screen.getByRole("button", { name: "Half hours" }));
+    expect(timeBox().tagName).toBe("SELECT");
+    expect(timeBox().value).toBe("10:15");
   });
 
   it("does not wipe the time off screen when the date is cleared", async () => {
@@ -143,7 +172,7 @@ describe("DateTimeField — a fallback day", () => {
   it("emits the whole value once the time is typed", async () => {
     const user = setupUser();
     show("", { fallbackDate: "2027-01-19" });
-    await user.type(timeBox(), "14:30");
+    await user.selectOptions(timeBox(), "14:30");
     expect(onChange).toHaveBeenLastCalledWith("2027-01-19T14:30");
   });
 
