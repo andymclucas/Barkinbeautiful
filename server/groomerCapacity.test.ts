@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groomerDayLoad, overbookingWarning, isClip, isTidy, clipLoadFor, clipLoadOf } from "@shared/groomerCapacity";
+import { addsToGroomerDay, groomerDayLoad, overbookingWarning, isClip, isTidy, clipLoadFor, clipLoadOf } from "@shared/groomerCapacity";
 
 describe("what uses up a groomer's day", () => {
   it("counts clips", () => {
@@ -123,5 +123,39 @@ describe("a tidy is half a clip", () => {
   it("leaves a day with room alone even once tidies count", () => {
     // 5 clips + 1 tidy = 5.5 against an 8.
     expect(overbookingWarning(groomerDayLoad(5.5, 8), "Megs", 1)).toBeNull();
+  });
+});
+
+describe("whether a change adds to a groomer's day", () => {
+  const onZee = { staffId: 7, dateKey: "2026-11-17", serviceType: "classic_groom" };
+
+  it("does not when only the time, a note or the price changes", () => {
+    // Lauren, 17/11/2026: a dog already on an over-full day could not be
+    // saved without pressing "Move anyway".
+    expect(addsToGroomerDay({ from: onZee, to: { ...onZee } })).toBe(false);
+  });
+
+  it("does when the dog moves to a different groomer", () => {
+    expect(addsToGroomerDay({ from: onZee, to: { ...onZee, staffId: 8 } })).toBe(true);
+    expect(addsToGroomerDay({ from: { ...onZee, staffId: null }, to: onZee })).toBe(true);
+  });
+
+  it("does when the dog moves to a different day", () => {
+    expect(addsToGroomerDay({ from: onZee, to: { ...onZee, dateKey: "2026-11-18" } })).toBe(true);
+  });
+
+  it("does when the service gets heavier, and not when it gets lighter or stays", () => {
+    expect(addsToGroomerDay({ from: { ...onZee, serviceType: "fft" }, to: onZee })).toBe(true);
+    expect(addsToGroomerDay({ from: onZee, to: { ...onZee, serviceType: "fft" } })).toBe(false);
+    expect(addsToGroomerDay({ from: onZee, to: { ...onZee, serviceType: "styled_groom" } })).toBe(false);
+  });
+
+  it("does when a cancelled booking is brought back, because it was not being counted", () => {
+    expect(addsToGroomerDay({ from: { ...onZee, cancelled: true }, to: { ...onZee } })).toBe(true);
+  });
+
+  it("errs towards asking when the day is not known", () => {
+    expect(addsToGroomerDay({ from: { ...onZee, dateKey: null }, to: onZee })).toBe(true);
+    expect(addsToGroomerDay({ from: onZee, to: { ...onZee, dateKey: "" } })).toBe(true);
   });
 });
