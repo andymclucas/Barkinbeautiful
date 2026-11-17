@@ -44,6 +44,9 @@ const PUBLIC = [
   // them and nothing else. Returns a first name and the reason and stops
   // there — SMS cannot carry a picture here, so the link is the way in.
   "clientPhotosRouter.getByToken",
+  // The client's own other contacts (18/11/2026), scoped by the portal
+  // session like updateMyProfile: add one, correct one, never remove.
+  "clientPortalRouter.addMyContact",
   "clientPortalRouter.cancelAppointment",
   "clientPortalRouter.completeSetup",
   "clientPortalRouter.createMyCardSetupLink",
@@ -69,6 +72,7 @@ const PUBLIC = [
   // link is the identity; it can only open a Stripe page for a bill on
   // that client's own account, sized again from the database, and only
   // for Groomigo's own open bills (shared/portalInvoicePay.ts).
+  "clientPortalRouter.myContacts",
   "clientPortalRouter.payMyInvoice",
   // Pay for today's appointment (11/11/2026): the portal session or access
   // link is the identity; it only reports and pays THIS client's bookings
@@ -104,6 +108,7 @@ const PUBLIC = [
   "clientPortalRouter.signMyAgreements",
   "clientPortalRouter.signWithAgreementLink",
   "clientPortalRouter.todaysBill",
+  "clientPortalRouter.updateMyContact",
   "clientPortalRouter.updateMyProfile",
   // An owner answering a quote for extra work found mid-groom, from a
   // texted link. Public on purpose and not behind the portal login: the
@@ -612,7 +617,7 @@ describe("tRPC procedure surface", () => {
     // weekly payments against grooms done, which is always positive for a
     // weekly-billed member, and its two buttons invoiced clients for money
     // already paid and wrote payment rows with no money behind them.
-    expect(surface).toHaveLength(447);
+    expect(surface).toHaveLength(450);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -626,7 +631,7 @@ describe("tRPC procedure surface", () => {
     // 61 since 12/11/2026: clientPortal.requestPasswordReset.
     // 63 since 12/11/2026: the two sign-in link procedures.
     // 64 since 12/11/2026: redeemSignInCode.
-    expect(PUBLIC).toHaveLength(64);
+    expect(PUBLIC).toHaveLength(67);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
