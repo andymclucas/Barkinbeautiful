@@ -1300,9 +1300,9 @@ export default function ClientDetail() {
                   variant="outline" size="sm"
                   onClick={() => {
                     setEditDetailsForm({
-                    firstName: client.firstName ?? "",
-                    lastName: client.lastName ?? "",
-                    email: client.email ?? "",
+                      firstName: client.firstName ?? "",
+                      lastName: client.lastName ?? "",
+                      email: client.email ?? "",
                       phone: client.phone ?? "",
                       address: client.address ?? "",
                       notes: client.notes ?? "",
