@@ -95,7 +95,9 @@ export async function portalInviteAudience(db: any, tenantId: number, scope: Por
         eq(appointments.tenantId, tenantId),
         gte(appointments.scheduledStart, week.from),
         lt(appointments.scheduledStart, week.to),
-        notInArray(appointments.status, ["cancelled", "no_show"]),
+        // "pending" is an online request nobody has approved yet: not a
+        // booking, and it may be declined, so it earns no invitation.
+        notInArray(appointments.status, ["cancelled", "no_show", "pending"]),
         notInArray(appointments.workflowState, ["cancelled", "no_show"]),
       ));
     const booked = new Set(bookedRows.map((r) => r.clientId));
