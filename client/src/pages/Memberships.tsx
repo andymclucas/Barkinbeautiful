@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { billingCycleFromWeeks } from "@shared/stripeBilling";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, TrendingDown, FileText, CheckCircle, XCircle, RefreshCw, Landmark } from "lucide-react";
+import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, CheckCircle, XCircle, RefreshCw, Landmark } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { MembershipAccountsReceivable } from "@/components/MembershipAccountsReceivable";
 import { MembershipSignupRequests } from "@/components/MembershipSignupRequests";
@@ -1192,7 +1192,7 @@ export default function Memberships() {
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window === "undefined") return "active";
     const requested = new URLSearchParams(window.location.search).get("tab");
-    const allowed = ["active", "pending_payment", "paused", "cancelled", "debt", "failed_payments", "receivable"];
+    const allowed = ["active", "pending_payment", "paused", "cancelled", "failed_payments", "receivable"];
     return requested && allowed.includes(requested) ? requested : "active";
   });
   const [page, setPage] = useState(1);
@@ -1220,24 +1220,6 @@ export default function Memberships() {
   }, { enabled: isAdmin });
 
   const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({}, { enabled: isAdmin });
-  const { data: debtSummary, refetch: refetchDebt } = trpc.memberships.getDebtSummary.useQuery({}, { enabled: isAdmin });
-  const generateInvoiceMutation = trpc.memberships.generateDebtInvoice.useMutation({
-    onSuccess: (res) => {
-      toast.success(`Draft invoice ${res.invoiceNumber} created`);
-      refetchDebt();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const markPaidMutation = trpc.memberships.markDebtPaid.useMutation({
-    onSuccess: (res) => {
-      toast.success(`Cleared ${res.clearedGrooms} groom${res.clearedGrooms !== 1 ? "s" : ""} — $${res.totalAmount} marked as paid`);
-      setConfirmMarkPaid(null);
-      refetchDebt();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const [confirmMarkPaid, setConfirmMarkPaid] = useState<{ id: number; debtGrooms: number; pricePerCycle: string | null; clientName: string; petName: string | null } | null>(null);
-  const [markPaidMethod, setMarkPaidMethod] = useState<"cash" | "eftpos" | "bank_transfer" | "square">("cash");
   // ── Failed payment mutations & state ──────────────────────────────────────
   const recordFailureMutation = trpc.memberships.recordPaymentFailure.useMutation({
     onSuccess: (res) => {
@@ -1263,36 +1245,6 @@ export default function Memberships() {
   const [confirmRecordFailure, setConfirmRecordFailure] = useState<{ id: number; clientName: string; petName: string | null; membershipName: string | null; failedCount: number } | null>(null);
   const [failureReason, setFailureReason] = useState("");
   const [confirmResolve, setConfirmResolve] = useState<{ id: number; clientName: string; petName: string | null } | null>(null);
-  const [debtSearch, setDebtSearch] = useState("");
-  const [debtSortKey, setDebtSortKey] = useState<"client" | "owed" | "value">("owed");
-  const [debtSortDir, setDebtSortDir] = useState<"asc" | "desc">("desc");
-
-  const toggleDebtSort = (key: "client" | "owed" | "value") => {
-    if (debtSortKey === key) setDebtSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setDebtSortKey(key); setDebtSortDir("desc"); }
-  };
-
-  const allDebtItems = (debtSummary ?? []).filter(d => d.debtGrooms > 0);
-  const debtItems = allDebtItems
-    .filter(d => {
-      if (!debtSearch) return true;
-      const q = debtSearch.toLowerCase();
-      return (
-        `${d.clientFirstName} ${d.clientLastName}`.toLowerCase().includes(q) ||
-        (d.petName ?? "").toLowerCase().includes(q) ||
-        (d.name ?? "").toLowerCase().includes(q)
-      );
-    })
-    .sort((a, b) => {
-      let cmp = 0;
-      if (debtSortKey === "client") cmp = `${a.clientFirstName} ${a.clientLastName}`.localeCompare(`${b.clientFirstName} ${b.clientLastName}`);
-      else if (debtSortKey === "owed") cmp = a.debtGrooms - b.debtGrooms;
-      else if (debtSortKey === "value") cmp = a.debtAmount - b.debtAmount;
-      return debtSortDir === "asc" ? cmp : -cmp;
-    });
-  const totalDebtGrooms = allDebtItems.reduce((s, d) => s + d.debtGrooms, 0);
-  const totalDebtAmount = allDebtItems.reduce((s, d) => s + d.debtAmount, 0);
-
   const items: MembershipItem[] = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -1413,13 +1365,6 @@ export default function Memberships() {
             {STATUS_TABS.map(tab => (
               <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>
             ))}
-            <TabsTrigger value="debt" className="gap-1.5">
-              <TrendingDown className="h-3.5 w-3.5" />
-              Debt Tracking
-              {debtItems.length > 0 && (
-                <span className="ml-1 bg-red-500 text-white text-[10px] rounded-full px-1.5 py-0.5 leading-none">{debtItems.length}</span>
-              )}
-            </TabsTrigger>
             <TabsTrigger value="failed_payments" className="gap-1.5">
               <XCircle className="h-3.5 w-3.5" />
               Failed Payments
@@ -1470,148 +1415,6 @@ export default function Memberships() {
               )}
             </TabsContent>
           ))}
-          <TabsContent value="debt" className="mt-4">
-            {debtItems.length === 0 ? (
-              <div className="bg-card rounded-xl border p-10 text-center text-muted-foreground">
-                <TrendingDown className="h-8 w-8 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">No outstanding groom debt</p>
-                <p className="text-sm mt-1">All paid billing cycles have been matched to completed grooms.</p>
-              </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                  <Card className="border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/40">
-                    <CardContent className="p-4">
-                      <p className="text-xs text-red-600 dark:text-red-400 font-semibold uppercase tracking-wide">Grooms Owed</p>
-                      <p className="text-3xl font-bold text-red-700 dark:text-red-300 mt-1">{totalDebtGrooms}</p>
-                      <p className="text-xs text-red-500 mt-0.5">across {debtItems.length} membership{debtItems.length !== 1 ? "s" : ""}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40">
-                    <CardContent className="p-4">
-                      <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold uppercase tracking-wide">Estimated Value</p>
-                      <p className="text-3xl font-bold text-amber-700 dark:text-amber-300 mt-1">${totalDebtAmount.toFixed(2)}</p>
-                      <p className="text-xs text-amber-500 mt-0.5">at current membership rates</p>
-                    </CardContent>
-                  </Card>
-                </div>
-                <div className="mb-3">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
-                      className="pl-9 h-8 text-sm"
-                      placeholder="Search by client, pet, or membership name..."
-                      value={debtSearch}
-                      onChange={e => setDebtSearch(e.target.value)}
-                    />
-                  </div>
-                  {debtSearch && (
-                    <p className="text-xs text-muted-foreground mt-1.5">
-                      Showing {debtItems.length} of {allDebtItems.length} result{allDebtItems.length !== 1 ? "s" : ""}
-                    </p>
-                  )}
-                </div>
-                <div className="bg-card rounded-xl border overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/50 border-b">
-                      <tr>
-                        <th className="text-left p-3 font-medium text-muted-foreground">
-                          <button className="flex items-center gap-1 hover:text-foreground" onClick={() => toggleDebtSort("client")}>
-                            Client / Pet
-                            {debtSortKey === "client" ? (debtSortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
-                          </button>
-                        </th>
-                        <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Membership</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground">Paid Cycles</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground">Grooms Done</th>
-                        <th className="text-left p-3 font-medium text-muted-foreground">
-                          <button className="flex items-center gap-1 hover:text-foreground" onClick={() => toggleDebtSort("owed")}>
-                            Owed
-                            {debtSortKey === "owed" ? (debtSortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
-                          </button>
-                        </th>
-                        <th className="text-left p-3 font-medium text-muted-foreground">
-                          <button className="flex items-center gap-1 hover:text-foreground" onClick={() => toggleDebtSort("value")}>
-                            Value
-                            {debtSortKey === "value" ? (debtSortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-40" />}
-                          </button>
-                        </th>
-                        <th className="text-left p-3 font-medium text-muted-foreground">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {debtItems.length === 0 && (
-                        <tr><td colSpan={7} className="p-6 text-center text-muted-foreground text-sm">No results match your search.</td></tr>
-                      )}
-                      {debtItems.map(d => (
-                        <tr key={d.id} className="border-b last:border-0 hover:bg-muted/20">
-                          <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="h-7 w-7 rounded-full bg-red-100 dark:bg-red-950/50 flex items-center justify-center flex-shrink-0">
-                                <Dog className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
-                              </div>
-                              <div>
-                                <p className="font-medium text-sm">{d.clientFirstName} {d.clientLastName}</p>
-                                <p className="text-xs text-muted-foreground">{d.petName}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-3 hidden md:table-cell">
-                            <p className="text-sm">{d.name}</p>
-                            <p className="text-xs text-muted-foreground capitalize">{d.tier} · {d.serviceType}</p>
-                          </td>
-                          <td className="p-3 text-center">
-                            <span className="font-semibold">{d.paidCycles}</span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <span className="font-semibold text-emerald-700 dark:text-emerald-300">{d.groomsDelivered}</span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <Badge className="bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 font-bold">{d.debtGrooms} groom{d.debtGrooms !== 1 ? "s" : ""}</Badge>
-                          </td>
-                          <td className="p-3 font-semibold text-red-700 dark:text-red-300">
-                            ${d.debtAmount.toFixed(2)}
-                          </td>
-                          <td className="p-3">
-                            <div className="flex items-center gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1.5 text-xs h-7"
-                                disabled={generateInvoiceMutation.isPending}
-                                onClick={() => generateInvoiceMutation.mutate({
-                                  membershipId: d.id,
-                                  debtGrooms: d.debtGrooms,
-                                  pricePerGroom: d.pricePerCycle ?? "0",
-                                })}
-                              >
-                                <FileText className="h-3 w-3" /> Invoice
-                              </Button>
-                              <Button
-                                size="sm"
-                                className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                disabled={markPaidMutation.isPending}
-                                onClick={() => setConfirmMarkPaid({
-                                  id: d.id,
-                                  debtGrooms: d.debtGrooms,
-                                  pricePerCycle: d.pricePerCycle,
-                                  clientName: `${d.clientFirstName ?? ""} ${d.clientLastName ?? ""}`.trim(),
-                                  petName: d.petName,
-                                })}
-                              >
-                                <CheckCircle className="h-3 w-3" /> Mark Paid
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </TabsContent>
-
           <TabsContent value="accounts_receivable" className="mt-4">
             <MembershipAccountsReceivable />
           </TabsContent>
@@ -1844,55 +1647,6 @@ export default function Memberships() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Mark as Paid Confirmation Dialog ── */}
-      <Dialog open={!!confirmMarkPaid} onOpenChange={open => { if (!open) setConfirmMarkPaid(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
-              <CheckCircle className="h-4 w-4" />
-              Mark Debt as Paid
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              This will record <strong className="text-foreground">{confirmMarkPaid?.debtGrooms} groom{(confirmMarkPaid?.debtGrooms ?? 0) !== 1 ? "s" : ""}</strong> as paid for{" "}
-              <strong className="text-foreground">{confirmMarkPaid?.clientName}</strong>{confirmMarkPaid?.petName ? ` (${confirmMarkPaid.petName})` : ""}, clearing their outstanding balance of{" "}
-              <strong className="text-foreground">${((confirmMarkPaid?.debtGrooms ?? 0) * parseFloat(confirmMarkPaid?.pricePerCycle ?? "0")).toFixed(2)}</strong>.
-            </p>
-            <div className="space-y-1">
-              <Label className="text-xs">Payment Method</Label>
-              <select
-                className="w-full h-8 rounded-md border border-input bg-background px-3 text-sm"
-                value={markPaidMethod}
-                onChange={e => setMarkPaidMethod(e.target.value as typeof markPaidMethod)}
-              >
-                <option value="cash">Cash</option>
-                <option value="eftpos">EFTPOS</option>
-                <option value="bank_transfer">Bank Transfer</option>
-                <option value="square">Square</option>
-              </select>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConfirmMarkPaid(null)}>Cancel</Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              disabled={markPaidMutation.isPending}
-              onClick={() => {
-                if (!confirmMarkPaid) return;
-                markPaidMutation.mutate({
-                  membershipId: confirmMarkPaid.id,
-                  debtGrooms: confirmMarkPaid.debtGrooms,
-                  pricePerGroom: confirmMarkPaid.pricePerCycle ?? "0",
-                  paymentMethod: markPaidMethod,
-                });
-              }}
-            >
-              {markPaidMutation.isPending ? "Saving..." : "Confirm Payment"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </DashboardLayout>
   );
 }
