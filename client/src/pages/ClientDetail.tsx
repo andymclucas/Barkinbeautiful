@@ -1,4 +1,6 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { cleanClientName } from "@shared/clientName";
+import { canCancelFromClientPage } from "@shared/cancelFromClientPage";
 import { calendarAppointmentHref } from "@shared/calendarDeepLink";
 import { brisbaneDateKey } from "@shared/localDateTime";
 import { VipMark } from "@/components/VipMark";
@@ -382,6 +384,7 @@ export default function ClientDetail() {
   // session with it, so it goes through a named confirm rather than a
   // window.confirm — the same shape the calendar's Delete booking uses.
   const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string; petName: string | null; companions: string } | null>(null);
+  const [confirmCancelAppt, setConfirmCancelAppt] = useState<{ id: number; label: string; petName: string | null; together: string; togetherCount: number } | null>(null);
   /*
    * Andy, 04/11/2026: "Add feature to be able to delete clients - just
    * in case there are duplicates etc." Owner-only and refuses the
@@ -453,7 +456,7 @@ export default function ClientDetail() {
   const [contactForm, setContactForm] = useState({ name: "", phone: "", email: "", relationship: "" });
   const [editDetailsOpen, setEditDetailsOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
-  const [editDetailsForm, setEditDetailsForm] = useState({ email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false, status: "active" as string });
+  const [editDetailsForm, setEditDetailsForm] = useState({ firstName: "", lastName: "", email: "", phone: "", address: "", notes: "", referralSource: "", smsOptedOut: false, status: "active" as string });
   const updateClientDetails = trpc.clients.updateDetails.useMutation({
     onSuccess: async () => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -491,6 +494,45 @@ export default function ClientDetail() {
         : "Booking time updated");
     },
     onError: (error) => toast.error(error.message || "Could not change that booking"),
+  });
+  /*
+   * Cancelling from the client's own page (Lauren, 17/11/2026: "need to
+   * have a click button on status to cancel. she texted"). This list
+   * only had a pencil and a bin, and a bin DELETES: no cancellation on
+   * the dog's history, nothing to undo. This is the calendar's own
+   * cancel (calendar.updateWorkflowState), so everything that follows a
+   * cancellation there follows it here, the text to the client included.
+   */
+  const afterCancel = async () => {
+    await utils.clients.getProfile.invalidate({ clientId });
+    await utils.calendar.invalidate();
+    void utils.workflow.getBoard.invalidate();
+    void utils.workflow.getTodayBoard.invalidate();
+    setConfirmCancelAppt(null);
+  };
+  /** Staff are told whether the client was texted, because not every cancellation sends one. */
+  const textOutcome = (notice: { sent: boolean } | null | undefined) =>
+    notice?.sent ? "The client has been texted." : "No text was sent to the client.";
+  const cancelAppointment = trpc.calendar.updateWorkflowState.useMutation({
+    onSuccess: async (result) => {
+      await afterCancel();
+      toast.success(`Booking cancelled. ${textOutcome(result.clientNotice)}`);
+    },
+    onError: (error) => toast.error(error.message || "Could not cancel that booking"),
+  });
+  /*
+   * Every dog of the booking in one press, and ONE text. Cancelling a
+   * family's dogs one at a time sends the client a text for each, which
+   * is the thing Andy ruled out ("Do not ever send 2 or 3"); the calendar
+   * avoids it the same way.
+   */
+  const cancelWholeBooking = trpc.calendar.cancelWholeBooking.useMutation({
+    onSuccess: async (result) => {
+      await afterCancel();
+      const left = result.blocked.length > 0 ? ` ${result.blocked.join(", ")} left alone, already at the salon or groomed.` : "";
+      toast.success(`${result.cancelled} dog${result.cancelled === 1 ? "" : "s"} cancelled.${left} ${textOutcome(result.notice)}`);
+    },
+    onError: (error) => toast.error(error.message || "Could not cancel that booking"),
   });
   const deleteAppointment = trpc.calendar.deleteAppointment.useMutation({
     onSuccess: async () => {
@@ -1299,6 +1341,8 @@ export default function ClientDetail() {
                   variant="outline" size="sm"
                   onClick={() => {
                     setEditDetailsForm({
+                      firstName: client.firstName ?? "",
+                      lastName: client.lastName ?? "",
                       email: client.email ?? "",
                       phone: client.phone ?? "",
                       address: client.address ?? "",
@@ -1418,6 +1462,8 @@ export default function ClientDetail() {
                 className="text-left text-sm text-muted-foreground/70 hover:text-muted-foreground italic underline decoration-dotted underline-offset-2"
                 onClick={() => {
                   setEditDetailsForm({
+                    firstName: client.firstName ?? "",
+                    lastName: client.lastName ?? "",
                     email: client.email ?? "",
                     phone: client.phone ?? "",
                     address: client.address ?? "",
@@ -1464,6 +1510,19 @@ export default function ClientDetail() {
           <DialogContent className="sm:max-w-md">
             <DialogHeader><DialogTitle>Edit client details</DialogTitle></DialogHeader>
             <div className="space-y-3">
+              {/* Lauren, 17/11/2026: "wont let me edit the last name
+                  spelling". There were no name fields here, and nowhere
+                  else to fix one either. */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="edit-client-first-name">First name</Label>
+                  <Input id="edit-client-first-name" value={editDetailsForm.firstName} maxLength={100} onChange={e => setEditDetailsForm(f => ({ ...f, firstName: e.target.value }))} />
+                </div>
+                <div>
+                  <Label htmlFor="edit-client-last-name">Last name</Label>
+                  <Input id="edit-client-last-name" value={editDetailsForm.lastName} maxLength={100} onChange={e => setEditDetailsForm(f => ({ ...f, lastName: e.target.value }))} />
+                </div>
+              </div>
               <div>
                 <Label>Email</Label>
                 <Input value={editDetailsForm.email} onChange={e => setEditDetailsForm(f => ({ ...f, email: e.target.value }))} placeholder="client@example.com" />
@@ -1575,7 +1634,8 @@ export default function ClientDetail() {
                     ...(isSettableClientStatus(status) ? { status } : {}),
                   });
                 }}
-                disabled={updateClientDetails.isPending}
+                disabled={updateClientDetails.isPending || !cleanClientName(editDetailsForm.firstName)}
+                title={cleanClientName(editDetailsForm.firstName) ? undefined : "A client needs a first name"}
               >
                 {updateClientDetails.isPending ? "Saving…" : "Save changes"}
               </Button>
@@ -2528,6 +2588,30 @@ export default function ClientDetail() {
                           } variant="outline">
                             {isFuture ? "Upcoming" : a.workflowState === "complete" ? "Complete" : a.status}
                           </Badge>
+                          {canCancelFromClientPage({ scheduledStart: a.scheduledStart, status: a.status, workflowState: a.workflowState }, new Date()) && (
+                            <button
+                              type="button"
+                              className="ml-2 rounded border border-red-200 px-1.5 py-0.5 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
+                              title="Cancel this booking. It stays on the dog's history and can be undone from the calendar."
+                              aria-label={`Cancel ${a.petName}'s booking`}
+                              onClick={() => {
+                                // The other dogs of this client booked at the SAME time and still
+                                // cancellable: exactly the set "cancel the whole booking" cancels.
+                                const together = appointments.filter(o => o.id !== a.id
+                                  && new Date(o.scheduledStart).getTime() === new Date(a.scheduledStart).getTime()
+                                  && canCancelFromClientPage({ scheduledStart: o.scheduledStart, status: o.status, workflowState: o.workflowState }, new Date()));
+                                setConfirmCancelAppt({
+                                id: a.id,
+                                petName: a.petName,
+                                together: joinNames(together.map(o => o.petName)),
+                                togetherCount: together.length,
+                                label: `${a.petName}'s booking on ${new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}`,
+                                });
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          )}
                         </td>
                         <td className="p-3 hidden sm:table-cell">
                           {a.paymentStatus
@@ -3328,6 +3412,52 @@ export default function ClientDetail() {
               onClick={() => clientId && deleteClient.mutate({ clientId })}
             >
               {deleteClient.isPending ? "Deleting…" : "Delete client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!confirmCancelAppt} onOpenChange={open => { if (!open) setConfirmCancelAppt(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel this booking?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Cancel <strong className="text-foreground">{confirmCancelAppt?.label}</strong>?
+            {(confirmCancelAppt?.togetherCount ?? 0) > 0
+              ? <> {confirmCancelAppt?.together} {confirmCancelAppt?.togetherCount === 1 ? "is" : "are"} booked at the same time.</>
+              : null}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            A cancelled booking stays on the dog&rsquo;s history and can be put back from the calendar.
+            The client is usually texted that it is cancelled; you will be told whether a text went.
+            {(confirmCancelAppt?.togetherCount ?? 0) > 0
+              ? " Cancelling the dogs together sends one text. Cancelling them one at a time sends one for each."
+              : null}
+          </p>
+          <DialogFooter className="flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setConfirmCancelAppt(null)}>Keep booked</Button>
+            {(confirmCancelAppt?.togetherCount ?? 0) > 0 && (
+              <Button
+                variant="outline"
+                disabled={cancelAppointment.isPending || cancelWholeBooking.isPending}
+                onClick={() => confirmCancelAppt && cancelAppointment.mutate({ appointmentId: confirmCancelAppt.id, newState: "cancelled" })}
+              >
+                Just {confirmCancelAppt?.petName ?? "this dog"}
+              </Button>
+            )}
+            <Button
+              disabled={cancelAppointment.isPending || cancelWholeBooking.isPending}
+              onClick={() => {
+                if (!confirmCancelAppt) return;
+                if (confirmCancelAppt.togetherCount > 0) cancelWholeBooking.mutate({ appointmentId: confirmCancelAppt.id });
+                else cancelAppointment.mutate({ appointmentId: confirmCancelAppt.id, newState: "cancelled" });
+              }}
+            >
+              {cancelAppointment.isPending || cancelWholeBooking.isPending
+                ? "Cancelling…"
+                : (confirmCancelAppt?.togetherCount ?? 0) > 0
+                  ? `Cancel all ${(confirmCancelAppt?.togetherCount ?? 0) + 1} dogs`
+                  : "Cancel the booking"}
             </Button>
           </DialogFooter>
         </DialogContent>

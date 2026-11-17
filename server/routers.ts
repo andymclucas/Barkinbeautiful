@@ -131,6 +131,7 @@ import { createCardSetupLink, clientCardLink } from "./stripeCards";
 import { BATH_ORDER_LOCKED_MESSAGE, buildBathPriorityQueue, canChangeBathOrder, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { partyKeyOf } from "../shared/linkedWorkflowCascade";
 import { judgeStagePress, STALE_STAGE_PRESS_MESSAGE } from "../shared/stagePressGuard";
+import { clientNameUpdate } from "../shared/clientName";
 import { brisbaneDayBounds, brisbaneExplicitRange, brisbaneLocalInputValue, parseBrisbaneLocalDateTime, yearOptions } from "../shared/localDateTime";
 import { bookingsCancelledByPassing } from "../shared/petPassingBookings";
 import { nextVisitAfter } from "@shared/nextVisit";
@@ -6152,6 +6153,14 @@ const clientsRouter = router({
   updateDetails: operationalProcedure
     .input(z.object({
       clientId: z.number(),
+      /**
+       * Lauren, 17/11/2026: "wont let me edit the last name spelling."
+       * Nothing could change a name once the client existed. The rules
+       * (first name required, spelling left as typed) are in
+       * shared/clientName.ts with their tests.
+       */
+      firstName: z.string().max(200).optional(),
+      lastName: z.string().max(200).optional(),
       email: z.string().email().optional().or(z.literal("")).nullable(),
       /**
        * Lauren, 30/10/2026: "It won't let me edit the phone number."
@@ -6227,6 +6236,10 @@ const clientsRouter = router({
       // salon and nothing else, so there is no number a client could send.
       const tenantId = tenantOf(ctx);
       const updates: Record<string, unknown> = { updatedAt: new Date() };
+      const names = clientNameUpdate({ firstName: input.firstName, lastName: input.lastName });
+      if (!names.ok) throw new TRPCError({ code: "BAD_REQUEST", message: names.message });
+      if (names.firstName !== undefined) updates.firstName = names.firstName;
+      if (names.lastName !== undefined) updates.lastName = names.lastName;
       if (input.email !== undefined) updates.email = input.email || null;
       if (input.phone !== undefined) updates.phone = input.phone || null;
       if (input.address !== undefined) updates.address = input.address;
