@@ -129,3 +129,34 @@ export function changeVersus(current: number, previous: number): ChangeVersus {
   if (then === 0) return { direction, percent: null };
   return { direction, percent: Math.round((Math.abs(now - then) / Math.abs(then)) * 1000) / 10 };
 }
+
+/**
+ * A period that reaches back before revenue was being recorded.
+ *
+ * Andy, 17/11/2026: "Add the yearly warning to Reporting". Barkin'
+ * Beautiful's bookings before August 2025 came across from the old system
+ * without prices: January to July 2025 holds 4,526 bookings and $0. Set
+ * against that, this year reads as revenue up 160%, which is not real.
+ *
+ * Nothing here knows that date. It compares the first day with any
+ * booking against the first day with any revenue, both read from the
+ * salon's own data, so it is right for any salon and goes quiet by
+ * itself if the history is ever repriced. A salon whose revenue starts
+ * with its bookings never sees it.
+ *
+ * Returns the day revenue starts, when the period begins before it;
+ * otherwise null.
+ */
+export function revenueGapStart(input: {
+  periodFromKey: string;
+  bookingsFrom: string | null | undefined;
+  revenueRecordedFrom: string | null | undefined;
+}): string | null {
+  const { periodFromKey, bookingsFrom, revenueRecordedFrom } = input;
+  const key = /^\d{4}-\d{2}-\d{2}$/;
+  if (!bookingsFrom || !revenueRecordedFrom) return null;
+  if (!key.test(bookingsFrom) || !key.test(revenueRecordedFrom) || !key.test(periodFromKey)) return null;
+  // Revenue from the first booking on: there is no gap to warn about.
+  if (revenueRecordedFrom <= bookingsFrom) return null;
+  return periodFromKey < revenueRecordedFrom ? revenueRecordedFrom : null;
+}
