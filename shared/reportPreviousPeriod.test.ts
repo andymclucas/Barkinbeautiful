@@ -26,12 +26,30 @@ describe("the period a report is compared with", () => {
 
   it("a rolling window: the same number of days, ending the day before", () => {
     expect(prev("d7", "2026-11-11", "2026-11-17")).toEqual({ fromKey: "2026-11-04", toKey: "2026-11-10", name: "previous 7 days" });
+    // The preset really spans eight calendar days (today and seven back);
+    // the window before matches that length and keeps the preset's name.
+    expect(prev("d7", "2026-11-10", "2026-11-17")).toEqual({ fromKey: "2026-11-02", toKey: "2026-11-09", name: "previous 7 days" });
     expect(prev("d30", "2026-10-19", "2026-11-17")).toEqual({ fromKey: "2026-09-19", toKey: "2026-10-18", name: "previous 30 days" });
     expect(prev("y1", "2025-11-18", "2026-11-17")).toMatchObject({ fromKey: "2024-11-18", toKey: "2025-11-17", name: "previous 12 months" });
   });
 
   it("a whole year picked by hand is compared with the whole year before", () => {
     expect(prev("custom", "2026-01-01", "2026-12-31")).toEqual({ fromKey: "2025-01-01", toKey: "2025-12-31", name: "previous year" });
+  });
+
+  it("a whole year or month still in progress is compared only up to today", () => {
+    const today = "2026-11-17";
+    expect(previousReportPeriod({ kind: "custom", fromKey: "2026-01-01", toKey: "2026-12-31", todayKey: today }))
+      .toEqual({ fromKey: "2025-01-01", toKey: "2025-11-17", name: "previous year" });
+    expect(previousReportPeriod({ kind: "custom", fromKey: "2026-11-01", toKey: "2026-11-30", todayKey: today }))
+      .toEqual({ fromKey: "2026-10-01", toKey: "2026-10-17", name: "previous month" });
+    // Finished ones, and ones wholly in the future, are whole against whole.
+    expect(previousReportPeriod({ kind: "custom", fromKey: "2025-01-01", toKey: "2025-12-31", todayKey: today }))
+      .toMatchObject({ fromKey: "2024-01-01", toKey: "2024-12-31" });
+    expect(previousReportPeriod({ kind: "custom", fromKey: "2026-10-01", toKey: "2026-10-31", todayKey: today }))
+      .toMatchObject({ fromKey: "2026-09-01", toKey: "2026-09-30" });
+    expect(previousReportPeriod({ kind: "custom", fromKey: "2026-11-01", toKey: "2026-11-30", todayKey: "2026-11-30" }))
+      .toMatchObject({ fromKey: "2026-10-01", toKey: "2026-10-31" });
   });
 
   it("a whole month picked by hand is compared with the whole month before", () => {

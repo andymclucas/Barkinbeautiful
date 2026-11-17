@@ -94,7 +94,7 @@ export default function Reporting() {
   /* The period these figures are set against (Andy, 17/11/2026): the
      week, month or year before, like for like. See
      shared/reportPreviousPeriod.ts. */
-  const previous = previousReportPeriod({ kind: range.rangeKey, fromKey: range.fromKey, toKey: range.toKey });
+  const previous = previousReportPeriod({ kind: range.rangeKey, fromKey: range.fromKey, toKey: range.toKey, todayKey: brisbaneDateKey(new Date()) });
   const previousRange = brisbaneExplicitRange(previous.fromKey, previous.toKey);
   const previousFrom = previousRange.from.toISOString();
   const previousTo = previousRange.to.toISOString();
@@ -226,7 +226,7 @@ export default function Reporting() {
     dateFrom: from, dateTo: to,
   });
 
-  const { data: previousSummary } = trpc.analytics.summary.useQuery({
+  const { data: previousSummary, isError: previousSummaryFailed } = trpc.analytics.summary.useQuery({
     dateFrom: previousFrom, dateTo: previousTo,
   });
 
@@ -240,7 +240,7 @@ export default function Reporting() {
     { enabled: reportTab === "financial" },
   );
 
-  const { data: previousFinancials } = trpc.analytics.financialBreakdown.useQuery(
+  const { data: previousFinancials, isError: previousFinancialsFailed } = trpc.analytics.financialBreakdown.useQuery(
     { dateFrom: previousFrom, dateTo: previousTo },
     { enabled: reportTab === "financial" },
   );
@@ -360,7 +360,7 @@ export default function Reporting() {
                   dates say, so there is no earlier figure to set them
                   against. */}
               {"versus" in k && k.versus && (
-                <VersusPrevious {...k.versus} name={previous.name} loading={loadingSummary} />
+                <VersusPrevious {...k.versus} name={previous.name} loading={loadingSummary} failed={previousSummaryFailed} />
               )}
             </div>
           ))}
@@ -474,17 +474,17 @@ export default function Reporting() {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Revenue</p>
                     <p className="text-lg font-bold mt-0.5">${financials.totalRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
-                    <VersusPrevious current={financials.totalRevenue} previous={previousFinancials?.totalRevenue} name={previous.name} format={asDollars} />
+                    <VersusPrevious current={financials.totalRevenue} previous={previousFinancials?.totalRevenue} name={previous.name} format={asDollars} failed={previousFinancialsFailed} />
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Membership</p>
                     <p className="text-lg font-bold mt-0.5">${financials.membershipRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
-                    <VersusPrevious current={financials.membershipRevenue} previous={previousFinancials?.membershipRevenue} name={previous.name} format={asDollars} />
+                    <VersusPrevious current={financials.membershipRevenue} previous={previousFinancials?.membershipRevenue} name={previous.name} format={asDollars} failed={previousFinancialsFailed} />
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">One-off</p>
                     <p className="text-lg font-bold mt-0.5">${financials.oneOffRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
-                    <VersusPrevious current={financials.oneOffRevenue} previous={previousFinancials?.oneOffRevenue} name={previous.name} format={asDollars} />
+                    <VersusPrevious current={financials.oneOffRevenue} previous={previousFinancials?.oneOffRevenue} name={previous.name} format={asDollars} failed={previousFinancialsFailed} />
                   </div>
                 </div>
                 <div className="space-y-3">

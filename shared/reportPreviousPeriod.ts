@@ -54,7 +54,13 @@ const isWholeMonth = (fromKey: string, toKeyValue: string) => {
 const isWholeYear = (fromKey: string, toKeyValue: string) =>
   fromKey.slice(5) === "01-01" && toKeyValue === `${fromKey.slice(0, 4)}-12-31`;
 
-export function previousReportPeriod(input: { kind: ReportRangeKind; fromKey: string; toKey: string }): PreviousPeriod {
+export function previousReportPeriod(input: {
+  kind: ReportRangeKind;
+  fromKey: string;
+  toKey: string;
+  /** Today in Brisbane. A whole month or year still in progress is compared only up to today. */
+  todayKey?: string;
+}): PreviousPeriod {
   const { kind, fromKey } = input;
   // A reversed pair is read the right way round, as the range itself is.
   const [lo, hi] = fromKey <= input.toKey ? [fromKey, input.toKey] : [input.toKey, fromKey];
@@ -72,11 +78,19 @@ export function previousReportPeriod(input: { kind: ReportRangeKind; fromKey: st
   if (kind === "custom") {
     // A whole calendar year or month picked by hand is still "yearly" or
     // "monthly": compare it with the whole one before.
+    // ...unless it has not finished. The whole of this year against the
+    // whole of last year, in November, is ten and a half months against
+    // twelve; so an unfinished one is compared up to today's date, the
+    // same as year-to-date and month-to-date.
+    const today = input.todayKey;
+    const unfinished = today !== undefined && lo <= today && today < hi;
     if (isWholeYear(lo, hi)) {
+      if (unfinished) return { fromKey: yearBefore(lo), toKey: yearBefore(today), name: "previous year" };
       const y = Number(lo.slice(0, 4)) - 1;
       return { fromKey: `${y}-01-01`, toKey: `${y}-12-31`, name: "previous year" };
     }
     if (isWholeMonth(lo, hi)) {
+      if (unfinished) return { fromKey: monthBefore(lo), toKey: monthBefore(today), name: "previous month" };
       const first = monthBefore(lo);
       const [y, m] = first.split("-").map(Number);
       return { fromKey: first, toKey: `${y}-${pad(m)}-${pad(daysInMonth(y, m))}`, name: "previous month" };
@@ -84,7 +98,13 @@ export function previousReportPeriod(input: { kind: ReportRangeKind; fromKey: st
   }
   // Rolling windows, and any other hand-picked range: the same number of
   // days, ending the day before this one starts.
-  const name = kind === "y1" ? "previous 12 months" : `previous ${days} day${days === 1 ? "" : "s"}`;
+  // The presets keep their own names: "Last 30 days" reaches back thirty
+  // days from today and so spans thirty-one, and "previous 31 days" under
+  // it would read as a different length. The dates are shown beside it.
+  const nominal: Partial<Record<ReportRangeKind, string>> = {
+    d7: "previous 7 days", d30: "previous 30 days", d90: "previous 90 days", y1: "previous 12 months",
+  };
+  const name = nominal[kind] ?? `previous ${days} day${days === 1 ? "" : "s"}`;
   return { fromKey: addDays(lo, -days), toKey: addDays(lo, -1), name };
 }
 

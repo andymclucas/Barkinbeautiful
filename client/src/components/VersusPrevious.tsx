@@ -13,7 +13,10 @@ export function VersusPrevious({
   name,
   format,
   loading = false,
+  failed = false,
 }: {
+  /** The earlier period could not be fetched: say so, rather than "…" for ever. */
+  failed?: boolean;
   current: number;
   /** Undefined while the earlier period is still being fetched. */
   previous: number | undefined;
@@ -22,6 +25,9 @@ export function VersusPrevious({
   format: (value: number) => string;
   loading?: boolean;
 }) {
+  if (failed) {
+    return <p className="mt-0.5 text-[11px] text-muted-foreground">vs {name}: not available</p>;
+  }
   if (loading || previous === undefined) {
     return <p className="mt-0.5 text-[11px] text-muted-foreground">vs {name}: …</p>;
   }
