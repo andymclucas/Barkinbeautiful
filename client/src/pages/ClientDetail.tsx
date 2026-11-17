@@ -383,7 +383,7 @@ export default function ClientDetail() {
   // session with it, so it goes through a named confirm rather than a
   // window.confirm — the same shape the calendar's Delete booking uses.
   const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string; petName: string | null; companions: string } | null>(null);
-  const [confirmCancelAppt, setConfirmCancelAppt] = useState<{ id: number; label: string; petName: string | null; companions: string } | null>(null);
+  const [confirmCancelAppt, setConfirmCancelAppt] = useState<{ id: number; label: string; petName: string | null; together: string; togetherCount: number } | null>(null);
   /*
    * Andy, 04/11/2026: "Add feature to be able to delete clients - just
    * in case there are duplicates etc." Owner-only and refuses the
@@ -502,12 +502,34 @@ export default function ClientDetail() {
    * cancel (calendar.updateWorkflowState), so everything that follows a
    * cancellation there follows it here, the text to the client included.
    */
+  const afterCancel = async () => {
+    await utils.clients.getProfile.invalidate({ clientId });
+    await utils.calendar.invalidate();
+    void utils.workflow.getBoard.invalidate();
+    void utils.workflow.getTodayBoard.invalidate();
+    setConfirmCancelAppt(null);
+  };
+  /** Staff are told whether the client was texted, because not every cancellation sends one. */
+  const textOutcome = (notice: { sent: boolean } | null | undefined) =>
+    notice?.sent ? "The client has been texted." : "No text was sent to the client.";
   const cancelAppointment = trpc.calendar.updateWorkflowState.useMutation({
-    onSuccess: async () => {
-      await utils.clients.getProfile.invalidate({ clientId });
-      await utils.calendar.invalidate();
-      setConfirmCancelAppt(null);
-      toast.success("Booking cancelled");
+    onSuccess: async (result) => {
+      await afterCancel();
+      toast.success(`Booking cancelled. ${textOutcome(result.clientNotice)}`);
+    },
+    onError: (error) => toast.error(error.message || "Could not cancel that booking"),
+  });
+  /*
+   * Every dog of the booking in one press, and ONE text. Cancelling a
+   * family's dogs one at a time sends the client a text for each, which
+   * is the thing Andy ruled out ("Do not ever send 2 or 3"); the calendar
+   * avoids it the same way.
+   */
+  const cancelWholeBooking = trpc.calendar.cancelWholeBooking.useMutation({
+    onSuccess: async (result) => {
+      await afterCancel();
+      const left = result.blocked.length > 0 ? ` ${result.blocked.join(", ")} left alone, already at the salon or groomed.` : "";
+      toast.success(`${result.cancelled} dog${result.cancelled === 1 ? "" : "s"} cancelled.${left} ${textOutcome(result.notice)}`);
     },
     onError: (error) => toast.error(error.message || "Could not cancel that booking"),
   });
@@ -2553,12 +2575,20 @@ export default function ClientDetail() {
                               className="ml-2 rounded border border-red-200 px-1.5 py-0.5 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/50 dark:text-red-300 dark:hover:bg-red-950/40"
                               title="Cancel this booking. It stays on the dog's history and can be undone from the calendar."
                               aria-label={`Cancel ${a.petName}'s booking`}
-                              onClick={() => setConfirmCancelAppt({
+                              onClick={() => {
+                                // The other dogs of this client booked at the SAME time and still
+                                // cancellable: exactly the set "cancel the whole booking" cancels.
+                                const together = appointments.filter(o => o.id !== a.id
+                                  && new Date(o.scheduledStart).getTime() === new Date(a.scheduledStart).getTime()
+                                  && canCancelFromClientPage({ scheduledStart: o.scheduledStart, status: o.status, workflowState: o.workflowState }, new Date()));
+                                setConfirmCancelAppt({
                                 id: a.id,
                                 petName: a.petName,
-                                companions: joinNames(companionsOf(a, appointments).map(o => o.petName)),
+                                together: joinNames(together.map(o => o.petName)),
+                                togetherCount: together.length,
                                 label: `${a.petName}'s booking on ${new Date(a.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}`,
-                              })}
+                                });
+                              }}
                             >
                               Cancel
                             </button>
@@ -3374,21 +3404,41 @@ export default function ClientDetail() {
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Cancel <strong className="text-foreground">{confirmCancelAppt?.label}</strong>?
-            {confirmCancelAppt?.companions
-              ? <> Only {confirmCancelAppt.petName ?? "this dog"} is cancelled. {confirmCancelAppt.companions}, on the same booking, {confirmCancelAppt.companions.includes(" and ") ? "stay" : "stays"} booked.</>
+            {(confirmCancelAppt?.togetherCount ?? 0) > 0
+              ? <> {confirmCancelAppt?.together} {confirmCancelAppt?.togetherCount === 1 ? "is" : "are"} booked at the same time.</>
               : null}
           </p>
           <p className="text-xs text-muted-foreground">
-            It is recorded as a cancellation, so it stays on {confirmCancelAppt?.petName ?? "the dog"}&rsquo;s history and can be undone from the calendar.
-            The client is texted that it is cancelled, unless they have that text switched off.
+            A cancelled booking stays on the dog&rsquo;s history and can be put back from the calendar.
+            The client is usually texted that it is cancelled; you will be told whether a text went.
+            {(confirmCancelAppt?.togetherCount ?? 0) > 0
+              ? " Cancelling the dogs together sends one text. Cancelling them one at a time sends one for each."
+              : null}
           </p>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex-wrap gap-2">
             <Button variant="outline" onClick={() => setConfirmCancelAppt(null)}>Keep booked</Button>
+            {(confirmCancelAppt?.togetherCount ?? 0) > 0 && (
+              <Button
+                variant="outline"
+                disabled={cancelAppointment.isPending || cancelWholeBooking.isPending}
+                onClick={() => confirmCancelAppt && cancelAppointment.mutate({ appointmentId: confirmCancelAppt.id, newState: "cancelled" })}
+              >
+                Just {confirmCancelAppt?.petName ?? "this dog"}
+              </Button>
+            )}
             <Button
-              disabled={cancelAppointment.isPending}
-              onClick={() => confirmCancelAppt && cancelAppointment.mutate({ appointmentId: confirmCancelAppt.id, newState: "cancelled" })}
+              disabled={cancelAppointment.isPending || cancelWholeBooking.isPending}
+              onClick={() => {
+                if (!confirmCancelAppt) return;
+                if (confirmCancelAppt.togetherCount > 0) cancelWholeBooking.mutate({ appointmentId: confirmCancelAppt.id });
+                else cancelAppointment.mutate({ appointmentId: confirmCancelAppt.id, newState: "cancelled" });
+              }}
             >
-              {cancelAppointment.isPending ? "Cancelling…" : "Cancel the booking"}
+              {cancelAppointment.isPending || cancelWholeBooking.isPending
+                ? "Cancelling…"
+                : (confirmCancelAppt?.togetherCount ?? 0) > 0
+                  ? `Cancel all ${(confirmCancelAppt?.togetherCount ?? 0) + 1} dogs`
+                  : "Cancel the booking"}
             </Button>
           </DialogFooter>
         </DialogContent>
