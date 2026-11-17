@@ -607,7 +607,12 @@ describe("tRPC procedure surface", () => {
     // every later booking in a repeat series. protectedProcedure, unlike
     // the rest of that router: it writes onto bookings months away, which
     // is the front desk's call, so it is NOT in OPERATIONAL below.
-    expect(surface).toHaveLength(450);
+    // 447 since 17/11/2026: memberships.getDebtSummary, generateDebtInvoice
+    // and markDebtPaid removed with the Debt Tracking tab. It counted paid
+    // weekly payments against grooms done, which is always positive for a
+    // weekly-billed member, and its two buttons invoiced clients for money
+    // already paid and wrote payment rows with no money behind them.
+    expect(surface).toHaveLength(447);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

@@ -6015,7 +6015,7 @@ const clientsRouter = router({
        * many times they have been.
        *
        * Two grouped queries for the PAGE, not a pair per client.
-       * getDebtSummary did the per-row version and took 64 seconds; the
+       * the old debt summary (removed 17/11/2026) did the per-row version and took 64 seconds; the
        * same shape here over 10,101 clients would be far worse.
        *
        * Deliberately no money column. 6,182 invoices are marked paid,
@@ -6077,7 +6077,7 @@ const clientsRouter = router({
        *
        * The same shape as the pets and visits above, and for the same
        * reason: a query per client over 10,101 of them is what made
-       * getDebtSummary take 64 seconds. Only the rows a membership
+       * the old debt summary take 64 seconds. Only the rows a membership
        * column could show are selected, and `activeMembership` decides
        * which one — so the list and the client record cannot disagree
        * about who is a member.
@@ -9839,134 +9839,6 @@ const membershipsRouter = router({
         .orderBy(desc(memberships.lastFailedPaymentAt));
     }),
 
-  // Debt tracking: for each active membership, count paid billing cycles vs. completed grooms
-  getDebtSummary: protectedProcedure
-    .input(z.object({ tenantId: z.number().default(1) }))
-    .query(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db) return [];
-      // Get all active memberships with client/pet info
-      const activeMemberships = await db
-        .select({
-          id: memberships.id,
-          name: memberships.name,
-          tier: memberships.tier,
-          serviceType: memberships.serviceType,
-          pricePerCycle: memberships.pricePerCycle,
-          billingCycleWeeks: memberships.billingCycleWeeks,
-          status: memberships.status,
-          startedAt: memberships.startedAt,
-          clientId: memberships.clientId,
-          petId: memberships.petId,
-          clientFirstName: clients.firstName,
-          clientLastName: clients.lastName,
-          clientPhone: clients.phone,
-          petName: pets.name,
-        })
-        .from(memberships)
-        .leftJoin(clients, eq(memberships.clientId, clients.id))
-        .leftJoin(pets, eq(memberships.petId, pets.id))
-        .where(and(
-          eq(memberships.tenantId, tenantOf(ctx, input)),
-          sql`${memberships.status} IN ('active', 'paused', 'pending_payment')`
-        ));
-
-      if (activeMemberships.length === 0) return [];
-
-      // Two grouped queries, not two per membership.
-      //
-      // This was a Promise.all firing a pair of COUNT(*)s for every active
-      // membership: 153 of them on 15/10/2026, so 306 round trips down one
-      // mysql2 connection, which serialises them. Neither
-      // appointments.membership_id nor membership_payments.membership_id
-      // is indexed, so each one was a full scan as well. Measured end to
-      // end it took 64.5 seconds and the page gave up before it returned —
-      // "Debt summary could not be loaded".
-      //
-      // The same answer as two GROUP BYs takes 0.42 seconds. Scoped by the
-      // membership ids already fetched, so it stays inside this tenant by
-      // construction rather than by remembering a predicate.
-      const membershipIds = activeMemberships.map((m) => m.id);
-
-      const paidRows = await db
-        .select({ membershipId: membershipPayments.membershipId, count: sql<number>`COUNT(*)` })
-        .from(membershipPayments)
-        .where(and(
-          inArray(membershipPayments.membershipId, membershipIds),
-          eq(membershipPayments.status, "paid"),
-        ))
-        .groupBy(membershipPayments.membershipId);
-
-      const groomRows = await db
-        .select({ membershipId: appointments.membershipId, count: sql<number>`COUNT(*)` })
-        .from(appointments)
-        .where(and(
-          inArray(appointments.membershipId, membershipIds),
-          sql`${appointments.workflowState} IN ('complete', 'ready')`,
-        ))
-        .groupBy(appointments.membershipId);
-
-      const paidByMembership = new Map(paidRows.map((r: any) => [Number(r.membershipId), Number(r.count)]));
-      const groomsByMembership = new Map(groomRows.map((r: any) => [Number(r.membershipId), Number(r.count)]));
-
-      const results = activeMemberships.map((m) => {
-        // A membership with no rows is absent from the grouped result, not
-        // a zero in it — which is the whole reason for the ?? 0.
-        const paidCycles = paidByMembership.get(m.id) ?? 0;
-        const groomsDelivered = groomsByMembership.get(m.id) ?? 0;
-        const debtGrooms = Math.max(0, paidCycles - groomsDelivered);
-        const debtAmount = debtGrooms * parseFloat(m.pricePerCycle ?? "0");
-        return {
-          ...m,
-          paidCycles,
-          groomsDelivered,
-          debtGrooms,
-          debtAmount,
-        };
-      });
-      return results.filter(r => r.debtGrooms > 0 || r.paidCycles > 0);
-    }),
-
-  generateDebtInvoice: protectedProcedure
-    .input(z.object({
-      tenantId: z.number().default(1),
-      membershipId: z.number(),
-      debtGrooms: z.number(),
-      pricePerGroom: z.string(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
-      const [m] = await db
-        .select({ clientId: memberships.clientId, name: memberships.name })
-        .from(memberships)
-        .where(eq(memberships.id, input.membershipId))
-        .limit(1);
-      if (!m) throw new Error("Membership not found");
-      const subtotal = (input.debtGrooms * parseFloat(input.pricePerGroom)).toFixed(2);
-      const invNum = `DEBT-${Date.now().toString(36).toUpperCase()}`;
-      const [result] = await db.insert(invoices).values({
-        tenantId: tenantOf(ctx, input),
-        clientId: m.clientId,
-        invoiceNumber: invNum,
-        subtotal,
-        taxAmount: "0",
-        total: subtotal,
-        status: "draft",
-        notes: `Membership debt: ${input.debtGrooms} outstanding groom(s) for "${m.name}"`,
-        dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      });
-      const invoiceId = (result as any).insertId;
-      await db.insert(invoiceLineItems).values({
-        invoiceId,
-        description: `Outstanding grooms owed — ${m.name} (${input.debtGrooms} × $${input.pricePerGroom})`,
-        quantity: String(input.debtGrooms),
-        unitPrice: input.pricePerGroom,
-        lineTotal: subtotal,
-      });
-      return { success: true, invoiceNumber: invNum };
-    }),
-
   recordPaymentFailure: protectedProcedure
     .input(z.object({
       tenantId: z.number().default(1),
@@ -10142,36 +10014,6 @@ const membershipsRouter = router({
       }
 
       return { success: true, outcome: input.outcome };
-    }),
-
-  markDebtPaid: protectedProcedure
-    .input(z.object({
-      tenantId: z.number().default(1),
-      membershipId: z.number(),
-      debtGrooms: z.number(),
-      pricePerGroom: z.string(),
-      paymentMethod: z.enum(["cash", "eftpos", "bank_transfer", "square"]).default("cash"),
-    }))
-    .mutation(async ({ input }) => {
-      const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
-      const [m] = await db
-        .select({ id: memberships.id, name: memberships.name, pricePerCycle: memberships.pricePerCycle })
-        .from(memberships)
-        .where(eq(memberships.id, input.membershipId))
-        .limit(1);
-      if (!m) throw new Error("Membership not found");
-      const amount = (input.debtGrooms * parseFloat(input.pricePerGroom)).toFixed(2);
-      // Insert one paid payment record per owed groom to balance the books
-      const paymentRows = Array.from({ length: input.debtGrooms }, () => ({
-        membershipId: input.membershipId,
-        amount: input.pricePerGroom,
-        status: "paid" as const,
-        gatewayPaymentId: `MANUAL-${Date.now().toString(36).toUpperCase()}`,
-        paidAt: new Date(),
-      }));
-      await db.insert(membershipPayments).values(paymentRows);
-      return { success: true, clearedGrooms: input.debtGrooms, totalAmount: amount };
     }),
 
   getAccountsReceivable: adminProcedure
