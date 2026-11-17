@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 
 const { getDb } = vi.hoisted(() => ({ getDb: vi.fn() }));
 vi.mock("./db", () => ({ getDb }));
@@ -81,9 +81,88 @@ const staff = { id: 2, role: "staff" } as any;
 const caller = (user: any = admin) =>
   appRouter.createCaller({ user, tenantId: 1 } as any);
 
+/** Groomigo's own Stripe account configured: there is something to buy. */
+function openBilling() {
+  vi.stubEnv("GROOMIGO_STRIPE_SECRET_KEY", "sk_test_groomigo");
+  vi.stubEnv("GROOMIGO_STRIPE_WEBHOOK_SECRET", "whsec_test_groomigo");
+  vi.stubEnv("GROOMIGO_STRIPE_PRICE_STARTER", "price_test_starter");
+}
+function closeBilling() {
+  for (const name of ["SECRET_KEY", "WEBHOOK_SECRET", "PRICE_STARTER", "PRICE_PROFESSIONAL", "PRICE_ENTERPRISE"]) {
+    vi.stubEnv(`GROOMIGO_STRIPE_${name}`, "");
+  }
+}
+
 beforeEach(() => {
   forgetTrialState();
   vi.clearAllMocks();
+  // Open unless a test says otherwise: a trial only locks a salon out
+  // when there is a plan it could buy instead.
+  openBilling();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("before Groomigo can take payment", () => {
+  const expired = {
+    plan: "trial", status: "trialing", customerId: null, subscriptionId: null, currentPeriodEnd: null,
+    subscriptionPlan: "trial", subscriptionStatus: "trialing", billingExempt: 0, trialEndsAt: YESTERDAY,
+  };
+
+  it("does not lock out a salon whose trial has run out", async () => {
+    // Nothing to buy means nothing to be locked out for.
+    closeBilling();
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    await expect(caller().sidebarCounts.get()).resolves.toBeDefined();
+  });
+
+  it("shows no countdown to a deadline that is not enforced", async () => {
+    closeBilling();
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    const state = await caller().trial.get();
+    expect(state.ended).toBe(false);
+    expect(state.show).toBe(false);
+  });
+
+  it("offers no plans and starts no checkout", async () => {
+    closeBilling();
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    const status = await caller().platformBilling.status();
+    expect(status.purchasablePlans).toEqual([]);
+    expect(status.description).toBe("Free trial");
+    await expect(caller().platformBilling.startCheckout({ plan: "starter" }))
+      .rejects.toThrow(/Plans are not open yet/);
+  });
+
+  it("counts as closed when only half of it is set", async () => {
+    // A key and a price but no webhook secret: a salon could pay and
+    // this app would never hear about it.
+    closeBilling();
+    vi.stubEnv("GROOMIGO_STRIPE_SECRET_KEY", "sk_test_groomigo");
+    vi.stubEnv("GROOMIGO_STRIPE_PRICE_STARTER", "price_test_starter");
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    await expect(caller().sidebarCounts.get()).resolves.toBeDefined();
+    expect((await caller().platformBilling.status()).purchasablePlans).toEqual([]);
+  });
+
+  it("is not opened by the client-payments Stripe key", async () => {
+    // STRIPE_SECRET_KEY is the account clients pay salons through. It
+    // must never stand in for Groomigo's own.
+    closeBilling();
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_client_payments");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_client_payments");
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    expect((await caller().platformBilling.status()).purchasablePlans).toEqual([]);
+    await expect(caller().platformBilling.startCheckout({ plan: "starter" }))
+      .rejects.toThrow(/Plans are not open yet/);
+  });
+
+  it("locks the same salon the day billing opens", async () => {
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    await expect(caller().sidebarCounts.get()).rejects.toThrow(TRIAL_ENDED_MESSAGE);
+  });
 });
 
 describe("a trial that has run out", () => {
@@ -149,6 +228,40 @@ describe("a trial that has run out", () => {
   });
 });
 
+describe("an expired salon paying its way back in", () => {
+  const expired = {
+    plan: "trial", status: "trialing", customerId: null, subscriptionId: null, currentPeriodEnd: null,
+    subscriptionPlan: "trial", subscriptionStatus: "trialing", billingExempt: 0, trialEndsAt: YESTERDAY,
+  };
+
+  it("can open its own bill", async () => {
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    const status = await caller().platformBilling.status();
+    expect(status.subscribed).toBe(false);
+    expect(status.description).toMatch(/^Free trial ended .* choose a plan/);
+  });
+
+  it("is not refused by the trial check when it starts a checkout", async () => {
+    // Enterprise has no price in this test, so the call stops there —
+    // which is the point: it got past enforceTrial to say so.
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    const attempt = caller().platformBilling.startCheckout({ plan: "enterprise" });
+    await expect(attempt).rejects.toThrow(/not on sale yet/);
+    await expect(attempt).rejects.not.toThrow(TRIAL_ENDED_MESSAGE);
+  });
+
+  it("still cannot reach the rest of Settings", async () => {
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    await expect(caller().stripeBilling.getStatus({})).rejects.toThrow(TRIAL_ENDED_MESSAGE);
+  });
+
+  it("keeps the money buttons to administrators", async () => {
+    getDb.mockResolvedValue(databaseWithTenant(expired));
+    await expect(caller(staff).platformBilling.startCheckout({ plan: "starter" })).rejects.toThrow();
+    await expect(caller(staff).platformBilling.status()).rejects.toThrow();
+  });
+});
+
 describe("a trial that is still running", () => {
   it("does not get in the way", async () => {
     getDb.mockResolvedValue(
@@ -191,6 +304,14 @@ describe("Barkin' Beautiful", () => {
       })
     );
     await expect(caller().sidebarCounts.get()).resolves.toBeDefined();
+  });
+
+  it("cannot be put on a paid plan by a stray click", async () => {
+    getDb.mockResolvedValue(
+      databaseWithTenant({ billingExempt: 1, trialEndsAt: null, platformStripeSubscriptionId: null })
+    );
+    await expect(caller().platformBilling.startCheckout({ plan: "starter" }))
+      .rejects.toThrow(/not billed for Groomigo/);
   });
 
   it("is shown no banner at all", async () => {

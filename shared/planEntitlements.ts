@@ -125,6 +125,27 @@ export function trialHasEnded(
   return now.getTime() >= ends.getTime();
 }
 
+/**
+ * Does an ended trial actually lock this salon out?
+ *
+ * Only when there is something to buy. Groomigo's own Stripe account and
+ * its prices arrive after the product does (Andy, 17/11/2026), and until
+ * they do a salon whose seven days have passed would be shut out of a
+ * product it has no way to pay for. So while billing is closed the trial
+ * date is kept but not enforced, and the day billing opens it bites.
+ *
+ * Exemption wins over everything: no date and no configuration can
+ * switch off Barkin' Beautiful.
+ */
+export function trialLocksSalon(input: {
+  trialEnded: boolean;
+  billingExempt: boolean;
+  billingOpen: boolean;
+}): boolean {
+  if (input.billingExempt) return false;
+  return input.trialEnded && input.billingOpen;
+}
+
 /** Whole days left, floored. Zero once it has gone. */
 export function trialDaysLeft(
   tenant: TenantEntitlementState,
@@ -163,6 +184,16 @@ export function canExportData(): boolean {
  */
 export function tenantFeatures(tenant: TenantEntitlementState, now: Date = new Date()): readonly Feature[] {
   if (tenant.billingExempt) return FEATURES;
+
+  /*
+   * CAUTION for a new caller: this reads the trial date alone and does
+   * not know whether billing is open. The lockout itself (enforceTrial,
+   * via getTrialState) goes through trialLocksSalon, which does. The two
+   * agree today only because the one caller, smsUsage, never selects
+   * trial_ends_at. Pass a full tenant row here and an ended trial takes
+   * every feature away even while there is nothing to buy — decide the
+   * lock with trialLocksSalon first.
+   */
 
   // An expired trial loses EVERYTHING, core included — and that is the
   // one place core is gated.
@@ -265,7 +296,30 @@ const ALLOWED_WHEN_EXPIRED = [
   "system.", // health and version
   "salonSignup.", // public anyway, but harmless here
   "settings.getTenantInfo",
-  "stripeConnect.", // so they can set up paying
+  "stripeConnect.", // so their CLIENTS can pay them — not how they pay us
+  /*
+   * How the salon pays Groomigo. Missing until 17/11/2026, which meant
+   * the "Choose a plan" button led to a page whose every call was
+   * refused: an expired salon could not pay to stop being expired.
+   *
+   * The whole namespace, because all of it is the salon's own bill —
+   * every procedure acts on the caller's own tenant (tenantOf(ctx)) and
+   * takes no salon id, `status` only reads, and the two that spend money
+   * only open Stripe's hosted pages. Anything added to platformBilling
+   * later is reachable by a salon that has not paid, so it must stay
+   * that narrow.
+   */
+  "platformBilling.",
+  /*
+   * The salon switcher. An owner with two salons who is standing in the
+   * expired one has to be able to step back into the other — without
+   * these the switcher gets no data, renders nothing, and Lauren is
+   * stuck in The Pet Pad with Barkin' Beautiful's diary out of reach.
+   * Both only read the caller's own list of salons. Exact paths: the
+   * rest of `salons.` creates salons and grants access.
+   */
+  "salons.mine",
+  "salons.canAccess",
   "trial.", // the screen telling them what happened
   "clients.exportCsv", // THE data export — see canExportData() in planEntitlements
   "issueReports.submit", // a salon whose trial ended can still tell us something is wrong

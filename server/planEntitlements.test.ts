@@ -3,6 +3,7 @@ import {
   PLANS, FEATURES, PLAN_FEATURES, effectivePlan, hasFeature,
   smallestPlanWith, upgradeMessage, tenantFeatures, tenantHasFeature, isBillable,
   TRIAL_DAYS, trialEndsAfter, trialHasEnded, trialDaysLeft, canExportData,
+  trialLocksSalon,
   allowedWhileExpired,
 } from "@shared/planEntitlements";
 
@@ -225,6 +226,26 @@ describe("what an expired trial may still reach", () => {
     expect(allowedWhileExpired("trial.get")).toBe(true);
   });
 
+  it("lets them pay Groomigo, which is the way out of being expired", () => {
+    // Missing until 17/11/2026: the banner said "Choose a plan" and every
+    // call behind the plan page was refused.
+    for (const path of ["platformBilling.status", "platformBilling.startCheckout", "platformBilling.managePortal"]) {
+      expect(allowedWhileExpired(path), path).toBe(true);
+    }
+    // The salon's CLIENT billing is a different thing and stays shut.
+    expect(allowedWhileExpired("stripeBilling.getStatus")).toBe(false);
+    expect(allowedWhileExpired("platformBillingAdmin.anything")).toBe(false);
+  });
+
+  it("lets an owner of two salons switch out of the expired one", () => {
+    expect(allowedWhileExpired("salons.mine")).toBe(true);
+    expect(allowedWhileExpired("salons.canAccess")).toBe(true);
+    // Creating salons and handing out access is not switching.
+    for (const path of ["salons.provision", "salons.grant", "salons.revoke", "salons.eligibleOwners"]) {
+      expect(allowedWhileExpired(path), path).toBe(false);
+    }
+  });
+
   it("refuses the rest of the product", () => {
     for (const path of [
       "calendar.getAppointments",
@@ -259,5 +280,25 @@ describe("what an expired trial may still reach", () => {
     expect(allowedWhileExpired("clientsExport.everything")).toBe(false);
     expect(allowedWhileExpired("authority.grantSelfAdmin")).toBe(false);
     expect(allowedWhileExpired("systematicOverride.run")).toBe(false);
+  });
+});
+
+describe("when an ended trial actually locks a salon out", () => {
+  it("only once there is a plan to buy", () => {
+    expect(trialLocksSalon({ trialEnded: true, billingExempt: false, billingOpen: true })).toBe(true);
+    // Groomigo's Stripe account and prices arrive after the product. A
+    // salon must not be shut out of something it has no way to pay for.
+    expect(trialLocksSalon({ trialEnded: true, billingExempt: false, billingOpen: false })).toBe(false);
+  });
+
+  it("never while the trial is still running", () => {
+    expect(trialLocksSalon({ trialEnded: false, billingExempt: false, billingOpen: true })).toBe(false);
+    expect(trialLocksSalon({ trialEnded: false, billingExempt: false, billingOpen: false })).toBe(false);
+  });
+
+  it("never for Barkin' Beautiful, whatever else is true", () => {
+    for (const trialEnded of [true, false]) for (const billingOpen of [true, false]) {
+      expect(trialLocksSalon({ trialEnded, billingExempt: true, billingOpen })).toBe(false);
+    }
   });
 });

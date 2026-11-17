@@ -9,7 +9,8 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "./db";
 import { tenants } from "../drizzle/schema";
-import { trialHasEnded, trialDaysLeft } from "../shared/planEntitlements";
+import { trialHasEnded, trialDaysLeft, trialLocksSalon } from "../shared/planEntitlements";
+import { isPlatformBillingOpen } from "./platformStripe";
 
 export {
   allowedWhileExpired,
@@ -62,7 +63,12 @@ export async function getTrialState(tenantId: number): Promise<TrialState> {
     // Exemption first: no date can switch off Barkin' Beautiful.
     const exempt = Boolean(row.billingExempt);
     const state: TrialState = {
-      ended: exempt ? false : trialHasEnded(row),
+      // Not while there is nothing to buy — see trialLocksSalon.
+      ended: trialLocksSalon({
+        trialEnded: trialHasEnded(row),
+        billingExempt: exempt,
+        billingOpen: isPlatformBillingOpen(),
+      }),
       daysLeft: trialDaysLeft(row),
       exempt,
       onTrial: row.trialEndsAt !== null && row.trialEndsAt !== undefined,

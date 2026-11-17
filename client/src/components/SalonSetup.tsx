@@ -1,3 +1,4 @@
+import { TRIAL_DAYS } from "@shared/planEntitlements";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Building2, Loader2, Plus } from "lucide-react";
@@ -66,7 +67,7 @@ export function SalonSetup() {
 
   const provision = trpc.salons.provision.useMutation({
     onSuccess: (r) => {
-      toast.success(`${name.trim()} created — it is at ${r.slug} and on a free trial.`, { duration: 10000 });
+      toast.success(`${name.trim()} created — it is at ${r.slug} and on a ${TRIAL_DAYS}-day free trial.`, { duration: 10000 });
       setName(""); setEmail(""); setPhone(""); setOwner(null); setOwnerQuery("");
       setCopyFrom("none"); setCatalogues([]);
       void utils.salons.mine.invalidate();

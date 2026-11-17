@@ -26,9 +26,8 @@ import { TRPCError } from "@trpc/server";
 import { router, protectedProcedure, adminProcedure, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { tenants } from "../../drizzle/schema";
-import {
-  createPlatformBillingPortal, createPlatformSubscriptionCheckout, priceIdForPlan,
-} from "../platformBilling";
+import { createPlatformBillingPortal, createPlatformSubscriptionCheckout } from "../platformBilling";
+import { platformBillingState } from "../platformStripe";
 import {
   describeSalonSubscription, salonHasAccess,
   type SalonSubscriptionStatus,
@@ -55,6 +54,7 @@ export const platformBillingRouter = router({
       if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "That salon does not exist" });
 
       const status = row.status as SalonSubscriptionStatus;
+      const billing = platformBillingState();
       return {
         plan: row.plan,
         status,
@@ -62,21 +62,21 @@ export const platformBillingRouter = router({
           status,
           currentPeriodEnd: row.currentPeriodEnd,
           trialEndsAt: row.trialEndsAt,
+          plansOpen: billing.open,
         }),
         hasAccess: salonHasAccess({ status, currentPeriodEnd: row.currentPeriodEnd }),
         /** Whether there is anything for the Stripe portal to manage. */
-        billingSetUp: Boolean(row.customerId),
+        billingSetUp: Boolean(row.customerId) && billing.open,
         subscribed: Boolean(row.subscriptionId),
         currentPeriodEnd: row.currentPeriodEnd,
         trialEndsAt: row.trialEndsAt,
         /*
-         * Which plans can actually be bought right now. A plan with no
-         * Stripe price configured would send somebody to a checkout that
-         * fails, so it is not offered — and the Settings page can say
-         * why rather than showing a dead button.
+         * Which plans can actually be bought right now. None at all until
+         * Groomigo's own Stripe account, its webhook and a price are in
+         * place (server/platformStripe.ts); after that, a plan with no
+         * price is not offered rather than shown as a dead button.
          */
-        purchasablePlans: (["starter", "professional", "enterprise"] as const)
-          .filter((plan) => priceIdForPlan(plan) !== null),
+        purchasablePlans: billing.purchasablePlans,
       };
     }),
 
