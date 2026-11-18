@@ -113,7 +113,7 @@ import { PaymentStamp } from "@/components/PaymentStamp";
 import { VipMark } from "@/components/VipMark";
 import { showsMembershipMark } from "@shared/membershipMark";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
-import { liveSiblings, sameColumnSiblings, columnCardMembers } from "@shared/bookingSiblings";
+import { liveSiblings, sameColumnSiblings, columnCardMembers, strayedSessionMembers } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
   ChevronLeft, ChevronRight, Plus, CalendarDays, Pencil, Filter, CalendarIcon, Ban, Trash2, AlertTriangle, Printer, Camera, X, Search,
@@ -5605,6 +5605,32 @@ export default function Calendar() {
                 and would grow to its content instead of scrolling,
                 pushing the bar off the bottom of the screen. */}
             <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6">
+            {/* A dog that belongs to this booking but is due at another
+                time (one of a pair was moved and the other left behind).
+                Lauren, 19/11/2026: "Its saying its there.. but sonny isnt
+                there". Said here, with where the dog is, so nobody tries
+                to add it a second time. */}
+            {(() => {
+              const strayed = editAppt.sessionId
+                ? strayedSessionMembers(editAppt, sessionMap.get(editAppt.sessionId) ?? [])
+                : [];
+              if (strayed.length === 0) return null;
+              return (
+                <div role="note" className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+                  <p className="font-semibold">
+                    {strayed.length === 1 ? "Another dog on this booking is at a different time" : "Other dogs on this booking are at a different time"}
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {strayed.map((dog) => (
+                      <li key={dog.id}>
+                        {dog.petName}: {fmtDateShort(new Date(dog.scheduledStart))}, {fmtTime(new Date(dog.scheduledStart))}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs">Move that booking to this time to bring the dogs back together. Adding the dog again would book it twice.</p>
+                </div>
+              );
+            })()}
             {/* The same red panel New Appointment has, on the booking
                 itself: the dog's alert and its warning codes, for every
                 dog on the visit. Above the tabs so it is read whichever
