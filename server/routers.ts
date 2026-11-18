@@ -73,7 +73,7 @@ import { calculateGroomIntervalStats } from "./groomInterval";
 import { resolveLastAppointmentDates } from "./lastAppointment";
 import { resolveAppointmentDeletionIds } from "../shared/appointmentDeletion";
 import { consumeAppointmentDeletionUndo, createAppointmentDeletionUndo, getAppointmentDeletionUndo, type AppointmentDeletionSnapshot } from "./appointmentDeletionUndo";
-import { getNewSharedSessionPetIds } from "../shared/appointmentSession";
+import { getNewSharedSessionPetIds, sessionAddRefusal, sortRequestedSessionPets } from "../shared/appointmentSession";
 import { canAssignTo, markUnreadPatch } from "../shared/messageReadState";
 import { buildAdminRightsEmail, buildPortalAccessEmail, buildRoleChangeEmail, describeAdminRightsChange, diffAdminRights } from "../shared/staffAdminNotice";
 import { PRODUCT_NAME } from "../shared/salonTitle";
@@ -3373,16 +3373,25 @@ const calendarRouter = router({
         throw new Error("Every added pet must be an active pet belonging to the same client");
       }
 
-      const existingSessionPets = source.sessionId
-        ? await db.select({ petId: appointments.petId }).from(appointments).where(and(
+      // A session is a label, not a place: a dog can carry it while sitting
+      // at another time, or while marked as not coming. Only a dog that is
+      // live at THIS start is "already here" (shared/appointmentSession.ts).
+      const sessionMembers = source.sessionId
+        ? await db.select({
+            petId: appointments.petId,
+            petName: pets.name,
+            status: appointments.status,
+            workflowState: appointments.workflowState,
+            scheduledStart: appointments.scheduledStart,
+          }).from(appointments).leftJoin(pets, eq(pets.id, appointments.petId)).where(and(
             eq(appointments.tenantId, source.tenantId),
             eq(appointments.sessionId, source.sessionId),
           ))
-        : [{ petId: source.petId }];
-      const petIdsToAdd = getNewSharedSessionPetIds(
-        existingSessionPets.map((row) => row.petId),
-        requestedPetIds,
-      );
+        : [{ petId: source.petId, petName: null, status: source.status, workflowState: source.workflowState, scheduledStart: source.scheduledStart }];
+      const sessionSort = sortRequestedSessionPets(source.scheduledStart, sessionMembers, requestedPetIds);
+      const addRefusal = sessionAddRefusal(sessionSort);
+      if (addRefusal) throw new TRPCError({ code: "BAD_REQUEST", message: addRefusal });
+      const petIdsToAdd = getNewSharedSessionPetIds(sessionSort.alreadyHere, requestedPetIds);
       if (petIdsToAdd.length === 0) return { success: true, added: 0 };
       /*
        * A dog joining this booking must not already be in that day on

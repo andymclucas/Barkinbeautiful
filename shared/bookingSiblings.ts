@@ -176,3 +176,23 @@ export function columnCardMembers<T extends SiblingCandidate>(
   }
   return drawn;
 }
+
+/**
+ * Dogs that carry this booking's label but are due at another time.
+ *
+ * Lauren, 19/11/2026: one dog of a pair had been moved to another day and
+ * the other left behind. The dialog named one dog, the payment list named
+ * two, and adding the second was refused as "already in this booking".
+ * liveSiblings is right to leave such a dog off the card, but nothing
+ * then said where it had gone. This is that list, for the dialog to show.
+ */
+export function strayedSessionMembers<T extends SiblingCandidate>(appt: T, sessionMembers: T[]): T[] {
+  if (!appt.sessionId || isDeadAppointment(appt)) return [];
+  const mine = startKey(appt);
+  if (mine === null) return [];
+  return sessionMembers.filter((other) => {
+    if (other.id === appt.id || isDeadAppointment(other)) return false;
+    const theirs = startKey(other);
+    return theirs !== null && theirs !== mine;
+  });
+}
