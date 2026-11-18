@@ -1,6 +1,7 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { CancelMembershipFutureBookings } from "@/components/CancelMembershipFutureBookings";
-import type { FutureBookingChoice } from "@shared/membershipCancelBookings";
+import { resolveKeptPrices, type FutureBookingChoice } from "@shared/membershipCancelBookings";
+import type { SizePriceDecision } from "@shared/sizeChangePricing";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -585,6 +586,9 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
   const utils = trpc.useUtils();
   const [confirming, setConfirming] = useState(false);
   const [futureChoice, setFutureChoice] = useState<FutureBookingChoice | null>(null);
+  // What each kept booking should cost: staff pick, the system never does.
+  const [keptDecisions, setKeptDecisions] = useState<Record<number, SizePriceDecision | undefined>>({});
+  const [keptErrors, setKeptErrors] = useState<Record<number, string>>({});
   const clientName = [m.clientFirstName, m.clientLastName].filter(Boolean).join(" ").trim() || "this client";
 
   // What the dog still has booked on this membership. Asked for only once
@@ -625,12 +629,12 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
         type="button"
         className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-red-600 hover:underline disabled:opacity-50 dark:hover:text-red-400"
         disabled={cancelMembership.isPending}
-        onClick={() => { setFutureChoice(null); setConfirming(true); }}
+        onClick={() => { setFutureChoice(null); setKeptDecisions({}); setKeptErrors({}); setConfirming(true); }}
       >
         {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
       </button>
       <Dialog open={confirming} onOpenChange={(open) => !open && !cancelMembership.isPending && setConfirming(false)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Cancel this membership?</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
             This ends {clientName}&rsquo;s membership for good and moves it to Cancelled. Any automatic billing is
@@ -647,6 +651,15 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
             bookings={futureBookings}
             choice={futureChoice}
             onChoice={setFutureChoice}
+            decisions={keptDecisions}
+            onDecision={(bookingId, decision) => {
+              setKeptDecisions((previous) => ({ ...previous, [bookingId]: decision }));
+              setKeptErrors((previous) => {
+                const { [bookingId]: _answered, ...rest } = previous;
+                return rest;
+              });
+            }}
+            errors={keptErrors}
             disabled={cancelMembership.isPending}
           />
           <DialogFooter>
@@ -657,12 +670,25 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
               variant="destructive"
               size="sm"
               disabled={cancelMembership.isPending || waitingOnBookings}
-              onClick={() => cancelMembership.mutate({
-                membershipId: m.id,
-                ...(futureBookings.length > 0 && futureChoice
-                  ? { futureBookings: futureChoice, previewedBookingIds: futureBookings.map((booking: { id: number }) => booking.id) }
-                  : {}),
-              })}
+              onClick={() => {
+                const previewedBookingIds = futureBookings.map((booking: { id: number }) => booking.id);
+                if (futureBookings.length === 0 || !futureChoice) {
+                  cancelMembership.mutate({ membershipId: m.id });
+                  return;
+                }
+                if (futureChoice === "remove") {
+                  cancelMembership.mutate({ membershipId: m.id, futureBookings: "remove", previewedBookingIds });
+                  return;
+                }
+                // Keeping them: every booking the membership had made free
+                // needs a price answered before anything is cancelled.
+                const kept = resolveKeptPrices(futureBookings, keptDecisions);
+                if (!kept.ok) {
+                  setKeptErrors(kept.errors);
+                  return;
+                }
+                cancelMembership.mutate({ membershipId: m.id, futureBookings: "keep", previewedBookingIds, keptPrices: kept.prices });
+              }}
             >
               {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
             </Button>

@@ -1,46 +1,87 @@
 import { describe, expect, it } from "vitest";
-import { describeFutureBookingOutcome, keptBookingPrice, normalPriceWithoutMembership } from "./membershipCancelBookings";
-import type { PriceCatalogueItem } from "./groomPricing";
+import {
+  describeFutureBookingOutcome,
+  hasRealPrice,
+  keptBookingPrice,
+  resolveKeptPrices,
+  type KeptBooking,
+} from "./membershipCancelBookings";
 
-const item = (id: number, name: string, legacyServiceType: string, weightBand: string | null, priceAud: string | null, priceMode = "fixed"): PriceCatalogueItem =>
-  ({ id, name, legacyServiceType, weightBand, priceMode, priceAud, sortOrder: id });
-
-// The shape of the real list: one row per service, size and rate.
-const catalogue: PriceCatalogueItem[] = [
-  item(1, "Styled Groom - Small (New Client)", "styled_groom", "0-10kg", "110.00"),
-  item(2, "Styled Groom - Small (Regular Client)", "styled_groom", "0-10kg", "95.00"),
-  item(3, "Styled Groom - Small (VIP Client)", "styled_groom", "0-10kg", "85.00"),
-  item(4, "Classic Groom - Small (New Client)", "classic_groom", "0-10kg", "90.00"),
-  item(5, "Styled Groom - Large (New Client)", "styled_groom", "17-25kg", "160.00"),
-  item(6, "Colour / Dye", "colour", null, null, "quote"),
+const choices = [
+  { tier: "new" as const, label: "New client", price: "180.00", from: "Full Groom (Styled) - New Client - Small" },
+  { tier: "regular" as const, label: "Regular client", price: "163.00", from: "Full Groom (Styled) - Regular Client - Small" },
+  { tier: "vip" as const, label: "VIP client", price: "145.00", from: "Full Groom (Styled) - VIP Client - Small" },
 ];
+const free = (id: number): KeptBooking => ({ id, currentPrice: "0.00", choices });
+const priced = (id: number, price = "110.00"): KeptBooking => ({ id, currentPrice: price, choices });
 
-describe("normalPriceWithoutMembership", () => {
-  it("gives the non-member rate for that service and that size", () => {
-    expect(normalPriceWithoutMembership({ serviceType: "styled_groom", sizeBand: "small", catalogue }))
-      .toEqual({ price: "110.00", from: "Styled Groom - Small (New Client)" });
-    expect(normalPriceWithoutMembership({ serviceType: "classic_groom", sizeBand: "small", catalogue }))
-      .toEqual({ price: "90.00", from: "Classic Groom - Small (New Client)" });
-    expect(normalPriceWithoutMembership({ serviceType: "styled_groom", sizeBand: "large", catalogue }))
-      .toEqual({ price: "160.00", from: "Styled Groom - Large (New Client)" });
+describe("hasRealPrice", () => {
+  it("treats blank and nil as no price, and anything else as real", () => {
+    for (const none of [null, undefined, "", "  ", "0", "0.00", 0]) expect(hasRealPrice(none)).toBe(false);
+    for (const real of ["110.00", 145, "0.50"]) expect(hasRealPrice(real)).toBe(true);
+  });
+});
+
+describe("resolveKeptPrices", () => {
+  it("will not go ahead until every free booking has an answer", () => {
+    const result = resolveKeptPrices([free(1), free(2)], { 1: { kind: "tier", tier: "regular" } });
+    expect(result).toEqual({ ok: false, errors: { 2: "Choose a price for this booking." } });
   });
 
-  it("never falls back to a member rate when the non-member row is missing", () => {
-    const membersOnly = catalogue.filter((row) => row.id !== 1);
-    expect(normalPriceWithoutMembership({ serviceType: "styled_groom", sizeBand: "small", catalogue: membersOnly }))
-      .toEqual({ price: null, why: "not_on_price_list" });
+  it("takes the rate picked for each booking, never one it chose itself", () => {
+    const result = resolveKeptPrices([free(1), free(2)], { 1: { kind: "tier", tier: "new" }, 2: { kind: "tier", tier: "vip" } });
+    expect(result).toEqual({
+      ok: true,
+      prices: [{ appointmentId: 1, price: "180.00" }, { appointmentId: 2, price: "145.00" }],
+      leftBlank: 0,
+      keptAsPriced: 0,
+    });
   });
 
-  it("leaves the price blank rather than guess a size", () => {
-    expect(normalPriceWithoutMembership({ serviceType: "styled_groom", sizeBand: null, catalogue }))
-      .toEqual({ price: null, why: "no_size" });
+  it("takes a price staff typed themselves", () => {
+    const result = resolveKeptPrices([free(1)], { 1: { kind: "custom", amount: "110" } });
+    expect(result).toEqual({ ok: true, prices: [{ appointmentId: 1, price: "110.00" }], leftBlank: 0, keptAsPriced: 0 });
   });
 
-  it("leaves a quote-only or unlisted service blank", () => {
-    expect(normalPriceWithoutMembership({ serviceType: "colour", sizeBand: "small", catalogue }))
-      .toEqual({ price: null, why: "not_on_price_list" });
-    expect(normalPriceWithoutMembership({ serviceType: "bath", sizeBand: "small", catalogue }))
-      .toEqual({ price: null, why: "not_on_price_list" });
+  it("leaves a booking that already has a real price alone unless told otherwise", () => {
+    expect(resolveKeptPrices([priced(1)], {})).toEqual({ ok: true, prices: [], leftBlank: 0, keptAsPriced: 1 });
+    expect(resolveKeptPrices([priced(1)], { 1: { kind: "tier", tier: "regular" } }))
+      .toEqual({ ok: true, prices: [{ appointmentId: 1, price: "163.00" }], leftBlank: 0, keptAsPriced: 0 });
+  });
+
+  it("lets a free booking be left with no price yet, when staff say so", () => {
+    expect(resolveKeptPrices([free(1)], { 1: { kind: "leave" } })).toEqual({ ok: true, prices: [], leftBlank: 1, keptAsPriced: 0 });
+  });
+
+  it("never keeps a booking at nil, whichever way $0 is typed", () => {
+    for (const amount of ["0", "0.00"]) {
+      expect(resolveKeptPrices([free(1)], { 1: { kind: "custom", amount } }))
+        .toEqual({ ok: false, errors: { 1: 'Type a price above $0, or choose "No price yet".' } });
+      expect(resolveKeptPrices([{ id: 1, currentPrice: null, choices }], { 1: { kind: "custom", amount } }).ok).toBe(false);
+      expect(resolveKeptPrices([priced(1)], { 1: { kind: "custom", amount } }).ok).toBe(false);
+    }
+  });
+
+  it("leaves a booking whose bill was set by hand out of it", () => {
+    expect(resolveKeptPrices([{ ...free(1), hasBillingOverride: true }], {})).toEqual({ ok: true, prices: [], leftBlank: 1, keptAsPriced: 0 });
+  });
+
+  it("refuses a custom price that is not a price", () => {
+    const result = resolveKeptPrices([free(1)], { 1: { kind: "custom", amount: "abc" } });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("keptBookingPrice", () => {
+  it("uses the price staff chose", () => {
+    expect(keptBookingPrice("0.00", "163.00")).toEqual({ change: true, price: "163.00" });
+    expect(keptBookingPrice("110.00", "145.00")).toEqual({ change: true, price: "145.00" });
+  });
+
+  it("with no choice, keeps a real price and blanks a nil one", () => {
+    expect(keptBookingPrice("110.00", undefined)).toEqual({ change: false });
+    expect(keptBookingPrice("0.00", undefined)).toEqual({ change: true, price: null });
+    expect(keptBookingPrice(null, null)).toEqual({ change: true, price: null });
   });
 });
 
@@ -51,32 +92,12 @@ describe("describeFutureBookingOutcome", () => {
   });
 
   it("says what was kept, and what still needs a price", () => {
-    expect(describeFutureBookingOutcome({ choice: "keep", removed: 0, repriced: 6, needPrice: 0 })).toBe("6 future bookings kept: 6 now at the normal price.");
-    expect(describeFutureBookingOutcome({ choice: "keep", removed: 0, repriced: 0, needPrice: 1 })).toBe("1 future booking kept: 1 still needs a price.");
+    expect(describeFutureBookingOutcome({ choice: "keep", removed: 0, repriced: 6, needPrice: 0 })).toBe("6 future bookings kept: 6 at the price you chose.");
     expect(describeFutureBookingOutcome({ choice: "keep", removed: 0, repriced: 3, needPrice: 1, keptAsPriced: 2 }))
-      .toBe("6 future bookings kept: 3 now at the normal price, 2 left at the price already on them, 1 still needs a price.");
+      .toBe("6 future bookings kept: 3 at the price you chose, 2 left at the price already on them, 1 still needs a price.");
   });
 
   it("says nothing about bookings when there were none", () => {
     expect(describeFutureBookingOutcome({ choice: null, removed: 0, repriced: 0, needPrice: 0 })).toBe("");
-  });
-});
-
-describe("keptBookingPrice", () => {
-  const normal = { price: "180.00", from: "Styled Groom - Small (New Client)" } as const;
-
-  it("reprices a booking the membership had made nil, or that never had a price", () => {
-    expect(keptBookingPrice("0.00", normal)).toEqual({ change: true, price: "180.00" });
-    expect(keptBookingPrice(null, normal)).toEqual({ change: true, price: "180.00" });
-    expect(keptBookingPrice("", normal)).toEqual({ change: true, price: "180.00" });
-  });
-
-  it("leaves a booking that already carries a real price alone", () => {
-    expect(keptBookingPrice("110.00", normal)).toEqual({ change: false });
-    expect(keptBookingPrice(145, normal)).toEqual({ change: false });
-  });
-
-  it("leaves the price blank, never nil, when no normal price can be worked out", () => {
-    expect(keptBookingPrice("0.00", { price: null, why: "no_size" })).toEqual({ change: true, price: null });
   });
 });

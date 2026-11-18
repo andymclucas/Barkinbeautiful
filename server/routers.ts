@@ -16,9 +16,9 @@ import { DOG_BREED_CATALOGUE } from "@shared/dogBreedCatalogue";
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { buildPaymentTimeline } from "@shared/portalBilling";
-import { sizePriceChoices } from "@shared/sizeChangePricing";
+import { sizePriceChoices, type SizePriceChoice } from "@shared/sizeChangePricing";
 import { prepareClientProfile, prepareClientContact, canAddPortalContact, normaliseAustralianPhoneForStorage } from "@shared/clientProfileEdit";
-import { FUTURE_BOOKING_CHOICES, describeFutureBookingOutcome, keptBookingPrice, normalPriceWithoutMembership, type FutureBookingChoice } from "@shared/membershipCancelBookings";
+import { FUTURE_BOOKING_CHOICES, ZERO_KEPT_PRICE_MESSAGE, describeFutureBookingOutcome, hasRealPrice, keptBookingPrice, type FutureBookingChoice } from "@shared/membershipCancelBookings";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { findDuplicateGroups, suggestSurvivor } from "@shared/clientMerge";
@@ -9176,8 +9176,8 @@ function rateSummary(weeklyRate: string | null | undefined, cycle: "weekly" | "m
 }
 
 /**
- * The bookings a cancelled membership leaves behind, and what each would
- * cost without it (shared/membershipCancelBookings.ts).
+ * The bookings a cancelled membership leaves behind, and the rates each
+ * could be priced at without it (shared/membershipCancelBookings.ts).
  *
  * Only bookings still to come, not yet started, and tied to THIS
  * membership. A dog already in the salon keeps the terms it arrived on,
@@ -9194,6 +9194,8 @@ async function futureBookingsOnMembership(db: any, membership: { id: number; ten
       scheduledStart: appointments.scheduledStart,
       price: appointments.price,
       workflowState: appointments.workflowState,
+      discountPercent: appointments.discountPercent,
+      billedTotalOverride: appointments.billedTotalOverride,
     })
     .from(appointments)
     .innerJoin(pets, eq(pets.id, appointments.petId))
@@ -9225,7 +9227,9 @@ async function futureBookingsOnMembership(db: any, membership: { id: number; ten
     ));
   return rows.map((row: any) => ({
     ...row,
-    normal: normalPriceWithoutMembership({ serviceType: row.serviceType, sizeBand: row.sizeBand, catalogue }),
+    // The three rates the price list has for this service at the dog's
+    // size. Offered, never applied: staff pick (Andy, 18/11/2026).
+    choices: sizePriceChoices({ serviceType: row.serviceType, sizeBand: row.sizeBand, catalogue }),
   }));
 }
 
@@ -9832,13 +9836,26 @@ const membershipsRouter = router({
         .limit(1);
       if (!membership) throw new TRPCError({ code: "NOT_FOUND", message: "Membership not found" });
       const bookings = await futureBookingsOnMembership(db, membership);
+      const previewIds = bookings.map((row: any) => row.id as number);
+      const paidRows = previewIds.length === 0 ? [] : await db
+        .select({ appointmentId: appointmentPayments.appointmentId, paid: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)`.as("paid") })
+        .from(appointmentPayments)
+        .where(and(eq(appointmentPayments.tenantId, membership.tenantId), inArray(appointmentPayments.appointmentId, previewIds)))
+        .groupBy(appointmentPayments.appointmentId);
+      const paidByBooking = new Map<number, number>(paidRows.map((row: any) => [row.appointmentId as number, Number(row.paid)]));
       return {
         bookings: bookings.map((row: any) => ({
           id: row.id,
           petName: row.petName as string,
           scheduledStart: row.scheduledStart as Date,
+          serviceType: row.serviceType as string,
           currentPrice: row.price as string | null,
-          normalPrice: row.normal.price as string | null,
+          choices: row.choices as SizePriceChoice[],
+          // What a new price runs into, said before it is chosen — the
+          // same three the size-change prompt shows.
+          discountPercent: (row.discountPercent as number | null) ?? null,
+          hasBillingOverride: row.billedTotalOverride !== null,
+          alreadyPaid: paidByBooking.get(row.id) ?? 0,
         })),
       };
     }),
@@ -9856,6 +9873,15 @@ const membershipsRouter = router({
       futureBookings: z.enum(FUTURE_BOOKING_CHOICES).optional(),
       /** The booking ids the dialog showed, so the answer applies to that list only. */
       previewedBookingIds: z.array(z.number().int().positive()).max(500).optional(),
+      /**
+       * For "keep": the price staff chose for a booking — one of the three
+       * rates, or their own figure. A booking not named here keeps a real
+       * price if it has one, and is otherwise left with no price.
+       */
+      keptPrices: z.array(z.object({
+        appointmentId: z.number().int().positive(),
+        price: z.string().regex(/^\d{1,5}(\.\d{1,2})?$/),
+      })).max(500).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -9891,6 +9917,11 @@ const membershipsRouter = router({
         if (seen !== now) {
           throw new TRPCError({ code: "CONFLICT", message: "This dog's bookings have changed since you opened this. Close it and open it again to see the current list." });
         }
+      }
+      // A kept booking is never saved at nil: that is the free groom this
+      // whole change exists to stop, arriving by another door.
+      if ((input.keptPrices ?? []).some((entry) => !hasRealPrice(entry.price))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: ZERO_KEPT_PRICE_MESSAGE });
       }
       if (futureBookings.length > 0 && !input.futureBookings) {
         throw new TRPCError({
@@ -9972,12 +10003,21 @@ const membershipsRouter = router({
         }
 
         if (input.futureBookings === "keep") {
+          // Only prices for bookings on THIS list are honoured; an id from
+          // anywhere else in the request is ignored, not written.
+          const chosen = new Map<number, string>(
+            (input.keptPrices ?? []).map((entry) => [entry.appointmentId, Number(entry.price).toFixed(2)]),
+          );
           for (const row of futureBookings) {
             if (!live.has(row.id)) continue;
-            const kept = keptBookingPrice(row.price, row.normal);
-            // Off the membership either way. The price only changes when
-            // the membership had made it nil; a real figure already on
-            // the booking stays (shared/membershipCancelBookings.ts).
+            // A hand-set bill ignores the price, so a chosen one is not
+            // written against it; the booking just comes off the membership.
+            const kept = row.billedTotalOverride !== null
+              ? ({ change: false } as const)
+              : keptBookingPrice(row.price, chosen.get(row.id));
+            // Off the membership either way. The price is what staff
+            // chose; with no choice a real figure stays and a nil one is
+            // left blank (shared/membershipCancelBookings.ts).
             await tx.update(appointments)
               .set(kept.change
                 ? {
