@@ -24,13 +24,34 @@ import { TRPCError } from "@trpc/server";
 import { router, operationalProcedure, adminProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import { salonAccess, tenants, users } from "../../drizzle/schema";
-import { canAccessSalon, shouldOfferSalonSwitcher } from "@shared/salonAccess";
+import { canAccessSalon, isPlatformAdmin, shouldOfferSalonSwitcher } from "@shared/salonAccess";
 import {
   COPYABLE_CATALOGUES, CATALOGUE_TABLES, cataloguesToCopy, describeProvisionPlan,
 } from "@shared/salonProvisioning";
-import { provisionSalon } from "../salonProvisioning";
+import { copyCataloguesInto, provisionSalon } from "../salonProvisioning";
 import { sql } from "drizzle-orm";
 import { isValidTimeZone } from "@shared/auditTimestamp";
+import { isDuplicateEntryError } from "../dbErrors";
+
+/**
+ * Stop anybody who does not run the platform.
+ *
+ * adminProcedure alone is not enough for anything in this file that
+ * reaches ACROSS salons: a salon that signs itself up gets an admin
+ * owner. See isPlatformAdmin for what that used to allow.
+ */
+function requirePlatformAdmin(ctx: { user: { role?: string | null }; accessibleTenantIds: readonly number[] }) {
+  if (!isPlatformAdmin({ role: ctx.user.role, accessibleTenantIds: ctx.accessibleTenantIds })) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Only Groomigo's own administrators can set up salons" });
+  }
+}
+
+/** A price list may only be copied out of a salon the caller can already open. */
+function requireSourceAccess(ctx: { accessibleTenantIds: readonly number[] }, fromTenantId: number | null) {
+  if (fromTenantId !== null && !canAccessSalon(ctx.accessibleTenantIds, fromTenantId)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "You can only copy from a salon you have access to" });
+  }
+}
 
 export const salonsRouter = router({
   /**
@@ -47,7 +68,7 @@ export const salonsRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
       const ids = ctx.accessibleTenantIds;
-      if (ids.length === 0) return { salons: [], activeTenantId: ctx.tenantId, showSwitcher: false };
+      if (ids.length === 0) return { salons: [], activeTenantId: ctx.tenantId, showSwitcher: false, canManageSalons: false };
 
       const rows = await db.select({
         id: tenants.id,
@@ -62,6 +83,8 @@ export const salonsRouter = router({
         salons: rows.sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)),
         activeTenantId: ctx.tenantId,
         showSwitcher: shouldOfferSalonSwitcher(ids),
+        /** Whether to show the salon set-up tools at all. */
+        canManageSalons: isPlatformAdmin({ role: ctx.user.role, accessibleTenantIds: ids }),
       };
     }),
 
@@ -145,7 +168,8 @@ export const salonsRouter = router({
    */
   eligibleOwners: adminProcedure
     .input(z.object({ query: z.string().trim().max(100).default("") }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      requirePlatformAdmin(ctx);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const q = input.query.trim();
@@ -180,7 +204,9 @@ export const salonsRouter = router({
       copyFromTenantId: z.number().int().positive().nullable(),
       catalogues: z.array(z.enum(COPYABLE_CATALOGUES)).default([]),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      requirePlatformAdmin(ctx);
+      requireSourceAccess(ctx, input.copyFromTenantId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -247,6 +273,8 @@ export const salonsRouter = router({
       catalogues: z.array(z.enum(COPYABLE_CATALOGUES)).default([]),
     }))
     .mutation(async ({ input, ctx }) => {
+      requirePlatformAdmin(ctx);
+      requireSourceAccess(ctx, input.copyFromTenantId);
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
@@ -286,6 +314,61 @@ export const salonsRouter = router({
           code: "BAD_REQUEST",
           message: error instanceof Error ? error.message : "Could not create the salon",
         });
+      }
+    }),
+
+  /**
+   * Every salon on the platform, for choosing which one to copy lists into.
+   *
+   * Platform administrators only: it names businesses the caller may have
+   * no access to. Names and addresses, nothing about their books.
+   */
+  all: adminProcedure
+    .query(async ({ ctx }) => {
+      requirePlatformAdmin(ctx);
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const rows = await db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug }).from(tenants);
+      return rows.sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+    }),
+
+  /**
+   * Give a salon that already exists somewhere to start from.
+   *
+   * A salon that signs itself up starts with no price list, no grooming
+   * codes, no retail products and no membership plans. This copies the
+   * chosen lists in from a salon the caller can open. Lists the target
+   * already has anything in are skipped and reported, never added to.
+   *
+   * The fields are named from/to rather than `tenantId` on purpose: the
+   * tenant guard compares `tenantId` with the salon the caller is
+   * standing in, and the whole point here is to act on a different one.
+   * The two checks below are what stand in for it.
+   */
+  copyCatalogues: adminProcedure
+    .input(z.object({
+      fromTenantId: z.number().int().positive(),
+      toTenantId: z.number().int().positive(),
+      catalogues: z.array(z.enum(COPYABLE_CATALOGUES)).min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      requirePlatformAdmin(ctx);
+      requireSourceAccess(ctx, input.fromTenantId);
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [target] = await db.select({ id: tenants.id, name: tenants.name }).from(tenants)
+        .where(eq(tenants.id, input.toTenantId)).limit(1);
+      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "That salon does not exist" });
+      try {
+        const result = await copyCataloguesInto(input);
+        return { success: true, salonName: target.name, ...result };
+      } catch (error) {
+        // A duplicate key means the salon got that list between the check
+        // and the copy. Said in words, not as a database error.
+        const message = isDuplicateEntryError(error)
+          ? "That salon already has some of those. Nothing was doubled up; check its lists and try the rest."
+          : error instanceof Error ? error.message : "Could not copy the lists";
+        throw new TRPCError({ code: "BAD_REQUEST", message });
       }
     }),
 

@@ -127,3 +127,24 @@ export function describeProvisionPlan(input: {
     : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   return `Create ${input.salonName}, copying ${list} from ${input.copyFromName}. No clients, pets or bookings are copied.`;
 }
+
+/**
+ * Which lists to copy into a salon that ALREADY exists.
+ *
+ * A salon that signs itself up starts empty, so this is how it is given
+ * somewhere to start. A list the salon already has rows in is SKIPPED,
+ * never added to: copying a price list twice would leave every service
+ * in the book twice, and copying over one the owner has started editing
+ * would bury their work under somebody else's prices. Skipped lists are
+ * reported, so "nothing happened" is explained rather than silent.
+ */
+export function planCatalogueCopy(
+  requested: readonly CopyableCatalogue[],
+  alreadyInTarget: Partial<Record<CopyableCatalogue, number>>,
+): { copy: CopyableCatalogue[]; skip: CopyableCatalogue[] } {
+  const wanted = [...new Set(requested.filter(isCopyableCatalogue))];
+  return {
+    copy: wanted.filter((c) => (alreadyInTarget[c] ?? 0) === 0),
+    skip: wanted.filter((c) => (alreadyInTarget[c] ?? 0) > 0),
+  };
+}

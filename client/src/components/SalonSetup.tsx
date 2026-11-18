@@ -40,8 +40,36 @@ export function SalonSetup() {
    * adminProcedure, so a visible card that errors on load is worse than
    * no card at all.
    */
-  const isAdmin = user?.role === "admin";
+  const signedInAdmin = user?.role === "admin";
   const utils = trpc.useUtils();
+  const salons = trpc.salons.mine.useQuery(undefined, { enabled: signedInAdmin });
+  /*
+   * Not just "an admin": every salon that signs itself up has one. These
+   * tools reach across salons, so the server offers them only to the
+   * people who run Groomigo, and says so in salons.mine.
+   */
+  const isAdmin = signedInAdmin && salons.data?.canManageSalons === true;
+  const [copyTo, setCopyTo] = useState<string>("");
+  const [copySource, setCopySource] = useState<string>("");
+  const [copyLists, setCopyLists] = useState<CopyableCatalogue[]>([]);
+  const allSalons = trpc.salons.all.useQuery(undefined, { enabled: isAdmin });
+  const copyInto = trpc.salons.copyCatalogues.useMutation({
+    onSuccess: (r) => {
+      const done = Object.entries(r.copied).map(([c, n]) => `${CATALOGUE_LABELS[c as CopyableCatalogue]}: ${n}`);
+      const skipped = r.skipped.map((c) => CATALOGUE_LABELS[c]);
+      toast.success(
+        done.length ? `Copied into ${r.salonName} — ${done.join(", ")}` : `Nothing copied into ${r.salonName}`,
+        {
+          description: skipped.length
+            ? `Left alone because ${r.salonName} already has its own: ${skipped.join(", ")}.`
+            : undefined,
+          duration: 12000,
+        },
+      );
+      setCopyLists([]);
+    },
+    onError: (e) => toast.error(e.message, { duration: 10000 }),
+  });
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -51,7 +79,6 @@ export function SalonSetup() {
   const [copyFrom, setCopyFrom] = useState<string>("none");
   const [catalogues, setCatalogues] = useState<CopyableCatalogue[]>([]);
 
-  const salons = trpc.salons.mine.useQuery(undefined, { enabled: isAdmin });
   // Users, not staff records: provisioning puts somebody into a second
   // salon and never creates a login, so they must already have one.
   const owners = trpc.salons.eligibleOwners.useQuery(
@@ -214,6 +241,55 @@ export function SalonSetup() {
             A name, a timezone and an owner who already has a login are needed.
           </p>
         )}
+
+        {/* A salon that signed ITSELF up starts empty. This is how it is
+            given a price list to start editing, after the fact. */}
+        <div className="space-y-2 rounded-lg border p-3">
+          <Label>Copy lists into a salon that already exists</Label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Select value={copySource} onValueChange={setCopySource}>
+              <SelectTrigger className="h-9" aria-label="Copy from"><SelectValue placeholder="Copy from…" /></SelectTrigger>
+              <SelectContent>
+                {(salons.data?.salons ?? []).map(s => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={copyTo} onValueChange={setCopyTo}>
+              <SelectTrigger className="h-9" aria-label="Copy into"><SelectValue placeholder="Into…" /></SelectTrigger>
+              <SelectContent>
+                {(allSalons.data ?? []).filter(s => String(s.id) !== copySource).map(s => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {COPYABLE_CATALOGUES.map(c => (
+              <button key={c} type="button"
+                onClick={() => setCopyLists(cur => cur.includes(c) ? cur.filter(x => x !== c) : [...cur, c])}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  copyLists.includes(c)
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:bg-muted"
+                }`}>
+                {CATALOGUE_LABELS[c]}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            A list the salon already has anything in is left alone, so this never doubles up or
+            overwrites what an owner has started. No clients, pets, bookings or staff are copied.
+          </p>
+          <Button variant="outline" size="sm"
+            disabled={!copySource || !copyTo || copyLists.length === 0 || copyInto.isPending}
+            onClick={() => copyInto.mutate({
+              fromTenantId: Number(copySource), toTenantId: Number(copyTo), catalogues: copyLists,
+            })}>
+            {copyInto.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Copy lists
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

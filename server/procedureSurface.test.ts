@@ -622,7 +622,11 @@ describe("tRPC procedure surface", () => {
     // weekly payments against grooms done, which is always positive for a
     // weekly-billed member, and its two buttons invoiced clients for money
     // already paid and wrote payment rows with no money behind them.
-    expect(surface).toHaveLength(453);
+    // 455 since 18/11/2026: salons.all and salons.copyCatalogues, for
+    // giving a salon that signed itself up a price list to start from.
+    // Both adminProcedure AND platform-administrator inside
+    // (isPlatformAdmin) — a self-signed-up salon's owner is an admin too.
+    expect(surface).toHaveLength(455);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
