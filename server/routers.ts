@@ -16,6 +16,7 @@ import { DOG_BREED_CATALOGUE } from "@shared/dogBreedCatalogue";
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { buildPaymentTimeline } from "@shared/portalBilling";
+import { sizePriceChoices } from "@shared/sizeChangePricing";
 import { prepareClientProfile, prepareClientContact, canAddPortalContact, normaliseAustralianPhoneForStorage } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
@@ -7215,7 +7216,7 @@ const petsRouter = router({
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
         throw new Error("This pet is not available to your salon staff profile");
       }
-      const [pet] = await db.select({ id: pets.id, tenantId: pets.tenantId })
+      const [pet] = await db.select({ id: pets.id, tenantId: pets.tenantId, sizeBand: pets.sizeBand })
         .from(pets)
         .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
@@ -7257,7 +7258,12 @@ const petsRouter = router({
           });
         }
       });
-      return { success: true, weightKg: update.weightKg, sizeBand: update.sizeBand ?? null };
+      // Whether the weight moved the dog into another size band — which
+      // is what its price hangs off. The screen uses it to ask about the
+      // dog's upcoming bookings (shared/sizeChangePricing.ts); nothing is
+      // repriced here.
+      const sizeBandChanged = update.sizeBand !== undefined && update.sizeBand !== pet.sizeBand;
+      return { success: true, weightKg: update.weightKg, sizeBand: update.sizeBand ?? null, sizeBandChanged };
     }),
 
   /**
@@ -7326,7 +7332,7 @@ const petsRouter = router({
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
         throw new Error("This pet is not available to your salon staff profile");
       }
-      const [pet] = await db.select({ id: pets.id })
+      const [pet] = await db.select({ id: pets.id, sizeBand: pets.sizeBand })
         .from(pets)
         .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
@@ -7337,7 +7343,133 @@ const petsRouter = router({
           sizeBandSource: input.sizeBand === null ? null : "manual",
         })
         .where(eq(pets.id, pet.id));
-      return { success: true, sizeBand: input.sizeBand };
+      return {
+        success: true,
+        sizeBand: input.sizeBand,
+        // Same signal as updateWeight: the size the price hangs off moved.
+        sizeBandChanged: input.sizeBand !== null && input.sizeBand !== pet.sizeBand,
+      };
+    }),
+
+  /**
+   * What a dog's new size means for the bookings it already has.
+   *
+   * Asked by the screen straight after a weight or size change moved the
+   * dog into another band (Andy, 18/11/2026). For each upcoming booking
+   * it returns the price on it now and the price list's three rates for
+   * that service at the dog's CURRENT size, so staff can pick one, type
+   * their own, or leave it. It changes nothing; the save goes through
+   * calendar.updateDetails like any other price edit.
+   *
+   * operationalProcedure, like updateWeight and updateDetails beside it:
+   * the dog is weighed on the floor, and whoever weighs it is who is
+   * asked. It carries the dog's own bookings and prices, nothing else.
+   */
+  sizePriceReview: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), petId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantId) {
+        throw new Error("This pet is not available to your salon staff profile");
+      }
+      const [pet] = await db.select({ id: pets.id, name: pets.name, sizeBand: pets.sizeBand })
+        .from(pets)
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantId)))
+        .limit(1);
+      if (!pet) throw new Error("Pet not found");
+
+      const rows = await db
+        .select({
+          id: appointments.id,
+          scheduledStart: appointments.scheduledStart,
+          serviceType: appointments.serviceType,
+          price: appointments.price,
+          membershipId: appointments.membershipId,
+          discountPercent: appointments.discountPercent,
+          billedTotalOverride: appointments.billedTotalOverride,
+        })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.petId, pet.id),
+          eq(appointments.workflowState, "scheduled"),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
+          gte(appointments.scheduledStart, new Date()),
+        ))
+        .orderBy(asc(appointments.scheduledStart), asc(appointments.id));
+
+      // The membership this dog is on, by name only: the plan is sold by
+      // size, so a dog that has changed band may be on the wrong one. Said
+      // to staff; never changed from here.
+      // Both ways a dog can be on a plan: as the plan's own dog, or as
+      // one of the extra dogs a multi-dog plan covers (membership_pets).
+      const coveredBy = await db
+        .select({ membershipId: membershipPets.membershipId })
+        .from(membershipPets)
+        .where(and(eq(membershipPets.tenantId, tenantId), eq(membershipPets.petId, pet.id)));
+      const coveringIds = coveredBy.map((row: any) => row.membershipId as number);
+      const plans = await db
+        .select({ id: memberships.id, name: memberships.name })
+        .from(memberships)
+        .where(and(
+          eq(memberships.tenantId, tenantId),
+          eq(memberships.status, "active"),
+          coveringIds.length > 0
+            ? or(eq(memberships.petId, pet.id), inArray(memberships.id, coveringIds))
+            : eq(memberships.petId, pet.id),
+        ))
+        .orderBy(asc(memberships.id));
+
+      // What has already been taken against each booking, so staff are
+      // told before they change a price that somebody has part-paid.
+      const bookingIds = rows.map((row: any) => row.id as number);
+      const paidRows = bookingIds.length === 0 ? [] : await db
+        .select({ appointmentId: appointmentPayments.appointmentId, paid: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)`.as("paid") })
+        .from(appointmentPayments)
+        .where(and(eq(appointmentPayments.tenantId, tenantId), inArray(appointmentPayments.appointmentId, bookingIds)))
+        .groupBy(appointmentPayments.appointmentId);
+      const paidByBooking = new Map<number, number>(paidRows.map((row: any) => [row.appointmentId as number, Number(row.paid)]));
+
+      const catalogue = rows.length === 0 ? [] : await db
+        .select({
+          id: pricingServices.id,
+          name: pricingServices.name,
+          legacyServiceType: pricingServices.legacyServiceType,
+          weightBand: pricingServices.weightBand,
+          priceMode: pricingServices.priceMode,
+          priceAud: pricingServices.priceAud,
+          sortOrder: pricingServices.sortOrder,
+        })
+        .from(pricingServices)
+        .where(and(
+          eq(pricingServices.tenantId, tenantId),
+          eq(pricingServices.catalogueType, "service"),
+          eq(pricingServices.isActive, true),
+          isNotNull(pricingServices.legacyServiceType),
+        ));
+
+      return {
+        pet: { id: pet.id, name: pet.name as string, sizeBand: pet.sizeBand as string | null },
+        membershipName: plans.length > 0 ? plans.map((plan: any) => plan.name as string).join(", ") : null,
+        bookings: rows.map((row: any) => ({
+          id: row.id as number,
+          scheduledStart: row.scheduledStart as Date,
+          serviceType: row.serviceType as string,
+          currentPrice: row.price as string | null,
+          // A groom the membership pays for has no price to change.
+          onMembership: row.membershipId !== null,
+          // Three things a new price runs into, said before it is chosen:
+          // a discount (a new price removes it), a billing override (the
+          // bill ignores the price while it is set), and money already taken.
+          discountPercent: (row.discountPercent as number | null) ?? null,
+          hasBillingOverride: row.billedTotalOverride !== null,
+          alreadyPaid: paidByBooking.get(row.id) ?? 0,
+          choices: sizePriceChoices({ serviceType: row.serviceType, sizeBand: pet.sizeBand, catalogue }),
+        })),
+      };
     }),
 
   /**
