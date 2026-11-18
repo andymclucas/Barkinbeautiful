@@ -39,6 +39,7 @@ import {
 import { StripeCardPanel } from "@/components/StripeCardPanel";
 import { BookingPetPricing, type StagedAddOn } from "@/components/BookingPetPricing";
 import { PetAvatar } from "@/components/PetAvatar";
+import { SizeChangePriceDialog } from "@/components/SizeChangePriceDialog";
 import { trpc } from "@/lib/trpc";
 import { PetWeightHistoryPanel } from "@/components/PetWeightHistoryPanel";
 import { useParams } from "wouter";
@@ -663,19 +664,25 @@ export default function ClientDetail() {
     },
     onError: (e) => toast.error(e.message),
   });
+  /* The dog whose size band has just moved, so its upcoming prices are
+     asked about (Andy, 18/11/2026; components/SizeChangePriceDialog). */
+  const [sizePricePetId, setSizePricePetId] = useState<number | null>(null);
+  const closeSizePrice = useCallback(() => setSizePricePetId(null), []);
   const updatePetSizeBand = trpc.pets.updateSizeBand.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result, variables) => {
       await utils.clients.getProfile.invalidate({ clientId });
       toast.success("Size band saved");
+      if (result.sizeBandChanged) setSizePricePetId(variables.petId);
     },
     onError: (error) => toast.error(error.message),
   });
   const updatePetWeight = trpc.pets.updateWeight.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result, variables) => {
       await utils.clients.getProfile.invalidate({ clientId });
       setEditingWeightPetId(null);
       setWeightDraft("");
       toast.success("Recorded dog weight saved");
+      if (result.sizeBandChanged) setSizePricePetId(variables.petId);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -1017,6 +1024,7 @@ export default function ClientDetail() {
 
   return (
     <DashboardLayout>
+      <SizeChangePriceDialog petId={sizePricePetId} onClose={closeSizePrice} />
       {/* Andy, 10/11/2026, with a photo of the record: "It looks like
           it's justified left and squashed. On desktop, let's have this
           cover the entire page."

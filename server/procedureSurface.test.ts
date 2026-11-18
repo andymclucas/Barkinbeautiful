@@ -350,6 +350,10 @@ const OPERATIONAL = [
   "petsRouter.listBreeds",
   "petsRouter.listByClient",
   "petsRouter.restore",
+  // What a dog's new size means for the bookings it already has
+  // (18/11/2026). Asked straight after a weigh-in, so it is open to whoever
+  // weighs the dog; it reads that dog's own bookings and changes nothing.
+  "petsRouter.sizePriceReview",
   // The dog's usual groomer. A groomer knows which dogs are theirs, and
   // the person taking the booking is who hears "can we have Charlotte
   // again". Tenant-checked on both the pet and the staff member.
@@ -618,7 +622,7 @@ describe("tRPC procedure surface", () => {
     // weekly payments against grooms done, which is always positive for a
     // weekly-billed member, and its two buttons invoiced clients for money
     // already paid and wrote payment rows with no money behind them.
-    expect(surface).toHaveLength(451);
+    expect(surface).toHaveLength(452);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -695,7 +699,7 @@ describe("tRPC procedure surface", () => {
     // skipped date of a repeat, staff-facing like the rest of the calendar.
     // 163 since 13/11/2026: the staff half of supportChat. Every staff
     // login can ask for help; the server keys each one to ctx.user.id.
-    expect(OPERATIONAL).toHaveLength(163);
+    expect(OPERATIONAL).toHaveLength(164);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
