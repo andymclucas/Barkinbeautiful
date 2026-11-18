@@ -31,6 +31,7 @@ import {
 import { copyCataloguesInto, provisionSalon } from "../salonProvisioning";
 import { sql } from "drizzle-orm";
 import { isValidTimeZone } from "@shared/auditTimestamp";
+import { isDuplicateEntryError } from "../dbErrors";
 
 /**
  * Stop anybody who does not run the platform.
@@ -362,10 +363,12 @@ export const salonsRouter = router({
         const result = await copyCataloguesInto(input);
         return { success: true, salonName: target.name, ...result };
       } catch (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error instanceof Error ? error.message : "Could not copy the lists",
-        });
+        // A duplicate key means the salon got that list between the check
+        // and the copy. Said in words, not as a database error.
+        const message = isDuplicateEntryError(error)
+          ? "That salon already has some of those. Nothing was doubled up; check its lists and try the rest."
+          : error instanceof Error ? error.message : "Could not copy the lists";
+        throw new TRPCError({ code: "BAD_REQUEST", message });
       }
     }),
 

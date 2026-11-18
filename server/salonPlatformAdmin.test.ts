@@ -184,6 +184,46 @@ describe("salons.copyCatalogues", () => {
     expect(d.inserts).toEqual([]);
   });
 
+  it("copies the products but not the other salon's stock on the shelf", async () => {
+    const d = database(new Map<unknown, Array<Record<string, unknown>>>([[tenants, [NOT_EXPIRED]]]));
+    let reads = 0;
+    const source = [{ id: 3, tenantId: 1, name: "Shampoo", stockQty: 40, reorderThreshold: 5 }];
+    const realSelect = d.db.select;
+    d.db.select = (() => {
+      const chain: any = realSelect();
+      const from = chain.from;
+      chain.from = (t: unknown) => {
+        if (t !== retailProducts) return from(t);
+        reads += 1;
+        const rows = reads === 1 ? [] : source;
+        const c: any = {
+          where: () => c, limit: () => Promise.resolve(rows.slice(0, 1)),
+          then: (res: any, rej?: any) => Promise.resolve(rows).then(res, rej),
+        };
+        return c;
+      };
+      return chain;
+    }) as any;
+    getDb.mockResolvedValue(d.db);
+    await platform().salons.copyCatalogues({ fromTenantId: 1, toTenantId: 7, catalogues: ["retail"] });
+    expect(d.inserts[0].values).toEqual([{ tenantId: 7, name: "Shampoo", stockQty: 0, reorderThreshold: 5 }]);
+  });
+
+  it("refuses a second copy into the same salon while the first is running", async () => {
+    // Two together would both see an empty list and both fill it.
+    const d = database(new Map<unknown, Array<Record<string, unknown>>>([[tenants, [NOT_EXPIRED]], [petCodes, []]]));
+    getDb.mockResolvedValue(d.db);
+    const first = platform().salons.copyCatalogues({ fromTenantId: 1, toTenantId: 7, catalogues: ["petCodes"] });
+    const second = platform().salons.copyCatalogues({ fromTenantId: 1, toTenantId: 7, catalogues: ["petCodes"] });
+    const results = await Promise.allSettled([first, second]);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+    expect(String((results.find((r) => r.status === "rejected") as PromiseRejectedResult).reason))
+      .toMatch(/already being copied/);
+    // And the salon is free again afterwards.
+    await expect(platform().salons.copyCatalogues({ fromTenantId: 1, toTenantId: 7, catalogues: ["petCodes"] }))
+      .resolves.toMatchObject({ success: true });
+  });
+
   it("refuses to copy a salon into itself", async () => {
     getDb.mockResolvedValue(database(new Map([[tenants, [NOT_EXPIRED]]])).db);
     await expect(platform().salons.copyCatalogues({ fromTenantId: 1, toTenantId: 1, catalogues: ["pricing"] }))

@@ -91,6 +91,9 @@ async function copyCatalogue(
 
   const values = rows.map((row: Record<string, unknown>) => {
     const { id: _id, tenantId: _tenantId, createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = row;
+    // The products are copied; the shelf is not. A new salon does not
+    // have another salon's forty bottles of shampoo in its cupboard.
+    if ("stockQty" in rest) rest.stockQty = 0;
     return { ...rest, tenantId: toTenantId };
   });
   await db.insert(table).values(values);
@@ -215,6 +218,9 @@ export async function provisionSalon(input: {
  *
  * The caller decides WHO may do this; see salons.copyCatalogues.
  */
+/** Salons being copied into right now. One instance, so a Set is enough. */
+const copyingInto = new Set<number>();
+
 export async function copyCataloguesInto(input: {
   fromTenantId: number;
   toTenantId: number;
@@ -226,6 +232,28 @@ export async function copyCataloguesInto(input: {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
 
+  /*
+   * "Has the salon got any?" and "copy them in" are two steps, so two
+   * copies started together would both see an empty list and both fill
+   * it. Retail products have no unique key to stop that, and the salon
+   * would get every product twice. One copy per salon at a time.
+   */
+  if (copyingInto.has(input.toTenantId)) {
+    throw new Error("Lists are already being copied into that salon. Give it a moment.");
+  }
+  copyingInto.add(input.toTenantId);
+  try {
+    return await copyChecked(db, input);
+  } finally {
+    copyingInto.delete(input.toTenantId);
+  }
+}
+
+async function copyChecked(db: any, input: {
+  fromTenantId: number;
+  toTenantId: number;
+  catalogues: readonly CopyableCatalogue[];
+}): Promise<{ copied: Record<string, number>; skipped: CopyableCatalogue[] }> {
   const already: Partial<Record<CopyableCatalogue, number>> = {};
   for (const catalogue of new Set(input.catalogues)) {
     const table = TABLE_FOR[catalogue] as any;
