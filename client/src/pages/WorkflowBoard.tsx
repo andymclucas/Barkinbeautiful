@@ -40,6 +40,7 @@ import { StaffAvatar } from "@/components/StaffAvatar";
 import { useDisplayTheme } from "@/lib/displayTheme";
 import { useTheme } from "@/contexts/ThemeContext";
 import { QuickAppointmentDialog } from "@/components/QuickAppointmentDialog";
+import { MarkOutDialog } from "@/components/MarkOutDialog";
 import { dogBoardSummary } from "@shared/dogBoardSummary";
 import { collectByTone } from "@shared/collectBy";
 import {
@@ -242,7 +243,6 @@ export default function WorkflowBoard() {
     onSuccess: () => { toast.success("Family link removed"); setFamilyLinkPopup(null); refetch(); },
     onError: (e) => toast.error(e.message),
   });
-    const [outMarkPaid, setOutMarkPaid] = useState(false);
 
   // Tick each second so every active stage tracker is visibly live.
   useEffect(() => {
@@ -1169,50 +1169,16 @@ export default function WorkflowBoard() {
       )}
 
       {outConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setOutConfirm(null)}>
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="relative bg-card rounded-2xl shadow-2xl max-w-xs w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
-            <div className="text-center">
-              <div className="h-12 w-12 rounded-full bg-amber-100 dark:bg-amber-950/50 flex items-center justify-center mx-auto mb-3">
-                <AlertTriangle className="h-6 w-6 text-amber-600 dark:text-amber-400" />
-              </div>
-              <h3 className="text-lg font-bold">Mark {outConfirm.petName} as Out?</h3>
-              <p className="text-sm text-muted-foreground mt-1">Please confirm that payment has been collected before marking this dog as picked up.</p>
-            </div>
-            {/* Mark as Paid toggle */}
-            <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted transition-colors">
-              <input
-                type="checkbox"
-                checked={outMarkPaid}
-                onChange={e => setOutMarkPaid(e.target.checked)}
-                className="h-4 w-4 rounded accent-emerald-600"
-              />
-              <div>
-                <p className="text-sm font-semibold">Mark as Paid</p>
-                <p className="text-xs text-muted-foreground">Tick if payment has been received</p>
-              </div>
-            </label>
-            <div className="flex gap-2">
-              <button
-                className="flex-1 px-3 py-2 rounded-lg border text-sm font-medium hover:bg-muted transition-colors"
-                onClick={() => { setOutConfirm(null); setOutMarkPaid(false); }}
-              >
-                Cancel
-              </button>
-              <button
-                className="flex-1 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors"
-                onClick={() => {
-                  const sent = completeAppointment(outConfirm, { pickedUpAt: Date.now(), ...(outMarkPaid ? { isPaid: true } : {}) });
-                  setOutConfirm(null);
-                  setOutMarkPaid(false);
-                  if (sent) toast.success(`${outConfirm.petName} marked as out`);
-                }}
-              >
-                {outMarkPaid ? "Paid & OUT" : "OUT (payment pending)"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <MarkOutDialog
+          appointmentId={outConfirm.id}
+          petName={outConfirm.petName}
+          onCancel={() => setOutConfirm(null)}
+          onConfirm={() => {
+            const sent = completeAppointment(outConfirm, { pickedUpAt: Date.now() });
+            setOutConfirm(null);
+            if (sent) toast.success(`${outConfirm.petName} marked as out`);
+          }}
+        />
       )}
 
       <Dialog open={Boolean(pickupMessageAppointment)} onOpenChange={open => { if (!open && !sendPickupMessage.isPending) { setPickupMessageAppointment(null); setSelectedPickupRecipientId(""); } }}>
