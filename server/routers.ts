@@ -3706,8 +3706,8 @@ const calendarRouter = router({
        * Move the other dogs on the same booking too. For callers that
        * act on ONE row of a per-dog list (the client's Bookings tab):
        * without it, moving Maddie leaves Misha on the old day, still
-       * tied to her by sessionId. The calendar moves its own siblings
-       * and does not send this.
+       * tied to her by sessionId. The calendar sends it too since
+       * 18/11/2026, from both its Save and its drag.
        */
       withBooking: z.boolean().optional(),
     }))
