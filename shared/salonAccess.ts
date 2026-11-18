@@ -86,3 +86,36 @@ export function shouldOfferSalonSwitcher(accessible: readonly number[]): boolean
 function isUsableId(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
+
+/**
+ * The salon Groomigo itself is run from.
+ *
+ * Tenant 1 is Barkin' Beautiful, where the people who operate the
+ * platform have their accounts. Named once here so "who runs Groomigo"
+ * is not spelt as a bare `1` in a dozen routers.
+ */
+export const PLATFORM_HOME_TENANT_ID = 1;
+
+/**
+ * May this person run the PLATFORM — create salons, copy price lists
+ * between them, search every account?
+ *
+ * `users.role === "admin"` is NOT that, and treating it as that was a
+ * hole until 18/11/2026. The public sign-up page makes every new salon's
+ * owner an admin, because they administer their own salon. The salon
+ * set-up tools trusted any admin, so a stranger who signed up could have
+ * created a salon seeded with Barkin' Beautiful's price list, membership
+ * plans and retail catalogue, and searched every account's name and
+ * email across all salons.
+ *
+ * A platform administrator is an admin who can ALSO act in the platform's
+ * home salon. The list of salons is the one the server built from the
+ * user's own rows (see resolveActiveSalon), never anything the browser
+ * sent, and which salon they are currently switched into does not matter.
+ */
+export function isPlatformAdmin(input: {
+  role: string | null | undefined;
+  accessibleTenantIds: readonly number[];
+}): boolean {
+  return input.role === "admin" && input.accessibleTenantIds.includes(PLATFORM_HOME_TENANT_ID);
+}

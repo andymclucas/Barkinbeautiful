@@ -47,7 +47,7 @@ import {
 } from "../drizzle/schema";
 import { slugifySalonName, nextFreeSlug } from "@shared/salonSignup";
 import {
-  cataloguesToCopy, type CopyableCatalogue, type ProvisionChoice,
+  cataloguesToCopy, planCatalogueCopy, type CopyableCatalogue, type ProvisionChoice,
 } from "@shared/salonProvisioning";
 
 /**
@@ -202,4 +202,48 @@ export async function provisionSalon(input: {
     await db.delete(tenants).where(eq(tenants.id, tenantId)).catch(() => {});
     throw error;
   }
+}
+
+/**
+ * Copy lists into a salon that already exists — one that signed itself
+ * up, which always starts empty.
+ *
+ * Reads only through TABLE_FOR, like the provisioner, so there is still
+ * no argument that reaches a client, a pet or a payment. A list the
+ * target already has anything in is skipped (planCatalogueCopy), which
+ * also makes a double click harmless.
+ *
+ * The caller decides WHO may do this; see salons.copyCatalogues.
+ */
+export async function copyCataloguesInto(input: {
+  fromTenantId: number;
+  toTenantId: number;
+  catalogues: readonly CopyableCatalogue[];
+}): Promise<{ copied: Record<string, number>; skipped: CopyableCatalogue[] }> {
+  if (input.fromTenantId === input.toTenantId) {
+    throw new Error("A salon cannot be copied into itself");
+  }
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  const already: Partial<Record<CopyableCatalogue, number>> = {};
+  for (const catalogue of new Set(input.catalogues)) {
+    const table = TABLE_FOR[catalogue] as any;
+    if (!table) continue;
+    const rows = await db.select({ id: table.id }).from(table)
+      .where(eq(table.tenantId, input.toTenantId)).limit(1);
+    already[catalogue] = rows.length;
+  }
+
+  const plan = planCatalogueCopy(input.catalogues, already);
+  const copied: Record<string, number> = {};
+  for (const catalogue of plan.copy) {
+    copied[catalogue] = await copyCatalogue(db, catalogue, input.fromTenantId, input.toTenantId);
+  }
+  console.log(
+    `[provision] copied into salon ${input.toTenantId} from ${input.fromTenantId}: `
+    + (plan.copy.map((c) => `${c}=${copied[c]}`).join(" ") || "nothing")
+    + (plan.skip.length ? `; skipped (already has rows): ${plan.skip.join(", ")}` : ""),
+  );
+  return { copied, skipped: plan.skip };
 }
