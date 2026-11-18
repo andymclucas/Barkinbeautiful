@@ -32,7 +32,6 @@ function sizeForValue(value: string): string {
 export function ClientMetrics({ clientId }: { clientId: number }) {
   const { data } = trpc.clients.messageContext.useQuery({ clientId });
   const { data: reviews } = trpc.clientReviews.forClient.useQuery({ clientId });
-  const { data: portal } = trpc.clientPortal.getAccountStatus.useQuery({ clientId });
 
   const money = (n: number) => `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   // messageContext already folds paid invoices and counter payments into
@@ -53,35 +52,8 @@ export function ClientMetrics({ clientId }: { clientId: number }) {
       value: reviews?.average != null ? String(reviews.average) : "—",
       detail: reviews?.count ? `${reviews.count} review${reviews.count === 1 ? "" : "s"}` : "none yet",
     },
-    /*
-     * Andy, 04/11/2026: "at a glance on the overview - show if the
-     * client has setup and has access to their client portal
-     * 'Yes/No'".
-     *
-     * Yes means ACTIVE, and only active. A setup link that was issued
-     * and never used is not access — the client cannot sign in — so it
-     * reads No with the reason underneath rather than a third state
-     * nobody asked for. The full picture is still in Client portal,
-     * which is where you go to do something about it.
-     */
-    {
-      label: "Portal access",
-      value: portal?.portalAccountStatus === "active" ? "Yes" : "No",
-      tone: portal?.portalAccountStatus === "active"
-        ? "text-emerald-600 dark:text-emerald-400"
-        : "text-muted-foreground",
-      detail: portal?.portalAccountStatus === "active"
-        ? (portal.portalLastSignedInAt
-            ? `last used ${new Date(portal.portalLastSignedInAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() })}`
-            : "never signed in")
-        : portal?.setupExpired
-          ? "setup link expired"
-          : portal?.portalAccountStatus === "setup_pending"
-            ? "setup sent, not used"
-            : portal?.portalAccountStatus === "revoked"
-              ? "access revoked"
-              : "not set up",
-    },
+    /* Portal access used to be the ninth tile here. It sits beside the
+       client's name now (Lauren, 19/11/2026; shared/portalAccessSummary.ts). */
   ];
 
   return (

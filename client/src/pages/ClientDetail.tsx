@@ -48,6 +48,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { portalAccessSummary } from "@shared/portalAccessSummary";
 import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel, ClientWaitlistPanel } from "@/components/client-record/ClientOverview";
 import { TextUpcomingDatesButton } from "@/components/TextUpcomingDatesButton";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
@@ -1331,6 +1332,28 @@ export default function ClientDetail() {
                 {activeMemberships.map(m => (
                   <MembershipBadge key={m.id} tier={m.tier} name={m.name} status={m.status} />
                 ))}
+                {/* Portal access, beside the name (Lauren, 19/11/2026: "need
+                    to move Portal access up the top near their name"). It
+                    was the last tile on the overview. Same gate as the
+                    Client portal button, which it opens. */}
+                {isAdmin && portalAccount && (() => {
+                  const portal = portalAccessSummary(portalAccount, (when) =>
+                    new Date(when).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }));
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => { setPortalLink(null); setPortalSetupLink(null); setPortalRevokeConfirm(false); setPortalAccountRevokeConfirm(false); setPortalLinkOpen(true); }}
+                      title="Open client portal access"
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold hover:bg-muted ${portal.hasAccess
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-300"
+                        : "border-border bg-muted/50 text-muted-foreground"}`}
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Portal access: {portal.label}
+                      <span className="font-normal">· {portal.detail}</span>
+                    </button>
+                  );
+                })()}
               </div>
 
               <div className="flex items-center gap-4 mt-2 flex-wrap text-sm text-muted-foreground">
