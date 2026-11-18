@@ -16,8 +16,9 @@ import { DOG_BREED_CATALOGUE } from "@shared/dogBreedCatalogue";
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { buildPaymentTimeline } from "@shared/portalBilling";
-import { sizePriceChoices } from "@shared/sizeChangePricing";
+import { sizePriceChoices, type SizePriceChoice } from "@shared/sizeChangePricing";
 import { prepareClientProfile, prepareClientContact, canAddPortalContact, normaliseAustralianPhoneForStorage } from "@shared/clientProfileEdit";
+import { FUTURE_BOOKING_CHOICES, ZERO_KEPT_PRICE_MESSAGE, describeFutureBookingOutcome, hasRealPrice, keptBookingPrice, type FutureBookingChoice } from "@shared/membershipCancelBookings";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { findDuplicateGroups, suggestSurvivor } from "@shared/clientMerge";
@@ -9174,6 +9175,64 @@ function rateSummary(weeklyRate: string | null | undefined, cycle: "weekly" | "m
   };
 }
 
+/**
+ * The bookings a cancelled membership leaves behind, and the rates each
+ * could be priced at without it (shared/membershipCancelBookings.ts).
+ *
+ * Only bookings still to come, not yet started, and tied to THIS
+ * membership. A dog already in the salon keeps the terms it arrived on,
+ * and a past groom is history.
+ */
+async function futureBookingsOnMembership(db: any, membership: { id: number; tenantId: number }) {
+  const rows = await db
+    .select({
+      id: appointments.id,
+      petId: appointments.petId,
+      petName: pets.name,
+      sizeBand: pets.sizeBand,
+      serviceType: appointments.serviceType,
+      scheduledStart: appointments.scheduledStart,
+      price: appointments.price,
+      workflowState: appointments.workflowState,
+      discountPercent: appointments.discountPercent,
+      billedTotalOverride: appointments.billedTotalOverride,
+    })
+    .from(appointments)
+    .innerJoin(pets, eq(pets.id, appointments.petId))
+    .where(and(
+      eq(appointments.tenantId, membership.tenantId),
+      eq(appointments.membershipId, membership.id),
+      eq(appointments.workflowState, "scheduled"),
+      notInArray(appointments.status, ["cancelled", "no_show"]),
+      gte(appointments.scheduledStart, new Date()),
+    ))
+    .orderBy(asc(appointments.scheduledStart), asc(appointments.id));
+  if (rows.length === 0) return [];
+  const catalogue = await db
+    .select({
+      id: pricingServices.id,
+      name: pricingServices.name,
+      legacyServiceType: pricingServices.legacyServiceType,
+      weightBand: pricingServices.weightBand,
+      priceMode: pricingServices.priceMode,
+      priceAud: pricingServices.priceAud,
+      sortOrder: pricingServices.sortOrder,
+    })
+    .from(pricingServices)
+    .where(and(
+      eq(pricingServices.tenantId, membership.tenantId),
+      eq(pricingServices.catalogueType, "service"),
+      eq(pricingServices.isActive, true),
+      isNotNull(pricingServices.legacyServiceType),
+    ));
+  return rows.map((row: any) => ({
+    ...row,
+    // The three rates the price list has for this service at the dog's
+    // size. Offered, never applied: staff pick (Andy, 18/11/2026).
+    choices: sizePriceChoices({ serviceType: row.serviceType, sizeBand: row.sizeBand, catalogue }),
+  }));
+}
+
 const membershipsRouter = router({
   /**
    * Plans whose name claims more dogs than are recorded against them.
@@ -9759,11 +9818,70 @@ const membershipsRouter = router({
       return { changed: true, billingCycle: input.billingCycle, ...rateSummary(membership.pricePerCycle, input.billingCycle) };
     }),
 
+  /**
+   * What cancelling this membership would leave behind: the dog's future
+   * bookings still on it, and the price each would go back to. The cancel
+   * dialog shows this so the choice is made with the list in front of
+   * whoever is making it. Same access as cancelMembership itself.
+   */
+  cancelPreview: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1), membershipId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const [membership] = await db
+        .select({ id: memberships.id, tenantId: memberships.tenantId })
+        .from(memberships)
+        .where(and(eq(memberships.id, input.membershipId), eq(memberships.tenantId, tenantOf(ctx, input))))
+        .limit(1);
+      if (!membership) throw new TRPCError({ code: "NOT_FOUND", message: "Membership not found" });
+      const bookings = await futureBookingsOnMembership(db, membership);
+      const previewIds = bookings.map((row: any) => row.id as number);
+      const paidRows = previewIds.length === 0 ? [] : await db
+        .select({ appointmentId: appointmentPayments.appointmentId, paid: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)`.as("paid") })
+        .from(appointmentPayments)
+        .where(and(eq(appointmentPayments.tenantId, membership.tenantId), inArray(appointmentPayments.appointmentId, previewIds)))
+        .groupBy(appointmentPayments.appointmentId);
+      const paidByBooking = new Map<number, number>(paidRows.map((row: any) => [row.appointmentId as number, Number(row.paid)]));
+      return {
+        bookings: bookings.map((row: any) => ({
+          id: row.id,
+          petName: row.petName as string,
+          scheduledStart: row.scheduledStart as Date,
+          serviceType: row.serviceType as string,
+          currentPrice: row.price as string | null,
+          choices: row.choices as SizePriceChoice[],
+          // What a new price runs into, said before it is chosen — the
+          // same three the size-change prompt shows.
+          discountPercent: (row.discountPercent as number | null) ?? null,
+          hasBillingOverride: row.billedTotalOverride !== null,
+          alreadyPaid: paidByBooking.get(row.id) ?? 0,
+        })),
+      };
+    }),
+
   cancelMembership: adminProcedure
     .input(z.object({
       tenantId: z.number().default(1),
       membershipId: z.number().int().positive(),
       note: z.string().max(500).optional(),
+      /**
+       * What to do with the dog's future bookings on this membership
+       * (Andy, 18/11/2026). Never assumed: when there are any, the caller
+       * has to say, and the cancel is refused until it does.
+       */
+      futureBookings: z.enum(FUTURE_BOOKING_CHOICES).optional(),
+      /** The booking ids the dialog showed, so the answer applies to that list only. */
+      previewedBookingIds: z.array(z.number().int().positive()).max(500).optional(),
+      /**
+       * For "keep": the price staff chose for a booking — one of the three
+       * rates, or their own figure. A booking not named here keeps a real
+       * price if it has one, and is otherwise left with no price.
+       */
+      keptPrices: z.array(z.object({
+        appointmentId: z.number().int().positive(),
+        price: z.string().regex(/^\d{1,5}(\.\d{1,2})?$/),
+      })).max(500).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -9786,6 +9904,32 @@ const membershipsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "This membership is already closed" });
       }
 
+      // Read before anything changes, and refuse before anything changes:
+      // a cancel that went through without the choice would leave these
+      // bookings tied to a dead membership at nil, which is the bug.
+      const futureBookings = await futureBookingsOnMembership(db, membership);
+      // The answer was given for a particular list. If the list has moved
+      // since — a booking added or started in between — it is asked again
+      // rather than applied to bookings nobody looked at.
+      if (input.futureBookings && input.previewedBookingIds) {
+        const seen = [...input.previewedBookingIds].sort((x, y) => x - y).join(",");
+        const now = futureBookings.map((row: any) => row.id as number).sort((x: number, y: number) => x - y).join(",");
+        if (seen !== now) {
+          throw new TRPCError({ code: "CONFLICT", message: "This dog's bookings have changed since you opened this. Close it and open it again to see the current list." });
+        }
+      }
+      // A kept booking is never saved at nil: that is the free groom this
+      // whole change exists to stop, arriving by another door.
+      if ((input.keptPrices ?? []).some((entry) => !hasRealPrice(entry.price))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: ZERO_KEPT_PRICE_MESSAGE });
+      }
+      if (futureBookings.length > 0 && !input.futureBookings) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Choose what happens to the ${futureBookings.length} future booking${futureBookings.length === 1 ? "" : "s"} on this membership first.`,
+        });
+      }
+
       // Stop the money before changing the status, so a failure here cannot
       // leave a cancelled membership still billing.
       if (membership.stripeSubscriptionId) {
@@ -9793,25 +9937,109 @@ const membershipsRouter = router({
         await cancelMembershipSubscription(membership.id);
       }
 
-      await db.update(memberships).set({
-        status: "cancelled",
-        cancelledAt: new Date(),
-        nextBillingDate: null,
-        paymentRetryScheduledAt: null,
-        bookingSuspended: true,
-      }).where(eq(memberships.id, membership.id));
+      /*
+       * The status and the bookings change together or not at all. Done
+       * as two steps, a failure in the second left a cancelled membership
+       * with its bookings still tied to it at nil — and no way back,
+       * because a cancelled membership cannot be cancelled again.
+       *
+       * Billing was stopped above, outside this, on purpose: money must
+       * stop even if this fails, and a retry finds no subscription left.
+       */
+      const outcome = {
+        choice: (futureBookings.length > 0 ? input.futureBookings ?? null : null) as FutureBookingChoice | null,
+        removed: 0, repriced: 0, needPrice: 0, keptAsPriced: 0,
+      };
+      await db.transaction(async (tx: any) => {
+        await tx.update(memberships).set({
+          status: "cancelled",
+          cancelledAt: new Date(),
+          nextBillingDate: null,
+          paymentRetryScheduledAt: null,
+          bookingSuspended: true,
+        }).where(and(eq(memberships.id, membership.id), eq(memberships.tenantId, membership.tenantId)));
 
-      await db.insert(petMembershipEvents).values({
-        tenantId: membership.tenantId,
-        clientId: membership.clientId,
-        petId: membership.petId,
-        membershipId: membership.id,
-        eventType: "membership_removed",
-        note: input.note?.trim() || "Membership cancelled",
-        changedByUserId: ctx.user.id,
+        await tx.insert(petMembershipEvents).values({
+          tenantId: membership.tenantId,
+          clientId: membership.clientId,
+          petId: membership.petId,
+          membershipId: membership.id,
+          eventType: "membership_removed",
+          note: input.note?.trim() || "Membership cancelled",
+          changedByUserId: ctx.user.id,
+        });
+
+        if (futureBookings.length === 0) return;
+        const ids = futureBookings.map((row: any) => row.id as number);
+        // Only the ones STILL waiting: a dog checked in between the read
+        // and this write keeps the terms it arrived on, and gets no false
+        // "cancelled" row in the audit trail.
+        const still = await tx.select({ id: appointments.id }).from(appointments).where(and(
+          eq(appointments.tenantId, membership.tenantId),
+          inArray(appointments.id, ids),
+          eq(appointments.membershipId, membership.id),
+          eq(appointments.workflowState, "scheduled"),
+        ));
+        const live = new Set<number>(still.map((row: any) => row.id));
+
+        if (input.futureBookings === "remove") {
+          const removeIds = ids.filter((id: number) => live.has(id));
+          if (removeIds.length > 0) {
+            await tx.update(appointments)
+              .set({ workflowState: "cancelled", status: "cancelled", updatedAt: new Date() })
+              .where(and(eq(appointments.tenantId, membership.tenantId), inArray(appointments.id, removeIds)));
+            await tx.insert(workflowLogs).values(removeIds.map((id: number) => ({
+              appointmentId: id,
+              fromState: "scheduled" as const,
+              toState: "cancelled" as const,
+              notes: "Cancelled with the membership",
+            })));
+          }
+          outcome.removed = removeIds.length;
+          // No text goes to the client: the one deliberate exception to
+          // "a cancellation always texts the client". One per booking to
+          // somebody who has just cancelled their membership is not what
+          // anyone wants, and whoever pressed this is talking to them.
+        }
+
+        if (input.futureBookings === "keep") {
+          // Only prices for bookings on THIS list are honoured; an id from
+          // anywhere else in the request is ignored, not written.
+          const chosen = new Map<number, string>(
+            (input.keptPrices ?? []).map((entry) => [entry.appointmentId, Number(entry.price).toFixed(2)]),
+          );
+          for (const row of futureBookings) {
+            if (!live.has(row.id)) continue;
+            // A hand-set bill ignores the price, so a chosen one is not
+            // written against it; the booking just comes off the membership.
+            const kept = row.billedTotalOverride !== null
+              ? ({ change: false } as const)
+              : keptBookingPrice(row.price, chosen.get(row.id));
+            // Off the membership either way. The price is what staff
+            // chose; with no choice a real figure stays and a nil one is
+            // left blank (shared/membershipCancelBookings.ts).
+            await tx.update(appointments)
+              .set(kept.change
+                ? {
+                    membershipId: null,
+                    price: kept.price,
+                    discountPercent: null,
+                    discountReason: null,
+                    preDiscountPrice: null,
+                    discountAppliedByUserId: null,
+                    discountAppliedAt: null,
+                    updatedAt: new Date(),
+                  }
+                : { membershipId: null, updatedAt: new Date() })
+              .where(and(eq(appointments.tenantId, membership.tenantId), eq(appointments.id, row.id)));
+            if (!kept.change) outcome.keptAsPriced += 1;
+            else if (kept.price === null) outcome.needPrice += 1;
+            else outcome.repriced += 1;
+          }
+        }
       });
 
-      return { cancelled: true };
+      return { cancelled: true, bookings: outcome, summary: describeFutureBookingOutcome(outcome) };
     }),
 
   manageDepartedPet: adminProcedure
