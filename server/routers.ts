@@ -3739,6 +3739,13 @@ const calendarRouter = router({
        * 18/11/2026, from both its Save and its drag.
        */
       withBooking: z.boolean().optional(),
+      /*
+       * false: staff were asked and chose not to text the client about
+       * this move (Lauren, 19/11/2026, shared/moveTextQuestion.ts). Left
+       * out, the move behaves as it always has, so a caller that does not
+       * ask keeps the text.
+       */
+      textClient: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       { const lengthProblem = bookingLengthProblem(input.scheduledStart, input.scheduledEnd); if (lengthProblem) throw new TRPCError({ code: "BAD_REQUEST", message: lengthProblem }); }
@@ -3812,9 +3819,11 @@ const calendarRouter = router({
        * and a Twilio outage must not surface to staff as a failed
        * reschedule. Same shape as sendBookingConfirmation.
        */
-      const notice = before
-        ? await sendRescheduleNotice(db, input.appointmentId, before.scheduledStart)
-        : { sent: false as const, reason: "appointment not found" };
+      const notice = input.textClient === false
+        ? { sent: false as const, reason: "staff chose not to text" }
+        : before
+          ? await sendRescheduleNotice(db, input.appointmentId, before.scheduledStart)
+          : { sent: false as const, reason: "appointment not found" };
       return { success: true, notice, movedWith: companions.length };
     }),
 

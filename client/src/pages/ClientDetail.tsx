@@ -49,6 +49,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { portalAccessSummary } from "@shared/portalAccessSummary";
+import { moveAsksAboutText } from "@shared/moveTextQuestion";
+import { MoveTextQuestion } from "@/components/MoveTextQuestion";
 import { ClientMetrics, ClientNotesPanel, ClientReviewsPanel, ClientWaitlistPanel } from "@/components/client-record/ClientOverview";
 import { TextUpcomingDatesButton } from "@/components/TextUpcomingDatesButton";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
@@ -430,6 +432,8 @@ export default function ClientDetail() {
   const [editAppt, setEditAppt] = useState<
     {
       id: number; petName: string | null; label: string; scheduledStart: string; scheduledEnd: string;
+      /** Where the booking is now, so a move to another day can ask about the text. */
+      originalStart: string;
       /** The other dogs on this booking, already joined for display; "" when there are none. */
       companions: string;
       /** Whether Save moves them too. On by default: a family that arrives together moves together. */
@@ -489,6 +493,9 @@ export default function ClientDetail() {
   );
   // The same procedure the calendar's own edit dialog uses, so a booking
   // moved from here behaves exactly as one moved by dragging it.
+  const [moveTextCall, setMoveTextCall] = useState<
+    { appointmentId: number; scheduledStart: string; scheduledEnd: string; withBooking: boolean } | null
+  >(null);
   const rescheduleAppointment = trpc.calendar.reschedule.useMutation({
     onSuccess: async (result) => {
       await utils.clients.getProfile.invalidate({ clientId });
@@ -1296,6 +1303,14 @@ export default function ClientDetail() {
           </DialogContent>
         </Dialog>
 
+        <MoveTextQuestion
+          open={moveTextCall !== null}
+          onAnswer={(answer) => {
+            const call = moveTextCall;
+            setMoveTextCall(null);
+            if (call && answer !== null) rescheduleAppointment.mutate({ ...call, textClient: answer });
+          }}
+        />
         {/* Hero header */}
         <div className="bg-card rounded-2xl border shadow-sm p-6">
           <div className="flex items-start gap-5 flex-wrap">
@@ -2709,6 +2724,7 @@ export default function ClientDetail() {
                               label: `${a.petName} — ${SERVICE_LABELS[a.serviceType] ?? a.serviceType}`,
                               scheduledStart: brisbaneLocalInputValue(new Date(a.scheduledStart)),
                               scheduledEnd: brisbaneLocalInputValue(new Date(a.scheduledEnd)),
+                              originalStart: new Date(a.scheduledStart).toISOString(),
                               // Only dogs at the SAME time move with it; one
                               // already put on another day is left there.
                               companions: joinNames(companionsOf(a, appointments)
@@ -3463,12 +3479,22 @@ export default function ClientDetail() {
                 // A booking that ends before it starts is a typo, not a plan.
                 || new Date(editAppt.scheduledEnd).getTime() <= new Date(editAppt.scheduledStart).getTime()
               }
-              onClick={() => editAppt && rescheduleAppointment.mutate({
-                appointmentId: editAppt.id,
-                scheduledStart: editAppt.scheduledStart,
-                scheduledEnd: editAppt.scheduledEnd,
-                withBooking: editAppt.companions !== "" && editAppt.moveTogether,
-              })}
+              onClick={() => {
+                if (!editAppt) return;
+                const call = {
+                  appointmentId: editAppt.id,
+                  scheduledStart: editAppt.scheduledStart,
+                  scheduledEnd: editAppt.scheduledEnd,
+                  withBooking: editAppt.companions !== "" && editAppt.moveTogether,
+                };
+                // A move to another day asks about the text first
+                // (Lauren, 19/11/2026; shared/moveTextQuestion.ts).
+                if (moveAsksAboutText({ previousStart: editAppt.originalStart, newStartLocal: editAppt.scheduledStart })) {
+                  setMoveTextCall(call);
+                  return;
+                }
+                rescheduleAppointment.mutate(call);
+              }}
             >
               {rescheduleAppointment.isPending ? "Saving…" : "Save time"}
             </Button>
