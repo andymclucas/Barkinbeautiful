@@ -190,7 +190,7 @@ import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
 import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
-import { getAppointmentMembershipCoverage } from "./appointmentCoverage";
+import { getAppointmentMembershipCoverage, getAppointmentMembershipCoverageByService } from "./appointmentCoverage";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, portalSetupAddress, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { loadPendingAgreements, recordPortalSignatures, requestIp } from "./portalAgreements";
 import { PORTAL_INVITE_SCOPES, PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, restOfBrisbaneWeek, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
@@ -200,7 +200,7 @@ import {
 } from "./portalInviteCampaign";
 import { DEFAULT_TIMEZONE as SALON_TIME_ZONE } from "@shared/auditTimestamp";
 import { checkClientDeletion, describeDeletionRefusal } from "@shared/clientDeletion";
-import { priceForAddedFamilyPet, priceForCoveredAppointment } from "@shared/appointmentMembershipCoverage";
+import { priceForAddedFamilyPet, priceForCoveredAppointment, serviceForPet } from "@shared/appointmentMembershipCoverage";
 import { CLIENT_PUBLIC_COLUMNS } from "./clientColumns";
 import { activeMembership } from "@shared/clientListFacts";
 import { collectByInstant, brisbaneDay } from "@shared/collectBy";
@@ -2966,6 +2966,11 @@ const calendarRouter = router({
       // so the single-groomer case is unchanged.
       staffByPetId: z.record(z.string(), z.number()).optional(),
       serviceType: z.enum(SERVICE_TYPES).default("classic_groom"),
+      // One service per dog. Lauren, 18/11/2026, booking three dogs from
+      // one household: "wont let me edit the service per dog, 1 style,
+      // 1 classic, 1 bath". Same shape as staffByPetId; any dog not named
+      // here has serviceType, so the one-service case is unchanged.
+      serviceByPetId: z.record(z.string(), z.enum(SERVICE_TYPES)).optional(),
       /**
        * The client already has this booking somewhere else, so do not
        * confirm it to them.
@@ -3036,7 +3041,12 @@ const calendarRouter = router({
         at: parseBrisbaneLocalDateTime(input.scheduledStart),
       });
       const groomerForPet = await resolveGroomerPerPet(db, tenantOf(ctx, input), petIds, input.staffId, input.staffByPetId);
-      const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
+      // Each dog against its own service: a Classic plan does not pay
+      // for the styled cut the dog beside it is having.
+      const serviceOf = (petId: number) => serviceForPet(petId, input.serviceType, input.serviceByPetId);
+      const coverage = await getAppointmentMembershipCoverageByService(
+        db, tenantOf(ctx, input), input.clientId, petIds.map(petId => ({ petId, service: serviceOf(petId) })),
+      );
       // Assign a shared sessionId when booking multiple pets together
       const sessionId = petIds.length > 1 ? nanoid(16) : null;
       const created: number[] = [];
@@ -3085,7 +3095,10 @@ const calendarRouter = router({
         // the dialog sent. Checked before the per-dog figure so a filled-in
         // box can never bill a member for a groom they already pay for.
         const petPrice = priceForCoveredAppointment(
-          coverage.fullyCovered,
+          // This dog's own cover, not only the whole booking's. One dog
+          // on a plan having its cut beside a dog having a bath used to
+          // keep the catalogue price on a groom the plan had paid for.
+          coverage.fullyCovered || coverage.coveredPetIds.includes(petId),
           /**
            * This dog's own figure, never the booking total.
            *
@@ -3107,7 +3120,7 @@ const calendarRouter = router({
           clientId: input.clientId,
           petId,
           staffId: groomerForPet(petId),
-          serviceType: input.serviceType,
+          serviceType: serviceOf(petId),
           scheduledStart: parseBrisbaneLocalDateTime(input.scheduledStart),
           scheduledEnd: parseBrisbaneLocalDateTime(input.scheduledEnd),
           notes: input.notes,
@@ -3171,6 +3184,8 @@ const calendarRouter = router({
       clientId: z.number(),
       petIds: z.array(z.number()).min(1),
       serviceType: z.enum(SERVICE_TYPES),
+      // See createMultiPetAppointment: the form asks with the same map it books with.
+      serviceByPetId: z.record(z.string(), z.enum(SERVICE_TYPES)).optional(),
     }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
@@ -3188,7 +3203,10 @@ const calendarRouter = router({
       // dialog, because the dialog is not the only way in.
       const departedMessage = departedBookingMessage(selectedPets);
       if (departedMessage) throw new Error(departedMessage);
-      const coverage = await getAppointmentMembershipCoverage(db, tenantOf(ctx, input), input.clientId, petIds, input.serviceType);
+      const coverage = await getAppointmentMembershipCoverageByService(
+        db, tenantOf(ctx, input), input.clientId,
+        petIds.map(petId => ({ petId, service: serviceForPet(petId, input.serviceType, input.serviceByPetId) })),
+      );
       return {
         ...coverage,
         memberships: Object.values(coverage.membershipByPetId).map(membership => ({

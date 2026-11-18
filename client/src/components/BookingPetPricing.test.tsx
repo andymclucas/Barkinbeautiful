@@ -68,6 +68,37 @@ describe("BookingPetPricing", () => {
     expect(screen.getByText("Total $145.00")).toBeInTheDocument();
   });
 
+  it("prices a dog with a service of its own from that service, and leaves the other dog alone", () => {
+    // Lauren, 18/11/2026: one styled, one classic. Bella's price was
+    // typed by hand; giving Teddy a styled cut must not wipe it.
+    contextPets = [pet(100, "Teddy"), pet(200, "Bella")];
+    const onPricesChange = vi.fn();
+    const base = { petIds: [100, 200], priceByPetId: { "100": "145.00", "200": "99.00" }, onPricesChange };
+    const { props, rerender } = renderPricing(base);
+    onPricesChange.mockClear();
+    rerender(<BookingPetPricing {...props} serviceByPetId={{ "100": "styled_groom" }} />);
+    expect(onPricesChange).toHaveBeenCalledTimes(1);
+    expect(onPricesChange).toHaveBeenCalledWith({ "100": "180.00", "200": "99.00" });
+  });
+
+  it("empties the box when a dog's own service has no listed price", () => {
+    contextPets = [pet(100, "Teddy"), pet(200, "Bella")];
+    const onPricesChange = vi.fn();
+    const { props, rerender } = renderPricing({ petIds: [100, 200], priceByPetId: { "100": "145.00", "200": "145.00" }, onPricesChange });
+    onPricesChange.mockClear();
+    rerender(<BookingPetPricing {...props} serviceByPetId={{ "200": "bath_only" }} />);
+    expect(onPricesChange).toHaveBeenCalledWith({ "100": "145.00" });
+  });
+
+  it("prices only the covered dog at nil when the membership does not cover them all", () => {
+    // One dog on a plan having its cut, the dog beside it a bath.
+    contextPets = [pet(100, "Teddy"), pet(200, "Bella")];
+    renderPricing({ petIds: [100, 200], priceByPetId: { "100": "145.00", "200": "60.00" }, coveredPetIds: [100] });
+    expect(screen.getByText(/Teddy.s groom is covered by the membership/)).toBeInTheDocument();
+    expect(screen.queryByText(/Bella.s groom is covered/)).toBeNull();
+    expect(screen.getByText("Total $60.00")).toBeInTheDocument();
+  });
+
   it("counts the extras in the total", () => {
     // The bug Andy caught: "Total $145.00" sat above three add-ons worth
     // $180. The figure staff read out to the client was short by all of it.

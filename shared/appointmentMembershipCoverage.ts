@@ -86,6 +86,68 @@ export function resolveAppointmentMembershipCoverage(
 }
 
 /**
+ * Coverage for a booking whose dogs are not all having the same service.
+ *
+ * Lauren, 18/11/2026, booking three dogs from one household: "wont let me
+ * edit the service per dog, 1 style, 1 classic, 1 bath". The booking form
+ * had one service for the whole family, and coverage was worked out for
+ * that one service.
+ *
+ * Whether a plan covers a groom depends on the service (a Classic plan
+ * does not pay for a styled cut), so each dog is judged against ITS OWN
+ * service. Dogs having the same service are resolved together, exactly
+ * as before; the answers are then joined. `fullyCovered` keeps its
+ * meaning — every dog on the booking is covered — because that is the
+ * switch that prices the whole booking at nil.
+ *
+ * With every dog on one service this returns exactly what
+ * resolveAppointmentMembershipCoverage returns for that service.
+ */
+export function resolveCoverageByService(
+  petServices: readonly { petId: number; service: AppointmentService }[],
+  memberships: ActivePetMembership[],
+): AppointmentMembershipCoverage {
+  // First mention wins: one dog, one service.
+  const serviceByPet = new Map<number, AppointmentService>();
+  for (const entry of petServices) if (!serviceByPet.has(entry.petId)) serviceByPet.set(entry.petId, entry.service);
+
+  const petsByService = new Map<AppointmentService, number[]>();
+  for (const [petId, service] of serviceByPet) {
+    petsByService.set(service, [...(petsByService.get(service) ?? []), petId]);
+  }
+
+  const membershipByPetId: Record<number, ActivePetMembership> = {};
+  const coveredPetIds: number[] = [];
+  const uncoveredPetIds: number[] = [];
+  for (const [service, petIds] of petsByService) {
+    const part = resolveAppointmentMembershipCoverage(petIds, service, memberships);
+    for (const petId of part.coveredPetIds) {
+      coveredPetIds.push(petId);
+      membershipByPetId[petId] = part.membershipByPetId[petId];
+    }
+    uncoveredPetIds.push(...part.uncoveredPetIds);
+  }
+  // In the order the dogs were given, so callers that list them read the same.
+  const order = [...serviceByPet.keys()];
+  const byOrder = (a: number, b: number) => order.indexOf(a) - order.indexOf(b);
+  return {
+    fullyCovered: order.length > 0 && uncoveredPetIds.length === 0,
+    coveredPetIds: coveredPetIds.sort(byOrder),
+    uncoveredPetIds: uncoveredPetIds.sort(byOrder),
+    membershipByPetId,
+  };
+}
+
+/** The service one dog is having: its own if it was given one, else the booking's. */
+export function serviceForPet<T extends string>(
+  petId: number | string,
+  bookingService: T,
+  serviceByPetId: Readonly<Record<string, T | undefined>> | null | undefined,
+): T {
+  return serviceByPetId?.[String(petId)] ?? bookingService;
+}
+
+/**
  * What an appointment is priced at once coverage is known.
  *
  * A membership groom carries no price — the weekly payment is the revenue —

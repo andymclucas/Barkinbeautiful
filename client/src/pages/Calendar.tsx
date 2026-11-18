@@ -68,7 +68,8 @@ import {
   type StyleNoteDraft,
 } from "@shared/styleNoteDraft";
 import { formatAestDate, formatAestDateTime, formatAestTime } from "@shared/auditTimestamp";
-import { getAutoDurationMinutesForPets, AUTO_DURATION_SERVICES } from "@shared/appointmentDuration";
+import { getAutoDurationMinutesForPetServices, AUTO_DURATION_SERVICES } from "@shared/appointmentDuration";
+import { serviceForPet } from "@shared/appointmentMembershipCoverage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -1819,6 +1820,37 @@ export default function Calendar() {
   }, [newAppt.petIds, newAppt.staffByPetId]);
 
   const splitGroomerCount = perPetGroomers ? Object.keys(perPetGroomers).length : 0;
+
+  /*
+   * A service per dog. Lauren, 18/11/2026, booking three dogs from one
+   * household: "wont let me edit the service per dog, 1 style, 1 classic,
+   * 1 bath". Kept beside the form rather than in it, and read through
+   * perPetServices, which only ever names dogs that are on the booking
+   * and whose service differs from the booking's own. Undefined when
+   * nothing differs, so the common booking sends exactly what it did.
+   */
+  const [serviceByPetId, setServiceByPetId] = useState<Record<string, string>>({});
+  const [splitServices, setSplitServices] = useState(false);
+  const perPetServices = useMemo(() => {
+    const entries = newAppt.petIds
+      .filter(petId => serviceByPetId[petId] && serviceByPetId[petId] !== newAppt.serviceType)
+      .map(petId => [petId, serviceByPetId[petId]] as const);
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  }, [newAppt.petIds, newAppt.serviceType, serviceByPetId]);
+  const splitServiceCount = perPetServices ? Object.keys(perPetServices).length : 0;
+  const serviceOfPet = (petId: number | string) => serviceForPet(petId, newAppt.serviceType, perPetServices);
+  // A different client, or the form closed: nobody's dogs carry over.
+  useEffect(() => { setServiceByPetId({}); setSplitServices(false); }, [newAppt.clientId, showNewAppt]);
+  // A dog taken off the booking, or a dog whose own service is now the
+  // booking's, forgets its choice. Otherwise ticking the dog again, or
+  // changing the booking's service back, would bring an old pick back
+  // that nobody can see.
+  useEffect(() => {
+    setServiceByPetId(prev => {
+      const kept = Object.entries(prev).filter(([petId, service]) => newAppt.petIds.includes(petId) && service !== newAppt.serviceType);
+      return kept.length === Object.keys(prev).length ? prev : Object.fromEntries(kept);
+    });
+  }, [newAppt.petIds, newAppt.serviceType]);
   const [showPastAppts, setShowPastAppts] = useState(false);
   const { data: clientAppts, isFetching: isClientApptsFetching } = trpc.calendar.appointmentsForClient.useQuery(
     { clientId: apptListClient?.clientId ?? 0 },
@@ -2412,6 +2444,7 @@ export default function Calendar() {
       clientId: Number(newAppt.clientId),
       petIds: selectedAppointmentPetIds,
       serviceType: newAppt.serviceType as "classic_groom" | "styled_groom" | "bath_only" | "fft" | "nail_trim" | "daycare" | "deshed" | "other",
+      serviceByPetId: perPetServices as Record<string, "classic_groom"> | undefined,
     },
     { enabled: !!newAppt.clientId && selectedAppointmentPetIds.length > 0 },
   );
@@ -2439,9 +2472,10 @@ export default function Calendar() {
      */
     const dogs = selectedAppointmentPetIds.map(id => {
       const pet = selectedClientPets.data?.find(p => p.id === id);
-      return { weightKg: pet?.weightKg ?? null, sizeBand: (pet as { sizeBand?: string | null } | undefined)?.sizeBand ?? null };
+      return { weightKg: pet?.weightKg ?? null, sizeBand: (pet as { sizeBand?: string | null } | undefined)?.sizeBand ?? null, serviceType: serviceOfPet(id) };
     });
-    const suggestedMinutes = getAutoDurationMinutesForPets(newAppt.serviceType, dogs);
+    // Each dog's time for its own service, added up.
+    const suggestedMinutes = getAutoDurationMinutesForPetServices(dogs);
     if (suggestedMinutes === null) return;
     const start = new Date(newAppt.scheduledStart);
     if (Number.isNaN(start.getTime())) return;
@@ -2450,7 +2484,7 @@ export default function Calendar() {
     const endStr = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
     setNewAppt(current => current.scheduledEnd === endStr ? current : { ...current, scheduledEnd: endStr });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newAppt.scheduledStart, newAppt.serviceType, selectedAppointmentPetIds.join(","), selectedClientPets.data]);
+  }, [newAppt.scheduledStart, newAppt.serviceType, JSON.stringify(perPetServices ?? {}), selectedAppointmentPetIds.join(","), selectedClientPets.data]);
 
   /**
    * The selected groomer's day, so the time dropdown can say what is
@@ -2967,7 +3001,7 @@ export default function Calendar() {
           .filter(pet => newAppt.petIds.includes(String(pet.id)))
           .map(pet => ({
           petName: pet.name,
-          serviceType: newAppt.serviceType,
+          serviceType: serviceOfPet(pet.id),
           usualGroomerId: pet.preferredGroomerId,
           newGroomerId: perPetGroomers?.[String(pet.id)]
             ?? (newAppt.staffId ? Number(newAppt.staffId) : null),
@@ -2995,7 +3029,10 @@ export default function Calendar() {
     const capacity = (bookingGroomer as { dailyClipCapacity?: number | null } | undefined)?.dailyClipCapacity ?? null;
     // clipLoadFor, not isClip: a tidy is half a clip (Lauren, 08/10/2026),
     // so booking one can tip a groomer over and a day of them adds up.
-    const addingLoad = clipLoadFor(newAppt.serviceType) * (newAppt.petIds.length || 1);
+    // Each dog's own service: a bath beside two clips adds two clips, not three.
+    const addingLoad = newAppt.petIds.length > 0
+      ? newAppt.petIds.reduce((sum, petId) => sum + clipLoadFor(serviceOfPet(petId)), 0)
+      : clipLoadFor(newAppt.serviceType);
     if (bookingGroomer && capacity && addingLoad > 0 && newAppt.scheduledStart) {
       const dayKey = newAppt.scheduledStart.slice(0, 10);
       // The booked day as the server has it (groomerDay is fetched for the
@@ -3018,6 +3055,12 @@ export default function Calendar() {
       if (warning) toast.warning(warning, { duration: 6000 });
     }
     if (repeatForm.enabled) {
+      // A repeating booking is made with one service for every dog. Say
+      // so, rather than quietly booking the bath dog in for a clip.
+      if (perPetServices) {
+        toast.error("A repeating booking uses one service for all the dogs. Set every dog to the same service, or book the dogs with a different service separately.");
+        return;
+      }
       if (repeatForm.endKind === "date" && !repeatForm.untilDate) {
         toast.error("Please choose a date to repeat until"); return;
       }
@@ -3053,6 +3096,7 @@ export default function Calendar() {
       staffId:  newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
       staffByPetId: perPetGroomers,
       serviceType: newAppt.serviceType as "classic_groom",
+      serviceByPetId: perPetServices as Record<string, "classic_groom"> | undefined,
       scheduledStart: newAppt.scheduledStart,
       scheduledEnd:   newAppt.scheduledEnd,
       notes: newAppt.notes || undefined,
@@ -4937,6 +4981,56 @@ export default function Calendar() {
                 )}
               </div>
             )}
+            {/* One service per dog, the same way. Lauren, 18/11/2026: one
+                styled, one classic, one bath, in one household. */}
+            {newAppt.petIds.length > 1 && (
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <button
+                  type="button"
+                  onClick={() => setSplitServices(v => !v)}
+                  aria-expanded={splitServices}
+                  className="flex w-full items-center justify-between gap-2 text-left"
+                >
+                  <span className="text-sm font-medium">
+                    Different service per dog
+                    {splitServiceCount > 0 && (
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                        · {splitServiceCount} set
+                      </span>
+                    )}
+                  </span>
+                  {splitServices ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                </button>
+                {splitServices && (
+                  <div className="mt-3 space-y-2">
+                    {newAppt.petIds.map(petId => {
+                      const pet = selectedClientPets.data?.find(candidate => String(candidate.id) === petId);
+                      return (
+                        <div key={petId} className="flex items-center gap-2">
+                          <span className="w-28 shrink-0 truncate text-sm font-medium">{pet?.name ?? `Pet ${petId}`}</span>
+                          <Select
+                            value={perPetServices?.[petId] ?? "__same"}
+                            onValueChange={v => setServiceByPetId(prev => v === "__same"
+                              ? Object.fromEntries(Object.entries(prev).filter(([key]) => key !== petId))
+                              : { ...prev, [petId]: v })}
+                          >
+                            <SelectTrigger className="h-9" aria-label={`Service for ${pet?.name ?? `pet ${petId}`}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__same">Same as booking ({SERVICE_LABELS[newAppt.serviceType] ?? newAppt.serviceType})</SelectItem>
+                              {Object.entries(SERVICE_LABELS)
+                                .filter(([value]) => value !== newAppt.serviceType)
+                                .map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             {/* A date and a half-hour slot, rather than one datetime-local
                 whose time half is a spinner you scroll to the minute.
                 Lauren, booking all day: "the time clock is set to time
@@ -5044,7 +5138,9 @@ export default function Calendar() {
                   onChange={next => setNewAppt(p => ({ ...p, scheduledEnd: next }))}
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  {AUTO_DURATION_SERVICES.has(newAppt.serviceType)
+                  {(newAppt.petIds.length > 0
+                    ? newAppt.petIds.every(petId => AUTO_DURATION_SERVICES.has(serviceOfPet(petId)))
+                    : AUTO_DURATION_SERVICES.has(newAppt.serviceType))
                     ? "Suggested from the dogs' size — change it for a known-quick or a difficult groom."
                     /* Honest for the other five. Claiming a suggestion that
                        never comes is what made the empty field puzzling as
@@ -5193,7 +5289,9 @@ export default function Calendar() {
                 clientId={Number(newAppt.clientId)}
                 petIds={selectedAppointmentPetIds}
                 serviceType={newAppt.serviceType}
+                serviceByPetId={perPetServices}
                 membershipCovered={Boolean(membershipCoverage.data?.fullyCovered)}
+                coveredPetIds={membershipCoverage.data?.coveredPetIds}
                 priceByPetId={newAppt.priceByPetId}
                 onPricesChange={next => setNewAppt(p => ({ ...p, priceByPetId: next }))}
                 addOnsByPetId={newAppt.addOnsByPetId}

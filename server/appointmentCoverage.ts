@@ -12,10 +12,21 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { memberships, membershipPets } from "../drizzle/schema";
 import {
-  resolveAppointmentMembershipCoverage, type AppointmentService,
+  resolveCoverageByService, type AppointmentService,
 } from "@shared/appointmentMembershipCoverage";
 
 export async function getAppointmentMembershipCoverage(db: any, tenantId: number, clientId: number, petIds: number[], serviceType: AppointmentService) {
+  return getAppointmentMembershipCoverageByService(db, tenantId, clientId, petIds.map(petId => ({ petId, service: serviceType })));
+}
+
+/**
+ * The same, for a booking whose dogs are having different services
+ * (one styled, one classic, one bath). Each dog is judged against its
+ * own service; see resolveCoverageByService.
+ */
+export async function getAppointmentMembershipCoverageByService(
+  db: any, tenantId: number, clientId: number, petServices: { petId: number; service: AppointmentService }[],
+) {
   /**
    * EVERY plan on this client, not just the ones whose primary dog is in
    * this booking.
@@ -39,7 +50,7 @@ export async function getAppointmentMembershipCoverage(db: any, tenantId: number
     eq(memberships.clientId, clientId),
   )).orderBy(asc(memberships.id));
   if (activeMemberships.length === 0) {
-    return resolveAppointmentMembershipCoverage(petIds, serviceType, []);
+    return resolveCoverageByService(petServices, []);
   }
   const assigned = await db.select({
     membershipId: membershipPets.membershipId,
@@ -54,7 +65,7 @@ export async function getAppointmentMembershipCoverage(db: any, tenantId: number
     list.push(row.petId);
     coveredByMembership.set(row.membershipId, list);
   }
-  return resolveAppointmentMembershipCoverage(petIds, serviceType, activeMemberships.map(
+  return resolveCoverageByService(petServices, activeMemberships.map(
     (m: { id: number }) => ({ ...m, coveredPetIds: coveredByMembership.get(m.id) ?? [] }),
   ));
 }
