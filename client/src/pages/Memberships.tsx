@@ -1,4 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { CancelMembershipFutureBookings } from "@/components/CancelMembershipFutureBookings";
+import type { FutureBookingChoice } from "@shared/membershipCancelBookings";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -582,16 +584,37 @@ function MembershipCycleControl({ m }: { m: MembershipItem }) {
 function MembershipCancelControl({ m }: { m: MembershipItem }) {
   const utils = trpc.useUtils();
   const [confirming, setConfirming] = useState(false);
+  const [futureChoice, setFutureChoice] = useState<FutureBookingChoice | null>(null);
   const clientName = [m.clientFirstName, m.clientLastName].filter(Boolean).join(" ").trim() || "this client";
 
+  // What the dog still has booked on this membership. Asked for only once
+  // the dialog is open, and never kept: bookings change all day.
+  const preview = trpc.memberships.cancelPreview.useQuery(
+    { membershipId: m.id },
+    { enabled: confirming, staleTime: 0, gcTime: 0, retry: false },
+  );
+  const futureBookings = preview.data?.bookings ?? [];
+  // Until the list has arrived nobody can have answered for it, and once
+  // it has, bookings on it need an answer (Andy, 18/11/2026).
+  // isFetching as well as isLoading: reopening the dialog shows the last
+  // list while a fresh one loads, and nobody should answer for a stale one.
+  const waitingOnBookings = confirming && (preview.isLoading || preview.isFetching || preview.isError || (futureBookings.length > 0 && futureChoice === null));
+
   const cancelMembership = trpc.memberships.cancelMembership.useMutation({
-    onSuccess: () => {
-      toast.success("Membership cancelled");
+    onSuccess: (result) => {
+      toast.success(["Membership cancelled.", result.summary].filter(Boolean).join(" "));
+      utils.calendar.invalidate();
       utils.memberships.list.invalidate();
       utils.memberships.getFailedPayments.invalidate();
       setConfirming(false);
     },
-    onError: (error) => { toast.error(error.message); setConfirming(false); },
+    onError: (error) => {
+      toast.error(error.message);
+      // The row may have changed underneath (billing is stopped before
+      // anything else), so show what is true now.
+      utils.memberships.list.invalidate();
+      setConfirming(false);
+    },
   });
 
   if (m.status === "cancelled" || m.status === "expired") return null;
@@ -602,7 +625,7 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
         type="button"
         className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-red-600 hover:underline disabled:opacity-50 dark:hover:text-red-400"
         disabled={cancelMembership.isPending}
-        onClick={() => setConfirming(true)}
+        onClick={() => { setFutureChoice(null); setConfirming(true); }}
       >
         {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
       </button>
@@ -614,6 +637,18 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
             stopped at the same time, and they will not be able to book on the membership. Use <strong>Pause</strong>{" "}
             instead if they are only away for a while.
           </p>
+          {preview.isLoading && <p className="text-xs text-muted-foreground">Checking for future bookings on this membership…</p>}
+          {preview.isError && (
+            <p role="alert" className="text-xs text-destructive">
+              Could not check for future bookings, so this cannot be cancelled yet. Close this and try again.
+            </p>
+          )}
+          <CancelMembershipFutureBookings
+            bookings={futureBookings}
+            choice={futureChoice}
+            onChoice={setFutureChoice}
+            disabled={cancelMembership.isPending}
+          />
           <DialogFooter>
             <Button variant="outline" size="sm" disabled={cancelMembership.isPending} onClick={() => setConfirming(false)}>
               Keep membership
@@ -621,8 +656,13 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
             <Button
               variant="destructive"
               size="sm"
-              disabled={cancelMembership.isPending}
-              onClick={() => cancelMembership.mutate({ membershipId: m.id })}
+              disabled={cancelMembership.isPending || waitingOnBookings}
+              onClick={() => cancelMembership.mutate({
+                membershipId: m.id,
+                ...(futureBookings.length > 0 && futureChoice
+                  ? { futureBookings: futureChoice, previewedBookingIds: futureBookings.map((booking: { id: number }) => booking.id) }
+                  : {}),
+              })}
             >
               {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
             </Button>

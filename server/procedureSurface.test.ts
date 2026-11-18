@@ -618,7 +618,7 @@ describe("tRPC procedure surface", () => {
     // weekly payments against grooms done, which is always positive for a
     // weekly-billed member, and its two buttons invoiced clients for money
     // already paid and wrote payment rows with no money behind them.
-    expect(surface).toHaveLength(451);
+    expect(surface).toHaveLength(452);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
