@@ -3,7 +3,12 @@ import { applyStaffOrder, moveStaff } from "@shared/staffColumnOrder";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
 import { MoegoBadge } from "@/components/MoegoBadge";
-import { priceAfterServiceChange, notRepricedMessage } from "@shared/repricing";
+import {
+  priceAfterServiceChange,
+  notRepricedMessage,
+  bookablePetIdsForCoverage,
+  coverageForServiceChange,
+} from "@shared/repricing";
 import type { DogSizeBand } from "@shared/dogSizeBand";
 import { presenceKey } from "@shared/presence";
 import { usePresence } from "@/hooks/usePresence";
@@ -2349,32 +2354,44 @@ export default function Calendar() {
     { enabled: !!editAppt && !!editAppt.clientId && editPetIds.length > 0 },
   );
   // Which dogs a membership covers, from the procedure the new-booking
-  // form uses, for each service a plan can cover. No retry: it refuses a
-  // dog that has passed away, and no answer means "not covered", as before.
-  const coverageEnabled = !!editAppt && !!editAppt.clientId && editPetIds.length > 0;
+  // form uses, for each service a plan can cover. That procedure refuses
+  // any request naming an archived or passed-away dog, and a refusal is a
+  // red error toast, so those dogs are left out of it (they are never
+  // covered). Until the answer is in, a groom is not re-priced at all.
+  const editClientPets = trpc.pets.listByClient.useQuery(
+    { clientId: editAppt?.clientId ?? 0 },
+    { enabled: !!editAppt && !!editAppt.clientId },
+  );
+  const coveragePetIds = bookablePetIdsForCoverage(editPetIds, editClientPets.data);
+  const coverageEnabled = !!editAppt && !!editAppt.clientId && !!coveragePetIds && coveragePetIds.length > 0;
   const editClassicCoverage = trpc.calendar.getMembershipCoverage.useQuery(
-    { clientId: editAppt?.clientId ?? 0, petIds: editPetIds, serviceType: "classic_groom" },
+    { clientId: editAppt?.clientId ?? 0, petIds: coveragePetIds ?? [], serviceType: "classic_groom" },
     { enabled: coverageEnabled, retry: false },
   );
   const editStyledCoverage = trpc.calendar.getMembershipCoverage.useQuery(
-    { clientId: editAppt?.clientId ?? 0, petIds: editPetIds, serviceType: "styled_groom" },
+    { clientId: editAppt?.clientId ?? 0, petIds: coveragePetIds ?? [], serviceType: "styled_groom" },
     { enabled: coverageEnabled, retry: false },
   );
   const repriceFor = (petId: number, serviceType: string, currentPrice: string | null | undefined) => {
     const pet = repriceContext.data?.pets?.find((row: { petId: number }) => row.petId === petId);
     const catalogue = repriceCatalogue.data ?? [];
-    if (!pet || catalogue.length === 0) return null;
-    const coverage =
-      serviceType === "classic_groom" ? editClassicCoverage.data
-      : serviceType === "styled_groom" ? editStyledCoverage.data
-      : undefined;
+    const coverageQuery =
+      serviceType === "classic_groom" ? editClassicCoverage
+      : serviceType === "styled_groom" ? editStyledCoverage
+      : null;
     return priceAfterServiceChange({
       serviceType,
-      sizeBand: pet.sizeBand as DogSizeBand | null,
-      tier: pet.tier,
+      pricingLoaded: !!pet && catalogue.length > 0,
+      sizeBand: (pet?.sizeBand ?? null) as DogSizeBand | null,
+      tier: pet?.tier ?? "new",
       catalogue,
       currentPrice,
-      coveredByMembership: coverage?.coveredPetIds.includes(petId) ?? false,
+      coverage: coverageForServiceChange({
+        serviceType,
+        petId,
+        bookablePetIds: coveragePetIds,
+        fullyCovered: coverageQuery?.data?.fullyCovered,
+      }),
     });
   };
   /** Says what a service change did to the price; returns the new figure, if any. */
