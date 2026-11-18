@@ -91,3 +91,27 @@ export function getAutoDurationMinutesForPets(
   }
   return total;
 }
+
+/**
+ * The same total for a booking whose dogs are having different services
+ * (Lauren, 18/11/2026: one styled, one classic, one bath).
+ *
+ * Each dog's time is worked out for ITS service and added up. Still
+ * all-or-nothing: a dog whose service has no standard length (a bath,
+ * nails) or whose size is unknown makes the total a guess, so nothing is
+ * suggested and staff set the end time themselves.
+ *
+ * With every dog on one service this is getAutoDurationMinutesForPets.
+ */
+export function getAutoDurationMinutesForPetServices(
+  pets: readonly (DurationPet & { serviceType: string })[],
+): number | null {
+  if (pets.length === 0) return null;
+  let total = 0;
+  for (const pet of pets) {
+    const minutes = getAutoDurationMinutes(pet.serviceType, pet.weightKg, pet.sizeBand);
+    if (minutes === null) return null;
+    total += minutes;
+  }
+  return total;
+}

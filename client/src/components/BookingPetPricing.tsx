@@ -9,6 +9,7 @@ import { trpc } from "@/lib/trpc";
 import { SIZE_BAND_IDS, SIZE_BAND_SOURCE_LABELS, sizeBandLabel, type DogSizeBand, type SizeBandSource } from "@shared/dogSizeBand";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { addOnRequiresManualPrice } from "@shared/appointmentAddOns";
+import { serviceForPet } from "@shared/appointmentMembershipCoverage";
 import {
   bookingTotal,
   formatPriceAud,
@@ -48,8 +49,20 @@ type Props = {
   clientId: number;
   petIds: number[];
   serviceType: string;
+  /**
+   * A service for one dog where it differs from the booking's (Lauren,
+   * 18/11/2026: one styled, one classic, one bath). That dog's price is
+   * then looked up for its own service.
+   */
+  serviceByPetId?: Record<string, string>;
   /** The membership pays for the groom; the box is forced to zero. */
   membershipCovered: boolean;
+  /**
+   * The dogs whose own groom a membership pays for, when it is not all
+   * of them (one dog on a plan having its cut, the dog beside it a bath).
+   * Each of those is nil; the rest are priced as usual.
+   */
+  coveredPetIds?: readonly number[];
   priceByPetId: Record<string, string>;
   onPricesChange: (next: Record<string, string>) => void;
   addOnsByPetId: Record<string, StagedAddOn[]>;
@@ -61,6 +74,7 @@ type Props = {
 
 export function BookingPetPricing(props: Props) {
   const { clientId, petIds, serviceType, membershipCovered } = props;
+  const isCovered = (petId: number) => membershipCovered || (props.coveredPetIds ?? []).includes(petId);
   const utils = trpc.useUtils();
 
   const catalogueQuery = trpc.bookingPricing.catalogue.useQuery(
@@ -126,23 +140,30 @@ export function BookingPetPricing(props: Props) {
   // What the default price is worked out from — always this dog and this
   // service, whatever the dropdown is currently showing. Widening the list
   // must not change what the box was filled with.
+  const serviceByPetId = props.serviceByPetId;
+  const serviceOf = (petId: number) => serviceForPet(petId, serviceType, serviceByPetId);
+  // Which dogs have a service of their own, and what. Text, so an effect
+  // can watch it without re-running on every new object.
+  const ownServiceKey = petRows.map((r) => `${r.petId}:${serviceByPetId?.[String(r.petId)] ?? ""}`).join(",");
   const optionsByPetId = useMemo(() => {
     const map: Record<string, PriceOption[]> = {};
     for (const row of petRows) {
-      map[String(row.petId)] = groomPriceOptions({ serviceType, sizeBand: row.band, catalogue });
+      map[String(row.petId)] = groomPriceOptions({ serviceType: serviceOf(row.petId), sizeBand: row.band, catalogue });
     }
     return map;
-  }, [petRows, serviceType, catalogue]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [petRows, serviceType, ownServiceKey, catalogue]);
 
   // What the dropdown lists.
   const shownOptionsByPetId = useMemo(() => {
     if (applicableOnly) return optionsByPetId;
     const map: Record<string, PriceOption[]> = {};
     for (const row of petRows) {
-      map[String(row.petId)] = groomPriceOptions({ serviceType, sizeBand: row.band, catalogue, scope: "all" });
+      map[String(row.petId)] = groomPriceOptions({ serviceType: serviceOf(row.petId), sizeBand: row.band, catalogue, scope: "all" });
     }
     return map;
-  }, [applicableOnly, optionsByPetId, petRows, serviceType, catalogue]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicableOnly, optionsByPetId, petRows, serviceType, ownServiceKey, catalogue]);
 
   /**
    * Re-fill the boxes when the booking genuinely changes shape.
@@ -161,11 +182,14 @@ export function BookingPetPricing(props: Props) {
     `${service}|${petRows.map((r) => `${r.petId}:${r.band ?? ""}:${r.tier}`).join(",")}|${catalogue.length}`;
   const signature = signatureFor(serviceType);
   const lastSignature = useRef<string>("");
+  const lastOwnServices = useRef<Record<string, string>>({});
+  const ownServices = () => Object.fromEntries(petRows.map((r) => [String(r.petId), serviceByPetId?.[String(r.petId)] ?? ""]));
 
   useEffect(() => {
     if (catalogue.length === 0 || petRows.length === 0) return;
     if (lastSignature.current === signature) return;
     lastSignature.current = signature;
+    lastOwnServices.current = ownServices();
     const next: Record<string, string> = {};
     for (const row of petRows) {
       const option = pickDefaultPriceOption(optionsByPetId[String(row.petId)] ?? [], row.tier);
@@ -177,6 +201,31 @@ export function BookingPetPricing(props: Props) {
     props.onPricesChange(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
+
+  /**
+   * One dog given a service of its own re-prices THAT dog only.
+   *
+   * The effect above re-prices everybody, which is right when the whole
+   * booking changes service. Changing one dog to a bath must not wipe the
+   * figure somebody just typed for the dog beside it.
+   */
+  useEffect(() => {
+    if (catalogue.length === 0 || petRows.length === 0) return;
+    const now = ownServices();
+    const before = lastOwnServices.current;
+    lastOwnServices.current = now;
+    const changed = petRows.filter((row) => (before[String(row.petId)] ?? "") !== now[String(row.petId)]);
+    if (changed.length === 0) return;
+    const next = { ...props.priceByPetId };
+    for (const row of changed) {
+      const option = pickDefaultPriceOption(optionsByPetId[String(row.petId)] ?? [], row.tier);
+      // As above: no listed price leaves the box empty, never another service's figure.
+      if (option?.priceAud) next[String(row.petId)] = option.priceAud;
+      else delete next[String(row.petId)];
+    }
+    props.onPricesChange(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownServiceKey]);
 
   /**
    * Repeat the client's last booking: the same service, each dog's own
@@ -213,7 +262,8 @@ export function BookingPetPricing(props: Props) {
        * answer, because an empty price box invoices as zero.
        */
       const fromCatalogue = pickDefaultPriceOption(
-        groomPriceOptions({ serviceType: service, sizeBand: row.band, catalogue }),
+        // A dog with a service of its own keeps it, so price it for that.
+        groomPriceOptions({ serviceType: serviceByPetId?.[String(row.petId)] ?? service, sizeBand: row.band, catalogue }),
         row.tier,
       )?.priceAud ?? null;
       const repeated = fromCatalogue ?? (last.price || null);
@@ -257,7 +307,7 @@ export function BookingPetPricing(props: Props) {
   );
 
   const prices = petIds.map((petId) =>
-    membershipCovered ? "0.00" : props.priceByPetId[String(petId)] ?? null,
+    isCovered(petId) ? "0.00" : props.priceByPetId[String(petId)] ?? null,
   );
   // Every extra on the booking, whichever dog it belongs to. The total is
   // what staff read out to the client, so it has to be the real figure.
@@ -476,7 +526,7 @@ export function BookingPetPricing(props: Props) {
               * Casual." This only shows the rate it picked, why, and the
               * others — it does not quietly reprice anybody.
               */}
-            {!membershipCovered && options.length > 0 && (
+            {!isCovered(row.petId) && options.length > 0 && (
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">Rate</Label>
                 <div className="flex flex-wrap gap-1">
@@ -517,12 +567,17 @@ export function BookingPetPricing(props: Props) {
                   className="h-8 text-xs tabular-nums"
                   inputMode="decimal"
                   placeholder="0.00"
-                  disabled={membershipCovered}
-                  value={membershipCovered ? "0.00" : props.priceByPetId[key] ?? ""}
+                  disabled={isCovered(row.petId)}
+                  value={isCovered(row.petId) ? "0.00" : props.priceByPetId[key] ?? ""}
                   onChange={(e) => setPrice(row.petId, e.target.value)}
                 />
               </div>
-              {!membershipCovered && shownOptions.length > 0 && (
+              {isCovered(row.petId) && !membershipCovered && (
+                <p className="pb-1.5 text-[11px] text-muted-foreground">
+                  {row.pet?.name ?? "This dog"}&rsquo;s groom is covered by the membership.
+                </p>
+              )}
+              {!isCovered(row.petId) && shownOptions.length > 0 && (
                 <div className="min-w-0 flex-1 space-y-1">
                   <Label className="text-[11px] text-muted-foreground">From the price list</Label>
                   <Select
@@ -559,7 +614,7 @@ export function BookingPetPricing(props: Props) {
               )}
             </div>
 
-            {!membershipCovered && shownOptions.length === 0 && row.band && (
+            {!isCovered(row.petId) && shownOptions.length === 0 && row.band && (
               <p className="text-[11px] text-amber-700 dark:text-amber-300">
                 The price list has no {sizeBandLabel(row.band).toLowerCase()} price for this service — enter what was agreed.
               </p>
@@ -571,7 +626,7 @@ export function BookingPetPricing(props: Props) {
                 of the upcoming bookings. Saying so beats an empty box that
                 looks like a bug, and borrowing another tier's figure would
                 quietly misprice it. */}
-            {!membershipCovered && options.length > 0
+            {!isCovered(row.petId) && options.length > 0
               && !pickDefaultPriceOption(options, row.tier)
               && !props.priceByPetId[key] && (
               <p className="text-[11px] text-amber-700 dark:text-amber-300">

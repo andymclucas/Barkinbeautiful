@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { resolveAppointmentMembershipCoverage, priceForCoveredAppointment } from "../shared/appointmentMembershipCoverage";
+import { resolveAppointmentMembershipCoverage, resolveCoverageByService, serviceForPet, priceForCoveredAppointment } from "../shared/appointmentMembershipCoverage";
 
 const activeClassic = {
   id: 1,
@@ -241,5 +241,61 @@ describe("which plan claims a dog listed on two", () => {
     const c = resolveAppointmentMembershipCoverage([35, 36], "classic_groom", [householdPlan]);
     expect(c.membershipByPetId[35]?.id).toBe(3);
     expect(c.membershipByPetId[36]?.id).toBe(3);
+  });
+});
+
+describe("coverage when the dogs are having different services", () => {
+  // Lauren, 18/11/2026: one styled, one classic, one bath, in one household.
+  it("is exactly the one-service answer when every dog has the same service", () => {
+    const together = resolveAppointmentMembershipCoverage([10, 11, 12], "classic_groom", [activeClassic, activeStyled]);
+    const perDog = resolveCoverageByService(
+      [10, 11, 12].map(petId => ({ petId, service: "classic_groom" as const })),
+      [activeClassic, activeStyled],
+    );
+    expect(perDog).toEqual(together);
+  });
+
+  it("judges each dog against its own service", () => {
+    // Dog 10 is on a Classic plan and having a styled cut: not covered.
+    // Dog 11 is on a Styled plan and having a classic: covered.
+    const coverage = resolveCoverageByService(
+      [{ petId: 10, service: "styled_groom" }, { petId: 11, service: "classic_groom" }],
+      [activeClassic, activeStyled],
+    );
+    expect(coverage.fullyCovered).toBe(false);
+    expect(coverage.coveredPetIds).toEqual([11]);
+    expect(coverage.uncoveredPetIds).toEqual([10]);
+    expect(coverage.membershipByPetId[11]?.id).toBe(2);
+    expect(coverage.membershipByPetId[10]).toBeUndefined();
+  });
+
+  it("is fully covered only when every dog's own service is covered", () => {
+    const covered = resolveCoverageByService(
+      [{ petId: 10, service: "classic_groom" }, { petId: 11, service: "styled_groom" }],
+      [activeClassic, activeStyled],
+    );
+    expect(covered.fullyCovered).toBe(true);
+    // A bath is never a membership groom, so it stops the booking being free.
+    const withBath = resolveCoverageByService(
+      [{ petId: 10, service: "classic_groom" }, { petId: 11, service: "bath_only" }],
+      [activeClassic, activeStyled],
+    );
+    expect(withBath.fullyCovered).toBe(false);
+    expect(withBath.uncoveredPetIds).toEqual([11]);
+  });
+
+  it("lists the dogs in the order they were given, and is never covered with no dogs", () => {
+    const coverage = resolveCoverageByService(
+      [{ petId: 11, service: "styled_groom" }, { petId: 10, service: "classic_groom" }],
+      [activeClassic, activeStyled],
+    );
+    expect(coverage.coveredPetIds).toEqual([11, 10]);
+    expect(resolveCoverageByService([], [activeClassic]).fullyCovered).toBe(false);
+  });
+
+  it("gives a dog its own service, else the booking's", () => {
+    expect(serviceForPet(10, "classic_groom", { "10": "bath_only" })).toBe("bath_only");
+    expect(serviceForPet(11, "classic_groom", { "10": "bath_only" })).toBe("classic_groom");
+    expect(serviceForPet(11, "classic_groom", undefined)).toBe("classic_groom");
   });
 });

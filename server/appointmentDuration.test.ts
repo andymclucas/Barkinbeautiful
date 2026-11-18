@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getAutoDurationMinutes, getAutoDurationMinutesForPets } from "../shared/appointmentDuration";
+import { getAutoDurationMinutes, getAutoDurationMinutesForPets, getAutoDurationMinutesForPetServices } from "../shared/appointmentDuration";
 
 describe("automatic appointment duration by weight", () => {
   it("maps each weight band to the requested duration for full grooms", () => {
@@ -119,5 +119,24 @@ describe("a family booking of weighed and unweighed dogs", () => {
 
   it("gives nothing for no dogs at all", () => {
     expect(getAutoDurationMinutesForPets("classic_groom", [])).toBeNull();
+  });
+});
+
+describe("suggested length when the dogs are having different services", () => {
+  const dog = (serviceType: string, weightKg: number | null) => ({ serviceType, weightKg, sizeBand: null });
+
+  it("adds each dog's time for its own service", () => {
+    expect(getAutoDurationMinutesForPetServices([dog("styled_groom", 8), dog("classic_groom", 20)])).toBe(180);
+  });
+
+  it("matches the one-service total when every dog has the same service", () => {
+    expect(getAutoDurationMinutesForPetServices([dog("classic_groom", 8), dog("classic_groom", 15)]))
+      .toBe(getAutoDurationMinutesForPets("classic_groom", [{ weightKg: 8, sizeBand: null }, { weightKg: 15, sizeBand: null }]));
+  });
+
+  it("suggests nothing when one dog's service has no standard length, or its size is unknown", () => {
+    expect(getAutoDurationMinutesForPetServices([dog("styled_groom", 8), dog("bath_only", 8)])).toBeNull();
+    expect(getAutoDurationMinutesForPetServices([dog("styled_groom", 8), dog("classic_groom", null)])).toBeNull();
+    expect(getAutoDurationMinutesForPetServices([])).toBeNull();
   });
 });
