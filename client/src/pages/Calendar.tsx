@@ -134,6 +134,7 @@ import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { annotateSlots, blockingClashes, busyFromRows, clashesFor, concurrentDogs, describeClash, unavailableWarning } from "@shared/groomerAvailability";
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { takePendingBooking } from "@/lib/pendingBooking";
+import { deleteBookingPrompt } from "@shared/deleteBookingPrompt";
 import { familyRescheduleCalls } from "@shared/familyGroomerSave";
 import { isCancelledAppointment, isNotComing, preservesOriginalSchedule, canDragAppointment } from "@shared/cancelledAppointment";
 import {
@@ -1471,7 +1472,15 @@ export default function Calendar() {
   }, []);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showBlockoutDialog, setShowBlockoutDialog] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<{ type: "blockout" | "styleNote" | "appointment"; id: number; label: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{
+    type: "blockout" | "styleNote" | "appointment";
+    id: number;
+    label: string;
+    /* For a booking: the dog it was opened on and the others on it, so
+       Delete can ask which (shared/deleteBookingPrompt.ts). */
+    petName?: string | null;
+    otherDogs?: (string | null)[];
+  } | null>(null);
   /**
    * One dog of a family booking, about to be marked as not coming.
    *
@@ -6495,6 +6504,13 @@ export default function Calendar() {
                       label: editSiblings.length > 0
                         ? `${[editAppt, ...editSiblings].map((pet) => pet.petName).filter(Boolean).join(" & ")}'s booking`
                         : `${editAppt.petName}'s appointment`,
+                      petName: editAppt.petName,
+                      // Every other row on the booking, not only the dogs at
+                      // the same time: "all" on the server means the whole
+                      // booking, and the count shown has to be that count.
+                      otherDogs: (editAppt.sessionId ? (sessionMap.get(editAppt.sessionId) ?? []) : [])
+                        .filter((row) => row.id !== editAppt.id)
+                        .map((row) => row.petName ?? null),
                     })}
                   >
                     <Trash2 className="h-4 w-4" /> Delete booking
@@ -6930,33 +6946,73 @@ export default function Calendar() {
               Confirm Deletion
             </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            {confirmDelete?.type === "blockout"
-              ? <span>Are you sure you want to remove the block-out period <strong className="text-foreground">&ldquo;{confirmDelete.label}&rdquo;</strong>? This cannot be undone.</span>
-              : confirmDelete?.type === "appointment"
-                ? <span>Are you sure you want to delete <strong className="text-foreground">{confirmDelete.label}</strong>? Any pets in this shared booking will be deleted together. Financial records are retained without the appointment link. This cannot be undone.</span>
-                : <span>Are you sure you want to delete the style note from <strong className="text-foreground">{confirmDelete?.label}</strong>? This cannot be undone.</span>
-            }
-          </p>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              disabled={deleteBlockoutMutation.isPending || deleteStyleNote.isPending || deleteAppointmentMutation.isPending}
-              onClick={() => {
-                if (!confirmDelete) return;
-                if (confirmDelete.type === "blockout") {
-                  deleteBlockoutMutation.mutate({ id: confirmDelete.id, wholeGroup: true }, { onSuccess: () => setConfirmDelete(null) });
-                } else if (confirmDelete.type === "appointment") {
-                  deleteAppointmentMutation.mutate({ appointmentId: confirmDelete.id });
-                } else {
-                  deleteStyleNote.mutate({ id: confirmDelete.id }, { onSuccess: () => setConfirmDelete(null) });
-                }
-              }}
-            >
-              {(deleteBlockoutMutation.isPending || deleteStyleNote.isPending || deleteAppointmentMutation.isPending) ? "Deleting..." : "Delete"}
-            </Button>
-          </DialogFooter>
+          {(() => {
+            const sharedPrompt = confirmDelete?.type === "appointment"
+              ? deleteBookingPrompt({ petName: confirmDelete.petName, otherDogs: confirmDelete.otherDogs ?? [] })
+              : ({ shared: false } as const);
+            const busy = deleteBlockoutMutation.isPending || deleteStyleNote.isPending || deleteAppointmentMutation.isPending;
+            return (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {confirmDelete?.type === "blockout"
+                    ? <span>Are you sure you want to remove the block-out period <strong className="text-foreground">&ldquo;{confirmDelete.label}&rdquo;</strong>? This cannot be undone.</span>
+                    : confirmDelete?.type === "appointment"
+                      ? sharedPrompt.shared
+                        ? <span><strong className="text-foreground">{sharedPrompt.question}</strong> Financial records are retained without the appointment link. You can undo for 30 seconds afterwards.</span>
+                        : <span>Are you sure you want to delete <strong className="text-foreground">{confirmDelete.label}</strong>? Financial records are retained without the appointment link. You can undo for 30 seconds afterwards.</span>
+                      : <span>Are you sure you want to delete the style note from <strong className="text-foreground">{confirmDelete?.label}</strong>? This cannot be undone.</span>
+                  }
+                </p>
+                <DialogFooter className="gap-2">
+                  <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+                  {confirmDelete?.type === "appointment" && sharedPrompt.shared ? (
+                    <>
+                      {/* Two buttons, each saying what it removes. Neither is
+                          a plain "Delete": that word is what took both dogs. */}
+                      <Button
+                        variant="outline"
+                        className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40"
+                        disabled={busy}
+                        onClick={() => deleteAppointmentMutation.mutate({ appointmentId: confirmDelete.id, onlyThisDog: true })}
+                      >
+                        {busy ? "Deleting..." : sharedPrompt.onlyLabel}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        disabled={busy}
+                        onClick={() => deleteAppointmentMutation.mutate({ appointmentId: confirmDelete.id })}
+                      >
+                        {busy ? "Deleting..." : sharedPrompt.allLabel}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="destructive"
+                      disabled={busy}
+                      onClick={() => {
+                        if (!confirmDelete) return;
+                        if (confirmDelete.type === "blockout") {
+                          deleteBlockoutMutation.mutate({ id: confirmDelete.id, wholeGroup: true }, { onSuccess: () => setConfirmDelete(null) });
+                        } else if (confirmDelete.type === "appointment") {
+                          // No other dog was on screen for this booking, so
+                          // only this dog goes. The calendar loads a few days
+                          // at a time; a dog on the same booking but another
+                          // day is not loaded, and a plain delete would take
+                          // it too, unseen. For a dog truly on its own this
+                          // is exactly the same delete.
+                          deleteAppointmentMutation.mutate({ appointmentId: confirmDelete.id, onlyThisDog: true });
+                        } else {
+                          deleteStyleNote.mutate({ id: confirmDelete.id }, { onSuccess: () => setConfirmDelete(null) });
+                        }
+                      }}
+                    >
+                      {busy ? "Deleting..." : "Delete"}
+                    </Button>
+                  )}
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
       {/* ── The whole booking off, in one action and one text ── */}
