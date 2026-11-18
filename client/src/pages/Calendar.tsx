@@ -113,6 +113,8 @@ import { PaymentStamp } from "@/components/PaymentStamp";
 import { VipMark } from "@/components/VipMark";
 import { showsMembershipMark } from "@shared/membershipMark";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
+import { moveAsksAboutText } from "@shared/moveTextQuestion";
+import { MoveTextQuestion } from "@/components/MoveTextQuestion";
 import { liveSiblings, sameColumnSiblings, columnCardMembers } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
@@ -1959,6 +1961,16 @@ export default function Calendar() {
     },
     onError: (e) => toast.error(e.message),
   });
+  /*
+   * "Text the client about the new day?" Asked before any move to another
+   * day, from the drag and from Save (Lauren, 19/11/2026). The promise
+   * settles with true (text), false (no text) or null (do not move).
+   */
+  const [textQuestion, setTextQuestion] = useState<{ answer: (value: boolean | null) => void } | null>(null);
+  const askAboutText = useCallback(
+    () => new Promise<boolean | null>((resolve) => setTextQuestion({ answer: resolve })),
+    [],
+  );
   const rescheduleMutation = trpc.calendar.reschedule.useMutation({
     onSuccess: () => { toast.success("Appointment updated"); closeEditDialog(); refetch(); },
     onError: (e) => toast.error(e.message),
@@ -2116,11 +2128,19 @@ export default function Calendar() {
       ? (appt.staffId === null || appt.staffId === undefined ? null : Number(appt.staffId))
       : targetStaffId;
 
-    const move = () => rescheduleMutation.mutate({
+    const move = async () => {
+      let textClient: boolean | undefined;
+      if (moveAsksAboutText({ previousStart: appt.scheduledStart, newStartLocal: dragSchedule.scheduledStartIso })) {
+        const answer = await askAboutText();
+        if (answer === null) return;
+        textClient = answer;
+      }
+      rescheduleMutation.mutate({
       appointmentId:  appt.id,
       scheduledStart: dragSchedule.scheduledStartIso,
       scheduledEnd:   dragSchedule.scheduledEndIso,
       staffId: nextStaffId,
+      textClient,
       // A dragged dog takes the rest of its booking with it. The server
       // only moves dogs still at the same start, so dropping into another
       // groomer's column at the same time moves nobody else.
@@ -2137,6 +2157,7 @@ export default function Calendar() {
       },
       onError: (err) => toast.error(err.message),
     });
+    };
 
     // A dog dragged off its usual groomer gets the same question as one
     // changed in the form. Asked last, after any clash warning, and only
@@ -2231,7 +2252,7 @@ export default function Calendar() {
     }
 
     go();
-  }, [rescheduleMutation, refetch, resolveDragTarget, weekAppts, blockouts, staffList]);
+  }, [rescheduleMutation, refetch, resolveDragTarget, weekAppts, blockouts, staffList, askAboutText]);
 
   // Prefer the team directory but retain a safe calendar fallback for migrated
   // appointments: their joined staff data is sufficient to render assigned
@@ -3293,6 +3314,20 @@ export default function Calendar() {
         });
         return;
       }
+    }
+
+    // Asked last, once every other question has been answered: a move to
+    // another day texts the client unless staff say not to. One answer
+    // covers every dog on the booking.
+    const allDogs = [editAppt, ...siblings];
+    const movesDay = rescheduleCalls.some(call => {
+      const dog = allDogs.find(candidate => candidate.id === call.appointmentId);
+      return dog ? moveAsksAboutText({ previousStart: dog.scheduledStart, newStartLocal: call.scheduledStart }) : false;
+    });
+    if (movesDay) {
+      const answer = await askAboutText();
+      if (answer === null) return;
+      for (const call of rescheduleCalls) (call as { textClient?: boolean }).textClient = answer;
     }
 
     const promises: Promise<unknown>[] = [];
@@ -5526,6 +5561,10 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
+      <MoveTextQuestion
+        open={textQuestion !== null}
+        onAnswer={(value) => { const pending = textQuestion; setTextQuestion(null); pending?.answer(value); }}
+      />
       {/* ── Edit Appointment Dialog ── */}
       <Dialog open={!!editAppt} onOpenChange={open => { if (!open) closeEditDialog(); }}>
         {/* Slides in from the right rather than opening centred. Andy,
