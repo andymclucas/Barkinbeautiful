@@ -11,6 +11,44 @@
  * without explanation reads as a bug and gets "fixed".
  */
 
+import { portalSetupAddress, type PortalAccountStatus } from "./portalSetupLink";
+import { brisbaneDateKey, parseBrisbaneLocalDateTime } from "./localDateTime";
+
+/**
+ * Who a send is aimed at before the exclusions below are applied.
+ *
+ * Andy, 17/11/2026: "all clients that have appointments each week ...
+ * receive an email to setup their client portal on the Monday on the
+ * week of their appointment. We can then roll this out in stages and it
+ * be more manageable for issues that may arise." He chose a button
+ * somebody presses each Monday over an automatic send.
+ *
+ * `this_week` is that stage: only clients with a booking still to come
+ * this week. `everyone` is the original whole-list send.
+ */
+export const PORTAL_INVITE_SCOPES = ["this_week", "everyone"] as const;
+export type PortalInviteScope = (typeof PORTAL_INVITE_SCOPES)[number];
+
+/**
+ * From now until the end of this Brisbane week (Sunday midnight).
+ *
+ * Pressed on a Monday that is the whole week. Pressed mid-week it is the
+ * days that are left, so nobody is invited "for their appointment this
+ * week" after the appointment has been and gone. Monday-start because
+ * the salon trades Tuesday to Friday.
+ */
+export function restOfBrisbaneWeek(now: Date = new Date()): { from: Date; to: Date; lastDayKey: string } {
+  const [y, m, d] = brisbaneDateKey(now).split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 Sun … 6 Sat
+  const daysToSunday = (7 - dow) % 7;
+  const key = (offset: number) => new Date(Date.UTC(y, m - 1, d + offset)).toISOString().slice(0, 10);
+  return {
+    from: now,
+    to: parseBrisbaneLocalDateTime(`${key(daysToSunday + 1)}T00:00:00`),
+    lastDayKey: key(daysToSunday),
+  };
+}
+
 export type PortalInviteCandidate = {
   id: number;
   firstName: string | null;
@@ -102,8 +140,19 @@ export function selectPortalInviteRecipients(input: {
       skipped.invitation_outstanding += 1; continue;
     }
 
-    // A half-finished setup keeps the address it was set up with.
-    const email = normaliseEmail(c.portalLoginEmail) || normaliseEmail(c.email);
+    /*
+     * The same rule the button on the client's page uses
+     * (portalSetupAddress): nobody is signing in yet, so the email on the
+     * client record is the truth. A half-finished setup used to keep the
+     * address it was first sent to, which meant a client whose email had
+     * since been corrected was invited at the OLD address again, and the
+     * old address was saved back as their login (review, 17/11/2026).
+     */
+    const email = portalSetupAddress({
+      status: c.portalAccountStatus as PortalAccountStatus,
+      portalLoginEmail: c.portalLoginEmail,
+      clientEmail: c.email,
+    });
     if (!EMAIL.test(email)) { skipped.no_email += 1; continue; }
     if (input.unsubscribedEmails.has(email)) { skipped.unsubscribed += 1; continue; }
 

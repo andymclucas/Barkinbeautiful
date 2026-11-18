@@ -44,6 +44,9 @@ const PUBLIC = [
   // them and nothing else. Returns a first name and the reason and stops
   // there — SMS cannot carry a picture here, so the link is the way in.
   "clientPhotosRouter.getByToken",
+  // The client's own other contacts (18/11/2026), scoped by the portal
+  // session like updateMyProfile: add one, correct one, remove one.
+  "clientPortalRouter.addMyContact",
   "clientPortalRouter.cancelAppointment",
   "clientPortalRouter.completeSetup",
   "clientPortalRouter.createMyCardSetupLink",
@@ -69,6 +72,7 @@ const PUBLIC = [
   // link is the identity; it can only open a Stripe page for a bill on
   // that client's own account, sized again from the database, and only
   // for Groomigo's own open bills (shared/portalInvoicePay.ts).
+  "clientPortalRouter.myContacts",
   "clientPortalRouter.payMyInvoice",
   // Pay for today's appointment (11/11/2026): the portal session or access
   // link is the identity; it only reports and pays THIS client's bookings
@@ -81,6 +85,7 @@ const PUBLIC = [
   // iPhone Home Screen. Five wrong tries per address per 15 minutes.
   "clientPortalRouter.redeemSignInCode",
   "clientPortalRouter.redeemSignInLink",
+  "clientPortalRouter.removeMyContact",
   // Forgot password (12/11/2026). Answers the same whatever the address,
   // only emails a live account, skips held clients, and is throttled per
   // address and per IP (shared/portalPasswordReset.ts).
@@ -104,6 +109,7 @@ const PUBLIC = [
   "clientPortalRouter.signMyAgreements",
   "clientPortalRouter.signWithAgreementLink",
   "clientPortalRouter.todaysBill",
+  "clientPortalRouter.updateMyContact",
   "clientPortalRouter.updateMyProfile",
   // An owner answering a quote for extra work found mid-groom, from a
   // texted link. Public on purpose and not behind the portal login: the
@@ -344,6 +350,10 @@ const OPERATIONAL = [
   "petsRouter.listBreeds",
   "petsRouter.listByClient",
   "petsRouter.restore",
+  // What a dog's new size means for the bookings it already has
+  // (18/11/2026). Asked straight after a weigh-in, so it is open to whoever
+  // weighs the dog; it reads that dog's own bookings and changes nothing.
+  "petsRouter.sizePriceReview",
   // The dog's usual groomer. A groomer knows which dogs are theirs, and
   // the person taking the booking is who hears "can we have Charlotte
   // again". Tenant-checked on both the pet and the staff member.
@@ -612,7 +622,7 @@ describe("tRPC procedure surface", () => {
     // weekly payments against grooms done, which is always positive for a
     // weekly-billed member, and its two buttons invoiced clients for money
     // already paid and wrote payment rows with no money behind them.
-    expect(surface).toHaveLength(447);
+    expect(surface).toHaveLength(452);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -626,7 +636,7 @@ describe("tRPC procedure surface", () => {
     // 61 since 12/11/2026: clientPortal.requestPasswordReset.
     // 63 since 12/11/2026: the two sign-in link procedures.
     // 64 since 12/11/2026: redeemSignInCode.
-    expect(PUBLIC).toHaveLength(64);
+    expect(PUBLIC).toHaveLength(68);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
@@ -689,7 +699,7 @@ describe("tRPC procedure surface", () => {
     // skipped date of a repeat, staff-facing like the rest of the calendar.
     // 163 since 13/11/2026: the staff half of supportChat. Every staff
     // login can ask for help; the server keys each one to ctx.user.id.
-    expect(OPERATIONAL).toHaveLength(163);
+    expect(OPERATIONAL).toHaveLength(164);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

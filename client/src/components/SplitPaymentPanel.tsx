@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Banknote, CreditCard, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { ApplyDiscountDialog } from "@/components/ApplyDiscountDialog";
 import { CardEntryDialog } from "@/components/CardEntryDialog";
 import { describeDiscount } from "@shared/appointmentDiscount";
@@ -119,9 +120,20 @@ export function SplitPaymentPanel({
    * one names the account.
    */
   const clientId = data?.appointments?.[0]?.clientId ?? null;
+  /*
+   * Not asked for on a restricted staff login. storeCredit.getBalance is
+   * an owner-level read and refuses them, and a refused query raises the
+   * app-wide "Store credit could not be loaded" toast. This panel now
+   * also sits in the board's "Mark as Out?" dialog, which groomers and
+   * bathers open for every dog, so the question is simply not put.
+   * Whether the floor should see a client's balance is a separate
+   * decision; until it is made they see the panel without the chip.
+   */
+  const { user } = useAuth();
+  const mayReadStoreCredit = Boolean(user) && user?.role !== "staff";
   const { data: credit } = trpc.storeCredit.getBalance.useQuery(
     { clientId: clientId as number },
-    { enabled: clientId != null }
+    { enabled: clientId != null && mayReadStoreCredit }
   );
   const creditBalance = Number(credit?.balance ?? 0);
 

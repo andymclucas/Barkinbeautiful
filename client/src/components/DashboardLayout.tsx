@@ -1,4 +1,5 @@
 import { useTimezoneSync } from "@/lib/timezone";
+import { GroomigoLogo } from "@/components/GroomigoLogo";
 import { isStaffOperationRoute } from "@shared/staffRoutes";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -829,21 +830,21 @@ function DashboardLayoutContent({
 
           {/* ── Powered by Groomigo ── */}
           {!isCollapsed && (
-            <div className="px-3 py-3 flex items-center justify-center gap-2">
+            <div className="px-3 py-3 flex flex-col items-center justify-center gap-1.5">
               <span className="text-[11px] text-muted-foreground/50 tracking-wide font-medium">Powered by</span>
-              <img
-                src="/groomigo_logo.png"
-                alt="Go to dashboard"
-                role="button"
-                tabIndex={0}
-                className="h-8 sm:h-9 md:h-10 w-auto object-contain cursor-pointer"
+              {/* A real button now, holding the standard logo. It was an
+                  <img role="button">, with the old drawing whose white
+                  lettering did not show on the light sidebar. */}
+              <button
+                type="button"
+                aria-label="Go to dashboard"
+                className="cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 style={{
                   opacity: 0,
                   animation: "groomigo-fadein 0.8s cubic-bezier(0.23,1,0.32,1) 0.4s forwards",
                   transition: "transform 200ms cubic-bezier(0.23,1,0.32,1), filter 200ms ease, opacity 200ms ease",
                 }}
                 onClick={() => setLocation("/")}
-                onKeyDown={e => e.key === "Enter" && setLocation("/")}
                 onMouseEnter={e => {
                   const el = e.currentTarget;
                   el.style.transform = "scale(1.08)";
@@ -854,7 +855,9 @@ function DashboardLayoutContent({
                   el.style.transform = "scale(1)";
                   el.style.filter = "";
                 }}
-              />
+              >
+                <GroomigoLogo height={60} alt="" />
+              </button>
             </div>
           )}
 

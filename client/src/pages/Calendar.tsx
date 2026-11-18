@@ -11,6 +11,7 @@ import { PresenceIndicator } from "@/components/PresenceIndicator";
 import { addsToGroomerDay, clipLoadFor, clipLoadOf, groomerDayLoad, isClip, overbookingWarning } from "@shared/groomerCapacity";
 import { newAppointmentError, autoSelectedPetIds } from "@shared/newAppointmentValidation";
 import { preferredGroomerDefaults } from "@shared/preferredGroomerDefaults";
+import { usualGroomerChangeQuestion } from "@shared/usualGroomerChange";
 import { formatCollectBy } from "@shared/collectBy";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
 import { trpc } from "@/lib/trpc";
@@ -398,6 +399,8 @@ type Appt = {
   clientEmail?: string | null;
   petName: string | null;
   petBreed: string | null;
+  /** Who usually grooms this dog (pets.preferred_groomer_id). */
+  petPreferredGroomerId?: number | null;
   /** The dog's shorthand codes, as stored: "✂5f, SENSITIVE". */
   petMoegoCodeLabels: string | null;
   /** The dog's alert, for the warning panel on the edit dialog. */
@@ -1585,6 +1588,9 @@ export default function Calendar() {
   const preservesCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
   // Per-pet groomer overrides for multi-pet sessions: { [appointmentId]: staffId }
   const [siblingGroomers, setSiblingGroomers] = useState<Record<number, string>>({});
+  /* Whether changing the day or time takes the other dogs on the booking
+     along. On by default: Lauren, 18/11/2026, "it just moves one dog". */
+  const [moveWholeBooking, setMoveWholeBooking] = useState(true);
   // Per-pet price overrides for multi-pet sessions: { [appointmentId]: price string }
   const [siblingPrices, setSiblingPrices] = useState<Record<number, string>>({});
   // Per-pet service overrides for multi-pet sessions: { [appointmentId]: serviceType }
@@ -2069,10 +2075,36 @@ export default function Calendar() {
       scheduledStart: dragSchedule.scheduledStartIso,
       scheduledEnd:   dragSchedule.scheduledEndIso,
       staffId: nextStaffId,
+      // A dragged dog takes the rest of its booking with it. The server
+      // only moves dogs still at the same start, so dropping into another
+      // groomer's column at the same time moves nobody else.
+      withBooking: getSiblings(appt).length > 0,
     }, {
-      onSuccess: () => { toast.success("Appointment moved"); refetch(); },
+      onSuccess: (result) => {
+        // Only say the others moved when the time really changed: a drop
+        // into another groomer's column at the same time moves nobody.
+        const timeChanged = new Date(appt.scheduledStart).getTime() !== parseBrisbaneLocalDateTime(dragSchedule.scheduledStartIso).getTime();
+        toast.success(timeChanged && result.movedWith > 0
+          ? `Appointment moved, with ${result.movedWith} other dog${result.movedWith === 1 ? "" : "s"} on the booking`
+          : "Appointment moved");
+        refetch();
+      },
       onError: (err) => toast.error(err.message),
     });
+
+    // A dog dragged off its usual groomer gets the same question as one
+    // changed in the form. Asked last, after any clash warning, and only
+    // when the drop really changes who the dog is with.
+    const groomerQuestion = usualGroomerChangeQuestion([{
+      petName: appt.petName,
+      serviceType: appt.serviceType,
+      usualGroomerId: appt.petPreferredGroomerId,
+      currentGroomerId: appt.staffId === null || appt.staffId === undefined ? null : Number(appt.staffId),
+      newGroomerId: nextStaffId,
+    }], id => staffList?.find(member => member.id === id && member.isActive)?.name);
+    const go = groomerQuestion
+      ? () => setUsualGroomerConfirm({ message: groomerQuestion, proceed: move })
+      : move;
 
     // Dropping a dog on top of another is the easiest way to double-book
     // there is — it takes one imprecise gesture and gives no feedback.
@@ -2147,12 +2179,12 @@ export default function Calendar() {
         : null;
 
       if (leave.length > 0 || capacityWarning) {
-        setMoveConfirm({ groomerId: targetStaffId, clashes: leave, capacityWarning, proceed: move });
+        setMoveConfirm({ groomerId: targetStaffId, clashes: leave, capacityWarning, proceed: go });
         return;
       }
     }
 
-    move();
+    go();
   }, [rescheduleMutation, refetch, resolveDragTarget, weekAppts, blockouts, staffList]);
 
   // Prefer the team directory but retain a safe calendar fallback for migrated
@@ -2692,6 +2724,14 @@ export default function Calendar() {
    * because the same dialog serves the edit form and a drag-and-drop,
    * and each resumes differently.
    */
+  /**
+   * "Bella is usually groomed by Charlie. Change the groomer anyway?"
+   * One dialog for a new booking, the edit form and a drag-and-drop;
+   * `proceed` carries on with whichever of them asked.
+   */
+  const [usualGroomerConfirm, setUsualGroomerConfirm] = useState<
+    null | { message: string; proceed: () => void }
+  >(null);
   const [moveConfirm, setMoveConfirm] = useState<
     null | {
       groomerId: number | null;
@@ -2943,9 +2983,30 @@ export default function Calendar() {
    * `force` skips the double-booking confirmation, and is only ever true
    * when it came from the confirmation itself.
    */
-  const handleCreate = (force = false) => {
+  const handleCreate = (force = false, groomerConfirmed = false) => {
     const missing = newAppointmentError(newAppt);
     if (missing) { toast.error(missing); return; }
+
+    // The booking opens on each dog's usual groomer, so arriving here with
+    // somebody else means it was changed. Check that was meant.
+    if (!groomerConfirmed) {
+      const question = usualGroomerChangeQuestion(
+        (selectedClientPets.data ?? [])
+          .filter(pet => newAppt.petIds.includes(String(pet.id)))
+          .map(pet => ({
+          petName: pet.name,
+          serviceType: newAppt.serviceType,
+          usualGroomerId: pet.preferredGroomerId,
+          newGroomerId: perPetGroomers?.[String(pet.id)]
+            ?? (newAppt.staffId ? Number(newAppt.staffId) : null),
+        })),
+        id => activeStaff.find(member => member.id === id)?.name,
+      );
+      if (question) {
+        setUsualGroomerConfirm({ message: question, proceed: () => handleCreate(force, true) });
+        return;
+      }
+    }
 
     // Booking over another dog is allowed and sometimes right. It just
     // must not happen by accident, which is what it did while the time
@@ -3083,6 +3144,7 @@ export default function Calendar() {
     setEditRepeat({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
     setSelectedStylePetId(null);
     setSiblingGroomers({});
+    setMoveWholeBooking(true);
     setSiblingPrices({});
     setSiblingServices({});
     setSkippedRepeat([]);
@@ -3099,8 +3161,49 @@ export default function Calendar() {
   };
 
   /** `force` is only ever true when it came from the move confirmation. */
-  const handleSaveEdit = async (force = false) => {
+  const handleSaveEdit = async (force = false, groomerConfirmed = false) => {
     if (!editAppt) return;
+
+    const keepOriginalCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
+    const siblings = getSiblings(editAppt);
+    // Every dog's groomer, the first dog's included — on a family booking
+    // its choice is the per-dog dropdown, not the hidden single-dog field
+    // (shared/familyGroomerSave.ts). Worked out once, here, so the
+    // question below is about exactly what the save then writes. A
+    // cancelled booking moves nobody.
+    const rescheduleCalls = keepOriginalCancelledSchedule ? [] : familyRescheduleCalls({
+      primary: editAppt,
+      siblings,
+      pickedGroomers: siblingGroomers,
+      form: { staffId: editForm.staffId, scheduledStart: editForm.scheduledStart, scheduledEnd: editForm.scheduledEnd },
+      moveWholeBooking,
+    });
+
+    // Asked before the clash and long-day warnings.
+    if (!groomerConfirmed) {
+      const dogs = [editAppt, ...siblings];
+      const question = usualGroomerChangeQuestion(
+        rescheduleCalls.map(call => {
+          const dog = dogs.find(candidate => candidate.id === call.appointmentId);
+          return {
+            petName: dog?.petName,
+            // The service as this save leaves it, so a booking being
+            // changed to day care is not asked about.
+            serviceType: siblings.length > 0
+              ? (dog ? siblingServices[dog.id] ?? dog.serviceType : undefined)
+              : editForm.serviceType,
+            usualGroomerId: dog?.petPreferredGroomerId,
+            currentGroomerId: dog?.staffId === null || dog?.staffId === undefined ? null : Number(dog.staffId),
+            newGroomerId: call.staffId,
+          };
+        }),
+        id => activeStaff.find(member => member.id === id)?.name,
+      );
+      if (question) {
+        setUsualGroomerConfirm({ message: question, proceed: () => { void handleSaveEdit(force, true); } });
+        return;
+      }
+    }
 
     // Moving one dog on top of another is allowed and sometimes right, but
     // it must not happen silently. Same reasoning as creating a booking:
@@ -3116,27 +3219,29 @@ export default function Calendar() {
           groomerId: editStaffId,
           clashes: blockingClashes(editClashes),
           capacityWarning: overCapacity,
-          proceed: () => { void handleSaveEdit(true); },
+          proceed: () => { void handleSaveEdit(true, true); },
         });
         return;
       }
     }
 
     const promises: Promise<unknown>[] = [];
-    const keepOriginalCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
-    const siblings = getSiblings(editAppt);
-    // Every dog's groomer, the first dog's included — on a family booking
-    // its choice is the per-dog dropdown, not the hidden single-dog field
-    // (shared/familyGroomerSave.ts).
-    if (!keepOriginalCancelledSchedule) {
-      for (const call of familyRescheduleCalls({
-        primary: editAppt,
-        siblings,
-        pickedGroomers: siblingGroomers,
-        form: { staffId: editForm.staffId, scheduledStart: editForm.scheduledStart, scheduledEnd: editForm.scheduledEnd },
-      })) {
-        promises.push(rescheduleMutation.mutateAsync(call));
+    // The first dog's call goes alone and is waited for when it takes the
+    // booking with it: the server works out the one text for the family
+    // from where every dog is AFTER the move, and a sibling's own call
+    // landing in the middle could be told about the same day twice.
+    const [firstCall, ...laterCalls] = rescheduleCalls;
+    if (firstCall?.withBooking) {
+      try {
+        await rescheduleMutation.mutateAsync(firstCall);
+      } catch {
+        return; // the mutation's own onError has already said why
       }
+    } else if (firstCall) {
+      promises.push(rescheduleMutation.mutateAsync(firstCall));
+    }
+    for (const call of laterCalls) {
+      promises.push(rescheduleMutation.mutateAsync(call));
     }
     // For multi-pet sessions, per-dog price and service come from the sibling
     // maps; a single-pet booking uses editForm.
@@ -5246,6 +5351,23 @@ export default function Calendar() {
         </DialogContent>
       </Dialog>
 
+      {/* ── Changing a dog away from its usual groomer ──
+          Asks, never blocks (shared/usualGroomerChange.ts). */}
+      <Dialog open={!!usualGroomerConfirm} onOpenChange={open => { if (!open) setUsualGroomerConfirm(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change the groomer?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">{usualGroomerConfirm?.message}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUsualGroomerConfirm(null)}>Go back</Button>
+            <Button onClick={() => { const go = usualGroomerConfirm?.proceed; setUsualGroomerConfirm(null); go?.(); }}>
+              Change anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Double-booking confirmation ──
           Warn, never block: the salon squeezes dogs in for good reasons and
           a system that refused would simply be worked around. The cost of
@@ -5271,7 +5393,7 @@ export default function Calendar() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setClashConfirm(null)}>Pick another time</Button>
             <Button
-              onClick={() => { setClashConfirm(null); handleCreate(true); }}
+              onClick={() => { setClashConfirm(null); handleCreate(true, true); }}
               disabled={multiPetCreateMutation.isPending || createRecurringMutation.isPending}
             >
               Book anyway
@@ -6113,6 +6235,31 @@ export default function Calendar() {
                     <DateTimeField aria-label="Ends" value={editForm.scheduledEnd} fallbackDate={editForm.scheduledStart?.slice(0, 10)} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledEnd: next }))} />
                   </div>
                 </div>
+                {(() => {
+                  // Only dogs the server will actually move: still to
+                  // arrive. One already checked in stays where it is.
+                  const movable = getSiblings(editAppt).filter(pet => pet.workflowState === "scheduled");
+                  if (!editRepeatStartDirty || preservesCancelledSchedule || movable.length === 0) return null;
+                  const names = movable.map(pet => pet.petName).join(", ");
+                  return (
+                    <label className="flex items-start gap-2 rounded-lg border bg-muted/40 p-2.5 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 rounded accent-primary"
+                        checked={moveWholeBooking}
+                        onChange={(event) => setMoveWholeBooking(event.target.checked)}
+                      />
+                      <span>
+                        <span className="font-medium">Move all {1 + movable.length} dogs on this booking</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {moveWholeBooking
+                            ? `${names} will move too.`
+                            : `Only ${editAppt.petName} will move. ${names} will stay where they are.`}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })()}
                 {(blockingClashes(editClashes).length > 0 || editMoveCapacityWarning) && (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
                     {blockingClashes(editClashes).length > 0 && (

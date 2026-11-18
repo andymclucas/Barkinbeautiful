@@ -10,6 +10,9 @@ import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useReportRange, ReportRangePicker } from "@/components/ReportRange";
+import { previousReportPeriod, revenueGapStart } from "@shared/reportPreviousPeriod";
+import { brisbaneExplicitRange } from "@shared/localDateTime";
+import { VersusPrevious } from "@/components/VersusPrevious";
 import { WorkflowTimingChart } from "@/components/WorkflowTimingChart";
 import { DayTimingReport } from "@/components/DayTimingReport";
 import { brisbaneDateKey, localCalendarDay, localCalendarDayKey } from "@shared/localDateTime";
@@ -88,6 +91,16 @@ export default function Reporting() {
   const range = useReportRange("d30");
   const from = range.dateFrom.toISOString();
   const to = range.dateTo.toISOString();
+  /* The period these figures are set against (Andy, 17/11/2026): the
+     week, month or year before, like for like. See
+     shared/reportPreviousPeriod.ts. */
+  const previous = previousReportPeriod({ kind: range.rangeKey, fromKey: range.fromKey, toKey: range.toKey, todayKey: brisbaneDateKey(new Date()) });
+  const previousRange = brisbaneExplicitRange(previous.fromKey, previous.toKey);
+  const previousFrom = previousRange.from.toISOString();
+  const previousTo = previousRange.to.toISOString();
+  const brisbaneDay = (d: Date) => d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Brisbane" });
+  const previousDates = `${brisbaneDay(previousRange.from)} – ${brisbaneDay(previousRange.to)}`;
+  const asDollars = (value: number) => `$${value.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   /*
    * Andy, 04/11/2026: "Build the client retention report - add in the
@@ -213,6 +226,24 @@ export default function Reporting() {
     dateFrom: from, dateTo: to,
   });
 
+  /* Revenue for days before the salon's first priced booking is
+     understated, so a period reaching back that far is flagged rather
+     than compared in silence. Same query the range picker already runs. */
+  const { data: dataSpan } = trpc.analytics.dataYears.useQuery({});
+  const gapFor = (periodFromKey: string) => revenueGapStart({
+    periodFromKey, bookingsFrom: dataSpan?.bookingsFrom, revenueRecordedFrom: dataSpan?.revenueRecordedFrom,
+  });
+  const previousGap = gapFor(previous.fromKey);
+  const currentGap = gapFor(range.fromKey);
+  const gapDay = (key: string) => {
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  };
+
+  const { data: previousSummary, isError: previousSummaryFailed } = trpc.analytics.summary.useQuery({
+    dateFrom: previousFrom, dateTo: previousTo,
+  });
+
   const { data: staffData, isLoading: loadingStaff } = trpc.analytics.staffProductivity.useQuery(
     { dateFrom: from, dateTo: to },
     { enabled: reportTab === "staff" },
@@ -220,6 +251,11 @@ export default function Reporting() {
 
   const { data: financials, isLoading: loadingFinancials } = trpc.analytics.financialBreakdown.useQuery(
     { dateFrom: from, dateTo: to },
+    { enabled: reportTab === "financial" },
+  );
+
+  const { data: previousFinancials, isError: previousFinancialsFailed } = trpc.analytics.financialBreakdown.useQuery(
+    { dateFrom: previousFrom, dateTo: previousTo },
     { enabled: reportTab === "financial" },
   );
 
@@ -282,6 +318,15 @@ export default function Reporting() {
             {/* Name the actual dates, so no figure is read as a period it
                 does not cover. */}
             <p className="text-muted-foreground text-sm">{range.dates}</p>
+            <p className="text-muted-foreground text-xs">Compared with the {previous.name}: {previousDates}</p>
+            {(previousGap || currentGap) && (
+              <p role="note" className="mt-2 max-w-xl rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                Revenue is only counted from {gapDay((currentGap ?? previousGap)!)}: no earlier booking is recorded as a completed, priced visit. So{" "}
+                {currentGap
+                  ? "revenue for these dates is understated, and the change in revenue shown here cannot be relied on."
+                  : `revenue for the ${previous.name} is understated, and the change in revenue shown here is larger than it really was.`}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" className="h-9 gap-1.5" disabled={exporting} onClick={handleExport}>
@@ -303,12 +348,14 @@ export default function Reporting() {
               label: "Revenue",
               value: loadingSummary ? "…" : `$${(summary?.revenue ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
               sub: range.label,
+              versus: { current: summary?.revenue ?? 0, previous: previousSummary?.revenue, format: asDollars },
             },
             {
               icon: Calendar,
               label: "Appointments",
               value: loadingSummary ? "…" : (summary?.appointments ?? 0).toLocaleString(),
               sub: range.label,
+              versus: { current: summary?.appointments ?? 0, previous: previousSummary?.appointments, format: (n: number) => n.toLocaleString() },
             },
             {
               icon: Users,
@@ -330,6 +377,13 @@ export default function Reporting() {
               </div>
               <p className="mt-1.5 text-2xl font-bold tracking-[-0.02em] tabular-nums">{k.value}</p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">{k.sub}</p>
+              {/* Only the two figures that belong to the period. Active
+                  clients and memberships are today's count whatever the
+                  dates say, so there is no earlier figure to set them
+                  against. */}
+              {"versus" in k && k.versus && (
+                <VersusPrevious {...k.versus} name={previous.name} loading={loadingSummary} failed={previousSummaryFailed} />
+              )}
             </div>
           ))}
         </div>
@@ -442,14 +496,17 @@ export default function Reporting() {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Revenue</p>
                     <p className="text-lg font-bold mt-0.5">${financials.totalRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
+                    <VersusPrevious current={financials.totalRevenue} previous={previousFinancials?.totalRevenue} name={previous.name} format={asDollars} failed={previousFinancialsFailed} />
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Membership</p>
                     <p className="text-lg font-bold mt-0.5">${financials.membershipRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
+                    <VersusPrevious current={financials.membershipRevenue} previous={previousFinancials?.membershipRevenue} name={previous.name} format={asDollars} failed={previousFinancialsFailed} />
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">One-off</p>
                     <p className="text-lg font-bold mt-0.5">${financials.oneOffRevenue.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</p>
+                    <VersusPrevious current={financials.oneOffRevenue} previous={previousFinancials?.oneOffRevenue} name={previous.name} format={asDollars} failed={previousFinancialsFailed} />
                   </div>
                 </div>
                 <div className="space-y-3">

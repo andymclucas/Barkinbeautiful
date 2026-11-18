@@ -141,7 +141,7 @@
          letter tile. The SVG is the real favicon; the PNG is there for the
          browsers that still ignore SVG icons. -->
     <link rel="icon" type="image/svg+xml" href="/groomigo_logo.svg" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192-v3.png" />
 
     <!-- Installable, which on an iPhone is not cosmetic: iOS gives a site
          the Notification API and Web Push ONLY when it has been added to
@@ -149,7 +149,11 @@
          there is nothing to switch on. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#8358ec" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- The icon files carry a version in their name because every other
+         static file is served "immutable" for a year: a new icon under an
+         old name never reaches a browser that already has it. The portal
+         swap in shared/portalManifest.ts matches this tag exactly. -->
+    <link rel="apple-touch-icon" href="/icon-180-v3.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Groomigo" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { GroomigoLogo } from "@/components/GroomigoLogo";
 import { VipMark } from "@/components/VipMark";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -84,7 +85,7 @@ export default function StaffPortal() {
       <IncomingCallAlert />
       <header className="bg-slate-950 text-white px-5 pt-6 pb-5 rounded-b-3xl shadow-lg">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3"><img src="/groomigo_logo.png" alt="Groomigo" className="h-9 w-auto object-contain" /><span className="text-xs text-violet-300 font-semibold tracking-wide uppercase">My day</span></div>
+          <div className="flex items-center gap-3"><GroomigoLogo tone="on-dark" height={56} /><span className="text-xs text-violet-300 font-semibold tracking-wide uppercase">My day</span></div>
           <button className="p-2 rounded-lg hover:bg-white/10" onClick={() => logout()} aria-label="Sign out"><LogOut className="h-4 w-4" /></button>
         </div>
         <div className="mt-6"><p className="text-sm text-slate-300">{dateLabel}</p><h1 className="text-2xl font-bold">{data?.staff.name ?? user.name ?? "My appointments"}</h1><p className="text-sm text-violet-300 mt-1">{data?.appointments.length ?? 0} pets assigned to you</p></div>

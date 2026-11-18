@@ -8,6 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { MassTextDialog } from "@/components/MassTextDialog";
 import { SUGGESTED_AGREEMENT_TEXT } from "@shared/massTextMerge";
+import type { PortalInviteScope } from "@shared/portalInviteAudience";
 
 export const PORTAL_INVITE_TYPED_CONFIRM_THRESHOLD = 25;
 
@@ -19,6 +20,17 @@ export type PortalInvitePreview = {
   exampleSubject: string;
   exampleHtml: string;
   enabled: boolean;
+  /** Which stage this count is for. Absent means everyone. */
+  scope?: PortalInviteScope;
+  /** The last day of this week, as YYYY-MM-DD, for the weekly stage. */
+  weekEndsOn?: string;
+};
+
+/** "Sunday 22 November", from a YYYY-MM-DD key. No timezone involved. */
+const dayLabel = (key: string | undefined): string => {
+  if (!key) return "Sunday";
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 };
 
 export type PortalInviteProgress = {
@@ -46,7 +58,12 @@ export function PortalInvitePanelView({
   onStart,
   onResume,
   textAction,
+  scope = "everyone",
+  onScopeChange,
 }: {
+  /** Which stage is being counted; the container owns it and refetches. */
+  scope?: PortalInviteScope;
+  onScopeChange?: (scope: PortalInviteScope) => void;
   /** The "text the agreement" button; a slot so this view stays server-free. */
   textAction?: ReactNode;
   preview: PortalInvitePreview | undefined;
@@ -60,7 +77,11 @@ export function PortalInvitePanelView({
   const [showEmail, setShowEmail] = useState(false);
 
   const inFlight = progress?.status === "sending";
-  const count = preview?.count ?? 0;
+  // A count for the other stage is not this stage's count: until the
+  // preview for the chosen stage arrives, nothing can be sent.
+  const stale = Boolean(preview) && (preview?.scope ?? "everyone") !== scope;
+  const weekly = scope === "this_week";
+  const count = stale ? 0 : preview?.count ?? 0;
   const needsTyped = count > PORTAL_INVITE_TYPED_CONFIRM_THRESHOLD;
   const confirmed = !needsTyped || typed.trim() === String(count);
   const canSend = Boolean(preview?.enabled) && count > 0 && confirmed && !starting && !inFlight;
@@ -72,18 +93,33 @@ export function PortalInvitePanelView({
           <FileSignature className="h-5 w-5 text-primary" />
           Portal invitation with the service agreement
         </CardTitle>
+        {onScopeChange && (
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Who to invite">
+            <Button type="button" size="sm" variant={weekly ? "default" : "outline"} aria-pressed={weekly}
+              onClick={() => { setTyped(""); onScopeChange("this_week"); }}>
+              This week&rsquo;s bookings
+            </Button>
+            <Button type="button" size="sm" variant={weekly ? "outline" : "default"} aria-pressed={!weekly}
+              onClick={() => { setTyped(""); onScopeChange("everyone"); }}>
+              Everyone
+            </Button>
+          </div>
+        )}
         <p className="text-sm text-muted-foreground">
-          Emails every active client who isn't on the portal yet a link of their own. Signing the service
+          {weekly
+            ? `Emails clients with a booking between now and ${dayLabel(preview?.weekEndsOn)} who aren't on the portal yet a link of their own. Press it each Monday to invite that week's clients.`
+            : "Emails every active client who isn't on the portal yet a link of their own."}{" "}
+          Signing the service
           agreement is the first page; then they choose a password. Clients who have already signed go straight to the password.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!preview ? (
+        {!preview || stale ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Counting clients…</p>
         ) : (
           <>
             <div className="rounded-lg bg-muted/50 p-3 text-sm">
-              <p><span className="text-2xl font-bold" data-testid="invite-count">{count}</span> of {preview.activeClients} active clients would get an email.</p>
+              <p><span className="text-2xl font-bold" data-testid="invite-count">{count}</span> of {preview.activeClients} {weekly ? "clients booked for the rest of this week" : "active clients"} would get an email.</p>
               {preview.sample.length > 0 && (
                 <p className="mt-1 text-xs text-muted-foreground">Including {preview.sample.join(", ")}{count > preview.sample.length ? "…" : ""}</p>
               )}
@@ -183,7 +219,10 @@ export function PortalInvitePanelView({
 
 export function PortalInvitePanel() {
   const utils = trpc.useUtils();
-  const preview = trpc.clientPortal.portalInvitePreview.useQuery({});
+  // Opens on the weekly stage: it is the smaller send, and the one meant
+  // to be pressed every Monday (Andy, 17/11/2026).
+  const [scope, setScope] = useState<PortalInviteScope>("this_week");
+  const preview = trpc.clientPortal.portalInvitePreview.useQuery({ scope });
   const [startedId, setStartedId] = useState<number | null>(null);
   const campaignId = startedId ?? preview.data?.latestCampaignId ?? null;
 
@@ -215,7 +254,9 @@ export function PortalInvitePanel() {
       progress={progress.data as PortalInviteProgress | null | undefined}
       starting={start.isPending}
       resuming={resume.isPending}
-      onStart={(confirmedCount) => start.mutate({ confirmedCount })}
+      scope={scope}
+      onScopeChange={setScope}
+      onStart={(confirmedCount) => start.mutate({ confirmedCount, scope })}
       onResume={() => campaignId && resume.mutate({ campaignId })}
       textAction={
         <MassTextDialog

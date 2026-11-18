@@ -10,6 +10,7 @@ import { addOnRequiresManualPrice, addOnsTotal, addOnTargets, describeAddOnWrite
 import { carriesToRepeats, describeSeriesAdd } from "@shared/repeatBookingExtras";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { applyLineDiscount, discountFromColumns, describeLineDiscount, validateLineDiscount } from "@shared/lineDiscount";
+import { readUnitPriceEdit } from "@shared/addOnPriceEdit";
 
 /**
  * The extras done on a dog, recorded against the appointment.
@@ -209,7 +210,6 @@ export function AppointmentAddOns({ appointmentId, petName, siblings = [] }: {
               {editing === a.id && (
                 <AddOnEditor
                   addOn={a as any}
-                  gross={gross}
                   staffList={staffList ?? []}
                   onDone={() => setEditing(null)}
                   onSaved={() => { utils.appointmentAddOns.list.invalidate({ appointmentId }); setEditing(null); }}
@@ -301,10 +301,9 @@ export default AppointmentAddOns;
  * done by the other one, which is the case that prompted this.
  */
 function AddOnEditor({
-  addOn, gross, staffList, onDone, onSaved,
+  addOn, staffList, onDone, onSaved,
 }: {
-  addOn: { id: number; name: string; staffId?: number | null; discountPercent?: string | null; discountAmount?: string | null; discountReason?: string | null };
-  gross: number;
+  addOn: { id: number; name: string; unitPrice: string; quantity: number; staffId?: number | null; discountPercent?: string | null; discountAmount?: string | null; discountReason?: string | null };
   staffList: { id: number; name: string }[];
   onDone: () => void;
   onSaved: () => void;
@@ -314,6 +313,12 @@ function AddOnEditor({
   const [kind, setKind] = useState<"percent" | "amount">(existing?.kind ?? "amount");
   const [value, setValue] = useState(existing ? String(existing.value) : "");
   const [reason, setReason] = useState(addOn.discountReason ?? "");
+  // Lauren, 12/11/2026: the pencil only offered a discount, so a price
+  // could not simply be corrected. The discount below is checked against
+  // whatever is typed here, not the price the line had when it opened.
+  const [priceText, setPriceText] = useState(Number(addOn.unitPrice).toFixed(2));
+  const price = readUnitPriceEdit(priceText, addOn.unitPrice);
+  const gross = (price.ok ? price.unitPrice : Number(addOn.unitPrice)) * addOn.quantity;
 
   const update = trpc.appointmentAddOns.update.useMutation({
     onSuccess: () => { toast.success(`${addOn.name} updated`); onSaved(); },
@@ -331,9 +336,12 @@ function AddOnEditor({
     : null;
 
   const save = () => {
-    if (check && !check.ok) return;
+    if (!price.ok || (check && !check.ok)) return;
     update.mutate({
       id: addOn.id,
+      // Only when somebody changed it, so saving "done by" cannot
+      // rewrite what the line costs.
+      ...(price.changed ? { unitPrice: price.unitPrice } : {}),
       staffId: staffId === "none" ? null : Number(staffId),
       discountKind: clearing ? null : kind,
       discountValue: clearing ? null : value,
@@ -355,6 +363,22 @@ function AddOnEditor({
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div>
+        <Label htmlFor={`addon-price-${addOn.id}`} className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Price each{addOn.quantity > 1 ? ` (× ${addOn.quantity})` : ""}
+        </Label>
+        <Input
+          id={`addon-price-${addOn.id}`}
+          className="mt-0.5 h-7 text-xs"
+          inputMode="decimal"
+          value={priceText}
+          onChange={(e) => setPriceText(e.target.value)}
+        />
+        {!price.ok && (
+          <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{price.error}</p>
+        )}
       </div>
 
       <div>
@@ -398,7 +422,7 @@ function AddOnEditor({
       </div>
 
       <div className="flex gap-1.5">
-        <Button size="sm" className="h-7 flex-1 text-xs" disabled={update.isPending || Boolean(check && !check.ok)} onClick={save}>
+        <Button size="sm" className="h-7 flex-1 text-xs" disabled={update.isPending || !price.ok || Boolean(check && !check.ok)} onClick={save}>
           {update.isPending ? "Saving…" : "Save"}
         </Button>
         <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onDone}>Cancel</Button>

@@ -16,7 +16,8 @@ import { DOG_BREED_CATALOGUE } from "@shared/dogBreedCatalogue";
 import type { BusyInterval } from "@shared/groomerAvailability";
 import { timeValueToMinutes } from "@shared/bookingTimeSlots";
 import { buildPaymentTimeline } from "@shared/portalBilling";
-import { prepareClientProfile } from "@shared/clientProfileEdit";
+import { sizePriceChoices } from "@shared/sizeChangePricing";
+import { prepareClientProfile, prepareClientContact, canAddPortalContact, normaliseAustralianPhoneForStorage } from "@shared/clientProfileEdit";
 import { systemRouter } from "./_core/systemRouter";
 import { excludeTestPets } from "./testPets";
 import { findDuplicateGroups, suggestSurvivor } from "@shared/clientMerge";
@@ -189,9 +190,9 @@ import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
 import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
 import { getAppointmentMembershipCoverage } from "./appointmentCoverage";
-import { portalLinkIssueEffect, portalLinkExpiryEffect, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
+import { portalLinkIssueEffect, portalLinkExpiryEffect, portalSetupAddress, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { loadPendingAgreements, recordPortalSignatures, requestIp } from "./portalAgreements";
-import { PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
+import { PORTAL_INVITE_SCOPES, PORTAL_INVITE_SKIP_LABELS, guardPortalInviteSend, restOfBrisbaneWeek, type PortalInviteSkipReason } from "@shared/portalInviteAudience";
 import {
   PORTAL_INVITE_AUDIENCE_TYPE, portalInviteAudience, portalInviteEmail, portalInviteProgress,
   runPortalInviteCampaign, isPortalInviteRunning, withPortalInviteStartLock, heldClientIds,
@@ -1394,6 +1395,9 @@ const calendarRouter = router({
           clientEmail: clients.email,
           petName: pets.name,
           petBreed: pets.breed,
+          // Who usually grooms this dog, so moving a booking can ask before
+          // taking it off them (shared/usualGroomerChange.ts).
+          petPreferredGroomerId: pets.preferredGroomerId,
           // The dog's codes, so the appointment dialog can show them
           // alongside the board. Same column the board already reads.
           petMoegoCodeLabels: pets.moegoCodeLabels,
@@ -3703,8 +3707,8 @@ const calendarRouter = router({
        * Move the other dogs on the same booking too. For callers that
        * act on ONE row of a per-dog list (the client's Bookings tab):
        * without it, moving Maddie leaves Misha on the old day, still
-       * tied to her by sessionId. The calendar moves its own siblings
-       * and does not send this.
+       * tied to her by sessionId. The calendar sends it too since
+       * 18/11/2026, from both its Save and its drag.
        */
       withBooking: z.boolean().optional(),
     }))
@@ -7212,7 +7216,7 @@ const petsRouter = router({
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
         throw new Error("This pet is not available to your salon staff profile");
       }
-      const [pet] = await db.select({ id: pets.id, tenantId: pets.tenantId })
+      const [pet] = await db.select({ id: pets.id, tenantId: pets.tenantId, sizeBand: pets.sizeBand })
         .from(pets)
         .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
@@ -7254,7 +7258,12 @@ const petsRouter = router({
           });
         }
       });
-      return { success: true, weightKg: update.weightKg, sizeBand: update.sizeBand ?? null };
+      // Whether the weight moved the dog into another size band — which
+      // is what its price hangs off. The screen uses it to ask about the
+      // dog's upcoming bookings (shared/sizeChangePricing.ts); nothing is
+      // repriced here.
+      const sizeBandChanged = update.sizeBand !== undefined && update.sizeBand !== pet.sizeBand;
+      return { success: true, weightKg: update.weightKg, sizeBand: update.sizeBand ?? null, sizeBandChanged };
     }),
 
   /**
@@ -7323,7 +7332,7 @@ const petsRouter = router({
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) {
         throw new Error("This pet is not available to your salon staff profile");
       }
-      const [pet] = await db.select({ id: pets.id })
+      const [pet] = await db.select({ id: pets.id, sizeBand: pets.sizeBand })
         .from(pets)
         .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))))
         .limit(1);
@@ -7334,7 +7343,133 @@ const petsRouter = router({
           sizeBandSource: input.sizeBand === null ? null : "manual",
         })
         .where(eq(pets.id, pet.id));
-      return { success: true, sizeBand: input.sizeBand };
+      return {
+        success: true,
+        sizeBand: input.sizeBand,
+        // Same signal as updateWeight: the size the price hangs off moved.
+        sizeBandChanged: input.sizeBand !== null && input.sizeBand !== pet.sizeBand,
+      };
+    }),
+
+  /**
+   * What a dog's new size means for the bookings it already has.
+   *
+   * Asked by the screen straight after a weight or size change moved the
+   * dog into another band (Andy, 18/11/2026). For each upcoming booking
+   * it returns the price on it now and the price list's three rates for
+   * that service at the dog's CURRENT size, so staff can pick one, type
+   * their own, or leave it. It changes nothing; the save goes through
+   * calendar.updateDetails like any other price edit.
+   *
+   * operationalProcedure, like updateWeight and updateDetails beside it:
+   * the dog is weighed on the floor, and whoever weighs it is who is
+   * asked. It carries the dog's own bookings and prices, nothing else.
+   */
+  sizePriceReview: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), petId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantId) {
+        throw new Error("This pet is not available to your salon staff profile");
+      }
+      const [pet] = await db.select({ id: pets.id, name: pets.name, sizeBand: pets.sizeBand })
+        .from(pets)
+        .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantId)))
+        .limit(1);
+      if (!pet) throw new Error("Pet not found");
+
+      const rows = await db
+        .select({
+          id: appointments.id,
+          scheduledStart: appointments.scheduledStart,
+          serviceType: appointments.serviceType,
+          price: appointments.price,
+          membershipId: appointments.membershipId,
+          discountPercent: appointments.discountPercent,
+          billedTotalOverride: appointments.billedTotalOverride,
+        })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.petId, pet.id),
+          eq(appointments.workflowState, "scheduled"),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
+          gte(appointments.scheduledStart, new Date()),
+        ))
+        .orderBy(asc(appointments.scheduledStart), asc(appointments.id));
+
+      // The membership this dog is on, by name only: the plan is sold by
+      // size, so a dog that has changed band may be on the wrong one. Said
+      // to staff; never changed from here.
+      // Both ways a dog can be on a plan: as the plan's own dog, or as
+      // one of the extra dogs a multi-dog plan covers (membership_pets).
+      const coveredBy = await db
+        .select({ membershipId: membershipPets.membershipId })
+        .from(membershipPets)
+        .where(and(eq(membershipPets.tenantId, tenantId), eq(membershipPets.petId, pet.id)));
+      const coveringIds = coveredBy.map((row: any) => row.membershipId as number);
+      const plans = await db
+        .select({ id: memberships.id, name: memberships.name })
+        .from(memberships)
+        .where(and(
+          eq(memberships.tenantId, tenantId),
+          eq(memberships.status, "active"),
+          coveringIds.length > 0
+            ? or(eq(memberships.petId, pet.id), inArray(memberships.id, coveringIds))
+            : eq(memberships.petId, pet.id),
+        ))
+        .orderBy(asc(memberships.id));
+
+      // What has already been taken against each booking, so staff are
+      // told before they change a price that somebody has part-paid.
+      const bookingIds = rows.map((row: any) => row.id as number);
+      const paidRows = bookingIds.length === 0 ? [] : await db
+        .select({ appointmentId: appointmentPayments.appointmentId, paid: sql<string>`COALESCE(SUM(${appointmentPayments.amount}), 0)`.as("paid") })
+        .from(appointmentPayments)
+        .where(and(eq(appointmentPayments.tenantId, tenantId), inArray(appointmentPayments.appointmentId, bookingIds)))
+        .groupBy(appointmentPayments.appointmentId);
+      const paidByBooking = new Map<number, number>(paidRows.map((row: any) => [row.appointmentId as number, Number(row.paid)]));
+
+      const catalogue = rows.length === 0 ? [] : await db
+        .select({
+          id: pricingServices.id,
+          name: pricingServices.name,
+          legacyServiceType: pricingServices.legacyServiceType,
+          weightBand: pricingServices.weightBand,
+          priceMode: pricingServices.priceMode,
+          priceAud: pricingServices.priceAud,
+          sortOrder: pricingServices.sortOrder,
+        })
+        .from(pricingServices)
+        .where(and(
+          eq(pricingServices.tenantId, tenantId),
+          eq(pricingServices.catalogueType, "service"),
+          eq(pricingServices.isActive, true),
+          isNotNull(pricingServices.legacyServiceType),
+        ));
+
+      return {
+        pet: { id: pet.id, name: pet.name as string, sizeBand: pet.sizeBand as string | null },
+        membershipName: plans.length > 0 ? plans.map((plan: any) => plan.name as string).join(", ") : null,
+        bookings: rows.map((row: any) => ({
+          id: row.id as number,
+          scheduledStart: row.scheduledStart as Date,
+          serviceType: row.serviceType as string,
+          currentPrice: row.price as string | null,
+          // A groom the membership pays for has no price to change.
+          onMembership: row.membershipId !== null,
+          // Three things a new price runs into, said before it is chosen:
+          // a discount (a new price removes it), a billing override (the
+          // bill ignores the price while it is set), and money already taken.
+          discountPercent: (row.discountPercent as number | null) ?? null,
+          hasBillingOverride: row.billedTotalOverride !== null,
+          alreadyPaid: paidByBooking.get(row.id) ?? 0,
+          choices: sizePriceChoices({ serviceType: row.serviceType, sizeBand: pet.sizeBand, catalogue }),
+        })),
+      };
     }),
 
   /**
@@ -10716,7 +10851,7 @@ const analyticsRouter = router({
     .input(z.object({ tenantId: z.number().default(1) }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
-      if (!db) return { years: yearOptions(null, null) };
+      if (!db) return { years: yearOptions(null, null), bookingsFrom: null, revenueRecordedFrom: null };
 
       const [row] = await db
         .select({
@@ -10726,7 +10861,33 @@ const analyticsRouter = router({
         .from(appointments)
         .where(eq(appointments.tenantId, tenantOf(ctx, input)));
 
-      return { years: yearOptions(Number(row?.earliest) || null, Number(row?.latest) || null) };
+      // The first Brisbane day with a booking that has already happened,
+      // and the first with any revenue (a completed, priced visit). Where
+      // a salon's history was imported as bare bookings, never completed
+      // and never priced, the second is much later than the first and
+      // every revenue figure for the days in between is understated
+      // (shared/reportPreviousPeriod.ts, revenueGapStart). Read from the
+      // data, so it is right for any salon and moves if the history is
+      // ever filled in. Bookings still to come are left out: a salon that
+      // opened yesterday has future bookings and no revenue, and no gap.
+      const now = new Date();
+      const [span] = await db
+        .select({
+          bookingsFrom: sql<string | null>`DATE_FORMAT(MIN(CASE WHEN ${appointments.scheduledStart} < ${now} THEN CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00') END), '%Y-%m-%d')`,
+          revenueFrom: sql<string | null>`DATE_FORMAT(MIN(CASE WHEN ${appointments.workflowState} = 'complete' AND ${appointments.price} > 0 THEN CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00') END), '%Y-%m-%d')`,
+        })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantOf(ctx, input)),
+          notInArray(appointments.status, ["cancelled", "no_show"]),
+          excludeTestPets(appointments.petId, tenantOf(ctx, input)),
+        ));
+
+      return {
+        years: yearOptions(Number(row?.earliest) || null, Number(row?.latest) || null),
+        bookingsFrom: span?.bookingsFrom ?? null,
+        revenueRecordedFrom: span?.revenueFrom ?? null,
+      };
     }),
 
   summary: protectedProcedure
@@ -15468,6 +15629,33 @@ async function resolvePortalClient(db: any, input: { token?: string }, req: any)
   return { clientId: client.id as number, tenantId: client.tenantId as number };
 }
 
+/**
+ * The signed-in portal client, or UNAUTHORIZED.
+ *
+ * The guard getMyPortal and updateMyProfile each spell out inline: a
+ * session cookie, an ACTIVE portal account, and a sessionVersion that
+ * still matches, so a revoked or signed-out-everywhere client is refused.
+ * The ids it returns come from the session and the row it found, never
+ * from the request.
+ */
+async function requireSignedInPortalClient(req: Parameters<typeof readClientPortalSession>[0]) {
+  const session = await readClientPortalSession(req);
+  if (!session) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId })
+    .from(clients)
+    .where(and(
+      eq(clients.id, session.clientId),
+      eq(clients.tenantId, session.tenantId),
+      eq(clients.portalAccountStatus, "active"),
+      eq(clients.portalSessionVersion, session.sessionVersion),
+    ))
+    .limit(1);
+  if (!client) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please sign in to your client portal" });
+  return { db, clientId: client.id, tenantId: client.tenantId };
+}
+
 const clientPortalRouter = router({
   getAccessStatus: adminProcedure
     .input(z.object({ clientId: z.number().int().positive() }))
@@ -15723,7 +15911,14 @@ const clientPortalRouter = router({
         .limit(1);
       if (!client || client.tenantId !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
 
-      const loginEmail = (input.email ?? client.portalLoginEmail ?? client.email ?? "").trim().toLowerCase();
+      // The email on the client record, until somebody is actually using
+      // the portal: see portalSetupAddress in shared/portalSetupLink.ts.
+      const loginEmail = portalSetupAddress({
+        explicitEmail: input.email,
+        status: client.portalAccountStatus as PortalAccountStatus,
+        portalLoginEmail: client.portalLoginEmail,
+        clientEmail: client.email,
+      });
       if (!loginEmail) throw new TRPCError({ code: "BAD_REQUEST", message: "Add a client email before creating a portal account setup link" });
 
       const [matchingPortalLogin] = await db.select({ id: clients.id })
@@ -16036,12 +16231,14 @@ const clientPortalRouter = router({
    * adminProcedure, like issuing a single setup link.
    */
   portalInvitePreview: adminProcedure
-    .input(z.object({ tenantId: z.number().default(1) }))
+    // `scope` defaults to everyone so an older open tab keeps counting
+    // what it always counted; the screen asks for this_week by name.
+    .input(z.object({ tenantId: z.number().default(1), scope: z.enum(PORTAL_INVITE_SCOPES).default("everyone") }))
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const tenantId = tenantOf(ctx, input);
-      const audience = await portalInviteAudience(db, tenantId);
+      const audience = await portalInviteAudience(db, tenantId, input.scope);
       // Not `audience_filter = '<json text>'` in SQL: where the column is a
       // JSON type that never matches (shared/campaignAudienceFilter.ts).
       const campaignRows = await db.select({ id: emailCampaigns.id, audienceFilter: emailCampaigns.audienceFilter })
@@ -16061,6 +16258,9 @@ const clientPortalRouter = router({
       return {
         count: audience.recipients.length,
         activeClients: audience.activeClients,
+        scope: input.scope,
+        // The last day the weekly stage covers, for the screen to name.
+        weekEndsOn: restOfBrisbaneWeek().lastDayKey,
         skipped: (Object.keys(audience.skipped) as PortalInviteSkipReason[])
           .filter((k) => audience.skipped[k] > 0)
           .map((k) => ({ reason: k, label: PORTAL_INVITE_SKIP_LABELS[k], count: audience.skipped[k] })),
@@ -16081,13 +16281,19 @@ const clientPortalRouter = router({
    * only one invitation campaign may be sending at a time.
    */
   startPortalInvite: adminProcedure
-    .input(z.object({ tenantId: z.number().default(1), confirmedCount: z.number().int().min(1) }))
+    .input(z.object({
+      tenantId: z.number().default(1),
+      confirmedCount: z.number().int().min(1),
+      scope: z.enum(PORTAL_INVITE_SCOPES).default("everyone"),
+    }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       requireMassTextEnabled();
       const tenantId = tenantOf(ctx, input);
-      const filter = JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE });
+      // Same `type` for both scopes, so the one-send-at-a-time check and
+      // "latest invitation" lookups see a weekly send as an invitation.
+      const filter = JSON.stringify({ type: PORTAL_INVITE_AUDIENCE_TYPE, scope: input.scope });
 
       return withPortalInviteStartLock(tenantId, async () => {
       // The guard against emailing everybody twice. The audience is read in
@@ -16101,13 +16307,13 @@ const clientPortalRouter = router({
         throw new TRPCError({ code: "CONFLICT", message: "An invitation send is already running. Resume or wait for it rather than starting another." });
       }
 
-      const audience = await portalInviteAudience(db, tenantId);
+      const audience = await portalInviteAudience(db, tenantId, input.scope);
       const guard = guardPortalInviteSend({ recipientCount: audience.recipients.length, confirmedCount: input.confirmedCount });
       if (!guard.ok) throw new TRPCError({ code: "BAD_REQUEST", message: guard.error });
 
       const [inserted] = await db.insert(emailCampaigns).values({
         tenantId,
-        name: `Portal invitation + service agreement (${new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })})`,
+        name: `Portal invitation + service agreement${input.scope === "this_week" ? ", this week's bookings" : ""} (${new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Brisbane" })})`,
         subject: "Set up your client portal",
         // A description, not a sendable body: each client's email carries
         // their own setup link, built at send time.
@@ -16708,6 +16914,156 @@ const clientPortalRouter = router({
         .where(and(eq(clients.id, existing.id), eq(clients.tenantId, session.tenantId)));
 
       return { saved: true, profile: prepared.value };
+    }),
+
+  /**
+   * The client's other contacts, from their own portal (Lauren,
+   * 18/11/2026: "put their alternative contact details in there").
+   *
+   * These are the same client_contacts rows staff keep on the client's
+   * page. All three procedures share updateMyProfile's guard, through
+   * requireSignedInPortalClient: the client is whoever the session says,
+   * never anything the request supplies, so a client reads and writes
+   * only their own. Name, phone and relationship only — the contact's
+   * email stays a staff field.
+   *
+   * removeMyContact was added the same day (Andy: "Let clients remove a
+   * contact too"). It does what clients.removeContact does, scoped to the
+   * session's client.
+   */
+  myContacts: publicProcedure.query(async ({ ctx }) => {
+    const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
+    const contacts = await db.select({
+      id: clientContacts.id,
+      name: clientContacts.name,
+      phone: clientContacts.phone,
+      relationship: clientContacts.relationship,
+    })
+      .from(clientContacts)
+      .where(and(eq(clientContacts.clientId, clientId), eq(clientContacts.tenantId, tenantId)))
+      .orderBy(asc(clientContacts.name));
+    return { contacts, canAdd: canAddPortalContact(contacts.length) };
+  }),
+
+  addMyContact: publicProcedure
+    .input(z.object({
+      name: z.string().max(400),
+      phone: z.string().max(60),
+      relationship: z.string().max(200).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
+      const prepared = prepareClientContact(input);
+      if (!prepared.ok) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: Object.values(prepared.errors)[0] ?? "Please check the details you entered.",
+        });
+      }
+      const held = await db.select({ id: clientContacts.id, phone: clientContacts.phone })
+        .from(clientContacts)
+        .where(and(eq(clientContacts.clientId, clientId), eq(clientContacts.tenantId, tenantId)));
+      if (!canAddPortalContact(held.length)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That's as many contacts as we can hold here. Please ask the salon if one needs changing." });
+      }
+      // The same number twice is a double-tap or a second go at a typo,
+      // not a second person.
+      if (held.some((row: { phone: string }) => normaliseAustralianPhoneForStorage(row.phone) === prepared.value.phone)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That number is already one of your contacts." });
+      }
+      const [result] = await db.insert(clientContacts).values({
+        tenantId,
+        clientId,
+        name: prepared.value.name,
+        phone: prepared.value.phone,
+        relationship: prepared.value.relationship,
+      });
+      return { saved: true, id: Number((result as any).insertId) };
+    }),
+
+  updateMyContact: publicProcedure
+    .input(z.object({
+      contactId: z.number().int().positive(),
+      name: z.string().max(400),
+      phone: z.string().max(60),
+      relationship: z.string().max(200).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
+      // Every contact this client holds, by the session's client: somebody
+      // else's contact id is simply not among them, and reads as not
+      // found, the same as one that never existed.
+      const held = await db.select({ id: clientContacts.id, phone: clientContacts.phone })
+        .from(clientContacts)
+        .where(and(eq(clientContacts.clientId, clientId), eq(clientContacts.tenantId, tenantId)));
+      const contact = held.find((row: { id: number }) => row.id === input.contactId);
+      if (!contact) throw new TRPCError({ code: "NOT_FOUND", message: "We couldn't find that contact. Please refresh and try again." });
+      // A number the client did not change is kept as the salon holds it,
+      // whatever its shape. See prepareClientContact.
+      const prepared = prepareClientContact(input, { storedPhone: contact.phone });
+      if (!prepared.ok) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: Object.values(prepared.errors)[0] ?? "Please check the details you entered.",
+        });
+      }
+      const newNumber = normaliseAustralianPhoneForStorage(prepared.value.phone);
+      if (held.some((row: { id: number; phone: string }) => row.id !== contact.id && normaliseAustralianPhoneForStorage(row.phone) === newNumber)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That number is already one of your contacts." });
+      }
+      await db.update(clientContacts)
+        .set({ name: prepared.value.name, phone: prepared.value.phone, relationship: prepared.value.relationship })
+        .where(and(
+          eq(clientContacts.id, contact.id),
+          eq(clientContacts.clientId, clientId),
+          eq(clientContacts.tenantId, tenantId),
+        ));
+      return { saved: true };
+    }),
+
+  /**
+   * A client taking one of their own contacts off.
+   *
+   * The same two steps as clients.removeContact, in one transaction:
+   * UPCOMING bookings pointing at the contact are released back to the
+   * client, then the row goes. Past bookings keep their id on purpose —
+   * clearing it would say the client collected a dog somebody else did,
+   * and the read helpers already tolerate a contact that has gone.
+   *
+   * Every statement carries the session's client and tenant, so a
+   * contact id belonging to anyone else reads as not found and touches
+   * nothing.
+   */
+  removeMyContact: publicProcedure
+    .input(z.object({ contactId: z.number().int().positive() }))
+    .mutation(async ({ input, ctx }) => {
+      const { db, clientId, tenantId } = await requireSignedInPortalClient(ctx.req);
+      const [contact] = await db.select({ id: clientContacts.id })
+        .from(clientContacts)
+        .where(and(
+          eq(clientContacts.id, input.contactId),
+          eq(clientContacts.clientId, clientId),
+          eq(clientContacts.tenantId, tenantId),
+        ))
+        .limit(1);
+      if (!contact) throw new TRPCError({ code: "NOT_FOUND", message: "We couldn't find that contact. Please refresh and try again." });
+      await db.transaction(async (tx) => {
+        await tx.update(appointments)
+          .set({ contactId: null, updatedAt: new Date() })
+          .where(and(
+            eq(appointments.contactId, contact.id),
+            eq(appointments.clientId, clientId),
+            eq(appointments.tenantId, tenantId),
+            gte(appointments.scheduledStart, new Date()),
+          ));
+        await tx.delete(clientContacts)
+          .where(and(
+            eq(clientContacts.id, contact.id),
+            eq(clientContacts.clientId, clientId),
+            eq(clientContacts.tenantId, tenantId),
+          ));
+      });
+      return { removed: true };
     }),
 
   cancelAppointment: publicProcedure
