@@ -5627,7 +5627,7 @@ export default function Calendar() {
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-1 text-xs">Move that booking to this time to bring the dogs back together. Adding the dog again would book it twice.</p>
+                  <p className="mt-1 text-xs">If the dogs should be together, move that booking to this time. Adding the dog again would book it twice.</p>
                 </div>
               );
             })()}
