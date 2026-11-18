@@ -1588,6 +1588,9 @@ export default function Calendar() {
   const preservesCancelledSchedule = preservesOriginalSchedule(editAppt, editForm.workflowState);
   // Per-pet groomer overrides for multi-pet sessions: { [appointmentId]: staffId }
   const [siblingGroomers, setSiblingGroomers] = useState<Record<number, string>>({});
+  /* Whether changing the day or time takes the other dogs on the booking
+     along. On by default: Lauren, 18/11/2026, "it just moves one dog". */
+  const [moveWholeBooking, setMoveWholeBooking] = useState(true);
   // Per-pet price overrides for multi-pet sessions: { [appointmentId]: price string }
   const [siblingPrices, setSiblingPrices] = useState<Record<number, string>>({});
   // Per-pet service overrides for multi-pet sessions: { [appointmentId]: serviceType }
@@ -2072,8 +2075,20 @@ export default function Calendar() {
       scheduledStart: dragSchedule.scheduledStartIso,
       scheduledEnd:   dragSchedule.scheduledEndIso,
       staffId: nextStaffId,
+      // A dragged dog takes the rest of its booking with it. The server
+      // only moves dogs still at the same start, so dropping into another
+      // groomer's column at the same time moves nobody else.
+      withBooking: getSiblings(appt).length > 0,
     }, {
-      onSuccess: () => { toast.success("Appointment moved"); refetch(); },
+      onSuccess: (result) => {
+        // Only say the others moved when the time really changed: a drop
+        // into another groomer's column at the same time moves nobody.
+        const timeChanged = new Date(appt.scheduledStart).getTime() !== parseBrisbaneLocalDateTime(dragSchedule.scheduledStartIso).getTime();
+        toast.success(timeChanged && result.movedWith > 0
+          ? `Appointment moved, with ${result.movedWith} other dog${result.movedWith === 1 ? "" : "s"} on the booking`
+          : "Appointment moved");
+        refetch();
+      },
       onError: (err) => toast.error(err.message),
     });
 
@@ -3092,6 +3107,7 @@ export default function Calendar() {
     setEditRepeat({ enabled: false, frequencyWeeks: "4", endKind: "count", sessions: "6", untilDate: "" });
     setSelectedStylePetId(null);
     setSiblingGroomers({});
+    setMoveWholeBooking(true);
     setSiblingPrices({});
     setSiblingServices({});
     setSkippedRepeat([]);
@@ -3123,6 +3139,7 @@ export default function Calendar() {
       siblings,
       pickedGroomers: siblingGroomers,
       form: { staffId: editForm.staffId, scheduledStart: editForm.scheduledStart, scheduledEnd: editForm.scheduledEnd },
+      moveWholeBooking,
     });
 
     // Asked before the clash and long-day warnings.
@@ -3172,7 +3189,21 @@ export default function Calendar() {
     }
 
     const promises: Promise<unknown>[] = [];
-    for (const call of rescheduleCalls) {
+    // The first dog's call goes alone and is waited for when it takes the
+    // booking with it: the server works out the one text for the family
+    // from where every dog is AFTER the move, and a sibling's own call
+    // landing in the middle could be told about the same day twice.
+    const [firstCall, ...laterCalls] = rescheduleCalls;
+    if (firstCall?.withBooking) {
+      try {
+        await rescheduleMutation.mutateAsync(firstCall);
+      } catch {
+        return; // the mutation's own onError has already said why
+      }
+    } else if (firstCall) {
+      promises.push(rescheduleMutation.mutateAsync(firstCall));
+    }
+    for (const call of laterCalls) {
       promises.push(rescheduleMutation.mutateAsync(call));
     }
     // For multi-pet sessions, per-dog price and service come from the sibling
@@ -6171,6 +6202,31 @@ export default function Calendar() {
                     <DateTimeField aria-label="Ends" value={editForm.scheduledEnd} fallbackDate={editForm.scheduledStart?.slice(0, 10)} disabled={preservesCancelledSchedule} onChange={next => setEditForm(p => ({ ...p, scheduledEnd: next }))} />
                   </div>
                 </div>
+                {(() => {
+                  // Only dogs the server will actually move: still to
+                  // arrive. One already checked in stays where it is.
+                  const movable = getSiblings(editAppt).filter(pet => pet.workflowState === "scheduled");
+                  if (!editRepeatStartDirty || preservesCancelledSchedule || movable.length === 0) return null;
+                  const names = movable.map(pet => pet.petName).join(", ");
+                  return (
+                    <label className="flex items-start gap-2 rounded-lg border bg-muted/40 p-2.5 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 rounded accent-primary"
+                        checked={moveWholeBooking}
+                        onChange={(event) => setMoveWholeBooking(event.target.checked)}
+                      />
+                      <span>
+                        <span className="font-medium">Move all {1 + movable.length} dogs on this booking</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {moveWholeBooking
+                            ? `${names} will move too.`
+                            : `Only ${editAppt.petName} will move. ${names} will stay where they are.`}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })()}
                 {(blockingClashes(editClashes).length > 0 || editMoveCapacityWarning) && (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
                     {blockingClashes(editClashes).length > 0 && (

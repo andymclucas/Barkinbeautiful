@@ -48,4 +48,33 @@ describe("saving each dog's groomer on a booking", () => {
     const calls = familyRescheduleCalls({ primary: trixie, siblings: [late], pickedGroomers: { [late.id]: "11" }, form: movedForm });
     expect(calls[1]).toMatchObject({ scheduledStart: "2026-11-12T11:30", scheduledEnd: "2026-11-12T12:30" });
   });
+
+  it("takes the other dogs along when the first dog's day or time changes", () => {
+    const later = { ...form, scheduledStart: "2026-11-13T09:30", scheduledEnd: "2026-11-13T11:30" };
+    const calls = familyRescheduleCalls({ primary: trixie, siblings: [teddy], pickedGroomers: {}, form: later });
+    expect(calls).toEqual([
+      { appointmentId: trixie.id, scheduledStart: later.scheduledStart, scheduledEnd: later.scheduledEnd, staffId: 5, withBooking: true },
+    ]);
+  });
+
+  it("moves the first dog alone when staff untick moving the whole booking", () => {
+    const later = { ...form, scheduledStart: "2026-11-13T09:30", scheduledEnd: "2026-11-13T11:30" };
+    const calls = familyRescheduleCalls({ primary: trixie, siblings: [teddy], pickedGroomers: {}, form: later, moveWholeBooking: false });
+    expect(calls[0].withBooking).toBeUndefined();
+  });
+
+  it("does not ask for the booking to move when only the groomer changed, or the dog is alone", () => {
+    expect(familyRescheduleCalls({ primary: trixie, siblings: [teddy], pickedGroomers: { [trixie.id]: "11" }, form })[0].withBooking).toBeUndefined();
+    const later = { ...form, scheduledStart: "2026-11-13T09:30", scheduledEnd: "2026-11-13T11:30" };
+    expect(familyRescheduleCalls({ primary: trixie, siblings: [], pickedGroomers: {}, form: later })[0].withBooking).toBeUndefined();
+  });
+
+  it("leaves a sibling on its own time when the first dog moves alone, even if its groomer changed", () => {
+    const later = { ...form, scheduledStart: "2026-11-13T09:30", scheduledEnd: "2026-11-13T11:30" };
+    const stay = familyRescheduleCalls({ primary: trixie, siblings: [teddy], pickedGroomers: { [teddy.id]: "11" }, form: later, moveWholeBooking: false });
+    const untouched = familyRescheduleCalls({ primary: trixie, siblings: [teddy], pickedGroomers: { [teddy.id]: "11" }, form });
+    // Same times as a save that moved nothing; only the groomer is new.
+    expect(stay[1]).toEqual(untouched[1]);
+    expect(stay[1].staffId).toBe(11);
+  });
 });
