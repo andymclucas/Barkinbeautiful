@@ -113,6 +113,7 @@ import { PaymentStamp } from "@/components/PaymentStamp";
 import { VipMark } from "@/components/VipMark";
 import { showsMembershipMark } from "@shared/membershipMark";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
+import { skippedOccurrenceMessages } from "@shared/recurringSkipped";
 import { liveSiblings, sameColumnSiblings, columnCardMembers } from "@shared/bookingSiblings";
 import { splitAppointmentsByTime } from "@shared/appointmentHistorySplit";
 import {
@@ -307,6 +308,9 @@ function dayDateKey(localMidnight: Date): string {
 function fmtTime(date: Date) {
   return formatAestTime(date, undefined, getActiveTimeZone());
 }
+
+const fmtSkippedDay = (when: Date | string) =>
+  formatAestDate(when, { weekday: "short", day: "numeric", month: "short" });
 
 function fmtDateShort(date: Date) {
   return formatAestDate(date, { weekday: "short", day: "numeric", month: "short" });
@@ -2887,14 +2891,12 @@ export default function Calendar() {
        * Separate toast rather than appended, because a skipped booking
        * is not part of a success — somebody has to go and rebook it.
        */
-      if (r.skipped.length > 0) {
-        const when = r.skipped
-          .map(s => formatAestDate(s.scheduledStart, { weekday: "short", day: "numeric", month: "short" }))
-          .join(", ");
-        toast.warning(
-          `Not booked — the groomer is already busy: ${when}. Rebook ${r.skipped.length === 1 ? "it" : "them"} at another time or with someone else.`,
-          { duration: 15000 },
-        );
+      /* The server's own reason for each date. This toast used to say
+         "the groomer is already busy" whatever the reason was, which sent
+         Lauren looking at the groomer when the dogs were simply already
+         booked on those days (19/11/2026). */
+      for (const message of skippedOccurrenceMessages(r.skipped, fmtSkippedDay)) {
+        toast.warning(message, { duration: 15000 });
       }
       setShowNewAppt(false);
       setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" });
@@ -3018,13 +3020,8 @@ export default function Calendar() {
            the dog is already in that day, or the date has passed — and
            printing "the groomer is already busy" over all of them sends
            somebody looking at the wrong thing. */
-        const byReason = new Map<string, string[]>();
-        for (const x of r.skipped) {
-          const when = formatAestDate(x.scheduledStart, { weekday: "short", day: "numeric", month: "short" });
-          byReason.set(x.reason, [...(byReason.get(x.reason) ?? []), when]);
-        }
-        for (const [reason, dates] of byReason) {
-          toast.warning(`Not booked — ${reason.toLowerCase()}: ${dates.join(", ")}.`, { duration: 15000 });
+        for (const message of skippedOccurrenceMessages(r.skipped, fmtSkippedDay)) {
+          toast.warning(message, { duration: 15000 });
         }
       }
       if (r.truncated) {
