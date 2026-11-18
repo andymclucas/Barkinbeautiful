@@ -16268,7 +16268,7 @@ const clientPortalRouter = router({
             expiresAt: setup.expiresAt,
             agreementTitles: pending.map((a) => a.title),
           });
-          emailSent = await sendEmail({ to: loginEmail, subject: invite.subject, html: invite.html, replyTo: salon?.email ?? null });
+          emailSent = await sendEmail({ to: loginEmail, subject: invite.subject, html: invite.html, fromName: salon?.name ?? null, replyTo: salon?.email ?? null });
         }
       }
 
@@ -16755,7 +16755,7 @@ const clientPortalRouter = router({
             wasReset: client.portalAccountStatus === "active",
           });
           const { sendEmail } = await import("./email");
-          await sendEmail({ to: loginEmail, subject: allSet.subject, html: allSet.html, replyTo: salon?.email ?? null });
+          await sendEmail({ to: loginEmail, subject: allSet.subject, html: allSet.html, fromName: salon?.name ?? null, replyTo: salon?.email ?? null });
         })().catch((error: unknown) => console.error("[portal] all-set email failed", error));
       }
       await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion + 1 });
@@ -16819,7 +16819,7 @@ const clientPortalRouter = router({
         code,
       });
       const { sendEmail } = await import("./email");
-      await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, replyTo: salon?.email ?? null })
+      await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, fromName: salon?.name ?? null, replyTo: salon?.email ?? null })
         .catch((error: unknown) => { console.error("[portal] sign-in link email failed", error); return false; });
       return answer;
     }),
@@ -16967,9 +16967,9 @@ const clientPortalRouter = router({
 
       const resetUrl = `${getPortalBaseUrl()}/portal/setup/${setup.token}`;
       const email = portalPasswordResetEmail({ firstName: client.firstName, resetUrl, expiresAt });
-      const [salon] = await db.select({ email: tenants.email }).from(tenants).where(eq(tenants.id, client.tenantId)).limit(1);
+      const [salon] = await db.select({ name: tenants.name, email: tenants.email }).from(tenants).where(eq(tenants.id, client.tenantId)).limit(1);
       const { sendEmail } = await import("./email");
-      await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, replyTo: salon?.email ?? null })
+      await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, fromName: salon?.name ?? null, replyTo: salon?.email ?? null })
         .catch((error: unknown) => { console.error("[portal] self-service reset email failed", error); return false; });
       return answer;
     }),

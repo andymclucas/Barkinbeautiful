@@ -260,7 +260,7 @@ export function runPortalInviteCampaign(
   db: any,
   campaignId: number,
   tenantId: number,
-  sendEmail: (args: { to: string; subject: string; html: string; replyTo?: string | null }) => Promise<boolean | { ok: boolean; id: string | null }>,
+  sendEmail: (args: { to: string; subject: string; html: string; fromName?: string | null; replyTo?: string | null }) => Promise<boolean | { ok: boolean; id: string | null }>,
   wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
 ): boolean {
   if (running.has(campaignId)) return false;
@@ -281,7 +281,7 @@ async function processCampaign(
   db: any,
   campaignId: number,
   tenantId: number,
-  sendEmail: (args: { to: string; subject: string; html: string; replyTo?: string | null }) => Promise<boolean | { ok: boolean; id: string | null }>,
+  sendEmail: (args: { to: string; subject: string; html: string; fromName?: string | null; replyTo?: string | null }) => Promise<boolean | { ok: boolean; id: string | null }>,
   wait: (ms: number) => Promise<void>,
 ) {
   // Rows claimed by a run that died: not known whether they went.
@@ -334,7 +334,7 @@ async function processCampaign(
         });
         // The live sender returns Resend's id with the result; older or
         // test senders return a bare boolean.
-        const sentResult = await sendEmail({ to: row.email, subject: email.subject, html: email.html, replyTo: tenant?.email ?? null });
+        const sentResult = await sendEmail({ to: row.email, subject: email.subject, html: email.html, fromName: tenant?.name ?? null, replyTo: tenant?.email ?? null });
         const ok = typeof sentResult === "boolean" ? sentResult : sentResult.ok;
         resendMessageId = typeof sentResult === "boolean" ? null : sentResult.id;
         if (ok) status = "sent";
