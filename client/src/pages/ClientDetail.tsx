@@ -20,7 +20,7 @@ import { PetEditorDialog, type EditablePet } from "@/components/PetEditorDialog"
 import type { PassingReview } from "@shared/petPassingReview";
 import { describeCancelledBookings } from "@shared/petPassingBookings";
 import { companionsOf, joinNames } from "@shared/familyBookingRows";
-import { billedTogetherWith, familyBillingOffer, formatCents, groupPayments } from "@shared/familyBilling";
+import { billedTogetherWith, familyBillingOffer, formatCents, groupPayments, isSetupRow, paymentStatusLabel } from "@shared/familyBilling";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
   needsPaymentRetry, suspendedForPayment,
@@ -2988,12 +2988,14 @@ export default function ClientDetail() {
                       </td>
                       <td className="p-3">
                         <Badge className={
+                          // The $0.00 set-up row is not money in: grey, not green.
+                          isSetupRow(p.status, p.totalCents) ? "bg-muted text-muted-foreground border-border" :
                           p.status === "paid" ? "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50" :
                           p.status === "failed" ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 border-red-200 dark:border-red-900/50" :
                           p.status === "refunded" ? "bg-blue-100 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-900/50" :
                           "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900/50"
                         } variant="outline">
-                          {p.status === "paid" ? "✓ Paid" : p.status === "failed" ? "✗ Failed" : p.status}
+                          {paymentStatusLabel(p.status, p.totalCents)}
                         </Badge>
                       </td>
                       <td className="p-3 text-right font-medium tabular-nums">{formatCents(p.totalCents)}</td>
