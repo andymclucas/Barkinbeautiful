@@ -10,6 +10,8 @@ import { DateField } from "@/components/DateField";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTimezone } from "@/lib/timezone";
+import { prepaidBlockLabel, prepaidBlockUsable } from "@shared/prepaidGrooms";
+import { serviceLabel } from "@shared/serviceTypes";
 
 /** Prepaid blocks of grooms: what is left, and selling another. */
 export function ClientPackagesPanel({ clientId }: { clientId: number }) {
@@ -35,26 +37,21 @@ export function ClientPackagesPanel({ clientId }: { clientId: number }) {
         {owned?.map(pkg => {
           // Expiry is worked out on read, so a package that lapsed last
           // night reads as expired this morning without anything running.
-          const spent = pkg.creditsLeft <= 0;
-          const dead = pkg.expired || spent || pkg.status === "cancelled";
+          const dead = !prepaidBlockUsable(pkg);
           return (
-            <div key={pkg.id} className={`rounded-lg border p-3 ${dead ? "opacity-60" : ""}`}>
+            <div key={pkg.id} className={`rounded-lg border p-3 ${dead ? "opacity-70" : ""}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <PackageOpen className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">{pkg.packageName}</span>
                 </div>
-                <Badge variant={dead ? "outline" : "secondary"}>
-                  {pkg.status === "cancelled" ? "Cancelled"
-                    : spent ? "All used"
-                    : pkg.expired ? "Expired"
-                    : `${pkg.creditsLeft} of ${pkg.creditsTotal} left`}
-                </Badge>
+                <Badge variant={dead ? "outline" : "secondary"}>{prepaidBlockLabel(pkg)}</Badge>
               </div>
               <p className="mt-1.5 text-xs text-muted-foreground">
-                ${Number(pkg.pricePaid).toFixed(2)} · bought {tz.date(pkg.purchasedAt)}
+                ${Number(pkg.pricePaid).toFixed(2)} · paid {tz.date(pkg.purchasedAt)}
                 {pkg.expiresAt ? ` · ${pkg.expired ? "expired" : "expires"} ${tz.date(pkg.expiresAt)}` : " · no expiry"}
               </p>
+              <PrepaidGrooms clientId={clientId} clientPackageId={pkg.id} usable={!dead} />
             </div>
           );
         })}
@@ -85,8 +82,139 @@ export function ClientPackagesPanel({ clientId }: { clientId: number }) {
         {!catalogue?.length && (
           <p className="text-xs text-muted-foreground">No packages are set up to sell yet.</p>
         )}
+        <AddPrepaidBlock clientId={clientId} />
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The grooms on one prepaid block: which bookings have been counted off
+ * it, and a button to count the next one (shared/prepaidGrooms.ts).
+ */
+function PrepaidGrooms({ clientId, clientPackageId, usable }: { clientId: number; clientPackageId: number; usable: boolean }) {
+  const tz = useTimezone();
+  const utils = trpc.useUtils();
+  const { data } = trpc.packages.grooms.useQuery({ clientPackageId });
+  const refresh = () => {
+    utils.packages.grooms.invalidate({ clientPackageId });
+    utils.packages.forClient.invalidate({ clientId });
+  };
+  const count = trpc.packages.redeem.useMutation({ onSuccess: refresh, onError: (e) => toast.error(e.message) });
+  const undo = trpc.packages.unredeem.useMutation({ onSuccess: refresh, onError: (e) => toast.error(e.message) });
+  if (!data) return null;
+  const busy = count.isPending || undo.isPending;
+  const line = (a: { petName: string | null; scheduledStart: Date | string; serviceType: string }) =>
+    `${a.petName ?? "Dog"}, ${tz.date(a.scheduledStart)} · ${serviceLabel(a.serviceType)}`;
+  return (
+    <div className="mt-2 space-y-2 text-xs">
+      {data.counted.length > 0 && (
+        <div>
+          <p className="font-medium text-muted-foreground">Grooms used</p>
+          <ul className="mt-1 space-y-1">
+            {data.counted.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>{line(a)}</span>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={busy}
+                  onClick={() => undo.mutate({ clientPackageId, appointmentId: a.id })}>
+                  Take off
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {usable && data.available.length > 0 && (
+        <div>
+          <p className="font-medium text-muted-foreground">Count a groom against a booking</p>
+          <ul className="mt-1 space-y-1">
+            {data.available.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>{line(a)}</span>
+                <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={busy}
+                  onClick={() => count.mutate({ clientPackageId, appointmentId: a.id })}>
+                  Use one
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Record grooms a client paid for up front: how many, how much, and when
+ * the money arrived. For the clients who bank-transfer a year in advance
+ * (Lauren, 19/11/2026). It records the payment; it does not take one.
+ */
+function AddPrepaidBlock({ clientId }: { clientId: number }) {
+  const utils = trpc.useUtils();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [grooms, setGrooms] = useState("");
+  const [amount, setAmount] = useState("");
+  const [paidOn, setPaidOn] = useState("");
+  const [expiresOn, setExpiresOn] = useState("");
+  const add = trpc.packages.addPrepaid.useMutation({
+    onSuccess: () => {
+      toast.success("Prepaid grooms recorded");
+      setOpen(false); setName(""); setGrooms(""); setAmount(""); setPaidOn(""); setExpiresOn("");
+      utils.packages.forClient.invalidate({ clientId });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  if (!open) {
+    return (
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>Record prepaid grooms</Button>
+    );
+  }
+  const groomCount = Number(grooms);
+  const amountPaid = Number(amount);
+  const ready = name.trim() !== "" && Number.isInteger(groomCount) && groomCount > 0 && amount.trim() !== "" && Number.isFinite(amountPaid) && amountPaid >= 0;
+  return (
+    <div className="space-y-2 rounded-lg border border-dashed p-3">
+      <p className="text-sm font-medium">Record prepaid grooms</p>
+      <p className="text-xs text-muted-foreground">
+        For grooms already paid for another way, such as a bank transfer. This records it; nothing is charged.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-1 sm:col-span-2">
+          <Label className="text-xs text-muted-foreground" htmlFor="prepaid-name">What it is</Label>
+          <Input id="prepaid-name" className="h-9" placeholder="Silver membership, paid for the year" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label className="text-xs text-muted-foreground" htmlFor="prepaid-grooms">Number of grooms</Label>
+          <Input id="prepaid-grooms" className="h-9" inputMode="numeric" value={grooms} onChange={(e) => setGrooms(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label className="text-xs text-muted-foreground" htmlFor="prepaid-amount">Amount paid ($)</Label>
+          <Input id="prepaid-amount" className="h-9" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <Label className="text-xs text-muted-foreground">Date paid</Label>
+          <DateField value={paidOn} onChange={setPaidOn} />
+        </div>
+        <div className="grid gap-1">
+          <Label className="text-xs text-muted-foreground">Expires (optional)</Label>
+          <DateField value={expiresOn} onChange={setExpiresOn} />
+        </div>
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button
+          size="sm"
+          disabled={!ready || add.isPending}
+          onClick={() => add.mutate({
+            clientId, name: name.trim(), grooms: groomCount, amountPaid,
+            paidOn: paidOn || undefined, expiresOn: expiresOn || undefined,
+          })}
+        >
+          {add.isPending ? "Saving…" : "Record"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

@@ -626,7 +626,11 @@ describe("tRPC procedure surface", () => {
     // giving a salon that signed itself up a price list to start from.
     // Both adminProcedure AND platform-administrator inside
     // (isPlatformAdmin) — a self-signed-up salon's owner is an admin too.
-    expect(surface).toHaveLength(455);
+    // 458 since 19/11/2026: packages.addPrepaid, packages.grooms and
+    // packages.unredeem, for grooms a client paid for up front (a bank
+    // transfer for the year) and counting them off bookings. All three
+    // protectedProcedure, like the rest of the packages router.
+    expect(surface).toHaveLength(458);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
