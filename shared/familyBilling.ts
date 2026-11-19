@@ -290,3 +290,26 @@ export function groupPayments(rows: readonly PaymentRow[]): PaymentGroup[] {
   }
   return groups;
 }
+
+/**
+ * What a payment row says in its status badge.
+ *
+ * Lauren, 19/11/2026: "payment was meant to come out today. I set it up
+ * yesturday. why does it say $0 and then failed today?" Starting a
+ * membership with its first charge on a later day makes Stripe raise a
+ * $0.00 invoice straight away and mark it paid. Groomigo records that row,
+ * and showed it as "✓ Paid $0.00": a payment that never happened, sitting
+ * above the real one that failed.
+ *
+ * A paid row of nothing is the set-up, not a payment, and says so.
+ */
+export function paymentStatusLabel(status: string | null | undefined, totalCents: number): string {
+  if (status === "paid") return totalCents === 0 ? "Set up · nothing charged" : "✓ Paid";
+  if (status === "failed") return "✗ Failed";
+  return status ?? "";
+}
+
+/** True for the $0.00 set-up row, so it can be drawn quietly rather than as money in. */
+export function isSetupRow(status: string | null | undefined, totalCents: number): boolean {
+  return status === "paid" && totalCents === 0;
+}
