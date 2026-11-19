@@ -6893,6 +6893,67 @@ export default function Calendar() {
                     </div>
                   )}
                 </div>
+                {/* History first, the form for a new card below it. Lauren,
+                    19/11/2026: "can I move the last groom history up the top then
+                    the new area down below.. cause I'm finding the groomers keep
+                    putting in the notes (or slack and dont) when It could display
+                    their last groom notes more clearly being up the top." The form
+                    used to come first, so the last groom's notes sat below a
+                    screen of blank boxes. */}
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-1">Full style history</p>
+                  {styleNotes.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+                  {(styleNotes.data ?? []).length === 0 && !styleNotes.isLoading && <p className="text-xs text-muted-foreground text-center py-4">No style cards yet</p>}
+                  {(styleNotes.data ?? []).map(n => (
+                    <div key={n.id} className={`rounded-lg border bg-card p-3 text-xs space-y-2 ${(n as any).alertLevel === "danger" ? "border-red-400" : (n as any).alertLevel === "caution" ? "border-amber-400" : ""}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-muted-foreground">{new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}{n.staffName ? ` · ${n.staffName}` : ""}</span>
+                          {(n as any).serviceType && <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 capitalize">{(n as any).serviceType.replace("_"," ")}</span>}
+                          {(n as any).alertLevel === "danger" && <span className="bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 rounded px-1.5 py-0.5 font-semibold">🔴 Danger</span>}
+                          {(n as any).alertLevel === "caution" && <span className="bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1.5 py-0.5 font-semibold">⚠ Caution</span>}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button className="text-xs text-primary hover:underline" onClick={() => { setStyleNoteForm(styleDraftFromNote(n)); setPhotoPreview(n.photoUrl ?? null); toast.success("Style loaded — edit and save as new"); }}>↩ Use</button>
+                          <button className="text-muted-foreground hover:text-red-500 ml-1" onClick={() => setConfirmDelete({ type: "styleNote", id: n.id, label: new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" }) })}><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </div>
+                      {(n as any).warnings && <div className={`rounded px-2 py-1 text-xs ${(n as any).alertLevel === "danger" ? "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300" : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300"}`}><span className="font-semibold">⚠ </span>{(n as any).warnings}</div>}
+                      <div className="flex flex-wrap gap-1">
+                        {n.bladeSize && <span className="bg-muted rounded px-1.5 py-0.5">Blade: {n.bladeSize}</span>}
+                        {(n as any).combSize && <span className="bg-muted rounded px-1.5 py-0.5">Comb: {(n as any).combSize}</span>}
+                        {n.bodyLength && <span className="bg-muted rounded px-1.5 py-0.5">Body: {n.bodyLength}</span>}
+                        {(n as any).headStyle && <span className="bg-muted rounded px-1.5 py-0.5">Head: {(n as any).headStyle}</span>}
+                        {n.faceStyle && <span className="bg-muted rounded px-1.5 py-0.5">Face: {n.faceStyle}</span>}
+                        {n.earStyle && <span className="bg-muted rounded px-1.5 py-0.5">Ears: {n.earStyle}</span>}
+                        {(n as any).legStyle && <span className="bg-muted rounded px-1.5 py-0.5">Legs: {(n as any).legStyle}</span>}
+                        {n.tailStyle && <span className="bg-muted rounded px-1.5 py-0.5">Tail: {n.tailStyle}</span>}
+                      </div>
+                      <p className="text-foreground">{n.note}</p>
+                      {n.photoUrl && <a href={n.photoUrl} target="_blank" rel="noopener noreferrer"><img src={n.photoUrl} alt="style ref" className="mt-1.5 h-20 w-20 rounded-lg object-cover border hover:opacity-80 transition-opacity" /></a>}
+                    </div>
+                  ))}
+                </div>
+                {(styleNotes.data ?? []).length > 0 && (
+                  <div className="flex justify-end pt-1">
+                    <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => {
+                      const notes = styleNotes.data ?? [];
+                      const activePetId = styleTargetPetId ?? editAppt.petId;
+                      const allPets = [editAppt, ...editSiblings];
+                      const activePet = allPets.find(p => p.petId === activePetId);
+                      const petName = activePet?.petName ?? editAppt.petName ?? "Pet";
+                      const clientName = [editAppt?.clientFirstName, editAppt?.clientLastName].filter(Boolean).join(" ");
+                      const biz = tenantInfo;
+                      const logoAbsUrl = biz?.logoUrl ? (biz.logoUrl.startsWith("/") ? `${window.location.origin}${biz.logoUrl}` : biz.logoUrl) : null;
+                      const html = `<!DOCTYPE html><html><head><title>Groom Style — ${petName}</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111}.header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #e5e7eb;padding-bottom:16px;margin-bottom:20px}.header-left{display:flex;align-items:center;gap:14px}.header-logo{height:52px;width:auto;object-fit:contain}.biz-name{font-size:16px;font-weight:700;margin:0 0 3px}.biz-contact{font-size:11px;color:#666;line-height:1.6}.header-right{text-align:right;font-size:11px;color:#888}.header-right strong{display:block;font-size:14px;color:#111;font-weight:600}.card{border:1px solid #ddd;border-radius:6px;padding:12px 16px;margin-bottom:12px;page-break-inside:avoid}.card.danger{border-color:#f87171}.card.caution{border-color:#fbbf24}.meta{font-size:11px;color:#888;margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap}.badge{background:#f0f0f0;border-radius:4px;padding:2px 8px;font-size:11px}.badge.alert-danger{background:#fee2e2;color:#b91c1c}.badge.alert-caution{background:#fef3c7;color:#92400e}.warning-box{background:#fef3c7;border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:12px;color:#92400e}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tag{background:#f0f0f0;border-radius:4px;padding:2px 8px;font-size:11px}.body{font-size:13px}@media print{body{margin:16px}}</style></head><body><div class="header"><div class="header-left">${logoAbsUrl ? `<img src="${logoAbsUrl}" class="header-logo" alt="logo" />` : ""}<div><p class="biz-name">${biz?.name ?? "Grooming Salon"}</p><div class="biz-contact">${biz?.phone ? `<span>${biz.phone}</span><br/>` : ""}${biz?.email ? `<span>${biz.email}</span><br/>` : ""}${biz?.address ? `<span>${biz.address}</span>` : ""}</div></div></div><div class="header-right"><strong>Groom Style History</strong>${clientName}<br/>${petName}<br/>Printed ${new Date().toLocaleDateString("en-AU",{ timeZone: getActiveTimeZone(),day:"numeric",month:"long",year:"numeric"})}</div></div>${notes.map(n=>`<div class="card${(n as any).alertLevel==="danger"?" danger":(n as any).alertLevel==="caution"?" caution":""}"><div class="meta"><span>${new Date(n.createdAt).toLocaleDateString("en-AU",{ timeZone: getActiveTimeZone(),day:"numeric",month:"short",year:"numeric"})}${n.staffName?` · ${n.staffName}`:""}</span>${(n as any).serviceType?`<span class="badge">${(n as any).serviceType.replace("_"," ")}</span>`:""} ${(n as any).alertLevel==="danger"?`<span class="badge alert-danger">🔴 Danger</span>`:(n as any).alertLevel==="caution"?`<span class="badge alert-caution">⚠ Caution</span>`:""}</div>${(n as any).warnings?`<div class="warning-box">⚠ ${(n as any).warnings}</div>`:""}<div class="tags">${[n.bladeSize&&`<span class="tag">Blade: ${n.bladeSize}</span>`,(n as any).combSize&&`<span class="tag">Comb: ${(n as any).combSize}</span>`,n.bodyLength&&`<span class="tag">Body: ${n.bodyLength}</span>`,(n as any).headStyle&&`<span class="tag">Head: ${(n as any).headStyle}</span>`,n.faceStyle&&`<span class="tag">Face: ${n.faceStyle}</span>`,n.earStyle&&`<span class="tag">Ears: ${n.earStyle}</span>`,(n as any).legStyle&&`<span class="tag">Legs: ${(n as any).legStyle}</span>`,n.tailStyle&&`<span class="tag">Tail: ${n.tailStyle}</span>`].filter(Boolean).join("")}</div><div class="body">${n.note}</div></div>`).join("")}</body></html>`;
+                      const w = window.open("","_blank","width=800,height=600");
+                      if (w){w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),400);}
+                      else toast.error("Pop-up blocked.");
+                    }}><Printer className="h-3 w-3" /> Print / Save as PDF</Button>
+                  </div>
+                )}
+                </div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-3">New style card</p>
                 <div className="rounded-lg border p-3 space-y-3 bg-muted/30">
                   <div className="space-y-1">
                     <Label className="text-xs">Service Type</Label>
@@ -6990,59 +7051,6 @@ export default function Calendar() {
                     })}>
                     {createStyleNote.isPending ? "Saving..." : "Save Style Card"}
                   </Button>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-1">Full style history</p>
-                  {styleNotes.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
-                  {(styleNotes.data ?? []).length === 0 && !styleNotes.isLoading && <p className="text-xs text-muted-foreground text-center py-4">No style cards yet</p>}
-                  {(styleNotes.data ?? []).map(n => (
-                    <div key={n.id} className={`rounded-lg border bg-card p-3 text-xs space-y-2 ${(n as any).alertLevel === "danger" ? "border-red-400" : (n as any).alertLevel === "caution" ? "border-amber-400" : ""}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-muted-foreground">{new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}{n.staffName ? ` · ${n.staffName}` : ""}</span>
-                          {(n as any).serviceType && <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 capitalize">{(n as any).serviceType.replace("_"," ")}</span>}
-                          {(n as any).alertLevel === "danger" && <span className="bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 rounded px-1.5 py-0.5 font-semibold">🔴 Danger</span>}
-                          {(n as any).alertLevel === "caution" && <span className="bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded px-1.5 py-0.5 font-semibold">⚠ Caution</span>}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button className="text-xs text-primary hover:underline" onClick={() => { setStyleNoteForm(styleDraftFromNote(n)); setPhotoPreview(n.photoUrl ?? null); toast.success("Style loaded — edit and save as new"); }}>↩ Use</button>
-                          <button className="text-muted-foreground hover:text-red-500 ml-1" onClick={() => setConfirmDelete({ type: "styleNote", id: n.id, label: new Date(n.createdAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" }) })}><Trash2 className="h-3.5 w-3.5" /></button>
-                        </div>
-                      </div>
-                      {(n as any).warnings && <div className={`rounded px-2 py-1 text-xs ${(n as any).alertLevel === "danger" ? "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300" : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300"}`}><span className="font-semibold">⚠ </span>{(n as any).warnings}</div>}
-                      <div className="flex flex-wrap gap-1">
-                        {n.bladeSize && <span className="bg-muted rounded px-1.5 py-0.5">Blade: {n.bladeSize}</span>}
-                        {(n as any).combSize && <span className="bg-muted rounded px-1.5 py-0.5">Comb: {(n as any).combSize}</span>}
-                        {n.bodyLength && <span className="bg-muted rounded px-1.5 py-0.5">Body: {n.bodyLength}</span>}
-                        {(n as any).headStyle && <span className="bg-muted rounded px-1.5 py-0.5">Head: {(n as any).headStyle}</span>}
-                        {n.faceStyle && <span className="bg-muted rounded px-1.5 py-0.5">Face: {n.faceStyle}</span>}
-                        {n.earStyle && <span className="bg-muted rounded px-1.5 py-0.5">Ears: {n.earStyle}</span>}
-                        {(n as any).legStyle && <span className="bg-muted rounded px-1.5 py-0.5">Legs: {(n as any).legStyle}</span>}
-                        {n.tailStyle && <span className="bg-muted rounded px-1.5 py-0.5">Tail: {n.tailStyle}</span>}
-                      </div>
-                      <p className="text-foreground">{n.note}</p>
-                      {n.photoUrl && <a href={n.photoUrl} target="_blank" rel="noopener noreferrer"><img src={n.photoUrl} alt="style ref" className="mt-1.5 h-20 w-20 rounded-lg object-cover border hover:opacity-80 transition-opacity" /></a>}
-                    </div>
-                  ))}
-                </div>
-                {(styleNotes.data ?? []).length > 0 && (
-                  <div className="flex justify-end pt-1">
-                    <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => {
-                      const notes = styleNotes.data ?? [];
-                      const activePetId = styleTargetPetId ?? editAppt.petId;
-                      const allPets = [editAppt, ...editSiblings];
-                      const activePet = allPets.find(p => p.petId === activePetId);
-                      const petName = activePet?.petName ?? editAppt.petName ?? "Pet";
-                      const clientName = [editAppt?.clientFirstName, editAppt?.clientLastName].filter(Boolean).join(" ");
-                      const biz = tenantInfo;
-                      const logoAbsUrl = biz?.logoUrl ? (biz.logoUrl.startsWith("/") ? `${window.location.origin}${biz.logoUrl}` : biz.logoUrl) : null;
-                      const html = `<!DOCTYPE html><html><head><title>Groom Style — ${petName}</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111}.header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #e5e7eb;padding-bottom:16px;margin-bottom:20px}.header-left{display:flex;align-items:center;gap:14px}.header-logo{height:52px;width:auto;object-fit:contain}.biz-name{font-size:16px;font-weight:700;margin:0 0 3px}.biz-contact{font-size:11px;color:#666;line-height:1.6}.header-right{text-align:right;font-size:11px;color:#888}.header-right strong{display:block;font-size:14px;color:#111;font-weight:600}.card{border:1px solid #ddd;border-radius:6px;padding:12px 16px;margin-bottom:12px;page-break-inside:avoid}.card.danger{border-color:#f87171}.card.caution{border-color:#fbbf24}.meta{font-size:11px;color:#888;margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap}.badge{background:#f0f0f0;border-radius:4px;padding:2px 8px;font-size:11px}.badge.alert-danger{background:#fee2e2;color:#b91c1c}.badge.alert-caution{background:#fef3c7;color:#92400e}.warning-box{background:#fef3c7;border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:12px;color:#92400e}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.tag{background:#f0f0f0;border-radius:4px;padding:2px 8px;font-size:11px}.body{font-size:13px}@media print{body{margin:16px}}</style></head><body><div class="header"><div class="header-left">${logoAbsUrl ? `<img src="${logoAbsUrl}" class="header-logo" alt="logo" />` : ""}<div><p class="biz-name">${biz?.name ?? "Grooming Salon"}</p><div class="biz-contact">${biz?.phone ? `<span>${biz.phone}</span><br/>` : ""}${biz?.email ? `<span>${biz.email}</span><br/>` : ""}${biz?.address ? `<span>${biz.address}</span>` : ""}</div></div></div><div class="header-right"><strong>Groom Style History</strong>${clientName}<br/>${petName}<br/>Printed ${new Date().toLocaleDateString("en-AU",{ timeZone: getActiveTimeZone(),day:"numeric",month:"long",year:"numeric"})}</div></div>${notes.map(n=>`<div class="card${(n as any).alertLevel==="danger"?" danger":(n as any).alertLevel==="caution"?" caution":""}"><div class="meta"><span>${new Date(n.createdAt).toLocaleDateString("en-AU",{ timeZone: getActiveTimeZone(),day:"numeric",month:"short",year:"numeric"})}${n.staffName?` · ${n.staffName}`:""}</span>${(n as any).serviceType?`<span class="badge">${(n as any).serviceType.replace("_"," ")}</span>`:""} ${(n as any).alertLevel==="danger"?`<span class="badge alert-danger">🔴 Danger</span>`:(n as any).alertLevel==="caution"?`<span class="badge alert-caution">⚠ Caution</span>`:""}</div>${(n as any).warnings?`<div class="warning-box">⚠ ${(n as any).warnings}</div>`:""}<div class="tags">${[n.bladeSize&&`<span class="tag">Blade: ${n.bladeSize}</span>`,(n as any).combSize&&`<span class="tag">Comb: ${(n as any).combSize}</span>`,n.bodyLength&&`<span class="tag">Body: ${n.bodyLength}</span>`,(n as any).headStyle&&`<span class="tag">Head: ${(n as any).headStyle}</span>`,n.faceStyle&&`<span class="tag">Face: ${n.faceStyle}</span>`,n.earStyle&&`<span class="tag">Ears: ${n.earStyle}</span>`,(n as any).legStyle&&`<span class="tag">Legs: ${(n as any).legStyle}</span>`,n.tailStyle&&`<span class="tag">Tail: ${n.tailStyle}</span>`].filter(Boolean).join("")}</div><div class="body">${n.note}</div></div>`).join("")}</body></html>`;
-                      const w = window.open("","_blank","width=800,height=600");
-                      if (w){w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),400);}
-                      else toast.error("Pop-up blocked.");
-                    }}><Printer className="h-3 w-3" /> Print / Save as PDF</Button>
-                  </div>
-                )}
                 </div>
               </TabsContent>
 
