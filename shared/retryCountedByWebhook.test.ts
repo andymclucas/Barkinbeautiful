@@ -45,3 +45,26 @@ describe("retryWarning", () => {
     expect(retryWarning(3)).toMatch(/already suspended/);
   });
 });
+
+import { invoiceToRetry } from "./stripeBilling";
+
+describe("invoiceToRetry", () => {
+  it("pays the open invoice even when a newer failure has no invoice on it", () => {
+    // Newest first: a hand-recorded failure, then the webhook's row.
+    expect(invoiceToRetry([{ stripeInvoiceId: null }, { stripeInvoiceId: "in_open" }], [])).toBe("in_open");
+  });
+
+  it("does not 'pay' an invoice that has since been paid", () => {
+    expect(invoiceToRetry([{ stripeInvoiceId: null }, { stripeInvoiceId: "in_old" }], ["in_old"])).toBeNull();
+  });
+
+  it("only looks at the newest invoice, not an older one behind it", () => {
+    expect(invoiceToRetry([{ stripeInvoiceId: "in_new" }, { stripeInvoiceId: "in_old" }], ["in_old"])).toBe("in_new");
+    expect(invoiceToRetry([{ stripeInvoiceId: "in_new" }, { stripeInvoiceId: "in_old" }], ["in_new"])).toBeNull();
+  });
+
+  it("has nothing to pay when no failure carries an invoice", () => {
+    expect(invoiceToRetry([{ stripeInvoiceId: null }, {}], [])).toBeNull();
+    expect(invoiceToRetry([], [])).toBeNull();
+  });
+});

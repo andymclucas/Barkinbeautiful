@@ -10276,8 +10276,11 @@ const membershipsRouter = router({
       const lastFailure = new Map<number, { stripeInvoiceId: string | null; failureReason: string | null }>();
       const lastInvoice = new Map<number, string>();
       for (const row of failedRows) {
-        if (!lastFailure.has(row.membershipId)) lastFailure.set(row.membershipId, row);
-        if (row.stripeInvoiceId && !lastInvoice.has(row.membershipId)) lastInvoice.set(row.membershipId, row.stripeInvoiceId);
+        // Only the NEWEST failure: an older invoice's reason beside a newer
+        // strike would be the wrong reason.
+        if (lastFailure.has(row.membershipId)) continue;
+        lastFailure.set(row.membershipId, row);
+        if (row.stripeInvoiceId) lastInvoice.set(row.membershipId, row.stripeInvoiceId);
       }
       const invoiceIds = Array.from(new Set(lastInvoice.values()));
       const reasons = new Map<string, string | null>();

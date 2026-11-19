@@ -369,3 +369,33 @@ export function retryWarning(failedCount: number): string {
   }
   return "If it is declined again that counts as a second failed payment, and a weekly membership is suspended on its second. Check with the client that the money is there first.";
 }
+
+/**
+ * Which Stripe invoice a "retry" should pay, if any.
+ *
+ * The retry used to look only at the NEWEST failed row. A failure typed in
+ * by hand, or a failed direct charge, has no invoice on it, so the newest
+ * row could hide an invoice that was still open in Stripe. The retry would
+ * then charge the card directly, and when Stripe's own scheduled retry paid
+ * the open invoice later the client had paid twice.
+ *
+ * So: the newest failed row that HAS an invoice, unless that invoice has
+ * since been paid. A paid invoice is finished business; "paying" it again
+ * comes back as a success with no money moved, which would mark a
+ * membership active on nothing.
+ *
+ * `failedRows` newest first. Null means there is no open invoice to pay
+ * and a direct charge is the right thing.
+ */
+export function invoiceToRetry(
+  failedRows: ReadonlyArray<{ stripeInvoiceId?: string | null }>,
+  paidInvoiceIds: ReadonlyArray<string | null | undefined>,
+): string | null {
+  const paid = new Set(paidInvoiceIds.filter((id): id is string => Boolean(id)));
+  for (const row of failedRows) {
+    const invoiceId = row.stripeInvoiceId?.trim();
+    if (!invoiceId) continue;
+    return paid.has(invoiceId) ? null : invoiceId;
+  }
+  return null;
+}
