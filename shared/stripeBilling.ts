@@ -298,3 +298,104 @@ export function describeStripeKey(key: string | null | undefined): {
 export function retryCountedByWebhook(openInvoiceId: string | null | undefined): boolean {
   return Boolean(openInvoiceId && openInvoiceId.trim());
 }
+
+/**
+ * Why a membership payment failed, in the words Stripe's own dashboard uses.
+ *
+ * Andy, 19/11/2026, looking at five rows that all said "Card declined":
+ * "Why are these failing?" Every one was insufficient funds, and Groomigo
+ * could not say so: the webhook looks for the decline code on the invoice's
+ * `last_finalization_error`, which Stripe does not fill for a declined
+ * payment. "Pull the data from Stripe for the real reason."
+ *
+ * So the reason is read from the payment itself (its last error) and put
+ * through this. Known codes get plain words; anything else falls back to
+ * the sentence Stripe wrote, which is already meant for a person. Null when
+ * Stripe gave nothing, so the caller keeps whatever it had.
+ *
+ * This is for DISPLAY. It deliberately does not feed `classifyFailure`:
+ * that decides whether a membership is suspended on the spot, and changing
+ * what it sees would change who gets suspended.
+ */
+export type StripeFailureDetail = {
+  /** e.g. "card_declined", "payment_method_provider_decline". */
+  code?: string | null;
+  /** e.g. "insufficient_funds", "expired_card". */
+  declineCode?: string | null;
+  /** Stripe's own sentence. */
+  message?: string | null;
+};
+
+const FAILURE_WORDS: Record<string, string> = {
+  insufficient_funds: "Insufficient funds",
+  expired_card: "The card has expired",
+  incorrect_cvc: "The card's security code was wrong",
+  lost_card: "The card was reported lost",
+  stolen_card: "The card was reported stolen",
+  pickup_card: "The bank has blocked this card",
+  restricted_card: "The bank has restricted this card",
+  do_not_honor: "The bank refused the payment without a reason",
+  generic_decline: "The bank refused the payment without a reason",
+  card_velocity_exceeded: "The card has hit its spending limit",
+  withdrawal_count_limit_exceeded: "The card has hit its spending limit",
+  authentication_required: "The bank wants the client to approve the payment",
+  transaction_not_allowed: "The bank does not allow this kind of payment on the card",
+};
+
+export function describeMembershipFailure(detail: StripeFailureDetail | null | undefined): string | null {
+  if (!detail) return null;
+  for (const raw of [detail.declineCode, detail.code]) {
+    const code = (raw ?? "").trim().toLowerCase();
+    if (code && FAILURE_WORDS[code]) return FAILURE_WORDS[code];
+  }
+  const message = (detail.message ?? "").trim();
+  if (/insufficient funds/i.test(message)) return FAILURE_WORDS.insufficient_funds;
+  if (message) return message.replace(/\.$/, "");
+  return null;
+}
+
+/**
+ * What staff are told before they press "Retry payment".
+ *
+ * A retry that is declined is another failed payment, and a weekly
+ * membership is suspended on its second (shared/businessDays.ts). Lauren,
+ * 19/11/2026, pressed retry on a card that was still short and the plan was
+ * suspended: "It suspended his membership?" So the cost of a second "no" is
+ * said before the button is pressed, not found out after.
+ */
+export function retryWarning(failedCount: number): string {
+  if (failedCount >= 2) {
+    return "This membership is already suspended. If the payment goes through it becomes active again; if not, nothing changes.";
+  }
+  return "If it is declined again that counts as a second failed payment, and a weekly membership is suspended on its second. Check with the client that the money is there first.";
+}
+
+/**
+ * Which Stripe invoice a "retry" should pay, if any.
+ *
+ * The retry used to look only at the NEWEST failed row. A failure typed in
+ * by hand, or a failed direct charge, has no invoice on it, so the newest
+ * row could hide an invoice that was still open in Stripe. The retry would
+ * then charge the card directly, and when Stripe's own scheduled retry paid
+ * the open invoice later the client had paid twice.
+ *
+ * So: the newest failed row that HAS an invoice, unless that invoice has
+ * since been paid. A paid invoice is finished business; "paying" it again
+ * comes back as a success with no money moved, which would mark a
+ * membership active on nothing.
+ *
+ * `failedRows` newest first. Null means there is no open invoice to pay
+ * and a direct charge is the right thing.
+ */
+export function invoiceToRetry(
+  failedRows: ReadonlyArray<{ stripeInvoiceId?: string | null }>,
+  paidInvoiceIds: ReadonlyArray<string | null | undefined>,
+): string | null {
+  const paid = new Set(paidInvoiceIds.filter((id): id is string => Boolean(id)));
+  for (const row of failedRows) {
+    const invoiceId = row.stripeInvoiceId?.trim();
+    if (!invoiceId) continue;
+    return paid.has(invoiceId) ? null : invoiceId;
+  }
+  return null;
+}

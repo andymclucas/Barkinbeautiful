@@ -27,7 +27,7 @@ import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
 import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
-import { toStripeCents, stripeRecurring } from "@shared/stripeBilling";
+import { toStripeCents, stripeRecurring, type StripeFailureDetail } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { FAMILY_BILLING_TEST_ONLY, planFamilyBilling } from "@shared/familyBilling";
 import { hasScheduledRestart, resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
@@ -1175,5 +1175,43 @@ export async function payOpenInvoice(stripeInvoiceId: string): Promise<OffSessio
       declineCode: error?.decline_code ?? error?.code ?? null,
       message: error?.message ?? String(err),
     };
+  }
+}
+
+/**
+ * Why an invoice's last payment failed, straight from Stripe.
+ *
+ * Read from the payment's own last error, which is where Stripe puts the
+ * decline code and its sentence. Never throws: a Stripe outage, or a shape
+ * this SDK version does not have, comes back as null and the screen keeps
+ * the reason it already had.
+ */
+export async function invoiceFailureDetail(stripeInvoiceId: string): Promise<StripeFailureDetail | null> {
+  try {
+    const stripe = requireStripeClient();
+    const fromIntent = (intent: unknown): StripeFailureDetail | null => {
+      const error = (intent as { last_payment_error?: { code?: string | null; decline_code?: string | null; message?: string | null } | null } | null)?.last_payment_error;
+      if (!error) return null;
+      return { code: error.code ?? null, declineCode: error.decline_code ?? null, message: error.message ?? null };
+    };
+    // Current API: an invoice's payments are their own list.
+    try {
+      const payments = await (stripe as unknown as {
+        invoicePayments: { list: (params: Record<string, unknown>) => Promise<{ data: Array<{ payment?: { payment_intent?: unknown } }> }> };
+      }).invoicePayments.list({ invoice: stripeInvoiceId, limit: 5, expand: ["data.payment.payment_intent"] });
+      for (const row of payments.data) {
+        const intent = row.payment?.payment_intent;
+        const detail = fromIntent(typeof intent === "string" ? await stripe.paymentIntents.retrieve(intent) : intent);
+        if (detail) return detail;
+      }
+    } catch {
+      // Older API shape below.
+    }
+    const invoice = await stripe.invoices.retrieve(stripeInvoiceId, { expand: ["payment_intent"] } as never);
+    const intent = (invoice as unknown as { payment_intent?: unknown }).payment_intent;
+    return fromIntent(typeof intent === "string" ? await stripe.paymentIntents.retrieve(intent) : intent);
+  } catch (err) {
+    console.warn("[stripe] could not read the failure reason for", stripeInvoiceId, err instanceof Error ? err.message : err);
+    return null;
   }
 }

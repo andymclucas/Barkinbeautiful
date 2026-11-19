@@ -40,6 +40,7 @@ import {
   classifyFailure,
   planAfterFailure,
   retryCountedByWebhook,
+  invoiceToRetry,
 } from "@shared/stripeBilling";
 
 const cardColumns = {
@@ -301,12 +302,24 @@ export const stripeCardsRouter = router({
         throw new Error(`${describeCard(client) ?? "The card"} has expired. Ask the client for new details.`);
       }
 
-      const [lastFailure] = await db
+      // The open invoice to pay, if there is one: the newest failed row
+      // that carries an invoice, unless that invoice has since been paid
+      // (shared/stripeBilling.ts, invoiceToRetry). Looking only at the
+      // newest row let a hand-recorded failure hide an open invoice.
+      const failedRows = await db
         .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
         .from(membershipPayments)
         .where(and(eq(membershipPayments.membershipId, membership.id), eq(membershipPayments.status, "failed")))
         .orderBy(desc(membershipPayments.id))
-        .limit(1);
+        .limit(20);
+      const paidRows = await db
+        .select({ stripeInvoiceId: membershipPayments.stripeInvoiceId })
+        .from(membershipPayments)
+        .where(and(eq(membershipPayments.membershipId, membership.id), eq(membershipPayments.status, "paid")))
+        .orderBy(desc(membershipPayments.id))
+        .limit(50);
+      const openInvoiceId = invoiceToRetry(failedRows, paidRows.map((row) => row.stripeInvoiceId));
+      const lastFailure = { stripeInvoiceId: openInvoiceId };
 
       const result = lastFailure?.stripeInvoiceId
         ? await payOpenInvoice(lastFailure.stripeInvoiceId)

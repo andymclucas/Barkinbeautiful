@@ -128,8 +128,8 @@ const signInLinkByEmail = new Map<string, number>();
 const signInLinkByIp = new Map<string, number[]>();
 /** Wrong-code guesses per address, for redeemSignInCode. */
 const signInCodeAttempts = new Map<string, number[]>();
-import { describeCard, canChargeOffSession, isCardExpired } from "../shared/stripeBilling";
-import { createCardSetupLink, clientCardLink } from "./stripeCards";
+import { describeCard, canChargeOffSession, isCardExpired, describeMembershipFailure } from "../shared/stripeBilling";
+import { createCardSetupLink, clientCardLink, invoiceFailureDetail } from "./stripeCards";
 import { BATH_ORDER_LOCKED_MESSAGE, buildBathPriorityQueue, canChangeBathOrder, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { partyKeyOf } from "../shared/linkedWorkflowCascade";
 import { judgeStagePress, STALE_STAGE_PRESS_MESSAGE } from "../shared/stagePressGuard";
@@ -10229,13 +10229,14 @@ const membershipsRouter = router({
     .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
-      return db
+      const rows = await db
         .select({
           membershipId: memberships.id,
           membershipName: memberships.name,
           failedCount: memberships.failedPaymentCount,
           lastFailedAt: memberships.lastFailedPaymentAt,
           suspended: memberships.bookingSuspended,
+          stripeSubscriptionId: memberships.stripeSubscriptionId,
           clientFirstName: clients.firstName,
           clientLastName: clients.lastName,
           clientPhone: clients.phone,
@@ -10249,6 +10250,54 @@ const membershipsRouter = router({
           sql`${memberships.failedPaymentCount} > 0`
         ))
         .orderBy(desc(memberships.lastFailedPaymentAt));
+      if (rows.length === 0) return [];
+
+      /*
+       * Why each one failed (Andy, 19/11/2026: "Pull the data from Stripe
+       * for the real reason"). The reason written when it failed is only
+       * "Card declined", so the last failed payment's invoice is asked of
+       * Stripe here. One lookup per invoice, not per row: a family on one
+       * shared payment is three rows and one invoice. A lookup that fails
+       * leaves the stored reason in place.
+       */
+      const failedRows = await db
+        .select({
+          id: membershipPayments.id,
+          membershipId: membershipPayments.membershipId,
+          stripeInvoiceId: membershipPayments.stripeInvoiceId,
+          failureReason: membershipPayments.failureReason,
+        })
+        .from(membershipPayments)
+        .where(and(
+          inArray(membershipPayments.membershipId, rows.map((row) => row.membershipId)),
+          eq(membershipPayments.status, "failed"),
+        ))
+        .orderBy(desc(membershipPayments.id));
+      const lastFailure = new Map<number, { stripeInvoiceId: string | null; failureReason: string | null }>();
+      const lastInvoice = new Map<number, string>();
+      for (const row of failedRows) {
+        // Only the NEWEST failure: an older invoice's reason beside a newer
+        // strike would be the wrong reason.
+        if (lastFailure.has(row.membershipId)) continue;
+        lastFailure.set(row.membershipId, row);
+        if (row.stripeInvoiceId) lastInvoice.set(row.membershipId, row.stripeInvoiceId);
+      }
+      const invoiceIds = Array.from(new Set(lastInvoice.values()));
+      const reasons = new Map<string, string | null>();
+      await Promise.all(invoiceIds.map(async (invoiceId) => {
+        reasons.set(invoiceId, describeMembershipFailure(await invoiceFailureDetail(invoiceId)));
+      }));
+
+      return rows.map(({ stripeSubscriptionId, ...row }) => {
+        const invoiceId = lastInvoice.get(row.membershipId) ?? null;
+        return {
+          ...row,
+          /** Billed by Stripe, so "Retry payment" has something to retry. */
+          stripeBilled: Boolean(stripeSubscriptionId),
+          /** Stripe's reason when it could be read, else the one written at the time. */
+          failureReason: (invoiceId ? reasons.get(invoiceId) : null) ?? lastFailure.get(row.membershipId)?.failureReason ?? null,
+        };
+      });
     }),
 
   recordPaymentFailure: protectedProcedure
