@@ -12,9 +12,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { billingCycleFromWeeks } from "@shared/stripeBilling";
+import { billingCycleFromWeeks, retryWarning } from "@shared/stripeBilling";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, CheckCircle, XCircle, RefreshCw, Landmark } from "lucide-react";
+import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, CheckCircle, CheckCircle2, XCircle, RefreshCw, Landmark } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { MembershipAccountsReceivable } from "@/components/MembershipAccountsReceivable";
 import { MembershipSignupRequests } from "@/components/MembershipSignupRequests";
@@ -1308,6 +1308,19 @@ export default function Memberships() {
     },
     onError: (e) => toast.error(e.message),
   });
+  /* "Retry payment": Stripe tries the open payment again, now. The same
+     procedure as Charge now on the membership itself. */
+  const [confirmRetry, setConfirmRetry] = useState<{ id: number; clientName: string; petName: string | null; failedCount: number; reason: string | null } | null>(null);
+  const retryPaymentMutation = trpc.stripeCards.chargeNow.useMutation({
+    onSuccess: (result) => {
+      if (result.ok) toast.success("Payment taken. The membership is active again.");
+      else toast.error(result.message ?? "The payment was declined again.", { duration: 10000 });
+      setConfirmRetry(null);
+      utils.memberships.getFailedPayments.invalidate();
+      utils.memberships.list.invalidate();
+    },
+    onError: (e) => { toast.error(e.message, { duration: 10000 }); setConfirmRetry(null); },
+  });
   const [confirmRecordFailure, setConfirmRecordFailure] = useState<{ id: number; clientName: string; petName: string | null; membershipName: string | null; failedCount: number } | null>(null);
   const [failureReason, setFailureReason] = useState("");
   const [confirmResolve, setConfirmResolve] = useState<{ id: number; clientName: string; petName: string | null } | null>(null);
@@ -1547,9 +1560,36 @@ export default function Memberships() {
                           ) : (
                             <Badge className="text-xs bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300">Pending Retry</Badge>
                           )}
+                          {/* Stripe's own reason (Andy, 19/11/2026: "Pull the
+                              data from Stripe for the real reason"). Every row
+                              used to say only "Card declined". */}
+                          {fp.failureReason && (
+                            <p className="mt-1 max-w-[16rem] text-xs text-muted-foreground">{fp.failureReason}</p>
+                          )}
                         </td>
                         <td className="p-3">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {/* Andy, 19/11/2026: a "retry payment" button
+                                here that has Stripe try the payment again.
+                                Only where Stripe bills the membership, so
+                                there is something to retry. */}
+                            {fp.stripeBilled && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5 text-xs h-7"
+                                disabled={retryPaymentMutation.isPending}
+                                onClick={() => setConfirmRetry({
+                                  id: fp.membershipId,
+                                  clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),
+                                  petName: fp.petName,
+                                  failedCount: fp.failedCount,
+                                  reason: fp.failureReason,
+                                })}
+                              >
+                                <CheckCircle2 className="h-3 w-3" /> Retry payment
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -1663,6 +1703,32 @@ export default function Memberships() {
               }}
             >
               {recordFailureMutation.isPending ? "Recording..." : "Confirm Failure"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Retry Payment Dialog ── */}
+      <Dialog open={!!confirmRetry} onOpenChange={open => { if (!open) setConfirmRetry(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Retry this payment now?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              Stripe will try the payment again for <strong className="text-foreground">{confirmRetry?.clientName}</strong>
+              {confirmRetry?.petName ? ` (${confirmRetry.petName})` : ""}, on the card they have saved.
+            </p>
+            {confirmRetry?.reason && <p>Last time: {confirmRetry.reason}.</p>}
+            <p>{retryWarning(confirmRetry?.failedCount ?? 0)}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRetry(null)}>Not now</Button>
+            <Button
+              disabled={retryPaymentMutation.isPending}
+              onClick={() => { if (confirmRetry) retryPaymentMutation.mutate({ membershipId: confirmRetry.id }); }}
+            >
+              {retryPaymentMutation.isPending ? "Trying..." : "Retry payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
