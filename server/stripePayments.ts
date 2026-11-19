@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { clients, invoices, membershipLedgerEntries, membershipPayments, memberships, stripeEvents, tenants } from "../drizzle/schema";
+import { clients, invoices, membershipLedgerEntries, membershipPayments, membershipPets, memberships, pets, stripeEvents, tenants } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
 import { syncAccountStatus, tenantIdForStripeAccount } from "./stripeConnectAccounts";
@@ -10,6 +10,8 @@ import { postInvoicePaymentToAppointments } from "./invoicePaymentPosting";
 import { handlePortalAppointmentPayment } from "./portalAppointmentPayment";
 import { handleStripeRefund } from "./stripeRefunds";
 import { notifyOwner } from "./ownerNotification";
+import { getAppBaseUrl } from "./appUrl";
+import { buildFailedPaymentEmail } from "@shared/failedPaymentEmail";
 import { classifyFailure, fromStripeCents, planAfterFailure } from "@shared/stripeBilling";
 import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
 import { isDuplicateEntryError } from "./dbErrors";
@@ -276,6 +278,44 @@ async function membershipsForSubscription(db: any, subscriptionId: string | null
    */
   const open = rows.filter((row) => row.status !== "cancelled" && row.status !== "expired");
   return rows.length > 1 && open.length > 0 ? open : rows;
+}
+
+/**
+ * Who a failed payment belongs to, for the salon's notice: the client's
+ * name, and the dogs on each membership (the plan's own dog plus any
+ * added to it). Read only, and a failure here must never stop the notice.
+ */
+async function failedPaymentPeople(db: any, tenantId: number, clientId: number | null, membershipIds: number[]) {
+  const dogsByMembership = new Map<number, string[]>();
+  let clientName: string | null = null;
+  if (clientId != null) {
+    const [client] = await db
+      .select({ firstName: clients.firstName, lastName: clients.lastName })
+      .from(clients)
+      .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId)))
+      .limit(1);
+    if (client) clientName = `${client.firstName ?? ""} ${client.lastName ?? ""}`.trim() || null;
+  }
+  if (membershipIds.length === 0) return { clientName, dogsByMembership };
+  const add = (membershipId: number, name: string | null) => {
+    if (!name) return;
+    const list = dogsByMembership.get(membershipId) ?? [];
+    if (!list.includes(name)) list.push(name);
+    dogsByMembership.set(membershipId, list);
+  };
+  const own: Array<{ membershipId: number; name: string | null }> = await db
+    .select({ membershipId: memberships.id, name: pets.name })
+    .from(memberships)
+    .innerJoin(pets, eq(pets.id, memberships.petId))
+    .where(and(inArray(memberships.id, membershipIds), eq(memberships.tenantId, tenantId)));
+  for (const row of own) add(row.membershipId, row.name);
+  const extra: Array<{ membershipId: number; name: string | null }> = await db
+    .select({ membershipId: membershipPets.membershipId, name: pets.name })
+    .from(membershipPets)
+    .innerJoin(pets, eq(pets.id, membershipPets.petId))
+    .where(and(inArray(membershipPets.membershipId, membershipIds), eq(membershipPets.tenantId, tenantId)));
+  for (const row of extra) add(row.membershipId, row.name);
+  return { clientName, dogsByMembership };
 }
 
 /** One invoice amount, in cents, split across the memberships it paid for. */
@@ -656,11 +696,20 @@ export async function processStripeEvent(event: Stripe.Event) {
     }).where(inArray(memberships.id, failedForIds));
 
     // Lights the Dashboard's failed-payments alert, and emails the owner.
-    // One notice for the payment, naming every membership on it.
-    await notifyOwner({
-      title: plan.suspend ? "⛔ Membership payment failed - suspended" : "⚠️ Membership payment failed",
-      content: `${failedFor.map((row) => row.name ?? "Membership").join(" + ")} - ${plan.reason}`,
-    }).catch(() => undefined);
+    // One notice for the payment, saying whose it was: the client, the
+    // dogs on every membership it covers, the amount and why.
+    const who = await failedPaymentPeople(db, membership.tenantId ?? 1, membership.clientId, failedForIds)
+      .catch(() => ({ clientName: null as string | null, dogsByMembership: new Map<number, string[]>() }));
+    await notifyOwner(buildFailedPaymentEmail({
+      clientId: membership.clientId,
+      clientName: who.clientName,
+      memberships: failedFor.map((row) => ({ name: row.name, dogNames: who.dogsByMembership.get(row.id) ?? [] })),
+      amountDueCents: invoice.amount_due ?? null,
+      reason: plan.reason,
+      suspended: plan.suspend,
+      retryAt: plan.retryAt,
+      appBaseUrl: getAppBaseUrl(),
+    })).catch(() => undefined);
     return { duplicate: false, handled: "subscription_failed" };
   }
 
