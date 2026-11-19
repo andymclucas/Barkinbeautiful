@@ -12,6 +12,7 @@ import { useAppBadge } from "@/hooks/useAppBadge";
 import { SystemNotificationList, useSystemNotifications } from "@/components/SystemNotificationBell";
 import {
   NOTIFICATION_TABS, NOTIFICATION_TAB_LABEL, badgeText, firstNotificationTab, notificationTabCounts, notificationTotal,
+  unreadPortalThreads,
   type NotificationTab,
 } from "@shared/notificationTabs";
 
@@ -139,8 +140,16 @@ export default function NotificationBell() {
   // record used to be its own icon; it is the System tab now, and its
   // unread count is part of the one badge.
   const system = useSystemNotifications();
+  // Messages clients send through their portal. They live in their own
+  // threads, so the text-message feed above never carried them. A minute
+  // between looks: the list reads every thread's messages to count unread.
+  const { data: portalThreads } = trpc.portalChat.listThreads.useQuery(
+    {},
+    { enabled: ownerFeeds, refetchInterval: 60_000, refetchOnWindowFocus: true },
+  );
+  const portalUnread = unreadPortalThreads(portalThreads);
   const counts = {
-    unreadMessages: messageCount,
+    unreadMessages: messageCount + portalUnread.length,
     assignedToMe: assignedCount,
     unreadSystem: system.unread,
     reportUpdates: updates.length,
@@ -334,6 +343,31 @@ export default function NotificationBell() {
             </>
           )}
 
+          {/* Portal conversations waiting on the salon. */}
+          {tab === "messages" && portalUnread.length > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 bg-sky-50 px-4 py-1.5 dark:bg-sky-950/30">
+                <MessageSquare className="h-3 w-3 shrink-0 text-sky-700 dark:text-sky-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-300">
+                  Portal messages ({portalUnread.length})
+                </span>
+              </div>
+              {portalUnread.map((thread) => (
+                <button
+                  key={`portal-${thread.id}`}
+                  className="w-full border-b px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-accent"
+                  onClick={() => { setOpen(false); setLocation("/portal-messages"); }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium">{`${thread.firstName ?? ""} ${thread.lastName ?? ""}`.trim() || "Client"}</span>
+                    {thread.lastMessageAt && <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(thread.lastMessageAt)}</span>}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{thread.preview}</p>
+                </button>
+              ))}
+            </>
+          )}
+
           {tab === "messages" && recent.length > 0 && (
             <>
               <div className="flex items-center gap-1.5 bg-muted/60 px-4 py-1.5">
@@ -398,7 +432,7 @@ export default function NotificationBell() {
               </div>
             ))}
           </div>
-          ) : assignedCount === 0 ? (
+          ) : assignedCount === 0 && portalUnread.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">No new messages or calls</p>
           ) : null}
 

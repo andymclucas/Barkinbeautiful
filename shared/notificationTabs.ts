@@ -74,3 +74,18 @@ export function firstNotificationTab(counts: NotificationCounts): NotificationTa
 export function badgeText(count: number): string {
   return count > 9 ? "9+" : String(count);
 }
+
+/**
+ * Portal conversations that are waiting on the salon.
+ *
+ * Andy, 19/11/2026: "Messages - portal or client messages and missed
+ * calls/voice mails." The bell only ever read text messages and missed
+ * calls; a message a client sent through their portal lives in its own
+ * thread and never reached it. A thread counts once, however many messages
+ * the client sent, because it is one conversation to answer.
+ */
+export type PortalThreadSummary = { id: number; unread?: number | null };
+
+export function unreadPortalThreads<T extends PortalThreadSummary>(threads: readonly T[] | null | undefined): T[] {
+  return (threads ?? []).filter((thread) => (thread.unread ?? 0) > 0);
+}

@@ -44,3 +44,16 @@ describe("badgeText", () => {
     expect(badgeText(10)).toBe("9+");
   });
 });
+
+import { unreadPortalThreads } from "./notificationTabs";
+
+describe("unreadPortalThreads", () => {
+  it("keeps the portal conversations waiting on the salon, one per client", () => {
+    const threads = [{ id: 1, unread: 3 }, { id: 2, unread: 0 }, { id: 3 }, { id: 4, unread: 1 }];
+    expect(unreadPortalThreads(threads).map((t) => t.id)).toEqual([1, 4]);
+  });
+
+  it("is empty before the list has loaded", () => {
+    expect(unreadPortalThreads(undefined)).toEqual([]);
+  });
+});
