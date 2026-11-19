@@ -39,6 +39,7 @@ import {
   describeStripeKey,
   classifyFailure,
   planAfterFailure,
+  retryCountedByWebhook,
 } from "@shared/stripeBilling";
 
 const cardColumns = {
@@ -343,6 +344,29 @@ export const stripeCardsRouter = router({
           });
         }
         return { ok: true, message: "Payment taken" };
+      }
+
+      /*
+       * One attempt is one strike.
+       *
+       * Lauren, 19/11/2026: a client's card declined at 9:16 am (strike
+       * one). She pressed this at 9:41 am, it declined again, and the
+       * membership was suspended "after 3 failed payments" on its second
+       * real attempt. "It suspended his membership? But i only just put in
+       * his details."
+       *
+       * When this retries an OPEN INVOICE, Stripe reports the failure
+       * itself (invoice.payment_failed), and the webhook counts the strike,
+       * books the failed row and sets the hold (server/stripePayments.ts).
+       * Counting it here as well made every failed retry two strikes. So
+       * for an invoice the webhook is the only counter, exactly as the
+       * success branch above already leaves the paid row to invoice.paid.
+       * Only a direct charge, which Stripe sends no invoice event for, is
+       * counted here.
+       */
+      if (retryCountedByWebhook(lastFailure?.stripeInvoiceId)) {
+        const message = result.message ?? "The card was declined.";
+        return { ok: false, message, nextAction: message };
       }
 
       const plan = planAfterFailure(
