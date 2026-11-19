@@ -100,3 +100,36 @@ export function needsAttention(state: MembershipBillingState): boolean {
 export function canStartBilling(state: MembershipBillingState): boolean {
   return state === "needs_migration" || state === "added_not_live";
 }
+
+/**
+ * Whether "Retry payment" belongs on this membership.
+ *
+ * Lauren, 19/11/2026, on a client whose payment had failed twice: "showing
+ * paused... why cant I press retry on myside". The client's page said
+ * Paused and offered nothing. A membership suspended for failed payments
+ * is stored as status "paused", the same as one on a holiday pause, so
+ * `membershipBillingState` reads it as "paused" and `needsAttention` says
+ * nobody needs to act. The failed-payment count is what tells them apart.
+ *
+ * So: a membership Stripe bills, that has at least one failed payment
+ * against it and has not ended. That covers both "payment failed" (one
+ * strike, still billing) and "suspended" (stored as paused).
+ */
+export function needsPaymentRetry(m: {
+  status: string | null | undefined;
+  stripeSubscriptionId?: string | null;
+  failedPaymentCount?: number | null;
+}): boolean {
+  if (m.status === "cancelled" || m.status === "expired") return false;
+  if (!m.stripeSubscriptionId) return false;
+  return (m.failedPaymentCount ?? 0) > 0;
+}
+
+/** True when the membership is stopped for failed payments, not on a holiday pause. */
+export function suspendedForPayment(m: {
+  status: string | null | undefined;
+  stripeSubscriptionId?: string | null;
+  failedPaymentCount?: number | null;
+}): boolean {
+  return m.status === "paused" && needsPaymentRetry(m);
+}
