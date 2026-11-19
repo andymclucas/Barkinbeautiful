@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { GroomigoLogo, GROOMIGO_LOGO_ON_DARK, GROOMIGO_LOGO_ON_LIGHT } from "./GroomigoLogo";
+import { GroomigoLogo, GROOMIGO_LOGO_ON_DARK, GROOMIGO_LOGO_ON_LIGHT, sidebarLogoTone } from "./GroomigoLogo";
 
 describe("GroomigoLogo", () => {
   it("shows the white-lettered drawing on a surface that is always dark", () => {
@@ -33,5 +33,17 @@ describe("GroomigoLogo", () => {
     expect(img.style.height).toBe("100px");
     expect(Number.parseInt(img.style.width, 10)).toBeGreaterThan(95);
     expect(Number.parseInt(img.style.width, 10)).toBeLessThan(110);
+  });
+});
+
+describe("sidebarLogoTone", () => {
+  it("uses the white lettering in Christmas mode, where the sidebar is dark red", () => {
+    expect(sidebarLogoTone(true)).toBe("on-dark");
+    render(<GroomigoLogo tone={sidebarLogoTone(true)} height={60} />);
+    expect((screen.getByRole("img", { name: "Groomigo" }) as HTMLImageElement).getAttribute("src")).toBe(GROOMIGO_LOGO_ON_DARK);
+  });
+
+  it("follows light and dark mode the rest of the year", () => {
+    expect(sidebarLogoTone(false)).toBe("auto");
   });
 });

@@ -1,5 +1,5 @@
 import { useTimezoneSync } from "@/lib/timezone";
-import { GroomigoLogo } from "@/components/GroomigoLogo";
+import { GroomigoLogo, sidebarLogoTone } from "@/components/GroomigoLogo";
 import { isStaffOperationRoute } from "@shared/staffRoutes";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -854,7 +854,9 @@ function DashboardLayoutContent({
                   el.style.filter = "";
                 }}
               >
-                <GroomigoLogo height={60} alt="" />
+                {/* White lettering while the Christmas theme is on: the
+                    sidebar is dark red then, in light mode too. */}
+                <GroomigoLogo height={60} alt="" tone={sidebarLogoTone(festive)} />
               </button>
             </div>
           )}

@@ -19,6 +19,20 @@ import { cn } from "@/lib/utils";
 export const GROOMIGO_LOGO_ON_DARK = "/groomigo-logo-on-dark-v1.png";
 export const GROOMIGO_LOGO_ON_LIGHT = "/groomigo-logo-on-light-v1.png";
 
+/**
+ * Which drawing the staff sidebar needs.
+ *
+ * Andy, 19/11/2026: "Groomigo logo text can't be seen in Christmas mode.
+ * Swap it out for the white text one when the switch occurs." The Christmas
+ * theme paints the sidebar dark red whether the app is in light or dark
+ * mode, so "auto" picked the dark-ink drawing for a light app and the word
+ * vanished into the red. With the Christmas theme on, the sidebar is a
+ * dark surface: white lettering, always.
+ */
+export function sidebarLogoTone(festive: boolean): "auto" | "on-dark" {
+  return festive ? "on-dark" : "auto";
+}
+
 /** Width over height of both drawings, so a height alone reserves the space. */
 const ASPECT = 560 / 549;
 
