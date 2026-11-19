@@ -284,3 +284,17 @@ export function describeStripeKey(key: string | null | undefined): {
       : "unknown";
   return { configured: !placeholder, mode, placeholder };
 }
+
+/**
+ * Who counts the strike when a staff-pressed retry fails.
+ *
+ * A retry of an open Stripe invoice is reported by Stripe itself
+ * (invoice.payment_failed), and the webhook counts it. Counting it at the
+ * button as well made one failed retry two strikes: on 19/11/2026 a
+ * membership read "Suspended after 3 failed payments" on its second real
+ * attempt. A direct charge has no invoice and no such event, so the button
+ * is its only counter.
+ */
+export function retryCountedByWebhook(openInvoiceId: string | null | undefined): boolean {
+  return Boolean(openInvoiceId && openInvoiceId.trim());
+}
