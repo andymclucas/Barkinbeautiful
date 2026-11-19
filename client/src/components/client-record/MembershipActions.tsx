@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Plus, Loader2, Info, CreditCard, TriangleAlert, Link2, Mail, Copy, ShieldCheck } from "lucide-react";
+import { Plus, Loader2, Info, CreditCard, TriangleAlert, Link2, Mail, Copy, ShieldCheck, RefreshCw } from "lucide-react";
+import { retryWarning } from "@shared/stripeBilling";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -589,6 +590,58 @@ export function FamilyBillingPanel({ offer, hasCardOnFile, onChanged }: {
               })}
             >
               {start.isPending ? "Starting…" : offer.joinsExisting ? `Add to the payment` : `Start ${total} a ${cycle}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/**
+ * "Retry payment" on the client's own page.
+ *
+ * Lauren, 19/11/2026: the button was only on Memberships > Failed Payments,
+ * and on the client's page a suspended membership just said Paused. Same
+ * retry (Stripe tries the open payment again), same warning before it is
+ * pressed. Administrators only: it charges a card.
+ */
+export function RetryPaymentButton({ membership, clientName, onChanged }: {
+  membership: { id: number; petName?: string | null; failedPaymentCount?: number | null };
+  clientName: string;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const retry = trpc.stripeCards.chargeNow.useMutation({
+    onSuccess: (result) => {
+      if (result.ok) toast.success("Payment taken. The membership is active again.");
+      else toast.error(result.message ?? "The payment was declined again.", { duration: 10000 });
+      setOpen(false);
+      onChanged();
+    },
+    onError: (e) => { toast.error(e.message, { duration: 10000 }); setOpen(false); },
+  });
+  return (
+    <>
+      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setOpen(true)}>
+        <RefreshCw className="h-3.5 w-3.5" /> Retry payment
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Retry this payment now?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            <p>
+              Stripe will try the payment again for <strong className="text-foreground">{clientName}</strong>
+              {membership.petName ? ` (${membership.petName})` : ""}, on the card they have saved.
+            </p>
+            <p>{retryWarning(membership.failedPaymentCount ?? 0)}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Not now</Button>
+            <Button disabled={retry.isPending} onClick={() => retry.mutate({ membershipId: membership.id })}>
+              {retry.isPending ? "Trying..." : "Retry payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

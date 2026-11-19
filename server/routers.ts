@@ -6746,6 +6746,9 @@ const clientsRouter = router({
           stripeSubscriptionId: memberships.stripeSubscriptionId,
           gatewaySubscriptionId: memberships.gatewaySubscriptionId,
           bookingSuspended: memberships.bookingSuspended,
+          // So the client's page can tell a failed-payment suspension from a
+          // holiday pause and offer Retry payment (shared/membershipBillingState.ts).
+          failedPaymentCount: memberships.failedPaymentCount,
           startedAt: memberships.startedAt,
           cancelledAt: memberships.cancelledAt,
           petId: memberships.petId,

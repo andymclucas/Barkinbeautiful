@@ -23,6 +23,7 @@ import { companionsOf, joinNames } from "@shared/familyBookingRows";
 import { billedTogetherWith, familyBillingOffer, formatCents, groupPayments } from "@shared/familyBilling";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
+  needsPaymentRetry, suspendedForPayment,
 } from "@shared/membershipBillingState";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { shouldActOnSignal } from "@shared/openOnSignal";
@@ -31,7 +32,7 @@ import { membershipsByCoveredPet } from "@shared/membershipCoveredPets";
 import { parseClientTags, clientTagTone } from "@shared/clientTags";
 import { describePetCode, petCodeMeaning } from "@shared/petCodeMeanings";
 import { canChargeOffSession } from "@shared/stripeBilling";
-import { AddMembershipButton, FamilyBillingPanel, SetWeeklyBillingButton, SendCardLinkButton } from "@/components/client-record/MembershipActions";
+import { AddMembershipButton, FamilyBillingPanel, SetWeeklyBillingButton, SendCardLinkButton, RetryPaymentButton } from "@/components/client-record/MembershipActions";
 import {
   SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
   type DogSizeBand, type SizeBandSource,
@@ -2881,6 +2882,24 @@ export default function ClientDetail() {
                           <p className={`font-semibold capitalize ${colours.text}`}>{icon} {m.tier}</p>
                         </div>
                       </div>
+                      {/* Suspended for failed payments is stored as "paused",
+                          so it used to show Paused and offer nothing
+                          (Lauren, 19/11/2026: "why cant I press retry on
+                          myside"). Said plainly here, with the retry. */}
+                      {suspendedForPayment(m) && (
+                        <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">
+                          <p className="text-xs text-muted-foreground flex-1 min-w-[12rem]">
+                            Stopped because the payment failed. A payment that goes through makes it active again.
+                          </p>
+                          {isAdmin && (
+                            <RetryPaymentButton
+                              membership={{ id: m.id, petName: m.petName, failedPaymentCount: m.failedPaymentCount }}
+                              clientName={`${client.firstName ?? ""} ${client.lastName ?? ""}`.trim()}
+                              onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
+                            />
+                          )}
+                        </div>
+                      )}
                       {needsAttention(billing) && (
                         <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-3">
                           <p className="text-xs text-muted-foreground flex-1 min-w-[12rem]">
@@ -2891,6 +2910,13 @@ export default function ClientDetail() {
                               clientId={clientId}
                               clientEmail={client.email}
                               hasCardOnFile={hasCardOnFile}
+                            />
+                          )}
+                          {isAdmin && needsPaymentRetry(m) && (
+                            <RetryPaymentButton
+                              membership={{ id: m.id, petName: m.petName, failedPaymentCount: m.failedPaymentCount }}
+                              clientName={`${client.firstName ?? ""} ${client.lastName ?? ""}`.trim()}
+                              onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
                             />
                           )}
                           {/* A failing payment is already billing — starting it
