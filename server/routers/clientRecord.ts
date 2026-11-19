@@ -6,8 +6,9 @@ import { getDb } from "../db";
 import {
   agreementDocuments, agreementSignatures, clientReviews, clientNotes,
   servicePackages, clientPackages, clientPackageRedemptions,
-  petVaccinations, pets, clients, users,
+  petVaccinations, pets, clients, users, appointments,
 } from "../../drizzle/schema";
+import { prepaidCandidates } from "../../shared/prepaidGrooms";
 import { SEED_AGREEMENTS } from "../seed/agreementBodies";
 
 /**
@@ -396,6 +397,15 @@ export const packagesRouter = router({
       if (cp.creditsUsed >= cp.creditsTotal) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "No credits left on that package" });
       }
+      // The booking has to be this client's own. Nothing checked this, so
+      // a groom could be counted off against anybody's appointment.
+      const [appt] = await d.select({ id: appointments.id }).from(appointments)
+        .where(and(
+          eq(appointments.id, input.appointmentId),
+          eq(appointments.tenantId, tenantOf(ctx, input)),
+          eq(appointments.clientId, cp.clientId),
+        )).limit(1);
+      if (!appt) throw new TRPCError({ code: "BAD_REQUEST", message: "That booking does not belong to this client" });
 
       try {
         await d.insert(clientPackageRedemptions).values({
@@ -411,6 +421,110 @@ export const packagesRouter = router({
       const used = cp.creditsUsed + 1;
       await d.update(clientPackages)
         .set({ creditsUsed: used, status: used >= cp.creditsTotal ? "used_up" : "active" })
+        .where(eq(clientPackages.id, cp.id));
+      return { creditsLeft: cp.creditsTotal - used };
+    }),
+
+  /**
+   * Record a block of grooms that was paid for up front, on its own terms.
+   *
+   * Lauren, 19/11/2026: clients who bank-transferred a year in advance,
+   * recorded nowhere (shared/prepaidGrooms.ts). `purchase` copies a
+   * catalogue item and stamps today; these were paid months ago for a
+   * figure agreed with the client, so the name, the number of grooms, the
+   * amount and the date are all given. Records what happened; takes no
+   * money and prices nothing.
+   */
+  addPrepaid: protectedProcedure
+    .input(TENANT.extend({
+      clientId: z.number().int().positive(),
+      name: z.string().trim().min(1).max(200),
+      grooms: z.number().int().min(1).max(100),
+      amountPaid: z.number().nonnegative().max(100000),
+      /** The day the money arrived, YYYY-MM-DD. Defaults to today. */
+      paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      /** The last day a groom can be taken, YYYY-MM-DD. Left out, it does not expire. */
+      expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await assertClient(tenantOf(ctx, input), input.clientId);
+      const d = await db();
+      // Midday Brisbane, so the date reads the same in any zone the page is opened in.
+      const brisbaneNoon = (day: string) => new Date(`${day}T02:00:00.000Z`);
+      const paidAt = input.paidOn ? brisbaneNoon(input.paidOn) : new Date();
+      if (paidAt.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "The date paid cannot be in the future" });
+      }
+      const expiresAt = input.expiresOn ? new Date(`${input.expiresOn}T13:59:59.000Z`) : null;
+      if (expiresAt && expiresAt.getTime() <= paidAt.getTime()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "It cannot expire before it was paid for" });
+      }
+      await d.insert(clientPackages).values({
+        tenantId: tenantOf(ctx, input), clientId: input.clientId,
+        // 0: not sold from the catalogue. The terms live on this row.
+        packageId: 0,
+        packageName: input.name, creditsTotal: input.grooms, pricePaid: input.amountPaid.toFixed(2),
+        purchasedAt: paidAt, expiresAt, soldByUserId: ctx.user?.id ? Number(ctx.user.id) : null,
+      });
+      return { success: true };
+    }),
+
+  /**
+   * One block's grooms: the bookings already counted off it, and the ones
+   * a groom could still be counted against.
+   */
+  grooms: protectedProcedure
+    .input(TENANT.extend({ clientPackageId: z.number().int().positive() }))
+    .query(async ({ input, ctx }) => {
+      const d = await db();
+      const tenantId = tenantOf(ctx, input);
+      const [cp] = await d.select().from(clientPackages)
+        .where(and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.tenantId, tenantId)))
+        .limit(1);
+      if (!cp) throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+      const redeemed = await d.select({ appointmentId: clientPackageRedemptions.appointmentId })
+        .from(clientPackageRedemptions)
+        .where(and(eq(clientPackageRedemptions.clientPackageId, cp.id), eq(clientPackageRedemptions.tenantId, tenantId)));
+      const countedIds = redeemed.map((r) => r.appointmentId);
+      const rows = await d.select({
+        id: appointments.id,
+        petName: pets.name,
+        scheduledStart: appointments.scheduledStart,
+        serviceType: appointments.serviceType,
+        status: appointments.status,
+        workflowState: appointments.workflowState,
+      }).from(appointments).leftJoin(pets, eq(pets.id, appointments.petId))
+        .where(and(eq(appointments.tenantId, tenantId), eq(appointments.clientId, cp.clientId)));
+      const counted = rows
+        .filter((row) => countedIds.includes(row.id))
+        .sort((a, b) => a.scheduledStart.getTime() - b.scheduledStart.getTime());
+      return { counted, available: prepaidCandidates(rows, countedIds, cp.purchasedAt) };
+    }),
+
+  /** Take a groom back off the count: it was counted against the wrong booking. */
+  unredeem: protectedProcedure
+    .input(TENANT.extend({
+      clientPackageId: z.number().int().positive(),
+      appointmentId: z.number().int().positive(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const d = await db();
+      const tenantId = tenantOf(ctx, input);
+      const [cp] = await d.select().from(clientPackages)
+        .where(and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.tenantId, tenantId)))
+        .limit(1);
+      if (!cp) throw new TRPCError({ code: "NOT_FOUND", message: "Package not found" });
+      const [row] = await d.select({ id: clientPackageRedemptions.id }).from(clientPackageRedemptions)
+        .where(and(
+          eq(clientPackageRedemptions.tenantId, tenantId),
+          eq(clientPackageRedemptions.clientPackageId, cp.id),
+          eq(clientPackageRedemptions.appointmentId, input.appointmentId),
+        )).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "That booking is not counted on this package" });
+      await d.delete(clientPackageRedemptions).where(eq(clientPackageRedemptions.id, row.id));
+      const used = Math.max(0, cp.creditsUsed - 1);
+      await d.update(clientPackages)
+        .set({ creditsUsed: used, status: cp.status === "used_up" ? "active" : cp.status })
         .where(eq(clientPackages.id, cp.id));
       return { creditsLeft: cp.creditsTotal - used };
     }),
