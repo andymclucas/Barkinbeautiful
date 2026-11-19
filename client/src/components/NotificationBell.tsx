@@ -1,6 +1,6 @@
 import { Bell, Phone, X, CreditCard, AlertTriangle, MessageSquare, UserCheck, RotateCcw, MessageSquareWarning } from "lucide-react";
 import { toast } from "sonner";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { trpc } from "@/lib/trpc";
@@ -9,6 +9,11 @@ import { failedPaymentDetail, failedPaymentHeadline, sortFailedPayments } from "
 import { notificationForEvent } from "@shared/notificationDelivery";
 import { useStaffNotifications } from "@/hooks/useStaffNotifications";
 import { useAppBadge } from "@/hooks/useAppBadge";
+import { SystemNotificationList, useSystemNotifications } from "@/components/SystemNotificationBell";
+import {
+  NOTIFICATION_TABS, NOTIFICATION_TAB_LABEL, badgeText, firstNotificationTab, notificationTabCounts, notificationTotal,
+  type NotificationTab,
+} from "@shared/notificationTabs";
 
 function timeAgo(date: Date | string) {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -130,7 +135,24 @@ export default function NotificationBell() {
   // whole point of assigning it rather than leaving it in the shared pile.
   const assignedCount = mine?.total ?? 0;
   const updates = reportUpdates ?? [];
-  const unreadCount = messageCount + failedPayments.length + assignedCount + updates.length;
+  // One bell, three tabs (shared/notificationTabs.ts). The owner's system
+  // record used to be its own icon; it is the System tab now, and its
+  // unread count is part of the one badge.
+  const system = useSystemNotifications();
+  const counts = {
+    unreadMessages: messageCount,
+    assignedToMe: assignedCount,
+    unreadSystem: system.unread,
+    reportUpdates: updates.length,
+    failedPayments: failedPayments.length,
+  };
+  const tabCounts = notificationTabCounts(counts);
+  const unreadCount = notificationTotal(counts);
+  const [open, setOpen] = useState(false);
+  // null until somebody picks a tab: until then the bell opens on the
+  // first tab that has something in it.
+  const [pickedTab, setPickedTab] = useState<NotificationTab | null>(null);
+  const tab = pickedTab ?? firstNotificationTab(counts);
 
   // The same number as the badge on the bell, on the Home Screen icon.
   // Driving it from here rather than its own query means the two cannot
@@ -155,7 +177,7 @@ export default function NotificationBell() {
   };
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setPickedTab(null); }}>
       <PopoverTrigger asChild>
         <button
           className="relative h-9 w-9 flex items-center justify-center rounded-xl bg-white/5 hover:bg-card/12 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
@@ -164,22 +186,40 @@ export default function NotificationBell() {
           <Bell className="h-4 w-4 text-muted-foreground" />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center">
-              {unreadCount > 9 ? "9+" : unreadCount}
+              {badgeText(unreadCount)}
             </span>
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0 flex flex-col max-h-[28rem]">
+      <PopoverContent align="end" className="flex max-h-[32rem] w-[360px] max-w-[calc(100vw-2rem)] flex-col p-0">
         <div className="px-4 py-3 border-b shrink-0">
           <h3 className="text-sm font-semibold">Notifications</h3>
           <p className="text-xs text-muted-foreground">
             {unreadCount === 0 ? "You're all caught up" : `${unreadCount} unread`}
           </p>
         </div>
+        <div role="tablist" aria-label="Notifications" className="flex shrink-0 border-b px-2">
+          {NOTIFICATION_TABS.map((name) => (
+            <button
+              key={name}
+              role="tab"
+              aria-selected={tab === name}
+              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${tab === name ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setPickedTab(name)}
+            >
+              {NOTIFICATION_TAB_LABEL[name]}
+              {tabCounts[name] > 0 && (
+                <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                  {badgeText(tabCounts[name])}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
         <div className="overflow-y-auto flex-1 min-h-0">
           {/* Answers to what you reported. First, because someone took the
               trouble to report it and is waiting to hear. */}
-          {updates.length > 0 && (
+          {tab === "system" && updates.length > 0 && (
             <>
               <div className="flex items-center gap-1.5 bg-emerald-50 px-4 py-1.5 dark:bg-emerald-950/30">
                 <MessageSquareWarning className="h-3 w-3 shrink-0 text-emerald-700 dark:text-emerald-400" />
@@ -212,7 +252,7 @@ export default function NotificationBell() {
 
           {/* Yours first. Everything below this is the salon's shared pile;
               this section is the only part that was handed to you by name. */}
-          {assignedCount > 0 && (
+          {tab === "messages" && assignedCount > 0 && (
             <>
               <div className="flex items-center gap-1.5 bg-violet-50 px-4 py-1.5 dark:bg-violet-950/30">
                 <UserCheck className="h-3 w-3 shrink-0 text-violet-700 dark:text-violet-400" />
@@ -263,7 +303,7 @@ export default function NotificationBell() {
 
           {/* Payments next, deliberately. A failed payment sitting under six
               voicemails is a payment nobody chases. */}
-          {failedPayments.length > 0 && (
+          {tab === "payments" && failedPayments.length > 0 && (
             <>
               <div className="flex items-center gap-1.5 bg-amber-50 px-4 py-1.5 dark:bg-amber-950/30">
                 <CreditCard className="h-3 w-3 shrink-0 text-amber-700 dark:text-amber-400" />
@@ -287,12 +327,14 @@ export default function NotificationBell() {
                     )}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">{failedPaymentDetail(item)}</p>
+                  {/* Stripe's own reason, as on the Failed Payments tab. */}
+                  {item.failureReason && <p className="mt-0.5 text-xs text-muted-foreground">{item.failureReason}</p>}
                 </button>
               ))}
             </>
           )}
 
-          {recent.length > 0 && (
+          {tab === "messages" && recent.length > 0 && (
             <>
               <div className="flex items-center gap-1.5 bg-muted/60 px-4 py-1.5">
                 <MessageSquare className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -302,7 +344,7 @@ export default function NotificationBell() {
               </div>
             </>
           )}
-          {recent.length > 0 ? (
+          {tab !== "messages" ? null : recent.length > 0 ? (
           <div>
             {recent.map((item: any) => (
               <div
@@ -356,16 +398,39 @@ export default function NotificationBell() {
               </div>
             ))}
           </div>
-          ) : failedPayments.length === 0 && updates.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No new notifications</p>
+          ) : assignedCount === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No new messages or calls</p>
           ) : null}
+
+          {/* System: the owner's record of portal sign-ups and access
+              changes. It was its own icon until 19/11/2026. */}
+          {tab === "system" && system.allowed && (
+            <SystemNotificationList items={system.items} onNavigate={() => setOpen(false)} />
+          )}
+          {tab === "system" && updates.length === 0 && (!system.allowed || system.items.length === 0) && (
+            <p className="py-6 text-center text-sm text-muted-foreground">Nothing yet</p>
+          )}
+
+          {tab === "payments" && failedPayments.length === 0 && (
+            <p className="py-6 text-center text-sm text-muted-foreground">No failed payments</p>
+          )}
         </div>
-        <button
-          className="w-full shrink-0 text-center text-xs font-medium text-primary py-2.5 border-t bg-background hover:bg-accent transition-colors"
-          onClick={() => setLocation("/messages")}
-        >
-          View all messages
-        </button>
+        {tab === "messages" && (
+          <button
+            className="w-full shrink-0 text-center text-xs font-medium text-primary py-2.5 border-t bg-background hover:bg-accent transition-colors"
+            onClick={() => { setOpen(false); setLocation("/messages"); }}
+          >
+            View all messages
+          </button>
+        )}
+        {tab === "payments" && failedPayments.length > 0 && (
+          <button
+            className="w-full shrink-0 text-center text-xs font-medium text-primary py-2.5 border-t bg-background hover:bg-accent transition-colors"
+            onClick={() => { setOpen(false); setLocation("/memberships?tab=failed_payments"); }}
+          >
+            Open failed payments
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   );

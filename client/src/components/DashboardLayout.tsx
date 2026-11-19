@@ -7,7 +7,6 @@ import { useTheme, type ThemeChoice } from "@/contexts/ThemeContext";
 import NotificationBell from "@/components/NotificationBell";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { SalonSwitcher } from "@/components/SalonSwitcher";
-import SystemNotificationBell from "@/components/SystemNotificationBell";
 import { ReportProblemButton, useReportProblem } from "@/components/ReportProblem";
 import { SupportChat } from "@/components/SupportChat";
 import IncomingCallAlert from "@/components/IncomingCallAlert";
@@ -555,7 +554,6 @@ function DashboardLayoutContent({
       >
         {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
       </button>
-      <SystemNotificationBell />
       <NotificationBell />
       <IncomingCallAlert />
       <div className="mx-1 hidden h-6 w-px bg-accent sm:block" />
