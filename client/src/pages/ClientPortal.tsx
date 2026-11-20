@@ -6,6 +6,7 @@ import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE, PORTAL_PERSON_REQUEST } from "@shared/portalChat";
+import { PortalChatLauncher } from "@/components/PortalChatLauncher";
 import { BruceAvatar } from "@/components/BruceAvatar";
 import { sortBookingsForBucket } from "@shared/bookingBuckets";
 import { clientFacingStage, isGroomInProgress, stageIcon, stageColourFor } from "@shared/groomingStage";
@@ -313,18 +314,7 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
         </div>
       )}
 
-      <Button
-        onClick={() => setOpen(v => !v)}
-        aria-label={open ? "Close chat" : "Message the salon"}
-        className="fixed bottom-6 right-4 z-50 h-14 w-14 rounded-full p-0 shadow-xl sm:right-6"
-      >
-        {open ? <X className="h-6 w-6" /> : <BruceAvatar size={56} className="rounded-full" />}
-        {!open && unread > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-bold text-destructive-foreground">
-            {unread}
-          </span>
-        )}
-      </Button>
+      <PortalChatLauncher open={open} unread={unread} onToggle={() => setOpen(v => !v)} />
     </>
   );
 }
@@ -996,7 +986,7 @@ export default function ClientPortal() {
   // on a bad day, and a pickup time that slips is worse than none.
   const inSalon = data.appointments.filter(appointment => isGroomInProgress(appointment.workflowState));
 
-  return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 py-8 px-4"><div className="mx-auto max-w-4xl space-y-6">
+  return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 px-4 pb-28 pt-8"><div className="mx-auto max-w-4xl space-y-6">
     <header className="rounded-2xl bg-primary p-6 text-primary-foreground"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm opacity-85">Welcome to</p><h1 className="font-display text-3xl font-bold">{data.salon.name}</h1><p className="mt-2 text-sm opacity-90">Hi {data.client.firstName}, here is a secure summary of your pets and grooming care.</p></div>{!token && <Button variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20" disabled={logout.isPending} onClick={() => logout.mutate()}>{logout.isPending ? "Signing out…" : "Sign out"}</Button>}</div></header>
 
     {/* Signed in on their own account: worth saving to the Home Screen. Not
