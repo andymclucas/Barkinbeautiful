@@ -24,7 +24,12 @@ import fs from "node:fs";
 const repo = process.argv[2];
 if (!repo) throw new Error('usage: node scripts/make-logo.mjs "$PWD"');
 const VERSION = "v1";
-const OUT_WIDTH = 560;
+// Defaults draw the app's two files. The marketing site wants one large
+// drawing in its own folder:
+//   LOGO_WIDTH=1400 LOGO_OUT=website LOGO_TONES=on-dark node scripts/make-logo.mjs "$PWD"
+const OUT_WIDTH = Number(process.env.LOGO_WIDTH) || 560;
+const OUT_DIR = process.env.LOGO_OUT || "client/public";
+const ONLY = process.env.LOGO_TONES ? process.env.LOGO_TONES.split(",") : null;
 /** The word is this many times the dog's width, tail to nose. */
 const WORD_SCALE = 1.45;
 const THIN_PX = 14;
@@ -64,6 +69,7 @@ const dw = info.width, dh = info.height;
 const clear = { r: 0, g: 0, b: 0, alpha: 0 };
 
 for (const [tone, c] of Object.entries(TONES)) {
+  if (ONLY && !ONLY.includes(tone)) continue;
   const dog = await sharp({ create: { width: dw, height: dh, channels: 3, background: rgb(c.dog) } })
     .joinChannel(mask, { raw: { width: dw, height: dh, channels: 1 } }).png().toBuffer();
   const tw = Math.round(dw * WORD_SCALE), th = Math.round(tw * WORD_BOX.h / WORD_BOX.w);
@@ -80,7 +86,7 @@ for (const [tone, c] of Object.entries(TONES)) {
   }
   layers.push({ input: dog, left: dogLeft, top: pad }, { input: text, left: textLeft, top: pad + dh + gap });
   const full = await sharp({ create: { width: W, height: H, channels: 4, background: clear } }).composite(layers).png().toBuffer();
-  const file = `client/public/groomigo-logo-${tone}-${VERSION}.png`;
+  const file = `${OUT_DIR}/groomigo-logo-${tone}-${VERSION}.png`;
   await sharp(full).resize({ width: OUT_WIDTH }).png({ compressionLevel: 9, palette: false }).toFile(`${repo}/${file}`);
   const m = await sharp(`${repo}/${file}`).metadata();
   console.log(file, `${m.width}x${m.height}`, `${Math.round(fs.statSync(`${repo}/${file}`).size / 1024)} KB`);

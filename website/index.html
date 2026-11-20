@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Groomigo – coming soon</title>
+<meta name="description" content="Groomigo. Salon management software. Designed by groomers. For groomers. Coming soon.">
+<meta name="theme-color" content="#000000">
+<meta property="og:title" content="Groomigo – coming soon">
+<meta property="og:description" content="Salon management software. Designed by groomers. For groomers.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://groomigo.com.au/">
+<meta property="og:image" content="https://groomigo.com.au/icon-512.png">
+<link rel="canonical" href="https://groomigo.com.au/">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap">
+<style>
+  /* One screen, nothing else: the logo, "coming soon" and one line, on black.
+     Brand colours only: black, white and Groomigo teal. */
+  :root { --black: #000000; --white: #FFFFFF; --teal: #1FE3DF; --soft: #B9C4C8; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--black);
+    color: var(--white);
+    font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  main {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: max(32px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  }
+  .logo { width: min(72vw, 360px); height: auto; display: block; }
+  h1 {
+    margin: clamp(28px, 5vh, 48px) 0 0;
+    font-size: clamp(15px, 2.2vw, 19px);
+    font-weight: 600;
+    letter-spacing: 0.42em;
+    /* the tracking adds a gap after the last letter; this re-centres the line */
+    margin-right: -0.42em;
+    text-transform: uppercase;
+    color: var(--teal);
+  }
+  .line {
+    width: 44px; height: 2px; border-radius: 2px;
+    background: var(--teal); opacity: 0.55;
+    margin: clamp(22px, 3.5vh, 30px) 0;
+  }
+  p {
+    margin: 0;
+    max-width: 30ch;
+    font-size: clamp(17px, 2.6vw, 22px);
+    font-weight: 400;
+    line-height: 1.55;
+    color: var(--soft);
+    text-wrap: balance;
+  }
+  p strong { color: var(--white); font-weight: 500; }
+  p span { white-space: nowrap; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  /* No entrance animation on purpose: a page whose words are invisible until
+     an animation runs shows nothing at all wherever animations are paused. */
+</style>
+</head>
+<body>
+<main>
+  <img class="logo" src="/groomigo-logo-on-dark-v1.png" width="900" height="883" alt="Groomigo">
+  <h1><span class="sr">Groomigo, </span>Coming soon</h1>
+  <div class="line" aria-hidden="true"></div>
+  <p><strong>Salon management software.</strong><br><span>Designed by groomers.</span> <span>For groomers.</span></p>
+</main>
+</body>
+</html>
