@@ -12,7 +12,7 @@ import { handleStripeRefund } from "./stripeRefunds";
 import { notifyOwner } from "./ownerNotification";
 import { getAppBaseUrl } from "./appUrl";
 import { buildFailedPaymentEmail } from "@shared/failedPaymentEmail";
-import { classifyFailure, fromStripeCents, planAfterFailure } from "@shared/stripeBilling";
+import { classifyFailure, fromStripeCents, isStaffPressedRetry, planAfterFailure, STAFF_RETRY_FAILURE_NOTE } from "@shared/stripeBilling";
 import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
 import { isDuplicateEntryError } from "./dbErrors";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
@@ -662,6 +662,27 @@ export async function processStripeEvent(event: Stripe.Event) {
      * are joined.
      */
     const failedForIds = failedFor.map((row) => row.id);
+
+    /*
+     * A retry that staff pressed is not a strike (Andy, 20/11/2026: "Only
+     * automatic attempts count towards suspension"). The button stamps
+     * the invoice just before it tries; a failure landing within minutes
+     * of that stamp is written down and changes nothing else: no count,
+     * no new retry date, no hold on bookings, and no email, because the
+     * person who pressed it is looking at the answer.
+     */
+    if (isStaffPressedRetry((invoice as unknown as { metadata?: Record<string, string> | null }).metadata, event.created)) {
+      for (const part of splitAcross(failedFor, invoice.amount_due ?? 0)) {
+        await db.insert(membershipPayments).values({
+          membershipId: part.membershipId,
+          amount: String(fromStripeCents(part.cents)),
+          status: "failed",
+          stripeInvoiceId: invoice.id ?? null,
+          failureReason: STAFF_RETRY_FAILURE_NOTE,
+        });
+      }
+      return { duplicate: false, handled: "subscription_failed_staff_retry" };
+    }
 
     const now = new Date();
     const failedCount = (membership.failedPaymentCount ?? 0) + 1;

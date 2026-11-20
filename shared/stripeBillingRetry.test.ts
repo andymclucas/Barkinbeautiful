@@ -1,16 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { retryCountedByWebhook } from "./stripeBilling";
-
-describe("retryCountedByWebhook", () => {
-  it("leaves a failed retry of an open invoice to the webhook, so it is one strike", () => {
-    expect(retryCountedByWebhook("in_123")).toBe(true);
-  });
-
-  it("counts a direct charge at the button, because Stripe sends no invoice event for it", () => {
-    for (const none of [null, undefined, "", "  "]) expect(retryCountedByWebhook(none)).toBe(false);
-  });
-});
-
 import { describeMembershipFailure } from "./stripeBilling";
 
 describe("describeMembershipFailure", () => {
@@ -36,8 +24,9 @@ describe("describeMembershipFailure", () => {
 import { retryWarning } from "./stripeBilling";
 
 describe("retryWarning", () => {
-  it("says a second decline suspends a weekly membership, before the button is pressed", () => {
-    expect(retryWarning(1)).toMatch(/suspended on its second/);
+  it("says a declined retry does not count towards suspension", () => {
+    expect(retryWarning(1)).toMatch(/does not count towards suspension/);
+    expect(retryWarning(0)).toMatch(/Only the automatic attempts do/);
   });
 
   it("says nothing gets worse for a membership that is already suspended", () => {
