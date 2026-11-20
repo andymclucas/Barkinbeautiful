@@ -286,18 +286,42 @@ export function describeStripeKey(key: string | null | undefined): {
 }
 
 /**
- * Who counts the strike when a staff-pressed retry fails.
+ * A retry that staff press is not a strike.
  *
- * A retry of an open Stripe invoice is reported by Stripe itself
- * (invoice.payment_failed), and the webhook counts it. Counting it at the
- * button as well made one failed retry two strikes: on 19/11/2026 a
- * membership read "Suspended after 3 failed payments" on its second real
- * attempt. A direct charge has no invoice and no such event, so the button
- * is its only counter.
+ * Andy, 20/11/2026: "Only automatic attempts count towards suspension."
+ *
+ * The history: on 19/11/2026 a card declined at 9:16 am (strike one),
+ * Lauren pressed Retry at 9:41 am, it declined again and the membership
+ * was suspended. "It suspended his membership? But i only just put in his
+ * details." Pressing the button is somebody at the counter trying to
+ * HELP; it should never be what locks a client out of booking.
+ *
+ * A retry of an open invoice is reported by Stripe itself
+ * (invoice.payment_failed), and that event looks the same whoever caused
+ * it. So the button stamps the invoice with the time just before it
+ * tries, and the webhook treats a failure that lands within a few minutes
+ * of that stamp as the button's. The stamp is a time, not a flag, so it
+ * goes stale on its own: Stripe's next automatic attempt on the same
+ * invoice, hours or days later, counts as it always did.
  */
-export function retryCountedByWebhook(openInvoiceId: string | null | undefined): boolean {
-  return Boolean(openInvoiceId && openInvoiceId.trim());
+export const STAFF_RETRY_METADATA_KEY = "groomigo_staff_retry_at";
+export const STAFF_RETRY_WINDOW_SECONDS = 180;
+
+/** `metadata` is the failed invoice's; `eventCreated` is the Stripe event's `created`, in seconds. */
+export function isStaffPressedRetry(
+  metadata: Record<string, string | null | undefined> | null | undefined,
+  eventCreated: number | null | undefined,
+): boolean {
+  const stamped = Number(metadata?.[STAFF_RETRY_METADATA_KEY]);
+  const at = Number(eventCreated);
+  if (!Number.isFinite(stamped) || stamped <= 0 || !Number.isFinite(at) || at <= 0) return false;
+  const gap = at - stamped;
+  // A few seconds of grace the other way: the two clocks are not the same clock.
+  return gap >= -10 && gap <= STAFF_RETRY_WINDOW_SECONDS;
 }
+
+/** What the failed row says when the attempt was the button's. */
+export const STAFF_RETRY_FAILURE_NOTE = "Declined on a retry pressed by staff. Not counted towards suspension.";
 
 /**
  * Why a membership payment failed, in the words Stripe's own dashboard uses.
@@ -357,17 +381,17 @@ export function describeMembershipFailure(detail: StripeFailureDetail | null | u
 /**
  * What staff are told before they press "Retry payment".
  *
- * A retry that is declined is another failed payment, and a weekly
- * membership is suspended on its second (shared/businessDays.ts). Lauren,
- * 19/11/2026, pressed retry on a card that was still short and the plan was
- * suspended: "It suspended his membership?" So the cost of a second "no" is
- * said before the button is pressed, not found out after.
+ * Until 20/11/2026 a declined retry was another failed payment, and this
+ * warned that a second "no" would suspend a weekly membership. Andy,
+ * 20/11/2026: "Only automatic attempts count towards suspension." So the
+ * button can no longer make anything worse, and this says so, because
+ * staff who were warned off it last week need to know it is safe now.
  */
 export function retryWarning(failedCount: number): string {
   if (failedCount >= 2) {
     return "This membership is already suspended. If the payment goes through it becomes active again; if not, nothing changes.";
   }
-  return "If it is declined again that counts as a second failed payment, and a weekly membership is suspended on its second. Check with the client that the money is there first.";
+  return "If it is declined, nothing changes: a retry you press does not count towards suspension. Only the automatic attempts do.";
 }
 
 /**

@@ -27,7 +27,7 @@ import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
 import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
-import { toStripeCents, stripeRecurring, type StripeFailureDetail } from "@shared/stripeBilling";
+import { toStripeCents, stripeRecurring, type StripeFailureDetail, STAFF_RETRY_METADATA_KEY } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { FAMILY_BILLING_TEST_ONLY, planFamilyBilling } from "@shared/familyBilling";
 import { hasScheduledRestart, resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
@@ -1150,8 +1150,30 @@ export async function resumeMembershipSubscription(membershipId: number) {
  * own records straight: the subscription sees its invoice settled, rather
  * than an unrelated charge appearing beside a still-unpaid invoice.
  */
-export async function payOpenInvoice(stripeInvoiceId: string): Promise<OffSessionChargeResult> {
+export async function payOpenInvoice(
+  stripeInvoiceId: string,
+  options: { staffPressed?: boolean } = {},
+): Promise<OffSessionChargeResult> {
   const stripe = requireStripeClient();
+  if (options.staffPressed) {
+    /*
+     * Stamp the invoice BEFORE trying, so the failure Stripe reports is
+     * recognisably the button's and is not counted as a strike
+     * (shared/stripeBilling.ts, isStaffPressedRetry). If the stamp cannot
+     * be written the attempt is not made: an unstamped decline would
+     * count, and could suspend a client because somebody tried to help.
+     */
+    try {
+      await stripe.invoices.update(stripeInvoiceId, {
+        metadata: { [STAFF_RETRY_METADATA_KEY]: String(Math.floor(Date.now() / 1000)) },
+      });
+    } catch (err: any) {
+      const code = (err?.raw ?? err)?.code ?? "";
+      if (code !== "invoice_no_payment_required" && code !== "invoice_already_paid") {
+        return { ok: false, paymentIntentId: null, declineCode: null, message: "Could not reach Stripe to retry this payment. Nothing was attempted; try again in a minute." };
+      }
+    }
+  }
   try {
     const invoice = await stripe.invoices.pay(stripeInvoiceId, { off_session: true });
     const paymentIntent = (invoice as unknown as { payment_intent?: string | Stripe.PaymentIntent }).payment_intent;

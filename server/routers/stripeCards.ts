@@ -37,9 +37,7 @@ import {
   describeCard,
   isCardExpired,
   describeStripeKey,
-  classifyFailure,
-  planAfterFailure,
-  retryCountedByWebhook,
+  STAFF_RETRY_FAILURE_NOTE,
   invoiceToRetry,
 } from "@shared/stripeBilling";
 
@@ -322,7 +320,7 @@ export const stripeCardsRouter = router({
       const lastFailure = { stripeInvoiceId: openInvoiceId };
 
       const result = lastFailure?.stripeInvoiceId
-        ? await payOpenInvoice(lastFailure.stripeInvoiceId)
+        ? await payOpenInvoice(lastFailure.stripeInvoiceId, { staffPressed: true })
         : await chargeSavedCard({
             customerId: client.stripeCustomerId!,
             paymentMethodId: client.stripeDefaultPaymentMethodId!,
@@ -360,54 +358,29 @@ export const stripeCardsRouter = router({
       }
 
       /*
-       * One attempt is one strike.
+       * A retry that staff press is not a strike.
        *
-       * Lauren, 19/11/2026: a client's card declined at 9:16 am (strike
-       * one). She pressed this at 9:41 am, it declined again, and the
-       * membership was suspended "after 3 failed payments" on its second
-       * real attempt. "It suspended his membership? But i only just put in
-       * his details."
+       * Andy, 20/11/2026: "Only automatic attempts count towards
+       * suspension." So a decline here changes nothing about the
+       * membership: not the failure count, not the next automatic retry,
+       * not whether the client can book. It is only written down.
        *
-       * When this retries an OPEN INVOICE, Stripe reports the failure
-       * itself (invoice.payment_failed), and the webhook counts the strike,
-       * books the failed row and sets the hold (server/stripePayments.ts).
-       * Counting it here as well made every failed retry two strikes. So
-       * for an invoice the webhook is the only counter, exactly as the
-       * success branch above already leaves the paid row to invoice.paid.
-       * Only a direct charge, which Stripe sends no invoice event for, is
-       * counted here.
+       * When this retried an OPEN INVOICE, Stripe reports the failure
+       * itself and the webhook writes the failed row, recognising the
+       * attempt as the button's by the stamp payOpenInvoice put on the
+       * invoice (shared/stripeBilling.ts, isStaffPressedRetry). A direct
+       * charge has no invoice and no such event, so its row is written
+       * here.
        */
-      if (retryCountedByWebhook(lastFailure?.stripeInvoiceId)) {
-        const message = result.message ?? "The card was declined.";
-        return { ok: false, message, nextAction: message };
+      const message = result.message ?? "The card was declined.";
+      if (!lastFailure?.stripeInvoiceId) {
+        await db.insert(membershipPayments).values({
+          membershipId: membership.id,
+          amount: membership.pricePerCycle ?? "0",
+          status: "failed",
+          failureReason: `${message} ${STAFF_RETRY_FAILURE_NOTE}`.slice(0, 250),
+        });
       }
-
-      const plan = planAfterFailure(
-        (membership.failedPaymentCount ?? 0) + 1,
-        classifyFailure(result.declineCode),
-        now,
-        membership.billingCycle ?? "weekly",
-      );
-      await db.update(memberships).set({
-        failedPaymentCount: (membership.failedPaymentCount ?? 0) + 1,
-        lastFailedPaymentAt: now,
-        paymentRetryScheduledAt: plan.retryAt,
-        bookingSuspended: plan.suspend,
-        status: plan.suspend ? "paused" : "pending_payment",
-        // A payment failure is not a holiday. Clearing the pause
-        // schedule keeps the two meanings of status "paused" from
-        // blurring, and stops a stale restart date from ever being
-        // read as one.
-        pauseMode: null,
-        pauseResumesAt: null,
-        pausedAt: null,
-      }).where(eq(memberships.id, membership.id));
-      await db.insert(membershipPayments).values({
-        membershipId: membership.id,
-        amount: membership.pricePerCycle ?? "0",
-        status: "failed",
-        failureReason: result.message ?? plan.reason,
-      });
-      return { ok: false, message: result.message ?? plan.reason, nextAction: plan.reason };
+      return { ok: false, message, nextAction: "Not counted towards suspension. The automatic retry is unchanged." };
     }),
 });
