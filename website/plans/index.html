@@ -96,7 +96,8 @@
     padding: 14px 0;
     border-top: 1px solid var(--edge); border-bottom: 1px solid var(--edge);
   }
-  .price b { display: block; font-size: 19px; font-weight: 500; color: var(--teal); }
+  .price b { display: block; font-size: 38px; font-weight: 600; line-height: 1.15; color: var(--teal); }
+  .price b small { font-size: 15px; font-weight: 500; letter-spacing: 0.08em; }
   .price span { display: block; font-size: 13px; color: var(--dim); }
   .plan ul { list-style: none; margin: 18px 0 0; padding: 0; flex: 1; }
   .plan li {
@@ -207,10 +208,13 @@
       <article class="plan">
         <p class="step">Plan 1</p>
         <h2>Software</h2>
-        <!-- PRICE: not set yet. The real figure lives in Stripe and Andy sets it. -->
-        <p class="price"><b>Price announced soon</b><span>per salon, per month</span></p>
+        <!-- PRICES: $99 / $179 / $299 AUD plus GST, from Andy's "Groomigo
+             Subscription Concept" (21/11/2026), still to be confirmed with the
+             accountant. The figure a salon is CHARGED lives in Stripe; when
+             the Stripe prices are created, make these three match them. -->
+        <p class="price"><b>$99 <small>AUD</small></b><span>a month, plus GST</span></p>
         <ul>
-          <li>Booking and the diary</li>
+          <li>Appointment booking system</li>
           <li>Clients and pets</li>
           <li>Staff</li>
           <li>Reporting and analytics</li>
@@ -222,7 +226,7 @@
       <article class="plan">
         <p class="step">Plan 2</p>
         <h2>Software + Messaging</h2>
-        <p class="price"><b>Price announced soon</b><span>per salon, per month</span></p>
+        <p class="price"><b>$179 <small>AUD</small></b><span>a month, plus GST</span></p>
         <ul>
           <li class="carry">Everything in Software</li>
           <li>Texts and email to clients</li>
@@ -237,7 +241,7 @@
         <span class="tag">The whole salon</span>
         <p class="step">Plan 3</p>
         <h2>Complete, with Workflow</h2>
-        <p class="price"><b>Price announced soon</b><span>per salon, per month</span></p>
+        <p class="price"><b>$299 <small>AUD</small></b><span>a month, plus GST</span></p>
         <ul>
           <li class="carry">Everything in Software + Messaging</li>
           <li>The workflow board: every dog from bath to dry to groom</li>
@@ -248,7 +252,7 @@
         <a class="btn" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
       </article>
     </div>
-    <p class="under">No card needed to start the trial.</p>
+    <p class="under">Prices are in Australian dollars, per salon, and exclude GST. No card needed to start the trial.</p>
 
     <!-- Andy, 21/11/2026: the client portal is presented as part of the
          Complete plan. Each tile below is something the portal does today
