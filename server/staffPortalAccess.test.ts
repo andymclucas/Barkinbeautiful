@@ -240,7 +240,9 @@ describe("canStaffUpdateAppointment", () => {
     expect(displaySource).toContain("Review completed dogs");
     expect(displaySource).toContain("Hide completed dogs");
     expect(displaySource).toContain("All dogs are complete");
-    expect(displaySource).toContain("A great day’s work from the Barkin Beautiful team.");
+    // The salon's own name, not Barkin' Beautiful's (shared/salonBrand.ts).
+    expect(displaySource).toContain("A great day’s work from the {salonName(salonBrand, \"whole\")} team.");
+    expect(displaySource).not.toContain("Barkin Beautiful team");
   });
 
   it("adds daily progress, an explicit completed-dog restore and a next-day TV reset", () => {

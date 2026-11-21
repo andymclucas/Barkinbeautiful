@@ -1,4 +1,5 @@
 import { useTimezoneSync } from "@/lib/timezone";
+import { SalonLogo } from "@/components/SalonLogo";
 import { GroomigoLogo, sidebarLogoTone } from "@/components/GroomigoLogo";
 import { isStaffOperationRoute } from "@shared/staffRoutes";
 import { Button } from "@/components/ui/button";
@@ -677,10 +678,10 @@ function DashboardLayoutContent({
                   className="flex items-center cursor-pointer min-w-0 flex-1"
                   onClick={() => setLocation("/")}
                 >
-                  <img
-                    src="/barkin_beautiful_logo.png"
-                    alt="Barkin' Beautiful Grooming Studio"
-                    className="h-10 w-auto object-contain max-w-full"
+                  <SalonLogo
+                    brand={tenantBranding}
+                    className="h-10 w-auto max-w-full"
+                    badgeClassName="h-10 w-10 text-sm"
                   />
                 </div>
               )}
