@@ -24,7 +24,7 @@ import { excludeTestPets } from "./testPets";
 import { findDuplicateGroups, suggestSurvivor } from "@shared/clientMerge";
 import { previewMerge, mergeClientInto } from "./clientMerge";
 import { forgetPetThumb } from "./petThumbCache";
-import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, router, tenantOf } from "./_core/trpc";
+import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, requireCallerTenant, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
 import { needsPetAssignment, missingPetCount, planCoveredPetIds } from "@shared/membershipCoveredPets";
 import { missedCallSearchFilter } from "./missedCallSearchFilter";
@@ -12055,11 +12055,12 @@ const groomStyleNotesRouter = router({
 const groomStylePresetsRouter = router({
   list: protectedProcedure
     .input(z.object({ search: z.string().optional() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
+      const tenantId = requireCallerTenant(ctx);
       const rows = await db.select().from(groomStylePresets)
-        .where(eq(groomStylePresets.tenantId, 1))
+        .where(eq(groomStylePresets.tenantId, tenantId))
         .orderBy(groomStylePresets.name);
       if (input.search) {
         const q = input.search.toLowerCase();
@@ -12082,11 +12083,11 @@ const groomStylePresetsRouter = router({
       tailStyle: z.string().optional(),
       notes: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       await db.insert(groomStylePresets).values({
-        tenantId: 1,
+        tenantId: requireCallerTenant(ctx),
         name: input.name,
         serviceType: input.serviceType ?? null,
         bladeSize: input.bladeSize ?? null,
@@ -12200,6 +12201,18 @@ const groomingReportsRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const portalStaff = await requireApprovedStaffAppointmentAccess(db, ctx.user, input.appointmentId, input.petId);
+      /*
+       * The staff check above returns null for an admin and checks
+       * nothing, and the report was filed under tenant 1 whoever made it.
+       * The appointment must be in the salon the caller is acting in, and
+       * the report goes under that appointment's salon.
+       */
+      const callerTenantId = requireCallerTenant(ctx);
+      const [appointment] = await db.select({ tenantId: appointments.tenantId, petId: appointments.petId })
+        .from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+      if (!appointment || appointment.tenantId !== callerTenantId || appointment.petId !== input.petId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found" });
+      }
       const [existing] = await db.select({ id: groomingReports.id }).from(groomingReports)
         .where(eq(groomingReports.appointmentId, input.appointmentId)).limit(1);
       const photoFields = input.position === "before"
@@ -12208,7 +12221,7 @@ const groomingReportsRouter = router({
       if (existing) {
         await db.update(groomingReports).set(photoFields).where(eq(groomingReports.id, existing.id));
       } else {
-        await db.insert(groomingReports).values({ appointmentId: input.appointmentId, petId: input.petId, tenantId: 1, status: "draft", ...photoFields });
+        await db.insert(groomingReports).values({ appointmentId: input.appointmentId, petId: input.petId, tenantId: appointment.tenantId, status: "draft", ...photoFields });
       }
       if (portalStaff) {
         await recordStaffAccessEvent(db, {
@@ -13364,7 +13377,7 @@ const onlineBookingRouter = router({
       const rows = await db
         .select({ moegoClientId: pets.moegoClientId })
         .from(pets)
-        .where(and(eq(pets.tenantId, 1), isNotNull(pets.moegoClientId)));
+        .where(and(eq(pets.tenantId, requireCallerTenant(ctx)), isNotNull(pets.moegoClientId)));
       return rows.map(r => r.moegoClientId).filter(Boolean) as string[];
     }),
 });
@@ -16427,9 +16440,12 @@ const clientPortalRouter = router({
    */
   previewPortal: adminProcedure
     .input(z.object({ clientId: z.number().int().positive() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      // The caller's own salon only. This was tenant 1 for every admin,
+      // so any salon's owner could read a Barkin' Beautiful client.
+      const callerTenantId = requireCallerTenant(ctx);
       const [access] = await db.select({
         clientId: clients.id,
         tenantId: clients.tenantId,
@@ -16444,7 +16460,7 @@ const clientPortalRouter = router({
       })
         .from(clients)
         .innerJoin(tenants, eq(clients.tenantId, tenants.id))
-        .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, 1)))
+        .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, callerTenantId)))
         .limit(1);
       if (!access) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
       return buildClientPortalPayload(db, access, { staffPreview: true });
