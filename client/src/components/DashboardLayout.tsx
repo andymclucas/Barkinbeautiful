@@ -854,9 +854,9 @@ function DashboardLayoutContent({
                   el.style.filter = "";
                 }}
               >
-                {/* White lettering while the Christmas theme is on: the
-                    sidebar is dark red then, in light mode too. */}
-                <GroomigoLogo height={60} alt="" tone={sidebarLogoTone(festive)} />
+                {/* Lettering follows the sidebar colour, which is the
+                    salon's own (dark by default) in light mode too. */}
+                <GroomigoLogo height={60} alt="" tone={sidebarLogoTone({ festive, sidebar: tenantBranding?.brandSidebar, primary: tenantBranding?.brandPrimary })} />
               </button>
             </div>
           )}

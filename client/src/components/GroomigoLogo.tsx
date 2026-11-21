@@ -15,6 +15,7 @@
  * immutable for a year (server/_core/vite.ts).
  */
 import { cn } from "@/lib/utils";
+import { sidebarIsDark } from "@shared/brandPalette";
 
 export const GROOMIGO_LOGO_ON_DARK = "/groomigo-logo-on-dark-v1.png";
 export const GROOMIGO_LOGO_ON_LIGHT = "/groomigo-logo-on-light-v1.png";
@@ -22,15 +23,17 @@ export const GROOMIGO_LOGO_ON_LIGHT = "/groomigo-logo-on-light-v1.png";
 /**
  * Which drawing the staff sidebar needs.
  *
- * Andy, 19/11/2026: "Groomigo logo text can't be seen in Christmas mode.
- * Swap it out for the white text one when the switch occurs." The Christmas
- * theme paints the sidebar dark red whether the app is in light or dark
- * mode, so "auto" picked the dark-ink drawing for a light app and the word
- * vanished into the red. With the Christmas theme on, the sidebar is a
- * dark surface: white lettering, always.
+ * Andy, 19/11/2026: "Groomigo logo text can't be seen in Christmas mode."
+ * Andy, 21/11/2026, the same logo on the ordinary dark sidebar in light
+ * mode: "Use the alternate text colour."
+ *
+ * The sidebar is the salon's own sidebar colour whatever the app's mode,
+ * and that colour is dark by default, so following light and dark mode
+ * ("auto") put dark lettering on a dark sidebar. The drawing now follows
+ * the sidebar colour itself (shared/brandPalette.ts, sidebarIsDark).
  */
-export function sidebarLogoTone(festive: boolean): "auto" | "on-dark" {
-  return festive ? "on-dark" : "auto";
+export function sidebarLogoTone(input: { festive?: boolean; sidebar?: string | null; primary?: string | null }): "on-dark" | "on-light" {
+  return sidebarIsDark(input) ? "on-dark" : "on-light";
 }
 
 /** Width over height of both drawings, so a height alone reserves the space. */

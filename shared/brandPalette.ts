@@ -409,6 +409,28 @@ export function sidebarTokens(sidebarHex: string): Record<string, string> {
   };
 }
 
+/**
+ * Whether the staff sidebar is a dark surface, and so needs light lettering.
+ *
+ * The sidebar is painted with the salon's own sidebar colour in light AND
+ * dark mode (index.css: `background: var(--brand-sidebar, ...)`), and that
+ * colour is dark by default. So the app's mode says nothing about what is
+ * behind the logo; the sidebar colour does. Andy, 21/11/2026, of the
+ * "Powered by" logo on the dark sidebar in light mode: "Use the alternate
+ * text colour."
+ *
+ * Christmas swaps the sidebar for FESTIVE_BRAND's dark green. Otherwise the
+ * salon's chosen colour, or, with none chosen, the one derived from its
+ * primary, exactly as brandTokens resolves it.
+ */
+export function sidebarIsDark(input: { festive?: boolean; sidebar?: string | null; primary?: string | null }): boolean {
+  const primary = normaliseHex(input.primary) ?? DEFAULT_BRAND.primary;
+  const sidebar = input.festive
+    ? normaliseHex(FESTIVE_BRAND.sidebar) ?? DEFAULT_BRAND.sidebar
+    : normaliseHex(input.sidebar) ?? deriveSidebar(primary);
+  return readableOn(sidebar) === PAPER;
+}
+
 /** A dark surface in the brand's hue, for the sidebar. */
 export function deriveSidebar(primaryHex: string): string {
   const brand = hexToOklch(primaryHex);
