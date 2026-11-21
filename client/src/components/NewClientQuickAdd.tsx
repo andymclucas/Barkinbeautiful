@@ -30,6 +30,12 @@ import { SIZE_BAND_IDS, sizeBandLabel, type DogSizeBand } from "@shared/dogSizeB
  * what the price comes from and the person is on the phone looking at
  * the dog's owner. 10,372 of 12,552 dogs on file have no weight; this is
  * the cheapest moment there will ever be to capture it.
+ *
+ * Email too, optional. Lauren, 21/11/2026: "can we add a email section in
+ * there so we have to get it when booking a dog in. Not a must be completed
+ * but good to get as soon as they come to send a portal link." The portal
+ * invitation goes by email, so a client booked without one cannot be sent
+ * a link until somebody goes back for it.
  */
 export function NewClientQuickAdd({
   onCreated,
@@ -54,6 +60,7 @@ export function NewClientQuickAdd({
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   type DogRow = { name: string; breed: string; sizeBand: string };
   const [dogs, setDogs] = useState<DogRow[]>([{ name: "", breed: "", sizeBand: "" }]);
   const [saving, setSaving] = useState(false);
@@ -65,7 +72,11 @@ export function NewClientQuickAdd({
   const createClient = trpc.clients.create.useMutation();
   const createPet = trpc.pets.create.useMutation();
 
-  const ready = firstName.trim() !== "" && lastName.trim() !== "" && namedDogs.length > 0;
+  // Optional, but a typed address has to be one: the server refuses a bad
+  // one and the whole save would fail with its message instead of this.
+  const emailTyped = email.trim();
+  const emailLooksWrong = emailTyped !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTyped);
+  const ready = firstName.trim() !== "" && lastName.trim() !== "" && namedDogs.length > 0 && !emailLooksWrong;
 
   const save = async () => {
     if (!ready || saving) return;
@@ -75,6 +86,7 @@ export function NewClientQuickAdd({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         phone: phone.trim() || undefined,
+        ...(emailTyped ? { email: emailTyped } : {}),
       });
       // The dogs are created separately, so a failure part-way leaves a
       // real client and whatever dogs did save, rather than rolling it all
@@ -129,9 +141,25 @@ export function NewClientQuickAdd({
         </div>
       </div>
 
-      <div className="space-y-1">
-        <Label className="text-[11px]" htmlFor="qa-phone">Phone</Label>
-        <Input id="qa-phone" className="h-8 text-xs" inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label className="text-[11px]" htmlFor="qa-phone">Phone</Label>
+          <Input id="qa-phone" className="h-8 text-xs" inputMode="tel" value={phone} onChange={e => setPhone(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[11px]" htmlFor="qa-email">Email</Label>
+          <Input
+            id="qa-email"
+            type="email"
+            inputMode="email"
+            autoComplete="off"
+            className="h-8 text-xs"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            aria-invalid={emailLooksWrong || undefined}
+          />
+          {emailLooksWrong && <p className="text-[10px] text-destructive">Check the email address, or leave it blank.</p>}
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -190,7 +218,7 @@ export function NewClientQuickAdd({
       </div>
 
       <p className="text-[10px] text-muted-foreground">
-        Email, address and notes can be added from their profile later.
+        Email is optional, but it is what the portal link is sent to. Address and notes can be added from their profile later.
       </p>
 
       <div className="flex justify-end gap-2 pt-0.5">
