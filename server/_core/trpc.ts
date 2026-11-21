@@ -56,6 +56,24 @@ export function tenantOf(
   return ctx.tenantId ?? input?.tenantId ?? 1;
 }
 
+/**
+ * The salon a signed-in caller is acting in, with NO fallback.
+ *
+ * tenantOf() falls back to 1 — Barkin' Beautiful — when the caller has no
+ * salon, which is how a handful of procedures came to read and write
+ * tenant 1's rows for everybody. Those used a literal `1` instead; once a
+ * second salon signed itself up, its owner (an admin of their own salon)
+ * could read a Barkin' Beautiful client's details through the portal
+ * preview. Use this where the answer must be the caller's own salon or
+ * nothing.
+ */
+export function requireCallerTenant(ctx: { tenantId?: number | null }): number {
+  if (typeof ctx.tenantId !== "number") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Your account is not linked to a salon" });
+  }
+  return ctx.tenantId;
+}
+
 export const router = t.router;
 export const publicProcedure = t.procedure;
 

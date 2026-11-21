@@ -17,7 +17,7 @@
  */
 import { z } from "zod";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
-import { router, operationalProcedure, tenantOf } from "../_core/trpc";
+import { router, operationalProcedure, requireCallerTenant, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
 import { missedCalls, portalMessages, portalThreads, smsLogs } from "../../drizzle/schema";
 import { getSmsUsage } from "../smsUsage";
@@ -35,10 +35,15 @@ export const smsUsageRouter = router({
    *
    * operationalProcedure: a groomer about to send a pickup text should be
    * able to see the salon is near its cap. It exposes counts, not content.
+   *
+   * Always the caller's own salon. It used to take a tenantId defaulting
+   * to 1, and the page sends none, so every salon was shown Barkin'
+   * Beautiful's usage. The input is still accepted, and ignored, so the
+   * page's existing call keeps working.
    */
   get: operationalProcedure
-    .input(z.object({ tenantId: z.number().int().positive().default(1) }).optional())
-    .query(async ({ input }) => getSmsUsage(input?.tenantId ?? 1)),
+    .input(z.object({ tenantId: z.number().int().positive().optional() }).optional())
+    .query(async ({ ctx }) => getSmsUsage(requireCallerTenant(ctx))),
 });
 
 export const sidebarCountsRouter = router({

@@ -1053,7 +1053,9 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
             .set({ [stage.column]: new Date() } as any)
             .where(inArray(appointments.id, claimedIds));
           await db.insert(smsLogs).values({
-            tenantId: 1,
+            // The appointment's salon. This was 1, which filed every
+            // salon's reminder into Barkin' Beautiful's Messages thread.
+            tenantId: row.tenantId,
             clientId: row.clientId,
             appointmentId: row.apptId,
             toNumber: phone,
