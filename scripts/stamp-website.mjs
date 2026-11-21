@@ -22,7 +22,6 @@ const SIGNIN = "https://staff.barkinbeautiful.com.au/login";
 const NAV = [
   ["features", "/features/", "Features"],
   ["workflow", "/workflow/", "The floor"],
-  ["memberships", "/memberships/", "Memberships"],
   ["plans", "/plans/", "Plans"],
   ["switch", "/switch/", "Switching"],
   ["about", "/about/", "Our story"],
@@ -38,8 +37,8 @@ const META = `
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/assets/site.css?v=1">
-<script src="/assets/site.js?v=1" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=2">
+<script src="/assets/site.js?v=2" defer></script>
 `;
 
 const header = (key) => {
@@ -74,7 +73,6 @@ const FOOT = `
         <ul>
           <li><a href="/features/">Features</a></li>
           <li><a href="/workflow/">The floor</a></li>
-          <li><a href="/memberships/">Memberships</a></li>
           <li><a href="/plans/">Plans</a></li>
         </ul>
       </div>

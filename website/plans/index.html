@@ -13,8 +13,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/assets/site.css?v=1">
-<script src="/assets/site.js?v=1" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=2">
+<script src="/assets/site.js?v=2" defer></script>
 <!--/META-->
 <!-- The plan names, what each includes and the text allowances mirror
      shared/planEntitlements.ts and shared/smsMetering.ts in the app. If those
@@ -32,11 +32,11 @@
 <header class="site-head">
   <div class="wrap">
     <a class="brand" href="/" aria-label="Groomigo home"><img src="/groomigo-logo-on-dark-v1.png" width="900" height="883" alt="Groomigo"></a>
-    <nav class="nav" aria-label="Main"><a href="/features/">Features</a><a href="/workflow/">The floor</a><a href="/memberships/">Memberships</a><a href="/plans/" aria-current="page">Plans</a><a href="/switch/">Switching</a><a href="/about/">Our story</a></nav>
+    <nav class="nav" aria-label="Main"><a href="/features/">Features</a><a href="/workflow/">The floor</a><a href="/plans/" aria-current="page">Plans</a><a href="/switch/">Switching</a><a href="/about/">Our story</a></nav>
     <div class="head-cta"><a class="btn btn-ghost" href="https://staff.barkinbeautiful.com.au/login">Sign in</a><a class="btn btn-primary" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a></div>
     <details class="menu">
       <summary aria-label="Menu"><span></span></summary>
-      <div class="menu-panel"><a href="/features/">Features</a><a href="/workflow/">The floor</a><a href="/memberships/">Memberships</a><a href="/plans/" aria-current="page">Plans</a><a href="/switch/">Switching</a><a href="/about/">Our story</a><a href="https://staff.barkinbeautiful.com.au/login">Sign in</a><a class="btn btn-primary btn-lg" href="https://staff.barkinbeautiful.com.au/signup">Start your free trial</a></div>
+      <div class="menu-panel"><a href="/features/">Features</a><a href="/workflow/">The floor</a><a href="/plans/" aria-current="page">Plans</a><a href="/switch/">Switching</a><a href="/about/">Our story</a><a href="https://staff.barkinbeautiful.com.au/login">Sign in</a><a class="btn btn-primary btn-lg" href="https://staff.barkinbeautiful.com.au/signup">Start your free trial</a></div>
     </details>
   </div>
 </header>
@@ -58,7 +58,7 @@
           <p class="step">Plan 1</p>
           <h2>Software</h2>
           <p class="for">For salons that want a proper diary and records first.</p>
-          <p class="price"><b>$99 <small>AUD</small></b><span>a month, plus GST</span></p>
+          <p class="price"><b>$99 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $500 one-off setup, plus GST</em></p>
           <ul class="ticks">
             <li>Appointment booking system</li>
             <li>Clients and pets</li>
@@ -72,13 +72,13 @@
         <article class="plan reveal">
           <p class="step">Plan 2</p>
           <h2>Software + Messaging</h2>
-          <p class="for">For salons ready to talk to clients and sell memberships.</p>
-          <p class="price"><b>$179 <small>AUD</small></b><span>a month, plus GST</span></p>
+          <p class="for">For salons ready to text, remind and win back clients.</p>
+          <p class="price"><b>$179 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $750 one-off setup, plus GST</em></p>
           <ul class="ticks">
             <li class="carry">Everything in Software</li>
             <li>Texts and email to clients</li>
             <li>Campaigns</li>
-            <li>Memberships and subscriptions</li>
+            <li>Reminders and confirmations</li>
             <li><strong>1,000 client texts a month included</strong></li>
           </ul>
           <a class="btn btn-ghost" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
@@ -89,7 +89,7 @@
           <p class="step">Plan 3</p>
           <h2>Complete, with Workflow</h2>
           <p class="for">For salons that want the floor and the owner joined up too.</p>
-          <p class="price"><b>$299 <small>AUD</small></b><span>a month, plus GST</span></p>
+          <p class="price"><b>$299 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $990 one-off setup, plus GST</em></p>
           <ul class="ticks">
             <li class="carry">Everything in Software + Messaging</li>
             <li>The workflow board: every dog from bath to dry to groom</li>
@@ -100,7 +100,48 @@
           <a class="btn btn-primary" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
         </article>
       </div>
-      <p class="note center">Prices are in Australian dollars, per salon, and exclude GST. No card needed to start the trial.</p>
+      <p class="note center">Prices are in Australian dollars, per salon, and exclude GST. No card needed to start the trial. <a class="teal" href="#setup">What setup includes</a>.</p>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section class="section line" id="setup">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="eyebrow">Setup</p>
+        <h2 class="h-sec">We set your salon up for you.</h2>
+        <p class="lead">Moving a salon across, with all its clients, dogs and staff, takes real work. A one-off setup fee pays for us to do it with you, so you open on day one with everything in place.</p>
+      </div>
+      <div class="grid g3" style="margin-top:40px">
+        <article class="card reveal">
+          <p class="dim" style="margin:0;font-size:12px;letter-spacing:.22em;text-transform:uppercase;font-weight:600">Software</p>
+          <p style="font-size:34px;color:var(--teal);font-weight:600;margin:10px 0 0;line-height:1.1">$500<span style="font-size:14px;color:var(--dim);font-weight:500"> once, + GST</span></p>
+          <ul class="ticks">
+            <li>Your clients and their dogs brought across</li>
+            <li>Upcoming bookings in the diary before you switch</li>
+            <li>Services, prices and staff set up</li>
+          </ul>
+        </article>
+        <article class="card reveal">
+          <p class="dim" style="margin:0;font-size:12px;letter-spacing:.22em;text-transform:uppercase;font-weight:600">Software + Messaging</p>
+          <p style="font-size:34px;color:var(--teal);font-weight:600;margin:10px 0 0;line-height:1.1">$750<span style="font-size:14px;color:var(--dim);font-weight:500"> once, + GST</span></p>
+          <ul class="ticks">
+            <li class="carry">Everything in Software setup</li>
+            <li>Texting and email set up and tested</li>
+            <li>Reminders and message wording set to suit your salon</li>
+          </ul>
+        </article>
+        <article class="card hl reveal">
+          <p class="teal" style="margin:0;font-size:12px;letter-spacing:.22em;text-transform:uppercase;font-weight:600">Complete</p>
+          <p style="font-size:34px;color:var(--teal);font-weight:600;margin:10px 0 0;line-height:1.1">$990<span style="font-size:14px;color:var(--dim);font-weight:500"> once, + GST</span></p>
+          <ul class="ticks">
+            <li class="carry">Everything in Software + Messaging setup</li>
+            <li>The workflow board and TV display set up for your floor</li>
+            <li>The client portal set up and ready for your clients</li>
+          </ul>
+        </article>
+      </div>
+      <p class="note center"><strong class="teal">Founding salons pay no setup fee.</strong> The setup fee is charged once, never again.</p>
     </div>
   </section>
 
@@ -124,7 +165,7 @@
             <tr><th scope="row">Two-way texting and email</th><td>–</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
             <tr><th scope="row">Reminders and confirmations</th><td>–</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
             <tr><th scope="row">Campaigns</th><td>–</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
-            <tr><th scope="row">Memberships with weekly billing</th><td>–</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">One-off setup, plus GST</th><td>$500</td><td>$750</td><td class="us">$990</td></tr>
             <tr><th scope="row">Client texts included each month</th><td>None</td><td>1,000</td><td class="us">2,500</td></tr>
             <tr><th scope="row">Live workflow board and TV display</th><td>–</td><td>–</td><td class="us yes">✓</td></tr>
             <tr><th scope="row">Where-the-day-went timing report</th><td>–</td><td>–</td><td class="us yes">✓</td></tr>
@@ -144,7 +185,7 @@
         <h2 class="h-sec">A portal your clients will actually use.</h2>
         <p class="lead">Every owner gets their own sign-in, under your salon's name. It answers the questions that would otherwise be a phone call while you have a dog on the table.</p>
       </div>
-      <div class="grid g3" style="margin-top:40px">
+      <div class="grid g4" style="margin-top:40px">
         <div class="card reveal"><h3>Upcoming visits</h3><p>Every booking for every dog in the family, in one place.</p></div>
         <div class="card reveal"><h3>Reschedule or cancel</h3><p>Owners move their own appointment into a time you have free. No phone tag.</p></div>
         <div class="card reveal"><h3>Follow the groom live</h3><p>Checked in, bathing, drying, grooming, ready. The portal shows where their dog is up to.</p></div>
@@ -153,7 +194,6 @@
         <div class="card reveal"><h3>Grooming cards</h3><p>A note from the groomer after each visit: what was checked and when to come back.</p></div>
         <div class="card reveal"><h3>Agreements signed up front</h3><p>Your service agreement is signed in the portal before the first visit.</p></div>
         <div class="card reveal"><h3>Details kept current</h3><p>Owners update their own mobile, address and who else you can ring about the dog.</p></div>
-        <div class="card reveal"><h3>Memberships at a glance</h3><p>Members see their plan and what is coming up.</p></div>
       </div>
       <p class="note center">Works on any phone and can be added to the home screen like an app.</p>
     </div>
@@ -202,6 +242,7 @@
         <details><summary>Do prices include GST?</summary><div><p>No. Prices are in Australian dollars and exclude GST, which is added to your invoice.</p></div></details>
         <details><summary>What happens when the trial ends?</summary><div><p>Choose a plan any time during the seven days and you carry straight on. If the trial ends without a plan, the salon pauses until you choose one. Nothing is deleted, and you can still sign in, pay and export your client list.</p></div></details>
         <details><summary>Can I change plans later?</summary><div><p>Yes. Change plan, update your card, download invoices or cancel from the billing page, whenever you like.</p></div></details>
+        <details><summary>Why is there a setup fee?</summary><div><p>Because we move you across rather than leaving you to do it. Your clients, dogs, bookings, services and staff are brought into Groomigo and checked with you before you switch. The fee is charged once, and founding salons pay none.</p></div></details>
         <details><summary>Is the price per groomer?</summary><div><p>No. Each plan is a price per salon.</p></div></details>
         <details><summary>What if we send more texts than the plan includes?</summary><div><p>Groomigo counts the texts your salon sends and warns you as you get close to the month's allowance, so it's never a surprise.</p></div></details>
       </div>
@@ -213,7 +254,7 @@
       <div class="cta-band reveal">
         <img class="mark" src="/groomigo-logo-on-dark-v1.png" width="900" height="883" alt="">
         <h2 class="h-sec">See all of it for a week.</h2>
-        <p class="lead">No card needed. Choose a plan when you're ready.</p>
+        <p class="lead">No card needed. Choose a plan when you're ready, and we'll set your salon up with you.</p>
         <div class="cta-row center"><a class="btn btn-primary btn-lg" href="https://staff.barkinbeautiful.com.au/signup">Start your 7-day free trial <span class="arrow" aria-hidden="true">→</span></a></div>
       </div>
     </div>
@@ -233,7 +274,6 @@
         <ul>
           <li><a href="/features/">Features</a></li>
           <li><a href="/workflow/">The floor</a></li>
-          <li><a href="/memberships/">Memberships</a></li>
           <li><a href="/plans/">Plans</a></li>
         </ul>
       </div>

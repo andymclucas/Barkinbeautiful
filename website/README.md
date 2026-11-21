@@ -14,7 +14,6 @@ this folder.
 | `/` | `index.html` | Home |
 | `/features/` | `features/index.html` | Every feature, by area |
 | `/workflow/` | `workflow/index.html` | The floor: the live workflow board |
-| `/memberships/` | `memberships/index.html` | Grooming memberships |
 | `/plans/` | `plans/index.html` | Plans and prices |
 | `/switch/` | `switch/index.html` | Switching to Groomigo |
 | `/about/` | `about/index.html` | Our story |
@@ -56,8 +55,12 @@ a Disallow line there would publish the addresses.
   concept of 21/11/2026; what a salon is charged lives in Stripe, so keep the
   two the same. The client portal is listed under Complete at his request; the
   app does not yet tie it to a plan.
-- Membership plans are described as visit rhythms (every 2, 3, 4, 6 or 8
-  weeks), never as a yearly groom count.
+- One-off setup fees, $500 / $750 / $990 plus GST by plan, waived for founding
+  salons: agreed in the team chat on 21/11/2026 and added at Andy's request on
+  22/11/2026. Nothing in the app or Stripe charges them yet.
+- No mention of memberships anywhere on the site (Andy, 22/11/2026): what a
+  salon sells its own clients is the salon's business, not Groomigo's. The
+  feature still exists in the app.
 - The logo is always the stacked lockup, wordmark under the dog.
 
 ## Logo and icons

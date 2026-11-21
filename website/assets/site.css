@@ -419,8 +419,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; text-wrap
 .price b { display: block; font-size: 44px; font-weight: 600; line-height: 1.1; color: var(--teal); letter-spacing: -0.02em; }
 .price b small { font-size: 15px; font-weight: 500; letter-spacing: .08em; }
 .price span { display: block; font-size: 13px; color: var(--dim); margin-top: 2px; }
+.price em.setup { display: block; font-style: normal; font-size: 13px; font-weight: 500; color: var(--soft); margin-top: 10px; }
 .plan .ticks { flex: 1; margin-top: 20px; }
-.plan .ticks li.carry { color: var(--white); font-weight: 500; }
+.ticks li.carry { color: var(--white); font-weight: 500; }
 .plan .btn { margin-top: 22px; width: 100%; }
 @media (max-width: 960px) { .plans { grid-template-columns: 1fr; max-width: 480px; margin: 0 auto; gap: 26px; } .plan h2, .plan .for { min-height: 0; } }
 
