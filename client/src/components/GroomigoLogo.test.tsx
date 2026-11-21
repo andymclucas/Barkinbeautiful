@@ -37,13 +37,24 @@ describe("GroomigoLogo", () => {
 });
 
 describe("sidebarLogoTone", () => {
-  it("uses the white lettering in Christmas mode, where the sidebar is dark red", () => {
-    expect(sidebarLogoTone(true)).toBe("on-dark");
-    render(<GroomigoLogo tone={sidebarLogoTone(true)} height={60} />);
+  it("uses the white lettering in Christmas mode, where the sidebar is dark green", () => {
+    expect(sidebarLogoTone({ festive: true, sidebar: "#ffffff" })).toBe("on-dark");
+    render(<GroomigoLogo tone={sidebarLogoTone({ festive: true })} height={60} />);
     expect((screen.getByRole("img", { name: "Groomigo" }) as HTMLImageElement).getAttribute("src")).toBe(GROOMIGO_LOGO_ON_DARK);
   });
 
-  it("follows light and dark mode the rest of the year", () => {
-    expect(sidebarLogoTone(false)).toBe("auto");
+  it("uses the white lettering on the default dark sidebar, whatever the app's mode", () => {
+    expect(sidebarLogoTone({})).toBe("on-dark");
+    expect(sidebarLogoTone({ sidebar: "#2b1830" })).toBe("on-dark");
+  });
+
+  it("uses the dark lettering when a salon picks a light sidebar", () => {
+    expect(sidebarLogoTone({ sidebar: "#f5f0f7" })).toBe("on-light");
+    render(<GroomigoLogo tone={sidebarLogoTone({ sidebar: "#f5f0f7" })} height={60} />);
+    expect((screen.getByRole("img", { name: "Groomigo" }) as HTMLImageElement).getAttribute("src")).toBe(GROOMIGO_LOGO_ON_LIGHT);
+  });
+
+  it("derives the sidebar from the primary colour when none was chosen", () => {
+    expect(sidebarLogoTone({ primary: "#d61572" })).toBe("on-dark");
   });
 });
