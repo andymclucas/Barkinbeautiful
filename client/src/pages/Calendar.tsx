@@ -1,4 +1,5 @@
 import { sessionDividerTop, AFTERNOON_SESSION_LABEL } from "@shared/sessionDivider";
+import { salonName } from "@shared/salonBrand";
 import { applyStaffOrder, moveStaff } from "@shared/staffColumnOrder";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BookingWarnings } from "@/components/BookingWarnings";
@@ -981,6 +982,8 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
   copyFrom?: ReportSnapshot | null;
   onCopyApplied?: () => void;
 }) {
+  // The card is the salon's, not Barkin' Beautiful's: see shared/salonBrand.ts.
+  const { data: cardSalon } = trpc.settings.getTenantInfo.useQuery({});
   const utils = trpc.useUtils();
   const { data: existing } = trpc.groomingReports.getByAppointment.useQuery({ appointmentId: appt.id });
   const upsert = trpc.groomingReports.upsert.useMutation({
@@ -1116,7 +1119,7 @@ function GroomingReportPanel({ appt, onCopyToAll, copyFrom, onCopyApplied }: {
     const serviceLabel = SERVICE_LABELS[appt.serviceType] ?? appt.serviceType.replace(/_/g, " ");
     return `<div style="font-family:Arial,sans-serif;color:#172033;max-width:600px;margin:0 auto">
       <div style="background:linear-gradient(135deg,#6d28d9,#8b5cf6);padding:24px 28px;border-radius:18px;color:#fff">
-        <div style="font-size:11px;letter-spacing:.12em;font-weight:700;opacity:.82">BARKIN BEAUTIFUL</div>
+        <div style="font-size:11px;letter-spacing:.12em;font-weight:700;opacity:.82;text-transform:uppercase">${escapeHtml(salonName(cardSalon, ""))}</div>
         <div style="font-size:27px;font-weight:800;margin-top:8px">${escapeHtml(appt.petName ?? "Your pet")}'s Grooming Card</div>
         <div style="font-size:13px;opacity:.9;margin-top:5px">${escapeHtml(new Date(appt.scheduledStart).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), weekday: "long", day: "numeric", month: "long", year: "numeric" }))} · Groomed by ${escapeHtml(appt.staffName ?? "your Groomigo groomer")}</div>
       </div>

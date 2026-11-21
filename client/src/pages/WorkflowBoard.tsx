@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { SalonLogo } from "@/components/SalonLogo";
 import { VipMark } from "@/components/VipMark";
 import { PetCodeWarningBox } from "@/components/PetCodeWarningBox";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
@@ -95,6 +96,9 @@ export default function WorkflowBoard() {
    * wall screen back to the staff board — see client/src/lib/tvMode.ts.
    */
   const { tvMode, setTvMode } = useTvMode();
+  // TV mode returns before DashboardLayout mounts, so it asks for the
+  // salon's name and logo itself.
+  const { data: salonBrand } = trpc.settings.getTenantInfo.useQuery({});
   const [newBuildAvailable, setNewBuildAvailable] = useState(false);
   /**
    * TV mode reloads itself; the staff board asks first.
@@ -662,7 +666,7 @@ export default function WorkflowBoard() {
           {/* TV Header */}
           <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3 min-w-0">
-              <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-10 object-contain shrink-0 dark:brightness-0 dark:invert" />
+              <SalonLogo brand={salonBrand} className="h-10 w-auto shrink-0 dark:brightness-0 dark:invert" badgeClassName="h-10 w-10 shrink-0 text-sm" />
               <div className="min-w-0">
                 <h1 className="text-2xl font-bold truncate">Live Workflow Board</h1>
                 <p className="text-sm text-muted-foreground dark:text-muted-foreground truncate">{formatAestDate(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</p>

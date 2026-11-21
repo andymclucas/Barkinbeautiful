@@ -1,4 +1,6 @@
 import { trpc } from "@/lib/trpc";
+import { SalonLogo } from "@/components/SalonLogo";
+import { salonName } from "@shared/salonBrand";
 import { useFollowSalonDay } from "@/lib/followSalonDay";
 import { WORKFLOW_STAGE_COLOURS } from "@shared/workflowStageColours";
 import { workflowStateLabel } from "@shared/workflowStateLabels";
@@ -61,6 +63,7 @@ export default function WorkflowDisplay() {
   // Tuesday's dogs.
   useBuildVersionReload();
   const { loading, user } = useAuth();
+  const { data: salonBrand } = trpc.settings.getTenantInfo.useQuery({}, { enabled: Boolean(user) });
   const displayUrl = typeof window === "undefined"
     ? `${PRODUCTION_APP_URL}/workflow/display`
     : `${window.location.origin}/workflow/display`;
@@ -253,7 +256,7 @@ export default function WorkflowDisplay() {
       <IncomingCallAlert />
       <header className="flex items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <img src="/barkin_beautiful_logo.png" alt="Barkin Beautiful" className="h-12 w-12 object-contain rounded bg-white p-1" />
+          <SalonLogo brand={salonBrand} className="h-12 w-12 rounded bg-white p-1" badgeClassName="h-12 w-12 text-base" />
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Live Workflow Board</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">{/* Parsed and rendered as UTC on purpose. boardDate is a plain
@@ -339,7 +342,7 @@ export default function WorkflowDisplay() {
                 </div>
                 <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.24em] text-amber-700 dark:text-amber-200"><Sparkles className="h-4 w-4" /> Day complete <Sparkles className="h-4 w-4" /></div>
                 <h2 className="mt-3 text-4xl font-black text-slate-900 dark:text-white md:text-5xl">All dogs are complete</h2>
-                <p className="mt-3 max-w-xl text-lg text-slate-600 dark:text-slate-300">A great day’s work from the Barkin Beautiful team.</p>
+                <p className="mt-3 max-w-xl text-lg text-slate-600 dark:text-slate-300">A great day’s work from the {salonName(salonBrand, "whole")} team.</p>
                 <div className="mt-7 flex flex-wrap justify-center gap-3">
                   <button type="button" onClick={() => setShowCompleted(true)} className="rounded-lg border border-emerald-300/30 dark:border-emerald-800/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-800 dark:text-emerald-100 hover:bg-emerald-400/20">Review completed dogs</button>
                   <button type="button" onClick={resetForTomorrow} className="rounded-lg border border-violet-300/30 dark:border-violet-800/30 bg-violet-400/10 px-4 py-2 text-sm font-semibold text-violet-800 dark:text-violet-100 hover:bg-violet-400/20">Reset for tomorrow</button>
