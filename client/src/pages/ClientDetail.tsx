@@ -57,6 +57,7 @@ import { TextUpcomingDatesButton } from "@/components/TextUpcomingDatesButton";
 import { AppointmentAddOns } from "@/components/AppointmentAddOns";
 import { ClientAgreementsPanel } from "@/components/client-record/ClientAgreements";
 import { ClientPackagesPanel, PetPaperworkPanel } from "@/components/client-record/ClientPackages";
+import { describeCancelAll, describeCancelAllResult } from "@shared/cancelAllUpcoming";
 import { bookingBucket, countBookingBuckets, sortBookingsForBucket, BOOKING_BUCKETS, BOOKING_BUCKET_LABELS, type BookingBucket } from "@shared/bookingBuckets";
 import { ClientPetsAside } from "@/components/client-record/ClientPetsAside";
 import { Separator } from "@/components/ui/separator";
@@ -391,6 +392,7 @@ export default function ClientDetail() {
   // session with it, so it goes through a named confirm rather than a
   // window.confirm — the same shape the calendar's Delete booking uses.
   const [confirmDeleteAppt, setConfirmDeleteAppt] = useState<{ id: number; label: string; petName: string | null; companions: string } | null>(null);
+  const [confirmCancelAll, setConfirmCancelAll] = useState(false);
   const [confirmCancelAppt, setConfirmCancelAppt] = useState<{ id: number; label: string; petName: string | null; together: string; togetherCount: number } | null>(null);
   /*
    * Andy, 04/11/2026: "Add feature to be able to delete clients - just
@@ -545,6 +547,19 @@ export default function ClientDetail() {
       toast.success(`${result.cancelled} dog${result.cancelled === 1 ? "" : "s"} cancelled.${left} ${textOutcome(result.notice)}`);
     },
     onError: (error) => toast.error(error.message || "Could not cancel that booking"),
+  });
+  /*
+   * Every upcoming booking at once (Lauren, 21/11/2026: a client moving
+   * away, five bookings to cancel one by one). Cancels, never deletes,
+   * and sends no text: shared/cancelAllUpcoming.ts.
+   */
+  const cancelAllUpcoming = trpc.calendar.cancelAllUpcoming.useMutation({
+    onSuccess: async (result) => {
+      await afterCancel();
+      setConfirmCancelAll(false);
+      toast.success(describeCancelAllResult(result.cancelled, result.inSalon));
+    },
+    onError: (error) => toast.error(error.message || "Could not cancel those bookings"),
   });
   const deleteAppointment = trpc.calendar.deleteAppointment.useMutation({
     onSuccess: async () => {
@@ -2575,7 +2590,18 @@ export default function ClientDetail() {
                   {BOOKING_BUCKET_LABELS[bucket]} ({bookingCounts[bucket]})
                 </button>
               ))}
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                {bookingTab === "upcoming" && bookingCounts.upcoming > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-red-200 text-xs text-red-700 hover:bg-red-50 hover:text-red-800"
+                    onClick={() => setConfirmCancelAll(true)}
+                  >
+                    Cancel all upcoming
+                  </Button>
+                )}
                 <Select value={paymentFilter} onValueChange={(v) => { setPaymentFilter(v); setBookingPage(1); }}>
                   <SelectTrigger className="h-8 w-[11rem] text-xs" aria-label="Payment status">
                     <SelectValue />
@@ -3562,6 +3588,24 @@ export default function ClientDetail() {
               onClick={() => clientId && deleteClient.mutate({ clientId })}
             >
               {deleteClient.isPending ? "Deleting…" : "Delete client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={confirmCancelAll} onOpenChange={open => { if (!open && !cancelAllUpcoming.isPending) setConfirmCancelAll(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel all upcoming bookings?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{describeCancelAll(bookingCounts.upcoming)}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmCancelAll(false)} disabled={cancelAllUpcoming.isPending}>Keep them</Button>
+            <Button
+              variant="destructive"
+              disabled={cancelAllUpcoming.isPending}
+              onClick={() => cancelAllUpcoming.mutate({ clientId })}
+            >
+              {cancelAllUpcoming.isPending ? "Cancelling..." : `Cancel ${bookingCounts.upcoming === 1 ? "1 booking" : `all ${bookingCounts.upcoming}`}`}
             </Button>
           </DialogFooter>
         </DialogContent>
