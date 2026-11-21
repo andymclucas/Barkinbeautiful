@@ -243,6 +243,7 @@ import { validateLineDiscount, applyLineDiscount } from "../shared/lineDiscount"
 import { sendBookingConfirmation, sendBookingDetailsByStaff } from "./bookingConfirmation";
 import { sendCancellationNotice, sendRescheduleNotice, clearCancellationClaim } from "./appointmentChangeNotify";
 import { wholeBookingCancellation } from "@shared/sharedBookingAttendance";
+import { planCancelAllUpcoming } from "@shared/cancelAllUpcoming";
 import { overduePets, type OverduePet } from "../shared/overdueForGroom";
 import { DEFAULT_TIMEZONE } from "../shared/auditTimestamp";
 import { weeklyToMonthly, annualisedCost, describeRate, resolveChargePlan } from "../shared/membershipBillingCycle";
@@ -3344,6 +3345,84 @@ const calendarRouter = router({
       // AFTER the writes, and exactly once. This is the whole point.
       const notice = await sendCancellationNotice(db, ids[0]);
       return { cancelled: ids.length, blocked: plan.blocked.map((b) => b.name), notice };
+    }),
+
+  /**
+   * Cancel every upcoming booking a client has, in one action.
+   *
+   * Lauren, 21/11/2026: a client moving away had five bookings ahead and
+   * each had to be cancelled by hand. Andy: "Add the function to cancel
+   * all." The rules are in shared/cancelAllUpcoming.ts: upcoming means the
+   * client page's Upcoming tab, a dog already in the salon is never
+   * cancelled in bulk, and NO text is sent (one per booking otherwise, to
+   * a client who asked for this).
+   *
+   * operationalProcedure like cancelWholeBooking beside it, and the same
+   * guard: every row is access-checked before anything is written, so a
+   * restricted groomer who cannot reach all of a client's bookings is
+   * refused the whole action rather than cancelling some of them.
+   */
+  cancelAllUpcoming: operationalProcedure
+    .input(z.object({ tenantId: z.number().default(1), clientId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input);
+      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId })
+        .from(clients).where(eq(clients.id, input.clientId)).limit(1);
+      if (!client || client.tenantId !== tenantId) throw new Error("This client is not available to this salon");
+
+      const rows = await db
+        .select({
+          id: appointments.id,
+          scheduledStart: appointments.scheduledStart,
+          status: appointments.status,
+          workflowState: appointments.workflowState,
+          petName: pets.name,
+        })
+        .from(appointments)
+        .leftJoin(pets, eq(pets.id, appointments.petId))
+        .where(and(
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.clientId, input.clientId),
+          gt(appointments.scheduledStart, new Date()),
+        ));
+
+      const plan = planCancelAllUpcoming(rows);
+      const inSalon = plan.inSalon.map((r) => r.petName);
+      if (plan.cancel.length === 0) return { cancelled: 0, inSalon };
+
+      let staffId: number | undefined;
+      for (const id of plan.cancel) {
+        const portalStaff = await requireApprovedStaffAppointmentAccess(db, ctx.user, id);
+        staffId = portalStaff?.id ?? staffId;
+      }
+
+      const before = new Map(rows.map((r: any) => [r.id, r.workflowState]));
+      await db.update(appointments)
+        .set({ workflowState: "cancelled", status: "cancelled" })
+        .where(and(
+          inArray(appointments.id, plan.cancel),
+          eq(appointments.tenantId, tenantId),
+          eq(appointments.clientId, input.clientId),
+        ));
+      await db.insert(workflowLogs).values(plan.cancel.map((id) => ({
+        appointmentId: id,
+        fromState: before.get(id) ?? "scheduled",
+        toState: "cancelled" as const,
+        changedByStaffId: staffId,
+      })));
+      // A quote still waiting on the owner for a groom that is now off
+      // would let them approve work that will never happen: the same
+      // expiry a single cancellation applies.
+      await db.update(groomQuotes)
+        .set({ status: "expired", updatedAt: new Date() })
+        .where(and(
+          eq(groomQuotes.tenantId, tenantId),
+          inArray(groomQuotes.appointmentId, plan.cancel),
+          eq(groomQuotes.status, "sent"),
+        ));
+      return { cancelled: plan.cancel.length, inSalon };
     }),
 
   addPetsToSharedAppointment: operationalProcedure

@@ -205,6 +205,10 @@ const OPERATIONAL = [
      the owner. It reads the diary's free gaps and returns no money and
      no client details. */
   "calendarRouter.availability",
+  /* Every upcoming booking of a client at once (Lauren, 21/11/2026, a
+     client moving away). Same reasoning and same per-row access guard
+     as cancelWholeBooking below, and it sends no text. */
+  "calendarRouter.cancelAllUpcoming",
   /*
    * Cancels every dog of a booking at once so the client gets ONE
    * text instead of one per dog. operationalProcedure like
@@ -630,7 +634,7 @@ describe("tRPC procedure surface", () => {
     // packages.unredeem, for grooms a client paid for up front (a bank
     // transfer for the year) and counting them off bookings. All three
     // protectedProcedure, like the rest of the packages router.
-    expect(surface).toHaveLength(458);
+    expect(surface).toHaveLength(459);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -707,7 +711,8 @@ describe("tRPC procedure surface", () => {
     // skipped date of a repeat, staff-facing like the rest of the calendar.
     // 163 since 13/11/2026: the staff half of supportChat. Every staff
     // login can ask for help; the server keys each one to ctx.user.id.
-    expect(OPERATIONAL).toHaveLength(164);
+    // 165 since 21/11/2026: calendarRouter.cancelAllUpcoming.
+    expect(OPERATIONAL).toHaveLength(165);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {
