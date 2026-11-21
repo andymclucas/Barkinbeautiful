@@ -46,8 +46,12 @@ a Disallow line there would publish the addresses.
   aren't reachable: tips, payroll or commission, rosters, a self-serve MoeGo
   import, automatic tracker or waitlist texts, a retail sales report, AI that
   books. Online bookings are requests the salon confirms.
-- The product illustrations are HTML drawings with made-up dogs and names.
-  Never use a real client's name or a screenshot with real client data.
+- The product pictures in `assets/screens/` are the app's real screens,
+  rendered from the real components with made-up dogs, owners and staff, never
+  from the live database (22/11/2026). Never use a real client's name or a
+  screenshot of real client data. Two app screens hardcode Barkin' Beautiful's
+  logo (the TV header and the online booking header), so those two are cropped
+  below it until the app is fixed.
 - No customer counts, testimonials or ratings until there are real ones.
 - The plan names, features and text allowances copy
   `shared/planEntitlements.ts` and `shared/smsMetering.ts` by hand. Prices
