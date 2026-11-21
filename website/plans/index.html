@@ -3,312 +3,258 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Groomigo plans</title>
-<!-- HIDDEN PAGE (Andy, 21/11/2026): not linked from anywhere and kept out of
-     search engines. Do not add it to robots.txt: a Disallow line there would
-     publish the address. Remove the noindex line the day it goes public. -->
+<title>Plans and prices – Groomigo</title>
+<meta name="description" content="Groomigo plans for grooming salons, in Australian dollars: Software $99, Software + Messaging $179, Complete with Workflow $299 a month plus GST. 7-day free trial, no card to start.">
+<!--META-->
 <meta name="robots" content="noindex, nofollow">
-<meta name="description" content="Groomigo plans for grooming salons.">
 <meta name="theme-color" content="#000000">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap">
-<style>
-  /* Same brand as the front page: black, white and Groomigo teal.
-     The plan names, what each includes and the text allowances mirror
-     shared/planEntitlements.ts and shared/smsMetering.ts in the app. If
-     those change, change this page too: it is static and reads nothing. */
-  :root {
-    --black: #000000; --white: #FFFFFF; --teal: #1FE3DF; --soft: #B9C4C8;
-    --card: #0B0F10; --edge: #1E2729; --dim: #7E8B90;
-    color-scheme: dark;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--black);
-    color: var(--white);
-    font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-    line-height: 1.55;
-  }
-  a { color: inherit; }
-  .wrap {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 0 max(20px, env(safe-area-inset-right)) 0 max(20px, env(safe-area-inset-left));
-  }
-  header { padding: 28px 0 0; text-align: center; }
-  header img { width: 150px; height: auto; display: inline-block; }
-
-  .eyebrow {
-    margin: 0;
-    font-size: 13px; font-weight: 600;
-    letter-spacing: 0.34em; text-transform: uppercase;
-    color: var(--teal);
-  }
-  .hero { text-align: center; padding: clamp(36px, 6vw, 64px) 0 clamp(32px, 5vw, 52px); }
-  h1 {
-    margin: 16px auto 0;
-    max-width: 18ch;
-    font-size: clamp(30px, 5.4vw, 52px);
-    font-weight: 600; line-height: 1.15;
-    text-wrap: balance;
-  }
-  .hero p.lead {
-    margin: 20px auto 0;
-    max-width: 46ch;
-    font-size: clamp(16px, 2.1vw, 19px);
-    color: var(--soft);
-    text-wrap: pretty;
-  }
-  .hero p.lead strong { color: var(--white); font-weight: 500; }
-
-  /* Plans */
-  .plans {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 18px;
-    align-items: stretch;
-  }
-  .plan {
-    position: relative;
-    display: flex; flex-direction: column;
-    background: var(--card);
-    border: 1px solid var(--edge);
-    border-radius: 18px;
-    padding: 28px 24px 24px;
-  }
-  .plan.top { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal), 0 0 44px rgba(31, 227, 223, 0.13); }
-  .tag {
-    position: absolute; top: -12px; left: 24px;
-    background: var(--teal); color: #001413;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
-    padding: 4px 10px; border-radius: 999px;
-  }
-  .plan .step { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.22em; color: var(--dim); text-transform: uppercase; }
-  .plan h2 { margin: 8px 0 0; font-size: 22px; font-weight: 600; line-height: 1.25; min-height: 2.5em; }
-  .price {
-    margin: 14px 0 0;
-    padding: 14px 0;
-    border-top: 1px solid var(--edge); border-bottom: 1px solid var(--edge);
-  }
-  .price b { display: block; font-size: 38px; font-weight: 600; line-height: 1.15; color: var(--teal); }
-  .price b small { font-size: 15px; font-weight: 500; letter-spacing: 0.08em; }
-  .price span { display: block; font-size: 13px; color: var(--dim); }
-  .plan ul { list-style: none; margin: 18px 0 0; padding: 0; flex: 1; }
-  .plan li {
-    position: relative;
-    padding: 0 0 0 26px;
-    margin: 0 0 10px;
-    font-size: 15px; color: var(--soft);
-  }
-  .plan li::before {
-    content: ""; position: absolute; left: 2px; top: 0.42em;
-    width: 11px; height: 6px;
-    border-left: 2px solid var(--teal); border-bottom: 2px solid var(--teal);
-    transform: rotate(-45deg);
-  }
-  .plan li.carry { color: var(--white); font-weight: 500; }
-  .plan li.texts { color: var(--white); }
-  .btn {
-    display: block;
-    margin: 18px 0 0;
-    padding: 13px 16px;
-    border-radius: 12px;
-    border: 1px solid var(--teal);
-    color: var(--teal);
-    font-size: 15px; font-weight: 600; text-align: center; text-decoration: none;
-  }
-  .btn:hover, .btn:focus-visible { background: rgba(31, 227, 223, 0.1); }
-  .plan.top .btn { background: var(--teal); color: #001413; }
-  .plan.top .btn:hover, .plan.top .btn:focus-visible { background: #5CEDEA; }
-  .under { margin: 18px 0 0; text-align: center; font-size: 14px; color: var(--dim); }
-
-  /* How it works */
-  section.block { padding: clamp(52px, 8vw, 88px) 0 0; }
-  section.block > h2 {
-    margin: 12px 0 0; text-align: center;
-    font-size: clamp(24px, 3.6vw, 34px); font-weight: 600; line-height: 1.2;
-    text-wrap: balance;
-  }
-  section.block > .eyebrow { text-align: center; }
-  .steps {
-    list-style: none; margin: 32px 0 0; padding: 0;
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
-    counter-reset: n;
-  }
-  .steps li { counter-increment: n; border-top: 2px solid var(--edge); padding: 18px 0 0; }
-  .steps li::before {
-    content: counter(n);
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; border-radius: 50%;
-    border: 1px solid var(--teal); color: var(--teal);
-    font-size: 14px; font-weight: 600;
-  }
-  .steps b { display: block; margin: 12px 0 4px; font-size: 17px; font-weight: 600; }
-  .steps span { font-size: 15px; color: var(--soft); }
-
-  section.block > p.sub {
-    margin: 14px auto 0; max-width: 56ch; text-align: center;
-    font-size: clamp(15px, 2vw, 17px); color: var(--soft); text-wrap: pretty;
-  }
-  .tiles { margin: 32px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  .tile { background: var(--card); border: 1px solid var(--edge); border-top: 2px solid var(--teal); border-radius: 14px; padding: 20px 22px; }
-  .tile b { display: block; font-size: 16px; font-weight: 600; }
-  .tile span { display: block; margin: 6px 0 0; font-size: 15px; color: var(--soft); }
-
-  .promises { margin: 32px 0 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
-  .promise { background: var(--card); border: 1px solid var(--edge); border-radius: 16px; padding: 22px 24px; }
-  .promise b { display: block; font-size: 17px; font-weight: 600; }
-  .promise span { display: block; margin: 6px 0 0; font-size: 15px; color: var(--soft); }
-
-  .close { text-align: center; padding: clamp(52px, 8vw, 88px) 0 0; }
-  .close h2 { margin: 0; font-size: clamp(24px, 3.6vw, 34px); font-weight: 600; text-wrap: balance; }
-  .close .btn { display: inline-block; margin: 22px 0 0; padding: 14px 28px; background: var(--teal); color: #001413; }
-  .close .btn:hover, .close .btn:focus-visible { background: #5CEDEA; }
-  .close p { margin: 14px 0 0; font-size: 14px; color: var(--dim); }
-
-  footer {
-    margin: clamp(56px, 8vw, 88px) 0 0;
-    border-top: 1px solid var(--edge);
-    padding: 26px 0 max(34px, env(safe-area-inset-bottom));
-    text-align: center; font-size: 14px; color: var(--dim);
-  }
-  footer strong { color: var(--soft); font-weight: 500; }
-
-  @media (max-width: 860px) {
-    .plans { grid-template-columns: 1fr; gap: 24px; max-width: 460px; margin: 0 auto; }
-    .plan h2 { min-height: 0; }
-    .steps, .tiles { grid-template-columns: repeat(2, 1fr); }
-  }
-  @media (max-width: 560px) {
-    .steps, .promises, .tiles { grid-template-columns: 1fr; }
-    header img { width: 124px; }
-  }
-</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/assets/site.css?v=1">
+<script src="/assets/site.js?v=1" defer></script>
+<!--/META-->
+<!-- The plan names, what each includes and the text allowances mirror
+     shared/planEntitlements.ts and shared/smsMetering.ts in the app. If those
+     change, change this page too: it is static and reads nothing.
+     The client portal is listed under Complete at Andy's request (21/11/2026);
+     the app does not yet tie the portal to a plan.
+     PRICES: $99 / $179 / $299 AUD plus GST, from Andy's "Groomigo
+     Subscription Concept" (21/11/2026), still to be confirmed with the
+     accountant. The figure a salon is CHARGED lives in Stripe; when the
+     Stripe prices are created, make these three match them. -->
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <a href="/" aria-label="Groomigo home"><img src="/groomigo-logo-on-dark-v1.png" width="900" height="883" alt="Groomigo"></a>
-  </header>
+<!--HEAD:plans-->
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Groomigo home"><img src="/groomigo-logo-on-dark-v1.png" width="900" height="883" alt="Groomigo"></a>
+    <nav class="nav" aria-label="Main"><a href="/features/">Features</a><a href="/workflow/">The floor</a><a href="/memberships/">Memberships</a><a href="/plans/" aria-current="page">Plans</a><a href="/switch/">Switching</a><a href="/about/">Our story</a></nav>
+    <div class="head-cta"><a class="btn btn-ghost" href="https://staff.barkinbeautiful.com.au/login">Sign in</a><a class="btn btn-primary" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a></div>
+    <details class="menu">
+      <summary aria-label="Menu"><span></span></summary>
+      <div class="menu-panel"><a href="/features/">Features</a><a href="/workflow/">The floor</a><a href="/memberships/">Memberships</a><a href="/plans/" aria-current="page">Plans</a><a href="/switch/">Switching</a><a href="/about/">Our story</a><a href="https://staff.barkinbeautiful.com.au/login">Sign in</a><a class="btn btn-primary btn-lg" href="https://staff.barkinbeautiful.com.au/signup">Start your free trial</a></div>
+    </details>
+  </div>
+</header>
+<!--/HEAD-->
+<main id="main">
 
-  <main>
-    <div class="hero">
+  <section class="page-hero center">
+    <div class="wrap">
       <p class="eyebrow">Plans</p>
-      <h1>Start with the diary. Add the rest when you&rsquo;re ready.</h1>
+      <h1 class="display mx-auto" style="max-width:17ch">Start with the diary. Add the rest when you're ready.</h1>
       <p class="lead">Three plans, each adding to the last. Every new salon gets <strong>7 days free with everything switched on</strong>, so you can see all of it before you choose.</p>
     </div>
+  </section>
 
-    <div class="plans">
-      <article class="plan">
-        <p class="step">Plan 1</p>
-        <h2>Software</h2>
-        <!-- PRICES: $99 / $179 / $299 AUD plus GST, from Andy's "Groomigo
-             Subscription Concept" (21/11/2026), still to be confirmed with the
-             accountant. The figure a salon is CHARGED lives in Stripe; when
-             the Stripe prices are created, make these three match them. -->
-        <p class="price"><b>$99 <small>AUD</small></b><span>a month, plus GST</span></p>
-        <ul>
-          <li>Appointment booking system</li>
-          <li>Clients and pets</li>
-          <li>Staff</li>
-          <li>Reporting and analytics</li>
-          <li class="texts">Client texts charged separately</li>
-        </ul>
-        <a class="btn" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
-      </article>
+  <section class="section tight" style="padding-top:24px">
+    <div class="wrap">
+      <div class="plans">
+        <article class="plan reveal">
+          <p class="step">Plan 1</p>
+          <h2>Software</h2>
+          <p class="for">For salons that want a proper diary and records first.</p>
+          <p class="price"><b>$99 <small>AUD</small></b><span>a month, plus GST</span></p>
+          <ul class="ticks">
+            <li>Appointment booking system</li>
+            <li>Clients and pets</li>
+            <li>Staff</li>
+            <li>Reporting and analytics</li>
+            <li><strong>Client texts charged separately</strong></li>
+          </ul>
+          <a class="btn btn-ghost" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
+        </article>
 
-      <article class="plan">
-        <p class="step">Plan 2</p>
-        <h2>Software + Messaging</h2>
-        <p class="price"><b>$179 <small>AUD</small></b><span>a month, plus GST</span></p>
-        <ul>
-          <li class="carry">Everything in Software</li>
-          <li>Texts and email to clients</li>
-          <li>Campaigns</li>
-          <li>Memberships and subscriptions</li>
-          <li class="texts">1,000 client texts a month included</li>
-        </ul>
-        <a class="btn" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
-      </article>
+        <article class="plan reveal">
+          <p class="step">Plan 2</p>
+          <h2>Software + Messaging</h2>
+          <p class="for">For salons ready to talk to clients and sell memberships.</p>
+          <p class="price"><b>$179 <small>AUD</small></b><span>a month, plus GST</span></p>
+          <ul class="ticks">
+            <li class="carry">Everything in Software</li>
+            <li>Texts and email to clients</li>
+            <li>Campaigns</li>
+            <li>Memberships and subscriptions</li>
+            <li><strong>1,000 client texts a month included</strong></li>
+          </ul>
+          <a class="btn btn-ghost" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
+        </article>
 
-      <article class="plan top">
-        <span class="tag">The whole salon</span>
-        <p class="step">Plan 3</p>
-        <h2>Complete, with Workflow</h2>
-        <p class="price"><b>$299 <small>AUD</small></b><span>a month, plus GST</span></p>
-        <ul>
-          <li class="carry">Everything in Software + Messaging</li>
-          <li>The workflow board: every dog from bath to dry to groom</li>
-          <li>Client portal: owners see visits, reschedule, pay and message you</li>
-          <li>Pet tracker: owners follow their dog&rsquo;s groom live</li>
-          <li class="texts">2,500 client texts a month included</li>
-        </ul>
-        <a class="btn" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
-      </article>
-    </div>
-    <p class="under">Prices are in Australian dollars, per salon, and exclude GST. No card needed to start the trial.</p>
-
-    <!-- Andy, 21/11/2026: the client portal is presented as part of the
-         Complete plan. Each tile below is something the portal does today
-         (client/src/pages/ClientPortal.tsx). Note the app does not yet tie
-         the portal to a plan: shared/planEntitlements.ts has no portal
-         feature. -->
-    <section class="block portal">
-      <p class="eyebrow">Included in Complete</p>
-      <h2>A portal your clients will actually use</h2>
-      <p class="sub">Every owner gets their own sign-in, under your salon&rsquo;s name. It answers the questions that would otherwise be a phone call while you have a dog on the table.</p>
-      <div class="tiles">
-        <div class="tile"><b>Upcoming visits</b><span>Every booking for every dog in the family, in one place.</span></div>
-        <div class="tile"><b>Reschedule or cancel</b><span>Owners move their own appointment into a time you have free. No phone tag.</span></div>
-        <div class="tile"><b>Follow the groom live</b><span>Checked in, bathing, drying, grooming, ready. The portal shows where their dog is up to.</span></div>
-        <div class="tile"><b>Pay from the phone</b><span>Today&rsquo;s bill and past invoices, paid by card before they reach the counter.</span></div>
-        <div class="tile"><b>Message the salon</b><span>One conversation with your team, kept with the client&rsquo;s record instead of a personal phone.</span></div>
-        <div class="tile"><b>Grooming cards</b><span>A note from the groomer after each visit: what was checked and when to come back.</span></div>
-        <div class="tile"><b>Agreements signed up front</b><span>Your service agreement is signed in the portal before the first visit.</span></div>
-        <div class="tile"><b>Details kept current</b><span>Owners update their own mobile, address and who else you can ring about the dog.</span></div>
-        <div class="tile"><b>Memberships at a glance</b><span>Members see their plan and what is coming up.</span></div>
+        <article class="plan top reveal">
+          <span class="tag-top">The whole salon</span>
+          <p class="step">Plan 3</p>
+          <h2>Complete, with Workflow</h2>
+          <p class="for">For salons that want the floor and the owner joined up too.</p>
+          <p class="price"><b>$299 <small>AUD</small></b><span>a month, plus GST</span></p>
+          <ul class="ticks">
+            <li class="carry">Everything in Software + Messaging</li>
+            <li>The workflow board: every dog from bath to dry to groom</li>
+            <li>Client portal: owners see visits, reschedule, pay and message you</li>
+            <li>Pet tracker: owners follow their dog's groom live</li>
+            <li><strong>2,500 client texts a month included</strong></li>
+          </ul>
+          <a class="btn btn-primary" href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a>
+        </article>
       </div>
-      <p class="under">Works on any phone and can be added to the home screen like an app.</p>
-    </section>
+      <p class="note center">Prices are in Australian dollars, per salon, and exclude GST. No card needed to start the trial.</p>
+    </div>
+  </section>
 
-    <section class="block">
-      <p class="eyebrow">How it works</p>
-      <h2>From sign-up to a running salon</h2>
-      <ol class="steps">
-        <li><b>Sign up</b><span>Your salon&rsquo;s name, your name, an email and a password. It takes a couple of minutes.</span></li>
+  <!-- COMPARE -->
+  <section class="section line">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="eyebrow">Compare plans</p>
+        <h2 class="h-sec">What's in each plan.</h2>
+      </div>
+      <div class="compare-wrap reveal" style="margin-top:40px">
+        <table class="compare">
+          <thead><tr><th scope="col">Feature</th><th scope="col">Software</th><th scope="col">Software + Messaging</th><th scope="col" class="us">Complete</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Diary, recurring and family bookings</th><td class="yes">✓</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Clients, pets, alerts and style notes</th><td class="yes">✓</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Card payments, invoices and counter sales</th><td class="yes">✓</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Staff roles and permissions</th><td class="yes">✓</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Reports and revenue targets</th><td class="yes">✓</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Export your client list, any time</th><td class="yes">✓</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Two-way texting and email</th><td>–</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Reminders and confirmations</th><td>–</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Campaigns</th><td>–</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Memberships with weekly billing</th><td>–</td><td class="yes">✓</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Client texts included each month</th><td>None</td><td>1,000</td><td class="us">2,500</td></tr>
+            <tr><th scope="row">Live workflow board and TV display</th><td>–</td><td>–</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Where-the-day-went timing report</th><td>–</td><td>–</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Pet tracker for owners</th><td>–</td><td>–</td><td class="us yes">✓</td></tr>
+            <tr><th scope="row">Client portal</th><td>–</td><td>–</td><td class="us yes">✓</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- PORTAL -->
+  <section class="section line">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="eyebrow">Included in Complete</p>
+        <h2 class="h-sec">A portal your clients will actually use.</h2>
+        <p class="lead">Every owner gets their own sign-in, under your salon's name. It answers the questions that would otherwise be a phone call while you have a dog on the table.</p>
+      </div>
+      <div class="grid g3" style="margin-top:40px">
+        <div class="card reveal"><h3>Upcoming visits</h3><p>Every booking for every dog in the family, in one place.</p></div>
+        <div class="card reveal"><h3>Reschedule or cancel</h3><p>Owners move their own appointment into a time you have free. No phone tag.</p></div>
+        <div class="card reveal"><h3>Follow the groom live</h3><p>Checked in, bathing, drying, grooming, ready. The portal shows where their dog is up to.</p></div>
+        <div class="card reveal"><h3>Pay from the phone</h3><p>Today's bill and past invoices, paid by card before they reach the counter.</p></div>
+        <div class="card reveal"><h3>Message the salon</h3><p>One conversation with your team, kept with the client's record instead of a personal phone.</p></div>
+        <div class="card reveal"><h3>Grooming cards</h3><p>A note from the groomer after each visit: what was checked and when to come back.</p></div>
+        <div class="card reveal"><h3>Agreements signed up front</h3><p>Your service agreement is signed in the portal before the first visit.</p></div>
+        <div class="card reveal"><h3>Details kept current</h3><p>Owners update their own mobile, address and who else you can ring about the dog.</p></div>
+        <div class="card reveal"><h3>Memberships at a glance</h3><p>Members see their plan and what is coming up.</p></div>
+      </div>
+      <p class="note center">Works on any phone and can be added to the home screen like an app.</p>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section line">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="eyebrow">How it works</p>
+        <h2 class="h-sec">From sign-up to a running salon.</h2>
+      </div>
+      <ol class="steps-h">
+        <li><b>Sign up</b><span>Your salon's name, your name, an email and a password. It takes a couple of minutes.</span></li>
         <li><b>7 days free</b><span>Every feature is on, including the workflow board. A banner counts the days down.</span></li>
-        <li><b>Choose a plan</b><span>Any day of the trial, from the Billing tab. Your card goes in on Stripe&rsquo;s secure page.</span></li>
+        <li><b>Choose a plan</b><span>Any day of the trial, from the Billing tab. Your card goes in on Stripe's secure page.</span></li>
         <li><b>Carry on</b><span>The plan switches on within seconds. Nothing to reinstall, nothing to set up again.</span></li>
       </ol>
-    </section>
-
-    <section class="block">
-      <p class="eyebrow">The fine print, in plain words</p>
-      <h2>Built the way we&rsquo;d want to be treated</h2>
-      <div class="promises">
-        <div class="promise"><b>We never see your card</b><span>Stripe handles every card. Card numbers never reach Groomigo.</span></div>
-        <div class="promise"><b>A failed payment switches nothing off</b><span>You have dogs in the building. We ask you to update the card and the salon keeps running.</span></div>
-        <div class="promise"><b>Your data is always yours</b><span>Export your client list at any time, on any plan, even after you stop paying.</span></div>
-        <div class="promise"><b>You manage your own billing</b><span>Change the card, download invoices, change plan or cancel yourself, from one button.</span></div>
-      </div>
-    </section>
-
-    <div class="close">
-      <h2>See all of it for a week.</h2>
-      <a class="btn" href="https://staff.barkinbeautiful.com.au/signup">Start your 7-day free trial</a>
-      <p>No card needed. Choose a plan when you&rsquo;re ready.</p>
     </div>
-  </main>
+  </section>
 
-  <footer>
-    <strong>Groomigo.</strong> Salon management software. Designed by groomers. For groomers.
-  </footer>
-</div>
+  <!-- PROMISES -->
+  <section class="section line">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="eyebrow">The fine print, in plain words</p>
+        <h2 class="h-sec">Built the way we'd want to be treated.</h2>
+      </div>
+      <div class="grid g2" style="margin-top:40px">
+        <div class="card reveal"><h3>We never see your card</h3><p>Stripe handles every card. Card numbers never reach Groomigo.</p></div>
+        <div class="card reveal"><h3>A failed payment switches nothing off</h3><p>You have dogs in the building. We ask you to update the card and the salon keeps running.</p></div>
+        <div class="card reveal"><h3>Your data is always yours</h3><p>Export your client list at any time, on any plan, even after you stop paying.</p></div>
+        <div class="card reveal"><h3>You manage your own billing</h3><p>Change the card, download invoices, change plan or cancel yourself, from one button.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section line">
+    <div class="wrap">
+      <div class="sec-head center">
+        <p class="eyebrow">Questions</p>
+        <h2 class="h-sec">About plans and billing.</h2>
+      </div>
+      <div class="faq">
+        <details><summary>Do prices include GST?</summary><div><p>No. Prices are in Australian dollars and exclude GST, which is added to your invoice.</p></div></details>
+        <details><summary>What happens when the trial ends?</summary><div><p>Choose a plan any time during the seven days and you carry straight on. If the trial ends without a plan, the salon pauses until you choose one. Nothing is deleted, and you can still sign in, pay and export your client list.</p></div></details>
+        <details><summary>Can I change plans later?</summary><div><p>Yes. Change plan, update your card, download invoices or cancel from the billing page, whenever you like.</p></div></details>
+        <details><summary>Is the price per groomer?</summary><div><p>No. Each plan is a price per salon.</p></div></details>
+        <details><summary>What if we send more texts than the plan includes?</summary><div><p>Groomigo counts the texts your salon sends and warns you as you get close to the month's allowance, so it's never a surprise.</p></div></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tight">
+    <div class="wrap">
+      <div class="cta-band reveal">
+        <img class="mark" src="/groomigo-logo-on-dark-v1.png" width="900" height="883" alt="">
+        <h2 class="h-sec">See all of it for a week.</h2>
+        <p class="lead">No card needed. Choose a plan when you're ready.</p>
+        <div class="cta-row center"><a class="btn btn-primary btn-lg" href="https://staff.barkinbeautiful.com.au/signup">Start your 7-day free trial <span class="arrow" aria-hidden="true">→</span></a></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+<!--FOOT-->
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a href="/" aria-label="Groomigo home"><img src="/groomigo-logo-on-dark-v1.png" width="900" height="883" alt="Groomigo"></a>
+        <p>Salon management software. Designed by groomers. For groomers.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="/features/">Features</a></li>
+          <li><a href="/workflow/">The floor</a></li>
+          <li><a href="/memberships/">Memberships</a></li>
+          <li><a href="/plans/">Plans</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="/about/">Our story</a></li>
+          <li><a href="/switch/">Switching to Groomigo</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Get started</h4>
+        <ul>
+          <li><a href="https://staff.barkinbeautiful.com.au/signup">Start free trial</a></li>
+          <li><a href="https://staff.barkinbeautiful.com.au/login">Sign in</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-base"><span>© <span data-year>2026</span> Groomigo. Made in Australia.</span><span>Prices in AUD and exclude GST.</span></div>
+  </div>
+</footer>
+<!--/FOOT-->
 </body>
 </html>
