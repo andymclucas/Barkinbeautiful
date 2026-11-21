@@ -37,8 +37,8 @@ const META = `
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/assets/site.css?v=3">
-<script src="/assets/site.js?v=3" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=4">
+<script src="/assets/site.js?v=4" defer></script>
 `;
 
 const header = (key) => {
