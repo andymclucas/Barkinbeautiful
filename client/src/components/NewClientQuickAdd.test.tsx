@@ -125,6 +125,24 @@ describe("NewClientQuickAdd", () => {
     });
   });
 
+  it("saves an email when one is typed, and sends none when it is left blank", async () => {
+    const user = setupUser();
+    render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
+    await fill(user);
+    await user.type(screen.getByLabelText("Email"), " kim@example.com ");
+    await user.click(screen.getByRole("button", { name: /add and book/i }));
+    expect(createClient).toHaveBeenCalledWith({ firstName: "Kim", lastName: "Dahl", phone: undefined, email: "kim@example.com" });
+  });
+
+  it("will not save with an email that is not one, and says so", async () => {
+    const user = setupUser();
+    render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);
+    await fill(user);
+    await user.type(screen.getByLabelText("Email"), "kim at example");
+    expect(screen.getByRole("button", { name: /add and book/i })).toBeDisabled();
+    expect(screen.getByText("Check the email address, or leave it blank.")).toBeInTheDocument();
+  });
+
   it("trims what was typed", async () => {
     const user = setupUser();
     render(<NewClientQuickAdd onCreated={vi.fn()} onCancel={vi.fn()} />);

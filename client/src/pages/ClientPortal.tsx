@@ -1064,8 +1064,6 @@ export default function ClientPortal() {
       </Card>
     )}
 
-    <InvoicesSection invoices={data.invoices ?? []} salon={data.salon} client={data.client} token={token ?? undefined} readOnly={isPreview} />
-
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Dog className="h-5 w-5 text-primary" /> Your pets</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">{data.pets.map(pet => <div key={pet.id} className="rounded-xl border bg-card p-4"><p className="font-semibold">{pet.name}</p><p className="text-sm text-muted-foreground">{pet.breed || pet.species}</p><Badge variant="outline" className="mt-2 capitalize">{pet.status}</Badge></div>)}</CardContent></Card>
 
     <Card>
@@ -1098,6 +1096,14 @@ export default function ClientPortal() {
         )) : <p className="text-sm text-muted-foreground">There are no upcoming appointments in this portal.</p>}
       </CardContent>
     </Card>
+
+    {/*
+      Invoices below the bookings. Lauren, 21/11/2026: a client said she
+      could see only one of her membership bookings; they were all there,
+      under the invoices, and she had not scrolled that far. "Maybe
+      appointment area needs to be above invoices."
+    */}
+    <InvoicesSection invoices={data.invoices ?? []} salon={data.salon} client={data.client} token={token ?? undefined} readOnly={isPreview} />
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Heart className="h-5 w-5 text-primary" /> Memberships</CardTitle></CardHeader><CardContent className="space-y-3">{data.memberships.length ? data.memberships.map(membership => <div key={membership.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-3 last:border-0 last:pb-0"><div><p className="font-semibold">{membership.name}</p><p className="text-sm text-muted-foreground">{membership.status === "active" && membership.nextBillingDate ? `Next renewal: ${portalDate(membership.nextBillingDate)}` : "Please contact the salon for account details."}</p></div><Badge variant="outline" className="capitalize">{membership.tier}</Badge></div>) : <p className="text-sm text-muted-foreground">No memberships are currently shown.</p>}</CardContent></Card>
 
