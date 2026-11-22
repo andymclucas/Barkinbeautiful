@@ -37,6 +37,7 @@ import { getDb } from "./db"
 import { z } from "zod";
 import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";
 import { workflowBoardDayBounds, workflowBoardVersion } from "../shared/workflowBoardVersion";
+import { appointmentsByDate } from "./appointmentIndexHints";
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   systemNotifications,
@@ -1563,7 +1564,7 @@ const calendarRouter = router({
              OBJECT, so String() on it yields "Mon Jul 22" and every key
              misses. Formatting in SQL returns a real string. */
           day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`,
-        }).from(appointments).where(and(
+        }).from(appointments, appointmentsByDate).where(and(
           eq(appointments.tenantId, tenant),
           notInArray(appointments.status, ["cancelled", "no_show"]),
           notInArray(appointments.workflowState, ["cancelled", "no_show"]),
@@ -4339,7 +4340,7 @@ const workflowRouter = router({
           staffColour: staff.colourHex,
           staffId: appointments.staffId,
         })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .leftJoin(pets, eq(appointments.petId, pets.id))
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
@@ -4432,7 +4433,7 @@ const workflowRouter = router({
           staffName: staff.name,
           staffColour: staff.colourHex,
         })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .leftJoin(pets, eq(appointments.petId, pets.id))
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
@@ -4634,7 +4635,7 @@ const workflowRouter = router({
           bookings: sql<number>`COUNT(*)`,
           lastChanged: sql<Date | string | null>`MAX(${appointments.updatedAt})`,
         })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, start),
@@ -5486,7 +5487,7 @@ const clientsRouter = router({
       // a cancelled booking is exactly how a client slips away.
       const booked = await db
         .select({ petId: appointments.petId })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantId),
           gte(appointments.scheduledStart, new Date()),
@@ -5512,7 +5513,7 @@ const clientsRouter = router({
       // confirmed visit to measure from — see the guard in the module.
       const unconfirmed = await db
         .select({ petId: appointments.petId, scheduledStart: appointments.scheduledStart })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantId),
           lt(appointments.scheduledStart, new Date()),
@@ -5957,7 +5958,7 @@ const clientsRouter = router({
        */
       const ahead = await db
         .select({ clientId: appointments.clientId })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantId),
           gte(appointments.scheduledStart, new Date()),
@@ -9080,7 +9081,7 @@ const staffRouter = router({
       const booked = await db.select({
         day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`.as("day"),
         dogs: sql<number>`COUNT(*)`.as("dogs"),
-      }).from(appointments).where(and(
+      }).from(appointments, appointmentsByDate).where(and(
         eq(appointments.tenantId, tenantId),
         notInArray(appointments.status, ["cancelled", "no_show"]),
         notInArray(appointments.workflowState, ["cancelled", "no_show"]),
@@ -11333,7 +11334,7 @@ const analyticsRouter = router({
           expected: sql<string>`COALESCE(SUM(COALESCE(${appointments.grossPrice}, ${appointments.price})), 0)`,
           notFullyPaidCount: sql<number>`SUM(CASE WHEN ${appointments.paymentStatus} IN ('unpaid','partial') THEN 1 ELSE 0 END)`,
         })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
@@ -11344,7 +11345,7 @@ const analyticsRouter = router({
         ));
       const [apptCount] = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           gte(appointments.scheduledStart, new Date(input.dateFrom)),
@@ -11364,7 +11365,7 @@ const analyticsRouter = router({
       // understating. Return the count so the UI can say so out loud.
       const [unpricedRow] = await db
         .select({ count: sql<number>`COUNT(*)` })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
@@ -11444,7 +11445,7 @@ const analyticsRouter = router({
         readyAt: appointments.readyAt,
         pickedUpAt: appointments.pickedUpAt,
         completedAt: appointments.completedAt,
-      }).from(appointments).where(and(
+      }).from(appointments, appointmentsByDate).where(and(
         eq(appointments.tenantId, tenantOf(ctx, input)),
         eq(appointments.workflowState, "complete"),
         notInArray(appointments.status, ["cancelled", "no_show"]),
@@ -11534,7 +11535,7 @@ const analyticsRouter = router({
         readyAt: appointments.readyAt,
         completedAt: appointments.completedAt,
       })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .leftJoin(pets, eq(appointments.petId, pets.id))
         .leftJoin(clients, eq(appointments.clientId, clients.id))
         .leftJoin(staff, eq(appointments.staffId, staff.id))
@@ -11640,7 +11641,7 @@ const analyticsRouter = router({
           appointmentCount: sql<number>`COUNT(${appointments.id})`,
           revenue: sql<string>`COALESCE(SUM(${appointments.price}), 0)`,
         })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .leftJoin(staff, eq(appointments.staffId, staff.id))
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
@@ -11664,7 +11665,7 @@ const analyticsRouter = router({
       // Appointment revenue (non-membership, completed, with price)
       const [apptRevRow] = await db
         .select({ total: sql<string>`COALESCE(SUM(${appointments.price}), 0)`, count: sql<number>`COUNT(*)` })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
@@ -11683,7 +11684,7 @@ const analyticsRouter = router({
           count: sql<number>`COUNT(DISTINCT ${appointments.id})`,
           revenue: sql<string>`COALESCE(SUM(DISTINCT ${appointments.price}), 0)`,
         })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .innerJoin(memberships, and(
           eq(memberships.clientId, appointments.clientId),
           eq(memberships.status, "active"),
@@ -11831,7 +11832,7 @@ const analyticsRouterExtended = router({
             day: brisbaneDayExpr,
             net: sql<string>`COALESCE(SUM(${appointments.price}), 0)`,
           })
-          .from(appointments)
+          .from(appointments, appointmentsByDate)
           .where(and(
             eq(appointments.tenantId, tenantOf(ctx, input)),
             eq(appointments.workflowState, "complete"),
@@ -11891,7 +11892,7 @@ const analyticsRouterExtended = router({
       const bucketDays = diffDays <= 31 ? 1 : diffDays <= 90 ? 7 : 30;
       const apptRows = await db
         .select({ scheduledStart: appointments.scheduledStart, price: appointments.price })
-        .from(appointments)
+        .from(appointments, appointmentsByDate)
         .where(and(
           eq(appointments.tenantId, tenantOf(ctx, input)),
           eq(appointments.workflowState, "complete"),
@@ -13015,7 +13016,7 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
       scheduledStart: appointments.scheduledStart,
       petId: appointments.petId,
     })
-      .from(appointments)
+      .from(appointments, appointmentsByDate)
       .where(and(
         eq(appointments.tenantId, input.tenantId),
         gte(appointments.scheduledStart, start),
@@ -13042,11 +13043,11 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
     if (!largeDogCapacity.available) return largeDogCapacity;
   }
   if (input.serviceType === "bath_only") {
-    const bathOnly = await db.select({ id: appointments.id }).from(appointments).where(and(eq(appointments.tenantId, input.tenantId), eq(appointments.serviceType, "bath_only"), gte(appointments.scheduledStart, start), lte(appointments.scheduledStart, end), inArray(appointments.status, activeStatuses as any)));
+    const bathOnly = await db.select({ id: appointments.id }).from(appointments, appointmentsByDate).where(and(eq(appointments.tenantId, input.tenantId), eq(appointments.serviceType, "bath_only"), gte(appointments.scheduledStart, start), lte(appointments.scheduledStart, end), inArray(appointments.status, activeStatuses as any)));
     if (bathOnly.length >= tenant.bathLimit) return { available: false, reason: `The daily online bath-only limit of ${tenant.bathLimit} has been reached` } as const;
   }
   if (BATH_RESOURCE_MINUTES[input.serviceType]) {
-    const bathResources = await db.select({ serviceType: appointments.serviceType, scheduledStart: appointments.scheduledStart }).from(appointments).where(and(eq(appointments.tenantId, input.tenantId), inArray(appointments.serviceType, Object.keys(BATH_RESOURCE_MINUTES) as any), gte(appointments.scheduledStart, start), lte(appointments.scheduledStart, end), inArray(appointments.status, activeStatuses as any)));
+    const bathResources = await db.select({ serviceType: appointments.serviceType, scheduledStart: appointments.scheduledStart }).from(appointments, appointmentsByDate).where(and(eq(appointments.tenantId, input.tenantId), inArray(appointments.serviceType, Object.keys(BATH_RESOURCE_MINUTES) as any), gte(appointments.scheduledStart, start), lte(appointments.scheduledStart, end), inArray(appointments.status, activeStatuses as any)));
     const bathOverlaps = countSharedBathResourceOverlaps(bathResources, input.serviceType, input.scheduledStart);
     if (bathOverlaps >= Math.max(1, tenant.bathCapacity)) return { available: false, reason: "All bathing stations are occupied for that time" } as const;
   }
