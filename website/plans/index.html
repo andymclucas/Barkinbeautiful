@@ -13,8 +13,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/assets/site.css?v=4">
-<script src="/assets/site.js?v=4" defer></script>
+<link rel="stylesheet" href="/assets/site.css?v=5">
+<script src="/assets/site.js?v=5" defer></script>
 <!--/META-->
 <!-- The plan names, what each includes and the text allowances mirror
      shared/planEntitlements.ts and shared/smsMetering.ts in the app. If those
@@ -52,13 +52,18 @@
   </section>
 
   <section class="section tight" style="padding-top:24px">
-    <div class="wrap">
+    <div class="wrap plans-wrap">
+      <fieldset class="billing">
+        <legend>Show prices</legend>
+        <input type="radio" name="billing" id="bill-monthly" value="monthly" checked><label for="bill-monthly">Monthly</label>
+        <input type="radio" name="billing" id="bill-yearly" value="yearly"><label for="bill-yearly">Yearly <small>No setup fee</small></label>
+      </fieldset>
       <div class="plans">
         <article class="plan reveal">
           <p class="step">Plan 1</p>
           <h2>Software</h2>
           <p class="for">For salons that want a proper diary and records first.</p>
-          <p class="price"><b>$99 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $500 one-off setup, plus GST</em><em class="yearly">Or <b>$1,150 a year</b> + GST, with no setup fee</em></p>
+          <div class="price"><p class="per-month"><b>$99 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $500 one-off setup, plus GST</em></p><p class="per-year"><b>$1,150 <small>AUD</small></b><span>a year, plus GST (about $96 a month)</span><em class="setup free">No setup fee</em></p></div>
           <ul class="ticks">
             <li>Appointment booking system</li>
             <li>Clients and pets</li>
@@ -73,7 +78,7 @@
           <p class="step">Plan 2</p>
           <h2>Software + Messaging</h2>
           <p class="for">For salons ready to text, remind and win back clients.</p>
-          <p class="price"><b>$179 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $750 one-off setup, plus GST</em><em class="yearly">Or <b>$2,110 a year</b> + GST, with no setup fee</em></p>
+          <div class="price"><p class="per-month"><b>$179 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $750 one-off setup, plus GST</em></p><p class="per-year"><b>$2,110 <small>AUD</small></b><span>a year, plus GST (about $176 a month)</span><em class="setup free">No setup fee</em></p></div>
           <ul class="ticks">
             <li class="carry">Everything in Software</li>
             <li>Texts and email to clients</li>
@@ -89,7 +94,7 @@
           <p class="step">Plan 3</p>
           <h2>Complete, with Workflow</h2>
           <p class="for">For salons that want the floor and the owner joined up too.</p>
-          <p class="price"><b>$299 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $990 one-off setup, plus GST</em><em class="yearly">Or <b>$3,550 a year</b> + GST, with no setup fee</em></p>
+          <div class="price"><p class="per-month"><b>$299 <small>AUD</small></b><span>a month, plus GST</span><em class="setup">+ $990 one-off setup, plus GST</em></p><p class="per-year"><b>$3,550 <small>AUD</small></b><span>a year, plus GST (about $296 a month)</span><em class="setup free">No setup fee</em></p></div>
           <ul class="ticks">
             <li class="carry">Everything in Software + Messaging</li>
             <li>The workflow board: every dog from bath to dry to groom</li>
