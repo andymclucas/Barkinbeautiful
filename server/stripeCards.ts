@@ -29,7 +29,7 @@ import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
 import { toStripeCents, stripeRecurring, type StripeFailureDetail, STAFF_RETRY_METADATA_KEY } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
-import { FAMILY_BILLING_TEST_ONLY, planFamilyBilling } from "@shared/familyBilling";
+import { FAMILY_BILLING_TEST_ONLY, householdPaymentToJoin, planFamilyBilling, planPaymentMerge } from "@shared/familyBilling";
 import { hasScheduledRestart, resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
 import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 
@@ -478,9 +478,35 @@ export async function startMembershipSubscription(membershipId: number, firstCha
   }
 
   if (membership.stripeSubscriptionId) {
-    return { subscriptionId: membership.stripeSubscriptionId, alreadyExisted: true };
+    return { subscriptionId: membership.stripeSubscriptionId, alreadyExisted: true, joinedHousehold: false, totalCents: null };
   }
   if (!membership.clientId) throw new Error("This membership has no client attached");
+
+  /*
+   * A household already paying for one dog takes the next dog on the SAME
+   * payment (shared/familyBilling.ts, Andy 22/11/2026). Before this, a
+   * second dog got its own weekly charge unless somebody knew to press
+   * "One payment", and 13 households were being charged twice a week.
+   * Joining charges from the household's next payment with no part-week,
+   * so `firstChargeOn` does not apply.
+   */
+  const household = await db
+    .select({
+      id: memberships.id,
+      status: memberships.status,
+      stripeSubscriptionId: memberships.stripeSubscriptionId,
+      billingCycle: memberships.billingCycle,
+      billingCycleWeeks: memberships.billingCycleWeeks,
+      pricePerCycle: memberships.pricePerCycle,
+      isTest: memberships.isTest,
+    })
+    .from(memberships)
+    .where(and(eq(memberships.clientId, membership.clientId), eq(memberships.tenantId, membership.tenantId ?? 1)));
+  const joinIds = householdPaymentToJoin(household, membership.id);
+  if (joinIds) {
+    const joined = await startFamilySubscription(joinIds);
+    return { subscriptionId: joined.subscriptionId, alreadyExisted: false, joinedHousehold: true, totalCents: joined.totalCents };
+  }
 
   const [client] = await db
     .select({
@@ -555,7 +581,7 @@ export async function startMembershipSubscription(membershipId: number, firstCha
     })
     .where(eq(memberships.id, membership.id));
 
-  return { subscriptionId: subscription.id, alreadyExisted: false };
+  return { subscriptionId: subscription.id, alreadyExisted: false, joinedHousehold: false, totalCents: null };
 }
 
 /**
@@ -761,6 +787,171 @@ export async function startFamilySubscription(membershipIds: number[], firstChar
     memberships: plan.toAdd.length + plan.alreadyOn.length,
     totalCents: plan.totalCents,
   };
+}
+
+/**
+ * Combine a household's separate payments into ONE (shared/familyBilling.ts).
+ *
+ * Andy, 22/11/2026: multi-dog families on membership are billed as a
+ * single payment. Households set up before that, with a payment per dog,
+ * are moved across here: each extra dog's line is added to the payment
+ * that stays, and the payment it leaves is cancelled.
+ *
+ * Nobody pays twice for the same days. The moving dog's line is added with
+ * no part-week (`proration_behavior: "none"`), so it is first charged on
+ * the kept payment's next date. The payment it leaves is cancelled with
+ * `prorate` and `invoice_now`: Stripe credits the unused days of the week
+ * the client already paid for to their balance, and that credit comes off
+ * the next combined charge automatically.
+ *
+ * The charge for each dog is copied from its own Stripe line, not
+ * recalculated, so what the client pays per dog does not change.
+ *
+ * Order matters. Line added, then the membership repointed, then the old
+ * payment cancelled. If the cancel fails the dog is on both, which is
+ * reported loudly rather than left silent; every earlier failure undoes
+ * itself and changes nothing.
+ */
+export async function mergeFamilyPayments(membershipIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const stripe = requireStripeClient();
+  const ids = Array.from(new Set(membershipIds));
+  const rows = await db
+    .select({
+      id: memberships.id,
+      tenantId: memberships.tenantId,
+      clientId: memberships.clientId,
+      name: memberships.name,
+      pricePerCycle: memberships.pricePerCycle,
+      billingCycleWeeks: memberships.billingCycleWeeks,
+      billingCycle: memberships.billingCycle,
+      status: memberships.status,
+      stripeSubscriptionId: memberships.stripeSubscriptionId,
+      failedPaymentCount: memberships.failedPaymentCount,
+      isTest: memberships.isTest,
+    })
+    .from(memberships)
+    .where(inArray(memberships.id, ids));
+  if (rows.length !== ids.length || rows.some((r) => (r.tenantId ?? 1) !== 1)) throw new Error("Membership not found");
+  if (FAMILY_BILLING_TEST_ONLY && rows.some((r) => !r.isTest)) {
+    throw new Error("One payment for several memberships is still being tested and is not switched on for clients yet.");
+  }
+
+  const plan = planPaymentMerge(rows.map((r) => {
+    const c = resolveChargePlan(r);
+    return {
+      id: r.id, clientId: r.clientId, tenantId: r.tenantId, status: r.status,
+      stripeSubscriptionId: r.stripeSubscriptionId, failedPaymentCount: r.failedPaymentCount,
+      cycle: c.ok ? c.cycle : null, amountCents: c.ok ? c.amountCents : 0,
+    };
+  }));
+  if (!plan.ok) throw new Error(plan.error);
+
+  // A payment being retired must pay for nobody else. A dog left on it
+  // would lose its billing when it is cancelled.
+  const leaving = Array.from(new Set(plan.moving.map((m) => m.fromSubscriptionId)));
+  const othersOnLeaving = await db.select({ id: memberships.id }).from(memberships).where(and(
+    inArray(memberships.stripeSubscriptionId, leaving),
+    notInArray(memberships.id, ids),
+    notInArray(memberships.status, ["cancelled", "expired"]),
+  ));
+  if (othersOnLeaving.length > 0) {
+    throw new Error("One of these payments also pays for another membership. Nothing was changed. Combine them one at a time from the client's page.");
+  }
+
+  const live = (status: string) => status === "active" || status === "trialing";
+  const keep = await stripe.subscriptions.retrieve(plan.keepSubscriptionId);
+  if (!live(keep.status)) throw new Error(`The payment being kept is ${keep.status} at Stripe. Nothing was changed.`);
+  const keepItems = await stripe.subscriptionItems.list({ subscription: plan.keepSubscriptionId, limit: 100 });
+  const keepRecurring = keepItems.data[0]?.price?.recurring;
+  if (!keepRecurring) throw new Error("The payment being kept has no recurring line at Stripe. Nothing was changed.");
+
+  // Same rule as startFamilySubscription: an unlabelled line can only be
+  // labelled when there is exactly one membership it could belong to.
+  const keptRows = rows.filter((r) => r.stripeSubscriptionId === plan.keepSubscriptionId);
+  const unlabelled = keepItems.data.filter((item) => !item.metadata?.groomigo_membership_id);
+  if (unlabelled.length > 0) {
+    if (unlabelled.length !== 1 || keptRows.length !== 1 || keepItems.data.length !== 1) {
+      throw new Error("The payment being kept has lines Groomigo cannot match to a membership. Nothing was changed. Check it in Stripe.");
+    }
+    await stripe.subscriptionItems.update(unlabelled[0].id, {
+      metadata: { ...unlabelled[0].metadata, groomigo_membership_id: String(keptRows[0].id) },
+    });
+  }
+
+  // Check every payment being left BEFORE changing anything.
+  const moves: Array<{ id: number; from: string; line: Stripe.SubscriptionItem }> = [];
+  for (const move of plan.moving) {
+    const sub = await stripe.subscriptions.retrieve(move.fromSubscriptionId);
+    if (!live(sub.status)) throw new Error(`One of the payments being combined is ${sub.status} at Stripe. Nothing was changed.`);
+    const items = await stripe.subscriptionItems.list({ subscription: move.fromSubscriptionId, limit: 100 });
+    if (items.data.length !== 1) throw new Error("One of the payments being combined has more than one line at Stripe. Nothing was changed.");
+    const [line] = items.data;
+    const recurring = line.price?.recurring;
+    if (!recurring || recurring.interval !== keepRecurring.interval || recurring.interval_count !== keepRecurring.interval_count) {
+      throw new Error("These payments charge on different cycles at Stripe, so they cannot be combined. Nothing was changed.");
+    }
+    if (!line.price.unit_amount || line.price.unit_amount <= 0) throw new Error("One of the payments being combined has no amount at Stripe. Nothing was changed.");
+    moves.push({ id: move.id, from: move.fromSubscriptionId, line });
+  }
+
+  const [keptSibling] = await db.select({ nextBillingDate: memberships.nextBillingDate })
+    .from(memberships).where(eq(memberships.stripeSubscriptionId, plan.keepSubscriptionId)).limit(1);
+  const onKeep = new Set(keepItems.data.map((item) => item.metadata?.groomigo_membership_id).filter(Boolean));
+  const byId = new Map(rows.map((r) => [r.id, r] as const));
+  const combined: number[] = [];
+  const stillOnOld: string[] = [];
+
+  for (const move of moves) {
+    const row = byId.get(move.id)!;
+    let added: Stripe.SubscriptionItem | null = null;
+    if (!onKeep.has(String(move.id))) {
+      added = await stripe.subscriptionItems.create({
+        subscription: plan.keepSubscriptionId,
+        metadata: {
+          groomigo_membership_id: String(move.id),
+          groomigo_membership_name: row.name ?? "Grooming membership",
+        },
+        price_data: {
+          currency: move.line.price.currency,
+          unit_amount: move.line.price.unit_amount!,
+          recurring: { interval: keepRecurring.interval as Stripe.SubscriptionItemCreateParams.PriceData.Recurring.Interval, interval_count: keepRecurring.interval_count },
+          product: typeof move.line.price.product === "string" ? move.line.price.product : move.line.price.product.id,
+        },
+        proration_behavior: "none",
+      });
+    }
+
+    const [written] = await db.update(memberships).set({
+      stripeSubscriptionId: plan.keepSubscriptionId,
+      gatewaySubscriptionId: plan.keepSubscriptionId,
+      paymentGateway: "stripe",
+      nextBillingDate: keptSibling?.nextBillingDate ?? null,
+    }).where(and(eq(memberships.id, move.id), eq(memberships.stripeSubscriptionId, move.from)));
+    if ((written as unknown as { affectedRows?: number }).affectedRows === 0) {
+      if (added) await stripe.subscriptionItems.del(added.id, { proration_behavior: "none" }).catch(() => undefined);
+      throw new Error(`Somebody changed one of these memberships at the same moment. ${combined.length ? `${combined.length} were combined before it stopped. ` : ""}Refresh and check before trying again.`);
+    }
+    combined.push(move.id);
+
+    // Credit the unused part of the week already paid for, then end it.
+    let cancelled = false;
+    for (let attempt = 0; attempt < 2 && !cancelled; attempt++) {
+      try {
+        await stripe.subscriptions.cancel(move.from, { prorate: true, invoice_now: true });
+        cancelled = true;
+      } catch (error) {
+        if (attempt === 1) console.error("[mergeFamilyPayments] could not cancel", move.from, error);
+      }
+    }
+    if (!cancelled) stillOnOld.push(move.from);
+  }
+
+  if (stillOnOld.length > 0) {
+    throw new Error(`Combined, but the old payment ${stillOnOld.join(", ")} could not be cancelled and will still charge. Cancel it in Stripe now.`);
+  }
+  return { subscriptionId: plan.keepSubscriptionId, combined: combined.length, totalCents: plan.totalCents };
 }
 
 /** The other memberships paid for by the same Stripe subscription. */

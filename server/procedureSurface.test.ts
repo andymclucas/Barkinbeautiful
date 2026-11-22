@@ -634,7 +634,10 @@ describe("tRPC procedure surface", () => {
     // packages.unredeem, for grooms a client paid for up front (a bank
     // transfer for the year) and counting them off bookings. All three
     // protectedProcedure, like the rest of the packages router.
-    expect(surface).toHaveLength(459);
+    // 460 since 22/11/2026: stripeCards.mergeFamilyPayments, combining a
+    // household's separate payments into one. adminProcedure, like
+    // startFamilyBilling.
+    expect(surface).toHaveLength(460);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

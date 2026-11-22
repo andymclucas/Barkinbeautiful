@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { brisbaneDateKey } from "@shared/localDateTime";
-import { formatCents, type FamilyBillingOffer } from "@shared/familyBilling";
+import { formatCents, type FamilyBillingOffer, type PaymentMergeOffer } from "@shared/familyBilling";
 import { joinNames } from "@shared/familyBookingRows";
 import type { MembershipWeightClass } from "@shared/membershipPackages";
 
@@ -276,7 +276,10 @@ export function SetWeeklyBillingButton({ membership, clientId, clientEmail, hasC
     onSuccess: (result) => onDone(
       result.alreadyExisted
         ? `${membership.name} was already billing at Stripe.`
-        : `Stripe will charge $${membership.pricePerCycle} a week from ${firstCharge}.`,
+        : result.joinedHousehold
+          // Added to the household's running payment (shared/familyBilling.ts).
+          ? `Added to the family's existing payment, now ${formatCents(result.totalCents ?? 0)} a week, from their next charge.`
+          : `Stripe will charge $${membership.pricePerCycle} a week from ${firstCharge}.`,
     ),
     onError: (error) => toast.error(error.message),
   });
@@ -590,6 +593,85 @@ export function FamilyBillingPanel({ offer, hasCardOnFile, onChanged }: {
               })}
             >
               {start.isPending ? "Starting…" : offer.joinsExisting ? `Add to the payment` : `Start ${total} a ${cycle}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/**
+ * Combine a household's separate payments into one (shared/familyBilling.ts).
+ *
+ * Andy, 22/11/2026: multi-dog families on membership pay as a single
+ * payment. Shown when a client already has a payment per dog. The unused
+ * days of the payments being retired are credited to the client, so the
+ * confirm can honestly say nothing is charged twice.
+ */
+export function CombinePaymentsPanel({ offer, onChanged }: {
+  offer: PaymentMergeOffer;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const total = formatCents(offer.totalCents);
+  const cycle = (offer.all[0]?.billingCycleWeeks ?? 1) === 2 ? "fortnight" : "week";
+  const dogs = joinNames(offer.all.map((r) => r.petName ?? r.name));
+
+  const merge = trpc.stripeCards.mergeFamilyPayments.useMutation({
+    onSuccess: (result) => {
+      toast.success("Now one payment", {
+        description: `${dogs}: one payment of ${formatCents(result.totalCents)} a ${cycle}, from the next charge.`,
+      });
+      onChanged();
+      setOpen(false);
+    },
+    onError: (error) => { toast.error(error.message, { duration: 10000 }); onChanged(); },
+  });
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
+        <div className="min-w-[14rem] flex-1">
+          <p className="text-sm font-semibold">{dogs} are paying separately</p>
+          <p className="text-xs text-muted-foreground">
+            {offer.payments} charges a {cycle}. Combine them into one charge of {total}. Each dog keeps its own membership.
+          </p>
+        </div>
+        <Button size="sm" className="gap-1.5" onClick={() => setOpen(true)}>
+          <CreditCard className="h-3.5 w-3.5" /> Combine · {total}/{cycle === "week" ? "wk" : "fn"}
+        </Button>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">Combine into one payment</DialogTitle>
+            <DialogDescription className="text-xs">
+              One charge to the card on file, with a line for each dog.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1.5 text-sm">
+            {offer.all.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                <span className="min-w-0">
+                  <span className="font-medium">{r.petName ?? "Membership"}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{r.name}</span>
+                </span>
+                <span className="shrink-0 font-medium">${Number(r.pricePerCycle ?? 0).toFixed(2)}</span>
+              </li>
+            ))}
+            <li className="flex items-center justify-between gap-3 px-3 pt-1 font-semibold">
+              <span>One payment each {cycle}</span><span>{total}</span>
+            </li>
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            Nothing is taken today. The combined payment starts from the next charge of the one that stays, and any days already paid on the others come off it, so nobody pays twice.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button disabled={merge.isPending} onClick={() => merge.mutate({ membershipIds: offer.membershipIds })}>
+              {merge.isPending ? "Combining…" : "Combine payments"}
             </Button>
           </DialogFooter>
         </DialogContent>
