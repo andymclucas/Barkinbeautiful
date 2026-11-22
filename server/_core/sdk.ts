@@ -6,6 +6,7 @@ import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
+import { shouldRecordSignIn } from "@shared/signInTouch";
 
 // Utility function
 const isNonEmptyString = (value: unknown): value is string =>
@@ -143,10 +144,15 @@ class SDKServer {
       throw ForbiddenError("User not found for this session");
     }
 
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
+    // Every request used to rewrite this row — on the 5-second board polls
+    // that was ~16,000 writes a day on a closed Sunday. Nothing reads it
+    // finer than "recently", so touch it at most every few minutes.
+    if (shouldRecordSignIn(user.lastSignedIn ?? null, signedInAt)) {
+      await db.upsertUser({
+        openId: user.openId,
+        lastSignedIn: signedInAt,
+      });
+    }
 
     return user;
   }
