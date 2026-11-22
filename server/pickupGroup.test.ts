@@ -99,24 +99,32 @@ describe("petVerb", () => {
 
 describe("buildReadyForPickupSms", () => {
   it("names one dog correctly", () => {
-    expect(buildReadyForPickupSms({ clientFirstName: "marjorie", petNames: ["Coco"] }))
+    expect(buildReadyForPickupSms({ clientFirstName: "marjorie", petNames: ["Coco"], salonName: "Barkin\' Beautiful" }))
       .toBe("Hi marjorie! Coco is all done and looking fabulous at Barkin' Beautiful. Come pick them up whenever you're ready! 🐾✨");
   });
 
   it("names both dogs of a family in one message", () => {
-    expect(buildReadyForPickupSms({ clientFirstName: "marjorie", petNames: ["Coco", "Bella"] }))
+    expect(buildReadyForPickupSms({ clientFirstName: "marjorie", petNames: ["Coco", "Bella"], salonName: "Barkin\' Beautiful" }))
       .toBe("Hi marjorie! Coco and Bella are all done and looking fabulous at Barkin' Beautiful. Come pick them up whenever you're ready! 🐾✨");
   });
 
   it("keeps 'them' for one dog as well as several", () => {
     // Deliberate: "pick them up" is natural either way, and switching to
     // "him" or "her" would need a gender the salon does not always hold.
-    const one = buildReadyForPickupSms({ clientFirstName: "Kim", petNames: ["Ralph"] });
+    const one = buildReadyForPickupSms({ clientFirstName: "Kim", petNames: ["Ralph"], salonName: "Barkin\' Beautiful" });
     expect(one).toContain("Come pick them up");
   });
 
+  it("names the dog's own salon, never another one", () => {
+    expect(buildReadyForPickupSms({ clientFirstName: "Kim", petNames: ["Ralph"], salonName: "The Pet Pad" }))
+      .toContain("looking fabulous at The Pet Pad.");
+    const unnamed = buildReadyForPickupSms({ clientFirstName: "Kim", petNames: ["Ralph"], salonName: null });
+    expect(unnamed).toContain("looking fabulous at the salon.");
+    expect(unnamed).not.toContain("Barkin");
+  });
+
   it("falls back rather than addressing an empty name", () => {
-    expect(buildReadyForPickupSms({ clientFirstName: "Kim", petNames: [] }))
+    expect(buildReadyForPickupSms({ clientFirstName: "Kim", petNames: [], salonName: "Barkin\' Beautiful" }))
       .toContain("your dog is all done");
   });
 });

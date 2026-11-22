@@ -1,5 +1,6 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { SalonLogo } from "@/components/SalonLogo";
+import { clientSalonName } from "@shared/salonBrand";
 import { VipMark } from "@/components/VipMark";
 import { PetCodeWarningBox } from "@/components/PetCodeWarningBox";
 import { pickupPrompt, joinPetNames } from "@shared/pickupGroup";
@@ -582,7 +583,7 @@ export default function WorkflowBoard() {
   const popupStageTimer = petPopup ? formatLiveStageElapsed(getLiveStageElapsedSeconds(petPopup, now)) : null;
   const selectedPickupRecipient = pickupRecipients?.recipients.find(recipient => String(recipient.id) === selectedPickupRecipientId) ?? null;
   const pickupMessagePreview = selectedPickupRecipient && pickupMessageAppointment
-    ? `Hi ${selectedPickupRecipient.name.split(" ")[0] || "there"}! ${pickupMessageAppointment.petName} is all done and looking fabulous at Barkin' Beautiful. Come pick them up whenever you're ready! 🐾✨`
+    ? `Hi ${selectedPickupRecipient.name.split(" ")[0] || "there"}! ${pickupMessageAppointment.petName} is all done and looking fabulous at ${clientSalonName(salonBrand?.name)}. Come pick them up whenever you're ready! 🐾✨`
     : null;
 
   // Everyone the query returns is rostered — it filters on that — so the

@@ -138,5 +138,8 @@ export function renderMassTextBody(
  * asserted by a test. No first name: the token system has none, and
  * "Hi ," with a blank name is worse than no greeting.
  */
-export const SUGGESTED_AGREEMENT_TEXT =
-  "Hi from Barkin' Beautiful! Before your dog's next groom, please read and sign our service agreement here: {agreement_link} Thank you!";
+export function suggestedAgreementText(salonName: string | null | undefined): string {
+  // The salon's own name: this said "Hi from Barkin' Beautiful!" for every salon.
+  const greeting = salonName?.trim() ? `Hi from ${salonName.trim()}!` : "Hi!";
+  return `${greeting} Before your dog's next groom, please read and sign our service agreement here: {agreement_link} Thank you!`;
+}

@@ -8,6 +8,7 @@
  */
 
 import { isStripeHostedUrl } from "./stripeHostedUrl";
+import { clientSalonName } from "./salonBrand";
 
 export type CardLinkEmailInput = {
   /** The client's first name. Blank or missing is fine. */
@@ -86,7 +87,7 @@ export function buildCardLinkEmail(input: CardLinkEmailInput): BuiltEmail {
 
   const name = (input.firstName ?? "").trim();
   const greeting = name ? `Hi ${escapeHtml(name)},` : "Hi there,";
-  const salon = (input.salonName ?? "Barkin' Beautiful").trim();
+  const salon = clientSalonName(input.salonName);
   const replacing = input.replacingExistingCard === true;
 
   const subject = replacing

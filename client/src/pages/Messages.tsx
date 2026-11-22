@@ -3,6 +3,7 @@ import { phoneKey } from "@shared/textableNumbers";
 import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
+import { clientSalonName } from "@shared/salonBrand";
 import { AssignStaffPicker } from "@/components/AssignStaffPicker";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { MassTextDialog } from "@/components/MassTextDialog";
@@ -34,13 +35,16 @@ import { calculateSmsCost } from "@shared/smsSegments";
 import { ClientLink } from "@/components/RecordLink";
 import { MessageThread, contactColour, contactInitials } from "@/components/MessageThread";
 
-const SMS_TEMPLATES = [
-  { key: "reminder", label: "Appointment Reminder", preview: "Hi {name}! Just a reminder that {pet} has a grooming appointment at Barkin' Beautiful tomorrow. See you then! 🐾" },
-  { key: "confirmation", label: "Booking Confirmation", preview: "Hi {name}! Your booking for {pet} at Barkin' Beautiful is confirmed. We can't wait to see them! 🐾" },
-  { key: "ready_pickup", label: "Ready for Pick-up", preview: "Hi {name}! {pet} is all done and looking fabulous at Barkin' Beautiful. Come pick them up whenever you're ready! 🐾✨" },
-  { key: "payment_failed", label: "Payment Failed", preview: "Hi {name}, we had trouble processing your Barkin' Beautiful membership payment for {pet}. Please update your payment details to keep your membership active." },
-  { key: "custom", label: "Custom Message", preview: "" },
-];
+/** The salon's own name in every template: they all said "Barkin' Beautiful". */
+function smsTemplates(salon: string) {
+  return [
+    { key: "reminder", label: "Appointment Reminder", preview: `Hi {name}! Just a reminder that {pet} has a grooming appointment at ${salon} tomorrow. See you then! 🐾` },
+    { key: "confirmation", label: "Booking Confirmation", preview: `Hi {name}! Your booking for {pet} at ${salon} is confirmed. We can't wait to see them! 🐾` },
+    { key: "ready_pickup", label: "Ready for Pick-up", preview: `Hi {name}! {pet} is all done and looking fabulous at ${salon}. Come pick them up whenever you're ready! 🐾✨` },
+    { key: "payment_failed", label: "Payment Failed", preview: `Hi {name}, we had trouble processing your membership payment for {pet} at ${salon}. Please update your payment details to keep your membership active.` },
+    { key: "custom", label: "Custom Message", preview: "" },
+  ];
+}
 
 const TYPE_COLOURS: Record<string, string> = {
   reminder: "bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300",
@@ -54,6 +58,8 @@ const TYPE_COLOURS: Record<string, string> = {
 };
 
 export default function Messages() {
+  const { data: salonInfo } = trpc.settings.getTenantInfo.useQuery({});
+  const SMS_TEMPLATES = useMemo(() => smsTemplates(clientSalonName(salonInfo?.name)), [salonInfo?.name]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -464,7 +470,7 @@ export default function Messages() {
     if (!t) return "";
     if (selectedTemplate === "custom") return customBody;
     return t.preview;
-  }, [selectedTemplate, customBody]);
+  }, [selectedTemplate, customBody, SMS_TEMPLATES]);
 
   const handleSend = () => {
     if (!toNumber) { toast.error("Enter a phone number"); return; }

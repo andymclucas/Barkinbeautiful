@@ -1,3 +1,4 @@
+import { salonPortalLabel } from "./salonBrand";
 /**
  * The email a client gets the moment their portal password is set.
  *
@@ -31,12 +32,12 @@ export function portalAllSetEmail(input: {
   const phone = input.salonPhone?.trim() ? ` on ${escapeHtml(input.salonPhone.trim())}` : "";
 
   const subject = input.wasReset
-    ? `Your ${input.salonName} portal password has been changed`
-    : `You're all set — your ${input.salonName} client portal`;
+    ? `Your ${salonPortalLabel(input.salonName).replace(/client portal$/, "portal")} password has been changed`
+    : `You're all set — your ${salonPortalLabel(input.salonName)}`;
 
   const opening = input.wasReset
     ? `<p>Your client portal password has just been changed.</p>`
-    : `<p>Your ${salon} client portal is ready.</p>`;
+    : `<p>Your ${escapeHtml(salonPortalLabel(input.salonName))} is ready.</p>`;
 
   const warning = input.wasReset
     ? `<p>Didn't change it? Call us${phone} straight away.</p>`

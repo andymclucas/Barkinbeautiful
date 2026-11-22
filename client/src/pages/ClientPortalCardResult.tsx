@@ -39,7 +39,7 @@ export default function ClientPortalCardResult({ outcome }: { outcome: CardResul
   const expired = outcome === "expired";
   // This page is sent to the salon's own clients, so it wears the
   // salon's colours rather than stock Groomigo ones.
-  usePublicBrandTheme();
+  const { salonName: brandName } = usePublicBrandTheme();
   // Where the client was before Stripe, if they started from inside the
   // portal. A client on a link has no login, so "Go to client sign in" is a
   // dead end for them; this puts them back where they were. Read once on
@@ -62,7 +62,7 @@ export default function ClientPortalCardResult({ outcome }: { outcome: CardResul
             <PawPrint className="h-6 w-6" />
           </div>
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.28em] opacity-80">Barkin&rsquo; Beautiful</p>
+            {brandName?.trim() && <p className="text-sm font-semibold uppercase tracking-[0.28em] opacity-80">{brandName.trim()}</p>}
             <h1 className="mt-3 font-display text-4xl font-bold leading-tight">
               {saved
                 ? "Thank you — your card is saved."

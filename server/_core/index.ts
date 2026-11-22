@@ -27,9 +27,10 @@ import {
   portalAccessTokenIn,
 } from "../../shared/portalManifest";
 import { getDb } from "../db";
+import { loadSalonName } from "../salonName";
 import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, missedCallAutoTexts, clientErrorLogs, workflowLogs } from "../../drizzle/schema";
 import {
-  MISSED_CALL_AUTO_TEXT,
+  missedCallAutoText,
   autoTextPhoneKey,
   classifyClaim,
   describeClaim,
@@ -567,7 +568,7 @@ async function startServer() {
   // once Twilio finishes transcribing, which can take a few seconds).
   const processedNoAnswerCallSids = new Set<string>();
 
-  // MISSED_CALL_AUTO_TEXT now lives in shared/missedCallAutoText.ts alongside
+  // missedCallAutoText now lives in shared/missedCallAutoText.ts alongside
   // the once-only decision logic, which is unit-tested.
 
   app.post("/api/twilio/voice-no-answer", express.urlencoded({ extended: false }), async (req, res) => {
@@ -640,8 +641,11 @@ async function startServer() {
 
         if (claim.send && phoneKey && db) {
           const claimedDb = db;
+          // Names the salon whose number was rung, not Barkin' Beautiful.
+          // A failed lookup says "the salon": the claim is already spent, so it must not stop the text.
+          const autoText = missedCallAutoText(await loadSalonName(claimedDb, tenantId).catch(() => null));
           // We hold the only claim for this number, so this send cannot repeat.
-          sendSms(String(From), MISSED_CALL_AUTO_TEXT, { tenantId, trigger: "automated", type: "missed_call" })
+          sendSms(String(From), autoText, { tenantId, trigger: "automated", type: "missed_call" })
             .then(async result => {
               await claimedDb
                 .update(missedCallAutoTexts)
@@ -669,7 +673,7 @@ async function startServer() {
                   tenantId,
                   clientId: autoTextCaller.clientId ?? null,
                   toNumber: phoneKey,
-                  body: MISSED_CALL_AUTO_TEXT,
+                  body: autoText,
                   twilioSid: result.sid,
                   status: result.success ? "sent" : "failed",
                   type: "custom",

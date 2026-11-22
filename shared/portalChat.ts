@@ -24,6 +24,8 @@ export type PortalChatFacts = {
   petNames: string[];
   /** Active membership names, e.g. "Diamond VIP - SML (0-10kg) x2". */
   membershipNames: string[];
+  /** The client's own salon, so the assistant never names another one. */
+  salonName?: string | null;
   salonPhone: string | null;
   salonEmail: string | null;
   /** Opening hours line, already formatted for display. */
@@ -49,7 +51,7 @@ export type PortalChatIntent =
   | "needs_human";
 
 const HANDOFF =
-  "I've passed this to the team — someone from Barkin' Beautiful will message you here as soon as they're available.";
+  "I've passed this to the team — someone from the salon will message you here as soon as they're available.";
 
 /** Anything in here is never answered automatically, whatever else matched. */
 const ALWAYS_HUMAN = [

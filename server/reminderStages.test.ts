@@ -33,6 +33,7 @@ const build = (
     time: "10:00 am",
     stage,
     alreadyConfirmed,
+    salonName: "Barkin' Beautiful",
   });
 
 describe("what a booking's reminders add up to", () => {

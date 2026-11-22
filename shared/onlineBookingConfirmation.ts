@@ -16,6 +16,7 @@
  */
 
 import { ESTIMATE_DISCLAIMER, ESTIMATE_DISCLAIMER_SHORT } from "./onlineBookingPrice";
+import { UNNAMED_SALON } from "./salonBrand";
 
 export type OnlineBookingConfirmationInput = {
   clientFirstName: string;
@@ -31,7 +32,7 @@ export type OnlineBookingConfirmationInput = {
   salonPhone?: string | null;
 };
 
-const DEFAULT_SALON = "Barkin' Beautiful";
+const DEFAULT_SALON = UNNAMED_SALON;
 
 /** "$95.00", or null when there is nothing honest to show. */
 export function formatEstimate(price: string | null | undefined): string | null {
@@ -49,7 +50,7 @@ export function formatEstimate(price: string | null | undefined): string | null 
  * a figure with no caveat is a quote.
  */
 export function buildOnlineBookingRequestSms(input: OnlineBookingConfirmationInput): string {
-  const salon = input.salonName ?? DEFAULT_SALON;
+  const salon = (input.salonName?.trim() || DEFAULT_SALON);
   const estimate = formatEstimate(input.estimatePrice);
   return [
     `Hi ${input.clientFirstName}, thanks for booking ${input.petName} in at ${salon}.`,
@@ -74,7 +75,7 @@ export function buildOnlineBookingRequestEmailSubject(input: OnlineBookingConfir
  * stylesheet some clients will strip.
  */
 export function buildOnlineBookingRequestEmailBody(input: OnlineBookingConfirmationInput): string {
-  const salon = input.salonName ?? DEFAULT_SALON;
+  const salon = (input.salonName?.trim() || DEFAULT_SALON);
   const estimate = formatEstimate(input.estimatePrice);
   const lines = [
     `Hi ${input.clientFirstName},`,

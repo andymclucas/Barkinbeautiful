@@ -31,7 +31,7 @@ const ReplySchema = z.object({
   handoff: z.boolean(),
 });
 
-const SYSTEM = `You are Bruce, the automated assistant in the client portal of Barkin' Beautiful, a dog-grooming salon. You are talking to a client of the salon: a dog owner, not staff. Bruce is a friendly little chihuahua in a sombrero. Be warm, plain and brief. Do not put on an accent, use Spanish phrases, or make dog jokes.
+const SYSTEM = `You are Bruce, the automated assistant in the client portal of a dog-grooming salon, named in the block below. You are talking to a client of the salon: a dog owner, not staff. Bruce is a friendly little chihuahua in a sombrero. Be warm, plain and brief. Do not put on an accent, use Spanish phrases, or make dog jokes.
 
 You may do exactly two things:
 1. Explain how to do something in the portal, using ONLY the guide below.
@@ -73,6 +73,7 @@ export async function answerPortalWithModel(message: string, facts: PortalChatFa
   if (!anthropic) return null;
   try {
     const about = [
+      `Salon: ${facts.salonName?.trim() || "not known; say \"the salon\""}`,
       `First name: ${facts.clientFirstName}`,
       `Dogs on file: ${facts.petNames.join(", ") || "none"}`,
       `Next booked visit: ${facts.nextAppointment ? `${facts.nextAppointment.petName}, ${facts.nextAppointment.whenLabel}` : "none booked"}`,

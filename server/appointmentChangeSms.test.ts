@@ -167,7 +167,7 @@ describe("the messages themselves", () => {
   it("reads correctly cancelling one dog", () => {
     expect(buildCancellationSms({
       clientFirstName: "Jo", petNames: ["Teddy"],
-      date: "Friday 6 November", time: "12:30 pm",
+      date: "Friday 6 November", time: "12:30 pm", salonName: "Barkin' Beautiful",
     })).toBe(
       "Hi Jo! Teddy's grooming appointment at Barkin' Beautiful on Friday 6 November at 12:30 pm "
       + "has been cancelled. Call us any time to rebook. \u{1F43E}",
@@ -184,7 +184,7 @@ describe("the messages themselves", () => {
   it("reads correctly moving two dogs", () => {
     expect(buildRescheduleSms({
       clientFirstName: "Jo", petNames: ["Albert", "Eddy"],
-      date: "Saturday 7 November", time: "9:00 am",
+      date: "Saturday 7 November", time: "9:00 am", salonName: "Barkin' Beautiful",
     })).toBe(
       "Hi Jo! Albert and Eddy's grooming appointment at Barkin' Beautiful has moved to "
       + "Saturday 7 November at 9:00 am. See you then! \u{1F43E}",

@@ -18,6 +18,31 @@ export function salonName(brand: SalonBrand | null | undefined, fallback = "Your
   return name ? name : fallback;
 }
 
+/**
+ * The salon's name as it goes into a text or email to a client.
+ *
+ * Every client message used to fall back to "Barkin' Beautiful" when the
+ * caller had no name to hand, so a client of any other salon could be
+ * told their dog was "looking fabulous at Barkin' Beautiful". The Pet Pad
+ * starts sending on 23/11/2026. The fallback is now words that are true
+ * for every salon, and every builder reads its fallback from here.
+ */
+export const UNNAMED_SALON = "the salon";
+
+export function clientSalonName(name: string | null | undefined): string {
+  const trimmed = name?.trim();
+  return trimmed ? trimmed : UNNAMED_SALON;
+}
+
+/**
+ * "Barkin Beautiful client portal", or just "client portal" when the name is
+ * unknown, so a sentence never reads "your the salon client portal".
+ */
+export function salonPortalLabel(name: string | null | undefined): string {
+  const trimmed = name?.trim();
+  return trimmed && trimmed !== UNNAMED_SALON ? `${trimmed} client portal` : "client portal";
+}
+
 /** The uploaded logo, or null: never a stand-in image belonging to another salon. */
 export function salonLogoSrc(brand: SalonBrand | null | undefined): string | null {
   const url = brand?.logoUrl?.trim();

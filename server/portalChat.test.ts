@@ -68,7 +68,7 @@ describe("it hands anything risky to a human", () => {
     it(`escalates: "${message}"`, () => {
       const r = answerPortalMessage(message, facts);
       expect(r.handedOff).toBe(true);
-      expect(r.body).toContain("someone from Barkin' Beautiful will message you");
+      expect(r.body).toContain("someone from the salon will message you");
     });
   }
 

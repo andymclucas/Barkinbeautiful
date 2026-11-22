@@ -150,7 +150,7 @@ export function buildAdminFailedPaymentEmail({
   </div>
   <p>The system will automatically retry on the next business day (<strong>${retryDate}</strong>).</p>
   <p>If this is the <strong>second failure</strong>, the client has been notified by email and their bookings have been suspended.</p>
-  <div class="footer">Groomigo — Barkin' Beautiful Grooming Studio</div>
+  <div class="footer">Sent by Groomigo</div>
 </div>
 </body>
 </html>`;

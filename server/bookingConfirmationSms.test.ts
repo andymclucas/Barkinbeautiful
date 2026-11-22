@@ -59,11 +59,12 @@ describe("buildBookingConfirmationSms", () => {
     expect(sms).toContain("Agnes's grooming appointment");
   });
 
-  it("falls back to the salon's name rather than printing nothing", () => {
+  it("says \"the salon\" rather than printing nothing or another salon's name", () => {
     const sms = buildBookingConfirmationSms({
       clientFirstName: "Annie", petNames: ["Agnes"], date: "Fri", time: "9am", salonName: "  ",
     });
-    expect(sms).toContain("Barkin' Beautiful");
+    expect(sms).toContain("appointment at the salon is booked");
+    expect(sms).not.toContain("Barkin");
   });
 
   it("stays inside a single SMS segment for a typical booking", () => {
@@ -161,7 +162,7 @@ describe("one booking, one text", () => {
     // rule for the pickup message, 13/10/2026, and the same reasoning.
     const sms = buildBookingConfirmationSms({
       clientFirstName: "Annie", petNames: ["Agnes", "Shirley"],
-      date: "Friday 30 October", time: "9:00 am",
+      date: "Friday 30 October", time: "9:00 am", salonName: "Barkin' Beautiful",
     });
     expect(sms).toContain("Agnes and Shirley");
     expect(sms.match(/booked/g)).toHaveLength(1);

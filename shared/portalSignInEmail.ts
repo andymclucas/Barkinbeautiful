@@ -1,3 +1,4 @@
+import { salonPortalLabel } from "./salonBrand";
 /**
  * "Email me a sign-in link" — the email, and what the page says.
  *
@@ -25,10 +26,10 @@ export function portalSignInEmail(input: {
   const url = escapeHtml(input.signInUrl);
   const salon = escapeHtml(input.salonName);
   return {
-    subject: `Your ${input.salonName} sign-in link`,
+    subject: `Your ${salonPortalLabel(input.salonName).replace(/ ?client portal$/, "")} sign-in link`.replace("Your  ", "Your "),
     html:
       `<p>Hi ${name},</p>`
-      + `<p>Tap the button to sign in to your ${salon} client portal — no password needed.</p>`
+      + `<p>Tap the button to sign in to your ${escapeHtml(salonPortalLabel(input.salonName))} — no password needed.</p>`
       + `<p><a href="${url}" style="display:inline-block;padding:12px 20px;border-radius:999px;background:#db2777;color:#ffffff;text-decoration:none;font-weight:600">Sign in to my portal</a></p>`
       + `<p>Using the portal saved on your Home Screen? Open it and type this code instead:</p>`
       + `<p style="font-size:28px;font-weight:700;letter-spacing:6px;margin:8px 0">${escapeHtml(input.code.slice(0, 3))} ${escapeHtml(input.code.slice(3))}</p>`
