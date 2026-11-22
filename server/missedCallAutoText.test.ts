@@ -4,7 +4,7 @@ import {
   classifyClaim,
   isDuplicateKeyError,
   describeClaim,
-  MISSED_CALL_AUTO_TEXT,
+  missedCallAutoText,
 } from "../shared/missedCallAutoText";
 
 describe("autoTextPhoneKey — numbers that cannot receive a text", () => {
@@ -197,10 +197,15 @@ describe("describeClaim", () => {
   });
 });
 
-describe("MISSED_CALL_AUTO_TEXT", () => {
-  it("is a single SMS segment's worth of sense and mentions a reply", () => {
-    expect(MISSED_CALL_AUTO_TEXT).toContain("Barkin' Beautiful");
-    expect(MISSED_CALL_AUTO_TEXT).toMatch(/reply text/i);
+describe("missedCallAutoText", () => {
+  it("names the salon that was rung and mentions a reply", () => {
+    expect(missedCallAutoText("The Pet Pad")).toContain("Thank you for calling The Pet Pad and");
+    expect(missedCallAutoText("The Pet Pad")).toMatch(/reply text/i);
+  });
+
+  it("never borrows another salon's name", () => {
+    expect(missedCallAutoText(null)).toContain("Thank you for calling the salon and");
+    expect(missedCallAutoText(" ")).not.toContain("Barkin");
   });
 });
 

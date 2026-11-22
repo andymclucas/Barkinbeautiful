@@ -10,7 +10,7 @@ import { buildAppointmentReminderSms } from "./sms";
 const build = (petNames: string[], stage?: "4d" | "2d" | "day_before", alreadyConfirmed = false) =>
   buildAppointmentReminderSms({
     clientFirstName: "Jo", petNames, date: "Friday 6 November",
-    time: "12:30 pm", stage, alreadyConfirmed,
+    time: "12:30 pm", stage, alreadyConfirmed, salonName: "Barkin' Beautiful",
   });
 
 describe("buildAppointmentReminderSms", () => {

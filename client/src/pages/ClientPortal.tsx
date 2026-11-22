@@ -26,6 +26,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 import { brisbaneDateKey } from "@shared/localDateTime";
 
 import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
+import { clientSalonName } from "@shared/salonBrand";
 import { AgreementGate, type GateAgreement } from "@/components/portal/AgreementGate";
 import { PortalContactsCard } from "@/components/portal/PortalContactsCard";
 type PortalPet = { id: number; name: string; breed: string | null; species: string; status: string };
@@ -92,7 +93,7 @@ function portalDateTime(value: Date | string) {
  * scope — and it means this screen can say so honestly, which is most of
  * what makes a client willing to use it.
  */
-function PortalPaymentMethodCard({ token, readOnly }: { token?: string; readOnly?: boolean }) {
+function PortalPaymentMethodCard({ token, readOnly, salonName }: { token?: string; readOnly?: boolean; salonName?: string | null }) {
   const status = trpc.clientPortal.getMyPaymentMethod.useQuery(
     { token },
     { enabled: !readOnly, retry: false },
@@ -172,7 +173,7 @@ function PortalPaymentMethodCard({ token, readOnly }: { token?: string; readOnly
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <span>
                 You&rsquo;ll be taken to Stripe, our payment provider, to enter your card on their secure page.
-                Barkin&rsquo; Beautiful never sees or stores your full card number. Nothing is charged when you
+                {clientSalonName(salonName).replace(/^the salon$/, "The salon")} never sees or stores your full card number. Nothing is charged when you
                 save a card.
               </span>
             </p>
@@ -189,7 +190,7 @@ function PortalPaymentMethodCard({ token, readOnly }: { token?: string; readOnly
   );
 }
 
-function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string; readOnly?: boolean; clientFirstName?: string }) {
+function PortalChatBubble({ token, readOnly, clientFirstName, salonName }: { token?: string; readOnly?: boolean; clientFirstName?: string; salonName?: string | null }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -242,7 +243,7 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
             <div className="flex min-w-0 items-center gap-2.5">
               <BruceAvatar size={36} />
               <div className="min-w-0">
-                <p className="text-sm font-bold">Bruce · Barkin&apos; Beautiful</p>
+                <p className="text-sm font-bold">{salonName?.trim() ? `Bruce · ${salonName.trim()}` : "Bruce"}</p>
                 <p className="text-[11px] opacity-85">Ask Bruce, or talk to the team. We reply during salon hours.</p>
               </div>
             </div>
@@ -275,7 +276,7 @@ function PortalChatBubble({ token, readOnly, clientFirstName }: { token?: string
                   <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "border bg-card"}`}>
                     {!mine && (
                       <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide opacity-70">
-                        {m.sender === "assistant" ? "Bruce" : (m.staffName ?? "Barkin' Beautiful")}
+                        {m.sender === "assistant" ? "Bruce" : (m.staffName ?? (salonName?.trim() || "The salon"))}
                       </p>
                     )}
                     <p className="whitespace-pre-wrap leading-relaxed">{m.body}</p>
@@ -1084,7 +1085,7 @@ export default function ClientPortal() {
                       <PencilLine className="h-3.5 w-3.5" /> Reschedule
                     </Button>
                   ) : (
-                    <span className="text-xs text-muted-foreground italic">This appointment cannot be rescheduled online. Please call Barkin' Beautiful on (07) 3823 4567.</span>
+                    <span className="text-xs text-muted-foreground italic">This appointment cannot be rescheduled online. Please call {clientSalonName(data.salon.name)}{data.salon.phone ? ` on ${data.salon.phone}` : ""}.</span>
                   )}
                   <Button size="sm" variant="ghost" className="gap-1.5 h-8 text-destructive hover:text-destructive" onClick={() => setCancelTarget(appointment)}>
                     <XCircle className="h-3.5 w-3.5" /> Cancel
@@ -1107,7 +1108,7 @@ export default function ClientPortal() {
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Heart className="h-5 w-5 text-primary" /> Memberships</CardTitle></CardHeader><CardContent className="space-y-3">{data.memberships.length ? data.memberships.map(membership => <div key={membership.id} className="flex flex-wrap items-center justify-between gap-2 border-b pb-3 last:border-0 last:pb-0"><div><p className="font-semibold">{membership.name}</p><p className="text-sm text-muted-foreground">{membership.status === "active" && membership.nextBillingDate ? `Next renewal: ${portalDate(membership.nextBillingDate)}` : "Please contact the salon for account details."}</p></div><Badge variant="outline" className="capitalize">{membership.tier}</Badge></div>) : <p className="text-sm text-muted-foreground">No memberships are currently shown.</p>}</CardContent></Card>
 
-    <PortalPaymentMethodCard token={token ?? undefined} readOnly={isPreview} />
+    <PortalPaymentMethodCard token={token ?? undefined} readOnly={isPreview} salonName={data.salon.name} />
 
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><Scissors className="h-5 w-5 text-primary" /> Grooming cards</CardTitle></CardHeader>
@@ -1143,7 +1144,7 @@ export default function ClientPortal() {
     <Card><CardContent className="flex flex-wrap items-center gap-5 py-5 text-sm text-muted-foreground"><span>Need help with an appointment?</span>{data.salon.phone && <a className="inline-flex items-center gap-1.5 hover:text-primary" href={`tel:${data.salon.phone}`}><Phone className="h-4 w-4" /> {data.salon.phone}</a>}{data.salon.email && <a className="inline-flex items-center gap-1.5 hover:text-primary" href={`mailto:${data.salon.email}`}><Mail className="h-4 w-4" /> {data.salon.email}</a>}</CardContent></Card>
   </div>
 
-  <PortalChatBubble token={token ?? undefined} readOnly={isPreview} clientFirstName={data.client.firstName} />
+  <PortalChatBubble token={token ?? undefined} readOnly={isPreview} clientFirstName={data.client.firstName} salonName={data.salon.name} />
 
   <Dialog open={!!rescheduleTarget} onOpenChange={(open) => !open && setRescheduleTarget(null)}>
     <DialogContent className="sm:max-w-sm">

@@ -25,7 +25,7 @@ describe("buildCardLinkEmail", () => {
   });
 
   it("greets the client by name and links to Stripe", () => {
-    const { subject, html } = buildCardLinkEmail({ firstName: "Toni", url: STRIPE_URL });
+    const { subject, html } = buildCardLinkEmail({ firstName: "Toni", url: STRIPE_URL, salonName: "Barkin' Beautiful" });
     expect(subject).toBe("Save your card for Barkin' Beautiful");
     expect(html).toContain("Hi Toni,");
     expect(html).toContain(`href="${STRIPE_URL}"`);

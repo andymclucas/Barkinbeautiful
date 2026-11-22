@@ -54,6 +54,8 @@ import { bookingKey, confirmedBookingKeys } from "@shared/confirmedBookings";
 import { runClientStatusSweepQuietly } from "./clientStatusSweep";
 import { EARLIEST_AUTOMATED_TEXT_HOUR } from "@shared/sendingHours";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
+import { loadSalonName } from "./salonName";
+import { clientSalonName } from "@shared/salonBrand";
 
 
 
@@ -669,7 +671,7 @@ export async function paymentRetryHandler(req: Request, res: Response) {
               membershipName,
               pricePerCycle: priceStr,
               billingCycle: m.billingCycle,
-              businessName: tenantRow?.name ?? "Barkin' Beautiful",
+              businessName: clientSalonName(tenantRow?.name),
               businessPhone: tenantRow?.phone,
               businessEmail: tenantRow?.email,
             }),
@@ -978,6 +980,8 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
       const confirmedBookings = confirmedBookingKeys(confirmReplies);
 
       let stageSent = 0;
+      // One lookup per salon per run: the reminder names the dog's own salon.
+      const salonNames = new Map<number, string | null>();
       /*
        * Grouped before sending: Groomigo stores one appointment row per
        * dog, so looping over rows texted a three-dog family three
@@ -1027,6 +1031,12 @@ export async function appointmentReminderHandler(req: Request, res: Response) {
           date: apptDate,
           time: apptTime,
           stage: stage.key,
+          salonName: salonNames.has(row.tenantId)
+            ? (salonNames.get(row.tenantId) ?? null)
+            : await loadSalonName(db, row.tenantId).then((name) => {
+                salonNames.set(row.tenantId, name);
+                return name;
+              }),
           /* Asked on the whole booking, not just the lead row: the Y
              was logged against whichever dog the outbound text named,
              and it spoke for the family either way. */

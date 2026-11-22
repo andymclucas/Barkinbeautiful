@@ -54,14 +54,14 @@
 import { brisbaneDateKey } from "./localDateTime";
 import { EARLIEST_AUTOMATED_TEXT_HOUR, withinSendingHours } from "./sendingHours";
 import { describePets } from "./pickupGroup";
+import { UNNAMED_SALON } from "./salonBrand";
 
 /**
- * Exported so the other SMS builders use the SAME fallback rather than
- * each carrying its own copy of the salon name. One literal to change
- * when a second salon starts sending texts, which The Pet Pad does on
- * 23/11/2026 — every caller can already pass salonName and should.
+ * Exported so the other SMS builders use the SAME fallback. It was
+ * "Barkin' Beautiful"; it is now words true for every salon, because
+ * The Pet Pad starts sending texts on 23/11/2026. Callers pass salonName.
  */
-export const DEFAULT_SALON = "Barkin' Beautiful";
+export const DEFAULT_SALON = UNNAMED_SALON;
 /** Nothing automated lands between these hours on the salon's clock. */
 /** Andy, 09/11/2026: "9am texts only." Was 8. See shared/sendingHours.ts. */
 const QUIET_FROM_HOUR = EARLIEST_AUTOMATED_TEXT_HOUR;

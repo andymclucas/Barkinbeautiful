@@ -47,6 +47,7 @@ import {
 } from "@shared/portalInviteAudience";
 import { getPortalBaseUrl } from "./appUrl";
 import { loadPendingAgreements } from "./portalAgreements";
+import { clientSalonName, salonPortalLabel } from "@shared/salonBrand";
 
 export const PORTAL_INVITE_AUDIENCE_TYPE = "portal_invite";
 
@@ -147,7 +148,7 @@ export function portalInviteEmail(input: {
     ? ` or call us on ${escapeHtml(input.salonPhone)}`
     : "";
   return {
-    subject: `Set up your ${input.salonName} client portal`,
+    subject: `Set up your ${salonPortalLabel(input.salonName)}`,
     html: `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.55;color:#1f2937;max-width:560px">
   <p>${escapeHtml(inviteGreeting(input.firstName))}</p>
   <p>${salon} now has a client portal. You can see your upcoming appointments, follow your dog's groom on the day, and keep your details and payment card up to date.</p>
@@ -296,7 +297,7 @@ async function processCampaign(
 
   const [tenant] = await db.select({ name: tenants.name, phone: tenants.phone, email: tenants.email })
     .from(tenants).where(eq(tenants.id, tenantId)).limit(1);
-  const salonName = tenant?.name ?? "Barkin' Beautiful";
+  const salonName = clientSalonName(tenant?.name);
   const baseUrl = getPortalBaseUrl();
 
   for (;;) {

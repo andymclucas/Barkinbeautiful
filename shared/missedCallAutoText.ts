@@ -1,3 +1,4 @@
+import { clientSalonName } from "./salonBrand";
 /**
  * The missed-call auto-reply: at most ONE text per phone number, ever.
  *
@@ -12,8 +13,13 @@
  * drizzle/0060_missed_call_auto_texts.sql.
  */
 
-export const MISSED_CALL_AUTO_TEXT =
-  "Thank you for calling Barkin' Beautiful and we're sorry we missed your call - we will call you back as soon as we are able, but please feel free to send us a reply text and let us know what you need.";
+/**
+ * The text a caller gets when nobody answered. It names the salon whose
+ * number they rang: it used to say "Barkin' Beautiful" for every salon.
+ */
+export function missedCallAutoText(salonName: string | null | undefined): string {
+  return `Thank you for calling ${clientSalonName(salonName)} and we're sorry we missed your call - we will call you back as soon as we are able, but please feel free to send us a reply text and let us know what you need.`;
+}
 
 /**
  * Canonical key for a caller's number: the one spelling used to decide whether

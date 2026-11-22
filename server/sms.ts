@@ -1,6 +1,7 @@
 import { REPLY_PROMPT } from "@shared/replyPrompt";
 import { automatedSmsAllowed, automatedSmsPermitted, describeBlockedSms, type AutomatedSmsType } from "@shared/automatedSms";
 import { describePets } from "@shared/pickupGroup";
+import { clientSalonName } from "@shared/salonBrand";
 import twilio from "twilio";
 import { getAppBaseUrl } from "./appUrl";
 import { checkSmsAllowance } from "./smsUsage";
@@ -180,7 +181,8 @@ export function buildAppointmentReminderSms(opts: {
   petNames: readonly string[];
   date: string;
   time: string;
-  salonName?: string;
+  /** Required: a text never borrows another salon's name. */
+  salonName: string | null;
   /**
    * "day_before" is the LAST reminder, and there is no morning-of one.
    *
@@ -209,7 +211,7 @@ export function buildAppointmentReminderSms(opts: {
    */
   alreadyConfirmed?: boolean;
 }) {
-  const salon = opts.salonName ?? "Barkin' Beautiful";
+  const salon = clientSalonName(opts.salonName);
   // Same helper the pickup text and the confirmation use, so a client
   // who gets both reads their dogs named the same way in each.
   const { subject, verb } = describePets(opts.petNames);
@@ -264,9 +266,10 @@ export function buildAppointmentConfirmationSms(opts: {
   petName: string;
   date: string;
   time: string;
-  salonName?: string;
+  /** Required: a text never borrows another salon's name. */
+  salonName: string | null;
 }) {
-  const salon = opts.salonName ?? "Barkin' Beautiful";
+  const salon = clientSalonName(opts.salonName);
   return `Hi ${opts.clientFirstName}! Your booking for ${opts.petName} at ${salon} on ${opts.date} at ${opts.time} is confirmed. We can't wait to see them! 🐾`;
 }
 
@@ -274,9 +277,10 @@ export function buildPetTrackerSms(opts: {
   clientFirstName: string;
   petName: string;
   trackerUrl: string;
-  salonName?: string;
+  /** Required: a text never borrows another salon's name. */
+  salonName: string | null;
 }) {
-  const salon = opts.salonName ?? "Barkin' Beautiful";
+  const salon = clientSalonName(opts.salonName);
   return `Hi ${opts.clientFirstName}! ${opts.petName} has checked in at ${salon}. Follow their grooming progress here: ${opts.trackerUrl}`;
 }
 
@@ -292,9 +296,10 @@ export function buildReadyForPickupSms(opts: {
   clientFirstName: string;
   /** One name, or every dog on the booking. */
   petNames: string[];
-  salonName?: string;
+  /** Required: a text never borrows another salon's name. */
+  salonName: string | null;
 }) {
-  const salon = opts.salonName ?? "Barkin' Beautiful";
+  const salon = clientSalonName(opts.salonName);
   const { subject, verb } = describePets(opts.petNames);
   return `Hi ${opts.clientFirstName}! ${subject} ${verb} all done and looking fabulous at ${salon}. Come pick them up whenever you're ready! 🐾✨`;
 }
@@ -303,18 +308,20 @@ export function buildMembershipPaymentFailedSms(opts: {
   clientFirstName: string;
   petName: string;
   amount: string;
-  salonName?: string;
+  /** Required: a text never borrows another salon's name. */
+  salonName: string | null;
 }) {
-  const salon = opts.salonName ?? "Barkin' Beautiful";
-  return `Hi ${opts.clientFirstName}, we had trouble processing your ${salon} membership payment of ${opts.amount} for ${opts.petName}. Please update your payment details to keep your membership active. Call us if you need help!`;
+  const salon = clientSalonName(opts.salonName);
+  return `Hi ${opts.clientFirstName}, we had trouble processing your membership payment of ${opts.amount} for ${opts.petName} at ${salon}. Please update your payment details to keep your membership active. Call us if you need help!`;
 }
 
 export function buildGroomingReportReadySms(opts: {
   clientFirstName: string;
   petName: string;
-  salonName?: string;
+  /** Required: a text never borrows another salon's name. */
+  salonName: string | null;
 }) {
-  const salon = opts.salonName ?? "Barkin' Beautiful";
+  const salon = clientSalonName(opts.salonName);
   return `Hi ${opts.clientFirstName}! ${opts.petName}'s grooming report from ${salon} is ready. Ask your groomer for a copy or check your email. 🐾`;
 }
 

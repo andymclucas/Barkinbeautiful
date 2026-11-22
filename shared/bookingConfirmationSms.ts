@@ -1,6 +1,7 @@
 import { describePets } from "./pickupGroup";
 import { EARLIEST_AUTOMATED_TEXT_HOUR, withinSendingHours } from "./sendingHours";
 import { REPLY_PROMPT } from "./replyPrompt";
+import { UNNAMED_SALON } from "./salonBrand";
 /**
  * The text a client gets when the salon books their dog in.
  *
@@ -69,7 +70,7 @@ export function confirmationAsksToConfirm(
   return start - at <= ASK_ON_CONFIRMATION_WITHIN_HOURS * 3_600_000;
 }
 
-const DEFAULT_SALON = "Barkin' Beautiful";
+const DEFAULT_SALON = UNNAMED_SALON;
 
 /** Automated texts land between these hours, on the salon's clock. */
 /**

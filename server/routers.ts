@@ -178,6 +178,9 @@ import { minutesToTimeValue, salonBookingStarts } from "../shared/bookingTimeSlo
 const OFFERABLE_SLOT_STARTS = salonBookingStarts();
 import { getPricingAmountValidationError, normalisePricingCode } from "../shared/pricingCatalogue";
 import { getAppBaseUrl, getPortalBaseUrl } from "./appUrl";
+import { loadSalonName } from "./salonName";
+import { clientSalonName } from "@shared/salonBrand";
+import { escapeHtml } from "@shared/escapeHtml";
 import { canAdministerStaff, STAFF_ADMIN_DENIED_MESSAGE } from "@shared/staffAdministrators";
 import { withoutRevenueTarget } from "@shared/staffRecord";
 import { requireSalonOwner, isSalonOwner } from "./tenantOwner";
@@ -3775,7 +3778,7 @@ const calendarRouter = router({
           const body = buildPetTrackerSms({
             clientFirstName: trackerRecipient.firstName ?? "there",
             petName: trackerRecipient.petName ?? "your dog",
-            salonName: trackerRecipient.tenantName ?? "Barkin' Beautiful",
+            salonName: trackerRecipient.tenantName,
             trackerUrl,
           });
           const result = await sendSms(trackerRecipient.phone, body, { tenantId: appt.tenantId, trigger: "automated", type: "tracker" });
@@ -10484,7 +10487,7 @@ const membershipsRouter = router({
           membershipName: row.name,
           pricePerCycle: parseFloat(row.pricePerCycle ?? "0").toFixed(2),
           billingCycle: row.billingCycle,
-          businessName: row.tenantName ?? "Barkin\' Beautiful Grooming Studio",
+          businessName: clientSalonName(row.tenantName),
           businessPhone: row.tenantPhone,
           businessEmail: row.tenantEmail,
         });
@@ -12274,9 +12277,12 @@ const groomingReportsRouter = router({
           // someone who has no account would send them to a login screen they
           // cannot get past.
           portalAccountStatus: clients.portalAccountStatus,
+          // The footer names the dog's own salon.
+          salonName: tenants.name,
         })
         .from(appointments)
         .leftJoin(clients, eq(appointments.clientId, clients.id))
+        .leftJoin(tenants, eq(appointments.tenantId, tenants.id))
         .where(eq(appointments.id, input.appointmentId))
         .limit(1);
       if (!appointmentRecipient?.email || appointmentRecipient.email.trim().toLowerCase() !== input.clientEmail.trim().toLowerCase()) {
@@ -12319,7 +12325,7 @@ const groomingReportsRouter = router({
           </div>
           ${portalBlock}
           <div style="padding:16px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;text-align:center">
-            <p style="color:#9ca3af;font-size:11px;margin:0">Sent via Groomigo · Barkin' Beautiful Grooming Studio</p>
+            <p style="color:#9ca3af;font-size:11px;margin:0">Sent via Groomigo${appointmentRecipient.salonName?.trim() ? ` · ${escapeHtml(appointmentRecipient.salonName.trim())}` : ""}</p>
           </div>
         </div>`;
       const sent = await sendEmail({ to: input.clientEmail, subject, html });
@@ -14118,7 +14124,11 @@ const smsRouter = router({
       if (!decision.ok) throw new Error(decision.reason);
       const { petNames, appointmentIds: covered } = decision;
 
-      const body = buildReadyForPickupSms({ clientFirstName: recipient.name.split(" ")[0] || "there", petNames });
+      const body = buildReadyForPickupSms({
+        clientFirstName: recipient.name.split(" ")[0] || "there",
+        petNames,
+        salonName: await loadSalonName(db, appointment.tenantId),
+      });
       const result = await sendSms(recipient.phone, body, { tenantId: appointment.tenantId, trigger: "staff" });
       // Logged against EVERY dog the text covers, not just the one whose
       // button was pressed. That record is what stops a second prompt when
@@ -14253,7 +14263,7 @@ const smsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
-      const [client] = await db.select({ firstName: clients.firstName, phone: clients.phone }).from(clients).where(eq(clients.id, input.clientId)).limit(1);
+      const [client] = await db.select({ firstName: clients.firstName, phone: clients.phone, tenantId: clients.tenantId }).from(clients).where(eq(clients.id, input.clientId)).limit(1);
       if (!client?.phone) throw new Error("Client has no phone number");
       let petName = "your dog";
       if (input.appointmentId) {
@@ -14261,12 +14271,14 @@ const smsRouter = router({
         if (appt?.petName) petName = appt.petName;
       }
       let body = "";
+      // The client's own salon, not the caller's default tenant.
+      const salonName = await loadSalonName(db, client.tenantId);
       if (input.templateType === "ready_pickup") {
-        body = buildReadyForPickupSms({ clientFirstName: client.firstName ?? "there", petNames: [petName] });
+        body = buildReadyForPickupSms({ clientFirstName: client.firstName ?? "there", petNames: [petName], salonName });
       } else if (input.templateType === "custom" && input.customMessage) {
         body = buildCustomSms({ clientFirstName: client.firstName ?? "there", petName, message: input.customMessage });
       } else if (input.templateType === "reminder") {
-        body = buildAppointmentReminderSms({ clientFirstName: client.firstName ?? "there", petNames: [petName], date: "your upcoming appointment", time: "" });
+        body = buildAppointmentReminderSms({ clientFirstName: client.firstName ?? "there", petNames: [petName], date: "your upcoming appointment", time: "", salonName });
       } else {
         body = input.customMessage ?? "";
       }
@@ -16280,12 +16292,13 @@ const clientPortalRouter = router({
       }
 
       const { sendEmail } = await import("./email");
+      const portalSalon = await loadSalonName(db, client.tenantId);
       const sent = await sendEmail({
         to: recipient,
-        subject: "Your Barkin' Beautiful client portal",
+        subject: portalSalon ? `Your ${portalSalon} client portal` : "Your client portal",
         html: `
         <div style="font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;padding:28px 24px;background:#faf8ff;border-radius:16px">
-          <p style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b7280;margin:0">Barkin' Beautiful</p>
+          ${portalSalon ? `<p style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b7280;margin:0">${escapeHtml(portalSalon)}</p>` : ""}
           <h1 style="margin:10px 0 14px;font-size:24px;color:#111827">Your client portal</h1>
           <p style="margin:0 0 20px;color:#374151;font-size:15px;line-height:1.6">
             ${greeting} here's your link again. You can see your upcoming appointments,
@@ -16398,7 +16411,7 @@ const clientPortalRouter = router({
       if (input.sendEmail !== false) {
         if (isReset) {
           // Same wording as the reset a client asks for herself.
-          const reset = portalPasswordResetEmail({ firstName: client.firstName, resetUrl: setupUrl, expiresAt: setup.expiresAt });
+          const reset = portalPasswordResetEmail({ firstName: client.firstName, resetUrl: setupUrl, expiresAt: setup.expiresAt, salonName: await loadSalonName(db, client.tenantId) });
           emailSent = await sendEmail({ to: loginEmail, subject: reset.subject, html: reset.html });
         } else {
           const [salon] = await db.select({ name: tenants.name, phone: tenants.phone, email: tenants.email })
@@ -16406,7 +16419,7 @@ const clientPortalRouter = router({
           const pending = await loadPendingAgreements(db, client.tenantId, client.id);
           const invite = portalInviteEmail({
             firstName: client.firstName,
-            salonName: salon?.name ?? "Barkin' Beautiful",
+            salonName: clientSalonName(salon?.name),
             salonPhone: salon?.phone ?? null,
             setupUrl,
             expiresAt: setup.expiresAt,
@@ -16660,11 +16673,11 @@ const clientPortalRouter = router({
       const sample = audience.recipients[0];
       const exampleEmail = portalInviteEmail({
         firstName: sample?.firstName ?? "Jane",
-        salonName: "Barkin' Beautiful",
+        salonName: clientSalonName(await loadSalonName(db, tenantId)),
         salonPhone: null,
         setupUrl: `${getPortalBaseUrl()}/portal/setup/…`,
         expiresAt: new Date(Date.now() + CLIENT_PORTAL_ACCESS_TTL_MS),
-        agreementTitles: ["Barkin Beautiful Service Agreement"],
+        agreementTitles: ["Service Agreement"],
       });
       return {
         count: audience.recipients.length,
@@ -16897,7 +16910,7 @@ const clientPortalRouter = router({
             firstName: client.firstName,
             signInUrl: `${getPortalBaseUrl()}/portal/login`,
             loginEmail,
-            salonName: salon?.name ?? "Barkin' Beautiful",
+            salonName: clientSalonName(salon?.name),
             salonPhone: salon?.phone ?? null,
             wasReset: client.portalAccountStatus === "active",
           });
@@ -16962,7 +16975,7 @@ const clientPortalRouter = router({
       const email = portalSignInEmail({
         firstName: client.firstName,
         signInUrl: `${getPortalBaseUrl()}/portal/signin/${token}`,
-        salonName: salon?.name ?? "Barkin' Beautiful",
+        salonName: clientSalonName(salon?.name),
         code,
       });
       const { sendEmail } = await import("./email");
@@ -17113,8 +17126,8 @@ const clientPortalRouter = router({
       }).where(and(eq(clients.id, client.id), eq(clients.portalAccountStatus, "active")));
 
       const resetUrl = `${getPortalBaseUrl()}/portal/setup/${setup.token}`;
-      const email = portalPasswordResetEmail({ firstName: client.firstName, resetUrl, expiresAt });
       const [salon] = await db.select({ name: tenants.name, email: tenants.email }).from(tenants).where(eq(tenants.id, client.tenantId)).limit(1);
+      const email = portalPasswordResetEmail({ firstName: client.firstName, resetUrl, expiresAt, salonName: salon?.name ?? null });
       const { sendEmail } = await import("./email");
       await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, fromName: salon?.name ?? null, replyTo: salon?.email ?? null })
         .catch((error: unknown) => { console.error("[portal] self-service reset email failed", error); return false; });
@@ -17899,7 +17912,7 @@ const clientPortalRouter = router({
       // Everything the assistant is allowed to know, read fresh so it cannot
       // answer from anything but this client's current record.
       const [client] = await db.select({ firstName: clients.firstName }).from(clients).where(eq(clients.id, clientId)).limit(1);
-      const [tenant] = await db.select({ phone: tenants.phone, email: tenants.email }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+      const [tenant] = await db.select({ name: tenants.name, phone: tenants.phone, email: tenants.email }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
       const petRows = await db.select({ name: pets.name }).from(pets)
         .where(and(eq(pets.clientId, clientId), eq(pets.status, "active")));
       const [nextAppt] = await db.select({
@@ -17930,6 +17943,7 @@ const clientPortalRouter = router({
         lastAppointment: lastAppt ? { petName: lastAppt.petName, whenLabel: label(lastAppt.start) } : null,
         petNames: petRows.map((p: any) => p.name),
         membershipNames: msRows.map((m: any) => m.name),
+        salonName: tenant?.name ?? null,
         salonPhone: tenant?.phone ?? null,
         salonEmail: tenant?.email ?? null,
         openingHoursLabel: null,

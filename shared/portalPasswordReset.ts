@@ -74,14 +74,19 @@ export function portalPasswordResetEmail(input: {
   firstName: string | null | undefined;
   resetUrl: string;
   expiresAt: Date;
+  /** The client's own salon. Null reads "the salon", never another salon's name. */
+  salonName: string | null;
   now?: Date;
 }): { subject: string; html: string } {
   const name = escapeHtml((input.firstName ?? "").trim() || "there");
+  // "your Barkin Beautiful client portal", or "your client portal" when
+  // the name is unknown: never "your the salon client portal".
+  const portal = input.salonName?.trim() ? `${input.salonName.trim()} client portal` : "client portal";
   return {
-    subject: "Reset your Barkin' Beautiful client portal password",
+    subject: `Reset your ${portal} password`,
     html:
       `<p>Hi ${name},</p>`
-      + `<p>Here's your link to set a new password for your Barkin' Beautiful client portal account.</p>`
+      + `<p>Here's your link to set a new password for your ${escapeHtml(portal)} account.</p>`
       + `<p><a href="${escapeHtml(input.resetUrl)}">Reset my password</a></p>`
       + `<p>${expiryWords(input.expiresAt, input.now ?? new Date())} Until you set a new one, your current password still works.</p>`
       + `<p>Didn't ask for this? You can ignore this email — nothing changes unless the link is used.</p>`,

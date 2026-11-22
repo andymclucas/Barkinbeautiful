@@ -31,7 +31,7 @@ describe("the reset email", () => {
   it("gives a self-service link's life in hours and says the old password still works", () => {
     const { subject, html } = portalPasswordResetEmail({
       firstName: "Nikki", resetUrl: "https://staff.barkinbeautiful.com.au/portal/setup/abc",
-      expiresAt: new Date(now.getTime() + 2 * 3_600_000), now,
+      expiresAt: new Date(now.getTime() + 2 * 3_600_000), now, salonName: "Barkin' Beautiful",
     });
     expect(subject).toBe("Reset your Barkin' Beautiful client portal password");
     expect(html).toContain("Hi Nikki,");
@@ -42,14 +42,16 @@ describe("the reset email", () => {
 
   it("gives the salon's 30-day link a Brisbane date", () => {
     const { html } = portalPasswordResetEmail({
-      firstName: null, resetUrl: "https://x/portal/setup/t", expiresAt: new Date("2026-12-12T01:00:00Z"), now,
+      firstName: null, resetUrl: "https://x/portal/setup/t", expiresAt: new Date("2026-12-12T01:00:00Z"), now, salonName: null,
     });
+    expect(html).toContain("your client portal account");
+    expect(html).not.toContain("Barkin");
     expect(html).toContain("Hi there,");
     expect(html).toContain("expires on 12 December 2026");
   });
 
   it("escapes a name rather than putting markup in the email", () => {
-    const { html } = portalPasswordResetEmail({ firstName: "<b>Jo</b>", resetUrl: "https://x/t", expiresAt: now, now });
+    const { html } = portalPasswordResetEmail({ firstName: "<b>Jo</b>", resetUrl: "https://x/t", expiresAt: now, now, salonName: "The Pet Pad" });
     expect(html).toContain("Hi &lt;b&gt;Jo&lt;/b&gt;,");
   });
 });

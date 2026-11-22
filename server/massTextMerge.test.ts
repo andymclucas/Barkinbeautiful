@@ -145,8 +145,12 @@ describe("{agreement_link}", () => {
 
   it("the suggested message, with its link, fits in two segments", async () => {
     const { calculateSmsCost } = await import("@shared/smsSegments");
-    const { SUGGESTED_AGREEMENT_TEXT } = await import("@shared/massTextMerge");
-    const rendered = renderMassTextBody(SUGGESTED_AGREEMENT_TEXT, {
+    const { suggestedAgreementText } = await import("@shared/massTextMerge");
+    // A long salon name, so the two-segment promise holds for any salon.
+    const suggested = suggestedAgreementText("Barkin Beautiful Grooming Studio");
+    expect(suggested.startsWith("Hi from Barkin Beautiful Grooming Studio!")).toBe(true);
+    expect(suggestedAgreementText(null).startsWith("Hi! Before")).toBe(true);
+    const rendered = renderMassTextBody(suggested, {
       agreementLink: "https://staff.barkinbeautiful.com.au/sign/7tq.1abcdef.0123456789ab",
     });
     expect(rendered.ok).toBe(true);

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { MassTextDialog } from "@/components/MassTextDialog";
-import { SUGGESTED_AGREEMENT_TEXT } from "@shared/massTextMerge";
+import { suggestedAgreementText } from "@shared/massTextMerge";
 import type { PortalInviteScope } from "@shared/portalInviteAudience";
 
 export const PORTAL_INVITE_TYPED_CONFIRM_THRESHOLD = 25;
@@ -223,6 +223,7 @@ export function PortalInvitePanel() {
   // to be pressed every Monday (Andy, 17/11/2026).
   const [scope, setScope] = useState<PortalInviteScope>("this_week");
   const preview = trpc.clientPortal.portalInvitePreview.useQuery({ scope });
+  const { data: salon } = trpc.settings.getTenantInfo.useQuery({});
   const [startedId, setStartedId] = useState<number | null>(null);
   const campaignId = startedId ?? preview.data?.latestCampaignId ?? null;
 
@@ -261,7 +262,7 @@ export function PortalInvitePanel() {
       textAction={
         <MassTextDialog
           defaultAudience="agreement_unsigned"
-          defaultBody={SUGGESTED_AGREEMENT_TEXT}
+          defaultBody={suggestedAgreementText(salon?.name)}
           triggerLabel="Text the agreement to clients with no email"
           triggerClassName="gap-1.5"
         />

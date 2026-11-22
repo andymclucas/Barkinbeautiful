@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 import { CalendarClock, Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { clientSalonName } from "@shared/salonBrand";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -29,6 +30,7 @@ export function RebookReminderCard() {
   const isAdmin = user?.role === "admin";
 
   const { data: settings, isLoading } = trpc.onlineBooking.getSettings.useQuery({ tenantId: 1 });
+  const { data: salon } = trpc.settings.getTenantInfo.useQuery({});
   const update = trpc.onlineBooking.updateSettings.useMutation({
     onSuccess: () => { void utils.onlineBooking.getSettings.invalidate(); },
     onError: (e) => toast.error("Could not save", { description: e.message }),
@@ -46,7 +48,7 @@ export function RebookReminderCard() {
   // than placeholder tokens — {petName} tells you nothing about how the
   // sentence actually reads.
   const preview = buildRebookReminderSms({
-    salonName: "Barkin Beautiful",
+    salonName: clientSalonName(salon?.name),
     clientFirstName: "Scott",
     petNames: ["Effie", "Dusty"],
     weeksSinceLastVisit: weeksBefore,

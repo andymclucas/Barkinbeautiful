@@ -14,7 +14,7 @@ const BRONWYN_DATES = [
 describe("the text itself", () => {
   it("names the dog, the salon and every date in order", () => {
     const body = buildUpcomingDatesSms({
-      clientFirstName: "Bronwyn", petNames: ["Gizmo"], dates: BRONWYN_DATES,
+      clientFirstName: "Bronwyn", petNames: ["Gizmo"], dates: BRONWYN_DATES, salonName: "Barkin Beautiful",
     });
     expect(body).toContain("Hi Bronwyn!");
     expect(body).toContain("Gizmo's grooming appointments");
