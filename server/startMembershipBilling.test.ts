@@ -95,6 +95,17 @@ describe("starting weekly billing", () => {
     expect(updates[0]).toMatchObject({ stripeSubscriptionId: "sub_family" });
   });
 
+  it("bills on its own when staff promised a first charge later than the family's next payment", async () => {
+    const sibling = { ...addedNotBilling, id: 500, status: "active", stripeSubscriptionId: "sub_family", isTest: false, nextBillingDate: new Date("2027-01-05T23:00:00Z") };
+    const { db, updates } = fakeDb([[addedNotBilling], [sibling, { ...addedNotBilling, isTest: false }], [cardOnFile]]);
+    getDb.mockResolvedValue(db);
+    stripe.subscriptions.create.mockResolvedValue({ id: "sub_own", status: "trialing", items: { data: [] } });
+
+    await expect(startMembershipSubscription(501, "2027-02-02")).resolves.toMatchObject({ subscriptionId: "sub_own", joinedHousehold: false });
+    expect(stripe.subscriptionItems.create).not.toHaveBeenCalled();
+    expect(updates[0]).toMatchObject({ stripeSubscriptionId: "sub_own" });
+  });
+
   it("still refuses a paused or cancelled membership", async () => {
     getDb.mockResolvedValue(fakeDb([[{ ...addedNotBilling, status: "paused" }]]).db);
     await expect(startMembershipSubscription(501)).rejects.toThrow("paused");

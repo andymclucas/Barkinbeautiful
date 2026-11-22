@@ -24,6 +24,7 @@ import type Stripe from "stripe";
 import { and, eq, inArray, isNotNull, isNull, ne, notInArray, or } from "drizzle-orm";
 import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
+import { notifyOwner } from "./ownerNotification";
 import { requireStripeClient } from "./stripeClient";
 import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
@@ -499,11 +500,21 @@ export async function startMembershipSubscription(membershipId: number, firstCha
       billingCycleWeeks: memberships.billingCycleWeeks,
       pricePerCycle: memberships.pricePerCycle,
       isTest: memberships.isTest,
+      nextBillingDate: memberships.nextBillingDate,
     })
     .from(memberships)
     .where(and(eq(memberships.clientId, membership.clientId), eq(memberships.tenantId, membership.tenantId ?? 1)));
   const joinIds = householdPaymentToJoin(household, membership.id);
-  if (joinIds) {
+  /*
+   * Joining charges the dog from the family's next payment. If staff
+   * promised the client a LATER first charge than that, joining would take
+   * money before the agreed day, so bill it on its own as before. The
+   * Combine button offers to put them together once it is live.
+   */
+  const requestedStart = firstChargeStamp(firstChargeOn);
+  const familyNext = household.find((r) => joinIds?.includes(r.id) && r.id !== membership.id && r.nextBillingDate)?.nextBillingDate ?? null;
+  const joinsTooEarly = Boolean(requestedStart && (!familyNext || new Date(familyNext).getTime() / 1000 < requestedStart - 60));
+  if (joinIds && !joinsTooEarly) {
     const joined = await startFamilySubscription(joinIds);
     return { subscriptionId: joined.subscriptionId, alreadyExisted: false, joinedHousehold: true, totalCents: joined.totalCents };
   }
@@ -860,9 +871,19 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
     throw new Error("One of these payments also pays for another membership. Nothing was changed. Combine them one at a time from the client's page.");
   }
 
-  const live = (status: string) => status === "active" || status === "trialing";
+  /*
+   * "trialing" is excluded on purpose. A payment that has not taken its
+   * first charge yet has a start date somebody promised the client:
+   * cancelling it gives no credit, and moving the dog would charge it on
+   * the other payment's date instead. Combine once it has started.
+   */
+  const live = (status: string) => status === "active";
   const keep = await stripe.subscriptions.retrieve(plan.keepSubscriptionId);
-  if (!live(keep.status)) throw new Error(`The payment being kept is ${keep.status} at Stripe. Nothing was changed.`);
+  if (!live(keep.status)) {
+    throw new Error(keep.status === "trialing"
+      ? "One of these payments has not taken its first charge yet. Combine them after it has. Nothing was changed."
+      : `The payment being kept is ${keep.status} at Stripe. Nothing was changed.`);
+  }
   const keepItems = await stripe.subscriptionItems.list({ subscription: plan.keepSubscriptionId, limit: 100 });
   const keepRecurring = keepItems.data[0]?.price?.recurring;
   if (!keepRecurring) throw new Error("The payment being kept has no recurring line at Stripe. Nothing was changed.");
@@ -884,7 +905,11 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
   const moves: Array<{ id: number; from: string; line: Stripe.SubscriptionItem }> = [];
   for (const move of plan.moving) {
     const sub = await stripe.subscriptions.retrieve(move.fromSubscriptionId);
-    if (!live(sub.status)) throw new Error(`One of the payments being combined is ${sub.status} at Stripe. Nothing was changed.`);
+    if (!live(sub.status)) {
+      throw new Error(sub.status === "trialing"
+        ? "One of these payments has not taken its first charge yet. Combine them after it has. Nothing was changed."
+        : `One of the payments being combined is ${sub.status} at Stripe. Nothing was changed.`);
+    }
     const items = await stripe.subscriptionItems.list({ subscription: move.fromSubscriptionId, limit: 100 });
     if (items.data.length !== 1) throw new Error("One of the payments being combined has more than one line at Stripe. Nothing was changed.");
     const [line] = items.data;
@@ -897,15 +922,23 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
   }
 
   const [keptSibling] = await db.select({ nextBillingDate: memberships.nextBillingDate })
-    .from(memberships).where(eq(memberships.stripeSubscriptionId, plan.keepSubscriptionId)).limit(1);
+    .from(memberships).where(and(
+      eq(memberships.stripeSubscriptionId, plan.keepSubscriptionId),
+      notInArray(memberships.status, ["cancelled", "expired"]),
+    )).limit(1);
   const onKeep = new Set(keepItems.data.map((item) => item.metadata?.groomigo_membership_id).filter(Boolean));
   const byId = new Map(rows.map((r) => [r.id, r] as const));
   const combined: number[] = [];
   const stillOnOld: string[] = [];
 
+  const doneSoFar = () => combined.length
+    ? ` ${combined.length} of ${moves.length} dog(s) had already been moved onto the one payment before it stopped (membership ${combined.join(", ")}).`
+    : " Nothing had been moved yet.";
+
   for (const move of moves) {
     const row = byId.get(move.id)!;
     let added: Stripe.SubscriptionItem | null = null;
+    try {
     if (!onKeep.has(String(move.id))) {
       added = await stripe.subscriptionItems.create({
         subscription: plan.keepSubscriptionId,
@@ -922,6 +955,9 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
         proration_behavior: "none",
       });
     }
+    } catch (error) {
+      throw new Error(`Stripe refused to add a dog to the combined payment: ${(error as Error).message}.${doneSoFar()}`);
+    }
 
     const [written] = await db.update(memberships).set({
       stripeSubscriptionId: plan.keepSubscriptionId,
@@ -931,7 +967,7 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
     }).where(and(eq(memberships.id, move.id), eq(memberships.stripeSubscriptionId, move.from)));
     if ((written as unknown as { affectedRows?: number }).affectedRows === 0) {
       if (added) await stripe.subscriptionItems.del(added.id, { proration_behavior: "none" }).catch(() => undefined);
-      throw new Error(`Somebody changed one of these memberships at the same moment. ${combined.length ? `${combined.length} were combined before it stopped. ` : ""}Refresh and check before trying again.`);
+      throw new Error(`Somebody changed one of these memberships at the same moment.${doneSoFar()} Refresh and check before trying again.`);
     }
     combined.push(move.id);
 
@@ -949,7 +985,21 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
   }
 
   if (stillOnOld.length > 0) {
-    throw new Error(`Combined, but the old payment ${stillOnOld.join(", ")} could not be cancelled and will still charge. Cancel it in Stripe now.`);
+    /*
+     * The dog is on the combined payment AND its old one is still live, so
+     * the client will be charged twice. Webhooks for the old payment match
+     * no membership any more and record nothing, so nothing in Groomigo
+     * would ever show it. Email the owner as well as saying so on screen.
+     */
+    await notifyOwner({
+      title: "Cancel a Stripe payment now: a client would be charged twice",
+      content:
+        `Combining a family's memberships into one payment moved membership(s) ${combined.join(", ")} onto ` +
+        `${plan.keepSubscriptionId}, but Stripe would not cancel the old payment ${stillOnOld.join(", ")}.\n\n` +
+        `Until it is cancelled in Stripe the client is charged for those dogs twice. Cancel it in the Stripe ` +
+        `dashboard, with "prorate" on so the unused days are credited.`,
+    }).catch((error) => console.error("[mergeFamilyPayments] owner notice failed", error));
+    throw new Error(`Combined, but the old payment ${stillOnOld.join(", ")} could not be cancelled and will still charge. Cancel it in Stripe now. The owner has been emailed.`);
   }
   return { subscriptionId: plan.keepSubscriptionId, combined: combined.length, totalCents: plan.totalCents };
 }
