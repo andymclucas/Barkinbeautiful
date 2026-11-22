@@ -124,7 +124,10 @@ export default function Dashboard() {
   // to fire first and come back refused (see NotificationBell.tsx).
   const ownerFeeds = !!user && user.role !== "staff";
   const { data: boardData } = trpc.workflow.getTodayBoard.useQuery({}, live);
-  const { data: analytics } = trpc.analytics.summary.useQuery({ dateFrom: monthStart.toISOString(), dateTo: tomorrow.toISOString() }, { ...live, enabled: ownerFeeds });
+  // The month's revenue scans every booking in the range (~2,700 TiDB request
+  // units a load) and moves slowly, so it refreshes every 10 minutes and on
+  // returning to the tab, not every minute with the board (23/11/2026).
+  const { data: analytics } = trpc.analytics.summary.useQuery({ dateFrom: monthStart.toISOString(), dateTo: tomorrow.toISOString() }, { refetchInterval: 10 * 60_000, refetchOnWindowFocus: true, enabled: ownerFeeds });
   const { data: failedPayments } = trpc.memberships.getFailedPayments.useQuery({}, { enabled: ownerFeeds });
   const { data: timingReviewAlerts } = trpc.workflowReview.getAlerts.useQuery({ date: dashboardDate }, { ...live, enabled: user?.role === "admin" });
   const { data: messagePreview } = trpc.sms.getUnreadPreview.useQuery({ limit: 5 }, { ...live, enabled: ownerFeeds });

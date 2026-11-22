@@ -458,6 +458,7 @@ const OPERATIONAL = [
   "waitlistRouter.update",
   "workflowReviewRouter.getBoardThresholds",
   "workflowRouter.getBoard",
+  "workflowRouter.getBoardVersion",
   "workflowRouter.getStaff",
   "workflowRouter.getTodayBoard",
   "workflowRouter.reorderBathQueue",
@@ -637,7 +638,9 @@ describe("tRPC procedure surface", () => {
     // 460 since 22/11/2026: stripeCards.mergeFamilyPayments, combining a
     // household's separate payments into one. adminProcedure, like
     // startFamilyBilling.
-    expect(surface).toHaveLength(460);
+    // 461 since 23/11/2026: workflow.getBoardVersion, the cheap "has the
+    // board changed?" check. operationalProcedure, like getBoard.
+    expect(surface).toHaveLength(461);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -715,7 +718,8 @@ describe("tRPC procedure surface", () => {
     // 163 since 13/11/2026: the staff half of supportChat. Every staff
     // login can ask for help; the server keys each one to ctx.user.id.
     // 165 since 21/11/2026: calendarRouter.cancelAllUpcoming.
-    expect(OPERATIONAL).toHaveLength(165);
+    // 166 since 23/11/2026: workflowRouter.getBoardVersion.
+    expect(OPERATIONAL).toHaveLength(166);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

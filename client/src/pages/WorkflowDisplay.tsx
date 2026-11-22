@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { CheckCircle2, Clock3, Dog, Moon, RefreshCw, Sparkles, Sun, Wifi, WifiOff } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
+import { useReloadBoardOnChange, workflowBoardRefreshOptions, workflowBoardVersionOptions } from "@/lib/workflowBoardRefresh";
 import { isTerminalWorkflowState } from "@/lib/workflowTerminalStates";
 import { PRODUCTION_APP_URL } from "@shared/const";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
@@ -101,6 +101,11 @@ export default function WorkflowDisplay() {
     { date: boardDate },
     { ...workflowBoardRefreshOptions, enabled: !!user },
   );
+  const { data: boardVersion } = trpc.workflow.getBoardVersion.useQuery(
+    { date: boardDate },
+    { ...workflowBoardVersionOptions, enabled: !!user },
+  );
+  useReloadBoardOnChange(boardVersion, refetch);
   // The board shows each stage's staff member with their photo. The wall
   // display now renders the same table, so it needs the same staff list.
   const { data: staffList } = trpc.workflow.getStaff.useQuery({}, { enabled: !!user });

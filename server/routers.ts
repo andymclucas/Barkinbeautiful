@@ -36,6 +36,7 @@ import { agreementsRouter, clientReviewsRouter, packagesRouter, petPaperworkRout
 import { getDb } from "./db"
 import { z } from "zod";
 import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";
+import { workflowBoardDayBounds, workflowBoardVersion } from "../shared/workflowBoardVersion";
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   systemNotifications,
@@ -4365,12 +4366,7 @@ const workflowRouter = router({
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This workflow is not available to your salon staff profile");
       const dateStr = input.date || new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10);
       // AEST = UTC+10. Midnight AEST = 14:00 UTC previous day.
-      const [y, m, d] = dateStr.split('-').map(Number);
-      // Build UTC timestamps for start/end of the AEST day
-      const dayStartUTC = new Date(Date.UTC(y, m - 1, d - 1, 14, 0, 0, 0)); // midnight AEST
-      const dayEndUTC = new Date(Date.UTC(y, m - 1, d, 13, 59, 59, 999));   // 23:59:59 AEST
-      const dayStart = dayStartUTC;
-      const dayEnd = dayEndUTC;
+      const { start: dayStart, end: dayEnd } = workflowBoardDayBounds(dateStr);
       const boardRows = await db
         .select({
           id: appointments.id,
@@ -4615,6 +4611,36 @@ const workflowRouter = router({
         addOns: addOnsByAppointment.get(row.id) ?? [],
         pickupTextSentAt: pickupTextByAppointment.get(row.id) ?? null,
       }));
+    }),
+
+  // A fingerprint of the board's day, asked for every few seconds so each
+  // screen reloads getBoard only when something changed. Reads the day's few
+  // rows through idx_appt_tenant_date; see shared/workflowBoardVersion.ts for
+  // why (TiDB spending limit, 23/11/2026). Same access rule as getBoard.
+  getBoardVersion: operationalProcedure
+    .input(z.object({
+      tenantId: z.number().default(1),
+      date: z.string().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return "0:0";
+      const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
+      if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This workflow is not available to your salon staff profile");
+      const dateStr = input.date || new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10);
+      const { start, end } = workflowBoardDayBounds(dateStr);
+      const [row] = await db
+        .select({
+          bookings: sql<number>`COUNT(*)`,
+          lastChanged: sql<Date | string | null>`MAX(${appointments.updatedAt})`,
+        })
+        .from(appointments)
+        .where(and(
+          eq(appointments.tenantId, tenantOf(ctx, input)),
+          gte(appointments.scheduledStart, start),
+          lte(appointments.scheduledStart, end),
+        ));
+      return workflowBoardVersion(row?.bookings ?? 0, row?.lastChanged ?? null);
     }),
 
   updateStage: operationalProcedure

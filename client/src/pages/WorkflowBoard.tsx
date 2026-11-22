@@ -27,7 +27,7 @@ import { GroomingNoteTab } from "@/components/GroomingNoteTab";
 import { PetAvatar } from "@/components/PetAvatar";
 import { shiftDateKey } from "@/lib/workflowDates";
 import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workflowStageTimer";
-import { workflowBoardRefreshOptions } from "@/lib/workflowBoardRefresh";
+import { useReloadBoardOnChange, workflowBoardRefreshOptions, workflowBoardVersionOptions } from "@/lib/workflowBoardRefresh";
 import { shouldShowWorkflowRow } from "@/lib/workflowTerminalStates";
 import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresholds";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
@@ -263,6 +263,8 @@ export default function WorkflowBoard() {
     { date: boardDate },
     workflowBoardRefreshOptions,
   );
+  const { data: boardVersion } = trpc.workflow.getBoardVersion.useQuery({ date: boardDate }, workflowBoardVersionOptions);
+  useReloadBoardOnChange(boardVersion, refetch);
   const { data: staffList } = trpc.workflow.getStaff.useQuery({});
   const { data: timingReviewThresholds } = trpc.workflowReview.getBoardThresholds.useQuery({});
   const { data: pickupRecipients, isLoading: pickupRecipientsLoading, error: pickupRecipientsError } = trpc.sms.getPickupRecipients.useQuery(
