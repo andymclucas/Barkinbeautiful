@@ -30,7 +30,7 @@ import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
 import { toStripeCents, stripeRecurring, type StripeFailureDetail, STAFF_RETRY_METADATA_KEY } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
-import { FAMILY_BILLING_TEST_ONLY, householdPaymentToJoin, planFamilyBilling, planPaymentMerge } from "@shared/familyBilling";
+import { combinablePaymentStates, FAMILY_BILLING_TEST_ONLY, householdPaymentToJoin, planFamilyBilling, planPaymentMerge } from "@shared/familyBilling";
 import { hasScheduledRestart, resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
 import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 
@@ -871,19 +871,10 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
     throw new Error("One of these payments also pays for another membership. Nothing was changed. Combine them one at a time from the client's page.");
   }
 
-  /*
-   * "trialing" is excluded on purpose. A payment that has not taken its
-   * first charge yet has a start date somebody promised the client:
-   * cancelling it gives no credit, and moving the dog would charge it on
-   * the other payment's date instead. Combine once it has started.
-   */
-  const live = (status: string) => status === "active";
   const keep = await stripe.subscriptions.retrieve(plan.keepSubscriptionId);
-  if (!live(keep.status)) {
-    throw new Error(keep.status === "trialing"
-      ? "One of these payments has not taken its first charge yet. Combine them after it has. Nothing was changed."
-      : `The payment being kept is ${keep.status} at Stripe. Nothing was changed.`);
-  }
+  // Every payment's state is checked together, below, once all are read
+  // (combinablePaymentStates): two payments both waiting for the same
+  // first charge can be combined; any other trial cannot.
   const keepItems = await stripe.subscriptionItems.list({ subscription: plan.keepSubscriptionId, limit: 100 });
   const keepRecurring = keepItems.data[0]?.price?.recurring;
   if (!keepRecurring) throw new Error("The payment being kept has no recurring line at Stripe. Nothing was changed.");
@@ -903,13 +894,10 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
 
   // Check every payment being left BEFORE changing anything.
   const moves: Array<{ id: number; from: string; line: Stripe.SubscriptionItem }> = [];
+  const movingStates: Array<{ status: string; trialEnd: number | null }> = [];
   for (const move of plan.moving) {
     const sub = await stripe.subscriptions.retrieve(move.fromSubscriptionId);
-    if (!live(sub.status)) {
-      throw new Error(sub.status === "trialing"
-        ? "One of these payments has not taken its first charge yet. Combine them after it has. Nothing was changed."
-        : `One of the payments being combined is ${sub.status} at Stripe. Nothing was changed.`);
-    }
+    movingStates.push({ status: sub.status, trialEnd: sub.trial_end ?? null });
     const items = await stripe.subscriptionItems.list({ subscription: move.fromSubscriptionId, limit: 100 });
     if (items.data.length !== 1) throw new Error("One of the payments being combined has more than one line at Stripe. Nothing was changed.");
     const [line] = items.data;
@@ -920,6 +908,8 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
     if (!line.price.unit_amount || line.price.unit_amount <= 0) throw new Error("One of the payments being combined has no amount at Stripe. Nothing was changed.");
     moves.push({ id: move.id, from: move.fromSubscriptionId, line });
   }
+  const stateProblem = combinablePaymentStates({ status: keep.status, trialEnd: keep.trial_end ?? null }, movingStates);
+  if (stateProblem) throw new Error(stateProblem);
 
   const [keptSibling] = await db.select({ nextBillingDate: memberships.nextBillingDate })
     .from(memberships).where(and(

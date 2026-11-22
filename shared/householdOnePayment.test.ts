@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  combinablePaymentStates,
   householdPaymentToJoin,
   paymentMergeOffer,
   planPaymentMerge,
@@ -105,5 +106,25 @@ describe("paymentMergeOffer", () => {
       ["monthly", [row(1, { stripeSubscriptionId: "sub_a", billingCycle: "monthly" }), row(2, { stripeSubscriptionId: "sub_b", billingCycle: "monthly" })]],
     ];
     for (const [label, rows] of cases) expect(paymentMergeOffer(rows), label).toBeNull();
+  });
+});
+
+describe("combinablePaymentStates", () => {
+  const live = { status: "active", trialEnd: null };
+  const due = (trialEnd: number) => ({ status: "trialing", trialEnd });
+
+  it("combines live payments", () => {
+    expect(combinablePaymentStates(live, [live])).toBeNull();
+  });
+
+  it("combines two payments both waiting for the same first charge", () => {
+    expect(combinablePaymentStates(due(1_795_000_000), [due(1_795_000_060)])).toBeNull();
+  });
+
+  it("refuses anything that would move a first charge", () => {
+    expect(combinablePaymentStates(due(1_795_000_000), [due(1_795_086_400)])).toMatch(/same day/);
+    expect(combinablePaymentStates(live, [due(1_795_000_000)])).toMatch(/first charge/);
+    expect(combinablePaymentStates(due(1_795_000_000), [live])).toMatch(/first charge/);
+    expect(combinablePaymentStates(live, [{ status: "past_due", trialEnd: null }])).toMatch(/past_due/);
   });
 });
