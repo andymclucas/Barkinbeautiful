@@ -437,3 +437,32 @@ export function paymentMergeOffer(rows: ReadonlyArray<FamilyBillingRow & { faile
     totalCents: billing.reduce((sum, r) => sum + cents(r.pricePerCycle), 0),
   };
 }
+
+export type StripePaymentState = { status: string; trialEnd: number | null };
+
+/** Stripe trial ends further apart than this are different first-charge days. */
+export const SAME_FIRST_CHARGE_SECONDS = 10 * 60;
+
+/**
+ * Whether these Stripe payments are in a state that can be combined, or
+ * the reason they are not.
+ *
+ * Live payments always can. A payment that has not taken its first charge
+ * yet ("trialing") only can when EVERY payment involved is waiting for its
+ * first charge at the same moment. Then nothing has been paid, so there is
+ * nothing to credit, and moving a dog does not change when it is first
+ * charged. That is exactly the shape of a two-dog plan split into one
+ * membership per dog (22/11/2026: ten households, each pair due the same
+ * morning). Any other mix is refused: it would charge a dog earlier or
+ * later than the client was told.
+ */
+export function combinablePaymentStates(keep: StripePaymentState, moving: readonly StripePaymentState[]): string | null {
+  const all = [keep, ...moving];
+  if (all.every((p) => p.status === "active")) return null;
+  const bad = all.find((p) => p.status !== "active" && p.status !== "trialing");
+  if (bad) return `One of these payments is ${bad.status} at Stripe. Nothing was changed.`;
+  const sameStart = all.every((p) => p.status === "trialing" && p.trialEnd != null && keep.trialEnd != null
+    && Math.abs(p.trialEnd - keep.trialEnd) <= SAME_FIRST_CHARGE_SECONDS);
+  if (sameStart) return null;
+  return "One of these payments has not taken its first charge yet, and they do not start on the same day. Combine them after it has. Nothing was changed.";
+}
