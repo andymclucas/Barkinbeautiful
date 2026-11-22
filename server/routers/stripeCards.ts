@@ -26,6 +26,7 @@ import {
   detachClientCard,
   startMembershipSubscription,
   startFamilySubscription,
+  mergeFamilyPayments,
   cancelMembershipSubscription,
   pauseMembershipSubscription,
   resumeMembershipSubscription,
@@ -153,6 +154,19 @@ export const stripeCardsRouter = router({
       firstChargeOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     }))
     .mutation(async ({ input }) => startFamilySubscription(input.membershipIds, input.firstChargeOn)),
+
+  /**
+   * Combine a household's separate payments into one.
+   *
+   * Andy, 22/11/2026: multi-dog families on membership pay as a single
+   * payment. For households set up with a payment per dog before that.
+   * The unused days of a payment being retired are credited to the
+   * client, so nobody pays twice for the same week. Rules in
+   * shared/familyBilling.ts; the server re-checks every one.
+   */
+  mergeFamilyPayments: adminProcedure
+    .input(z.object({ membershipIds: z.array(z.number().int().positive()).min(2).max(10) }))
+    .mutation(async ({ input }) => mergeFamilyPayments(input.membershipIds)),
 
   cancelSubscription: adminProcedure
     .input(z.object({ membershipId: z.number() }))

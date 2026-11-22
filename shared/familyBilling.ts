@@ -313,3 +313,127 @@ export function paymentStatusLabel(status: string | null | undefined, totalCents
 export function isSetupRow(status: string | null | undefined, totalCents: number): boolean {
   return status === "paid" && totalCents === 0;
 }
+
+// ─── Every household on one payment by default ───────────────────────────────
+//
+// Andy, 22/11/2026: "Can you adjust it so that multi-dog families on
+// membership are billed as a single payment." Until then a second dog got
+// its own weekly charge unless somebody ticked "One payment", and Lauren
+// had not known to: 13 households were being charged twice a week.
+//
+// Two halves. A dog whose billing is started beside a payment already
+// running JOINS it rather than starting its own. And households already
+// on separate payments can be combined into one.
+
+/**
+ * The memberships to put on one payment when billing is started for
+ * `membershipId`, or null to bill it on its own.
+ *
+ * Joins only the clear case familyBillingOffer already offers: exactly one
+ * live payment for the client, on the same cadence, with nothing failing
+ * or paused. Anything murkier bills separately, as it always did, rather
+ * than guessing which payment a dog belongs on. Other dogs not billing
+ * yet are left alone: starting billing for one dog never starts another's.
+ */
+export function householdPaymentToJoin(rows: readonly FamilyBillingRow[], membershipId: number): number[] | null {
+  const target = rows.find((r) => r.id === membershipId);
+  if (!target || target.stripeSubscriptionId) return null;
+  const offer = familyBillingOffer(rows.filter((r) => r.id === membershipId || r.stripeSubscriptionId));
+  if (!offer || !offer.joinsExisting) return null;
+  return offer.membershipIds;
+}
+
+export type PaymentMergeCandidate = FamilyBillingCandidate & { failedPaymentCount?: number | null };
+
+export type PaymentMergePlan =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      /** The payment everybody ends up on. */
+      keepSubscriptionId: string;
+      /** Memberships moving onto it, each with the payment it leaves. */
+      moving: Array<{ id: number; fromSubscriptionId: string }>;
+      totalCents: number;
+    };
+
+/**
+ * Whether a household's separate payments can become one, and which one
+ * survives.
+ *
+ * Every membership must be live, paid up, on the same client and cadence,
+ * and already billing. The payment kept is the one with the most dogs on
+ * it (ties: the one holding the oldest membership), so the fewest lines
+ * move. Refuses on any mismatch: a wrong merge charges a real card.
+ */
+export function planPaymentMerge(candidates: readonly PaymentMergeCandidate[]): PaymentMergePlan {
+  if (candidates.length < 2) return { ok: false, error: "Pick at least two memberships to combine" };
+  if (new Set(candidates.map((c) => c.id)).size !== candidates.length) {
+    return { ok: false, error: "The same membership was picked twice" };
+  }
+  const [first] = candidates;
+  if (!first.clientId) return { ok: false, error: "This membership has no client attached" };
+  if (candidates.some((c) => c.clientId !== first.clientId || (c.tenantId ?? 1) !== (first.tenantId ?? 1))) {
+    return { ok: false, error: "Only memberships belonging to the same client can share a payment" };
+  }
+  if (candidates.some((c) => !c.stripeSubscriptionId)) {
+    return { ok: false, error: "One of these is not billing yet. Use One payment to add it instead." };
+  }
+  if (candidates.some((c) => c.status !== "active" || (c.failedPaymentCount ?? 0) > 0)) {
+    return { ok: false, error: "One of these payments is paused or has a failed charge. Sort that out first." };
+  }
+  if (candidates.some((c) => !c.cycle || c.amountCents <= 0)) {
+    return { ok: false, error: "One of these memberships has no price or a billing cycle Stripe cannot take" };
+  }
+  if (new Set(candidates.map((c) => c.cycle)).size > 1) {
+    return { ok: false, error: "These memberships bill on different cycles, so they cannot share one payment. Put them on the same cycle first." };
+  }
+
+  const bySub = new Map<string, PaymentMergeCandidate[]>();
+  for (const c of candidates) bySub.set(c.stripeSubscriptionId!, [...(bySub.get(c.stripeSubscriptionId!) ?? []), c]);
+  if (bySub.size < 2) return { ok: false, error: "These memberships are already billed together" };
+
+  const oldest = (rows: PaymentMergeCandidate[]) => Math.min(...rows.map((r) => r.id));
+  const [keepSubscriptionId] = Array.from(bySub.entries())
+    .sort(([, a], [, b]) => b.length - a.length || oldest(a) - oldest(b))[0];
+
+  return {
+    ok: true,
+    keepSubscriptionId,
+    moving: candidates
+      .filter((c) => c.stripeSubscriptionId !== keepSubscriptionId)
+      .sort((a, b) => a.id - b.id)
+      .map((c) => ({ id: c.id, fromSubscriptionId: c.stripeSubscriptionId! })),
+    totalCents: candidates.reduce((sum, c) => sum + c.amountCents, 0),
+  };
+}
+
+export type PaymentMergeOffer = {
+  membershipIds: number[];
+  /** How many separate charges the client has now. */
+  payments: number;
+  all: FamilyBillingRow[];
+  totalCents: number;
+};
+
+/**
+ * Whether to offer "Combine into one payment" on a client's Memberships
+ * tab. Null means nothing to offer.
+ *
+ * Offered only when every live payment the client has is healthy and on
+ * one weekly or fortnightly cadence, and there are at least two of them.
+ */
+export function paymentMergeOffer(rows: ReadonlyArray<FamilyBillingRow & { failedPaymentCount?: number | null }>): PaymentMergeOffer | null {
+  const billing = rows.filter((r) => r.stripeSubscriptionId && r.status !== "cancelled" && r.status !== "expired");
+  const payments = new Set(billing.map((r) => r.stripeSubscriptionId));
+  if (payments.size < 2) return null;
+  if (billing.some((r) => r.status !== "active" || (r.failedPaymentCount ?? 0) > 0)) return null;
+  if (billing.some((r) => r.billingCycle === "monthly" || cents(r.pricePerCycle) <= 0)) return null;
+  if (new Set(billing.map(cadence)).size > 1) return null;
+  if (FAMILY_BILLING_TEST_ONLY && billing.some((r) => !r.isTest)) return null;
+  return {
+    membershipIds: billing.map((r) => r.id),
+    payments: payments.size,
+    all: billing,
+    totalCents: billing.reduce((sum, r) => sum + cents(r.pricePerCycle), 0),
+  };
+}

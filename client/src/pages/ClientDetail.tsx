@@ -20,7 +20,7 @@ import { PetEditorDialog, type EditablePet } from "@/components/PetEditorDialog"
 import type { PassingReview } from "@shared/petPassingReview";
 import { describeCancelledBookings } from "@shared/petPassingBookings";
 import { companionsOf, joinNames } from "@shared/familyBookingRows";
-import { billedTogetherWith, familyBillingOffer, formatCents, groupPayments, isSetupRow, paymentStatusLabel } from "@shared/familyBilling";
+import { billedTogetherWith, familyBillingOffer, formatCents, groupPayments, isSetupRow, paymentMergeOffer, paymentStatusLabel } from "@shared/familyBilling";
 import {
   membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
   needsPaymentRetry, suspendedForPayment,
@@ -32,7 +32,7 @@ import { membershipsByCoveredPet } from "@shared/membershipCoveredPets";
 import { parseClientTags, clientTagTone } from "@shared/clientTags";
 import { describePetCode, petCodeMeaning } from "@shared/petCodeMeanings";
 import { canChargeOffSession } from "@shared/stripeBilling";
-import { AddMembershipButton, FamilyBillingPanel, SetWeeklyBillingButton, SendCardLinkButton, RetryPaymentButton } from "@/components/client-record/MembershipActions";
+import { AddMembershipButton, CombinePaymentsPanel, FamilyBillingPanel, SetWeeklyBillingButton, SendCardLinkButton, RetryPaymentButton } from "@/components/client-record/MembershipActions";
 import {
   SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
   type DogSizeBand, type SizeBandSource,
@@ -2821,10 +2821,18 @@ export default function ClientDetail() {
                   Owners only, like Set Weekly Billing: it starts a charge. */}
               {isOwner && (() => {
                 const offer = familyBillingOffer(memberships);
-                return offer
-                  ? <FamilyBillingPanel
-                      offer={offer}
-                      hasCardOnFile={clientHasCardOnFile}
+                if (offer) {
+                  return <FamilyBillingPanel
+                    offer={offer}
+                    hasCardOnFile={clientHasCardOnFile}
+                    onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
+                  />;
+                }
+                // Already paying separately for each dog: combine them.
+                const merge = paymentMergeOffer(memberships);
+                return merge
+                  ? <CombinePaymentsPanel
+                      offer={merge}
                       onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
                     />
                   : null;

@@ -743,6 +743,14 @@ export async function processStripeEvent(event: Stripe.Event) {
     // lookup above misses and the audit row would say nothing about who it
     // was. startMembershipSubscription stamps the membership id into the
     // subscription metadata precisely so it stays identifiable.
+    /*
+     * The membership has already moved to ANOTHER payment: a household's
+     * separate payments combined into one (mergeFamilyPayments), which
+     * repoints the dog first and cancels its old payment second. Clearing
+     * it here would take the dog off the payment it has just joined and
+     * leave it never charged again.
+     */
+    let movedElsewhere = false;
     if (!membership) {
       const metaId = Number((subscription.metadata ?? {}).groomigo_membership_id || 0) || null;
       if (metaId) {
@@ -753,11 +761,13 @@ export async function processStripeEvent(event: Stripe.Event) {
             clientId: memberships.clientId,
             name: memberships.name,
             failedPaymentCount: memberships.failedPaymentCount,
+            stripeSubscriptionId: memberships.stripeSubscriptionId,
           })
           .from(memberships)
           .where(eq(memberships.id, metaId))
           .limit(1);
         membership = row ?? null;
+        movedElsewhere = Boolean(row?.stripeSubscriptionId && row.stripeSubscriptionId !== subscription.id);
       }
     }
 
@@ -767,7 +777,7 @@ export async function processStripeEvent(event: Stripe.Event) {
       membershipId: membership?.id ?? null, invoiceId: null,
     });
 
-    if (membership) {
+    if (membership && !movedElsewhere) {
       await db.update(memberships)
         .set({
           stripeSubscriptionId: null,
