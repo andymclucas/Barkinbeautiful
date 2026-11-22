@@ -423,9 +423,29 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; text-wrap
 .price b { display: block; font-size: 44px; font-weight: 600; line-height: 1.1; color: var(--teal); letter-spacing: -0.02em; }
 .price b small { font-size: 15px; font-weight: 500; letter-spacing: .08em; }
 .price span { display: block; font-size: 13px; color: var(--dim); margin-top: 2px; }
-.price em.yearly { display: block; font-style: normal; font-size: 13px; color: var(--soft); margin-top: 6px; }
-.price em.yearly b { display: inline; font-size: 15px; line-height: inherit; letter-spacing: 0; color: var(--teal); font-weight: 600; }
+.price p { margin: 0; }
 .price em.setup { display: block; font-style: normal; font-size: 13px; font-weight: 500; color: var(--soft); margin-top: 10px; }
+.price em.setup.free { color: var(--teal); }
+
+/* Monthly / yearly switch. Plain radio buttons, so it works with no script:
+   :has() swaps which price shows. A browser without :has() hides the switch
+   and shows both prices, one under the other. */
+.billing { display: none; margin: 0 auto 30px; padding: 4px; border: 1px solid var(--edge-2); border-radius: 999px; background: var(--card); width: max-content; max-width: 100%; }
+.billing legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.billing input { position: absolute; opacity: 0; pointer-events: none; }
+.billing label { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--soft); cursor: pointer; transition: background .2s, color .2s; }
+.billing label small { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--teal); }
+.billing input:checked + label { background: var(--teal); color: var(--teal-ink); }
+.billing input:checked + label small { color: var(--teal-ink); }
+.billing input:focus-visible + label { outline: 2px solid var(--teal-hi); outline-offset: 2px; }
+.price .per-year { margin-top: 14px; }
+@supports selector(:has(*)) {
+  .billing { display: flex; }
+  .price .per-year { display: none; margin-top: 0; }
+  .plans-wrap:has(#bill-yearly:checked) .price .per-month { display: none; }
+  .plans-wrap:has(#bill-yearly:checked) .price .per-year { display: block; }
+}
+@media (max-width: 420px) { .billing label { padding: 10px 14px; font-size: 14px; } }
 .plan .ticks { flex: 1; margin-top: 20px; }
 .ticks li.carry { color: var(--white); font-weight: 500; }
 .plan .btn { margin-top: 22px; width: 100%; }
