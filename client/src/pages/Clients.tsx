@@ -43,6 +43,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { ClientListCard } from "@/components/ClientListCard";
 import { ClientPetList } from "@/components/ClientPetList";
 import { BreedInput } from "@/components/BreedInput";
+import { FLOATING_BUTTON_CLEARANCE } from "@/lib/floatingButtonClearance";
 
 const STATUS_COLOURS: Record<string, string> = {
   active: "bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300",
@@ -960,7 +961,7 @@ export default function Clients() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between flex-shrink-0 text-sm text-muted-foreground">
+        <div className={`flex items-center justify-between flex-shrink-0 text-sm text-muted-foreground ${FLOATING_BUTTON_CLEARANCE}`}>
           <span>
             {total === 0
               ? "0 results"
