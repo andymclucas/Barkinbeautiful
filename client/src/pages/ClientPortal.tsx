@@ -7,6 +7,7 @@ import { formatMoney } from "@shared/portalBilling";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE, PORTAL_PERSON_REQUEST } from "@shared/portalChat";
 import { PortalChatLauncher } from "@/components/PortalChatLauncher";
+import { PortalMessagesCard } from "@/components/PortalMessagesCard";
 import { BruceAvatar } from "@/components/BruceAvatar";
 import { sortBookingsForBucket } from "@shared/bookingBuckets";
 import { clientFacingStage, isGroomInProgress, stageIcon, stageColourFor } from "@shared/groomingStage";
@@ -228,8 +229,15 @@ function PortalPaymentMethodCard({ token, readOnly, salonName }: { token?: strin
   );
 }
 
-function PortalChatBubble({ token, readOnly, clientFirstName, salonName }: { token?: string; readOnly?: boolean; clientFirstName?: string; salonName?: string | null }) {
-  const [open, setOpen] = useState(false);
+function PortalChatBubble({ token, readOnly, clientFirstName, salonName, open: controlledOpen, onOpenChange }: { token?: string; readOnly?: boolean; clientFirstName?: string; salonName?: string | null; open?: boolean; onOpenChange?: (open: boolean) => void }) {
+  // Opened from the Messages card and the header too, so the page can own
+  // the open state; on its own the bubble still keeps its own.
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = (next: boolean | ((was: boolean) => boolean)) => {
+    const value = typeof next === "function" ? next(open) : next;
+    if (onOpenChange) onOpenChange(value); else setOwnOpen(value);
+  };
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -945,6 +953,7 @@ export default function ClientPortal() {
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlot, setSelectedSlot] = useState<string>("");
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const openReschedule = (appt: PortalAppointment) => {
     setRescheduleTarget(appt);
@@ -1026,11 +1035,12 @@ export default function ClientPortal() {
   const inSalon = data.appointments.filter(appointment => isGroomInProgress(appointment.workflowState));
 
   return <main className="min-h-screen bg-gradient-to-br from-pink-50 dark:from-pink-950/40 via-background to-violet-50 dark:to-violet-950/40 px-4 pb-28 pt-8"><div className="mx-auto max-w-4xl space-y-6">
-    <header className="rounded-2xl bg-primary p-6 text-primary-foreground"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm opacity-85">Welcome to</p><h1 className="font-display text-3xl font-bold">{data.salon.name}</h1><p className="mt-2 text-sm opacity-90">Hi {data.client.firstName}, here is a secure summary of your pets and grooming care.</p></div>{!token && <Button variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20" disabled={logout.isPending} onClick={() => logout.mutate()}>{logout.isPending ? "Signing out…" : "Sign out"}</Button>}</div></header>
+    <header className="rounded-2xl bg-primary p-6 text-primary-foreground"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm opacity-85">Welcome to</p><h1 className="font-display text-3xl font-bold">{data.salon.name}</h1><p className="mt-2 text-sm opacity-90">Hi {data.client.firstName}, here is a secure summary of your pets and grooming care.</p></div><div className="flex flex-wrap gap-2">{!isPreview && <Button variant="outline" className="gap-2 border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20" onClick={() => setChatOpen(true)}><MessageCircle className="h-4 w-4" aria-hidden="true" />Messages</Button>}{!token && <Button variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20" disabled={logout.isPending} onClick={() => logout.mutate()}>{logout.isPending ? "Signing out…" : "Sign out"}</Button>}</div></div></header>
 
     {/* Signed in on their own account: worth saving to the Home Screen. Not
         on a staff preview, and not on an access-token link. */}
     <PortalCardNeededBanner token={token ?? undefined} readOnly={isPreview} previewCard={isPreview ? data.previewCard : undefined} />
+    <PortalMessagesCard token={token ?? undefined} readOnly={isPreview} onOpen={() => setChatOpen(true)} />
     {!isPreview && !token && <PortalInstallTip />}
     {inSalon.length > 0 && <section className="space-y-3">
       {inSalon.map(appointment => {
@@ -1183,7 +1193,7 @@ export default function ClientPortal() {
     <Card><CardContent className="flex flex-wrap items-center gap-5 py-5 text-sm text-muted-foreground"><span>Need help with an appointment?</span>{data.salon.phone && <a className="inline-flex items-center gap-1.5 hover:text-primary" href={`tel:${data.salon.phone}`}><Phone className="h-4 w-4" /> {data.salon.phone}</a>}{data.salon.email && <a className="inline-flex items-center gap-1.5 hover:text-primary" href={`mailto:${data.salon.email}`}><Mail className="h-4 w-4" /> {data.salon.email}</a>}</CardContent></Card>
   </div>
 
-  <PortalChatBubble token={token ?? undefined} readOnly={isPreview} clientFirstName={data.client.firstName} salonName={data.salon.name} />
+  <PortalChatBubble token={token ?? undefined} readOnly={isPreview} clientFirstName={data.client.firstName} salonName={data.salon.name} open={chatOpen} onOpenChange={setChatOpen} />
 
   <Dialog open={!!rescheduleTarget} onOpenChange={(open) => !open && setRescheduleTarget(null)}>
     <DialogContent className="sm:max-w-sm">
