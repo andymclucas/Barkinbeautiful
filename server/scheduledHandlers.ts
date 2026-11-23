@@ -142,7 +142,7 @@ async function attemptMembershipCharge(
         .limit(1);
 
   if (lastFailure?.stripeInvoiceId) {
-    const result = await payOpenInvoice(lastFailure.stripeInvoiceId);
+    const result = await payOpenInvoice(lastFailure.stripeInvoiceId, membership.tenantId ?? 1);
     return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true, invoiceId: lastFailure.stripeInvoiceId };
   }
   if (isFamilyPayment) {
@@ -159,6 +159,7 @@ async function attemptMembershipCharge(
   }
 
   const result = await chargeSavedCard({
+    tenantId: membership.tenantId ?? 1,
     customerId: client.stripeCustomerId!,
     paymentMethodId: client.stripeDefaultPaymentMethodId!,
     amountDollars: (plan.amountCents / 100).toFixed(2),

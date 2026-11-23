@@ -25,7 +25,7 @@ import { and, eq, inArray, isNotNull, isNull, ne, notInArray, or } from "drizzle
 import { clients, memberships } from "../drizzle/schema";
 import { getDb } from "./db";
 import { notifyOwner } from "./ownerNotification";
-import { requireStripeClient } from "./stripeClient";
+import { requireClientStripe, tenantIdOfClient } from "./clientStripe";
 import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
 import { toStripeCents, stripeRecurring, type StripeFailureDetail, STAFF_RETRY_METADATA_KEY } from "@shared/stripeBilling";
@@ -38,7 +38,6 @@ import { buildCardLinkEmail } from "@shared/cardLinkEmail";
 export async function ensureStripeCustomer(clientId: number): Promise<string> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const stripe = requireStripeClient();
   const [client] = await db
     .select({
       id: clients.id,
@@ -55,6 +54,9 @@ export async function ensureStripeCustomer(clientId: number): Promise<string> {
   if (!client) throw new Error("Client not found");
   if (client.stripeCustomerId) return client.stripeCustomerId;
 
+  // On the client's own salon's account: a customer belongs to the account
+  // it was made on, and is charged there.
+  const stripe = await requireClientStripe(client.tenantId);
   const customer = await stripe.customers.create({
     name: `${client.firstName} ${client.lastName}`.trim(),
     email: client.email ?? undefined,
@@ -74,7 +76,8 @@ export async function ensureStripeCustomer(clientId: number): Promise<string> {
  * of it.
  */
 export async function createCardSetupLink(clientId: number) {
-  const stripe = requireStripeClient();
+  const tenantId = await tenantIdOfClient(clientId);
+  const stripe = await requireClientStripe(tenantId);
   const customerId = await ensureStripeCustomer(clientId);
   // The CLIENT returns to this after saving a card, so it is a client
   // page and belongs on the client host.
@@ -83,7 +86,7 @@ export async function createCardSetupLink(clientId: number) {
     mode: "setup",
     customer: customerId,
     currency: "aud",
-    metadata: { groomigo_client_id: String(clientId), payment_kind: "card_on_file" },
+    metadata: { groomigo_client_id: String(clientId), tenant_id: String(tenantId), payment_kind: "card_on_file" },
     // The webhook does the saving; these two only decide what the client sees
     // when Stripe sends them back.
     success_url: `${base}/portal/card-saved?client=${clientId}`,
@@ -144,7 +147,9 @@ export async function emailCardSetupLink(clientId: number) {
     .from(clients)
     .where(eq(clients.id, clientId))
     .limit(1);
-  if (!client || (client.tenantId ?? 1) !== 1) throw new Error("Client not found");
+  if (!client) throw new Error("Client not found");
+  // Refuse before emailing a link that would only lead to "not set up".
+  await requireClientStripe(client.tenantId);
 
   const to = (client.email ?? "").trim();
   if (!to) {
@@ -195,7 +200,7 @@ export async function emailCardSetupLink(clientId: number) {
  * without the client present.
  */
 export async function createCardSetupIntent(clientId: number) {
-  const stripe = requireStripeClient();
+  const stripe = await requireClientStripe(await tenantIdOfClient(clientId));
   const customerId = await ensureStripeCustomer(clientId);
   const intent = await stripe.setupIntents.create({
     customer: customerId,
@@ -223,7 +228,7 @@ export async function createCardSetupIntent(clientId: number) {
 export async function saveCardFromSetupIntent(clientId: number, setupIntentId: string) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const stripe = requireStripeClient();
+  const stripe = await requireClientStripe(await tenantIdOfClient(clientId));
   const intent = await stripe.setupIntents.retrieve(setupIntentId);
   if (intent.status !== "succeeded") {
     throw new Error(`That card was not confirmed (${intent.status})`);
@@ -247,7 +252,7 @@ export async function saveCardFromSetupIntent(clientId: number, setupIntentId: s
 export async function attachPaymentMethodToClient(clientId: number, paymentMethodId: string) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const stripe = requireStripeClient();
+  const stripe = await requireClientStripe(await tenantIdOfClient(clientId));
   const method = await stripe.paymentMethods.retrieve(paymentMethodId);
   const customerId = typeof method.customer === "string" ? method.customer : method.customer?.id;
   if (customerId) {
@@ -287,10 +292,15 @@ export async function detachClientCard(clientId: number) {
     .where(eq(clients.id, clientId))
     .limit(1);
   if (client?.paymentMethodId) {
-    const stripe = requireStripeClient();
-    // Stripe may already have detached it; that is not worth stopping for,
-    // because the row must be cleared either way.
-    await stripe.paymentMethods.detach(client.paymentMethodId).catch(() => undefined);
+    // Stripe may already have detached it, or the salon's Stripe may no
+    // longer be reachable; neither is worth stopping for, because the row
+    // must be cleared either way.
+    try {
+      const stripe = await requireClientStripe(await tenantIdOfClient(clientId));
+      await stripe.paymentMethods.detach(client.paymentMethodId).catch(() => undefined);
+    } catch {
+      // Cleared below regardless.
+    }
   }
   await db
     .update(clients)
@@ -324,6 +334,8 @@ export interface OffSessionChargeResult {
  * because no number of automatic attempts can satisfy a 3DS challenge.
  */
 export async function chargeSavedCard(input: {
+  /** The salon whose client this is: the charge is taken on its account. */
+  tenantId: number;
   customerId: string;
   paymentMethodId: string;
   amountDollars: string | number;
@@ -338,7 +350,7 @@ export async function chargeSavedCard(input: {
    */
   idempotencyKey?: string;
 }): Promise<OffSessionChargeResult> {
-  const stripe = requireStripeClient();
+  const stripe = await requireClientStripe(input.tenantId);
   const amount = toStripeCents(input.amountDollars);
   if (amount <= 0) {
     return { ok: false, paymentIntentId: null, declineCode: null, message: "Nothing to charge" };
@@ -430,7 +442,6 @@ export function membershipLiveOnStart(subscriptionStatus: string | null | undefi
 export async function startMembershipSubscription(membershipId: number, firstChargeOn?: string | null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const stripe = requireStripeClient();
   const [membership] = await db
     .select({
       id: memberships.id,
@@ -446,9 +457,10 @@ export async function startMembershipSubscription(membershipId: number, firstCha
     .from(memberships)
     .where(eq(memberships.id, membershipId))
     .limit(1);
-  // Same tenant guard the client-portal procedures use: the tRPC context
-  // carries no tenantId, so fail closed rather than trusting an id.
-  if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+  // Which salon may ask is checked by the router (server/routers/stripeCards.ts);
+  // here the membership's own salon decides which Stripe account bills it.
+  if (!membership) throw new Error("Membership not found");
+  const stripe = await requireClientStripe(membership.tenantId);
 
   /**
    * Never start billing a membership that is not meant to be billed.
@@ -611,7 +623,6 @@ export async function startMembershipSubscription(membershipId: number, firstCha
 export async function startFamilySubscription(membershipIds: number[], firstChargeOn?: string | null) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const stripe = requireStripeClient();
   const ids = Array.from(new Set(membershipIds));
   const rows = await db
     .select({
@@ -628,8 +639,9 @@ export async function startFamilySubscription(membershipIds: number[], firstChar
     })
     .from(memberships)
     .where(inArray(memberships.id, ids));
-  // Same tenant guard as startMembershipSubscription: fail closed.
-  if (rows.length !== ids.length || rows.some((r) => (r.tenantId ?? 1) !== 1)) throw new Error("Membership not found");
+  // One payment never spans two salons: it is taken on ONE salon's account.
+  if (rows.length !== ids.length || new Set(rows.map((r) => r.tenantId)).size !== 1) throw new Error("Membership not found");
+  const stripe = await requireClientStripe(rows[0].tenantId);
   if (FAMILY_BILLING_TEST_ONLY && rows.some((r) => !r.isTest)) {
     throw new Error("One payment for several memberships is still being tested and is not switched on for clients yet.");
   }
@@ -826,7 +838,6 @@ export async function startFamilySubscription(membershipIds: number[], firstChar
 export async function mergeFamilyPayments(membershipIds: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const stripe = requireStripeClient();
   const ids = Array.from(new Set(membershipIds));
   const rows = await db
     .select({
@@ -844,7 +855,9 @@ export async function mergeFamilyPayments(membershipIds: number[]) {
     })
     .from(memberships)
     .where(inArray(memberships.id, ids));
-  if (rows.length !== ids.length || rows.some((r) => (r.tenantId ?? 1) !== 1)) throw new Error("Membership not found");
+  // One payment never spans two salons: it is taken on ONE salon's account.
+  if (rows.length !== ids.length || new Set(rows.map((r) => r.tenantId)).size !== 1) throw new Error("Membership not found");
+  const stripe = await requireClientStripe(rows[0].tenantId);
   if (FAMILY_BILLING_TEST_ONLY && rows.some((r) => !r.isTest)) {
     throw new Error("One payment for several memberships is still being tested and is not switched on for clients yet.");
   }
@@ -1054,9 +1067,9 @@ export async function cancelMembershipSubscription(membershipId: number) {
     .from(memberships)
     .where(eq(memberships.id, membershipId))
     .limit(1);
-  if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+  if (!membership) throw new Error("Membership not found");
   if (!membership.stripeSubscriptionId) return { cancelled: false };
-  const stripe = requireStripeClient();
+  const stripe = await requireClientStripe(membership.tenantId);
   /*
    * On a shared payment (shared/familyBilling.ts) stopping ONE dog must
    * not stop the others. Take just this membership's line off, with no
@@ -1148,7 +1161,7 @@ export async function pauseMembershipSubscription(
     .from(memberships)
     .where(eq(memberships.id, membershipId))
     .limit(1);
-  if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+  if (!membership) throw new Error("Membership not found");
   // Both closed states, matching the four other membership mutations
   // that already treat "expired" as finished. Nothing writes "expired"
   // for memberships today, so this is consistency rather than a fix.
@@ -1188,7 +1201,7 @@ export async function pauseMembershipSubscription(
   });
 
   if (membership.stripeSubscriptionId) {
-    const stripe = requireStripeClient();
+    const stripe = await requireClientStripe(membership.tenantId);
     await stripe.subscriptions.update(membership.stripeSubscriptionId, {
       pause_collection: {
         behavior: "void",
@@ -1266,7 +1279,7 @@ export async function holdPausedMembershipsAfterPassing(clientId: number, tenant
 
   const subscriptions = Array.from(new Set(toHold.map((r) => r.stripeSubscriptionId).filter((id): id is string => !!id)));
   if (subscriptions.length > 0) {
-    const stripe = requireStripeClient();
+    const stripe = await requireClientStripe(tenantId);
     for (const subscriptionId of subscriptions) {
       // An open-ended pause: no `resumes_at`. This also re-pauses a
       // subscription Stripe has already restarted on its own.
@@ -1305,7 +1318,7 @@ export async function resumeMembershipSubscription(membershipId: number) {
     .from(memberships)
     .where(eq(memberships.id, membershipId))
     .limit(1);
-  if (!membership || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+  if (!membership) throw new Error("Membership not found");
 
   /**
    * Only a paused membership can be resumed.
@@ -1339,7 +1352,7 @@ export async function resumeMembershipSubscription(membershipId: number) {
    * there is no collection to restart.
    */
   if (membership.stripeSubscriptionId) {
-    const stripe = requireStripeClient();
+    const stripe = await requireClientStripe(membership.tenantId);
     await stripe.subscriptions.update(membership.stripeSubscriptionId, { pause_collection: null });
   }
 
@@ -1383,9 +1396,11 @@ export async function resumeMembershipSubscription(membershipId: number) {
  */
 export async function payOpenInvoice(
   stripeInvoiceId: string,
+  /** The salon the invoice belongs to: it lives on that salon's account. */
+  tenantId: number,
   options: { staffPressed?: boolean } = {},
 ): Promise<OffSessionChargeResult> {
-  const stripe = requireStripeClient();
+  const stripe = await requireClientStripe(tenantId);
   if (options.staffPressed) {
     /*
      * Stamp the invoice BEFORE trying, so the failure Stripe reports is
@@ -1439,9 +1454,9 @@ export async function payOpenInvoice(
  * this SDK version does not have, comes back as null and the screen keeps
  * the reason it already had.
  */
-export async function invoiceFailureDetail(stripeInvoiceId: string): Promise<StripeFailureDetail | null> {
+export async function invoiceFailureDetail(stripeInvoiceId: string, tenantId: number): Promise<StripeFailureDetail | null> {
   try {
-    const stripe = requireStripeClient();
+    const stripe = await requireClientStripe(tenantId);
     const fromIntent = (intent: unknown): StripeFailureDetail | null => {
       const error = (intent as { last_payment_error?: { code?: string | null; decline_code?: string | null; message?: string | null } | null } | null)?.last_payment_error;
       if (!error) return null;

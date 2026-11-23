@@ -9,7 +9,7 @@ const { getDb, stripe } = vi.hoisted(() => ({
   },
 }));
 vi.mock("./db", () => ({ getDb }));
-vi.mock("./stripeClient", () => ({ requireStripeClient: () => stripe }));
+vi.mock("./clientStripe", () => ({ requireClientStripe: async () => stripe, tenantIdOfClient: async () => 1 }));
 
 import { membershipLiveOnStart, startMembershipSubscription } from "./stripeCards";
 

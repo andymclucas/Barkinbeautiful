@@ -36,6 +36,7 @@ import { agreementsRouter, clientReviewsRouter, packagesRouter, petPaperworkRout
 import { getDb } from "./db"
 import { z } from "zod";
 import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";
+import { decidePasswordSignIn, inSalonOrder } from "@shared/portalSignInSalon";
 import { workflowBoardDayBounds } from "../shared/workflowBoardVersion";
 import { appointmentsByDate } from "./appointmentIndexHints";
 import { liveBoard, loadBoardVersion } from "./liveBoard";
@@ -10391,7 +10392,7 @@ const membershipsRouter = router({
       const invoiceIds = Array.from(new Set(lastInvoice.values()));
       const reasons = new Map<string, string | null>();
       await Promise.all(invoiceIds.map(async (invoiceId) => {
-        reasons.set(invoiceId, describeMembershipFailure(await invoiceFailureDetail(invoiceId)));
+        reasons.set(invoiceId, describeMembershipFailure(await invoiceFailureDetail(invoiceId, tenantOf(ctx, input))));
       }));
 
       return rows.map(({ stripeSubscriptionId, ...row }) => {
@@ -16097,6 +16098,37 @@ async function requireSignedInPortalClient(req: Parameters<typeof readClientPort
   return { db, clientId: client.id, tenantId: client.tenantId };
 }
 
+/**
+ * Every salon's portal account for one login email, in salon order.
+ *
+ * The email is unique only within a salon, and every salon's clients sign
+ * in on the same page — see shared/portalSignInSalon.ts. Asked as
+ * `tenant_id IN (every salon) AND portal_login_email = ?` rather than by
+ * email alone, so it is answered from uq_clients_tenant_portal_login_email
+ * instead of reading the whole clients table on every sign-in.
+ */
+async function portalAccountsForEmail(db: any, loginEmail: string) {
+  const salonIds: number[] = (await db.select({ id: tenants.id }).from(tenants)).map((row: { id: number }) => row.id);
+  if (salonIds.length === 0) return [];
+  const rows: Array<{
+    id: number; tenantId: number; firstName: string; lastName: string; email: string | null;
+    portalLoginEmail: string | null; portalPasswordHash: string | null; portalAccountStatus: string;
+    portalSessionVersion: number; portalLastSignedInAt: Date | null;
+  }> = await db.select({
+    id: clients.id,
+    tenantId: clients.tenantId,
+    firstName: clients.firstName,
+    lastName: clients.lastName,
+    email: clients.email,
+    portalLoginEmail: clients.portalLoginEmail,
+    portalPasswordHash: clients.portalPasswordHash,
+    portalAccountStatus: clients.portalAccountStatus,
+    portalSessionVersion: clients.portalSessionVersion,
+    portalLastSignedInAt: clients.portalLastSignedInAt,
+  }).from(clients).where(and(inArray(clients.tenantId, salonIds), eq(clients.portalLoginEmail, loginEmail)));
+  return inSalonOrder(rows);
+}
+
 const clientPortalRouter = router({
   getAccessStatus: adminProcedure
     .input(z.object({ clientId: z.number().int().positive() }))
@@ -16968,23 +17000,16 @@ const clientPortalRouter = router({
 
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [client] = await db.select({
-        id: clients.id,
-        tenantId: clients.tenantId,
-        firstName: clients.firstName,
-        portalAccountStatus: clients.portalAccountStatus,
-        portalSessionVersion: clients.portalSessionVersion,
-        portalLastSignedInAt: clients.portalLastSignedInAt,
-      })
-        .from(clients)
-        .where(and(eq(clients.tenantId, 1), eq(clients.portalLoginEmail, loginEmail)))
-        .limit(1);
-      // A live account only. Somebody who never finished setting up still
-      // has their invitation, which carries the service agreement.
-      if (!client || client.portalAccountStatus !== "active") return answer;
-      if (heldClientIds(client.tenantId).has(client.id)) return answer;
+      // Live accounts only. Somebody who never finished setting up still
+      // has their invitation, which carries the service agreement. One
+      // email per salon the address has an account with, each with its
+      // own link and code, so the code alone says which salon it opens.
+      const live = (await portalAccountsForEmail(db, loginEmail))
+        .filter((c) => c.portalAccountStatus === "active" && !heldClientIds(c.tenantId).has(c.id));
+      if (live.length === 0) return answer;
       signInLinkByEmail.set(loginEmail, now);
 
+      for (const client of live) {
       const claim = {
         clientId: client.id,
         tenantId: client.tenantId,
@@ -17003,6 +17028,7 @@ const clientPortalRouter = router({
       const { sendEmail } = await import("./email");
       await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, fromName: salon?.name ?? null, replyTo: salon?.email ?? null })
         .catch((error: unknown) => { console.error("[portal] sign-in link email failed", error); return false; });
+      }
       return answer;
     }),
 
@@ -17026,18 +17052,19 @@ const clientPortalRouter = router({
 
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [client] = await db.select({
-        id: clients.id,
-        tenantId: clients.tenantId,
-        portalAccountStatus: clients.portalAccountStatus,
-        portalSessionVersion: clients.portalSessionVersion,
-        portalLastSignedInAt: clients.portalLastSignedInAt,
-      }).from(clients).where(and(eq(clients.tenantId, 1), eq(clients.portalLoginEmail, loginEmail))).limit(1);
-      if (!client || client.portalAccountStatus !== "active") throw wrong;
-      if (heldClientIds(client.tenantId).has(client.id)) throw wrong;
-      const lastMs = client.portalLastSignedInAt ? new Date(client.portalLastSignedInAt).getTime() : 0;
-      const claim = { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion, lastSignedInMs: lastMs };
-      if (!signInCodeMatches(claim, input.code, now)) throw wrong;
+      // Each salon's account was sent its own code, so the code picks the
+      // account. The attempt limit above is per address, across them all.
+      const lastMsOf = (c: { portalLastSignedInAt: Date | null }) =>
+        c.portalLastSignedInAt ? new Date(c.portalLastSignedInAt).getTime() : 0;
+      const client = (await portalAccountsForEmail(db, loginEmail)).find((c) =>
+        c.portalAccountStatus === "active"
+        && !heldClientIds(c.tenantId).has(c.id)
+        && signInCodeMatches(
+          { clientId: c.id, tenantId: c.tenantId, sessionVersion: c.portalSessionVersion, lastSignedInMs: lastMsOf(c) },
+          input.code, now,
+        ));
+      if (!client) throw wrong;
+      const lastMs = lastMsOf(client);
 
       const result = await db.update(clients).set({ portalLastSignedInAt: new Date(Math.max(now, lastMs + 1000)), updatedAt: new Date() })
         .where(and(
@@ -17115,22 +17142,13 @@ const clientPortalRouter = router({
 
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-      const [client] = await db.select({
-        id: clients.id,
-        tenantId: clients.tenantId,
-        firstName: clients.firstName,
-        portalLoginEmail: clients.portalLoginEmail,
-        portalPasswordHash: clients.portalPasswordHash,
-        portalAccountStatus: clients.portalAccountStatus,
-      })
-        .from(clients)
-        .where(and(eq(clients.tenantId, 1), eq(clients.portalLoginEmail, loginEmail)))
-        .limit(1);
-      // Only a working account. Somebody who never finished setting up
+      // Only working accounts. Somebody who never finished setting up
       // needs the salon's invitation, which carries the service agreement.
-      if (!client || client.portalAccountStatus !== "active" || !client.portalPasswordHash) return answer;
-      if (heldClientIds(client.tenantId).has(client.id)) return answer;
-
+      // One reset email per salon the address has an account with: each
+      // resets that salon's password only.
+      const working = (await portalAccountsForEmail(db, loginEmail))
+        .filter((c) => c.portalAccountStatus === "active" && c.portalPasswordHash && !heldClientIds(c.tenantId).has(c.id));
+      for (const client of working) {
       const setup = createClientPortalToken();
       const expiresAt = new Date(now + SELF_RESET_TTL_MS);
       // Same address, active account: a reset that keeps the password.
@@ -17139,7 +17157,7 @@ const clientPortalRouter = router({
         currentLoginEmail: client.portalLoginEmail,
         newLoginEmail: loginEmail,
       });
-      if (!effect.keepPassword) return answer;
+      if (!effect.keepPassword) continue;
       selfResetByEmail.set(loginEmail, now);
       await db.update(clients).set({
         portalSetupTokenHash: setup.tokenHash,
@@ -17153,40 +17171,44 @@ const clientPortalRouter = router({
       const { sendEmail } = await import("./email");
       await sendEmail({ to: loginEmail, subject: email.subject, html: email.html, fromName: salon?.name ?? null, replyTo: salon?.email ?? null })
         .catch((error: unknown) => { console.error("[portal] self-service reset email failed", error); return false; });
+      }
       return answer;
     }),
 
   login: publicProcedure
-    .input(z.object({ email: z.string().trim().email(), password: z.string().min(1) }))
+    .input(z.object({
+      email: z.string().trim().email(),
+      password: z.string().min(1),
+      /** The salon picked after being asked — see shared/portalSignInSalon.ts. */
+      salonId: z.number().int().positive().optional(),
+    }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const loginEmail = input.email.trim().toLowerCase();
-      const [client] = await db.select({
-        id: clients.id,
-        tenantId: clients.tenantId,
-        firstName: clients.firstName,
-        lastName: clients.lastName,
-        email: clients.email,
-        portalLoginEmail: clients.portalLoginEmail,
-        portalPasswordHash: clients.portalPasswordHash,
-        portalAccountStatus: clients.portalAccountStatus,
-        portalSessionVersion: clients.portalSessionVersion,
-      })
-        .from(clients)
-        .where(and(
-          eq(clients.tenantId, 1),
-          eq(clients.portalLoginEmail, loginEmail),
-        ))
-        .limit(1);
-      if (!client || client.portalAccountStatus !== "active" || !client.portalPasswordHash) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      const accounts = (await portalAccountsForEmail(db, loginEmail))
+        .filter((c) => c.portalAccountStatus === "active" && c.portalPasswordHash);
+      const matched: typeof accounts = [];
+      for (const account of accounts) {
+        if (await bcrypt.compare(input.password, account.portalPasswordHash!)) matched.push(account);
       }
-      const valid = await bcrypt.compare(input.password, client.portalPasswordHash);
-      if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      const salonNames = new Map<number, string>();
+      if (matched.length > 1) {
+        const rows = await db.select({ id: tenants.id, name: tenants.name }).from(tenants)
+          .where(inArray(tenants.id, matched.map((m) => m.tenantId)));
+        for (const row of rows) salonNames.set(row.id, clientSalonName(row.name));
+      }
+      const decision = decidePasswordSignIn({
+        matched,
+        chosenTenantId: input.salonId ?? null,
+        salonName: (id) => salonNames.get(id) ?? "Your salon",
+      });
+      if (decision.kind === "refused") throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      if (decision.kind === "choose") return { success: false as const, chooseSalon: decision.salons };
+      const client = decision.account;
       await db.update(clients).set({ portalLastSignedInAt: new Date(), updatedAt: new Date() }).where(eq(clients.id, client.id));
       await setClientPortalSessionCookie(ctx.res, ctx.req, { clientId: client.id, tenantId: client.tenantId, sessionVersion: client.portalSessionVersion });
-      return { success: true, client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail } };
+      return { success: true as const, client: { firstName: client.firstName, lastName: client.lastName, email: client.portalLoginEmail } };
     }),
 
   me: publicProcedure.query(async ({ ctx }) => {
