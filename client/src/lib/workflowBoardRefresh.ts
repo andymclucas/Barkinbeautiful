@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   WORKFLOW_BOARD_CHECK_INTERVAL_MS,
   WORKFLOW_BOARD_FULL_REFRESH_INTERVAL_MS,
@@ -39,4 +39,37 @@ export function useReloadBoardOnChange(version: string | undefined, reload: () =
     if (boardVersionChanged(previous.current, version)) void reloadRef.current();
     if (version !== undefined) previous.current = version;
   }, [version]);
+}
+
+/**
+ * Hold the board's live connection (/api/board-events). While it is up the
+ * server tells this screen when the day changes, so the screen does not poll
+ * for it; pass `!connected` as the fingerprint query's `enabled`. While it is
+ * down (EventSource cannot send the Bearer fallback, a proxy dropped it, the
+ * server restarted) the fingerprint polling takes over. EventSource
+ * reconnects on its own, with its own backoff.
+ */
+export function useLiveBoard(date: string, reload: () => unknown, enabled = true): boolean {
+  const [connected, setConnected] = useState(false);
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  useEffect(() => {
+    if (!enabled || typeof EventSource === "undefined") {
+      setConnected(false);
+      return;
+    }
+    const source = new EventSource(`/api/board-events?date=${encodeURIComponent(date)}`);
+    source.onmessage = (message) => {
+      let event: { type?: string };
+      try { event = JSON.parse(message.data); } catch { return; }
+      if (event.type === "connected") setConnected(true);
+      if (event.type === "board-changed") void reloadRef.current();
+    };
+    source.onerror = () => setConnected(false);
+    return () => {
+      source.close();
+      setConnected(false);
+    };
+  }, [date, enabled]);
+  return connected;
 }

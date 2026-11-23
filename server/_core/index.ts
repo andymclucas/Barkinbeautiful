@@ -27,6 +27,9 @@ import {
   portalAccessTokenIn,
 } from "../../shared/portalManifest";
 import { getDb } from "../db";
+import { liveBoard } from "../liveBoard";
+import { requireApprovedStaffTenant } from "../staffAccess";
+import { isBoardDate } from "@shared/workflowBoardVersion";
 import { loadSalonName } from "../salonName";
 import { appointments, clients, clientContacts, smsLogs, pets, staff, missedCalls, missedCallAutoTexts, clientErrorLogs, workflowLogs } from "../../drizzle/schema";
 import {
@@ -846,6 +849,58 @@ async function startServer() {
     req.on("close", () => {
       clearInterval(heartbeat);
       unsubscribe();
+    });
+  });
+
+  // The workflow board's live connection. One per open board screen; the
+  // server watches each salon's day ONCE however many screens hold one, and
+  // sends "board-changed" when it moves, so screens stop polling the database
+  // themselves (server/boardWatch.ts). A screen that cannot hold this open
+  // (EventSource cannot send the Bearer fallback; some proxies drop it) falls
+  // back to polling workflow.getBoardVersion on its own.
+  app.get("/api/board-events", async (req, res) => {
+    let viewer;
+    try {
+      viewer = await sdk.authenticateRequest(req);
+    } catch {
+      res.sendStatus(401);
+      return;
+    }
+    const date = String(req.query.date ?? "");
+    if (!isBoardDate(date)) {
+      res.status(400).send("date must be YYYY-MM-DD");
+      return;
+    }
+    // The same rule as workflow.getBoard: a restricted staff login needs an
+    // approved staff profile and sees only that profile's salon.
+    let tenantId: number | null;
+    try {
+      const db = await getDb();
+      const portalStaff = db ? await requireApprovedStaffTenant(db, viewer as any) : null;
+      tenantId = portalStaff ? portalStaff.tenantId : await tenantForUser(viewer as any);
+    } catch {
+      res.sendStatus(403);
+      return;
+    }
+    if (typeof tenantId !== "number") {
+      res.sendStatus(403);
+      return;
+    }
+
+    res.set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    });
+    res.flushHeaders?.();
+    const send = (event: unknown) => res.write(`data: ${JSON.stringify(event)}\n\n`);
+    send({ type: "connected" });
+
+    const unwatch = liveBoard.watchBoard(tenantId, date, () => send({ type: "board-changed" }));
+    const heartbeat = setInterval(() => res.write(`: heartbeat\n\n`), 25000);
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      unwatch();
     });
   });
 

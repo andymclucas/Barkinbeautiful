@@ -40,3 +40,13 @@ describe("boardVersionChanged", () => {
     expect(boardVersionChanged("3:1", "3:2")).toBe(true);
   });
 });
+
+describe("isBoardDate", () => {
+  it("accepts real dates only", async () => {
+    const { isBoardDate } = await import("./workflowBoardVersion");
+    expect(isBoardDate("2026-11-24")).toBe(true);
+    expect(isBoardDate("2026-02-30")).toBe(false);
+    expect(isBoardDate("2026-11-24T00:00")).toBe(false);
+    expect(isBoardDate("")).toBe(false);
+  });
+});
