@@ -382,3 +382,50 @@ describe("going home always asks first", () => {
     expect(actions.update).toHaveBeenCalledWith(dog.id, expect.objectContaining({ workflowState: "ready" }), expect.anything());
   });
 });
+
+describe("family link", () => {
+  const family = (id: number, petName: string, over: Record<string, unknown> = {}) =>
+    row({ id, petId: id * 10, petName, petFamilyGroupId: 7, familyPetNames: ["Lola", "Poppy"], ...over });
+
+  it("joins a family's rows with one rail that starts, runs and ends inside its own column", () => {
+    const rows = [family(1, "Lola"), family(2, "Poppy"), row({ id: 3, petId: 30, petName: "Charli" })];
+    const { container } = renderBoard({ actions: boardActions() }, rows);
+    const rails = Array.from(container.querySelectorAll("[data-family-rail]")).map((el) => el.getAttribute("data-family-rail"));
+    expect(rails).toEqual(["start", "end"]);
+    // Drawn inside the family cell, never reaching across the dog's name.
+    for (const rail of Array.from(container.querySelectorAll("[data-family-rail]"))) {
+      expect(rail.closest("[data-family-cell]")).not.toBeNull();
+    }
+  });
+
+  it("draws no rail for a family dog with no family neighbour on the board", () => {
+    const { container } = renderBoard({ actions: boardActions() }, [family(1, "Lola"), row({ id: 3, petId: 30, petName: "Charli" })]);
+    expect(container.querySelectorAll("[data-family-rail]")).toHaveLength(0);
+    expect(container.querySelector('[data-family-badge="standalone"]')).not.toBeNull();
+  });
+
+  it("filters to the family from the badge and manages the link from the button beside it", () => {
+    const setFamilyFilter = vi.fn();
+    const setFamilyLinkPopup = vi.fn();
+    renderBoard({ actions: boardActions({ setFamilyFilter, setFamilyLinkPopup }) }, [family(1, "Lola"), family(2, "Poppy")]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Show this family only/ })[0]);
+    expect(setFamilyFilter).toHaveBeenCalledWith(7);
+    fireEvent.click(screen.getByRole("button", { name: /Manage or unlink Poppy/ }));
+    expect(setFamilyLinkPopup).toHaveBeenCalledWith(expect.objectContaining({ apptId: 2, petFamilyGroupId: 7 }));
+  });
+
+  it("offers to link a dog that has no family, but not once it has gone home", () => {
+    renderBoard({ actions: boardActions() }, [
+      row({ id: 1, petName: "Charli" }),
+      row({ id: 2, petId: 20, petName: "Milo", workflowState: "complete" }),
+    ]);
+    expect(screen.getByRole("button", { name: "Link Charli to a family" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Link Milo to a family" })).toBeNull();
+  });
+
+  it("shows no family controls on the read-only wall display", () => {
+    renderBoard({ readOnly: true }, [family(1, "Lola"), family(2, "Poppy"), row({ id: 3, petId: 30, petName: "Charli" })]);
+    expect(screen.queryByRole("button", { name: /Manage or unlink/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /to a family/ })).toBeNull();
+  });
+});
