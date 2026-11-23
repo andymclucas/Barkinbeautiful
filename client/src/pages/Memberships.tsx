@@ -26,6 +26,7 @@ import { weeklyToMonthly, describeRate, annualisedCost } from "@shared/membershi
 
 import { describePause, resolvePauseResumesAt } from "@shared/membershipPause";
 import { MembershipPetAssignment } from "@/components/MembershipPetAssignment";
+import { FLOATING_BUTTON_CLEARANCE } from "@/lib/floatingButtonClearance";
 type MembershipItem = {
   id: number;
   clientId: number | null;
@@ -1636,7 +1637,7 @@ export default function Memberships() {
             dogs as its name says. */}
         <MembershipPetAssignment />
 
-        <div className="flex items-center justify-between text-sm text-muted-foreground pt-1">
+        <div className={`flex items-center justify-between text-sm text-muted-foreground pt-1 ${FLOATING_BUTTON_CLEARANCE}`}>
           <span>Showing {total === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, total)}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
