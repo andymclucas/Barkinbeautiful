@@ -34,7 +34,8 @@ import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, bathQueuePositionMeta, buildBathPriorityQueue, canChangeBathOrder, dogsOnTheSameBathNumber, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Save, Star, Sun, Tv2, Unlink, UserPlus, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Columns3, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Rows3, Save, Star, Sun, Tv2, Unlink, UserPlus, Users, X } from "lucide-react";
+import { WorkflowKanban } from "@/components/WorkflowKanban";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -154,6 +155,17 @@ export default function WorkflowBoard() {
     return () => setDarkSurface(false);
   }, [tvWantsDark, setDarkSurface]);
   const [showCompleted, setShowCompleted] = useState(false);
+  /* Simple mode (Andy, 23/11/2026): the day as columns with one simple card
+     per dog. Remembered per device, because the front desk and a groomer's
+     tablet may want different views; browser storage can be missing or
+     refuse, and then it simply starts in the full board. */
+  const [simpleMode, setSimpleModeState] = useState<boolean>(() => {
+    try { return window.localStorage.getItem("groomigo.workflow.simpleMode") === "1"; } catch { return false; }
+  });
+  const setSimpleMode = (on: boolean) => {
+    setSimpleModeState(on);
+    try { window.localStorage.setItem("groomigo.workflow.simpleMode", on ? "1" : "0"); } catch { /* not remembered, still switched */ }
+  };
   const [stageFilter, setStageFilter] = useState<string>("__all__");
   const [groomerFilter, setGroomerFilter] = useState<string>("__all__");
   const [familyFilter, setFamilyFilter] = useState<number | null>(null);
@@ -724,6 +736,29 @@ export default function WorkflowBoard() {
     );
   }
 
+  const boardActions = {
+    update,
+    updateStagePending: updateStage.isPending,
+    advanceStage,
+    revertStage,
+    dragApptId,
+    boardData,
+    completeAppointment,
+    setPetPopup,
+    setEditingNotes,
+    setOutConfirm,
+    familyFilter,
+    setFamilyFilter,
+    setFamilyLinkPopup,
+    setFamilySearch,
+    setBathPriority,
+    toggleAddOnDone: (addOnId: number, done: boolean) => toggleAddOn.mutate({ id: addOnId, done }),
+    bathGroupCandidates,
+    setBathGroupPopup,
+    setBathGroupSelectedIds,
+    setBathGroupPriority,
+  };
+
   // ─── Main Board View ─────────────────────────────────────────────────────────
   return (
     <DashboardLayout>
@@ -762,6 +797,17 @@ export default function WorkflowBoard() {
             </div>
             <Button variant="outline" size="sm" className={BOARD_CONTROL} onClick={() => setShowCompleted(v => !v)}>
               {showCompleted ? "Hide Completed" : "Show Completed"}
+            </Button>
+            <Button
+              variant={simpleMode ? "default" : "outline"}
+              size="sm"
+              className={BOARD_CONTROL}
+              aria-pressed={simpleMode}
+              onClick={() => setSimpleMode(!simpleMode)}
+              title={simpleMode ? "Back to the full board" : "Simple mode: one card per dog, in columns"}
+            >
+              {simpleMode ? <Rows3 className="h-4 w-4 mr-1.5" /> : <Columns3 className="h-4 w-4 mr-1.5" />}
+              {simpleMode ? "Full board" : "Simple mode"}
             </Button>
             {/* Groomer filter */}
             <Select value={groomerFilter} onValueChange={setGroomerFilter}>
@@ -947,7 +993,17 @@ export default function WorkflowBoard() {
             the question that prompted the line in the first place. */}
         <SessionDogCounts rows={rows} className="mb-3" />
 
-        {/* Main whiteboard table */}
+        {/* Main whiteboard table, or Simple mode's columns */}
+        {simpleMode ? (
+          <WorkflowKanban
+            rows={rows}
+            now={now}
+            bathers={bathers}
+            groomers={groomers}
+            showOut={showCompleted}
+            actions={boardActions}
+          />
+        ) : (
         <WorkflowBoardTable
             // The staff board is the one surface not hanging on a wall.
             showContact
@@ -960,29 +1016,9 @@ export default function WorkflowBoard() {
             isLoading={isLoading}
             hasReviewAppointmentFocus={hasReviewAppointmentFocus}
             reviewAppointmentId={reviewAppointmentId}
-            actions={{
-              update,
-              updateStagePending: updateStage.isPending,
-              advanceStage,
-              revertStage,
-              dragApptId,
-              boardData,
-              completeAppointment,
-              setPetPopup,
-              setEditingNotes,
-              setOutConfirm,
-              familyFilter,
-              setFamilyFilter,
-              setFamilyLinkPopup,
-              setFamilySearch,
-              setBathPriority,
-    toggleAddOnDone: (addOnId: number, done: boolean) => toggleAddOn.mutate({ id: addOnId, done }),
-              bathGroupCandidates,
-              setBathGroupPopup,
-              setBathGroupSelectedIds,
-              setBathGroupPriority,
-            }}
+            actions={boardActions}
           />
+        )}
 
         {/* Below the board, as asked: time in, time out, no stages. */}
         <DaycareBoardSection

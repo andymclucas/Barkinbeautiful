@@ -174,7 +174,8 @@ describe("canStaffUpdateAppointment", () => {
     // Two read-only surfaces (TV overlay, wall display) and one interactive.
     expect(boardSource.match(/<WorkflowBoardTable/g)).toHaveLength(2);
     expect(displaySource.match(/<WorkflowBoardTable/g)).toHaveLength(1);
-    expect(boardSource).toContain("actions={{");
+    // The interactive one gets the board's actions (shared with Simple mode).
+    expect(boardSource).toContain("actions={boardActions}");
     expect(displaySource).toContain("readOnly");
     // A second table would mean a copy is back.
     expect(tableSource.match(/min-w-\[980px\]/g)).toHaveLength(1);
