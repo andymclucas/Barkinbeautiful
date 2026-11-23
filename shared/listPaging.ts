@@ -67,3 +67,34 @@ export function readSavedListView(
   const sortDir = v.sortDir === "asc" || v.sortDir === "desc" ? v.sortDir : defaults.sortDir;
   return { page, tab, tier, search, sortKey, sortDir };
 }
+
+/** A check on one saved field: true when the stored value can be used. */
+export type FieldCheck = (value: unknown) => boolean;
+
+export const isPageNumber: FieldCheck = (v) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 10000;
+export const isShortText: FieldCheck = (v) => typeof v === "string" && v.length <= 100;
+export const isBoolean: FieldCheck = (v) => typeof v === "boolean";
+export const oneOf = (allowed: readonly unknown[]): FieldCheck => (v) => allowed.includes(v);
+
+/**
+ * The general form of readSavedListView, for lists whose filters are not
+ * the Memberships set: each field has its own check, and any field that
+ * fails it, or is missing, keeps its default.
+ */
+export function readSavedView<T extends Record<string, unknown>>(
+  raw: string | null | undefined,
+  defaults: T,
+  checks: { [K in keyof T]: FieldCheck },
+): T {
+  if (!raw) return defaults;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return defaults; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return defaults;
+  const stored = parsed as Record<string, unknown>;
+  const out = { ...defaults };
+  for (const key of Object.keys(checks) as Array<keyof T>) {
+    const value = stored[key as string];
+    if (checks[key](value)) out[key] = value as T[keyof T];
+  }
+  return out;
+}

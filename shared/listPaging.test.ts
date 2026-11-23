@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageButtons, readSavedListView, type SavedListView } from "./listPaging";
+import { isBoolean, isPageNumber, isShortText, oneOf, pageButtons, readSavedListView, readSavedView, type SavedListView } from "./listPaging";
 
 describe("pageButtons", () => {
   it("shows every page when there are four, as on the Memberships list", () => {
@@ -48,5 +48,28 @@ describe("readSavedListView", () => {
   it("drops any one field that does not check out and keeps the rest", () => {
     const saved = { page: -2, tab: "deleted", tier: "silver", search: 7, sortKey: "x", sortDir: "up" };
     expect(readSavedListView(JSON.stringify(saved), defaults, allowed)).toEqual({ ...defaults, tier: "silver" });
+  });
+});
+
+describe("readSavedView", () => {
+  const defaults = { page: 1, status: "active", search: "", onlyOverdue: false };
+  const checks = { page: isPageNumber, status: oneOf(["active", "all"]), search: isShortText, onlyOverdue: isBoolean };
+
+  it("brings back every field that checks out", () => {
+    const saved = { page: 12, status: "all", search: "bella", onlyOverdue: true };
+    expect(readSavedView(JSON.stringify(saved), defaults, checks)).toEqual(saved);
+  });
+
+  it("keeps the default for a field that is missing or wrong", () => {
+    expect(readSavedView(JSON.stringify({ page: 0, status: "gone", onlyOverdue: "yes" }), defaults, checks)).toEqual(defaults);
+  });
+
+  it("ignores fields it was not asked about", () => {
+    expect(readSavedView(JSON.stringify({ page: 2, extra: "x" }), defaults, checks)).toEqual({ ...defaults, page: 2 });
+  });
+
+  it("falls back on garbage", () => {
+    expect(readSavedView("[1,2]", defaults, checks)).toEqual(defaults);
+    expect(readSavedView("nope", defaults, checks)).toEqual(defaults);
   });
 });
