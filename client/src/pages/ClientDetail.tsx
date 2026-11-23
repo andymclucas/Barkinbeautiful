@@ -2129,7 +2129,7 @@ export default function ClientDetail() {
                             type="button"
                             className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                             aria-label={`Edit ${pet.name}`}
-                            onClick={() => setPetEditor({ pet: { id: pet.id, name: pet.name, breed: pet.breed, sizeBand: pet.sizeBand } })}
+                            onClick={() => setPetEditor({ pet: { id: pet.id, name: pet.name, breed: pet.breed, sizeBand: pet.sizeBand, gender: pet.gender, desexed: pet.desexed } })}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
@@ -2286,7 +2286,7 @@ export default function ClientDetail() {
                           petName={pet.name}
                           open={weightHistoryPetId === pet.id}
                         />
-                        {pet.gender && <p><span className="text-muted-foreground">Gender:</span> {pet.gender}{pet.desexed ? " (desexed)" : ""}</p>}
+                        <p><span className="text-muted-foreground">Gender:</span> {pet.gender === "male" ? "Male" : pet.gender === "female" ? "Female" : "Not known"}{pet.desexed ? " (desexed)" : ""}</p>
                       </div>
                       {/* Size band. Shown next to the weight because they
                           answer different questions: the weight is what the
