@@ -27,7 +27,7 @@ import { GroomingNoteTab } from "@/components/GroomingNoteTab";
 import { PetAvatar } from "@/components/PetAvatar";
 import { shiftDateKey } from "@/lib/workflowDates";
 import { formatLiveStageElapsed, getLiveStageElapsedSeconds } from "@/lib/workflowStageTimer";
-import { useReloadBoardOnChange, workflowBoardRefreshOptions, workflowBoardVersionOptions } from "@/lib/workflowBoardRefresh";
+import { useLiveBoard, useReloadBoardOnChange, workflowBoardRefreshOptions, workflowBoardVersionOptions } from "@/lib/workflowBoardRefresh";
 import { shouldShowWorkflowRow } from "@/lib/workflowTerminalStates";
 import { resolveTimingReviewThreshold } from "@shared/workflowTimingReviewThresholds";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
@@ -263,7 +263,8 @@ export default function WorkflowBoard() {
     { date: boardDate },
     workflowBoardRefreshOptions,
   );
-  const { data: boardVersion } = trpc.workflow.getBoardVersion.useQuery({ date: boardDate }, workflowBoardVersionOptions);
+  const liveBoardConnected = useLiveBoard(boardDate, refetch);
+  const { data: boardVersion } = trpc.workflow.getBoardVersion.useQuery({ date: boardDate }, { ...workflowBoardVersionOptions, enabled: !liveBoardConnected });
   useReloadBoardOnChange(boardVersion, refetch);
   const { data: staffList } = trpc.workflow.getStaff.useQuery({});
   const { data: timingReviewThresholds } = trpc.workflowReview.getBoardThresholds.useQuery({});

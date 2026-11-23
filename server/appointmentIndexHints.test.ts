@@ -16,6 +16,9 @@ describe("appointmentsByDate index hint", () => {
     // Delegation count, not behaviour: if one of these drops the hint, the
     // planner is free to go back to scanning every salon's bookings.
     const source = readFileSync(resolve(process.cwd(), "server/routers.ts"), "utf8");
-    expect(source.match(/\.from\(appointments, appointmentsByDate\)/g)?.length).toBe(21);
+    expect(source.match(/\.from\(appointments, appointmentsByDate\)/g)?.length).toBe(20);
+    // The board's change check moved to server/liveBoard.ts (23/11/2026).
+    const live = readFileSync(resolve(process.cwd(), "server/liveBoard.ts"), "utf8");
+    expect(live.match(/\.from\(appointments, appointmentsByDate\)/g)?.length).toBe(1);
   });
 });

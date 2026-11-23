@@ -36,8 +36,9 @@ import { agreementsRouter, clientReviewsRouter, packagesRouter, petPaperworkRout
 import { getDb } from "./db"
 import { z } from "zod";
 import { eq, and, or, ne, gte, lte, gt, lt, desc, asc, like, sql, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";
-import { workflowBoardDayBounds, workflowBoardVersion } from "../shared/workflowBoardVersion";
+import { workflowBoardDayBounds } from "../shared/workflowBoardVersion";
 import { appointmentsByDate } from "./appointmentIndexHints";
+import { liveBoard, loadBoardVersion } from "./liveBoard";
 import {
   tenants, staff, clients, pets, appointments, workflowLogs,
   systemNotifications,
@@ -4366,252 +4367,257 @@ const workflowRouter = router({
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This workflow is not available to your salon staff profile");
       const dateStr = input.date || new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10);
-      // AEST = UTC+10. Midnight AEST = 14:00 UTC previous day.
-      const { start: dayStart, end: dayEnd } = workflowBoardDayBounds(dateStr);
-      const boardRows = await db
-        .select({
-          id: appointments.id,
-          sessionId: appointments.sessionId,
-          scheduledStart: appointments.scheduledStart,
-          scheduledEnd: appointments.scheduledEnd,
-          workflowState: appointments.workflowState,
-          serviceType: appointments.serviceType,
-          /* Tells the board to draw "Walk-In: Nail Clip" rather than
-             "NAIL", and tells a groomer this one is not part of the
-             day's run. */
-          isQuick: appointments.isQuick,
-          price: appointments.price,
-          status: appointments.status,
-          notes: appointments.notes,
-          cageNumber: appointments.cageNumber,
-          tagNumber: appointments.tagNumber,
-          bathStaffId: appointments.bathStaffId,
-          bathPriority: appointments.bathPriority,
-          collectBy: appointments.collectBy,
-          // Needed to judge the deadline: how long a dog still takes depends
-          // on its size — see shared/collectBy.ts.
-          petSizeBand: pets.sizeBand,
-          bathQueueOrder: appointments.bathQueueOrder,
-          bathGroupId: appointments.bathGroupId,
-          dryStaffId: appointments.dryStaffId,
-          workflowAddOns: appointments.workflowAddOns,
-          checkedInAt: appointments.checkedInAt,
-          stageStartedAt: appointments.stageStartedAt,
-          bathingStartedAt: appointments.bathingStartedAt,
-          bathingCompletedAt: appointments.bathingCompletedAt,
-          dryingStartedAt: appointments.dryingStartedAt,
-          dryingCompletedAt: appointments.dryingCompletedAt,
-          groomingStartedAt: appointments.groomingStartedAt,
-          groomingCompletedAt: appointments.groomingCompletedAt,
-          readyAt: appointments.readyAt,
-          completedAt: appointments.completedAt,
-          pickedUpAt: appointments.pickedUpAt,
-          staffId: appointments.staffId,
-          petId: appointments.petId,
-          clientId: appointments.clientId,
-          membershipId: appointments.membershipId,
-          petName: pets.name,
-          petBreed: pets.breed,
-          petWeightKg: pets.weightKg,
-          petWeight: pets.weight,
-          petAlertLevel: pets.alertLevel,
-          petWarnings: pets.warnings,
-          petFamilyGroupId: pets.familyGroupId,
-          petMoeGoPetCodes: pets.moeGoPetCodes,
-          /** MoeGo's own tags — "✂5f, #7f, No cologne, SENSITIVE". */
-          petMoegoCodeLabels: pets.moegoCodeLabels,
-          clientFirstName: clients.firstName,
-          clientLastName: clients.lastName,
-          // Who to ring about this dog. Null is the client themselves. On
-          // the board because the person doing the collecting is what a
-          // groomer needs at the point the dog is ready, and it used to
-          // live in green marker on the whiteboard.
-          contactId: appointments.contactId,
-          contactName: clientContacts.name,
-          contactPhone: clientContacts.phone,
-          contactRelationship: clientContacts.relationship,
-          staffName: staff.name,
-          staffColour: staff.colourHex,
-        })
-        .from(appointments, appointmentsByDate)
-        .leftJoin(pets, eq(appointments.petId, pets.id))
-        .leftJoin(clients, eq(appointments.clientId, clients.id))
-        .leftJoin(staff, eq(appointments.staffId, staff.id))
-        .leftJoin(clientContacts, and(
-          eq(appointments.contactId, clientContacts.id),
-          // Belt and braces. updateDetails already refuses a contact that
-          // is not on this booking's client, but this join prints a name and
-          // a phone number onto the board, and a stray id arriving by any
-          // other route — a direct write, an import — must not surface it.
-          // The CLIENT matters as much as the tenant: without it another
-          // client's contact in the same salon would render here while the
-          // pickup dialog, which only offers this client's own contacts,
-          // quietly preselected the owner — the board and the text then
-          // disagreeing about who is being rung.
-          eq(clientContacts.tenantId, appointments.tenantId),
-          eq(clientContacts.clientId, appointments.clientId),
-        ))
-        .where(and(
-          eq(appointments.tenantId, tenantOf(ctx, input)),
-          gte(appointments.scheduledStart, dayStart),
-          lte(appointments.scheduledStart, dayEnd),
-          sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
-        ))
-        .orderBy(asc(appointments.scheduledStart));
-
-      const familyGroupIds = Array.from(new Set(boardRows.map(row => row.petFamilyGroupId).filter((id): id is number => id !== null)));
-      const familyPetNamesByGroup = new Map<number, string[]>();
-      if (familyGroupIds.length > 0) {
-        const familyPets = await db.select({ familyGroupId: pets.familyGroupId, name: pets.name })
-          .from(pets)
-          .where(and(eq(pets.tenantId, tenantOf(ctx, input)), inArray(pets.familyGroupId, familyGroupIds)))
-          .orderBy(asc(pets.name));
-        for (const familyPet of familyPets) {
-          if (!familyPet.familyGroupId) continue;
-          const names = familyPetNamesByGroup.get(familyPet.familyGroupId) ?? [];
-          names.push(familyPet.name);
-          familyPetNamesByGroup.set(familyPet.familyGroupId, names);
-        }
-      }
-
-      const appointmentIds = boardRows.map(row => row.id);
-      const latestGroomNoteByAppointment = new Map<number, { note: string; warnings: string | null; alertLevel: string | null }>();
-      if (appointmentIds.length > 0) {
-        const styleNoteRows = await db
+      // One load per salon and day, shared by every screen for up to a minute
+      // and dropped the moment anything changes (server/boardWatch.ts). The
+      // result depends only on the salon and the day, never on who asks.
+      return liveBoard.getCachedBoard(tenantOf(ctx, input), dateStr, async () => {
+        // AEST = UTC+10. Midnight AEST = 14:00 UTC previous day.
+        const { start: dayStart, end: dayEnd } = workflowBoardDayBounds(dateStr);
+        const boardRows = await db
           .select({
-            appointmentId: groomStyleNotes.appointmentId,
-            note: groomStyleNotes.note,
-            warnings: groomStyleNotes.warnings,
-            alertLevel: groomStyleNotes.alertLevel,
-            createdAt: groomStyleNotes.createdAt,
+            id: appointments.id,
+            sessionId: appointments.sessionId,
+            scheduledStart: appointments.scheduledStart,
+            scheduledEnd: appointments.scheduledEnd,
+            workflowState: appointments.workflowState,
+            serviceType: appointments.serviceType,
+            /* Tells the board to draw "Walk-In: Nail Clip" rather than
+               "NAIL", and tells a groomer this one is not part of the
+               day's run. */
+            isQuick: appointments.isQuick,
+            price: appointments.price,
+            status: appointments.status,
+            notes: appointments.notes,
+            cageNumber: appointments.cageNumber,
+            tagNumber: appointments.tagNumber,
+            bathStaffId: appointments.bathStaffId,
+            bathPriority: appointments.bathPriority,
+            collectBy: appointments.collectBy,
+            // Needed to judge the deadline: how long a dog still takes depends
+            // on its size — see shared/collectBy.ts.
+            petSizeBand: pets.sizeBand,
+            bathQueueOrder: appointments.bathQueueOrder,
+            bathGroupId: appointments.bathGroupId,
+            dryStaffId: appointments.dryStaffId,
+            workflowAddOns: appointments.workflowAddOns,
+            checkedInAt: appointments.checkedInAt,
+            stageStartedAt: appointments.stageStartedAt,
+            bathingStartedAt: appointments.bathingStartedAt,
+            bathingCompletedAt: appointments.bathingCompletedAt,
+            dryingStartedAt: appointments.dryingStartedAt,
+            dryingCompletedAt: appointments.dryingCompletedAt,
+            groomingStartedAt: appointments.groomingStartedAt,
+            groomingCompletedAt: appointments.groomingCompletedAt,
+            readyAt: appointments.readyAt,
+            completedAt: appointments.completedAt,
+            pickedUpAt: appointments.pickedUpAt,
+            staffId: appointments.staffId,
+            petId: appointments.petId,
+            clientId: appointments.clientId,
+            membershipId: appointments.membershipId,
+            petName: pets.name,
+            petBreed: pets.breed,
+            petWeightKg: pets.weightKg,
+            petWeight: pets.weight,
+            petAlertLevel: pets.alertLevel,
+            petWarnings: pets.warnings,
+            petFamilyGroupId: pets.familyGroupId,
+            petMoeGoPetCodes: pets.moeGoPetCodes,
+            /** MoeGo's own tags — "✂5f, #7f, No cologne, SENSITIVE". */
+            petMoegoCodeLabels: pets.moegoCodeLabels,
+            clientFirstName: clients.firstName,
+            clientLastName: clients.lastName,
+            // Who to ring about this dog. Null is the client themselves. On
+            // the board because the person doing the collecting is what a
+            // groomer needs at the point the dog is ready, and it used to
+            // live in green marker on the whiteboard.
+            contactId: appointments.contactId,
+            contactName: clientContacts.name,
+            contactPhone: clientContacts.phone,
+            contactRelationship: clientContacts.relationship,
+            staffName: staff.name,
+            staffColour: staff.colourHex,
           })
-          .from(groomStyleNotes)
-          .where(inArray(groomStyleNotes.appointmentId, appointmentIds))
-          .orderBy(asc(groomStyleNotes.createdAt));
-        // Rows are ordered oldest-first, so the last write per appointmentId
-        // (via Map overwrite) ends up being the most recent style note.
-        for (const noteRow of styleNoteRows) {
-          if (noteRow.appointmentId === null) continue;
-          latestGroomNoteByAppointment.set(noteRow.appointmentId, {
-            note: noteRow.note,
-            warnings: noteRow.warnings,
-            alertLevel: noteRow.alertLevel,
+          .from(appointments, appointmentsByDate)
+          .leftJoin(pets, eq(appointments.petId, pets.id))
+          .leftJoin(clients, eq(appointments.clientId, clients.id))
+          .leftJoin(staff, eq(appointments.staffId, staff.id))
+          .leftJoin(clientContacts, and(
+            eq(appointments.contactId, clientContacts.id),
+            // Belt and braces. updateDetails already refuses a contact that
+            // is not on this booking's client, but this join prints a name and
+            // a phone number onto the board, and a stray id arriving by any
+            // other route — a direct write, an import — must not surface it.
+            // The CLIENT matters as much as the tenant: without it another
+            // client's contact in the same salon would render here while the
+            // pickup dialog, which only offers this client's own contacts,
+            // quietly preselected the owner — the board and the text then
+            // disagreeing about who is being rung.
+            eq(clientContacts.tenantId, appointments.tenantId),
+            eq(clientContacts.clientId, appointments.clientId),
+          ))
+          .where(and(
+            eq(appointments.tenantId, tenantOf(ctx, input)),
+            gte(appointments.scheduledStart, dayStart),
+            lte(appointments.scheduledStart, dayEnd),
+            sql`${appointments.status} NOT IN ('cancelled', 'no_show')`,
+          ))
+          .orderBy(asc(appointments.scheduledStart));
+
+        const familyGroupIds = Array.from(new Set(boardRows.map(row => row.petFamilyGroupId).filter((id): id is number => id !== null)));
+        const familyPetNamesByGroup = new Map<number, string[]>();
+        if (familyGroupIds.length > 0) {
+          const familyPets = await db.select({ familyGroupId: pets.familyGroupId, name: pets.name })
+            .from(pets)
+            .where(and(eq(pets.tenantId, tenantOf(ctx, input)), inArray(pets.familyGroupId, familyGroupIds)))
+            .orderBy(asc(pets.name));
+          for (const familyPet of familyPets) {
+            if (!familyPet.familyGroupId) continue;
+            const names = familyPetNamesByGroup.get(familyPet.familyGroupId) ?? [];
+            names.push(familyPet.name);
+            familyPetNamesByGroup.set(familyPet.familyGroupId, names);
+          }
+        }
+
+        const appointmentIds = boardRows.map(row => row.id);
+        const latestGroomNoteByAppointment = new Map<number, { note: string; warnings: string | null; alertLevel: string | null }>();
+        if (appointmentIds.length > 0) {
+          const styleNoteRows = await db
+            .select({
+              appointmentId: groomStyleNotes.appointmentId,
+              note: groomStyleNotes.note,
+              warnings: groomStyleNotes.warnings,
+              alertLevel: groomStyleNotes.alertLevel,
+              createdAt: groomStyleNotes.createdAt,
+            })
+            .from(groomStyleNotes)
+            .where(inArray(groomStyleNotes.appointmentId, appointmentIds))
+            .orderBy(asc(groomStyleNotes.createdAt));
+          // Rows are ordered oldest-first, so the last write per appointmentId
+          // (via Map overwrite) ends up being the most recent style note.
+          for (const noteRow of styleNoteRows) {
+            if (noteRow.appointmentId === null) continue;
+            latestGroomNoteByAppointment.set(noteRow.appointmentId, {
+              note: noteRow.note,
+              warnings: noteRow.warnings,
+              alertLevel: noteRow.alertLevel,
+            });
+          }
+        }
+
+        /**
+         * The extras booked on each dog, so a groomer can see at a glance
+         * what else needs doing.
+         *
+         * Lauren, 22/10/2026: "need to show any add-ons on the workflow so
+         * groomers can see what else needs to be done at a glance."
+         *
+         * The board already had a line for this, bound to
+         * `appointments.workflow_add_ons` — a free-text field that is
+         * empty on all 15,659 rows and that nothing writes. The real
+         * extras live in `appointment_add_ons`, which the board had never
+         * queried, so Teeth Ultra Clean and Anal Glands were invisible to
+         * the person who has to do them.
+         */
+        const addOnsByAppointment = new Map<number, Array<{ id: number; name: string; quantity: number; completedAt: Date | null }>>();
+        if (appointmentIds.length > 0) {
+          const addOnRows = await db
+            .select({
+              appointmentId: appointmentAddOns.appointmentId,
+              // The board needs the id to tick it off, and completedAt to
+              // show whether it has been. Lauren, 27/10/2026.
+              id: appointmentAddOns.id,
+              name: appointmentAddOns.name,
+              quantity: appointmentAddOns.quantity,
+              completedAt: appointmentAddOns.completedAt,
+            })
+            .from(appointmentAddOns)
+            .where(and(
+              eq(appointmentAddOns.tenantId, tenantOf(ctx, input)),
+              inArray(appointmentAddOns.appointmentId, appointmentIds),
+            ))
+            .orderBy(asc(appointmentAddOns.id));
+          for (const addOn of addOnRows) {
+            const list = addOnsByAppointment.get(addOn.appointmentId) ?? [];
+            list.push({ id: addOn.id, name: addOn.name, quantity: addOn.quantity, completedAt: addOn.completedAt });
+            addOnsByAppointment.set(addOn.appointmentId, list);
+          }
+        }
+
+        /**
+         * When the owner was told their dog is ready.
+         *
+         * Lauren, 03/11/2026: "tracking down if the customers has been texted
+         * or not. Can't tell from the workflow".
+         *
+         * The fact was already recorded — `smsLogs` is written on every pickup
+         * send — but the only place it surfaced was inside the pickup dialog,
+         * one dog at a time. From the board she had to open each ready dog to
+         * find out, which is the search she is describing.
+         *
+         * A failed send is deliberately NOT a send: the row exists, but nobody
+         * was told, and showing it as texted is the one way this could be
+         * worse than showing nothing. Same filter the pickup dialog already
+         * uses for `alreadyTexted`.
+         *
+         * Reduced in JS rather than with MAX()/GROUP BY, matching
+         * `petCodes.list` — TiDB runs ONLY_FULL_GROUP_BY and the grouping trap
+         * in CLAUDE.md §6 is not worth risking for a set this small. Measured
+         * 03/11/2026: `sms_logs` holds 574 rows in total and has no index on
+         * `appointment_id`, so the scan is free today. Worth an index if it
+         * ever reaches the tens of thousands.
+         */
+        const pickupTextByAppointment = new Map<number, Date>();
+        if (appointmentIds.length > 0) {
+          const pickupLogs = await db
+            .select({ appointmentId: smsLogs.appointmentId, sentAt: smsLogs.sentAt })
+            .from(smsLogs)
+            .where(and(
+              eq(smsLogs.tenantId, tenantOf(ctx, input)),
+              inArray(smsLogs.appointmentId, appointmentIds),
+              eq(smsLogs.type, "ready_pickup"),
+              eq(smsLogs.direction, "outbound"),
+              ne(smsLogs.status, "failed"),
+            ));
+          for (const log of pickupLogs) {
+            if (log.appointmentId === null || !log.sentAt) continue;
+            const seen = pickupTextByAppointment.get(log.appointmentId);
+            // The LAST one, because a second text is a re-send and that is the
+            // time staff would be asked about.
+            if (!seen || log.sentAt > seen) pickupTextByAppointment.set(log.appointmentId, log.sentAt);
+          }
+        }
+
+        const petIdsOnBoard = Array.from(new Set(boardRows.map(row => row.petId).filter((id): id is number => id !== null)));
+        // A plan covers its primary dog AND every dog assigned to it. Reading
+        // memberships.pet_id alone left the second dog on an "x2" plan without
+        // a badge — Lauren, 28/10/2026. See shared/vipPetIds.ts.
+        let vipPetIdSet = new Set<number>();
+        if (petIdsOnBoard.length > 0) {
+          const [primaries, covered] = await Promise.all([
+            db.select({ petId: memberships.petId }).from(memberships)
+              .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard))),
+            db.select({ petId: membershipPets.petId }).from(membershipPets)
+              .innerJoin(memberships, eq(memberships.id, membershipPets.membershipId))
+              .where(and(eq(membershipPets.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(membershipPets.petId, petIdsOnBoard))),
+          ]);
+          vipPetIdSet = vipPetIds({
+            primaryPetIds: primaries.map(m => m.petId),
+            coveredPetIds: covered.map(m => m.petId),
           });
         }
-      }
 
-      /**
-       * The extras booked on each dog, so a groomer can see at a glance
-       * what else needs doing.
-       *
-       * Lauren, 22/10/2026: "need to show any add-ons on the workflow so
-       * groomers can see what else needs to be done at a glance."
-       *
-       * The board already had a line for this, bound to
-       * `appointments.workflow_add_ons` — a free-text field that is
-       * empty on all 15,659 rows and that nothing writes. The real
-       * extras live in `appointment_add_ons`, which the board had never
-       * queried, so Teeth Ultra Clean and Anal Glands were invisible to
-       * the person who has to do them.
-       */
-      const addOnsByAppointment = new Map<number, Array<{ id: number; name: string; quantity: number; completedAt: Date | null }>>();
-      if (appointmentIds.length > 0) {
-        const addOnRows = await db
-          .select({
-            appointmentId: appointmentAddOns.appointmentId,
-            // The board needs the id to tick it off, and completedAt to
-            // show whether it has been. Lauren, 27/10/2026.
-            id: appointmentAddOns.id,
-            name: appointmentAddOns.name,
-            quantity: appointmentAddOns.quantity,
-            completedAt: appointmentAddOns.completedAt,
-          })
-          .from(appointmentAddOns)
-          .where(and(
-            eq(appointmentAddOns.tenantId, tenantOf(ctx, input)),
-            inArray(appointmentAddOns.appointmentId, appointmentIds),
-          ))
-          .orderBy(asc(appointmentAddOns.id));
-        for (const addOn of addOnRows) {
-          const list = addOnsByAppointment.get(addOn.appointmentId) ?? [];
-          list.push({ id: addOn.id, name: addOn.name, quantity: addOn.quantity, completedAt: addOn.completedAt });
-          addOnsByAppointment.set(addOn.appointmentId, list);
-        }
-      }
-
-      /**
-       * When the owner was told their dog is ready.
-       *
-       * Lauren, 03/11/2026: "tracking down if the customers has been texted
-       * or not. Can't tell from the workflow".
-       *
-       * The fact was already recorded — `smsLogs` is written on every pickup
-       * send — but the only place it surfaced was inside the pickup dialog,
-       * one dog at a time. From the board she had to open each ready dog to
-       * find out, which is the search she is describing.
-       *
-       * A failed send is deliberately NOT a send: the row exists, but nobody
-       * was told, and showing it as texted is the one way this could be
-       * worse than showing nothing. Same filter the pickup dialog already
-       * uses for `alreadyTexted`.
-       *
-       * Reduced in JS rather than with MAX()/GROUP BY, matching
-       * `petCodes.list` — TiDB runs ONLY_FULL_GROUP_BY and the grouping trap
-       * in CLAUDE.md §6 is not worth risking for a set this small. Measured
-       * 03/11/2026: `sms_logs` holds 574 rows in total and has no index on
-       * `appointment_id`, so the scan is free today. Worth an index if it
-       * ever reaches the tens of thousands.
-       */
-      const pickupTextByAppointment = new Map<number, Date>();
-      if (appointmentIds.length > 0) {
-        const pickupLogs = await db
-          .select({ appointmentId: smsLogs.appointmentId, sentAt: smsLogs.sentAt })
-          .from(smsLogs)
-          .where(and(
-            eq(smsLogs.tenantId, tenantOf(ctx, input)),
-            inArray(smsLogs.appointmentId, appointmentIds),
-            eq(smsLogs.type, "ready_pickup"),
-            eq(smsLogs.direction, "outbound"),
-            ne(smsLogs.status, "failed"),
-          ));
-        for (const log of pickupLogs) {
-          if (log.appointmentId === null || !log.sentAt) continue;
-          const seen = pickupTextByAppointment.get(log.appointmentId);
-          // The LAST one, because a second text is a re-send and that is the
-          // time staff would be asked about.
-          if (!seen || log.sentAt > seen) pickupTextByAppointment.set(log.appointmentId, log.sentAt);
-        }
-      }
-
-      const petIdsOnBoard = Array.from(new Set(boardRows.map(row => row.petId).filter((id): id is number => id !== null)));
-      // A plan covers its primary dog AND every dog assigned to it. Reading
-      // memberships.pet_id alone left the second dog on an "x2" plan without
-      // a badge — Lauren, 28/10/2026. See shared/vipPetIds.ts.
-      let vipPetIdSet = new Set<number>();
-      if (petIdsOnBoard.length > 0) {
-        const [primaries, covered] = await Promise.all([
-          db.select({ petId: memberships.petId }).from(memberships)
-            .where(and(eq(memberships.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(memberships.petId, petIdsOnBoard))),
-          db.select({ petId: membershipPets.petId }).from(membershipPets)
-            .innerJoin(memberships, eq(memberships.id, membershipPets.membershipId))
-            .where(and(eq(membershipPets.tenantId, tenantOf(ctx, input)), eq(memberships.status, "active"), inArray(membershipPets.petId, petIdsOnBoard))),
-        ]);
-        vipPetIdSet = vipPetIds({
-          primaryPetIds: primaries.map(m => m.petId),
-          coveredPetIds: covered.map(m => m.petId),
-        });
-      }
-
-      return boardRows.map(row => ({
-        ...row,
-        familyPetNames: row.petFamilyGroupId ? familyPetNamesByGroup.get(row.petFamilyGroupId) ?? [row.petName] : [],
-        petAlertLevel: normalizePetAlertLevel(row.petAlertLevel),
-        groomStyleNote: latestGroomNoteByAppointment.get(row.id)?.note ?? null,
-        groomStyleWarnings: latestGroomNoteByAppointment.get(row.id)?.warnings ?? null,
-        isVipMember: row.petId ? vipPetIdSet.has(row.petId) : false,
-        addOns: addOnsByAppointment.get(row.id) ?? [],
-        pickupTextSentAt: pickupTextByAppointment.get(row.id) ?? null,
-      }));
+        return boardRows.map(row => ({
+          ...row,
+          familyPetNames: row.petFamilyGroupId ? familyPetNamesByGroup.get(row.petFamilyGroupId) ?? [row.petName] : [],
+          petAlertLevel: normalizePetAlertLevel(row.petAlertLevel),
+          groomStyleNote: latestGroomNoteByAppointment.get(row.id)?.note ?? null,
+          groomStyleWarnings: latestGroomNoteByAppointment.get(row.id)?.warnings ?? null,
+          isVipMember: row.petId ? vipPetIdSet.has(row.petId) : false,
+          addOns: addOnsByAppointment.get(row.id) ?? [],
+          pickupTextSentAt: pickupTextByAppointment.get(row.id) ?? null,
+        }));
+      });
     }),
 
   // A fingerprint of the board's day, asked for every few seconds so each
@@ -4629,19 +4635,7 @@ const workflowRouter = router({
       const portalStaff = await requireApprovedStaffTenant(db, ctx.user);
       if (portalStaff && portalStaff.tenantId !== tenantOf(ctx, input)) throw new Error("This workflow is not available to your salon staff profile");
       const dateStr = input.date || new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10);
-      const { start, end } = workflowBoardDayBounds(dateStr);
-      const [row] = await db
-        .select({
-          bookings: sql<number>`COUNT(*)`,
-          lastChanged: sql<Date | string | null>`MAX(${appointments.updatedAt})`,
-        })
-        .from(appointments, appointmentsByDate)
-        .where(and(
-          eq(appointments.tenantId, tenantOf(ctx, input)),
-          gte(appointments.scheduledStart, start),
-          lte(appointments.scheduledStart, end),
-        ));
-      return workflowBoardVersion(row?.bookings ?? 0, row?.lastChanged ?? null);
+      return loadBoardVersion(tenantOf(ctx, input), dateStr);
     }),
 
   updateStage: operationalProcedure

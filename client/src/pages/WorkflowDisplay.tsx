@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { CheckCircle2, Clock3, Dog, Moon, RefreshCw, Sparkles, Sun, Wifi, WifiOff } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useReloadBoardOnChange, workflowBoardRefreshOptions, workflowBoardVersionOptions } from "@/lib/workflowBoardRefresh";
+import { useLiveBoard, useReloadBoardOnChange, workflowBoardRefreshOptions, workflowBoardVersionOptions } from "@/lib/workflowBoardRefresh";
 import { isTerminalWorkflowState } from "@/lib/workflowTerminalStates";
 import { PRODUCTION_APP_URL } from "@shared/const";
 import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
@@ -101,9 +101,10 @@ export default function WorkflowDisplay() {
     { date: boardDate },
     { ...workflowBoardRefreshOptions, enabled: !!user },
   );
+  const liveBoardConnected = useLiveBoard(boardDate, refetch, !!user);
   const { data: boardVersion } = trpc.workflow.getBoardVersion.useQuery(
     { date: boardDate },
-    { ...workflowBoardVersionOptions, enabled: !!user },
+    { ...workflowBoardVersionOptions, enabled: !!user && !liveBoardConnected },
   );
   useReloadBoardOnChange(boardVersion, refetch);
   // The board shows each stage's staff member with their photo. The wall

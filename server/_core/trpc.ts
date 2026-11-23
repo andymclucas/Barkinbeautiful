@@ -243,6 +243,19 @@ const requireNonStaffUser = t.middleware(async opts => {
 const broadcastChange = t.middleware(async opts => {
   const result = await opts.next();
   if (opts.type !== "mutation" || !result.ok) return result;
+  // Every successful write drops the salon's cached workflow board and tells
+  // its open board screens to reload, whatever the write was: a style note
+  // or an add-on changes the board without touching the appointment row the
+  // per-salon watcher fingerprints (server/boardWatch.ts).
+  try {
+    const tenantId = opts.ctx.tenantId;
+    if (typeof tenantId === "number") {
+      const { liveBoard } = await import("../liveBoard");
+      liveBoard.nudgeBoards(tenantId);
+    }
+  } catch (err) {
+    console.error("[boardWatch] could not nudge boards for", opts.path, err);
+  }
   try {
     const { shouldBroadcast, staleTopicsFor, topicForPath } = await import("@shared/realtimeTopics");
     if (!shouldBroadcast(opts.path)) return result;
