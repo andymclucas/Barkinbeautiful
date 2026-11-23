@@ -97,12 +97,19 @@ export function buildCardLinkEmail(input: CardLinkEmailInput): BuiltEmail {
   // Deliberately plain: states what the link does, that nothing is charged by
   // following it, and that the salon never sees the card number. A payment
   // email that reads like a marketing email reads like a scam.
+  //
+  // The one loud thing is the ask itself. Lauren, 23/11/2026, after the
+  // portal invite got a red "Please add your card details" box: "Can the
+  // email to add card section (link have the same thing.)". Clients were
+  // reading past a plain line, so it gets the same red box, and the link
+  // becomes a button rather than a word in a sentence.
   const html = [
     `<p>${greeting}</p>`,
+    `<div style="margin:16px 0;padding:14px 16px;border:2px solid #dc2626;border-radius:10px;background:#fef2f2"><p style="margin:0;font-size:18px;font-weight:bold;color:#dc2626">${replacing ? "Please update your card details" : "Please add your card details"}</p></div>`,
     replacing
       ? `<p>Here's a secure link to update the card we keep on file for your grooming membership.</p>`
       : `<p>Here's a secure link to save a card for your grooming membership, so we can take payment automatically instead of asking you at the counter each visit.</p>`,
-    `<p><a href="${escapeHtml(input.url)}">${replacing ? "Update my card" : "Save my card"}</a></p>`,
+    `<p style="margin:20px 0"><a href="${escapeHtml(input.url)}" style="background:#db2777;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:bold;display:inline-block">${replacing ? "Update my card" : "Save my card"}</a></p>`,
     `<p>Following this link does not charge you anything. Your details are entered on Stripe's secure page and held by them &mdash; ${escapeHtml(salon)} never sees or stores your full card number.</p>`,
     `<p>If you weren't expecting this email, you can ignore it and nothing will change.</p>`,
     `<p>&mdash; ${escapeHtml(salon)}</p>`,
