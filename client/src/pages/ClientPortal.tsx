@@ -12,7 +12,7 @@ import { BruceAvatar } from "@/components/BruceAvatar";
 import { sortBookingsForBucket } from "@shared/bookingBuckets";
 import { clientFacingStage, isGroomInProgress, stageIcon, stageColourFor } from "@shared/groomingStage";
 import { GroomProgressBar } from "@/components/GroomProgressBar";
-import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle, CreditCard, Loader2, TriangleAlert, Lock, ChevronRight } from "lucide-react";
+import { CalendarDays, Dog, FileDown, MessageCircle, Send, X, Heart, Mail, Phone, Scissors, ShieldCheck, Wallet, History as HistoryIcon, PencilLine, XCircle, CreditCard, Loader2, TriangleAlert, Lock, ChevronRight, Sparkles } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DateField } from "@/components/DateField";
+import { PortalAddExtrasDialog, PortalBookCard, PortalBookingDialog } from "@/components/PortalBooking";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { brisbaneDateKey } from "@shared/localDateTime";
@@ -948,6 +949,8 @@ export default function ClientPortal() {
   const refetch = () => (isPreview ? preview.refetch() : token ? tokenPortal.refetch() : accountPortal.refetch());
 
   const [rescheduleTarget, setRescheduleTarget] = useState<PortalAppointment | null>(null);
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [extrasTarget, setExtrasTarget] = useState<PortalAppointment | null>(null);
   const [cancelTarget, setCancelTarget] = useState<PortalAppointment | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState<string>(""); // "" = not chosen yet, "any" = no preference, else staffId
   const [selectedDate, setSelectedDate] = useState("");
@@ -1040,6 +1043,7 @@ export default function ClientPortal() {
     {/* Signed in on their own account: worth saving to the Home Screen. Not
         on a staff preview, and not on an access-token link. */}
     <PortalCardNeededBanner token={token ?? undefined} readOnly={isPreview} previewCard={isPreview ? data.previewCard : undefined} />
+    <PortalBookCard token={token ?? undefined} readOnly={isPreview} onBook={() => setBookingOpen(true)} />
     <PortalMessagesCard token={token ?? undefined} readOnly={isPreview} onOpen={() => setChatOpen(true)} />
     {!isPreview && !token && <PortalInstallTip />}
     {inSalon.length > 0 && <section className="space-y-3">
@@ -1129,6 +1133,11 @@ export default function ClientPortal() {
               <Badge className="capitalize">{appointment.status}</Badge>
               {canManage(appointment) && (
                 <>
+                  {canReschedule(appointment) && (
+                    <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => setExtrasTarget(appointment)}>
+                      <Sparkles className="h-3.5 w-3.5" /> Add extras
+                    </Button>
+                  )}
                   {canReschedule(appointment) ? (
                     <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => openReschedule(appointment)}>
                       <PencilLine className="h-3.5 w-3.5" /> Reschedule
@@ -1194,6 +1203,9 @@ export default function ClientPortal() {
   </div>
 
   <PortalChatBubble token={token ?? undefined} readOnly={isPreview} clientFirstName={data.client.firstName} salonName={data.salon.name} open={chatOpen} onOpenChange={setChatOpen} />
+
+  {!isPreview && <PortalBookingDialog token={token ?? undefined} open={bookingOpen} onClose={() => setBookingOpen(false)} onBooked={() => refetch()} />}
+  {!isPreview && <PortalAddExtrasDialog token={token ?? undefined} appointment={extrasTarget} onClose={() => setExtrasTarget(null)} onAdded={() => refetch()} />}
 
   <Dialog open={!!rescheduleTarget} onOpenChange={(open) => !open && setRescheduleTarget(null)}>
     <DialogContent className="sm:max-w-sm">
