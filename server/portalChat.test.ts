@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  answerPortalMessage, requiresHuman, unreadForClient, unreadForStaff,
+  answerPortalMessage, isJustAcknowledgement, requiresHuman, unreadForClient, unreadForStaff,
   type PortalChatFacts,
 } from "../shared/portalChat";
 
@@ -144,5 +144,26 @@ describe("unread counts are derived from the messages", () => {
   it("is zero when read after the last message", () => {
     expect(unreadForStaff(msgs, "2026-10-05T04:00:00Z")).toBe(0);
     expect(unreadForClient(msgs, "2026-10-05T04:00:00Z")).toBe(0);
+  });
+});
+
+describe("isJustAcknowledgement (Andy, 24/11/2026: no handoff reply to a thank-you)", () => {
+  it.each([
+    "Thank you", "thanks!", "Thanks so much", "thank you so much xx", "Ok", "okay thanks", "Cheers",
+    "No worries", "Perfect, thank you", "sounds good", "Great thanks 😊", "👍", "🙏❤️", "ta", "Lovely, see you then",
+  ])("treats %j as an acknowledgement", (message) => {
+    expect(isJustAcknowledgement(message)).toBe(true);
+  });
+
+  it.each([
+    "Thanks, can I move Bella to Friday?",
+    "thank you, how much is the next groom",
+    "Thanks but she has a rash on her belly",
+    "ok?",
+    "When is my next appointment",
+    "Thanks for the groom, could you leave her ears longer next time",
+    "",
+  ])("still hands %j to the team", (message) => {
+    expect(isJustAcknowledgement(message)).toBe(false);
   });
 });
