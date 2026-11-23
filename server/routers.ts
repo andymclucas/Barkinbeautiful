@@ -26,6 +26,7 @@ import { previewMerge, mergeClientInto } from "./clientMerge";
 import { forgetPetThumb } from "./petThumbCache";
 import { adminProcedure, operationalProcedure, publicProcedure, protectedProcedure, requireCallerTenant, router, tenantOf } from "./_core/trpc";
 import { parseMessageSearch } from "@shared/messageSearch";
+import { orderMessageThreads } from "@shared/messageThreadOrder";
 import { needsPetAssignment, missingPetCount, planCoveredPetIds } from "@shared/membershipCoveredPets";
 import { missedCallSearchFilter } from "./missedCallSearchFilter";
 import { departedBookingMessage } from "@shared/petBookable";
@@ -7738,6 +7739,7 @@ const petsRouter = router({
       name: z.string().trim().min(1).max(100).optional(),
       breed: z.string().trim().max(100).nullable().optional(),
       gender: z.enum(["male", "female", "unknown"]).optional(),
+      desexed: z.boolean().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -7753,6 +7755,7 @@ const petsRouter = router({
       if (input.name !== undefined) updates.name = input.name;
       if (input.breed !== undefined) updates.breed = input.breed || null;
       if (input.gender !== undefined) updates.gender = input.gender;
+      if (input.desexed !== undefined) updates.desexed = input.desexed;
       if (Object.keys(updates).length === 0) return { success: true, changed: false };
       await db.update(pets).set(updates)
         .where(and(eq(pets.id, input.petId), eq(pets.tenantId, tenantOf(ctx, input))));
@@ -14503,7 +14506,7 @@ const smsRouter = router({
       const searchFilter = messageSearchFilter(search);
       if (searchFilter) filters.push(searchFilter);
 
-      const rows = await db.select({
+      const threadColumns = {
         id: smsLogs.id, toNumber: smsLogs.toNumber, body: smsLogs.body,
         direction: smsLogs.direction, sentAt: smsLogs.sentAt, readAt: smsLogs.readAt,
         readByName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.user_id = ${smsLogs.readByUserId} LIMIT 1)`,
@@ -14513,7 +14516,8 @@ const smsRouter = router({
         assignedStaffName: sql<string | null>`(SELECT s.name FROM staff s WHERE s.id = ${smsLogs.assignedStaffId} LIMIT 1)`,
         clientId: smsLogs.clientId,
         clientName: sql`CONCAT(${clients.firstName}, ' ', ${clients.lastName})`,
-      }).from(smsLogs)
+      };
+      const windowRows = await db.select(threadColumns).from(smsLogs)
         .leftJoin(clients, eq(smsLogs.clientId, clients.id))
         .where(and(...filters))
         .orderBy(desc(smsLogs.sentAt))
@@ -14522,6 +14526,18 @@ const smsRouter = router({
         // A flat 1000 was fine at 117 threads and would quietly stop
         // finding them at a few thousand messages.
         .limit(search.active ? 5000 : Math.max(1000, input.limit * 25));
+      // Unread texts older than that window are fetched on their own and
+      // added at the end, so an unread conversation can never fall out of
+      // the list while the sidebar badge goes on counting it (Lauren,
+      // 24/11/2026: "showing 3 unread messages but for life i cant find
+      // them"). Cheap: there are a handful at any time.
+      const windowIds = new Set(windowRows.map((r) => r.id));
+      const unreadRows = await db.select(threadColumns).from(smsLogs)
+        .leftJoin(clients, eq(smsLogs.clientId, clients.id))
+        .where(and(...filters, eq(smsLogs.direction, "inbound" as const), isNull(smsLogs.readAt)))
+        .orderBy(desc(smsLogs.sentAt))
+        .limit(500);
+      const rows = [...windowRows, ...unreadRows.filter((r) => !windowIds.has(r.id))];
 
       // Group in memory by a stable thread key (clientId if known, else the raw number).
       const threads = new Map<string, {
@@ -14571,7 +14587,8 @@ const smsRouter = router({
       // the UI — hiding it client-side would still ship every groomer the
       // names.
       const canSeeReaders = canAdministerStaff(ctx.user);
-      const all = Array.from(threads.values()).sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
+      // Unread conversations first, then newest first (shared/messageThreadOrder.ts).
+      const all = orderMessageThreads(Array.from(threads.values()));
       const page = all.slice(0, input.limit);
       // VIP beside members in the thread list (server/vipMembers.ts).
       const vip = await loadVipMembers(db, tenantOf(ctx, input), { clientIds: page.map((t) => t.clientId) });

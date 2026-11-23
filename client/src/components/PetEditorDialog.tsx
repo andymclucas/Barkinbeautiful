@@ -30,7 +30,23 @@ export type EditablePet = {
   name: string;
   breed: string | null;
   sizeBand?: string | null;
+  gender?: string | null;
+  desexed?: boolean | null;
 };
+
+/**
+ * Lauren, 24/11/2026: "it wont let me edit the dogs Gender". The card showed
+ * the gender and the server could already save it, but nothing on screen
+ * could change it, so every MoeGo import stayed "unknown".
+ */
+const GENDERS = [
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "unknown", label: "Not known" },
+] as const;
+type Gender = (typeof GENDERS)[number]["value"];
+const asGender = (g: string | null | undefined): Gender =>
+  g === "male" || g === "female" ? g : "unknown";
 
 export function PetEditorDialog({
   open,
@@ -49,6 +65,8 @@ export function PetEditorDialog({
   const [name, setName] = useState("");
   const [breed, setBreed] = useState("");
   const [sizeBand, setSizeBand] = useState("");
+  const [gender, setGender] = useState<Gender>("unknown");
+  const [desexed, setDesexed] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [blocker, setBlocker] = useState<string | null>(null);
 
@@ -57,6 +75,8 @@ export function PetEditorDialog({
     setName(pet?.name ?? "");
     setBreed(pet?.breed ?? "");
     setSizeBand(pet?.sizeBand ?? "");
+    setGender(asGender(pet?.gender));
+    setDesexed(Boolean(pet?.desexed));
     setConfirmingDelete(false);
     setBlocker(null);
   }, [open, pet]);
@@ -95,13 +115,15 @@ export function PetEditorDialog({
       if ((pet.sizeBand ?? "") !== sizeBand) {
         await updateBand.mutateAsync({ petId: pet.id, sizeBand: sizeBand || null });
       }
-      update.mutate({ petId: pet.id, name: name.trim(), breed: breed.trim() || null });
+      update.mutate({ petId: pet.id, name: name.trim(), breed: breed.trim() || null, gender, desexed });
     } else {
       create.mutate({
         clientId,
         name: name.trim(),
         ...(breed.trim() ? { breed: breed.trim() } : {}),
         ...(sizeBand ? { sizeBand } : {}),
+        gender,
+        desexed,
       });
     }
   };
@@ -135,6 +157,29 @@ export function PetEditorDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Gender</Label>
+            <div className="flex flex-wrap items-center gap-3">
+              <Select value={gender} onValueChange={(v) => setGender(asGender(v))}>
+                <SelectTrigger aria-label="Gender" className="w-40"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {GENDERS.map((g) => (
+                    <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={desexed}
+                  onChange={(e) => setDesexed(e.target.checked)}
+                />
+                Desexed
+              </label>
+            </div>
           </div>
 
           {pet && (
