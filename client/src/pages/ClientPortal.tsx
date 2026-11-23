@@ -203,7 +203,7 @@ function PortalPaymentMethodCard({ token, readOnly, salonName }: { token?: strin
             <p className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <span>
-                You&rsquo;ll be taken to Stripe, our payment provider, to enter your card on their secure page.
+                You&rsquo;ll be taken to Stripe, our payment provider, to enter your card on their secure page.{" "}
                 {clientSalonName(salonName).replace(/^the salon$/, "The salon")} never sees or stores your full card number. Nothing is charged when you
                 save a card.
               </span>
