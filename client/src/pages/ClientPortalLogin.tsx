@@ -16,8 +16,17 @@ export default function ClientPortalLogin() {
   const [, navigate] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  /*
+   * The same email and password can open accounts at two salons (one
+   * person, a client of both). The server then asks which, and the page
+   * offers one button per salon. shared/portalSignInSalon.ts.
+   */
+  const [chooseSalon, setChooseSalon] = useState<Array<{ tenantId: number; name: string }> | null>(null);
   const login = trpc.clientPortal.login.useMutation({
-    onSuccess: () => navigate("/portal"),
+    onSuccess: (result) => {
+      if (result.success) navigate("/portal");
+      else setChooseSalon(result.chooseSalon);
+    },
   });
   // Already signed in on this device: the sign-in page is a detour.
   const session = trpc.clientPortal.me.useQuery(undefined, { retry: false });
@@ -43,6 +52,7 @@ export default function ClientPortalLogin() {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setChooseSalon(null);
     login.mutate({ email, password });
   };
 
@@ -81,6 +91,17 @@ export default function ClientPortalLogin() {
             <div className="space-y-2"><Label htmlFor="client-email">Email</Label><div className="relative"><Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input id="client-email" className="pl-9" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required /></div></div>
             <div className="space-y-2"><Label htmlFor="client-password">Password</Label><Input id="client-password" type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required /></div>
             {login.error && <p className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{login.error.message}</p>}
+            {chooseSalon && (
+              <div role="group" aria-label="Choose a salon" className="space-y-2 rounded-lg bg-primary/10 p-3">
+                <p className="text-sm">You have an account with more than one salon. Which would you like to open?</p>
+                {chooseSalon.map((salon) => (
+                  <Button key={salon.tenantId} type="button" variant="outline" className="w-full" disabled={login.isPending}
+                    onClick={() => login.mutate({ email, password, salonId: salon.tenantId })}>
+                    {salon.name}
+                  </Button>
+                ))}
+              </div>
+            )}
             <Button type="submit" className="w-full" disabled={login.isPending}>{login.isPending ? "Signing in…" : "Sign in to client portal"}</Button>
             <button type="button" className="block w-full text-center text-sm font-medium text-primary underline-offset-4 hover:underline" onClick={() => { reset.reset(); setResetOpen(true); }}>Forgot password?</button>
           </form>
