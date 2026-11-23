@@ -517,6 +517,13 @@ account**, not `STRIPE_SECRET_KEY`: `GROOMIGO_STRIPE_SECRET_KEY`,
 account exists: billing is closed, no plan is offered and **no trial locks a
 salon out**. There is deliberately no fallback to `STRIPE_SECRET_KEY`.
 Checklist: `docs/groomigo-billing-switch-on.md`.
+Client card payments for any salon **other than Barkin' Beautiful** run only
+on that salon's own connected Stripe account, never on `STRIPE_SECRET_KEY`
+(which is Barkin' Beautiful's own Stripe), and only once
+`STRIPE_CONNECT_WEBHOOK_SECRET` is set for `/api/stripe/connect-webhook`.
+Unset, those salons are refused card payments and Barkin' Beautiful is
+unaffected. Rule: `clientMoneyAccount` in `shared/stripeConnect.ts`.
+Checklist: `docs/other-salon-card-payments.md`.
 Optional: `ANTHROPIC_API_KEY` turns on automatic sorting of staff problem
 reports (`server/issueTriage.ts`); unset, reports simply arrive unsorted.
 Push notifications: `VAPID_PRIVATE_KEY` (the only required one),

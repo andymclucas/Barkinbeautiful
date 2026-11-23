@@ -10392,7 +10392,7 @@ const membershipsRouter = router({
       const invoiceIds = Array.from(new Set(lastInvoice.values()));
       const reasons = new Map<string, string | null>();
       await Promise.all(invoiceIds.map(async (invoiceId) => {
-        reasons.set(invoiceId, describeMembershipFailure(await invoiceFailureDetail(invoiceId)));
+        reasons.set(invoiceId, describeMembershipFailure(await invoiceFailureDetail(invoiceId, tenantOf(ctx, input))));
       }));
 
       return rows.map(({ stripeSubscriptionId, ...row }) => {

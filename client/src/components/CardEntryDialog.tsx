@@ -46,9 +46,13 @@ import {
  * tag, and calling it on every open would add one each time.
  */
 const stripeCache = new Map<string, Promise<Stripe | null>>();
-function stripeFor(key: string) {
-  if (!stripeCache.has(key)) stripeCache.set(key, loadStripe(key));
-  return stripeCache.get(key)!;
+/** `stripeAccount`: a salon's own connected account, where its cards are saved. */
+function stripeFor(key: string, stripeAccount: string | null) {
+  const cacheKey = `${key}|${stripeAccount ?? ""}`;
+  if (!stripeCache.has(cacheKey)) {
+    stripeCache.set(cacheKey, stripeAccount ? loadStripe(key, { stripeAccount }) : loadStripe(key));
+  }
+  return stripeCache.get(cacheKey)!;
 }
 
 /**
@@ -183,8 +187,8 @@ export function CardEntryDialog({ clientName, open, onOpenChange, onSaved, ...ta
   const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
 
   useEffect(() => {
-    if (config?.inPlace && config.publishableKey) setStripePromise(stripeFor(config.publishableKey));
-  }, [config?.inPlace, config?.publishableKey]);
+    if (config?.inPlace && config.publishableKey) setStripePromise(stripeFor(config.publishableKey, config.stripeAccount ?? null));
+  }, [config?.inPlace, config?.publishableKey, config?.stripeAccount]);
 
   const options = useMemo(() => ({ appearance: { theme: "stripe" as const } }), []);
 

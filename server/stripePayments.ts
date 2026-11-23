@@ -3,6 +3,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { clients, invoices, membershipLedgerEntries, membershipPayments, membershipPets, memberships, pets, stripeEvents, tenants } from "../drizzle/schema";
 import { getDb } from "./db";
 import { requireStripeClient } from "./stripeClient";
+import { clientMoneyAccountFor, requireClientStripe, tenantIdOfClient } from "./clientStripe";
 import { syncAccountStatus, tenantIdForStripeAccount } from "./stripeConnectAccounts";
 import { chargesOnConnectedAccount, platformFeeCents } from "../shared/stripeConnect";
 import { attachPaymentMethodToClient } from "./stripeCards";
@@ -172,27 +173,18 @@ async function prepareCheckout(
 ) {
   const stripe = requireStripeClient();
 
-  // Whose account does this money go to?
-  //
-  // Only the salon's own, and only once Stripe says it can take charges.
-  // Everything else — no account, mid-onboarding, under review — falls
-  // back to the platform account, which is exactly what happens today.
-  // That fallback is what keeps Barkin' Beautiful, who have no connected
-  // account, taking payments through this change.
-  const [tenant] = await db.select({
-    stripeAccountId: tenants.stripeAccountId,
-    stripeChargesEnabled: tenants.stripeChargesEnabled,
-    stripeDetailsSubmitted: tenants.stripeDetailsSubmitted,
-    platformFeeBps: tenants.platformFeeBps,
-  }).from(tenants).where(eq(tenants.id, input.tenantId)).limit(1);
-
-  const onConnected = tenant ? chargesOnConnectedAccount(tenant) : false;
-  // Stripe's own option bag. Empty means "the platform account", which is
-  // the behaviour every payment has today.
-  const stripeAccount = onConnected && tenant?.stripeAccountId
-    ? { stripeAccount: tenant.stripeAccountId }
-    : undefined;
-  const feeCents = onConnected ? platformFeeCents(input.totalCents, tenant?.platformFeeBps) : null;
+  // Whose account does this money go to? shared/stripeConnect.ts,
+  // clientMoneyAccount: Barkin' Beautiful on the platform account, which is
+  // its own Stripe; any other salon on its own connected account or not at
+  // all. It used to fall back to the platform account for every salon, which
+  // for anyone but Barkin' Beautiful meant their client's money landing in
+  // another business's bank.
+  const account = await clientMoneyAccountFor(input.tenantId);
+  if (account.kind === "refused") throw new Error(account.reason);
+  const onConnected = account.kind === "connected";
+  // Stripe's own option bag. Empty means "the platform account".
+  const stripeAccount = account.kind === "connected" ? { stripeAccount: account.accountId } : undefined;
+  const feeCents = onConnected ? platformFeeCents(input.totalCents, account.platformFeeBps) : null;
 
   const [client] = await db.select({ stripeCustomerId: clients.stripeCustomerId }).from(clients).where(eq(clients.id, input.clientId)).limit(1);
   let customerId = client?.stripeCustomerId ?? null;
@@ -410,7 +402,8 @@ export async function processStripeEvent(event: Stripe.Event) {
       // The client just entered a card on Stripe's hosted page.
       const setupIntentId = typeof session.setup_intent === "string" ? session.setup_intent : session.setup_intent?.id;
       if (setupIntentId) {
-        const stripe = requireStripeClient();
+        // On the client's own salon's account, which is where the card was saved.
+        const stripe = await requireClientStripe(await tenantIdOfClient(clientId));
         const setupIntent = await stripe.setupIntents.retrieve(setupIntentId);
         const paymentMethodId = typeof setupIntent.payment_method === "string"
           ? setupIntent.payment_method

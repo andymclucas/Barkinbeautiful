@@ -25,6 +25,7 @@
  * leaves the building, it cannot be unsent, and it can change a client's
  * saved email address on the way past.
  */
+import { clientMoneyAccountFor } from "../clientStripe";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
@@ -1043,10 +1044,20 @@ export const paymentsRouter = router({
    * publishable key the panel falls back to the hosted link, which
    * works today and needs no new configuration.
    */
-  cardEntryConfig: operationalProcedure.query(() => {
+  cardEntryConfig: operationalProcedure.query(async ({ ctx }) => {
     const key = (process.env.STRIPE_PUBLISHABLE_KEY ?? "").trim();
     const usable = key.startsWith("pk_") && key.length >= 30;
-    return { inPlace: usable, publishableKey: usable ? key : null };
+    /*
+     * Which account Stripe's card fields talk to. A salon other than
+     * Barkin' Beautiful saves cards on its own connected account
+     * (server/clientStripe.ts), and the browser must confirm the intent
+     * there or Stripe answers "No such setupintent". A salon that cannot
+     * take cards at all gets no in-place entry.
+     */
+    if (!usable || typeof ctx.tenantId !== "number") return { inPlace: false, publishableKey: null, stripeAccount: null };
+    const account = await clientMoneyAccountFor(ctx.tenantId);
+    if (account.kind === "refused") return { inPlace: false, publishableKey: null, stripeAccount: null };
+    return { inPlace: true, publishableKey: key, stripeAccount: account.kind === "connected" ? account.accountId : null };
   }),
 
   /**
@@ -1212,6 +1223,7 @@ export const paymentsRouter = router({
         paymentMethodId: client!.stripeDefaultPaymentMethodId!,
       });
       const result = await chargeSavedCard({
+        tenantId,
         customerId: client!.stripeCustomerId!,
         paymentMethodId: client!.stripeDefaultPaymentMethodId!,
         amountDollars: (amountCents / 100).toFixed(2),

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 
 const { getDb, requireStripeClient } = vi.hoisted(() => ({
   getDb: vi.fn(), requireStripeClient: vi.fn(),
@@ -41,7 +41,15 @@ const request = {
   origin: "https://staff.barkinbeautiful.com.au",
 };
 
-beforeEach(() => { getDb.mockReset(); requireStripeClient.mockReset(); });
+beforeEach(() => {
+  getDb.mockReset(); requireStripeClient.mockReset();
+  // Connected accounts are only used once their events can be received.
+  process.env.STRIPE_CONNECT_WEBHOOK_SECRET = "whsec_connect_test";
+});
+afterEach(() => { delete process.env.STRIPE_CONNECT_WEBHOOK_SECRET; });
+
+/** Nathan's salon, or any salon that is not Barkin' Beautiful. */
+const otherSalon = { ...request, tenantId: 7 };
 
 describe("a salon with no connected account", () => {
   it("charges on the platform account, exactly as it does today", async () => {
@@ -71,7 +79,7 @@ describe("a salon Stripe has cleared", () => {
     requireStripeClient.mockReturnValue(stripe);
     getDb.mockResolvedValue(dbWith(connected));
 
-    await createInvoiceCheckout(request as any);
+    await createInvoiceCheckout(otherSalon as any);
     const customer = stripe.calls.find(c => c.method === "customers.create")!;
     const checkout = stripe.calls.find(c => c.method === "checkout.create")!;
     // Both on the same account — a customer made on the platform cannot be
@@ -93,7 +101,7 @@ describe("a salon Stripe has cleared", () => {
     const stripe = stripeSpy();
     requireStripeClient.mockReturnValue(stripe);
     getDb.mockResolvedValue(dbWith({ ...connected, platformFeeBps: 250 }));
-    await createInvoiceCheckout(request as any);
+    await createInvoiceCheckout(otherSalon as any);
     const checkout = stripe.calls.find(c => c.method === "checkout.create")!;
     // 2.5% of a $145 groom is $3.62, floored.
     expect(checkout.params.payment_intent_data.application_fee_amount).toBe(362);
@@ -111,5 +119,36 @@ describe("a salon part way through onboarding", () => {
     const checkout = stripe.calls.find(c => c.method === "checkout.create")!;
     expect(checkout.options).toBeUndefined();
     expect(checkout.params.payment_intent_data.application_fee_amount).toBeUndefined();
+  });
+});
+
+describe("any salon but Barkin' Beautiful", () => {
+  it("is refused rather than taking its client's money on Barkin' Beautiful's account", async () => {
+    // The platform account IS Barkin' Beautiful's own Stripe. Falling back
+    // to it would pay Nathan's clients into Lauren's bank.
+    const stripe = stripeSpy();
+    requireStripeClient.mockReturnValue(stripe);
+    getDb.mockResolvedValue(dbWith({ stripeAccountId: null, stripeChargesEnabled: false, stripeDetailsSubmitted: false, platformFeeBps: null }));
+    await expect(createInvoiceCheckout(otherSalon as any)).rejects.toThrow(/Connect the salon's own Stripe account/);
+    expect(stripe.calls).toEqual([]);
+  });
+
+  it("is refused part way through onboarding too", async () => {
+    const stripe = stripeSpy();
+    requireStripeClient.mockReturnValue(stripe);
+    getDb.mockResolvedValue(dbWith({ stripeAccountId: "acct_half", stripeChargesEnabled: false, stripeDetailsSubmitted: true, platformFeeBps: null }));
+    await expect(createInvoiceCheckout(otherSalon as any)).rejects.toThrow(/not set up/);
+    expect(stripe.calls).toEqual([]);
+  });
+
+  it("is refused while its account's payment notices cannot be received", async () => {
+    // Charged on the connected account with no Connect webhook, the
+    // client pays and the invoice is never marked paid.
+    delete process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+    const stripe = stripeSpy();
+    requireStripeClient.mockReturnValue(stripe);
+    getDb.mockResolvedValue(dbWith({ stripeAccountId: "acct_salon2", stripeChargesEnabled: true, stripeDetailsSubmitted: true, platformFeeBps: null }));
+    await expect(createInvoiceCheckout(otherSalon as any)).rejects.toThrow(/payment notices/);
+    expect(stripe.calls).toEqual([]);
   });
 });

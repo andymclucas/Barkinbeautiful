@@ -1,3 +1,5 @@
+import { processConnectedStripeEvent } from "../connectWebhook";
+import { connectWebhookSecret } from "../clientStripe";
 import { automatedSmsPermitted } from "@shared/automatedSms";
 import { decideConfirmAction, decideReplyAction, describeReplyRefusal } from "@shared/inboundReplyAction";
 import { clientStatusSweepHandler } from "../clientStatusSweep";
@@ -141,11 +143,44 @@ async function startServer() {
       if (typeof signature !== "string") return res.status(400).send("Missing Stripe signature");
       const event = stripe.webhooks.constructEvent(req.body, signature, secret);
       if (event.id.startsWith("evt_test_")) return res.json({ verified: true });
-      await processStripeEvent(event);
+      // An event FROM a salon's connected account, should this endpoint
+      // ever be set to receive them, gets the same salon checks as the
+      // Connect endpoint rather than going straight to the handlers.
+      if (event.account) await processConnectedStripeEvent(event);
+      else await processStripeEvent(event);
       return res.json({ received: true });
     } catch (error) {
       console.error("[Stripe] Webhook verification failed", error);
       return res.status(400).send("Webhook verification failed");
+    }
+  });
+  /*
+   * Events from salons' own connected Stripe accounts (server/connectWebhook.ts).
+   *
+   * A Connect webhook in Barkin' Beautiful's Stripe ("events on connected
+   * accounts") with its own signing secret, STRIPE_CONNECT_WEBHOOK_SECRET.
+   * 503 until that secret is set — and until it is, no salon but Barkin'
+   * Beautiful can take a card payment at all (shared/stripeConnect.ts,
+   * clientMoneyAccount), so nothing is lost meanwhile.
+   */
+  app.post("/api/stripe/connect-webhook", express.raw({ type: "application/json" }), async (req, res) => {
+    const secret = connectWebhookSecret();
+    const key = process.env.STRIPE_SECRET_KEY ?? "";
+    if (!secret || !key) return res.status(503).json({ error: "Stripe Connect webhook is not configured" });
+    const signature = req.headers["stripe-signature"];
+    if (typeof signature !== "string") return res.status(400).send("Missing Stripe signature");
+    let event: Stripe.Event;
+    try {
+      event = new Stripe(key, { typescript: true }).webhooks.constructEvent(req.body, signature, secret);
+    } catch (error) {
+      console.error("[Stripe] Connect webhook verification failed", error);
+      return res.status(400).send("Webhook verification failed");
+    }
+    try {
+      return res.json(await processConnectedStripeEvent(event));
+    } catch (error) {
+      console.error(`[Stripe] Connect webhook ${event.type} ${event.id} failed`, error);
+      return res.status(500).send("Webhook handler failed");
     }
   });
   /*

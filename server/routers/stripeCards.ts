@@ -14,7 +14,9 @@ import { z } from "zod";
 import { groomsFreeDuringPause } from "@shared/membershipCoverageDrift";
 import { resolvePauseResumesAt } from "@shared/membershipPause";
 import { and, desc, eq, gte, isNull, inArray } from "drizzle-orm";
-import { router, adminProcedure } from "../_core/trpc";
+import { TRPCError } from "@trpc/server";
+import { router, adminProcedure, requireCallerTenant } from "../_core/trpc";
+import { requireClientStripe } from "../clientStripe";
 import { getDb } from "../db";
 import { appointments, clients, memberships, membershipPayments, pets } from "../../drizzle/schema";
 import {
@@ -56,6 +58,40 @@ const cardColumns = {
   stripeCardSavedAt: clients.stripeCardSavedAt,
 };
 
+/*
+ * Which salon's records a caller may act on.
+ *
+ * Every procedure here takes a client or membership id. Until 23/11/2026
+ * the card functions refused anything outside Barkin' Beautiful (tenant 1),
+ * which was the only thing stopping one salon's admin acting on another's
+ * clients by id. Those blocks are gone now that every salon can take card
+ * payments, so the check is made here instead: the record must belong to
+ * the salon the caller is signed in to.
+ */
+type SalonCtx = { tenantId?: number | null };
+
+async function requireOwnClient(ctx: SalonCtx, clientId: number): Promise<number> {
+  const tenantId = requireCallerTenant(ctx);
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const [row] = await db.select({ tenantId: clients.tenantId }).from(clients).where(eq(clients.id, clientId)).limit(1);
+  if (!row || row.tenantId !== tenantId) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
+  return tenantId;
+}
+
+async function requireOwnMemberships(ctx: SalonCtx, membershipIds: number[]): Promise<number> {
+  const tenantId = requireCallerTenant(ctx);
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const ids = Array.from(new Set(membershipIds));
+  const rows = await db.select({ tenantId: memberships.tenantId }).from(memberships).where(inArray(memberships.id, ids));
+  // A membership with no salon recorded is a legacy Barkin' Beautiful row.
+  if (rows.length !== ids.length || rows.some((r) => (r.tenantId ?? 1) !== tenantId)) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Membership not found" });
+  }
+  return tenantId;
+}
+
 export const stripeCardsRouter = router({
   /** Whether this deployment can charge anything at all, and in which mode. */
   configuration: adminProcedure.query(() => {
@@ -68,7 +104,8 @@ export const stripeCardsRouter = router({
 
   cardStatus: adminProcedure
     .input(z.object({ clientId: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOwnClient(ctx, input.clientId);
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [client] = await db.select(cardColumns).from(clients).where(eq(clients.id, input.clientId)).limit(1);
@@ -92,7 +129,12 @@ export const stripeCardsRouter = router({
     .input(z.object({ clientId: z.number() }))
     /* The short link: this one is handed to a client, by whichever
        channel the salon picks. */
-    .mutation(async ({ input }) => ({ url: clientCardLink(input.clientId) })),
+    .mutation(async ({ input, ctx }) => {
+      // Refused here, before the link is handed out, when this salon
+      // cannot take cards — not when the client opens it.
+      await requireClientStripe(await requireOwnClient(ctx, input.clientId));
+      return { url: clientCardLink(input.clientId) };
+    }),
 
   /**
    * The third way to get a card on file: type it in, here, now.
@@ -110,23 +152,33 @@ export const stripeCardsRouter = router({
    */
   createSetupIntent: adminProcedure
     .input(z.object({ clientId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnClient(ctx, input.clientId);
       const intent = await createCardSetupIntent(input.clientId);
       return { clientSecret: intent.clientSecret, setupIntentId: intent.setupIntentId };
     }),
 
   saveSetupIntent: adminProcedure
     .input(z.object({ clientId: z.number(), setupIntentId: z.string().trim().min(5).max(255) }))
-    .mutation(async ({ input }) => saveCardFromSetupIntent(input.clientId, input.setupIntentId)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnClient(ctx, input.clientId);
+      return saveCardFromSetupIntent(input.clientId, input.setupIntentId);
+    }),
 
   /** Create the link AND email it to the client's address on file. */
   emailSetupLink: adminProcedure
     .input(z.object({ clientId: z.number() }))
-    .mutation(async ({ input }) => emailCardSetupLink(input.clientId)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnClient(ctx, input.clientId);
+      return emailCardSetupLink(input.clientId);
+    }),
 
   removeCard: adminProcedure
     .input(z.object({ clientId: z.number() }))
-    .mutation(async ({ input }) => detachClientCard(input.clientId)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnClient(ctx, input.clientId);
+      return detachClientCard(input.clientId);
+    }),
 
   startSubscription: adminProcedure
     // The cadence comes from the membership itself, not the caller: a
@@ -136,7 +188,10 @@ export const stripeCardsRouter = router({
       /** yyyy-mm-dd, Brisbane. Omitted charges now. */
       firstChargeOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     }))
-    .mutation(async ({ input }) => startMembershipSubscription(input.membershipId, input.firstChargeOn)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnMemberships(ctx, [input.membershipId]);
+      return startMembershipSubscription(input.membershipId, input.firstChargeOn);
+    }),
 
   /**
    * Bill several of one client's memberships as ONE payment, or add
@@ -153,7 +208,10 @@ export const stripeCardsRouter = router({
       /** yyyy-mm-dd, Brisbane. Omitted charges now. Ignored when joining a running payment. */
       firstChargeOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     }))
-    .mutation(async ({ input }) => startFamilySubscription(input.membershipIds, input.firstChargeOn)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnMemberships(ctx, input.membershipIds);
+      return startFamilySubscription(input.membershipIds, input.firstChargeOn);
+    }),
 
   /**
    * Combine a household's separate payments into one.
@@ -166,11 +224,17 @@ export const stripeCardsRouter = router({
    */
   mergeFamilyPayments: adminProcedure
     .input(z.object({ membershipIds: z.array(z.number().int().positive()).min(2).max(10) }))
-    .mutation(async ({ input }) => mergeFamilyPayments(input.membershipIds)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnMemberships(ctx, input.membershipIds);
+      return mergeFamilyPayments(input.membershipIds);
+    }),
 
   cancelSubscription: adminProcedure
     .input(z.object({ membershipId: z.number() }))
-    .mutation(async ({ input }) => cancelMembershipSubscription(input.membershipId)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnMemberships(ctx, [input.membershipId]);
+      return cancelMembershipSubscription(input.membershipId);
+    }),
 
   /**
    * Stop charging without tearing the subscription down, with the
@@ -189,7 +253,10 @@ export const stripeCardsRouter = router({
         z.object({ mode: z.literal("manual") }),
       ]).default({ mode: "manual" }),
     }))
-    .mutation(async ({ input }) => pauseMembershipSubscription(input.membershipId, input.plan)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnMemberships(ctx, [input.membershipId]);
+      return pauseMembershipSubscription(input.membershipId, input.plan);
+    }),
 
   /**
    * What pausing would do to grooms already in the diary.
@@ -214,7 +281,8 @@ export const stripeCardsRouter = router({
         z.object({ mode: z.literal("manual") }),
       ]).default({ mode: "manual" }),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await requireOwnMemberships(ctx, [input.membershipId]);
       const db = await getDb();
       if (!db) return { freeGrooms: [], until: null, openEnded: false };
 
@@ -278,7 +346,10 @@ export const stripeCardsRouter = router({
   /** Start charging a paused membership again. */
   resumeSubscription: adminProcedure
     .input(z.object({ membershipId: z.number() }))
-    .mutation(async ({ input }) => resumeMembershipSubscription(input.membershipId)),
+    .mutation(async ({ input, ctx }) => {
+      await requireOwnMemberships(ctx, [input.membershipId]);
+      return resumeMembershipSubscription(input.membershipId);
+    }),
 
   /**
    * Charge a membership now, from the counter, instead of waiting for the
@@ -287,7 +358,7 @@ export const stripeCardsRouter = router({
    */
   chargeNow: adminProcedure
     .input(z.object({ membershipId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new Error("DB unavailable");
       const [membership] = await db
@@ -303,7 +374,7 @@ export const stripeCardsRouter = router({
         .from(memberships)
         .where(eq(memberships.id, input.membershipId))
         .limit(1);
-      if (!membership?.clientId || (membership.tenantId ?? 1) !== 1) throw new Error("Membership not found");
+      if (!membership?.clientId || (membership.tenantId ?? 1) !== requireCallerTenant(ctx)) throw new Error("Membership not found");
 
       const [client] = await db.select(cardColumns).from(clients).where(eq(clients.id, membership.clientId)).limit(1);
       const now = new Date();
@@ -334,8 +405,9 @@ export const stripeCardsRouter = router({
       const lastFailure = { stripeInvoiceId: openInvoiceId };
 
       const result = lastFailure?.stripeInvoiceId
-        ? await payOpenInvoice(lastFailure.stripeInvoiceId, { staffPressed: true })
+        ? await payOpenInvoice(lastFailure.stripeInvoiceId, membership.tenantId, { staffPressed: true })
         : await chargeSavedCard({
+            tenantId: membership.tenantId,
             customerId: client.stripeCustomerId!,
             paymentMethodId: client.stripeDefaultPaymentMethodId!,
             amountDollars: membership.pricePerCycle ?? "0",
