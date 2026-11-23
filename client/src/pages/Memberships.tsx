@@ -14,11 +14,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { billingCycleFromWeeks, retryWarning } from "@shared/stripeBilling";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, CheckCircle, CheckCircle2, XCircle, RefreshCw, Landmark } from "lucide-react";
+import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ArrowUpDown, ArrowUp, ArrowDown, Plus, CheckCircle, CheckCircle2, XCircle, RefreshCw, Landmark } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { MembershipAccountsReceivable } from "@/components/MembershipAccountsReceivable";
 import { MembershipSignupRequests } from "@/components/MembershipSignupRequests";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { PageNumbers } from "@/components/PageNumbers";
+import { readSavedListView, type SavedListView } from "@shared/listPaging";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
@@ -1251,20 +1253,48 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function Memberships() {
-  const [search, setSearch] = useState("");
-  const [tierFilter, setTierFilter] = useState<string>("all");
+const MEMBERSHIPS_VIEW_KEY = "memberships:view";
+const MEMBERSHIP_TABS = ["active", "pending_payment", "paused", "cancelled", "failed_payments", "accounts_receivable", "receivable"];
+const MEMBERSHIP_SORT_KEYS: SortKey[] = ["client", "membership", "tier", "price", "nextBilling", "status"];
+
+/**
+ * Where the list was left: page, tab, filters and sort, kept for this
+ * browser tab so going to a client and coming back lands on the same page
+ * (shared/listPaging.ts). A deep link's ?tab= still wins, and starts on
+ * page 1 of that tab.
+ */
+function initialMembershipsView(): SavedListView {
+  const defaults: SavedListView = { page: 1, tab: "active", tier: "all", search: "", sortKey: "client", sortDir: "asc" };
+  if (typeof window === "undefined") return defaults;
+  let raw: string | null = null;
+  try { raw = window.sessionStorage.getItem(MEMBERSHIPS_VIEW_KEY); } catch { /* storage blocked: start fresh */ }
+  const saved = readSavedListView(raw, defaults, {
+    tabs: MEMBERSHIP_TABS,
+    tiers: TIER_OPTIONS.map((t) => t.value),
+    sortKeys: MEMBERSHIP_SORT_KEYS,
+  });
   // Deep link target for the notification bell: /memberships?tab=failed_payments
   // lands straight on the failed payments it was telling you about.
-  const [activeTab, setActiveTab] = useState(() => {
-    if (typeof window === "undefined") return "active";
-    const requested = new URLSearchParams(window.location.search).get("tab");
-    const allowed = ["active", "pending_payment", "paused", "cancelled", "failed_payments", "receivable"];
-    return requested && allowed.includes(requested) ? requested : "active";
-  });
-  const [page, setPage] = useState(1);
-  const [sortKey, setSortKey] = useState<SortKey>("client");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const requested = new URLSearchParams(window.location.search).get("tab");
+  if (requested && MEMBERSHIP_TABS.includes(requested) && requested !== saved.tab) {
+    return { ...saved, tab: requested, page: 1 };
+  }
+  return saved;
+}
+
+export default function Memberships() {
+  const [initialView] = useState(initialMembershipsView);
+  const [search, setSearch] = useState(initialView.search);
+  const [tierFilter, setTierFilter] = useState<string>(initialView.tier);
+  const [activeTab, setActiveTab] = useState(initialView.tab);
+  const [page, setPage] = useState(initialView.page);
+  const [sortKey, setSortKey] = useState<SortKey>(initialView.sortKey as SortKey);
+  const [sortDir, setSortDir] = useState<SortDir>(initialView.sortDir);
+  useEffect(() => {
+    const view: SavedListView = { page, tab: activeTab, tier: tierFilter, search, sortKey, sortDir };
+    try { window.sessionStorage.setItem(MEMBERSHIPS_VIEW_KEY, JSON.stringify(view)); } catch { /* storage blocked: nothing to keep */ }
+  }, [page, activeTab, tierFilter, search, sortKey, sortDir]);
+  const listTopRef = useRef<HTMLDivElement>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const { data: currentUser } = trpc.auth.me.useQuery();
   const isAdmin = currentUser?.role === "admin";
@@ -1328,6 +1358,15 @@ export default function Memberships() {
   const items: MembershipItem[] = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // A remembered page can be past the end once plans have been cancelled.
+  useEffect(() => {
+    if (data && page > totalPages) setPage(totalPages);
+  }, [data, page, totalPages]);
+  /** Jump to a page and bring the top of the list into view. */
+  const goToPage = (next: number) => {
+    setPage(Math.min(Math.max(1, next), totalPages));
+    listTopRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -1457,6 +1496,10 @@ export default function Memberships() {
 
           {STATUS_TABS.map(tab => (
             <TabsContent key={tab.key} value={tab.key} className="mt-4">
+              <div ref={tab.key === activeTab ? listTopRef : undefined} className="mb-3 flex scroll-mt-4 flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                <span>Showing {total === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, total)}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
+                <PageNumbers page={page} totalPages={totalPages} onPage={goToPage} label="Membership pages, top" />
+              </div>
               {isLoading ? (
                 <div className="text-center py-10 text-muted-foreground">Loading...</div>
               ) : (
@@ -1639,15 +1682,7 @@ export default function Memberships() {
 
         <div className={`flex items-center justify-between text-sm text-muted-foreground pt-1 ${FLOATING_BUTTON_CLEARANCE}`}>
           <span>Showing {total === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, total)}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span>Page {page} of {totalPages}</span>
-            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          <PageNumbers page={page} totalPages={totalPages} onPage={goToPage} label="Membership pages, bottom" />
         </div>
       </div>
 
