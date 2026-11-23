@@ -17,7 +17,7 @@ import { joinedContactBadge } from "@shared/appointmentContact";
 import { PetAlertFlag } from "@/components/PetAlertButton";
 import { describePetCode } from "@shared/petCodeMeanings";
 import { formatAestTime } from "@shared/auditTimestamp";
-import { Check, CheckCircle2, Clock, FileText, Link2, MessageSquare, Unlink } from "lucide-react";
+import { Check, CheckCircle2, Clock, FileText, Link2, MessageSquare, MoreVertical, Plus } from "lucide-react";
 import { VipMark } from "@/components/VipMark";
 import { Fragment, useState } from "react";
 import { toast } from "sonner";
@@ -329,7 +329,7 @@ function BathPriorityCell({ value, coordinated, onSave, onManageGroup, disabled,
           {BATH_PRIORITY_VALUES.map((priority) => <SelectItem key={priority} value={String(priority)}><span className="inline-flex items-center gap-1.5"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white" style={{ background: BATH_PRIORITY_META[priority].colour }}>{priority}</span>{BATH_PRIORITY_META[priority].label}</span></SelectItem>)}
         </SelectContent>
       </Select>
-      <button type="button" onClick={onManageGroup} disabled={disabled} className="flex w-full items-center justify-center gap-1 rounded border border-violet-200 dark:border-violet-900/50 bg-card px-1 py-0.5 text-[9px] font-semibold text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-950/50 disabled:cursor-not-allowed disabled:opacity-60" title="Coordinate one bathing priority across selected dogs">
+      <button type="button" onClick={onManageGroup} disabled={disabled} className={`flex w-full items-center justify-center gap-1 rounded px-1 py-0.5 text-[10px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${coordinated ? "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300" : "text-muted-foreground/70 hover:bg-muted hover:text-foreground"}`} title="Coordinate one bathing priority across selected dogs">
         <Link2 className="h-2.5 w-2.5" /> {coordinated ? "Together" : "Group dogs"}
       </button>
     </div>
@@ -436,11 +436,11 @@ export function WorkflowBoardTable({
                   instead of a block, so it still reads at a glance
                   without being the loudest thing on the board. */}
               <tr className="border-b bg-muted/60 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                <th className="px-2 py-3 text-center w-20">Time</th>
+                <th className="px-2 py-3 text-center w-24">Time</th>
                 <th className="px-2 py-3 text-center w-12 bg-blue-500/10 text-blue-700 dark:text-blue-300">Cage</th>
                 <th className="px-2 py-3 text-center w-12 bg-violet-500/10 text-violet-700 dark:text-violet-300">Tag</th>
                 <th className="px-2 py-3 text-left min-w-[140px]">Dog / Owner</th>
-                <th className="px-2 py-3 text-center w-14">Family</th>
+                <th className="px-2 py-3 text-center w-16">Family</th>
                 <th className="px-2 py-3 text-left w-36">Breed</th>
                 <th className="px-2 py-3 text-left min-w-[100px]">Service</th>
                 <th className="px-2 py-3 text-center w-24">Bath</th>
@@ -534,7 +534,7 @@ export function WorkflowBoardTable({
                 const rowBg = isComplete ? "bg-muted opacity-60"
                   : timerAlert ? "bg-red-50/40 dark:bg-red-950/40"
                   : timerWarn ? "bg-amber-50/30 dark:bg-amber-950/30"
-                  : idx % 2 === 0 ? "bg-card" : "bg-muted/50";
+                  : idx % 2 === 0 ? "bg-card" : "bg-muted/25";
 
                 return (
                   <Fragment key={appt.id}>
@@ -549,21 +549,21 @@ export function WorkflowBoardTable({
                   >
                     {/* Time */}
                     <td className="px-2 py-1.5 text-center">
-                      <span className="font-mono text-xs font-semibold text-muted-foreground">
+                      <span className="whitespace-nowrap font-mono text-xs font-semibold text-muted-foreground">
                         {fmtTime(appt.scheduledStart)}
                       </span>
                       {appt.checkedInAt && (
-                        <div className="text-[10px] text-violet-600 dark:text-violet-400 font-mono">In {fmtTime(appt.checkedInAt)}</div>
+                        <div className="whitespace-nowrap text-[10px] text-violet-600 dark:text-violet-400 font-mono">In {fmtTime(appt.checkedInAt)}</div>
                       )}
                       {totalMinutes !== null && (
-                        <div className="text-[10px] font-mono text-muted-foreground" title="Total time in salon">
+                        <div className="whitespace-nowrap text-[10px] font-mono text-muted-foreground" title="Total time in salon">
                           Total {formatDuration(totalMinutes)}
                         </div>
                       )}
                     </td>
 
                     {/* Cage # */}
-                    <td className="px-1 py-1.5 bg-blue-50/90 dark:bg-blue-950/90 border-x border-blue-200/80 dark:border-blue-900/80">
+                    <td className="px-1 py-1.5 bg-blue-50/50 dark:bg-blue-950/40">
                       <EditableNumber
                         value={appt.cageNumber}
                         onSave={v => update(appt.id, { cageNumber: v })}
@@ -577,7 +577,7 @@ export function WorkflowBoardTable({
                     </td>
 
                     {/* Tag # */}
-                    <td className="px-1 py-1.5 bg-violet-50/90 dark:bg-violet-950/90 border-r border-violet-200/80 dark:border-violet-900/80">
+                    <td className="px-1 py-1.5 bg-violet-50/50 dark:bg-violet-950/40">
                       <EditableNumber
                         value={appt.tagNumber}
                         onSave={v => update(appt.id, { tagNumber: v })}
@@ -825,62 +825,71 @@ export function WorkflowBoardTable({
                       </div>
                     </td>
 
-                    {/* Breed */}
                     {/* Family Link */}
-                    <td className="relative isolate overflow-visible px-1 py-1.5 text-center w-14">
+                    {/*
+                      * Andy, 23/11/2026: the family link "looks a bit janky".
+                      * It was a thick black bracket reaching out of this cell
+                      * across the dog's name, plus two icons per row. Now a
+                      * thin rail runs down the middle of this column joining
+                      * the family's rows, with one quiet badge on each. The
+                      * rail stays inside its own column, so nothing is drawn
+                      * over a name on any screen width.
+                      *
+                      * Both actions stay visible rather than appearing on
+                      * hover, because the salon works from tablets and a
+                      * touch screen has no hover.
+                      */}
+                    <td data-family-cell className="relative px-1 py-1.5 text-center w-16">
+                      {familyGroupId != null && (linkedAbove || linkedBelow) && (
+                        <span
+                          aria-hidden="true"
+                          data-family-rail={linkedAbove && linkedBelow ? "middle" : linkedAbove ? "end" : "start"}
+                          className={`pointer-events-none absolute ${readOnly ? "left-1/2" : "left-[calc(50%-9px)]"} w-[3px] -translate-x-1/2 rounded-full bg-violet-300 dark:bg-violet-700 ${linkedAbove ? "-top-px" : "top-1/2"} ${linkedBelow ? "-bottom-px" : "bottom-1/2"}`}
+                        />
+                      )}
                       {(() => {
                         const linkedPetNames: string[] = Array.from(new Set((appt as any).familyPetNames ?? []));
-                        const familyTooltip = linkedPetNames.length > 0 ? `Family linked: ${linkedPetNames.join(", ")}` : "Family linked";
-                        return (
-                          <div className="relative flex min-h-7 flex-col items-center justify-center gap-0.5">
-                            {/*
-                              * The bracket reaches LEFT, out of this cell
-                              * and across the dog/owner column. At -left-8
-                              * that is 32px, which is fine on a desktop
-                              * where the name column is wide and the text
-                              * stops short — and not fine on a phone,
-                              * where the column is narrow and the arm
-                              * drew straight through "Jen (Pet Sitter)".
-                              * Andy sent a photo of it on 04/11/2026.
-                              *
-                              * Half the reach below `sm`. It still reads
-                              * as one bracket joining the rows, because
-                              * what carries that is the vertical arm, not
-                              * how far the horizontal one travels.
-                              */}
-                            {linkedAbove && <span aria-hidden="true" data-family-bracket="above" className="pointer-events-none absolute -left-4 sm:-left-8 bottom-1/2 z-0 h-[calc(50%+1.55rem)] w-8 sm:w-12 rounded-bl-md border-b-4 border-l-4 border-slate-800 bg-transparent shadow-[0_0_0_2px_rgba(255,255,255,0.96)]" />}
-                            {linkedBelow && <span aria-hidden="true" data-family-bracket="below" className="pointer-events-none absolute -left-4 sm:-left-8 top-1/2 z-0 h-[calc(50%+1.55rem)] w-8 sm:w-12 rounded-tl-md border-l-4 border-t-4 border-slate-800 bg-transparent shadow-[0_0_0_2px_rgba(255,255,255,0.96)]" />}
-                            {familyGroupId ? (
-                              <div className="relative z-10 flex items-center gap-0.5">
+                        const familyTooltip = linkedPetNames.length > 0 ? `Family: ${linkedPetNames.join(", ")}` : "Family linked";
+                        const filtered = familyFilter === familyGroupId;
+                        if (familyGroupId) {
+                          return (
+                            <div className="relative flex min-h-7 items-center justify-center gap-0.5">
+                              <button
+                                type="button"
+                                className={`relative inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 ${filtered ? "bg-violet-600 text-white shadow-sm" : "bg-violet-50 text-violet-600 ring-1 ring-violet-200 hover:bg-violet-100 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-800"}`}
+                                title={`${familyTooltip}. ${filtered ? "Tap to show every dog again" : "Tap to show this family only"}`}
+                                aria-label={`${familyTooltip}. ${filtered ? "Clear family filter" : "Show this family only"}`}
+                                aria-pressed={filtered}
+                                data-family-badge={linkedAbove || linkedBelow ? "connected" : "standalone"}
+                                onClick={readOnly ? undefined : () => setFamilyFilter(filtered ? null : familyGroupId)}
+                              >
+                                <Link2 className="h-3.5 w-3.5" />
+                              </button>
+                              {!readOnly && (
                                 <button
-                                  className="group inline-flex items-center justify-center rounded-full transition-all hover:scale-110 focus:outline-none focus:ring-2 focus:ring-violet-400"
-                                  title={`${familyTooltip}. ${familyFilter === familyGroupId ? "Click to clear the family filter" : "Click to show this family only"}`}
-                                  aria-label={`${familyTooltip}. ${familyFilter === familyGroupId ? "Clear family filter" : "Show this family only"}`}
-                                  data-family-connector={linkedAbove || linkedBelow ? "connected" : "standalone"}
-                                  onClick={readOnly ? undefined : () => setFamilyFilter(familyFilter === familyGroupId ? null : familyGroupId)}
-                                >
-                                  <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors ${familyFilter === familyGroupId ? "bg-violet-800 text-white ring-2 ring-violet-400" : "bg-violet-600 text-white group-hover:bg-violet-700"}`}><Link2 className="h-3.5 w-3.5" /></span>
-                                </button>
-                                {!readOnly && <button
-                                  className="inline-flex h-5 w-5 items-center justify-center rounded text-violet-500 hover:bg-violet-100 dark:hover:bg-violet-950/50 hover:text-violet-700 dark:hover:text-violet-300 transition-colors"
+                                  type="button"
+                                  className="inline-flex h-6 w-4 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
                                   title={`${familyTooltip}. Manage or unlink this dog`}
                                   aria-label={`Manage or unlink ${appt.petName} from family: ${linkedPetNames.join(", ")}`}
                                   onClick={() => { setFamilyLinkPopup({ apptId: appt.id, petId: appt.petId, petName: appt.petName ?? "", petFamilyGroupId: familyGroupId ?? null }); setFamilySearch(""); }}
                                 >
-                                  <Unlink className="h-3 w-3" />
-                                </button>}
-                                <span className="sr-only">{familyTooltip}</span>
-                              </div>
-                            ) : readOnly ? null : (
-                              <button
-                                className="transition-all hover:scale-110"
-                                title="Link to family"
-                                onClick={() => { setFamilyLinkPopup({ apptId: appt.id, petId: appt.petId, petName: appt.petName ?? "", petFamilyGroupId: null }); setFamilySearch(""); }}
-                              >
-                                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full border-2 border-dashed border-slate-400 text-muted-foreground text-[10px] font-bold hover:border-violet-400 hover:text-violet-500 transition-colors">+</span>
-                              </button>
-                            )}
-                          </div>
+                                  <MoreVertical className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }
+                        if (readOnly || isComplete) return null;
+                        return (
+                          <button
+                            type="button"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground/40 transition-colors hover:bg-violet-50 hover:text-violet-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 dark:hover:bg-violet-950"
+                            title="Link to family"
+                            aria-label={`Link ${appt.petName ?? "this dog"} to a family`}
+                            onClick={() => { setFamilyLinkPopup({ apptId: appt.id, petId: appt.petId, petName: appt.petName ?? "", petFamilyGroupId: null }); setFamilySearch(""); }}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
                         );
                       })()}
                     </td>
@@ -1182,8 +1191,6 @@ export function WorkflowBoardTable({
                         <span className="text-slate-300 text-xs">—</span>
                       )}
                     </td>
-
-                    {/* Family Link */}
                   </tr>
                   </Fragment>
                 );

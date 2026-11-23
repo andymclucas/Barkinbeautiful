@@ -162,16 +162,12 @@ describe("family Workflow grouping", () => {
     expect(routerSource).toContain("eq(pets.familyGroupId, resolvedGroupId), eq(appointments.tenantId, tenantId)");
   });
 
-  it("returns all family dog names and makes the Workflow family control explicit and accessible", () => {
+  it("returns all family dog names for the Workflow family control", () => {
+    // How the control renders is tested by rendering it, in
+    // client/src/components/WorkflowBoardTable.test.tsx ("family link").
     const routerSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
-    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
-      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
     expect(routerSource).toContain("familyPetNames: row.petFamilyGroupId");
     expect(routerSource).toContain("familyPetNamesByGroup");
-    expect(boardSource).toContain("<Link2 className=");
-    expect(boardSource).toContain("const familyTooltip = linkedPetNames.length > 0");
-    expect(boardSource).toContain("Family linked:");
-    expect(boardSource).toContain("Manage or unlink");
   });
 
   it("allows approved staff to unlink only the selected dog from its family without altering booking or workflow history", () => {
@@ -184,19 +180,5 @@ describe("family Workflow grouping", () => {
     expect(boardSource).toContain("Need separate processing?");
     expect(boardSource).toContain("Appointments and workflow history are not changed.");
     expect(boardSource).toContain('"Unlink dog"');
-  });
-
-  it("draws an explicit connector only between consecutive Workflow rows in the same family group", () => {
-    const boardSource = readFileSync(new URL("../client/src/pages/WorkflowBoard.tsx", import.meta.url), "utf8")
-      + readFileSync(new URL("../client/src/components/WorkflowBoardTable.tsx", import.meta.url), "utf8");
-    expect(boardSource).toContain("const linkedAbove = familyGroupId != null");
-    expect(boardSource).toContain("const linkedBelow = familyGroupId != null");
-    expect(boardSource).toContain("isolate overflow-visible");
-    expect(boardSource).toContain('data-family-bracket="above"');
-    expect(boardSource).toContain('data-family-bracket="below"');
-    expect(boardSource).toContain("border-b-4 border-l-4 border-slate-800");
-    expect(boardSource).toContain("border-l-4 border-t-4 border-slate-800");
-    expect(boardSource).toContain("w-12");
-    expect(boardSource).toContain('data-family-connector={linkedAbove || linkedBelow ? "connected" : "standalone"}');
   });
 });

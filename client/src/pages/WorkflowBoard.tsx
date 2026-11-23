@@ -717,7 +717,7 @@ export default function WorkflowBoard() {
             bathQueueByAppointmentId={bathQueueByAppointmentId}
             readOnly
           />
-          <p className="text-xs text-muted-foreground dark:text-slate-300 mt-3 text-right">Auto-refreshes every 20s</p>
+          <p className="text-xs text-muted-foreground dark:text-slate-300 mt-3 text-right">Updates live</p>
         </div>
       </div>
     );
@@ -1082,7 +1082,7 @@ export default function WorkflowBoard() {
           ))}
           <span className="flex items-center gap-1 ml-4"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-amber-200 dark:bg-amber-900/50" /> 30-60 min in stage</span>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm inline-block bg-red-200 dark:bg-red-900/50" /> 60+ min in stage</span>
-          <span className="ml-auto text-muted-foreground">Auto-refreshes every 20s</span>
+          <span className="ml-auto text-muted-foreground">Updates live</span>
         </div>
       </div>
       </div>
