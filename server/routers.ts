@@ -93,7 +93,7 @@ import { outstandingForInvoice } from "./invoicePaymentPosting";
 import { isMoegoInvoice, portalInvoicePayable } from "@shared/portalInvoicePay";
 import { normalizePetAlertLevel } from "../shared/petAlertStatus";
 import { CLIENT_PORTAL_ACCESS_TTL_MS, clientPortalLinkRenewal, createClientPortalToken, hashClientPortalToken, isClientPortalLinkExpired } from "../shared/clientPortalAccess";
-import { answerPortalMessage, offerToModel, PORTAL_HANDOFF_LINE, unreadForClient, unreadForStaff, type PortalChatFacts, type PortalChatReply } from "../shared/portalChat";
+import { answerPortalMessage, isJustAcknowledgement, offerToModel, PORTAL_HANDOFF_LINE, unreadForClient, unreadForStaff, type PortalChatFacts, type PortalChatReply } from "../shared/portalChat";
 import { asksForPerson } from "../shared/supportChat";
 import { textableNumbers } from "../shared/textableNumbers";
 import { answerPortalWithModel } from "./portalAssistant";
@@ -18031,6 +18031,18 @@ const clientPortalRouter = router({
        * See shared/portalChat.ts.
        */
       const wantsPerson = input.wantsPerson === true || asksForPerson(input.body);
+      /*
+       * A plain "thank you" or "ok" gets no automatic reply (Andy,
+       * 24/11/2026). The message is kept and staff still see it, but the
+       * thread's status is left as it was: a thank-you after the salon
+       * answered needs nobody, and one sent while a question is still
+       * waiting does not take that question off the team's list.
+       */
+      if (!wantsPerson && isJustAcknowledgement(input.body)) {
+        await db.update(portalThreads).set({ lastMessageAt: now, lastClientMessageAt: now })
+          .where(eq(portalThreads.id, thread.id));
+        return { success: true, handedOff: false };
+      }
       let reply: PortalChatReply = wantsPerson
         ? { body: PORTAL_HANDOFF_LINE, handedOff: true, intent: "needs_human" }
         : answerPortalMessage(input.body, facts);

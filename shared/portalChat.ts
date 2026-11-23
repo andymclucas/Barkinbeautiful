@@ -78,6 +78,44 @@ export function requiresHuman(message: string): boolean {
   return has(message.toLowerCase(), ALWAYS_HUMAN);
 }
 
+/**
+ * A message that only says thanks, or ok, and asks for nothing.
+ *
+ * Andy, 24/11/2026: "if it's just someone responding to say 'thank you',
+ * no need to respond again with a 'I've passed this onto the team'
+ * message". Those got the handoff line, which reads as though the salon
+ * had not listened, and put the thread back in front of staff as though
+ * it needed an answer.
+ *
+ * Deliberately narrow: short, no question mark, nothing from the
+ * always-human list, and made only of words that thank or agree. "Thanks,
+ * can I move Bella to Friday?" is not an acknowledgement, and neither is
+ * anything this does not recognise; when in doubt the team still hears.
+ */
+const ACK_WORDS = new Set([
+  "thank", "thanks", "thankyou", "thx", "ty", "ta", "cheers", "much", "so", "very", "you", "u",
+  "ok", "okay", "okey", "k", "kk", "sure", "yes", "yep", "yup", "yeah", "no", "worries", "problem", "probs",
+  "great", "perfect", "awesome", "lovely", "amazing", "brilliant", "excellent", "fantastic", "wonderful", "good", "nice", "beautiful",
+  "sounds", "all", "that", "thats", "that's", "is", "will", "do", "done", "noted", "got", "it", "see", "then", "soon",
+  "appreciate", "appreciated", "appreciated!", "legend", "again", "heaps", "lots", "a", "lot", "the", "team", "guys", "both",
+  "love", "xx", "xxx", "x", "haha", "lol", "and", "for", "everything", "help", "your", "all",
+]);
+
+export function isJustAcknowledgement(message: string): boolean {
+  const text = message.toLowerCase().trim();
+  if (!text || text.length > 80 || text.includes("?")) return false;
+  if (requiresHuman(text)) return false;
+  // Emoji and punctuation alone ("👍", "🙏❤️", "!!") are an acknowledgement.
+  const words = text
+    .replace(/[\p{Extended_Pictographic}\u200d\ufe0f]/gu, " ")
+    .replace(/[^\p{L}\p{N}'\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return true;
+  if (words.length > 8) return false;
+  return words.every((w) => ACK_WORDS.has(w));
+}
+
 export function answerPortalMessage(message: string, facts: PortalChatFacts): PortalChatReply {
   const text = message.toLowerCase().trim();
   const handoff = (intent: PortalChatIntent = "needs_human"): PortalChatReply => ({
