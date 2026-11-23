@@ -129,6 +129,12 @@ export async function portalInviteAudience(db: any, tenantId: number, scope: Por
   return { ...result, activeClients: candidates.length };
 }
 
+/** The red "please add your card" box in the portal invitation. */
+export const CARD_NEEDED_BLOCK = `<div style="margin:20px 0;padding:14px 16px;border:2px solid #dc2626;border-radius:10px;background:#fef2f2">
+    <p style="margin:0;font-size:18px;font-weight:bold;color:#dc2626">Please add your card details</p>
+    <p style="margin:6px 0 0;color:#991b1b">Once your portal is set up, open <strong>Payment details</strong> and add your card so it is ready for your visits. Nothing is charged when you save it.</p>
+  </div>`;
+
 export function portalInviteEmail(input: {
   firstName: string | null;
   salonName: string;
@@ -136,6 +142,15 @@ export function portalInviteEmail(input: {
   setupUrl: string;
   expiresAt: Date;
   agreementTitles: string[];
+  /**
+   * True when the client has no card saved with the salon. Clients were
+   * missing that the portal is where they add one (Lauren, 23/11/2026:
+   * "does it clearly say the customer needs to update their card details?
+   * like RED WRITING!"), so for them the email leads with it, in red.
+   * Left out, it shows: a client with a card already saved is the one
+   * that has to be said, never assumed.
+   */
+  needsCard?: boolean;
 }): { subject: string; html: string } {
   const salon = escapeHtml(input.salonName);
   const expires = input.expiresAt.toLocaleDateString("en-AU", {
@@ -152,6 +167,7 @@ export function portalInviteEmail(input: {
     html: `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.55;color:#1f2937;max-width:560px">
   <p>${escapeHtml(inviteGreeting(input.firstName))}</p>
   <p>${salon} now has a client portal. You can see your upcoming appointments, follow your dog's groom on the day, and keep your details and payment card up to date.</p>
+  ${input.needsCard === false ? "" : CARD_NEEDED_BLOCK}
   ${agreementLine}
   <p style="margin:24px 0"><a href="${input.setupUrl}" style="background:#db2777;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:bold;display:inline-block">Set up my portal</a></p>
   <p style="font-size:13px;color:#6b7280">This link is just for you and works until ${escapeHtml(expires)}.</p>
@@ -177,6 +193,7 @@ async function issueSetupLinkForCampaign(db: any, clientId: number, tenantId: nu
     portalAccountStatus: clients.portalAccountStatus,
     portalLoginEmail: clients.portalLoginEmail,
     portalSetupExpiresAt: clients.portalSetupExpiresAt,
+    stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId,
   })
     .from(clients)
     .where(and(eq(clients.id, clientId), eq(clients.tenantId, tenantId)))
@@ -229,7 +246,7 @@ async function issueSetupLinkForCampaign(db: any, clientId: number, tenantId: nu
   if (Number(result?.[0]?.affectedRows ?? 0) !== 1) {
     return { skip: "Skipped: the client's portal changed while sending" as const };
   }
-  return { firstName: client.firstName as string | null, setup };
+  return { firstName: client.firstName as string | null, setup, hasCard: Boolean(client.stripeDefaultPaymentMethodId) };
 }
 
 const running = new Set<number>();
@@ -332,6 +349,7 @@ async function processCampaign(
           setupUrl: `${baseUrl}/portal/setup/${issued.setup.token}`,
           expiresAt: issued.setup.expiresAt,
           agreementTitles: pending.map((a) => a.title),
+          needsCard: !issued.hasCard,
         });
         // The live sender returns Resend's id with the result; older or
         // test senders return a bare boolean.
