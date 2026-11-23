@@ -80,6 +80,13 @@ export type OnlineBookingNotifyInput = {
    * proves the notification works, and it carries "(test booking)".
    */
   preview?: boolean;
+  /**
+   * A booking the client made in their own portal (24/11/2026). They see
+   * it confirmed on screen, so no email or text is sent: a new automatic
+   * client message needs Andy's word first (CLAUDE.md, client messaging).
+   * The staff bell row is written as usual.
+   */
+  silentForClient?: boolean;
 };
 
 export type OnlineBookingNotifyResult = {
@@ -176,6 +183,8 @@ export async function notifyOnlineBooking(
   // 2. The email. Not for a preview — see `preview` on the input type.
   if (input.preview) {
     out.skipped.push("preview: no client email");
+  } else if (input.silentForClient) {
+    out.skipped.push("portal booking: no client email");
   } else if (!client?.email) {
     out.skipped.push("no email address");
   } else {
@@ -197,6 +206,8 @@ export async function notifyOnlineBooking(
   //    person who filled in a form on the real site.
   if (input.preview) {
     out.skipped.push("preview: no client SMS");
+  } else if (input.silentForClient) {
+    out.skipped.push("portal booking: no client SMS");
   } else if (process.env.SMS_AUTOMATION_ENABLED !== "true") {
     out.skipped.push("SMS automation disabled");
   } else if (!client?.phone) {

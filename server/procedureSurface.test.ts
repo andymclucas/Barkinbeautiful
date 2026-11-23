@@ -44,11 +44,17 @@ const PUBLIC = [
   // them and nothing else. Returns a first name and the reason and stops
   // there — SMS cannot carry a picture here, so the link is the way in.
   "clientPhotosRouter.getByToken",
+  // Portal booking (24/11/2026): the client books and adds extras to
+  // their own dogs; client and salon come from resolvePortalClient.
+  "clientPortalRouter.addExtras",
   // The client's own other contacts (18/11/2026), scoped by the portal
   // session like updateMyProfile: add one, correct one, remove one.
   "clientPortalRouter.addMyContact",
+  "clientPortalRouter.bookingOptions",
+  "clientPortalRouter.bookingSlots",
   "clientPortalRouter.cancelAppointment",
   "clientPortalRouter.completeSetup",
+  "clientPortalRouter.createBooking",
   "clientPortalRouter.createMyCardSetupLink",
   // The texted service-agreement link (/sign/<token>), for clients with no
   // email (11/11/2026). The signed token from server/agreementLinkToken.ts
@@ -640,7 +646,9 @@ describe("tRPC procedure surface", () => {
     // startFamilyBilling.
     // 461 since 23/11/2026: workflow.getBoardVersion, the cheap "has the
     // board changed?" check. operationalProcedure, like getBoard.
-    expect(surface).toHaveLength(461);
+    // 465 since 24/11/2026: clientPortal.bookingOptions, bookingSlots,
+    // createBooking and addExtras, in PUBLIC.
+    expect(surface).toHaveLength(465);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -654,7 +662,8 @@ describe("tRPC procedure surface", () => {
     // 61 since 12/11/2026: clientPortal.requestPasswordReset.
     // 63 since 12/11/2026: the two sign-in link procedures.
     // 64 since 12/11/2026: redeemSignInCode.
-    expect(PUBLIC).toHaveLength(68);
+    // 72 since 24/11/2026: the four portal booking procedures.
+    expect(PUBLIC).toHaveLength(72);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

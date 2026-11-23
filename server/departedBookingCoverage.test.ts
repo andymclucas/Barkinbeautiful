@@ -37,7 +37,8 @@ describe("every appointment-creating path refuses a departed dog", () => {
     // unauthenticated publicProcedure that inserted an appointment from a
     // caller-supplied clientId and petId, and nothing called it.
     // 11 since 12/11/2026: addRecurrenceOccurrence, guarded below.
-    expect(count(read("server/routers.ts"), /insert\(appointments\)/g)).toBe(11);
+    // 12 since 24/11/2026: clientPortal.createBooking, the client booking their own dog.
+    expect(count(read("server/routers.ts"), /insert\(appointments\)/g)).toBe(12);
     expect(count(read("server/routers/membershipSignup.ts"), /insert\(appointments\)/g)).toBe(1);
     expect(count(read("server/routers/waitlist.ts"), /insert\(appointments\)/g)).toBe(1);
   });
@@ -63,7 +64,7 @@ describe("every appointment-creating path refuses a departed dog", () => {
     // 9 since 07/11/2026: onlineBooking.create was removed, and the
     // deleted path carried one of these calls.
     // 11 since 12/11/2026: addRecurrenceOccurrence asks too.
-    expect(count(read("server/routers.ts"), /departedBookingMessage\(/g)).toBe(11);
+    expect(count(read("server/routers.ts"), /departedBookingMessage\(/g)).toBe(12);
     expect(count(read("server/routers/membershipSignup.ts"), /departedBookingMessage\(/g)).toBe(1);
     // 2 since 11/11/2026: join checks too, now that it takes several
     // dogs — a passed-away or archived dog is refused when it is put on

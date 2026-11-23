@@ -57,7 +57,7 @@ import {
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
 import { deriveWorkflowTimingUpdate, type WorkflowState } from "./workflowTiming";
-import { BATH_RESOURCE_MINUTES, countOverlappingBookings, countSharedBathResourceOverlaps } from "./onlineBookingRules";
+import { BATH_RESOURCE_MINUTES, countSharedBathResourceOverlaps } from "./onlineBookingRules";
 import { onlineDailyCapacityVerdict } from "../shared/onlineBookingCapacity";
 import { ESTIMATE_DISCLAIMER, estimateOnlineBookingPrice } from "../shared/onlineBookingPrice";
 import { notifyOnlineBooking } from "./onlineBookingNotify";
@@ -198,6 +198,8 @@ import { pickupPrompt, pickupSendDecision } from "@shared/pickupGroup";
 import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
 import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
+import { bufferedSearchWindow, isClearOfBookings, CLIENT_BOOKING_BUFFER_MINUTES } from "@shared/clientBookingBuffer";
+import { decidePortalBooking, isClientPickableAddOn, memberServiceFor, MEMBER_EXTRAS_MESSAGE, PORTAL_BOOKING_SERVICES, PORTAL_BOOKING_SERVICE_LABELS, type PlanState } from "@shared/portalSelfBooking";
 import { getAppointmentMembershipCoverage, getAppointmentMembershipCoverageByService } from "./appointmentCoverage";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, portalSetupAddress, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { loadPendingAgreements, recordPortalSignatures, requestIp } from "./portalAgreements";
@@ -12982,11 +12984,13 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   const activeStatuses = ["confirmed", "pending"] as const;
   const staffAppointments = await db.select({ id: appointments.id, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd, serviceType: appointments.serviceType, bookedOnline: appointments.bookedOnline })
     .from(appointments).where(and(eq(appointments.tenantId, input.tenantId), eq(appointments.staffId, input.staffId), gte(appointments.scheduledStart, start), lte(appointments.scheduledStart, end), inArray(appointments.status, activeStatuses as any)));
-  const overlappingBookings = countOverlappingBookings(staffAppointments, input.scheduledStart, scheduledEnd);
-  // One groomer cannot groom two dogs at once, so the per-slot limit is
-  // absolute and is checked on its own.
-  if (overlappingBookings >= Math.max(1, groomer.slotLimit)) {
-    return { available: false, reason: "That groomer’s time slot is full" } as const;
+  // A booking a client makes with nobody watching the diary leaves 30
+  // minutes clear either side of every other booking the groomer has
+  // (Andy, 24/11/2026; shared/clientBookingBuffer.ts). Stricter than the
+  // old dogs-at-once limit, which is what let two self-made bookings
+  // land on top of each other.
+  if (!isClearOfBookings(staffAppointments, input.scheduledStart, scheduledEnd)) {
+    return { available: false, reason: "That groomer is busy around that time" } as const;
   }
   // A membership sign-up is not held to the daily ONLINE cap. That number
   // rations how much of the diary strangers may take; nothing is booked by
@@ -13107,10 +13111,10 @@ async function checkRescheduleSlotFree(input: { tenantId: number; staffId: numbe
       ne(appointments.status, "cancelled"),
       ne(appointments.id, input.excludeAppointmentId),
     ));
-  return !staffAppointments.some(appt =>
-    input.scheduledStart.getTime() < new Date(appt.scheduledEnd).getTime() &&
-    input.scheduledEnd.getTime() > new Date(appt.scheduledStart).getTime()
-  );
+  // The same 30 minutes clear either side as a new client booking
+  // (shared/clientBookingBuffer.ts): a client moving their own booking is
+  // as unwatched as a client making one.
+  return isClearOfBookings(staffAppointments, input.scheduledStart, input.scheduledEnd);
 }
 
 async function listRescheduleSlots(input: { tenantId: number; staffId: number; serviceType: string; date: string; excludeAppointmentId: number }) {
@@ -16146,6 +16150,81 @@ async function portalAccountsForEmail(db: any, loginEmail: string) {
   return inSalonOrder(rows);
 }
 
+/**
+ * Everything the portal's booking screen needs for one client, worked out
+ * on the server: which dogs, on what terms (shared/portalSelfBooking.ts),
+ * the services with their catalogue estimates, the extras a client may
+ * pick, and the groomers taking online bookings.
+ */
+async function loadPortalBookingOptions(db: any, tenantId: number, clientId: number) {
+  const [tenant] = await db.select({ enabled: tenants.onlineBookingEnabled }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+  const enabled = Boolean(Number(tenant?.enabled));
+  const petRows: Array<{ id: number; name: string; weightKg: string | null; weight: string | null; sizeBand: DogSizeBand | null }> = await db.select({
+    id: pets.id, name: pets.name, weightKg: pets.weightKg, weight: pets.weight, sizeBand: pets.sizeBand,
+  }).from(pets).where(and(eq(pets.tenantId, tenantId), eq(pets.clientId, clientId), eq(pets.status, "active"))).orderBy(asc(pets.name));
+  const petIds = petRows.map((p) => p.id);
+
+  // Which dogs a usable plan covers, from the same rule every booking path uses.
+  const coverage = petIds.length
+    ? await getAppointmentMembershipCoverage(db, tenantId, clientId, petIds, "classic_groom")
+    : { membershipByPetId: {} as Record<number, { serviceType: string }> };
+  // And which are on a plan at all, usable or not, so a paused plan's dog
+  // is sent to the salon rather than offered a paid booking.
+  const livePlans: Array<{ id: number; petId: number | null }> = await db.select({ id: memberships.id, petId: memberships.petId }).from(memberships).where(and(
+    eq(memberships.tenantId, tenantId), eq(memberships.clientId, clientId),
+    inArray(memberships.status, ["active", "paused", "pending_payment"]),
+  ));
+  const onAnyPlan = new Set<number>(livePlans.map((m) => m.petId).filter((id): id is number => typeof id === "number"));
+  if (livePlans.length) {
+    const listed: Array<{ petId: number }> = await db.select({ petId: membershipPets.petId }).from(membershipPets).where(and(
+      eq(membershipPets.tenantId, tenantId), inArray(membershipPets.membershipId, livePlans.map((m) => m.id)),
+    ));
+    for (const row of listed) onAnyPlan.add(row.petId);
+  }
+
+  const dogs = petRows.map((p) => {
+    const plan = (coverage.membershipByPetId as Record<number, { serviceType: string } | undefined>)[p.id];
+    const planState: PlanState = plan ? "covered" : onAnyPlan.has(p.id) ? "on_plan_not_usable" : "none";
+    const weight = Number(p.weightKg ?? p.weight);
+    return {
+      id: p.id,
+      name: p.name,
+      weightKg: Number.isFinite(weight) && weight > 0 ? weight : null,
+      sizeBand: p.sizeBand ?? null,
+      planState,
+      memberService: plan ? memberServiceFor(plan.serviceType) : null,
+    };
+  });
+
+  // Estimates from the salon's own catalogue, per dog and service; null
+  // when the catalogue has no figure, and the screen then shows none.
+  const services = await Promise.all(dogs.map(async (dog) => ({
+    petId: dog.id,
+    // A dog with neither a weight nor a size cannot be priced or checked
+    // for large-dog capacity, so it is offered nothing and told to call.
+    services: dog.weightKg === null && !dog.sizeBand ? [] : await Promise.all(
+      (dog.planState === "covered" ? [dog.memberService!] : [...PORTAL_BOOKING_SERVICES]).map(async (serviceType) => ({
+        serviceType,
+        label: PORTAL_BOOKING_SERVICE_LABELS[serviceType],
+        minutes: ONLINE_SERVICE_MINUTES[serviceType] ?? 60,
+        price: dog.planState === "covered" ? "0.00" : await onlineBookingPriceFor({ tenantId, serviceType, weightKg: dog.weightKg ?? undefined, sizeBand: dog.sizeBand }),
+      })),
+    ),
+  })));
+
+  const addOnRows: Array<{ id: number; name: string; description: string | null; priceAud: string | null; priceMode: string | null; isActive: boolean | number | null }> = await db.select({
+    id: pricingServices.id, name: pricingServices.name, description: pricingServices.description,
+    priceAud: pricingServices.priceAud, priceMode: pricingServices.priceMode, isActive: pricingServices.isActive,
+  }).from(pricingServices).where(and(eq(pricingServices.tenantId, tenantId), eq(pricingServices.catalogueType, "add_on"), eq(pricingServices.isActive, true)))
+    .orderBy(asc(pricingServices.sortOrder), asc(pricingServices.name));
+  const addOns = addOnRows.filter(isClientPickableAddOn).map((a) => ({ id: a.id, name: a.name, description: a.description, price: Number(a.priceAud).toFixed(2) }));
+
+  const groomers: Array<{ id: number; name: string }> = await db.select({ id: staff.id, name: staff.name }).from(staff)
+    .where(and(eq(staff.tenantId, tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true))).orderBy(asc(staff.name));
+
+  return { enabled, pets: dogs, services, addOns, groomers, bufferMinutes: CLIENT_BOOKING_BUFFER_MINUTES };
+}
+
 const clientPortalRouter = router({
   getAccessStatus: adminProcedure
     .input(z.object({ clientId: z.number().int().positive() }))
@@ -17711,14 +17790,17 @@ const clientPortalRouter = router({
       const newEnd = new Date(newStart.getTime() + durationMs);
 
       if (appt.staffId) {
+        // 30 minutes clear either side, as the slot list offered
+        // (shared/clientBookingBuffer.ts).
+        const clear = bufferedSearchWindow(newStart, newEnd);
         const [conflict] = await db.select({ id: appointments.id }).from(appointments).where(and(
           eq(appointments.staffId, appt.staffId),
           eq(appointments.tenantId, tenantId),
           ne(appointments.id, appt.id),
           ne(appointments.workflowState, "cancelled"),
           ne(appointments.status, "cancelled"),
-          lt(appointments.scheduledStart, newEnd),
-          gt(appointments.scheduledEnd, newStart),
+          lt(appointments.scheduledStart, clear.to),
+          gt(appointments.scheduledEnd, clear.from),
         )).limit(1);
         if (conflict) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "That time is no longer available. Please choose another time or call the salon." });
@@ -17727,6 +17809,160 @@ const clientPortalRouter = router({
 
       await db.update(appointments).set({ scheduledStart: newStart, scheduledEnd: newEnd }).where(eq(appointments.id, appt.id));
       return { success: true, scheduledStart: newStart, scheduledEnd: newEnd };
+    }),
+
+  // ─── Booking from the portal ───────────────────────────────────────────
+  // Andy, 24/11/2026: clients book their own dogs, and add extras, from the
+  // portal, only into a groomer's free time with 30 minutes clear either
+  // side (shared/clientBookingBuffer.ts). Members book their plan's groom
+  // and nothing else (shared/portalSelfBooking.ts). The client and salon
+  // always come from the portal sign-in via resolvePortalClient — never
+  // from the request — which is what the removed onlineBooking.create got
+  // wrong (9f2b02b). Bookings are held as "pending" for staff to confirm,
+  // like the public /book page.
+
+  /** What this client can book: their dogs, the services, extras, groomers. */
+  bookingOptions: publicProcedure
+    .input(z.object({ token: z.string().optional() }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      return loadPortalBookingOptions(db, tenantId, clientId);
+    }),
+
+  /** Free start times for one of the client's dogs on one day. */
+  bookingSlots: publicProcedure
+    .input(z.object({
+      token: z.string().optional(),
+      petId: z.number().int().positive(),
+      serviceType: z.string().max(40),
+      /** Null for "any groomer". */
+      staffId: z.number().int().positive().nullable(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      const options = await loadPortalBookingOptions(db, tenantId, clientId);
+      if (!options.enabled) return [];
+      const pet = options.pets.find((p) => p.id === input.petId);
+      if (!pet) throw new TRPCError({ code: "NOT_FOUND", message: "Dog not found." });
+      const decision = decidePortalBooking({ planState: pet.planState, memberService: pet.memberService, requestedService: input.serviceType, addOnIds: [] });
+      if (!decision.ok) return [];
+      const groomerIds = input.staffId
+        ? options.groomers.filter((g) => g.id === input.staffId).map((g) => g.id)
+        : options.groomers.map((g) => g.id);
+      const durationMinutes = ONLINE_SERVICE_MINUTES[decision.serviceType] ?? 60;
+      const starts = buildOnlineBookingSlotStarts(input.date, durationMinutes);
+      const free = await Promise.all(starts.map(async (scheduledStart) => {
+        for (const staffId of groomerIds) {
+          const verdict = await checkOnlineCapacity({ tenantId, staffId, serviceType: decision.serviceType, scheduledStart, petWeightKg: pet.weightKg ?? undefined });
+          if (verdict.available) return { scheduledStart, scheduledEnd: verdict.scheduledEnd, durationMinutes };
+        }
+        return null;
+      }));
+      return free.filter((slot): slot is NonNullable<typeof slot> => slot !== null);
+    }),
+
+  /** Book one of the client's own dogs. */
+  createBooking: publicProcedure
+    .input(z.object({
+      token: z.string().optional(),
+      petId: z.number().int().positive(),
+      serviceType: z.string().max(40),
+      staffId: z.number().int().positive().nullable(),
+      scheduledStart: z.coerce.date(),
+      addOnIds: z.array(z.number().int().positive()).max(10).default([]),
+      notes: z.string().trim().max(500).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      const options = await loadPortalBookingOptions(db, tenantId, clientId);
+      if (!options.enabled) throw new TRPCError({ code: "BAD_REQUEST", message: "Online booking isn't open at the moment. Please contact the salon." });
+      const pet = options.pets.find((p) => p.id === input.petId);
+      if (!pet) throw new TRPCError({ code: "NOT_FOUND", message: "Dog not found." });
+      const decision = decidePortalBooking({ planState: pet.planState, memberService: pet.memberService, requestedService: input.serviceType, addOnIds: input.addOnIds });
+      if (!decision.ok) throw new TRPCError({ code: "BAD_REQUEST", message: decision.message });
+      const extras = decision.addOnIds.map((id) => options.addOns.find((a) => a.id === id));
+      if (extras.some((a) => !a)) throw new TRPCError({ code: "BAD_REQUEST", message: "One of those extras isn't available online. Please contact the salon." });
+
+      // Re-checked here, not trusted from the slot list: the list is a
+      // minute old and another client may have taken the time since.
+      const groomerIds = input.staffId
+        ? options.groomers.filter((g) => g.id === input.staffId).map((g) => g.id)
+        : options.groomers.map((g) => g.id);
+      let chosen: { staffId: number; scheduledEnd: Date } | null = null;
+      for (const staffId of groomerIds) {
+        const verdict = await checkOnlineCapacity({ tenantId, staffId, serviceType: decision.serviceType, scheduledStart: input.scheduledStart, petWeightKg: pet.weightKg ?? undefined });
+        if (verdict.available && verdict.scheduledEnd) { chosen = { staffId, scheduledEnd: verdict.scheduledEnd }; break; }
+      }
+      if (!chosen) throw new TRPCError({ code: "BAD_REQUEST", message: "That time has just been taken. Please choose another." });
+
+      // Only active dogs are offered, but the shared rule is asked anyway,
+      // as on every other booking path (departedBookingCoverage.test.ts).
+      const [petRow] = await db.select({ id: pets.id, name: pets.name, status: pets.status }).from(pets)
+        .where(and(eq(pets.id, pet.id), eq(pets.tenantId, tenantId), eq(pets.clientId, clientId))).limit(1);
+      const departed = petRow ? departedBookingMessage([petRow]) : "Dog not found.";
+      if (departed) throw new TRPCError({ code: "BAD_REQUEST", message: departed });
+
+      await assertDogsNotAlreadyBookedThatDay(db, { tenantId, petIds: [pet.id], at: input.scheduledStart });
+
+      // A member's groom is priced by the shared coverage rule, which
+      // answers $0 for a covered dog (membershipBookingCoverage.test.ts).
+      const coverage = await getAppointmentMembershipCoverage(db, tenantId, clientId, [pet.id], decision.serviceType);
+      const estimate = await onlineBookingPriceFor({ tenantId, serviceType: decision.serviceType, weightKg: pet.weightKg ?? undefined, sizeBand: pet.sizeBand });
+      const price = priceForCoveredAppointment(coverage.fullyCovered, estimate) ?? null;
+      const notes = [input.notes?.trim(), "Booked by the client in the portal."].filter(Boolean).join("\n");
+      const [result] = await db.insert(appointments).values({
+        tenantId, clientId, petId: pet.id, staffId: chosen.staffId, serviceType: decision.serviceType,
+        scheduledStart: input.scheduledStart, scheduledEnd: chosen.scheduledEnd, notes, price,
+        membershipId: coverage.membershipByPetId[pet.id]?.id ?? null,
+        status: "pending", workflowState: "scheduled", bookedOnline: true,
+      });
+      const appointmentId = (result as any).insertId as number;
+      // The booking row is written. Nothing below may throw it away.
+      for (const addOn of extras) {
+        try {
+          await db.insert(appointmentAddOns).values({ tenantId, appointmentId, pricingServiceId: addOn!.id, name: addOn!.name, unitPrice: addOn!.price, quantity: 1, createdByUserId: null });
+        } catch (err) { console.error("[portal-booking] could not add an extra", err); }
+      }
+      await notifyOnlineBooking({ tenantId, clientId, petId: pet.id, appointmentId, serviceType: decision.serviceType, scheduledStart: input.scheduledStart, weightKg: pet.weightKg, sizeBand: pet.sizeBand, estimatePrice: price, silentForClient: true });
+      return { success: true, appointmentId, scheduledStart: input.scheduledStart, price, member: decision.member };
+    }),
+
+  /** Extras onto one of the client's upcoming bookings. */
+  addExtras: publicProcedure
+    .input(z.object({ token: z.string().optional(), appointmentId: z.number().int().positive(), addOnIds: z.array(z.number().int().positive()).min(1).max(10) }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      const [appt] = await db.select({
+        id: appointments.id, clientId: appointments.clientId, tenantId: appointments.tenantId,
+        scheduledStart: appointments.scheduledStart, workflowState: appointments.workflowState,
+        status: appointments.status, membershipId: appointments.membershipId,
+      }).from(appointments).where(eq(appointments.id, input.appointmentId)).limit(1);
+      if (!appt || appt.clientId !== clientId || appt.tenantId !== tenantId) throw new TRPCError({ code: "NOT_FOUND", message: "Appointment not found." });
+      if (appt.membershipId) throw new TRPCError({ code: "BAD_REQUEST", message: MEMBER_EXTRAS_MESSAGE });
+      if (appt.workflowState !== "scheduled" || appt.status === "cancelled" || new Date(appt.scheduledStart).getTime() - Date.now() < 24 * 3600000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Extras can be added online up to 24 hours before the booking. Please contact the salon." });
+      }
+      const options = await loadPortalBookingOptions(db, tenantId, clientId);
+      const ids = Array.from(new Set(input.addOnIds));
+      const extras = ids.map((id) => options.addOns.find((a) => a.id === id));
+      if (extras.some((a) => !a)) throw new TRPCError({ code: "BAD_REQUEST", message: "One of those extras isn't available online. Please contact the salon." });
+      const existing = await db.select({ pricingServiceId: appointmentAddOns.pricingServiceId }).from(appointmentAddOns)
+        .where(and(eq(appointmentAddOns.tenantId, tenantId), eq(appointmentAddOns.appointmentId, appt.id)));
+      const already = new Set(existing.map((r: { pricingServiceId: number | null }) => r.pricingServiceId));
+      const adding = extras.filter((a) => !already.has(a!.id));
+      for (const addOn of adding) {
+        await db.insert(appointmentAddOns).values({ tenantId, appointmentId: appt.id, pricingServiceId: addOn!.id, name: addOn!.name, unitPrice: addOn!.price, quantity: 1, createdByUserId: null });
+      }
+      return { success: true, added: adding.map((a) => a!.name) };
     }),
 
   // ─── Chat ───────────────────────────────────────────────────────────────

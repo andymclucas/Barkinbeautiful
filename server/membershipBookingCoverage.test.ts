@@ -37,6 +37,9 @@ const PRICED_AGAINST_MEMBERSHIP = [
   // (12/11/2026). Resolves coverage for the new row, like the series.
   "addRecurrenceOccurrence",
   "createMultiPetAppointment",
+  // The client booking their own dog in the portal (24/11/2026). A member's
+  // dog books its plan's groom, priced $0 by the shared rule.
+  "createBooking",
 ];
 
 /** Exempt, each for a reason that has to still be true. */
