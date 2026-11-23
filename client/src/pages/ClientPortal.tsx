@@ -93,6 +93,37 @@ function portalDateTime(value: Date | string) {
  * scope — and it means this screen can say so honestly, which is most of
  * what makes a client willing to use it.
  */
+/**
+ * The first thing a client without a card sees on their portal.
+ *
+ * Lauren, 23/11/2026: clients were missing that they need to add their card
+ * ("like RED WRITING!"). The Payment details card below already asks, but
+ * far down the page. Reads the same query, so it costs nothing extra and
+ * disappears the moment a card is saved.
+ */
+export function PortalCardNeededBanner({ token, readOnly }: { token?: string; readOnly?: boolean }) {
+  const status = trpc.clientPortal.getMyPaymentMethod.useQuery(
+    { token },
+    { enabled: !readOnly, retry: false },
+  );
+  const card = status.data;
+  if (readOnly || !card || (card.hasCard && !card.expired)) return null;
+  return (
+    <div role="alert" className="rounded-2xl border-2 border-red-600 bg-red-50 p-4 dark:border-red-500 dark:bg-red-950/40">
+      <p className="flex items-center gap-2 text-lg font-bold text-red-700 dark:text-red-300">
+        <TriangleAlert className="h-5 w-5 shrink-0" />
+        {card.expired ? "Your card has expired. Please add a new one" : "Please add your card details"}
+      </p>
+      <p className="mt-1 text-sm text-red-800 dark:text-red-200">
+        It only takes a minute, and nothing is charged when you save a card.
+      </p>
+      <a href="#payment-details" className="mt-3 inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
+        <CreditCard className="h-4 w-4" /> Add my card
+      </a>
+    </div>
+  );
+}
+
 function PortalPaymentMethodCard({ token, readOnly, salonName }: { token?: string; readOnly?: boolean; salonName?: string | null }) {
   const status = trpc.clientPortal.getMyPaymentMethod.useQuery(
     { token },
@@ -115,7 +146,7 @@ function PortalPaymentMethodCard({ token, readOnly, salonName }: { token?: strin
   const needsCard = Boolean(card && (!card.hasCard || card.expired));
 
   return (
-    <Card className={needsCard ? "border-amber-300 dark:border-amber-900/60" : undefined}>
+    <Card id="payment-details" className={needsCard ? "scroll-mt-6 border-amber-300 dark:border-amber-900/60" : "scroll-mt-6"}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <CreditCard className="h-5 w-5 text-primary" /> Payment details
@@ -172,7 +203,7 @@ function PortalPaymentMethodCard({ token, readOnly, salonName }: { token?: strin
             <p className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
               <span>
-                You&rsquo;ll be taken to Stripe, our payment provider, to enter your card on their secure page.
+                You&rsquo;ll be taken to Stripe, our payment provider, to enter your card on their secure page.{" "}
                 {clientSalonName(salonName).replace(/^the salon$/, "The salon")} never sees or stores your full card number. Nothing is charged when you
                 save a card.
               </span>
@@ -992,6 +1023,7 @@ export default function ClientPortal() {
 
     {/* Signed in on their own account: worth saving to the Home Screen. Not
         on a staff preview, and not on an access-token link. */}
+    <PortalCardNeededBanner token={token ?? undefined} readOnly={isPreview} />
     {!isPreview && !token && <PortalInstallTip />}
     {inSalon.length > 0 && <section className="space-y-3">
       {inSalon.map(appointment => {

@@ -28,6 +28,19 @@ describe("portalInviteEmail", () => {
     expect(portalInviteEmail({ ...base, firstName: "<b>Jo</b>", agreementTitles: [] }).html).toContain("Hi &lt;b&gt;Jo&lt;/b&gt;,");
     expect(portalInviteEmail({ ...base, firstName: "", agreementTitles: [] }).html).toContain("<p>Hi,</p>");
   });
+
+  it("leads with a red 'add your card' box for a client with no card saved", () => {
+    const html = portalInviteEmail({ ...base, agreementTitles: [], needsCard: true }).html;
+    expect(html).toContain("Please add your card details");
+    expect(html).toContain("#dc2626");
+    // Before the setup button, where it cannot be scrolled past.
+    expect(html.indexOf("Please add your card details")).toBeLessThan(html.indexOf("Set up my portal"));
+  });
+
+  it("asks for a card unless it is known one is saved", () => {
+    expect(portalInviteEmail({ ...base, agreementTitles: [] }).html).toContain("Please add your card details");
+    expect(portalInviteEmail({ ...base, agreementTitles: [], needsCard: false }).html).not.toContain("Please add your card details");
+  });
 });
 
 describe("heldClientIds", () => {

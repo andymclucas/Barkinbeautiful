@@ -90,3 +90,18 @@ describe("the short card link (11/11/2026)", () => {
     }
   });
 });
+
+describe("buildCardLinkEmail asks loudly", () => {
+  it("leads with a red 'add your card' box above the button", () => {
+    const { html } = buildCardLinkEmail({ firstName: "Jo", url: STRIPE_URL });
+    expect(html).toContain("Please add your card details");
+    expect(html).toContain("#dc2626");
+    expect(html.indexOf("Please add your card details")).toBeLessThan(html.indexOf("Save my card"));
+  });
+
+  it("asks to UPDATE when a card is being replaced", () => {
+    const { html } = buildCardLinkEmail({ url: STRIPE_URL, replacingExistingCard: true });
+    expect(html).toContain("Please update your card details");
+    expect(html).not.toContain("Please add your card details");
+  });
+});

@@ -16379,7 +16379,7 @@ const clientPortalRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
 
-      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId, email: clients.email, portalLoginEmail: clients.portalLoginEmail, firstName: clients.firstName, portalAccountStatus: clients.portalAccountStatus })
+      const [client] = await db.select({ id: clients.id, tenantId: clients.tenantId, email: clients.email, portalLoginEmail: clients.portalLoginEmail, firstName: clients.firstName, portalAccountStatus: clients.portalAccountStatus, stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId })
         .from(clients)
         .where(eq(clients.id, input.clientId))
         .limit(1);
@@ -16477,6 +16477,7 @@ const clientPortalRouter = router({
             setupUrl,
             expiresAt: setup.expiresAt,
             agreementTitles: pending.map((a) => a.title),
+            needsCard: !client.stripeDefaultPaymentMethodId,
           });
           emailSent = await sendEmail({ to: loginEmail, subject: invite.subject, html: invite.html, fromName: salon?.name ?? null, replyTo: salon?.email ?? null });
         }
