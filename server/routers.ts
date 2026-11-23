@@ -57,7 +57,7 @@ import {
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
 import { deriveWorkflowTimingUpdate, type WorkflowState } from "./workflowTiming";
-import { BATH_RESOURCE_MINUTES, countSharedBathResourceOverlaps } from "./onlineBookingRules";
+import { BATH_RESOURCE_MINUTES, countOverlappingBookings, countSharedBathResourceOverlaps } from "./onlineBookingRules";
 import { onlineDailyCapacityVerdict } from "../shared/onlineBookingCapacity";
 import { ESTIMATE_DISCLAIMER, estimateOnlineBookingPrice } from "../shared/onlineBookingPrice";
 import { notifyOnlineBooking } from "./onlineBookingNotify";
@@ -12989,7 +12989,14 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   // (Andy, 24/11/2026; shared/clientBookingBuffer.ts). Stricter than the
   // old dogs-at-once limit, which is what let two self-made bookings
   // land on top of each other.
-  if (!isClearOfBookings(staffAppointments, input.scheduledStart, scheduledEnd)) {
+  //
+  // Membership sign-up keeps the groomer's dogs-at-once limit instead: it
+  // books nothing, it is a request a person approves against the diary.
+  if (options.forMembershipSignup) {
+    if (countOverlappingBookings(staffAppointments, input.scheduledStart, scheduledEnd) >= Math.max(1, groomer.slotLimit)) {
+      return { available: false, reason: "That groomer’s time slot is full" } as const;
+    }
+  } else if (!isClearOfBookings(staffAppointments, input.scheduledStart, scheduledEnd)) {
     return { available: false, reason: "That groomer is busy around that time" } as const;
   }
   // A membership sign-up is not held to the daily ONLINE cap. That number
@@ -17885,6 +17892,11 @@ const clientPortalRouter = router({
       if (!options.enabled) throw new TRPCError({ code: "BAD_REQUEST", message: "Online booking isn't open at the moment. Please contact the salon." });
       const pet = options.pets.find((p) => p.id === input.petId);
       if (!pet) throw new TRPCError({ code: "NOT_FOUND", message: "Dog not found." });
+      // The screen offers such a dog nothing; refused here too, because
+      // without a size there is no price and no large-dog check.
+      if (pet.weightKg === null && !pet.sizeBand) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `We need ${pet.name}'s size before booking online. Please contact the salon.` });
+      }
       const decision = decidePortalBooking({ planState: pet.planState, memberService: pet.memberService, requestedService: input.serviceType, addOnIds: input.addOnIds });
       if (!decision.ok) throw new TRPCError({ code: "BAD_REQUEST", message: decision.message });
       const extras = decision.addOnIds.map((id) => options.addOns.find((a) => a.id === id));
@@ -17924,14 +17936,39 @@ const clientPortalRouter = router({
         status: "pending", workflowState: "scheduled", bookedOnline: true,
       });
       const appointmentId = (result as any).insertId as number;
-      // The booking row is written. Nothing below may throw it away.
+      /*
+       * Two clients can pass the check above for the same time in the same
+       * instant (or one client can tap twice). Looked again now the row
+       * exists: if an EARLIER booking for this groomer sits inside the
+       * 30-minute gap, this one gives way and is removed. Two racing
+       * requests each see the other, and only the later id steps back.
+       */
+      const clearWindow = bufferedSearchWindow(input.scheduledStart, chosen.scheduledEnd);
+      const [earlier] = await db.select({ id: appointments.id }).from(appointments).where(and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.staffId, chosen.staffId),
+        lt(appointments.id, appointmentId),
+        inArray(appointments.status, ["confirmed", "pending"]),
+        lt(appointments.scheduledStart, clearWindow.to),
+        gt(appointments.scheduledEnd, clearWindow.from),
+      )).limit(1);
+      if (earlier) {
+        await db.delete(appointments).where(and(eq(appointments.id, appointmentId), eq(appointments.tenantId, tenantId)));
+        throw new TRPCError({ code: "BAD_REQUEST", message: "That time has just been taken. Please choose another." });
+      }
+      // The booking stands. Nothing below may throw it away; an extra that
+      // will not save is reported back, not swallowed.
+      const extrasNotAdded: string[] = [];
       for (const addOn of extras) {
         try {
           await db.insert(appointmentAddOns).values({ tenantId, appointmentId, pricingServiceId: addOn!.id, name: addOn!.name, unitPrice: addOn!.price, quantity: 1, createdByUserId: null });
-        } catch (err) { console.error("[portal-booking] could not add an extra", err); }
+        } catch (err) {
+          console.error("[portal-booking] could not add an extra", err);
+          extrasNotAdded.push(addOn!.name);
+        }
       }
       await notifyOnlineBooking({ tenantId, clientId, petId: pet.id, appointmentId, serviceType: decision.serviceType, scheduledStart: input.scheduledStart, weightKg: pet.weightKg, sizeBand: pet.sizeBand, estimatePrice: price, silentForClient: true });
-      return { success: true, appointmentId, scheduledStart: input.scheduledStart, price, member: decision.member };
+      return { success: true, appointmentId, scheduledStart: input.scheduledStart, price, member: decision.member, extrasNotAdded };
     }),
 
   /** Extras onto one of the client's upcoming bookings. */
@@ -17952,6 +17989,12 @@ const clientPortalRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Extras can be added online up to 24 hours before the booking. Please contact the salon." });
       }
       const options = await loadPortalBookingOptions(db, tenantId, clientId);
+      // The dog's plan, not only the booking's link: a MoeGo-imported or
+      // staff-made booking for a member's dog can carry no membershipId.
+      const [apptPet] = await db.select({ petId: appointments.petId }).from(appointments).where(eq(appointments.id, appt.id)).limit(1);
+      const dog = options.pets.find((p) => p.id === apptPet?.petId);
+      if (!dog) throw new TRPCError({ code: "BAD_REQUEST", message: "Extras can't be added to this booking online. Please contact the salon." });
+      if (dog.planState !== "none") throw new TRPCError({ code: "BAD_REQUEST", message: MEMBER_EXTRAS_MESSAGE });
       const ids = Array.from(new Set(input.addOnIds));
       const extras = ids.map((id) => options.addOns.find((a) => a.id === id));
       if (extras.some((a) => !a)) throw new TRPCError({ code: "BAD_REQUEST", message: "One of those extras isn't available online. Please contact the salon." });

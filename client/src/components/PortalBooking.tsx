@@ -85,6 +85,7 @@ export function PortalBookingDialog({ token, open, onClose, onBooked }: { token?
   const create = trpc.clientPortal.createBooking.useMutation({
     onSuccess: (r) => {
       toast.success(`Booked for ${dayOf(r.scheduledStart)} at ${timeOf(r.scheduledStart)}. We'll confirm it shortly.`);
+      if (r.extrasNotAdded?.length) toast.error(`We couldn't add ${r.extrasNotAdded.join(", ")}. Please let us know and we'll add it.`);
       onBooked();
       onClose();
     },
