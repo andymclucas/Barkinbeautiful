@@ -17,12 +17,15 @@ import {
 import {
   Plus, Search, User, Phone, Mail,
   ChevronUp, ChevronDown, ChevronsUpDown,
-  ChevronLeft, ChevronRight, Download, Dog, Calendar,
+  Download, Dog, Calendar,
   Merge, History,
 } from "lucide-react";
 import { useRecentSearches } from "@/hooks/useRecentSearches";
 import { clientIdFromHref } from "@shared/recentSearches";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { PageNumbers } from "@/components/PageNumbers";
+import { loadSavedView, saveView } from "@/lib/savedListView";
+import { isPageNumber, isShortText, oneOf } from "@shared/listPaging";
 import { useLocation } from "wouter";
 import { AddOnPicker, type StagedAddOn } from "@/components/BookingPetPricing";
 import { stagePendingBooking } from "@/lib/pendingBooking";
@@ -221,8 +224,25 @@ function downloadCsv(content: string, filename: string) {
 }
 
 export default function Clients() {
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  /* Where the list was left (shared/listPaging.ts): page, filters, sort,
+     search and rows per page, kept for this browser tab so opening a
+     client and coming back lands on the same page. */
+  const [savedView] = useState(() => loadSavedView("clients:view", {
+    page: 1, pageSize: 50 as number, search: "", status: "active", portal: "any", card: "any",
+    membership: "any", sortBy: "firstName", sortDir: "asc",
+  }, {
+    page: isPageNumber,
+    pageSize: oneOf(CLIENT_LIST_PAGE_SIZES),
+    search: isShortText,
+    status: oneOf(["active", "inactive", "blocked", "all"]),
+    portal: oneOf(["any", "yes", "no"]),
+    card: oneOf(["any", "yes", "no"]),
+    membership: oneOf(["any", "yes", "no"]),
+    sortBy: oneOf(["firstName", "lastName", "email", "phone", "status", "createdAt"]),
+    sortDir: oneOf(["asc", "desc"]),
+  }));
+  const [search, setSearch] = useState(savedView.search);
+  const [debouncedSearch, setDebouncedSearch] = useState(savedView.search);
   /* Recent searches (Andy, 12/11/2026): the last five clients opened from
      a search here, offered when the empty box is clicked. */
   const { recent, remember, clear: clearRecent, refresh: refreshRecent } = useRecentSearches("clients");
@@ -242,7 +262,7 @@ export default function Clients() {
    * Every other option is one press away and the dropdown says which it
    * is, so nothing is hidden; it is only no longer the default.
    */
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(savedView.status as StatusFilter);
   /*
    * Andy, 10/11/2026: "Add more columns to the clients tab... make them
    * filterable." Three yes/no questions the list could not answer.
@@ -253,14 +273,21 @@ export default function Clients() {
    * about all 10,114 clients, not about the fifty on this page.
    */
   type YesNoFilter = "any" | "yes" | "no";
-  const [portalFilter, setPortalFilter] = useState<YesNoFilter>("any");
-  const [cardFilter, setCardFilter] = useState<YesNoFilter>("any");
-  const [membershipFilter, setMembershipFilter] = useState<YesNoFilter>("any");
+  const [portalFilter, setPortalFilter] = useState<YesNoFilter>(savedView.portal as YesNoFilter);
+  const [cardFilter, setCardFilter] = useState<YesNoFilter>(savedView.card as YesNoFilter);
+  const [membershipFilter, setMembershipFilter] = useState<YesNoFilter>(savedView.membership as YesNoFilter);
   const yesNo = (value: YesNoFilter) => (value === "any" ? undefined : value === "yes");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<PageSizeOption>(50);
-  const [sortBy, setSortBy] = useState<SortBy>("firstName");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [page, setPage] = useState(savedView.page);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(savedView.pageSize as PageSizeOption);
+  const [sortBy, setSortBy] = useState<SortBy>(savedView.sortBy as SortBy);
+  const [sortDir, setSortDir] = useState<SortDir>(savedView.sortDir as SortDir);
+  useEffect(() => {
+    saveView("clients:view", {
+      page, pageSize, search: debouncedSearch, status: statusFilter, portal: portalFilter,
+      card: cardFilter, membership: membershipFilter, sortBy, sortDir,
+    });
+  }, [page, pageSize, debouncedSearch, statusFilter, portalFilter, cardFilter, membershipFilter, sortBy, sortDir]);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [addStep, setAddStep] = useState<1 | 2>(1);
@@ -475,6 +502,15 @@ export default function Clients() {
 
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // A remembered page can be past the end once the list has shrunk.
+  useEffect(() => {
+    if (data && page > totalPages) setPage(totalPages);
+  }, [data, page, totalPages]);
+  /** Jump to a page, back at the top of the list. */
+  const goToPage = (next: number) => {
+    setPage(Math.min(Math.max(1, next), totalPages));
+    tableScrollRef.current?.scrollTo({ top: 0 });
+  };
 
   const SortTh = ({ col, label, className = "" }: { col: SortBy; label: string; className?: string }) => (
     <th
@@ -716,7 +752,14 @@ export default function Clients() {
           </DialogContent>
         </Dialog>
 
+        {totalPages > 1 && (
+          <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+            <span>Page {page} of {totalPages.toLocaleString()}</span>
+            <PageNumbers page={page} totalPages={totalPages} onPage={goToPage} label="Client pages, top" />
+          </div>
+        )}
         <div
+          ref={tableScrollRef}
           className="bg-card rounded-xl border overflow-auto flex-1 min-h-0"
           /* A client opened while a search is applied becomes a recent
              search. Caught here, once, so every link to a client — names,
@@ -984,13 +1027,7 @@ export default function Clients() {
                 </SelectContent>
               </Select>
             </div>
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="gap-1">
-              <ChevronLeft className="h-4 w-4" /> Prev
-            </Button>
-            <span className="px-2">Page {page} of {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="gap-1">
-              Next <ChevronRight className="h-4 w-4" />
-            </Button>
+            <PageNumbers page={page} totalPages={totalPages} onPage={goToPage} label="Client pages, bottom" />
           </div>
         </div>
       </div>

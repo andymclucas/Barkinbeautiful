@@ -47,6 +47,7 @@ import { useParams } from "wouter";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageNumbers } from "@/components/PageNumbers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { portalAccessSummary } from "@shared/portalAccessSummary";
@@ -2789,15 +2790,7 @@ export default function ClientDetail() {
                   {(currentBookingPage - 1) * BOOKINGS_PER_PAGE + 1}&ndash;
                   {Math.min(currentBookingPage * BOOKINGS_PER_PAGE, bookingsInTab.length)} of {bookingsInTab.length}
                 </p>
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="sm" disabled={currentBookingPage <= 1}
-                    onClick={() => setBookingPage(currentBookingPage - 1)}>Previous</Button>
-                  <span className="px-2 text-xs tabular-nums text-muted-foreground">
-                    {currentBookingPage} / {bookingPageCount}
-                  </span>
-                  <Button variant="outline" size="sm" disabled={currentBookingPage >= bookingPageCount}
-                    onClick={() => setBookingPage(currentBookingPage + 1)}>Next</Button>
-                </div>
+                <PageNumbers page={currentBookingPage} totalPages={bookingPageCount} onPage={setBookingPage} label="Booking pages" />
               </div>
             )}
           </TabsContent>

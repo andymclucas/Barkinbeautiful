@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { PageNumbers } from "@/components/PageNumbers";
 import { DateField } from "@/components/DateField";
 import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
 import { LAPSED_SORT_DEFAULT_DIR, type LapsedSortKey, type LapsedSortDir } from "@shared/lapsedClients";
@@ -768,6 +769,11 @@ export default function Reporting() {
               <div className="py-8 text-center text-sm text-muted-foreground">No grooming history yet.</div>
             ) : (
               <>
+                {retentionView.pageCount > 1 && (
+                  <div className="mb-2 flex justify-end">
+                    <PageNumbers page={retentionView.page} totalPages={retentionView.pageCount} onPage={setRetentionPage} label="Retention pages, top" />
+                  </div>
+                )}
                 <div className="overflow-x-auto rounded-lg border">
                   <table className="console-table">
                     <thead>
@@ -848,19 +854,7 @@ export default function Reporting() {
                     {retentionView.matched !== (retention?.rows.length ?? 0) &&
                       ` (filtered from ${retention?.rows.length ?? 0})`}
                   </p>
-                  {retentionView.pageCount > 1 && (
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7"
-                        disabled={retentionView.page <= 1}
-                        onClick={() => setRetentionPage((p) => p - 1)}>Previous</Button>
-                      <span className="px-1 text-xs text-muted-foreground tabular-nums">
-                        {retentionView.page} / {retentionView.pageCount}
-                      </span>
-                      <Button variant="outline" size="sm" className="h-7"
-                        disabled={retentionView.page >= retentionView.pageCount}
-                        onClick={() => setRetentionPage((p) => p + 1)}>Next</Button>
-                    </div>
-                  )}
+                  <PageNumbers page={retentionView.page} totalPages={retentionView.pageCount} onPage={setRetentionPage} label="Retention pages, bottom" />
                 </div>
                 <p className="pt-2 text-xs text-muted-foreground">
                   {retention.total > (retention.rows.length ?? 0) &&
