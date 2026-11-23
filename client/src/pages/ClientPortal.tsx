@@ -36,7 +36,7 @@ type PortalGroomingCard = { id: number; petId: number; petName: string; appointm
 type PortalInvoiceRow = { id: number; invoiceNumber: string | null; total: string | null; status: string | null; paymentMethod: string | null; paidAt: string | Date | null; dueAt: string | Date | null; createdAt: string | Date | null; amountOwing?: number | null; payable?: boolean };
 type PortalPaymentRow = { key: string; source: "invoice" | "membership" | "appointment"; amount: number; at: string | Date | number; method: string | null; description: string };
 
-type PortalData = { pendingAgreements?: GateAgreement[]; salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string; invoices: PortalInvoiceRow[]; payments: PortalPaymentRow[] };
+type PortalData = { pendingAgreements?: GateAgreement[]; salon: { name: string; phone: string | null; email: string | null }; client: { firstName: string; lastName: string; email: string | null; phone: string | null; address: string | null }; pets: PortalPet[]; appointments: PortalAppointment[]; memberships: PortalMembership[]; groomingCards: PortalGroomingCard[]; storeCreditBalance: string; invoices: PortalInvoiceRow[]; payments: PortalPaymentRow[]; previewCard?: { hasCard: boolean; expired: boolean } };
 
 const SERVICE_LABELS: Record<string, string> = {
   classic_groom: "Classic Groom", styled_groom: "Styled Groom", bath_only: "Bath",
@@ -101,13 +101,20 @@ function portalDateTime(value: Date | string) {
  * far down the page. Reads the same query, so it costs nothing extra and
  * disappears the moment a card is saved.
  */
-export function PortalCardNeededBanner({ token, readOnly }: { token?: string; readOnly?: boolean }) {
+export function PortalCardNeededBanner({ token, readOnly, previewCard }: {
+  token?: string;
+  readOnly?: boolean;
+  /** On a staff preview: the client's card state, from previewPortal. */
+  previewCard?: { hasCard: boolean; expired: boolean } | null;
+}) {
   const status = trpc.clientPortal.getMyPaymentMethod.useQuery(
     { token },
     { enabled: !readOnly, retry: false },
   );
-  const card = status.data;
-  if (readOnly || !card || (card.hasCard && !card.expired)) return null;
+  // A staff preview shows the banner the client would see, but its button
+  // is not a way in for staff, so it stays a plain picture of it.
+  const card = readOnly ? previewCard : status.data;
+  if (!card || (card.hasCard && !card.expired)) return null;
   return (
     <div role="alert" className="rounded-2xl border-2 border-red-600 bg-red-50 p-4 dark:border-red-500 dark:bg-red-950/40">
       <p className="flex items-center gap-2 text-lg font-bold text-red-700 dark:text-red-300">
@@ -1023,7 +1030,7 @@ export default function ClientPortal() {
 
     {/* Signed in on their own account: worth saving to the Home Screen. Not
         on a staff preview, and not on an access-token link. */}
-    <PortalCardNeededBanner token={token ?? undefined} readOnly={isPreview} />
+    <PortalCardNeededBanner token={token ?? undefined} readOnly={isPreview} previewCard={isPreview ? data.previewCard : undefined} />
     {!isPreview && !token && <PortalInstallTip />}
     {inSalon.length > 0 && <section className="space-y-3">
       {inSalon.map(appointment => {

@@ -16524,13 +16524,25 @@ const clientPortalRouter = router({
         salonName: tenants.name,
         salonPhone: tenants.phone,
         salonEmail: tenants.email,
+        stripeCustomerId: clients.stripeCustomerId,
+        stripeDefaultPaymentMethodId: clients.stripeDefaultPaymentMethodId,
+        stripeCardBrand: clients.stripeCardBrand,
+        stripeCardLast4: clients.stripeCardLast4,
+        stripeCardExpMonth: clients.stripeCardExpMonth,
+        stripeCardExpYear: clients.stripeCardExpYear,
       })
         .from(clients)
         .innerJoin(tenants, eq(clients.tenantId, tenants.id))
         .where(and(eq(clients.id, input.clientId), eq(clients.tenantId, callerTenantId)))
         .limit(1);
       if (!access) throw new TRPCError({ code: "NOT_FOUND", message: "Client not found" });
-      return buildClientPortalPayload(db, access, { staffPreview: true });
+      return {
+        ...(await buildClientPortalPayload(db, access, { staffPreview: true })),
+        // The card query reads the CLIENT's own session, which a staff
+        // preview does not have, so the preview is told here whether the
+        // red "Please add your card" banner would show.
+        previewCard: { hasCard: canChargeOffSession(access), expired: isCardExpired(access, new Date()) },
+      };
     }),
 
   getSetup: publicProcedure

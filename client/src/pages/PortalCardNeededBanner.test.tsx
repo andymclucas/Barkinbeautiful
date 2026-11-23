@@ -28,7 +28,13 @@ describe("PortalCardNeededBanner", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Your card has expired");
   });
 
-  it("says nothing once a good card is saved, while loading, or on a staff preview", () => {
+  it("shows staff on a preview what a client with no card sees", () => {
+    paymentMethod.mockReturnValue({ data: undefined });
+    render(<PortalCardNeededBanner readOnly previewCard={{ hasCard: false, expired: false }} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Please add your card details");
+  });
+
+  it("says nothing once a good card is saved, while loading, or on a preview without card state", () => {
     paymentMethod.mockReturnValue({ data: { hasCard: true, expired: false } });
     const { container, rerender } = render(<PortalCardNeededBanner />);
     expect(container).toBeEmptyDOMElement();
