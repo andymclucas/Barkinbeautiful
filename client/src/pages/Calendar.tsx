@@ -99,6 +99,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { DAY_STEP_BUTTON, DAY_TODAY_BUTTON } from "@/lib/dayNavigation";
 import { CalendarSidebar } from "@/components/CalendarSidebar";
 import { PetPhotoQuickAdd } from "@/components/PetPhotoQuickAdd";
 import { SplitPaymentPanel } from "@/components/SplitPaymentPanel";
@@ -4105,9 +4106,7 @@ export default function Calendar() {
    * is for. 44px square, which is also the smallest comfortable touch
    * target on a phone; they were 36, and the board is used on one.
    */
-  const navButtonClass =
-    "h-11 w-11 rounded-[var(--radius-control)] border border-primary/25 bg-primary/8 " +
-    "text-primary hover:border-primary/45 hover:bg-primary/15 hover:text-primary";
+  const navButtonClass = DAY_STEP_BUTTON;
 
   return (
     <HourHeightContext.Provider value={HOUR_HEIGHT}>
@@ -4130,7 +4129,7 @@ export default function Calendar() {
                 onClick={() => viewMode === "week" ? navigateWeek(-1) : navigateDay(-1)}>
                 <ChevronLeft className="h-5 w-5" />
               </Button>
-              <Button size="sm" className="h-11 px-6 text-base font-semibold" onClick={goToToday}>
+              <Button size="sm" className={DAY_TODAY_BUTTON} onClick={goToToday}>
                 Today
               </Button>
               <Button variant="outline" size="icon" className={navButtonClass}
