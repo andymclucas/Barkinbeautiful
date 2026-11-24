@@ -1908,7 +1908,9 @@ export default function Calendar() {
     isError: isClientSearchError,
   } = trpc.memberships.searchClients.useQuery(
     { search: clientSearch },
-    { enabled: clientSearch.length >= 1 }
+    // The last results stay while the next search loads, so the list
+    // does not blank under the pointer (Lauren, 24/11/2026).
+    { enabled: clientSearch.length >= 1, placeholderData: (previous) => previous }
   );
   type ClientOption = {
     clientId: number;
@@ -4824,6 +4826,16 @@ export default function Calendar() {
                           placeholder="Name, pet name or phone…"
                           value={clientSearch}
                           onChange={e => setClientSearch(e.target.value)}
+                          /* No spelling correction. Lauren, 24/11/2026, had
+                             to click a client twice: the Mac offered
+                             "McLucas" for "mclucas", applied it when the
+                             click took focus off the box, the changed text
+                             started a new search, and the row she was
+                             clicking vanished under the pointer. */
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                          autoComplete="off"
+                          spellCheck={false}
                           className="h-8 pr-9 text-sm"
                         />
                         {clientSearch && (
@@ -4883,7 +4895,10 @@ export default function Calendar() {
                     >
                       {clientSearch.length < 1 ? (
                         <p className="text-xs text-muted-foreground text-center py-4" aria-live="polite">Type a name, pet name or phone number</p>
-                      ) : isClientSearchFetching ? (
+                      ) : isClientSearchFetching && clientSearchOptions.length === 0 ? (
+                        /* Only when there is nothing to show yet. While a
+                           search refreshes, the last results stay on screen,
+                           so a row cannot disappear mid-click. */
                         <p className="text-xs text-muted-foreground text-center py-4" aria-live="polite">Searching clients…</p>
                       ) : isClientSearchError ? (
                         <p className="text-xs text-destructive text-center py-4" role="alert">Client search is temporarily unavailable. Please try again.</p>
@@ -4896,8 +4911,20 @@ export default function Calendar() {
                             type="button"
                             role="option"
                             className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
-                            onClick={() => {
+                            /* Chosen as the button goes DOWN, before the
+                               search box loses focus, so nothing the blur
+                               sets off (a spelling fix, a refreshed search)
+                               can move the row first. preventDefault keeps
+                               focus in the box. onClick stays for the
+                               keyboard, where Enter fires a click only. */
+                            onMouseDown={(e) => {
+                              if (e.button !== 0) return;
+                              e.preventDefault();
                               setNewAppt(p => ({ ...p, clientId: String(c.clientId), petIds: [], staffByPetId: {} }));
+                              setClientSearchOpen(false);
+                            }}
+                            onClick={() => {
+                              setNewAppt(p => p.clientId === String(c.clientId) ? p : ({ ...p, clientId: String(c.clientId), petIds: [], staffByPetId: {} }));
                               setClientSearchOpen(false);
                             }}
                           >
