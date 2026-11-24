@@ -5218,17 +5218,20 @@ export default function Calendar() {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Ends</Label>
+            <div className="space-y-1.5">
+              <div>
                 {/* fallbackDate, so the day is already there and only a time
                     has to be typed. Five of eight service types get no
                     suggested duration, and for those both halves were blank
                     and the picker opened on today — a January booking meant
                     paging forward three months to re-enter a date that was
-                    never going to differ from the start. */}
+                    never going to differ from the start.
+
+                    Two columns, under Date and Start time above (Andy,
+                    24/11/2026: start and end "in line with each other"). */}
                 <DateTimeField
                   aria-label="Ends"
+                  columns={{ dateLabel: "End date", timeLabel: "End time" }}
                   value={newAppt.scheduledEnd}
                   fallbackDate={newAppt.scheduledStart.slice(0, 10)}
                   onChange={next => setNewAppt(p => ({ ...p, scheduledEnd: next }))}

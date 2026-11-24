@@ -58,6 +58,7 @@ export function DateTimeField({
   disabled,
   fallbackDate,
   "aria-label": ariaLabel,
+  columns,
 }: {
   /** "2026-11-03T09:00", or "" for empty. */
   value: string;
@@ -89,6 +90,14 @@ export function DateTimeField({
    */
   fallbackDate?: string;
   "aria-label"?: string;
+  /**
+   * Labels for the two halves, laid out as two columns of a grid so they
+   * sit directly under a Date / Start time row above them (Andy,
+   * 24/11/2026: "Have the start date and end date and times in line with
+   * each other so it's easier to see"). Without them the halves wrap
+   * side by side as before.
+   */
+  columns?: { dateLabel: string; timeLabel: string };
 }) {
   /*
    * The two halves are held HERE, not derived from `value` on every render.
@@ -123,6 +132,78 @@ export function DateTimeField({
     onChange(joinLocalDateTime(nextDate, nextTime));
   };
 
+  const dateHalf = (
+    <DateField
+      id={id}
+      value={date}
+      onChange={(next) => emit(next, time || "09:00")}
+      min={min}
+      max={max}
+      disabled={disabled}
+      aria-label={ariaLabel ? `${ariaLabel} date` : "Date"}
+      wrapperClassName={columns ? "w-full" : "min-w-[9rem] flex-1"}
+      className={className}
+    />
+  );
+  const timeHalf = otherTime ? (
+    <div className="flex shrink-0 items-center gap-1">
+      <Input
+        type="time"
+        value={time}
+        disabled={disabled}
+        aria-label={ariaLabel ? `${ariaLabel} time` : "Time"}
+        className={cn(columns ? "w-full" : "w-[7rem] shrink-0", className)}
+        onChange={(e) => emit(date, e.target.value)}
+      />
+      <button
+        type="button"
+        disabled={disabled}
+        className="rounded px-1.5 py-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground disabled:opacity-50"
+        onClick={() => setOtherTime(false)}
+      >
+        Half hours
+      </button>
+    </div>
+  ) : (
+    <select
+      value={time}
+      disabled={disabled}
+      aria-label={ariaLabel ? `${ariaLabel} time` : "Time"}
+      className={cn(
+        "border-input dark:bg-input/30 h-9 shrink-0 rounded-md border bg-transparent px-2 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] md:text-sm",
+        columns ? "w-full" : "w-[7.5rem]",
+        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+        "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+        className,
+      )}
+      onChange={(e) => {
+        if (e.target.value === OTHER_TIME) { setOtherTime(true); return; }
+        emit(date, e.target.value);
+      }}
+    >
+      {!time && <option value="">Time</option>}
+      {slots.map((slot) => (
+        <option key={slot.value} value={slot.value}>{slot.label}</option>
+      ))}
+      <option value={OTHER_TIME}>Other time…</option>
+    </select>
+  );
+
+  if (columns) {
+    return (
+      <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2", wrapperClassName)}>
+        <div className="space-y-1.5">
+          <span className="text-sm font-medium leading-none">{columns.dateLabel}</span>
+          {dateHalf}
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-sm font-medium leading-none">{columns.timeLabel}</span>
+          {timeHalf}
+        </div>
+      </div>
+    );
+  }
+
   return (
     /*
      * Wraps rather than squeezes.
@@ -135,61 +216,10 @@ export function DateTimeField({
      * two readable lines instead of one clipped one.
      */
     <div className={cn("flex flex-wrap gap-2", wrapperClassName)}>
-      <DateField
-        id={id}
-        value={date}
-        onChange={(next) => emit(next, time || "09:00")}
-        min={min}
-        max={max}
-        disabled={disabled}
-        aria-label={ariaLabel ? `${ariaLabel} date` : "Date"}
-        wrapperClassName="min-w-[9rem] flex-1"
-        className={className}
-      />
-      {otherTime ? (
-        <div className="flex shrink-0 items-center gap-1">
-          <Input
-            type="time"
-            value={time}
-            disabled={disabled}
-            aria-label={ariaLabel ? `${ariaLabel} time` : "Time"}
-            className={cn("w-[7rem] shrink-0", className)}
-            onChange={(e) => emit(date, e.target.value)}
-          />
-          <button
-            type="button"
-            disabled={disabled}
-            className="rounded px-1.5 py-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground disabled:opacity-50"
-            onClick={() => setOtherTime(false)}
-          >
-            Half hours
-          </button>
-        </div>
-      ) : (
-        <select
-          value={time}
-          disabled={disabled}
-          aria-label={ariaLabel ? `${ariaLabel} time` : "Time"}
-          className={cn(
-            "border-input dark:bg-input/30 h-9 w-[7.5rem] shrink-0 rounded-md border bg-transparent px-2 py-1 text-base shadow-xs outline-none transition-[color,box-shadow] md:text-sm",
-            "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-            "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
-            className,
-          )}
-          onChange={(e) => {
-            if (e.target.value === OTHER_TIME) { setOtherTime(true); return; }
-            emit(date, e.target.value);
-          }}
-        >
-          {/* Nothing chosen yet. Not selectable once a time is set, so a
-              time cannot be cleared by accident. */}
-          {!time && <option value="">Time</option>}
-          {slots.map((slot) => (
-            <option key={slot.value} value={slot.value}>{slot.label}</option>
-          ))}
-          <option value={OTHER_TIME}>Other time…</option>
-        </select>
-      )}
+      {dateHalf}
+      {/* The time list never offers an empty choice once a time is set, so
+          a time cannot be cleared by accident. */}
+      {timeHalf}
     </div>
   );
 }
