@@ -88,6 +88,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/DateField";
+import { familyStatusChanges, familyStatusesDiffer, familyStatusLabel } from "@shared/familyStatus";
 import { brisbaneLocalInputValue, parseBrisbaneLocalDateTime } from "@shared/localDateTime";
 import { DateTimeField } from "@/components/DateTimeField";
 import { Label } from "@/components/ui/label";
@@ -3417,11 +3418,16 @@ export default function Calendar() {
         }));
       }
     }
+    // One status for the whole family booking (Andy, 24/11/2026): every dog
+    // not already at the chosen stage moves to it (shared/familyStatus.ts).
+    // Only when the box was changed, so saving a price never moves a dog.
     if (editForm.workflowState !== editAppt.workflowState) {
-      promises.push(workflowMutation.mutateAsync({
-        appointmentId: editAppt.id,
-        newState:      editForm.workflowState as "scheduled",
-      }));
+      for (const appointmentId of familyStatusChanges([editAppt, ...siblings], editForm.workflowState)) {
+        promises.push(workflowMutation.mutateAsync({
+          appointmentId,
+          newState: editForm.workflowState as "scheduled",
+        }));
+      }
     }
     try {
       await Promise.all(promises);
@@ -6098,13 +6104,14 @@ export default function Calendar() {
                   * check in status area be closer to the top and bolder." It
                   * sat under the times and the repeat box, a plain dropdown
                   * among a dozen others, on the dialog staff open to check a
-                  * dog in. It changes this one dog: on a family booking the
-                  * others are in "Dogs on this booking" just below, so it
-                  * says whose it is.
+                  * dog in. On a family booking it names every dog and sets
+                  * them together (Andy, 24/11/2026).
                   */}
                 <div className={`flex flex-wrap items-center gap-3 rounded-xl border-2 p-3 ${WORKFLOW_COLOURS[editForm.workflowState] ?? "bg-muted/40"}`}>
+                  {/* Every dog on a family booking, set together (Andy,
+                      24/11/2026; shared/familyStatus.ts). */}
                   <Label htmlFor={`status-${editAppt.id}`} className="text-lg font-bold">
-                    Status{editSiblings.length > 0 ? ` · ${editAppt.petName}` : ""}
+                    Status{editSiblings.length > 0 ? ` · ${familyStatusLabel([editAppt, ...editSiblings])}` : ""}
                   </Label>
                   <Select value={editForm.workflowState} onValueChange={v => setEditForm(p => ({ ...p, workflowState: v }))}>
                     <SelectTrigger id={`status-${editAppt.id}`} className="h-11 min-w-[12rem] flex-1 bg-background text-base font-bold text-foreground">
@@ -6116,8 +6123,16 @@ export default function Calendar() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {editSiblings.length > 0 && familyStatusesDiffer([editAppt, ...editSiblings]) && (
+                    <p className="w-full text-sm">
+                      Right now: {[editAppt, ...editSiblings].map((d) => `${d.petName} ${workflowStateLabel(d.workflowState)}`).join(", ")}.
+                      {" "}Changing this sets them all.
+                    </p>
+                  )}
                   {editForm.workflowState !== editAppt.workflowState && (
-                    <p className="w-full text-sm font-semibold">Press Save Changes to set it.</p>
+                    <p className="w-full text-sm font-semibold">
+                      Press Save Changes to set it{editSiblings.length > 0 ? " for every dog" : ""}.
+                    </p>
                   )}
                 </div>
                 {/* Lauren, 12/11/2026, circling them on a screenshot: "Move
