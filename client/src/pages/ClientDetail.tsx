@@ -4,6 +4,7 @@ import { portalSetupAddress, type PortalAccountStatus } from "@shared/portalSetu
 import { cleanClientName } from "@shared/clientName";
 import { canCancelFromClientPage } from "@shared/cancelFromClientPage";
 import { calendarAppointmentHref } from "@shared/calendarDeepLink";
+import { bookingCompanions } from "@shared/bookingCompanions";
 import { brisbaneDateKey } from "@shared/localDateTime";
 import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -924,9 +925,9 @@ export default function ClientDetail() {
   const cardPets = pets.filter(pet => !isPetArchived(pet.status));
   const archivedPets = pets.filter(pet => isPetArchived(pet.status));
   const selectedBookingPet = activePets.find(pet => String(pet.id) === bookPetId);
-  const bookingFamilyCompanions = selectedBookingPet?.familyGroupId
-    ? activePets.filter(pet => pet.familyGroupId === selectedBookingPet.familyGroupId && pet.id !== selectedBookingPet.id)
-    : [];
+  // Every other current dog of this client, family-linked or not
+  // (shared/bookingCompanions.ts, Lauren 25/11/2026).
+  const bookingFamilyCompanions = bookingCompanions(activePets, selectedBookingPet?.id ?? null);
   const activeMemberships = memberships.filter(m => m.status === "active");
   const bookingPetIds = Array.from(new Set([bookPetId, ...bookFamilyPetIds])).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0);
   // The dogs this booking is actually for, for the warning panel. Follows
@@ -3123,7 +3124,7 @@ export default function ClientDetail() {
                   ))}
                 </SelectContent>
               </Select>
-              {bookingFamilyCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50/70 dark:bg-violet-950/70 p-3"><p className="text-sm font-semibold text-violet-950 dark:text-violet-100">Family-linked dogs</p><p className="mt-0.5 text-xs text-violet-800 dark:text-violet-300">Add family companions to this shared appointment?</p><div className="mt-2 flex flex-wrap gap-2">{bookingFamilyCompanions.map(pet => { const included = bookFamilyPetIds.includes(String(pet.id)); return <Button key={pet.id} type="button" size="sm" variant={included ? "default" : "outline"} className={included ? "bg-violet-700 hover:bg-violet-800" : "border-violet-300 dark:border-violet-800 bg-card text-violet-900 dark:text-violet-200 hover:bg-violet-100 dark:hover:bg-violet-950/50"} onClick={() => setBookFamilyPetIds(current => included ? current.filter(id => id !== String(pet.id)) : [...current, String(pet.id)])}>{included ? "✓ " : "+ "}{pet.name}</Button>; })}</div></div>}
+              {bookingFamilyCompanions.length > 0 && <div className="mt-3 rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50/70 dark:bg-violet-950/70 p-3"><p className="text-sm font-semibold text-violet-950 dark:text-violet-100">Other dogs</p><p className="mt-0.5 text-xs text-violet-800 dark:text-violet-300">Add them to this appointment?</p><div className="mt-2 flex flex-wrap gap-2">{bookingFamilyCompanions.map(pet => { const included = bookFamilyPetIds.includes(String(pet.id)); return <Button key={pet.id} type="button" size="sm" variant={included ? "default" : "outline"} className={included ? "bg-violet-700 hover:bg-violet-800" : "border-violet-300 dark:border-violet-800 bg-card text-violet-900 dark:text-violet-200 hover:bg-violet-100 dark:hover:bg-violet-950/50"} onClick={() => setBookFamilyPetIds(current => included ? current.filter(id => id !== String(pet.id)) : [...current, String(pet.id)])}>{included ? "✓ " : "+ "}{pet.name}</Button>; })}</div></div>}
               {bookingPetIds.length > 0 && bookingMembershipCoverage.fullyCovered && <div className="mt-3 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 p-3 text-emerald-950 dark:text-emerald-100"><div className="flex flex-wrap items-center gap-2"><Badge className="bg-emerald-600 text-white">Weekly membership active</Badge>{Object.values(bookingMembershipCoverage.membershipByPetId).map(membership => <span key={membership.id} className="text-xs font-medium">{membership.name} · {membership.tier}</span>)}</div><p className="mt-1 text-xs text-emerald-800 dark:text-emerald-300">Every selected dog is covered for this service. This appointment is recorded as $0.00 because payment is managed through the weekly membership.</p></div>}
               {bookingPetIds.length > 0 && !bookingMembershipCoverage.fullyCovered && bookingMembershipCoverage.coveredPetIds.length > 0 && <div className="mt-3 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300">Some selected dogs have an active membership, but not every selected dog is covered for this service. Review the appointment price before saving.</div>}
             </div>

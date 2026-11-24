@@ -18,8 +18,9 @@ describe("remembered family companion booking", () => {
   it("offers the same remembered companions from the client profile and includes only selected dogs", () => {
     expect(routerSource).toContain("familyGroupId: pets.familyGroupId");
     expect(clientDetailSource).toContain("const bookingFamilyCompanions");
-    expect(clientDetailSource).toContain("Family-linked dogs");
-    expect(clientDetailSource).toContain("Add family companions to this shared appointment?");
+    // Which dogs are offered is shared/bookingCompanions.ts, tested there:
+    // every other dog of the client, not only family-linked ones (25/11/2026).
+    expect(clientDetailSource).toContain("bookingCompanions(activePets, selectedBookingPet?.id ?? null)");
     expect(clientDetailSource).toContain("Array.from(new Set([bookPetId, ...bookFamilyPetIds]))");
   });
 
