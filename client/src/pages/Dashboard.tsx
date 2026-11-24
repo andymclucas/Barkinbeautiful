@@ -289,18 +289,18 @@ export default function Dashboard() {
                 <p className="text-sm text-muted-foreground text-center py-8">No appointments today.</p>
               ) : (
                 <div>
-                  <div
-                    className="grid gap-3 pb-2 border-b border-border text-[11px] font-medium text-muted-foreground tracking-[0.02em] uppercase"
-                    style={{ gridTemplateColumns: "72px minmax(0,1fr) 130px 140px" }}
-                  >
-                    <div>Time</div><div>Pet</div><div>Service</div><div>Groomer</div>
+                  {/* Two columns on a phone, four from sm up. Andy, 24/11/2026,
+                      with a phone screenshot: the fixed Time, Service and
+                      Groomer columns left the Pet column no width at all, so
+                      the dog's name vanished and VIP sat on the service. */}
+                  <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 pb-2 border-b border-border text-[11px] font-medium text-muted-foreground tracking-[0.02em] uppercase sm:grid-cols-[72px_minmax(0,1fr)_130px_140px]">
+                    <div>Time</div><div>Pet</div><div className="hidden sm:block">Service</div><div className="hidden sm:block">Groomer</div>
                   </div>
                   <div className="overflow-y-auto max-h-80">
                     {activeAppts.map((a) => (
                       <div
                         key={a.id}
-                        className="grid gap-3 items-center py-[9px] border-b border-border/50 text-[13px] last:border-0"
-                        style={{ gridTemplateColumns: "72px minmax(0,1fr) 130px 140px" }}
+                        className="grid grid-cols-[64px_minmax(0,1fr)] gap-3 items-center py-[9px] border-b border-border/50 text-[13px] last:border-0 sm:grid-cols-[72px_minmax(0,1fr)_130px_140px]"
                       >
                         <div className="tabular-nums text-muted-foreground font-medium">{formatTime(a.scheduledStart)}</div>
                         <div className="min-w-0">
@@ -309,9 +309,12 @@ export default function Dashboard() {
                             {a.isVipMember && <VipMark />}
                           </span>
                           <span className="text-xs text-muted-foreground block truncate">{a.clientFirstName} {a.clientLastName}</span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground sm:hidden">
+                            {formatServiceType(a.serviceType)}{a.staffName ? ` · ${a.staffName}` : ""}
+                          </span>
                         </div>
-                        <div className="text-muted-foreground truncate">{formatServiceType(a.serviceType)}</div>
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="hidden text-muted-foreground truncate sm:block">{formatServiceType(a.serviceType)}</div>
+                        <div className="hidden items-center gap-2 min-w-0 sm:flex">
                           <span
                             className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center text-white text-[9px] font-bold"
                             style={{ background: a.staffColour ?? "var(--brand-primary)" }}

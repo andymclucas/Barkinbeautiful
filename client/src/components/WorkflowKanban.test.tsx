@@ -41,6 +41,46 @@ const renderKanban = (rows: any[], a = actions(), showOut = false, readOnly = fa
 
 const column = (label: RegExp) => screen.getByRole("region", { name: label });
 
+describe("Simple mode by touch (Andy, 24/11/2026: could not drag on a phone)", () => {
+  const touchAt = (x: number, y: number) => ({ touches: [{ clientX: x, clientY: y }] });
+
+  function dragByTouch(card: Element, target: Element, holdMs: number) {
+    vi.useFakeTimers();
+    const original = document.elementFromPoint;
+    document.elementFromPoint = () => target;
+    try {
+      fireEvent.touchStart(card, touchAt(10, 10));
+      vi.advanceTimersByTime(holdMs);
+      fireEvent.touchMove(card, touchAt(300, 40));
+      fireEvent.touchEnd(card, { touches: [] });
+    } finally {
+      document.elementFromPoint = original;
+      vi.useRealTimers();
+    }
+  }
+
+  it("press, hold and drop moves the dog to the column under the finger", () => {
+    const a = actions();
+    renderKanban([dog(1, "Rosie", "bathing")], a);
+    dragByTouch(screen.getByText("Rosie").closest("[data-kanban-card]")!, column(/^Dry/), 400);
+    expect(a.update).toHaveBeenCalledWith(1, { workflowState: "drying" }, { petName: "Rosie" });
+  });
+
+  it("a quick swipe scrolls instead of picking the card up", () => {
+    const a = actions();
+    renderKanban([dog(1, "Rosie", "bathing")], a);
+    dragByTouch(screen.getByText("Rosie").closest("[data-kanban-card]")!, column(/^Dry/), 100);
+    expect(a.update).not.toHaveBeenCalled();
+  });
+
+  it("dropping on Out by touch still asks first", () => {
+    const a = actions();
+    renderKanban([dog(1, "Rosie", "ready")], a, true);
+    dragByTouch(screen.getByText("Rosie").closest("[data-kanban-card]")!, column(/^Out/), 400);
+    expect(a.setOutConfirm).toHaveBeenCalledWith({ id: 1, petName: "Rosie" });
+  });
+});
+
 describe("Simple mode columns", () => {
   it("puts each dog's card in the area it is in", () => {
     renderKanban([dog(1, "Rosie", "bathing"), dog(2, "Lola", "waiting_for_dry"), dog(3, "Pip", "grooming"), dog(4, "Milo", "scheduled")]);
