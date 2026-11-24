@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ChevronRight, Info } from "lucide-react";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -41,6 +41,44 @@ export function WorkflowKanban({
 }) {
   const [dragId, setDragId] = useState<number | null>(null);
   const [overColumn, setOverColumn] = useState<string | null>(null);
+  /*
+   * Dragging by touch. The browser's own drag and drop is mouse-only, so on
+   * a phone or tablet the cards could not be moved at all (Andy,
+   * 24/11/2026). Press and hold a card to pick it up; a quick swipe still
+   * scrolls. The dog's name follows the finger, the column under it lights
+   * up, and letting go moves the dog through the same rules as a mouse drop.
+   */
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [touchDrag, setTouchDrag] = useState<{ id: number; name: string; x: number; y: number } | null>(null);
+  const columnAt = (x: number, y: number) =>
+    (document.elementFromPoint(x, y) as HTMLElement | null)?.closest("[data-kanban-column]")?.getAttribute("data-kanban-column") ?? null;
+  const touch: TouchDragHandlers = {
+    begin: (row, x, y) => {
+      setTouchDrag({ id: row.id, name: row.petName ?? "Dog", x, y });
+      setOverColumn(columnAt(x, y));
+      navigator.vibrate?.(15);
+    },
+    move: (x, y) => {
+      setTouchDrag((d) => (d ? { ...d, x, y } : d));
+      setOverColumn(columnAt(x, y));
+      // Near either edge, carry the board sideways to the columns off screen.
+      const el = scrollerRef.current;
+      if (el) {
+        const box = el.getBoundingClientRect();
+        if (x < box.left + 40) el.scrollLeft -= 14;
+        else if (x > box.right - 40) el.scrollLeft += 14;
+      }
+    },
+    end: (x, y) => {
+      const key = columnAt(x, y);
+      const dragged = touchDrag ? rows.find((r) => r.id === touchDrag.id) : undefined;
+      setTouchDrag(null);
+      setOverColumn(null);
+      const target = groups.find((g) => g.column.key === key)?.column;
+      if (dragged && target) moveTo(dragged, target);
+    },
+    cancel: () => { setTouchDrag(null); setOverColumn(null); },
+  };
   const staffById = new Map<number, StaffLite>();
   for (const s of [...bathers, ...groomers]) staffById.set(s.id, s);
   const groups = groupIntoKanbanColumns(rows, { showOut });
@@ -61,7 +99,16 @@ export function WorkflowKanban({
   return (
     // Scrolls sideways on a tablet rather than squeezing five areas into
     // cards too narrow to read.
-    <div className="overflow-x-auto pb-1" data-testid="workflow-kanban">
+    <div ref={scrollerRef} className="overflow-x-auto pb-1" data-testid="workflow-kanban">
+    {touchDrag && (
+      <div
+        className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-[130%] rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground shadow-lg"
+        style={{ left: touchDrag.x, top: touchDrag.y }}
+        data-testid="kanban-touch-ghost"
+      >
+        {touchDrag.name}
+      </div>
+    )}
     <div
       className="grid gap-3"
       style={{ gridTemplateColumns: `repeat(${groups.length}, minmax(200px, 1fr))` }}
@@ -102,6 +149,8 @@ export function WorkflowKanban({
                 busy={actions.updateStagePending}
                 onDragStart={() => setDragId(row.id)}
                 onAdvance={() => actions.advanceStage(row)}
+                touch={touch}
+                lifted={touchDrag?.id === row.id}
               />
             ))}
           </div>
@@ -117,7 +166,23 @@ function staffForColumn(row: any, column: KanbanColumn, staffById: Map<number, S
   return typeof id === "number" ? staffById.get(id) : undefined;
 }
 
-function KanbanCard({ row, now, column, staff, readOnly, busy, onDragStart, onAdvance }: {
+type TouchDragHandlers = {
+  begin: (row: any, x: number, y: number) => void;
+  move: (x: number, y: number) => void;
+  end: (x: number, y: number) => void;
+  cancel: () => void;
+};
+
+/** A touch screen with no mouse: phones and tablets. */
+const COARSE_POINTER = typeof window !== "undefined" && typeof window.matchMedia === "function"
+  && window.matchMedia("(pointer: coarse)").matches;
+
+/** How long a finger rests on a card before it is picked up. */
+const LONG_PRESS_MS = 350;
+/** Movement before that which means the finger is scrolling instead. */
+const SCROLL_SLOP_PX = 10;
+
+function KanbanCard({ row, now, column, staff, readOnly, busy, onDragStart, onAdvance, touch, lifted }: {
   row: any;
   now: number;
   column: KanbanColumn;
@@ -126,7 +191,68 @@ function KanbanCard({ row, now, column, staff, readOnly, busy, onDragStart, onAd
   busy: boolean;
   onDragStart: () => void;
   onAdvance: () => void;
+  touch: TouchDragHandlers;
+  lifted: boolean;
 }) {
+  // Touch listeners are attached by hand: touchmove must be non-passive to
+  // stop the page scrolling while a card is held, which React's own
+  // onTouchMove cannot promise.
+  const cardRef = useRef<HTMLElement>(null);
+  const touchRef = useRef(touch);
+  touchRef.current = touch;
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || readOnly) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let active = false;
+    let start = { x: 0, y: 0 };
+    let last = { x: 0, y: 0 };
+    const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      // Buttons and the details marker keep their own taps.
+      if ((e.target as HTMLElement).closest("button, a, [data-details-marker]")) return;
+      const t = e.touches[0];
+      start = { x: t.clientX, y: t.clientY };
+      last = start;
+      clear();
+      timer = setTimeout(() => {
+        timer = null;
+        active = true;
+        touchRef.current.begin(row, last.x, last.y);
+      }, LONG_PRESS_MS);
+    };
+    const onMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      last = { x: t.clientX, y: t.clientY };
+      if (!active) {
+        if (Math.hypot(last.x - start.x, last.y - start.y) > SCROLL_SLOP_PX) clear();
+        return;
+      }
+      e.preventDefault();
+      touchRef.current.move(last.x, last.y);
+    };
+    const onEnd = () => {
+      clear();
+      if (active) { active = false; touchRef.current.end(last.x, last.y); }
+    };
+    const onCancel = () => {
+      clear();
+      if (active) { active = false; touchRef.current.cancel(); }
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onCancel);
+    return () => {
+      clear();
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onCancel);
+    };
+  }, [row, readOnly]);
   const waiting = isWaitingInColumn(row.workflowState);
   const stage = STAGES.find((s) => s.key === row.workflowState);
   const next = NEXT_STAGE[row.workflowState as StageKey];
@@ -144,11 +270,15 @@ function KanbanCard({ row, now, column, staff, readOnly, busy, onDragStart, onAd
 
   return (
     <article
+      ref={cardRef}
       data-kanban-card={row.id}
-      draggable={!readOnly}
+      // Mouse drag where there is a mouse; on a touch screen the long press
+      // above does the job, and iPad Safari's own drag must not race it.
+      draggable={!readOnly && !COARSE_POINTER}
       onDragStart={readOnly ? undefined : onDragStart}
-      className={`group relative rounded-xl border bg-card p-2.5 shadow-sm transition-shadow ${readOnly ? "" : "cursor-grab hover:shadow-md active:cursor-grabbing"} ${isOut ? "opacity-60" : ""}`}
-      style={{ borderLeft: `4px solid ${serviceColour(row.serviceType)}` }}
+      onContextMenu={readOnly ? undefined : (e) => e.preventDefault()}
+      className={`group relative select-none rounded-xl border bg-card p-2.5 shadow-sm transition ${readOnly ? "" : "cursor-grab hover:shadow-md active:cursor-grabbing"} ${isOut ? "opacity-60" : ""} ${lifted ? "scale-[0.97] opacity-50 ring-2 ring-primary" : ""}`}
+      style={{ borderLeft: `4px solid ${serviceColour(row.serviceType)}`, WebkitTouchCallout: "none" }}
     >
       <div className="flex items-start gap-2">
         <PetAvatar petId={row.petId} petName={row.petName} className="h-9 w-9 shrink-0" />
@@ -186,7 +316,9 @@ function KanbanCard({ row, now, column, staff, readOnly, busy, onDragStart, onAd
       </div>
 
       {!isOut && (
-        <div className="mt-2 flex items-center gap-1.5">
+        // Wraps rather than overflows: on a phone the card is ~200px and the
+        // next-stage button ("WAIT DRY") ran past the card's edge.
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <span
             className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${waiting ? "bg-muted text-muted-foreground" : "text-white"}`}
             style={waiting ? undefined : { background: stageColour(row.workflowState) }}
@@ -198,13 +330,12 @@ function KanbanCard({ row, now, column, staff, readOnly, busy, onDragStart, onAd
               {formatLiveStageElapsed(seconds)}
             </span>
           )}
-          <span className="flex-1" />
           {!readOnly && nextStage && (
             <button
               type="button"
               onClick={onAdvance}
               disabled={busy}
-              className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="ml-auto inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               style={{ background: stageColour(nextStage.key) }}
               aria-label={`Move ${row.petName ?? "dog"} to ${nextStage.label}`}
             >
