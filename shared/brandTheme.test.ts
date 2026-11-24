@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   brandThemeChoice,
+  brandTokens,
+  darkenUntilReadable,
   GROOMIGO_BRAND,
   GROOMIGO_GLOW,
   readableOn,
@@ -42,15 +44,27 @@ describe("staffBrand", () => {
 });
 
 describe("Groomigo palette", () => {
-  it("keeps white button text readable on the teal", () => {
-    expect(contrastRatio(GROOMIGO_BRAND.primary, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+  it("is the logo's own teal, not a darkened one", () => {
+    expect(GROOMIGO_BRAND.primary).toBe(GROOMIGO_GLOW);
   });
 
-  it("keeps the neon glow readable on the sidebar it is drawn on", () => {
+  it("letters its buttons in near-black, which reads on the bright teal", () => {
+    const lettering = readableOn(GROOMIGO_BRAND.primary);
+    expect(lettering).not.toBe("#ffffff");
+    expect(contrastRatio(GROOMIGO_BRAND.primary, lettering)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("darkens the teal for text, so primary-coloured words read on white", () => {
+    const text = darkenUntilReadable(GROOMIGO_BRAND.primary, "#ffffff");
+    expect(contrastRatio(text, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(brandTokens(GROOMIGO_BRAND, "light")["--brand-text"]).toBeTruthy();
+  });
+
+  it("leaves a brand already dark enough to read as text unchanged", () => {
+    expect(darkenUntilReadable("#d61572", "#ffffff")).toBe("#d61572");
+  });
+
+  it("keeps the glow readable on the sidebar it is drawn on", () => {
     expect(contrastRatio(GROOMIGO_GLOW, GROOMIGO_BRAND.sidebar)).toBeGreaterThanOrEqual(7);
-  });
-
-  it("puts white text on the teal, not ink", () => {
-    expect(readableOn(GROOMIGO_BRAND.primary)).toBe("#ffffff");
   });
 });
