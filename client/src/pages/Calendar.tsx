@@ -25,6 +25,7 @@ import {
   calendarColumnGroups,
   columnOwnsAppointment,
   isDaycareColumn,
+  bookingStaffId,
   resolveCalendarStaffColumns,
   withDaycareColumn,
   withUnassignedColumn,
@@ -3079,7 +3080,7 @@ export default function Calendar() {
           serviceType: serviceOfPet(pet.id),
           usualGroomerId: pet.preferredGroomerId,
           newGroomerId: perPetGroomers?.[String(pet.id)]
-            ?? (newAppt.staffId ? Number(newAppt.staffId) : null),
+            ?? bookingStaffId(newAppt.staffId) ?? null,
         })),
         id => activeStaff.find(member => member.id === id)?.name,
       );
@@ -3151,7 +3152,7 @@ export default function Calendar() {
       createRecurringMutation.mutate({
         clientId: parseInt(newAppt.clientId),
         petIds: newAppt.petIds.map(id => parseInt(id)),
-        staffId: newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
+        staffId: bookingStaffId(newAppt.staffId),
         staffByPetId: perPetGroomers,
         serviceType: newAppt.serviceType as "classic_groom",
         scheduledStart: newAppt.scheduledStart,
@@ -3168,7 +3169,7 @@ export default function Calendar() {
     multiPetCreateMutation.mutate({
       clientId: parseInt(newAppt.clientId),
       petIds:   newAppt.petIds.map(id => parseInt(id)),
-      staffId:  newAppt.staffId ? parseInt(newAppt.staffId) : undefined,
+      staffId:  bookingStaffId(newAppt.staffId),
       staffByPetId: perPetGroomers,
       serviceType: newAppt.serviceType as "classic_groom",
       serviceByPetId: perPetServices as Record<string, "classic_groom"> | undefined,

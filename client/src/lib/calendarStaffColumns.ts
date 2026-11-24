@@ -192,3 +192,20 @@ export function withDaycareColumn(
 ): CalendarStaffColumn[] {
   return hasDaycare ? [...staffColumns, DAYCARE_COLUMN] : staffColumns;
 }
+
+/**
+ * The staff id a new booking is saved with, from the dialog's groomer
+ * value. Empty, "__unassigned__" (what the Daycare column fills in, since
+ * daycare is not a person) or anything that is not a real id means nobody.
+ *
+ * Lauren, 24/11/2026: booking two daycare dogs from the Daycare column
+ * failed with "Staff id: Invalid input: expected number, received NaN",
+ * because `parseInt("__unassigned__")` is NaN and the server rightly
+ * refused it. Unassigned bookings were always allowed; only the
+ * conversion was wrong.
+ */
+export function bookingStaffId(value: string | null | undefined): number | undefined {
+  if (!value || value === "__unassigned__") return undefined;
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+}
