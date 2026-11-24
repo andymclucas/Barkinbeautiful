@@ -19,7 +19,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { DateField } from "@/components/DateField";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DAY_STEP_BUTTON, DAY_TODAY_BUTTON } from "@/lib/dayNavigation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { GroomQuotePanel } from "@/components/GroomQuotePanel";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,7 +36,7 @@ import { groupFamilyWorkflowRows } from "@shared/familyWorkflowGrouping";
 import { SessionDogCounts } from "@/components/SessionDogCounts";
 import { BATH_PRIORITY_META, BATH_PRIORITY_VALUES, bathQueuePositionMeta, buildBathPriorityQueue, canChangeBathOrder, dogsOnTheSameBathNumber, isBathPriorityMutable } from "@shared/bathPriorityQueue";
 import { formatAestTime, formatAestDate } from "@shared/auditTimestamp";
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, Clock, Columns3, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Rows3, Save, Star, Sun, Tv2, Unlink, UserPlus, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock, Columns3, Dog, ExternalLink, FileText, Filter, GripVertical, Link2, Moon, Plus, RefreshCw, Rows3, Save, Star, Sun, Tv2, Unlink, UserPlus, Users, X } from "lucide-react";
 import { WorkflowKanban } from "@/components/WorkflowKanban";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
@@ -135,6 +137,7 @@ export default function WorkflowBoard() {
    * lib/timezone.ts states.
    */
   const { salonTimezone } = useTimezone();
+  const [boardDatePickerOpen, setBoardDatePickerOpen] = useState(false);
   const [boardDate, setBoardDate] = useState(() => {
     if (reviewDate && /^\d{4}-\d{2}-\d{2}$/.test(reviewDate)) return reviewDate;
     return dayInZone(Date.now(), salonTimezone) ?? new Date().toISOString().slice(0, 10);
@@ -781,19 +784,42 @@ export default function WorkflowBoard() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* Prev / Next day + Today */}
-            <div className="flex items-center">
-              <Button variant="outline" size="icon" className={`${BOARD_CONTROL} w-10 rounded-r-none border-r-0`} title="Previous day"
+            {/* The calendar's own day control (shared classes in
+                lib/dayNavigation): arrows either side of a solid Today, and
+                the day itself as a button that opens a month to pick from. */}
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" className={DAY_STEP_BUTTON} aria-label="Previous day"
                 onClick={() => setBoardDate(current => shiftDateKey(current, -1))}>
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-5 w-5" />
               </Button>
-              <DateField value={boardDate} onChange={setBoardDate} aria-label="Board date" wrapperClassName="w-40" className={`${BOARD_CONTROL} rounded-none border-x-0`} />
-              <Button variant="outline" size="icon" className={`${BOARD_CONTROL} w-10 rounded-l-none border-l-0`} title="Next day"
+              <Button size="sm" className={DAY_TODAY_BUTTON} onClick={() => setBoardDate(today)}>Today</Button>
+              <Button variant="outline" size="icon" className={DAY_STEP_BUTTON} aria-label="Next day"
                 onClick={() => setBoardDate(current => shiftDateKey(current, 1))}>
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-5 w-5" />
               </Button>
-              {!isToday && (
-                <Button variant="outline" size="sm" className={`${BOARD_CONTROL} ml-1.5`} onClick={() => setBoardDate(today)}>Today</Button>
-              )}
+              <Popover open={boardDatePickerOpen} onOpenChange={setBoardDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <button type="button" aria-label="Choose the board date" className="ml-1 flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] px-2 py-1.5 text-base font-bold transition-colors hover:bg-primary/10">
+                    <span className="rounded-md bg-primary/10 p-1 text-primary"><CalendarDays className="h-4 w-4" /></span>
+                    {formatAestDate(boardDate + "T12:00:00Z", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start" collisionPadding={8}>
+                  <CalendarPicker
+                    mode="single"
+                    selected={new Date(`${boardDate}T12:00:00`)}
+                    onSelect={(d) => {
+                      if (!d) return;
+                      // The picker hands back a local midnight; the board
+                      // keys days as YYYY-MM-DD, so read the local date.
+                      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                      setBoardDate(key);
+                      setBoardDatePickerOpen(false);
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <Button variant="outline" size="sm" className={BOARD_CONTROL} onClick={() => setShowCompleted(v => !v)}>
               {showCompleted ? "Hide Completed" : "Show Completed"}
