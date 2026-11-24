@@ -16,7 +16,7 @@ import { Building2, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { applyBrandTheme, readLogoColours, readLogoColoursFromUrl } from "@/lib/brandTheme";
-import { brandThemeChoice, GROOMIGO_BRAND, type BrandThemeChoice } from "@shared/brandPalette";
+import { brandThemeChoice, GROOMIGO_BRAND, readableOn, type BrandThemeChoice } from "@shared/brandPalette";
 import { deriveAccent, deriveSidebar } from "@shared/brandPalette";
 import { useEffect, useState } from "react";
 import { useSearch } from "wouter";
@@ -277,7 +277,7 @@ export default function Settings() {
                 </div>
                 <div className="rounded-xl bg-[var(--brand-sidebar)] p-4 text-white flex items-center justify-between gap-4">
                   <div><p className="font-semibold">Live brand preview</p><p className="text-sm text-white/70">Navigation and shared dashboard surfaces update immediately.</p></div>
-                  <span className="rounded-[var(--radius-control)] px-4 py-2 font-semibold" style={{ background: themeChoice === "brand" ? brand.primary : GROOMIGO_BRAND.primary }}>Save the look</span>
+                  <span className="rounded-[var(--radius-control)] px-4 py-2 font-semibold" style={{ background: themeChoice === "brand" ? brand.primary : GROOMIGO_BRAND.primary, color: readableOn(themeChoice === "brand" ? brand.primary : GROOMIGO_BRAND.primary) }}>Save the look</span>
                 </div>
                 <Button disabled={updateBrand.isPending} onClick={() => updateBrand.mutate({ brandPrimary: brand.primary, brandAccent: brand.accent, brandSidebar: brand.sidebar, brandFont: brand.font as any, logoUrl: brand.logoUrl || undefined, brandTheme: themeChoice })}>{updateBrand.isPending ? "Saving…" : "Save branding"}</Button>
               </CardContent>

@@ -320,15 +320,22 @@ export const FESTIVE_BRAND: Required<BrandInputShape> = {
  * setting for theme and users can then choose to have 'their brand' take
  * over."
  *
- * The primary is NOT the logo's neon teal (#1FE3DF). White text on that is
- * 1.6:1, so a button in it cannot be read. #0B7A78 carries white text at
- * 5.2:1 and keeps the hue; the neon stays where the logo draws it, on the
- * dark sidebar (`--brand-glow` in index.css), where it is 11:1.
+ * The primary IS the logo's teal. Andy, 24/11/2026, of the first version
+ * (#0B7A78): "Main colour needs to be the teal, not the dark green."
+ *
+ * White text on #1FE3DF is 1.6:1, so `brandTokens` letters its buttons in
+ * near-black instead (about 13:1) — `readableOn` already decides that from
+ * measured contrast. And because the teal itself cannot be read as TEXT on
+ * white, text and icons coloured "primary" use `--brand-text`, the same hue
+ * darkened until it reads on white.
  */
 export const GROOMIGO_BRAND: BrandColours = {
-  primary: "#0b7a78",
-  accent: "#e4f4f3",
-  sidebar: "#0a1a1c",
+  primary: "#1fe3df",
+  accent: "#e3fbfa",
+  // Charcoal rather than near-black. Andy, 24/11/2026: "Make the side
+  // banner not so dark - like a dark grey, so the white isn't so harsh."
+  // White on it is 14.6:1 (was 18:1), the glow 9.1:1.
+  sidebar: "#26292d",
 };
 
 /** The logo's neon teal. Only ever drawn on a dark surface. */
@@ -444,6 +451,13 @@ export function brandTokens(input: BrandInput, mode: ThemeMode = "light"): Recor
     oklchToHex(clampToGamut(shiftLightness(readablePrimary, mode === "dark" ? 0.09 : -0.09))),
   );
   tokens["--brand-accent"] = toOklchCss(accent);
+  // The brand as TEXT. A light brand (Groomigo's own teal, a yellow) makes a
+  // good button with dark lettering but cannot itself be read on a white
+  // page, so anything that colours words or icons "primary" reads this.
+  // A brand already dark enough is returned unchanged.
+  tokens["--brand-text"] = mode === "dark"
+    ? toOklchCss(readablePrimary)
+    : toOklchCss(darkenUntilReadable(primary, PAPER));
   tokens["--brand-sidebar"] = toOklchCss(sidebar);
 
   // The sidebar is its own surface with its own foregrounds, and it is

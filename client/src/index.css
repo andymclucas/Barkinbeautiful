@@ -139,10 +139,10 @@
   --auth-text-body: #4b5563;
   --auth-text-muted: #6b7280;
   --auth-text-faint: #9ca3af;
-  --auth-text-brand: var(--brand-primary);
-  --auth-text-brand-mid: color-mix(in oklch, var(--brand-primary) 67%, transparent);
-  --auth-text-brand-soft: color-mix(in oklch, var(--brand-primary) 50%, transparent);
-  --auth-text-brand-faint: color-mix(in oklch, var(--brand-primary) 40%, transparent);
+  --auth-text-brand: var(--brand-text);
+  --auth-text-brand-mid: color-mix(in oklch, var(--brand-text) 67%, transparent);
+  --auth-text-brand-soft: color-mix(in oklch, var(--brand-text) 50%, transparent);
+  --auth-text-brand-faint: color-mix(in oklch, var(--brand-text) 40%, transparent);
   /* Membership tier colours. Also applied by inline style (they come from a
      lookup, not a class), so they need variables to follow the theme. Silver
      (#6b7280) and bronze (#b45309) came out at roughly 2.4:1 and 1.8:1 on a
@@ -158,7 +158,7 @@
   --brand-accent: oklch(0.905 0.058 295);
   --brand-page: oklch(0.985 0.006 295);
   --brand-ink: oklch(0.24 0.035 285);
-  --brand-sidebar: #0a1a1c;  /* deep sidebar — tenants override via Settings */
+  --brand-sidebar: #26292d;  /* deep sidebar — tenants override via Settings */
 
   /* Soft tint ramp used for stat tiles, icon chips and empty states. */
   --tint-violet: oklch(0.955 0.030 292);
@@ -938,7 +938,7 @@ textarea[data-slot="textarea"],
 [data-slot="tabs-trigger"]:hover:not([data-state="active"]):not(:disabled),
 [role="tab"]:hover:not([aria-selected="true"]):not(:disabled) {
   background: color-mix(in oklch, var(--brand-primary) 12%, transparent);
-  color: var(--brand-primary);
+  color: var(--brand-text);
 }
 [data-slot="tabs-trigger"][data-state="active"],
 [role="tab"][aria-selected="true"] {
@@ -1692,7 +1692,7 @@ textarea[data-slot="textarea"]:focus-visible,
 [role="tab"][aria-selected="true"] {
   background-image: none;
   background-color: var(--card);
-  color: var(--brand-primary);
+  color: var(--brand-text);
   box-shadow:
     0 1px 2px color-mix(in oklch, var(--foreground) 12%, transparent),
     0 0 0 0.5px color-mix(in oklch, var(--foreground) 8%, transparent);
@@ -1822,7 +1822,7 @@ textarea[data-slot="textarea"]:focus-visible,
     0 0 0 0.5px color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 .seg-option[aria-pressed="true"] .seg-price {
-  color: var(--brand-primary);
+  color: var(--brand-text);
 }
 .seg-option:disabled {
   cursor: not-allowed;
@@ -1848,5 +1848,23 @@ textarea[data-slot="textarea"]:focus-visible,
   white-space: normal;
   text-align: center;
   line-height: 1.2;
+}
+
+/* ── The brand as text ─────────────────────────────────────────────────────
+   Andy, 24/11/2026: "Main colour needs to be the teal, not the dark green."
+   Groomigo's primary is now the logo's own bright teal, which makes a fine
+   button (lettered near-black) but cannot be read as words on white. So
+   every "primary" TEXT and icon reads --brand-text: the same hue darkened
+   until it reads on white, set by brandTokens for whatever brand is
+   showing. A salon whose colour is already dark gets its colour back
+   unchanged. Unlayered, so it outranks Tailwind's utilities layer. */
+:root { --brand-text: var(--brand-primary); }
+.text-primary,
+.hover\:text-primary:hover,
+.group:hover .group-hover\:text-primary {
+  color: var(--brand-text);
+}
+.text-primary\/60 {
+  color: color-mix(in oklch, var(--brand-text) 60%, transparent);
 }
 
