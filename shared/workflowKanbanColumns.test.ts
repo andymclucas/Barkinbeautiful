@@ -17,7 +17,12 @@ describe("kanbanColumnFor", () => {
     expect(kanbanColumnFor("waiting_for_bath")).toBe("bath");
     expect(kanbanColumnFor("checked_in")).toBe("bath");
     expect(kanbanColumnFor("waiting_for_dry")).toBe("dry");
-    expect(kanbanColumnFor("waiting_for_groom")).toBe("groom");
+    expect(kanbanColumnFor("grooming")).toBe("groom");
+  });
+
+  it("gives dogs waiting for a groomer their own area (Lauren, 24/11/2026)", () => {
+    expect(kanbanColumnFor("waiting_for_groom")).toBe("wait_groom");
+    expect(KANBAN_COLUMNS.map((c) => c.key)).toEqual(["arriving", "bath", "dry", "wait_groom", "groom", "ready", "out"]);
   });
 
   it("gives cancelled and no-show dogs no column", () => {

@@ -6,11 +6,11 @@
  * view with only the dogs in the relevant grooming sections and just simple
  * details of the dogs unless hover over to see all warnings & pet codes."
  *
- * The twelve workflow states fold into five areas. A dog WAITING for the bath
+ * The twelve workflow states fold into six areas. A dog WAITING for the bath
  * is in the bath area, shown as waiting; the board's own stage names still
  * carry the detail on the card.
  */
-export type KanbanColumnKey = "arriving" | "bath" | "dry" | "groom" | "ready" | "out";
+export type KanbanColumnKey = "arriving" | "bath" | "dry" | "wait_groom" | "groom" | "ready" | "out";
 
 export type KanbanColumn = {
   key: KanbanColumnKey;
@@ -25,7 +25,15 @@ export const KANBAN_COLUMNS: readonly KanbanColumn[] = [
   { key: "arriving", label: "Arriving", states: ["scheduled"], dropState: "scheduled" },
   { key: "bath", label: "Bath", states: ["checked_in", "waiting_for_bath", "bathing"], dropState: "bathing" },
   { key: "dry", label: "Dry", states: ["waiting_for_dry", "drying"], dropState: "drying" },
-  { key: "groom", label: "Groom", states: ["waiting_for_groom", "grooming"], dropState: "grooming" },
+  /*
+   * Waiting for a groomer is its own area. Lauren, 24/11/2026: "I recommend
+   * the wait to groom area to show up instead of just groom status." Dogs
+   * dried and waiting sat in Groom beside the dog on the table, told apart
+   * only by a status pill; the queue for the groomers is the thing the
+   * front desk most wants to see at a glance.
+   */
+  { key: "wait_groom", label: "Wait to groom", states: ["waiting_for_groom"], dropState: "waiting_for_groom" },
+  { key: "groom", label: "Groom", states: ["grooming"], dropState: "grooming" },
   { key: "ready", label: "Ready", states: ["ready"], dropState: "ready" },
   { key: "out", label: "Out", states: ["complete"], dropState: "complete" },
 ] as const;
