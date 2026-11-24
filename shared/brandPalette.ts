@@ -332,7 +332,10 @@ export const FESTIVE_BRAND: Required<BrandInputShape> = {
 export const GROOMIGO_BRAND: BrandColours = {
   primary: "#1fe3df",
   accent: "#e3fbfa",
-  sidebar: "#0a1a1c",
+  // Charcoal rather than near-black. Andy, 24/11/2026: "Make the side
+  // banner not so dark - like a dark grey, so the white isn't so harsh."
+  // White on it is 14.6:1 (was 18:1), the glow 9.1:1.
+  sidebar: "#26292d",
 };
 
 /** The logo's neon teal. Only ever drawn on a dark surface. */
