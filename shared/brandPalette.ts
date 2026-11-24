@@ -308,6 +308,66 @@ export const FESTIVE_BRAND: Required<BrandInputShape> = {
   sidebar: "#0a2f18",
 };
 
+/**
+ * Groomigo's own look: the theme every salon starts on.
+ *
+ * Andy, 24/11/2026: "Add a theme button to use Groomigo's default. This
+ * needs to be the foundation that the site is built on. Make the teal and
+ * white sleek, modern and really high-end. This will be the default
+ * setting for theme and users can then choose to have 'their brand' take
+ * over."
+ *
+ * The primary is NOT the logo's neon teal (#1FE3DF). White text on that is
+ * 1.6:1, so a button in it cannot be read. #0B7A78 carries white text at
+ * 5.2:1 and keeps the hue; the neon stays where the logo draws it, on the
+ * dark sidebar (`--brand-glow` in index.css), where it is 11:1.
+ */
+export const GROOMIGO_BRAND: BrandColours = {
+  primary: "#0b7a78",
+  accent: "#e4f4f3",
+  sidebar: "#0a1a1c",
+};
+
+/** The logo's neon teal. Only ever drawn on a dark surface. */
+export const GROOMIGO_GLOW = "#1fe3df";
+
+/** A theme with every colour decided. */
+export type BrandColours = { primary: string; accent: string; sidebar: string };
+
+/** Which colours the staff app wears: Groomigo's, or the salon's own. */
+export type BrandThemeChoice = "groomigo" | "brand";
+
+/**
+ * Read the stored choice. NULL, empty and anything unrecognised are
+ * Groomigo, because Groomigo is the default and a salon has to opt in to
+ * its own colours. Only the exact word "brand" turns them on.
+ */
+export function brandThemeChoice(stored: string | null | undefined): BrandThemeChoice {
+  return stored === "brand" ? "brand" : "groomigo";
+}
+
+/**
+ * The colours to paint the staff app in, given what the salon has saved.
+ *
+ * One function so the layout, the sidebar logo and the Settings preview
+ * cannot disagree about which theme is showing.
+ */
+export function staffBrand(tenant: {
+  brandTheme?: string | null;
+  brandPrimary?: string | null;
+  brandAccent?: string | null;
+  brandSidebar?: string | null;
+} | null | undefined): BrandColours & { choice: BrandThemeChoice } {
+  const choice = brandThemeChoice(tenant?.brandTheme);
+  if (choice === "groomigo" || !tenant) return { ...GROOMIGO_BRAND, choice };
+  return {
+    choice,
+    primary: normaliseHex(tenant.brandPrimary) ?? GROOMIGO_BRAND.primary,
+    accent: normaliseHex(tenant.brandAccent) ?? deriveAccent(normaliseHex(tenant.brandPrimary) ?? GROOMIGO_BRAND.primary),
+    sidebar: normaliseHex(tenant.brandSidebar) ?? deriveSidebar(normaliseHex(tenant.brandPrimary) ?? GROOMIGO_BRAND.primary),
+  };
+}
+
 type BrandInputShape = {
   primary?: string | null;
   accent?: string | null;

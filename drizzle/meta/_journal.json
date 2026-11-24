@@ -1233,6 +1233,13 @@
       "when": 1794380700000,
       "tag": "0175_support_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "5",
+      "when": 1795484922754,
+      "tag": "0176_tenant_brand_theme",
+      "breakpoints": true
     }
   ]
 }

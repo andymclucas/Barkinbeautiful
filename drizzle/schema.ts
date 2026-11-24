@@ -41,6 +41,12 @@ export const tenants = mysqlTable("tenants", {
   brandPrimary: varchar("brand_primary", { length: 16 }).default("#d61572").notNull(),
   brandAccent: varchar("brand_accent", { length: 16 }).default("#f9d4e7").notNull(),
   brandSidebar: varchar("brand_sidebar", { length: 16 }).default("#2b1830").notNull(),
+  /**
+   * "brand" paints the staff app in the three colours above. NULL, or
+   * anything else, paints Groomigo's own teal — the default every salon
+   * starts on. Read through `staffBrand` in shared/brandPalette.ts.
+   */
+  brandTheme: varchar("brand_theme", { length: 16 }),
   timezone: varchar("timezone", { length: 64 }).default("Australia/Brisbane").notNull(),
   subscriptionPlan: mysqlEnum("subscription_plan", ["trial", "starter", "professional", "enterprise"]).default("trial").notNull(),
   subscriptionStatus: mysqlEnum("subscription_status", ["active", "past_due", "cancelled", "trialing"]).default("trialing").notNull(),
