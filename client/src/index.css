@@ -121,13 +121,16 @@
      and names are unchanged, so tenant overrides keep working exactly as before. */
   /* Sign-in page. Its backdrop and card are set with inline styles, so they
      need variables rather than utility classes to follow the theme. */
-  --auth-page-gradient: linear-gradient(160deg, #faf8ff 0%, #f4f0fe 45%, #f7f4ff 75%, #fdfcff 100%);
+  /* Drawn from --brand-primary (24/11/2026), so the sign-in wears the same
+     theme as the app behind it: Groomigo teal by default, a salon's own
+     colours once it switches. They were fixed violet. */
+  --auth-page-gradient: linear-gradient(160deg, color-mix(in oklch, var(--brand-primary) 3%, white) 0%, color-mix(in oklch, var(--brand-primary) 6%, white) 45%, color-mix(in oklch, var(--brand-primary) 4%, white) 75%, #ffffff 100%);
   --auth-card-bg: #ffffff;
-  --auth-card-border: rgba(124, 58, 237, 0.12);
-  --auth-card-shadow: 0 24px 48px -20px rgba(76, 29, 149, 0.18), inset 0 1px 0 rgba(124, 58, 237, 0.06);
-  --auth-grid-line: rgba(124, 58, 237, 0.30);
-  --auth-field-border: rgba(124, 58, 237, 0.16);
-  --auth-field-border-focus: rgba(124, 58, 237, 0.55);
+  --auth-card-border: color-mix(in oklch, var(--brand-primary) 12%, transparent);
+  --auth-card-shadow: 0 24px 48px -20px color-mix(in oklch, var(--brand-primary) 20%, transparent);
+  --auth-grid-line: color-mix(in oklch, var(--brand-primary) 22%, transparent);
+  --auth-field-border: color-mix(in oklch, var(--foreground) 12%, transparent);
+  --auth-field-border-focus: color-mix(in oklch, var(--brand-primary) 60%, transparent);
   /* The sign-in copy is coloured by inline styles too, so it needs variables
      as well. These light values are the hexes that were hardcoded in
      Login.tsx - unchanged, so light mode looks exactly as it did - while the
@@ -136,10 +139,10 @@
   --auth-text-body: #4b5563;
   --auth-text-muted: #6b7280;
   --auth-text-faint: #9ca3af;
-  --auth-text-brand: #7c3aed;
-  --auth-text-brand-mid: #7c3aedaa;
-  --auth-text-brand-soft: #7c3aed80;
-  --auth-text-brand-faint: #7c3aed66;
+  --auth-text-brand: var(--brand-primary);
+  --auth-text-brand-mid: color-mix(in oklch, var(--brand-primary) 67%, transparent);
+  --auth-text-brand-soft: color-mix(in oklch, var(--brand-primary) 50%, transparent);
+  --auth-text-brand-faint: color-mix(in oklch, var(--brand-primary) 40%, transparent);
   /* Membership tier colours. Also applied by inline style (they come from a
      lookup, not a class), so they need variables to follow the theme. Silver
      (#6b7280) and bronze (#b45309) came out at roughly 2.4:1 and 1.8:1 on a
@@ -1826,4 +1829,24 @@ textarea[data-slot="textarea"]:focus-visible,
   opacity: 0.45;
 }
 .dark .seg-option[aria-pressed="true"] { background: var(--accent); }
+
+/* Equal columns with the price under the label, for a choice whose
+   options would otherwise wrap onto a second ragged row (the three rates
+   in a 448px dialog). Each column is a full-height touch target. */
+.seg-track.seg-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  width: 100%;
+}
+.seg-grid .seg-option {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.5rem;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+}
 

@@ -13,7 +13,9 @@ import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 export default function Login() {
   // The first screen a salon ever sees, and the one they show staff.
   // It wears their colours too.
-  usePublicBrandTheme();
+  // The staff sign-in follows the salon's Groomigo / My brand switch, like
+  // the staff app behind it. Client-facing pages keep the salon's colours.
+  usePublicBrandTheme(1, { staff: true });
   const [, navigate] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -141,7 +143,7 @@ export default function Login() {
 
       {/* Ambient glow blobs */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full opacity-10 blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, var(--color-violet-400) 0%, transparent 70%)" }} />
-      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full opacity-[0.08] blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, #f0abfc 0%, transparent 70%)" }} />
+      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full opacity-[0.08] blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, var(--color-violet-200) 0%, transparent 70%)" }} />
 
       <div className="relative w-full max-w-md z-10">
 
@@ -192,7 +194,7 @@ export default function Login() {
                 <Button
                   onClick={finishResetAndSignIn}
                   className="w-full font-semibold text-white rounded-xl"
-                  style={{ background: "linear-gradient(135deg, var(--color-violet-500) 0%, var(--color-violet-600) 100%)", boxShadow: "0 4px 16px rgba(124,58,237,0.26)" }}
+                 
                 >
                   Continue to sign in
                 </Button>
@@ -245,7 +247,7 @@ export default function Login() {
                   <Button
                     type="submit"
                     className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
-                    style={{ background: "linear-gradient(135deg, var(--color-violet-500) 0%, var(--color-violet-600) 50%, var(--color-violet-700) 100%)", boxShadow: "0 4px 20px rgba(124,58,237,0.30)" }}
+                   
                     disabled={completeResetMutation.isPending}
                   >
                     {completeResetMutation.isPending ? (
@@ -323,7 +325,7 @@ export default function Login() {
             <Button
               type="submit"
               className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
-              style={{ background: "linear-gradient(135deg, var(--color-violet-500) 0%, var(--color-violet-600) 50%, var(--color-violet-700) 100%)", boxShadow: "0 4px 20px rgba(124,58,237,0.30)" }}
+             
               disabled={loginMutation.isPending}
             >
               {loginMutation.isPending ? (
@@ -490,7 +492,7 @@ export default function Login() {
                   <Button
                     type="submit"
                     className="w-full font-semibold text-white rounded-xl"
-                    style={{ background: "linear-gradient(135deg, var(--color-violet-500) 0%, var(--color-violet-600) 100%)", boxShadow: "0 4px 16px rgba(124,58,237,0.26)" }}
+                   
                     disabled={resetMutation.isPending}
                   >
                     {resetMutation.isPending ? (

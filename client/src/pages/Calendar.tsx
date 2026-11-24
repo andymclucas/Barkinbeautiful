@@ -4106,8 +4106,8 @@ export default function Calendar() {
    * target on a phone; they were 36, and the board is used on one.
    */
   const navButtonClass =
-    "brand-lift h-11 w-11 rounded-full border-2 border-primary/30 bg-primary/10 " +
-    "text-primary hover:border-primary/50 hover:bg-primary/20 hover:text-primary";
+    "h-11 w-11 rounded-[var(--radius-control)] border border-primary/25 bg-primary/8 " +
+    "text-primary hover:border-primary/45 hover:bg-primary/15 hover:text-primary";
 
   return (
     <HourHeightContext.Provider value={HOUR_HEIGHT}>
@@ -4130,7 +4130,7 @@ export default function Calendar() {
                 onClick={() => viewMode === "week" ? navigateWeek(-1) : navigateDay(-1)}>
                 <ChevronLeft className="h-5 w-5" />
               </Button>
-              <Button size="sm" className="brand-lift h-11 rounded-full px-7 text-base font-bold shadow-md shadow-primary/25" onClick={goToToday}>
+              <Button size="sm" className="h-11 px-6 text-base font-semibold" onClick={goToToday}>
                 Today
               </Button>
               <Button variant="outline" size="icon" className={navButtonClass}

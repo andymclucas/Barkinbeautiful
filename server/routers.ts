@@ -12633,6 +12633,8 @@ const settingsRouter = router({
           brandPrimary: tenants.brandPrimary,
           brandAccent: tenants.brandAccent,
           brandSidebar: tenants.brandSidebar,
+          /** Only the staff sign-in reads it, to follow the theme switch. */
+          brandTheme: tenants.brandTheme,
         })
         .from(tenants)
         .where(eq(tenants.id, input.tenantId))

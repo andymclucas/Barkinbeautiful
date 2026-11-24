@@ -596,7 +596,7 @@ export function BookingPetPricing(props: Props) {
             {!isCovered(row.petId) && options.length > 0 && (
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">Rate</Label>
-                <div className="seg-track" role="group" aria-label="Rate">
+                <div className="seg-track seg-grid" role="group" aria-label="Rate">
                   {tierChoices(options, props.priceByPetId[key]).map((choice) => (
                     <button
                       key={choice.tier}
