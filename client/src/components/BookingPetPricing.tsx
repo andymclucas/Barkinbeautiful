@@ -401,7 +401,7 @@ export function BookingPetPricing(props: Props) {
   if (petIds.length === 0) return null;
 
   return (
-    <div className="space-y-3 rounded-lg border p-3">
+    <div className="sheet-group space-y-3 rounded-lg border p-3">
       <div className="flex items-center justify-between gap-3">
         <Label className="flex items-center gap-1.5 text-sm">
           <Dog className="h-3.5 w-3.5 text-primary" /> Price per dog
@@ -454,24 +454,29 @@ export function BookingPetPricing(props: Props) {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {/* The quick picks are the fast path Andy asked for: tap Classic or
             Styled and the figure for this dog's size lands in the box. They
             are hidden on a membership booking, where the groom is $0.00 and
             the service is whatever the membership covers. */}
-        {!membershipCovered && quickPicks.map((pick) => (
-          <Button
-            key={pick.serviceType}
-            type="button"
-            size="sm"
-            variant={serviceType === pick.serviceType ? "default" : "outline"}
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => props.onServiceTypeChange(pick.serviceType)}
-          >
-            {pick.label}
-            {pick.total && <span className="opacity-80">{formatPriceAud(pick.total)}</span>}
-          </Button>
-        ))}
+        {/* A segmented control (soft native, 24/11/2026): one choice of
+            cut, so it reads as one object with the chosen one raised. */}
+        {!membershipCovered && quickPicks.length > 0 && (
+          <div className="seg-track" role="group" aria-label="Cut">
+            {quickPicks.map((pick) => (
+              <button
+                key={pick.serviceType}
+                type="button"
+                className="seg-option"
+                aria-pressed={serviceType === pick.serviceType}
+                onClick={() => props.onServiceTypeChange(pick.serviceType)}
+              >
+                {pick.label}
+                {pick.total && <span className="seg-price tabular-nums opacity-80">{formatPriceAud(pick.total)}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Offered on a membership booking too — those are the clients who
             rebook every four to eight weeks, and repeating still restores
             the service, the groomer and the extras. */}
@@ -480,7 +485,7 @@ export function BookingPetPricing(props: Props) {
             type="button"
             size="sm"
             variant="outline"
-            className="h-8 gap-1.5 text-xs"
+            className="h-9 gap-1.5 text-xs"
             onClick={repeatLastBooking}
           >
             <RotateCcw className="h-3 w-3" /> Book again
@@ -514,7 +519,7 @@ export function BookingPetPricing(props: Props) {
           // inside cannot be mistaken for another dog's.
           <div
             key={key}
-            className="min-w-0 space-y-2.5 overflow-hidden rounded-xl border-2 bg-card p-3 shadow-sm"
+            className="min-w-0 space-y-2.5 overflow-hidden rounded-[var(--radius-group)] border bg-card p-3"
           >
             {/* Nothing in this row may refuse to shrink except the one
                 short control. The facts used to carry shrink-0, which was
@@ -591,7 +596,7 @@ export function BookingPetPricing(props: Props) {
             {!isCovered(row.petId) && options.length > 0 && (
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">Rate</Label>
-                <div className="flex flex-wrap gap-1">
+                <div className="seg-track" role="group" aria-label="Rate">
                   {tierChoices(options, props.priceByPetId[key]).map((choice) => (
                     <button
                       key={choice.tier}
@@ -601,16 +606,11 @@ export function BookingPetPricing(props: Props) {
                       // this reads as "we don't price that".
                       disabled={choice.priceAud === null}
                       onClick={() => choice.priceAud && setPrice(row.petId, choice.priceAud)}
-                      className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
-                        choice.selected
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : choice.priceAud === null
-                            ? "cursor-not-allowed border-dashed text-muted-foreground/60"
-                            : "border-input bg-background hover:bg-accent"
-                      }`}
+                      aria-pressed={choice.selected}
+                      className="seg-option text-[12px]"
                     >
                       {choice.label}
-                      <span className={`ml-1.5 tabular-nums ${choice.selected ? "" : "text-muted-foreground"}`}>
+                      <span className={`seg-price tabular-nums ${choice.selected ? "" : "text-muted-foreground"}`}>
                         {choice.priceAud === null ? "—" : formatPriceAud(choice.priceAud)}
                       </span>
                     </button>

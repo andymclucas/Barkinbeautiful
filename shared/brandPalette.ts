@@ -72,19 +72,22 @@ export type ThemeMode = "light" | "dark";
  * leave dark mode with light surfaces.
  */
 const NEUTRALS: Record<ThemeMode, ReadonlyArray<{ name: string; l: number; c: number }>> = {
+  // Soft native (24/11/2026): a slightly greyer page so white cards and
+  // groups stand off it, and less tint in the greys so they read as clean
+  // grey rather than as a pale wash of the brand.
   light: [
-    { name: "--background", l: 0.985, c: 0.006 },
+    { name: "--background", l: 0.972, c: 0.004 },
     { name: "--foreground", l: 0.24, c: 0.035 },
     { name: "--card-foreground", l: 0.24, c: 0.035 },
     { name: "--popover-foreground", l: 0.24, c: 0.035 },
-    { name: "--secondary", l: 0.955, c: 0.018 },
+    { name: "--secondary", l: 0.952, c: 0.012 },
     { name: "--secondary-foreground", l: 0.36, c: 0.11 },
     { name: "--accent", l: 0.945, c: 0.028 },
     { name: "--accent-foreground", l: 0.4, c: 0.14 },
-    { name: "--muted", l: 0.967, c: 0.01 },
+    { name: "--muted", l: 0.962, c: 0.006 },
     { name: "--muted-foreground", l: 0.556, c: 0.028 },
-    { name: "--border", l: 0.925, c: 0.014 },
-    { name: "--input", l: 0.925, c: 0.014 },
+    { name: "--border", l: 0.918, c: 0.008 },
+    { name: "--input", l: 0.918, c: 0.008 },
     { name: "--sidebar-accent", l: 0.955, c: 0.022 },
     { name: "--sidebar-accent-foreground", l: 0.42, c: 0.16 },
     { name: "--sidebar-border", l: 0.935, c: 0.012 },

@@ -31,7 +31,7 @@ describe("cancelled appointment calendar visibility", () => {
     // now faded and neutral. Asserted as the absence of the red treatment plus
     // the presence of the fade, rather than one exact gradient string.
     expect(calendarSource).toContain("opacity: isCancelled ? 0.45 : 1");
-    expect(calendarSource).toContain('isCancelled ? "dashed #cbd5e1"');
+    expect(calendarSource).toContain('isCancelled ? "3px dashed #cbd5e1"');
     expect(calendarSource).not.toContain("bg-red-700 px-1.5 py-0.5 text-[9px] font-black uppercase");
     expect(calendarSource).not.toContain("decoration-red-700");
     expect(calendarSource).not.toContain('linear-gradient(135deg, #fee2e2 0%, #fff7f7 180%)');
