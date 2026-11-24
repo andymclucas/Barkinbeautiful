@@ -199,6 +199,7 @@ import { retentionRows } from "@shared/clientRetention";
 import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } from "@shared/lapsedClients";
 import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
 import { bufferedSearchWindow, isClearOfBookings, CLIENT_BOOKING_BUFFER_MINUTES } from "@shared/clientBookingBuffer";
+import { clearCandidatesOnDay, searchDayKeys } from "@shared/portalNextAvailable";
 import { decidePortalBooking, isClientPickableAddOn, memberServiceFor, MEMBER_EXTRAS_MESSAGE, PORTAL_BOOKING_SERVICES, PORTAL_BOOKING_SERVICE_LABELS, type PlanState } from "@shared/portalSelfBooking";
 import { getAppointmentMembershipCoverage, getAppointmentMembershipCoverageByService } from "./appointmentCoverage";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, portalSetupAddress, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
@@ -17871,6 +17872,66 @@ const clientPortalRouter = router({
         return null;
       }));
       return free.filter((slot): slot is NonNullable<typeof slot> => slot !== null);
+    }),
+
+  /**
+   * The first free time for one of the client's dogs, up to eight weeks
+   * ahead (Andy, 24/11/2026: "a 'book next available' date button").
+   * Cheap on purpose: one query per open day, the 30-minute gap checked in
+   * code (shared/portalNextAvailable.ts), and the full capacity check only
+   * on the times that are clear. Null when nothing is free.
+   */
+  bookingNextAvailable: publicProcedure
+    .input(z.object({
+      token: z.string().optional(),
+      petId: z.number().int().positive(),
+      serviceType: z.string().max(40),
+      staffId: z.number().int().positive().nullable(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      const { clientId, tenantId } = await resolvePortalClient(db, input, ctx.req);
+      const options = await loadPortalBookingOptions(db, tenantId, clientId);
+      if (!options.enabled) return null;
+      const pet = options.pets.find((p) => p.id === input.petId);
+      if (!pet) throw new TRPCError({ code: "NOT_FOUND", message: "Dog not found." });
+      const decision = decidePortalBooking({ planState: pet.planState, memberService: pet.memberService, requestedService: input.serviceType, addOnIds: [] });
+      if (!decision.ok) return null;
+      const groomerIds = input.staffId
+        ? options.groomers.filter((g) => g.id === input.staffId).map((g) => g.id)
+        : options.groomers.map((g) => g.id);
+      if (groomerIds.length === 0) return null;
+      const durationMinutes = ONLINE_SERVICE_MINUTES[decision.serviceType] ?? 60;
+      const [tenant] = await db.select({ leadHours: tenants.onlineBookingLeadHours }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+      const notBefore = new Date(Date.now() + Number(tenant?.leadHours ?? 24) * 3600000);
+
+      for (const dateKey of searchDayKeys(brisbaneDateKey(new Date()))) {
+        if (buildOnlineBookingSlotStarts(dateKey, durationMinutes).length === 0) continue; // closed day, no query
+        const { start, end } = aestDayBounds(dateKey);
+        const rows: Array<{ staffId: number | null; scheduledStart: Date; scheduledEnd: Date }> = await db.select({
+          staffId: appointments.staffId, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd,
+        }).from(appointments).where(and(
+          eq(appointments.tenantId, tenantId),
+          inArray(appointments.staffId, groomerIds),
+          gte(appointments.scheduledStart, start),
+          lte(appointments.scheduledStart, end),
+          inArray(appointments.status, ["confirmed", "pending"]),
+        ));
+        const byGroomer = new Map<number, Array<{ scheduledStart: Date; scheduledEnd: Date }>>();
+        for (const row of rows) {
+          if (row.staffId === null) continue;
+          const list = byGroomer.get(row.staffId) ?? [];
+          list.push(row);
+          byGroomer.set(row.staffId, list);
+        }
+        const candidates = clearCandidatesOnDay({ dateKey, durationMinutes, groomerIds, bookingsByGroomer: byGroomer, notBefore });
+        for (const candidate of candidates.slice(0, 12)) {
+          const verdict = await checkOnlineCapacity({ tenantId, staffId: candidate.staffId, serviceType: decision.serviceType, scheduledStart: candidate.scheduledStart, petWeightKg: pet.weightKg ?? undefined });
+          if (verdict.available) return { date: dateKey, scheduledStart: candidate.scheduledStart, staffId: candidate.staffId };
+        }
+      }
+      return null;
     }),
 
   /** Book one of the client's own dogs. */

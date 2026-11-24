@@ -5,8 +5,10 @@ import userEvent from "@testing-library/user-event";
 const createBooking = vi.fn();
 const g = globalThis as any;
 
+const nextAvailable = vi.fn();
 vi.mock("@/lib/trpc", () => ({
   trpc: {
+    useUtils: () => ({ clientPortal: { bookingNextAvailable: { fetch: (i: unknown) => nextAvailable(i) } } }),
     clientPortal: {
       bookingOptions: { useQuery: () => ({ data: g.__options }) },
       bookingSlots: { useQuery: () => ({ data: g.__slots ?? [], isLoading: false }) },
@@ -73,6 +75,20 @@ describe("PortalBookingDialog", () => {
     expect(screen.getByText("Estimated total $60.00")).toBeInTheDocument();
     await u.click(screen.getByRole("button", { name: "Book" }));
     expect(createBooking).toHaveBeenCalledWith(expect.objectContaining({ petId: 2, serviceType: "bath_only", addOnIds: [9], staffId: null }));
+  });
+
+  it("jumps to the next free time with one press", async () => {
+    nextAvailable.mockResolvedValue({ date: "2026-12-09", scheduledStart: "2026-12-09T01:00:00.000Z", staffId: 5 });
+    g.__slots = [{ scheduledStart: "2026-12-09T01:00:00.000Z", scheduledEnd: "2026-12-09T03:00:00.000Z", durationMinutes: 120 }];
+    render(<PortalBookingDialog open onClose={() => {}} onBooked={() => {}} />);
+    const u = user();
+    await u.click(screen.getByRole("button", { name: "Louie" }));
+    await u.click(screen.getByRole("button", { name: /Classic groom/ }));
+    await u.click(screen.getByRole("button", { name: "Book next available" }));
+    expect(nextAvailable).toHaveBeenCalledWith(expect.objectContaining({ petId: 2, serviceType: "classic_groom", staffId: null }));
+    expect(await screen.findByText(/Wednesday 9 December at 11:00 am/)).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Book" }));
+    expect(createBooking).toHaveBeenCalledWith(expect.objectContaining({ petId: 2, serviceType: "classic_groom", scheduledStart: new Date("2026-12-09T01:00:00.000Z") }));
   });
 
   it("sends a dog whose plan cannot be used to the salon", async () => {
