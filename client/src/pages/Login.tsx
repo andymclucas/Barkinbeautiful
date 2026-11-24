@@ -193,7 +193,7 @@ export default function Login() {
                 </p>
                 <Button
                   onClick={finishResetAndSignIn}
-                  className="w-full font-semibold text-white rounded-xl"
+                  className="w-full font-semibold"
                  
                 >
                   Continue to sign in
@@ -246,7 +246,7 @@ export default function Login() {
                   </div>
                   <Button
                     type="submit"
-                    className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
+                    className="w-full font-semibold py-2.5 transition-all duration-200 active:scale-[0.98]"
                    
                     disabled={completeResetMutation.isPending}
                   >
@@ -324,7 +324,7 @@ export default function Login() {
 
             <Button
               type="submit"
-              className="w-full font-semibold py-2.5 rounded-xl text-white transition-all duration-200 active:scale-[0.98]"
+              className="w-full font-semibold py-2.5 transition-all duration-200 active:scale-[0.98]"
              
               disabled={loginMutation.isPending}
             >
@@ -347,7 +347,7 @@ export default function Login() {
                   style={{
                     background: rememberMe ? "var(--color-violet-600)" : "#ffffff",
                     border: rememberMe ? "1px solid var(--brand-primary)" : "1px solid var(--auth-field-border)",
-                    boxShadow: rememberMe ? "0 0 8px rgba(124,58,237,0.34)" : "none",
+                    boxShadow: "none",
                   }}
                 >
                   {rememberMe && (
@@ -491,7 +491,7 @@ export default function Login() {
                   </div>
                   <Button
                     type="submit"
-                    className="w-full font-semibold text-white rounded-xl"
+                    className="w-full font-semibold"
                    
                     disabled={resetMutation.isPending}
                   >
