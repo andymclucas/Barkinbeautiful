@@ -10,6 +10,7 @@ import { SIZE_BAND_IDS, SIZE_BAND_SOURCE_LABELS, sizeBandLabel, type DogSizeBand
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { addOnRequiresManualPrice } from "@shared/appointmentAddOns";
 import { serviceForPet } from "@shared/appointmentMembershipCoverage";
+import { withHourlyDaycarePrices } from "@shared/daycarePricing";
 import {
   bookingTotal,
   formatPriceAud,
@@ -68,6 +69,11 @@ type Props = {
   addOnsByPetId: Record<string, StagedAddOn[]>;
   onAddOnsChange: (next: Record<string, StagedAddOn[]>) => void;
   onServiceTypeChange: (serviceType: string) => void;
+  /**
+   * How long the booking runs. Daycare charged by the hour is priced from
+   * it (shared/daycarePricing.ts); nothing else reads it.
+   */
+  durationMinutes?: number | null;
   /** Book again also restores the groomer and the length of the last groom. */
   onRepeatLast?: (last: { staffId: number | null; durationMinutes: number | null }) => void;
 };
@@ -148,22 +154,24 @@ export function BookingPetPricing(props: Props) {
   const optionsByPetId = useMemo(() => {
     const map: Record<string, PriceOption[]> = {};
     for (const row of petRows) {
-      map[String(row.petId)] = groomPriceOptions({ serviceType: serviceOf(row.petId), sizeBand: row.band, catalogue });
+      const service = serviceOf(row.petId);
+      map[String(row.petId)] = withHourlyDaycarePrices(groomPriceOptions({ serviceType: service, sizeBand: row.band, catalogue }), service, props.durationMinutes);
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petRows, serviceType, ownServiceKey, catalogue]);
+  }, [petRows, serviceType, ownServiceKey, catalogue, props.durationMinutes]);
 
   // What the dropdown lists.
   const shownOptionsByPetId = useMemo(() => {
     if (applicableOnly) return optionsByPetId;
     const map: Record<string, PriceOption[]> = {};
     for (const row of petRows) {
-      map[String(row.petId)] = groomPriceOptions({ serviceType: serviceOf(row.petId), sizeBand: row.band, catalogue, scope: "all" });
+      const service = serviceOf(row.petId);
+      map[String(row.petId)] = withHourlyDaycarePrices(groomPriceOptions({ serviceType: service, sizeBand: row.band, catalogue, scope: "all" }), service, props.durationMinutes);
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicableOnly, optionsByPetId, petRows, serviceType, ownServiceKey, catalogue]);
+  }, [applicableOnly, optionsByPetId, petRows, serviceType, ownServiceKey, catalogue, props.durationMinutes]);
 
   /**
    * Re-fill the boxes when the booking genuinely changes shape.
@@ -178,8 +186,12 @@ export function BookingPetPricing(props: Props) {
    * groom's figure is not a styled groom's, so carrying it over would
    * leave a wrong number in a box that looks filled in.
    */
+  // A daycare booking re-prices when its length changes, because an hourly
+  // rate depends on it. A groom does not: moving its end time must not
+  // wipe a figure somebody typed.
   const signatureFor = (service: string) =>
-    `${service}|${petRows.map((r) => `${r.petId}:${r.band ?? ""}:${r.tier}`).join(",")}|${catalogue.length}`;
+    `${service}|${petRows.map((r) => `${r.petId}:${r.band ?? ""}:${r.tier}`).join(",")}|${catalogue.length}`
+    + (service === "daycare" ? `|${props.durationMinutes ?? ""}` : "");
   const signature = signatureFor(serviceType);
   const lastSignature = useRef<string>("");
   const lastOwnServices = useRef<Record<string, string>>({});
