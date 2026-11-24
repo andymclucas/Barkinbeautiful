@@ -92,6 +92,7 @@ import { canAdministerStaff } from "@shared/staffAdministrators";
 import { viewableSections, STAFF_SECTIONS } from "@shared/staffPermissions";
 import { seasonYearFor } from "@shared/christmasCountdown";
 import { brisbaneDay } from "@shared/collectBy";
+import { staffBrand } from "@shared/brandPalette";
 import { toast } from "sonner";
 import { useSalonDocumentTitle } from "@/hooks/useSalonDocumentTitle";
 import { useRealtimeInvalidation } from "@/hooks/useRealtimeInvalidation";
@@ -241,7 +242,7 @@ function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChang
             <Palette className="h-4 w-4 text-primary" /> Brand colours
           </DialogTitle>
         </DialogHeader>
-        <p className="text-xs text-muted-foreground -mt-2">Changes preview live — save to keep them.</p>
+        <p className="text-xs text-muted-foreground -mt-2">Changes preview live. Saving switches the app from Groomigo's teal to these colours.</p>
         <div className="space-y-3 py-1">
           {([
             { k: "primary", l: "Primary colour",  d: "Buttons & key actions" },
@@ -268,7 +269,7 @@ function BrandColoursDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           <Button
             size="sm"
             disabled={save.isPending}
-            onClick={() => save.mutate({ brandPrimary: colors.primary, brandAccent: colors.accent, brandSidebar: colors.sidebar })}
+            onClick={() => save.mutate({ brandPrimary: colors.primary, brandAccent: colors.accent, brandSidebar: colors.sidebar, brandTheme: "brand" })}
           >
             {save.isPending ? "Saving…" : "Save colours"}
           </Button>
@@ -359,12 +360,19 @@ function DashboardLayoutContent({
   const { data: myStaff, refetch: refetchMyStaff } = trpc.staff.getMyProfile.useQuery();
 
 
-  useEffect(() => applyBrandTheme({
-    primary: tenantBranding?.brandPrimary,
-    accent: tenantBranding?.brandAccent,
-    sidebar: tenantBranding?.brandSidebar,
-    font: tenantBranding?.brandFont,
-  }), [tenantBranding]);
+  // Groomigo's teal unless the salon has chosen its own colours.
+  const paintedBrand = staffBrand(tenantBranding);
+  useEffect(() => {
+    const painted = staffBrand(tenantBranding);
+    // Lets index.css draw the logo's neon teal only on Groomigo's own theme.
+    document.documentElement.dataset.brandTheme = painted.choice;
+    return applyBrandTheme({
+      primary: painted.primary,
+      accent: painted.accent,
+      sidebar: painted.sidebar,
+      font: tenantBranding?.brandFont,
+    });
+  }, [tenantBranding]);
 
   const activeMenuItem = menuItems.find(
     (item) => location === item.path || location.startsWith(item.path + "/")
@@ -857,7 +865,7 @@ function DashboardLayoutContent({
               >
                 {/* Lettering follows the sidebar colour, which is the
                     salon's own (dark by default) in light mode too. */}
-                <GroomigoLogo height={60} alt="" tone={sidebarLogoTone({ festive, sidebar: tenantBranding?.brandSidebar, primary: tenantBranding?.brandPrimary })} />
+                <GroomigoLogo height={60} alt="" tone={sidebarLogoTone({ festive, sidebar: paintedBrand.sidebar, primary: paintedBrand.primary })} />
               </button>
             </div>
           )}

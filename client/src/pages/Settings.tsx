@@ -16,6 +16,7 @@ import { Building2, Shield, Link, Palette, CreditCard, ExternalLink, ShieldCheck
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { applyBrandTheme, readLogoColours, readLogoColoursFromUrl } from "@/lib/brandTheme";
+import { brandThemeChoice, GROOMIGO_BRAND, type BrandThemeChoice } from "@shared/brandPalette";
 import { deriveAccent, deriveSidebar } from "@shared/brandPalette";
 import { useEffect, useState } from "react";
 import { useSearch } from "wouter";
@@ -44,6 +45,8 @@ export default function Settings() {
   const { data: stripeBilling, isLoading: stripeBillingLoading } = trpc.stripeBilling.getStatus.useQuery({});
   const { data: timingReviewSettings, isLoading: timingReviewSettingsLoading } = trpc.workflowReview.getThresholds.useQuery({});
   const [brand, setBrand] = useState({ primary: "#d61572", accent: "#f9d4e7", sidebar: "#2b1830", font: "Inter", logoUrl: "" });
+  // Groomigo's teal, or the salon's own colours. Saved with the branding.
+  const [themeChoice, setThemeChoice] = useState<BrandThemeChoice>("groomigo");
   // Where a happy client is sent from the grooming card. Separate state from
   // `brand` because it is saved on its own — a salon pasting a review link
   // should not have to press "Save branding".
@@ -58,6 +61,7 @@ export default function Settings() {
   const [timingMinutes, setTimingMinutes] = useState({ wait: "90", bath: "90", dry: "75", groom: "150", total: "240" });
   useEffect(() => {
     if (tenant) setBrand({ primary: tenant.brandPrimary ?? "#d61572", accent: tenant.brandAccent ?? "#f9d4e7", sidebar: tenant.brandSidebar ?? "#2b1830", font: tenant.brandFont ?? "Inter", logoUrl: tenant.logoUrl ?? "" });
+    if (tenant) setThemeChoice(brandThemeChoice((tenant as { brandTheme?: string | null }).brandTheme));
     if (tenant) setPublicReviewUrl((tenant as { publicReviewUrl?: string | null }).publicReviewUrl ?? "");
     if (tenant) setBusiness({
       abn: (tenant as { abn?: string | null }).abn ?? "",
@@ -73,7 +77,14 @@ export default function Settings() {
     const values = saved ?? fallback;
     setTimingMinutes({ wait: String(values.waitMinutes ?? fallback.waitMinutes), bath: String(values.bathMinutes), dry: String(values.dryMinutes), groom: String(values.groomMinutes), total: String(values.totalMinutes) });
   }, [timingReviewSettings, timingScope, timingSize, timingBreed]);
-  const applyBrand = (next: typeof brand) => { applyBrandTheme(next); };
+  // Anything a salon edits is a preview of its OWN brand, so touching a
+  // colour, the font or the logo moves the switch to "My brand".
+  const applyBrand = (next: typeof brand) => { setThemeChoice("brand"); applyBrandTheme(next); };
+  const chooseTheme = (choice: BrandThemeChoice) => {
+    setThemeChoice(choice);
+    applyBrandTheme(choice === "brand" ? brand : { ...GROOMIGO_BRAND, font: brand.font });
+    document.documentElement.dataset.brandTheme = choice;
+  };
 
   /**
    * Take the salon's colours from the logo they just uploaded.
@@ -223,12 +234,30 @@ export default function Settings() {
           </TabsContent>
 
           <TabsContent value="branding" className="mt-4">
-            <Card className="brand-lift overflow-hidden border-primary/20 bg-gradient-to-br from-white via-white to-primary/10">
+            <Card className="overflow-hidden">
               <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-base flex items-center gap-2"><Palette className="h-5 w-5 text-primary" /> White-label Salon Branding</CardTitle>
-                <p className="text-sm text-muted-foreground">Set the platform colours for this salon. Each tenant can use its own visual identity.</p>
+                <CardTitle className="text-base flex items-center gap-2"><Palette className="h-5 w-5 text-primary" /> Theme</CardTitle>
+                <p className="text-sm text-muted-foreground">Every salon starts on Groomigo's teal and white. Switch to your brand to have your own colours take over, read from your logo or picked below.</p>
               </CardHeader>
               <CardContent className="px-4 pb-4 space-y-4">
+                <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-2 sm:max-w-md">
+                  {([
+                    { value: "groomigo", label: "Groomigo", hint: "Teal and white", swatch: GROOMIGO_BRAND.primary },
+                    { value: "brand", label: "My brand", hint: "Your own colours", swatch: brand.primary },
+                  ] as const).map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={themeChoice === option.value}
+                      onClick={() => chooseTheme(option.value)}
+                      className={`flex min-h-14 items-center gap-3 rounded-[var(--radius)] border px-3 text-left transition-colors ${themeChoice === option.value ? "border-primary bg-primary/8 ring-1 ring-primary" : "border-border bg-card hover:bg-muted"}`}
+                    >
+                      <span className="h-6 w-6 shrink-0 rounded-full ring-1 ring-black/10" style={{ background: option.swatch }} />
+                      <span className="flex flex-col leading-tight"><span className="text-sm font-semibold">{option.label}</span><span className="text-xs text-muted-foreground">{option.hint}</span></span>
+                    </button>
+                  ))}
+                </div>
                 <div className="grid sm:grid-cols-3 gap-3">
                   {([
                     { key: "primary", label: "Primary colour", hint: "Buttons and key actions" },
@@ -248,9 +277,9 @@ export default function Settings() {
                 </div>
                 <div className="rounded-xl bg-[var(--brand-sidebar)] p-4 text-white flex items-center justify-between gap-4">
                   <div><p className="font-semibold">Live brand preview</p><p className="text-sm text-white/70">Navigation and shared dashboard surfaces update immediately.</p></div>
-                  <span className="rounded-lg px-4 py-2 font-semibold" style={{ background: brand.primary }}>Save the look</span>
+                  <span className="rounded-[var(--radius-control)] px-4 py-2 font-semibold" style={{ background: themeChoice === "brand" ? brand.primary : GROOMIGO_BRAND.primary }}>Save the look</span>
                 </div>
-                <Button disabled={updateBrand.isPending} onClick={() => updateBrand.mutate({ brandPrimary: brand.primary, brandAccent: brand.accent, brandSidebar: brand.sidebar, brandFont: brand.font as any, logoUrl: brand.logoUrl || undefined })}>{updateBrand.isPending ? "Saving…" : "Save branding"}</Button>
+                <Button disabled={updateBrand.isPending} onClick={() => updateBrand.mutate({ brandPrimary: brand.primary, brandAccent: brand.accent, brandSidebar: brand.sidebar, brandFont: brand.font as any, logoUrl: brand.logoUrl || undefined, brandTheme: themeChoice })}>{updateBrand.isPending ? "Saving…" : "Save branding"}</Button>
               </CardContent>
             </Card>
 

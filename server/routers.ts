@@ -12633,6 +12633,8 @@ const settingsRouter = router({
           brandPrimary: tenants.brandPrimary,
           brandAccent: tenants.brandAccent,
           brandSidebar: tenants.brandSidebar,
+          /** Only the staff sign-in reads it, to follow the theme switch. */
+          brandTheme: tenants.brandTheme,
         })
         .from(tenants)
         .where(eq(tenants.id, input.tenantId))
@@ -12662,6 +12664,8 @@ const settingsRouter = router({
           brandPrimary: tenants.brandPrimary,
           brandAccent: tenants.brandAccent,
           brandSidebar: tenants.brandSidebar,
+          /** "brand" for the salon's own colours; otherwise Groomigo's. */
+          brandTheme: tenants.brandTheme,
           /** Where a happy client is sent to leave a public review. */
           publicReviewUrl: tenants.publicReviewUrl,
           // The salon's own zone. A user who has not chosen one falls back to
@@ -12767,6 +12771,8 @@ const settingsRouter = router({
       brandPrimary: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       brandAccent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
       brandSidebar: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      /** Groomigo's teal, or the salon's own colours above. */
+      brandTheme: z.enum(["groomigo", "brand"]).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       // Salon-wide branding, so the same restriction as personnel changes.
@@ -12785,6 +12791,9 @@ const settingsRouter = router({
         brandPrimary: input.brandPrimary,
         brandAccent: input.brandAccent,
         brandSidebar: input.brandSidebar,
+        // Stored as NULL for Groomigo, so "never chosen" and "chose
+        // Groomigo" are the same row and the default stays the default.
+        ...(input.brandTheme === undefined ? {} : { brandTheme: input.brandTheme === "brand" ? "brand" : null }),
         // Empty string clears it, which is how a salon turns the public
         // review prompt off: the card then thanks a happy client and stops.
         ...(input.publicReviewUrl === undefined

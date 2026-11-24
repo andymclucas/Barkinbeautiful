@@ -597,7 +597,7 @@ function ApptBlock({
          which an ordinary class cannot beat — without it, hovering a
          card buried under two others raised it to z-20 and left it
          exactly where it was, under siblings sitting at 21 and 22. */
-      className={`absolute rounded-md text-[11px] group overflow-hidden select-none border border-white/80 transition-[transform,box-shadow,filter] duration-200 ease-out ${isCancelled ? "cursor-default opacity-95" : "cursor-grab active:cursor-grabbing hover:-translate-y-px hover:!z-[60] hover:!opacity-100 focus-visible:!z-[60] focus-visible:!opacity-100 hover:shadow-lg hover:saturate-110"}`}
+      className={`absolute rounded-[8px] text-[11px] group overflow-hidden select-none transition-[box-shadow,filter] duration-150 ease-out ${isCancelled ? "cursor-default opacity-95" : "cursor-grab active:cursor-grabbing hover:!z-[60] hover:!opacity-100 focus-visible:!z-[60] focus-visible:!opacity-100 hover:shadow-md hover:brightness-[0.98]"}`}
       style={{
         top,
         height,
@@ -609,13 +609,20 @@ function ApptBlock({
         // white-on-red badge - so a cancelled dog drew more attention than
         // the ones actually coming in. Now they keep the service colour at
         // low opacity so they read as "was here, gone" at a glance.
+        /* Soft native (24/11/2026): one flat tint of the service colour,
+           no gradient and no edge line, the way Apple and Notion Calendar
+           draw an event. Paid still recolours the whole card (Lauren,
+           30/10/2026), in a flat tint of the payment colour. */
         background: isCancelled
-          ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)"
-          : pay.background ?? `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`,
+          ? "#f8fafc"
+          : pay.accent
+            ? `color-mix(in oklch, ${pay.accent} 13%, white)`
+            : `color-mix(in oklch, ${svc.border} 15%, white)`,
         /* The service colour does not vanish when a dog is paid — it
-           moves to the spine, so the day can still be read by service
-           after the money has come in. */
-        borderLeft: `4px ${isCancelled ? "dashed #cbd5e1" : `solid ${svc.border}`}`,
+           moves to a spine, so the day can still be read by service
+           after the money has come in. Only a paid or cancelled card
+           needs one; an unpaid card IS the service colour. */
+        borderLeft: isCancelled ? "3px dashed #cbd5e1" : pay.accent ? `3px solid ${svc.border}` : undefined,
         /*
          * A cascaded card needs an edge, or a stack of them reads as
          * one wide card with a jumble of text in it. The shadow is
@@ -625,8 +632,8 @@ function ApptBlock({
         boxShadow: isCancelled
           ? "none"
           : placement.covers > 0
-            ? `inset 0 1px 0 rgba(255,255,255,0.9), -3px 0 8px -2px rgba(15,23,42,0.28)`
-            : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${pay.accent ?? svc.border}`,
+            ? `-3px 0 8px -2px rgba(15,23,42,0.28), 0 0 0 1px rgba(255,255,255,0.9)`
+            : "0 0 0 1px rgba(255,255,255,0.9)",
         /*
          * Andy asked for opacity on the ones sitting over the top. Kept
          * mild on purpose: the card beneath shows through the overlap,
@@ -685,7 +692,7 @@ function ApptBlock({
         )}
         {siblings && siblings.length > 0 ? (
           <>
-            <div className={`font-bold text-[12px] leading-tight tracking-[-0.01em] ${density.stampInline ? "pr-11" : ""} ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+            <div className={`font-semibold text-[12px] leading-tight tracking-[-0.01em] ${density.stampInline ? "pr-11" : ""} ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.text }}>
               {/*
                 * line-clamp-2 is load-bearing, not cosmetic.
                 *
@@ -729,13 +736,13 @@ function ApptBlock({
               */}
             {density.showFamilyLine && <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{formatFamilyBookingLine({ onThisCard: cardPetAppointments.length, inBooking: sharedPetAppointments.length })}</div>}
             {!compact && (
-              <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
+              <div className="truncate text-[10.5px] mt-0.5 font-medium tabular-nums" style={{ color: isCancelled ? "#991b1b" : svc.text, opacity: 0.8 }}>
                 {density.timeFormat === "range"
                   ? `${fmtTime(new Date(appt.scheduledStart))} – ${fmtTime(new Date(appt.scheduledEnd))}`
                   : fmtTime(new Date(appt.scheduledStart))}
               </div>
             )}
-            {density.serviceFormat !== "none" && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
+            {density.serviceFormat !== "none" && <div className="mt-1 block max-w-full truncate whitespace-nowrap text-[10.5px] font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text, opacity: 0.85 }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
           </>
         ) : (
           <>
@@ -753,19 +760,19 @@ function ApptBlock({
               * Clamped at two so a long double-barrelled surname cannot
               * push the service and the codes off a short booking.
               */}
-            <div className={`font-bold text-[12px] line-clamp-2 leading-tight tracking-[-0.01em] ${density.stampInline ? "pr-11" : ""} ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+            <div className={`font-semibold text-[12px] line-clamp-2 leading-tight tracking-[-0.01em] ${density.stampInline ? "pr-11" : ""} ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.text }}>
               {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
               {appt.petName}{appt.clientLastName ? ` ${appt.clientLastName}` : ""}
               {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
             </div>
             {!compact && (
               <>
-                <div className="truncate text-[10px] mt-0.5 font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text }}>
+                <div className="truncate text-[10.5px] mt-0.5 font-medium tabular-nums" style={{ color: isCancelled ? "#991b1b" : svc.text, opacity: 0.8 }}>
                   {density.timeFormat === "range"
                     ? `${fmtTime(new Date(appt.scheduledStart))} – ${fmtTime(new Date(appt.scheduledEnd))}`
                     : fmtTime(new Date(appt.scheduledStart))}
                 </div>
-                {density.serviceFormat !== "none" && <div className="mt-1 inline-flex max-w-full truncate whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text, backgroundColor: "rgba(255,255,255,0.72)" }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
+                {density.serviceFormat !== "none" && <div className="mt-1 block max-w-full truncate whitespace-nowrap text-[10.5px] font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text, opacity: 0.85 }}>{(density.serviceFormat === "short" ? SERVICE_LABELS_SHORT[appt.serviceType] : SERVICE_LABELS[appt.serviceType]) ?? appt.serviceType}</div>}
                 {/*
                   * Third in Andy's order: name, service, then these.
                   *
@@ -3645,8 +3652,8 @@ export default function Calendar() {
                     return (
                       <div
                         key={appt.id}
-                        className={`brand-lift rounded-md border border-white/80 px-2 py-1.5 cursor-pointer text-[11px] leading-tight ${isCancelled ? "bg-red-50 dark:bg-red-950/40" : ""}`}
-                        style={{ opacity: isCancelled ? 0.45 : 1, background: isCancelled ? "linear-gradient(135deg, #f8fafc 0%, #ffffff 180%)" : pay.background ?? `linear-gradient(135deg, ${svc.bg} 0%, #ffffff 180%)`, borderLeft: `4px solid ${isCancelled ? "#dc2626" : svc.border}`, boxShadow: isCancelled ? "inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px #dc2626" : `inset 0 1px 0 rgba(255,255,255,0.9), 0 5px 14px -12px ${pay.accent ?? svc.border}` }}
+                        className={`rounded-[8px] px-2 py-1.5 cursor-pointer text-[11px] leading-tight transition-shadow hover:shadow-md ${isCancelled ? "bg-red-50 dark:bg-red-950/40" : ""}`}
+                        style={{ opacity: isCancelled ? 0.45 : 1, background: isCancelled ? "#f8fafc" : pay.accent ? `color-mix(in oklch, ${pay.accent} 13%, white)` : `color-mix(in oklch, ${svc.border} 15%, white)`, borderLeft: isCancelled ? "3px solid #dc2626" : pay.accent ? `3px solid ${svc.border}` : undefined }}
                         onClick={(e) => { e.stopPropagation(); openEdit(appt as Appt); }}
                       >
                         {isCancelled && <div className="mb-1 inline-flex rounded-sm border border-border bg-card/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Cancelled</div>}
@@ -3656,7 +3663,7 @@ export default function Calendar() {
                             {isVip && <VipMark />}
                           </div>
                         )}
-                        <div className={`font-bold truncate ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.border }}>
+                        <div className={`font-semibold truncate ${isCancelled ? "line-through decoration-1 decoration-slate-400" : ""}`} style={{ color: isCancelled ? "#991b1b" : svc.text }}>
                           {hasArrivedOnSite(appt.workflowState, appt.status) && <ArrivedTick workflowState={appt.workflowState} />}
                           {sharedAppointmentLabel}
                           {appt.reminderStatus === "delivered" && <CheckCircle2 aria-label="Reminder delivered" className="inline ml-1 h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
@@ -3666,7 +3673,7 @@ export default function Calendar() {
                           {appt.staffName ? ` · ${appt.staffName.split(" ")[0]}` : ""}
                           {bookingPets.length > 1 ? ` · ${formatFamilyBookingCount({ onThisCard: 1, inBooking: bookingPets.length })}` : ""}
                         </div>
-                        <span className="mt-1 inline-flex rounded-full bg-card/70 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide" style={{ color: isCancelled ? "#991b1b" : svc.text }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</span>
+                        <span className="mt-1 block truncate text-[10.5px] font-medium" style={{ color: isCancelled ? "#991b1b" : svc.text, opacity: 0.85 }}>{SERVICE_LABELS[appt.serviceType] ?? appt.serviceType}</span>
                       </div>
                     );
                   })
@@ -3720,7 +3727,7 @@ export default function Calendar() {
     } = calendarColumnGroups(cols);
 
     return (
-      <div className="min-h-[500px] flex-1 bg-card rounded-2xl border border-white/90 shadow-xl shadow-[color-mix(in_oklch,var(--brand-primary)_10%,transparent)] flex flex-col overflow-hidden lg:min-h-0">
+      <div className="min-h-[500px] flex-1 bg-card rounded-[var(--radius-group)] border flex flex-col overflow-hidden lg:min-h-0">
         <div ref={boardRef} className="overflow-x-auto overscroll-x-contain flex-1 flex flex-col" aria-label="Scrollable staff calendar columns">
           {/* Columns fit the measured board width, down to a readable floor;
               only below that floor does the board scroll sideways. */}
@@ -3760,7 +3767,7 @@ export default function Calendar() {
                     {dayDate.toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short" })}
                   </div>
                   {cols.map((s, i) => (
-                    <div key={i} className="p-2.5 border-r last:border-r-0 text-center transition-colors hover:bg-muted/80" style={{ borderTop: `3px solid ${s.colourHex ?? "#6366f1"}` }}>
+                    <div key={i} className="p-2.5 border-r last:border-r-0 text-center transition-colors hover:bg-muted/80" style={{ boxShadow: `inset 0 2px 0 ${s.colourHex ?? "#6366f1"}` }}>
                       <div className="flex items-center justify-center gap-1.5">
                         <StaffAvatar photoUrl={(s as { photoUrl?: string | null }).photoUrl} name={s.name} colourHex={s.colourHex} className="h-7 w-7" />
                         <span className="text-xs font-semibold truncate">{s.name.split(" ")[0]}</span>
@@ -3792,7 +3799,7 @@ export default function Calendar() {
                           : load.state === "full" ? `${load.label} clips — full`
                           : `${load.label} clips — room for ${load.remaining} more`;
                         return (
-                          <div className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${tone}`} title={title}>
+                          <div className={`mt-1 inline-flex rounded-[6px] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${tone}`} title={title}>
                             {load.state === "unknown"
                               ? `${mine.length} appts`
                               : `${load.label} clips`}
@@ -4099,8 +4106,8 @@ export default function Calendar() {
    * target on a phone; they were 36, and the board is used on one.
    */
   const navButtonClass =
-    "brand-lift h-11 w-11 rounded-full border-2 border-primary/30 bg-primary/10 " +
-    "text-primary hover:border-primary/50 hover:bg-primary/20 hover:text-primary";
+    "h-11 w-11 rounded-[var(--radius-control)] border border-primary/25 bg-primary/8 " +
+    "text-primary hover:border-primary/45 hover:bg-primary/15 hover:text-primary";
 
   return (
     <HourHeightContext.Provider value={HOUR_HEIGHT}>
@@ -4112,7 +4119,7 @@ export default function Calendar() {
             rows. At lg the left/right split still fits on one line and
             is kept. Andy, 09/11/2026: "I think we centralise these
             buttons". */}
-        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-white/90 bg-card/70 px-3 py-3 shadow-lg shadow-[color-mix(in_oklch,var(--brand-primary)_8%,transparent)] backdrop-blur lg:flex-row lg:flex-wrap lg:justify-between">
+        <div className="flex flex-col items-center justify-center gap-2.5 rounded-[var(--radius-group)] border bg-card px-3 py-2.5 lg:flex-row lg:flex-wrap lg:justify-between">
           <div className="flex w-full min-w-0 flex-col items-center gap-2 lg:w-auto lg:flex-row lg:flex-wrap">
             {/* The three that matter — see navButtonClass. The arrows
                 also gain a name here: they had none, so a screen reader
@@ -4123,7 +4130,7 @@ export default function Calendar() {
                 onClick={() => viewMode === "week" ? navigateWeek(-1) : navigateDay(-1)}>
                 <ChevronLeft className="h-5 w-5" />
               </Button>
-              <Button size="sm" className="brand-lift h-11 rounded-full px-7 text-base font-bold shadow-md shadow-primary/25" onClick={goToToday}>
+              <Button size="sm" className="h-11 px-6 text-base font-semibold" onClick={goToToday}>
                 Today
               </Button>
               <Button variant="outline" size="icon" className={navButtonClass}
@@ -4435,10 +4442,10 @@ export default function Calendar() {
               * exists. Hidden in agenda view, which has no time axis.
               */}
             {viewMode !== "agenda" && (
-              <div className="flex items-center gap-0.5 rounded-full border bg-muted/40 p-0.5" role="group" aria-label="Calendar zoom">
+              <div className="flex items-center gap-0.5 rounded-[var(--radius-control)] bg-[color-mix(in_oklch,var(--foreground)_6%,var(--muted))] p-0.5" role="group" aria-label="Calendar zoom">
                 <button
                   type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius-control)-2px)] text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
                   onClick={zoomOut}
                   disabled={!canZoomOut}
                   aria-label="Zoom out"
@@ -4448,7 +4455,7 @@ export default function Calendar() {
                 </button>
                 <button
                   type="button"
-                  className="min-w-[2.75rem] rounded-full px-1 text-[11px] font-bold tabular-nums text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                  className="min-w-[2.75rem] rounded-[calc(var(--radius-control)-2px)] px-1 text-[11px] font-bold tabular-nums text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                   onClick={resetZoom}
                   aria-label={`Zoom ${Math.round(zoom * 100)} per cent. Reset to 100 per cent`}
                   title="Reset zoom"
@@ -4457,7 +4464,7 @@ export default function Calendar() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-[calc(var(--radius-control)-2px)] text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
                   onClick={zoomIn}
                   disabled={!canZoomIn}
                   aria-label="Zoom in"
@@ -4546,7 +4553,7 @@ export default function Calendar() {
                 walked in with a dog — and because the full booking
                 dialog is far too much form for a ten-minute job. */}
             <QuickAppointmentDialog onCreated={() => refetch()} />
-            <Button onClick={() => setShowNewAppt(true)} size="sm" className="brand-lift gap-1.5 shadow-lg shadow-primary/20">
+            <Button onClick={() => setShowNewAppt(true)} size="sm" className="gap-1.5">
               <Plus className="h-4 w-4" /> New Appointment
             </Button>
           </div>
@@ -4771,7 +4778,7 @@ export default function Calendar() {
       </Dialog>
 
       <Dialog open={showNewAppt} onOpenChange={(v) => { setShowNewAppt(v); if (!v) { setClientSearch(""); setAddingClient(false); setNewAppt({ clientId: "", petIds: [], staffId: "", staffByPetId: {}, serviceType: "classic_groom", scheduledStart: "", scheduledEnd: "", notes: "", price: "", alreadyArranged: false, priceByPetId: {}, addOnsByPetId: {}, collectByTime: "" }); setRepeatForm({ enabled: false, frequencyWeeks: "6", endKind: "ongoing", sessions: "6", untilDate: "" }); } }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md sheet-grouped">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-primary" /> New Appointment
@@ -5000,7 +5007,7 @@ export default function Calendar() {
                             };
                           })}
                           className={[
-                            "px-3 py-1.5 rounded-full text-sm border transition-all",
+                            "min-h-9 px-3.5 py-1.5 rounded-full text-sm border transition-colors",
                             passedAway
                               // Not dashed: dashed means "tap me". This is
                               // solid, still, and the colour of the
@@ -5057,7 +5064,7 @@ export default function Calendar() {
                 usually puts the whole family with one person anyway, so this
                 stays out of the way until it is wanted. */}
             {newAppt.petIds.length > 1 && (
-              <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="sheet-group rounded-lg border bg-muted/30 p-3">
                 <button
                   type="button"
                   onClick={() => setSplitGroomers(v => !v)}
@@ -5107,7 +5114,7 @@ export default function Calendar() {
             {/* One service per dog, the same way. Lauren, 18/11/2026: one
                 styled, one classic, one bath, in one household. */}
             {newAppt.petIds.length > 1 && (
-              <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="sheet-group rounded-lg border bg-muted/30 p-3">
                 <button
                   type="button"
                   onClick={() => setSplitServices(v => !v)}
@@ -5321,7 +5328,7 @@ export default function Calendar() {
               * before anybody thinks about what to charge.
               */}
             {newAppt.petIds.length >= 1 && (
-              <div className="rounded-lg border p-3 space-y-3 bg-muted/20">
+              <div className="sheet-group rounded-lg border p-3 space-y-3 bg-muted/20">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -5484,7 +5491,7 @@ export default function Calendar() {
                 * With 164 December bookings to re-enter by hand, that
                 * was 164 texts waiting to happen.
                 */}
-              <label className="mt-2 flex items-start gap-2 rounded-lg border bg-muted/40 p-2.5 text-xs">
+              <label className="sheet-group mt-2 flex items-start gap-2 rounded-lg border bg-muted/40 p-3 text-xs">
                 <input
                   type="checkbox"
                   className="mt-0.5 accent-primary"

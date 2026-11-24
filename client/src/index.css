@@ -70,7 +70,7 @@
   --font-display: "Bricolage Grotesque", "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
 
   /* ── Radius ─────────────────────────────────────────────────────────────── */
-  --radius: 0.875rem;
+  --radius: 0.625rem;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@
   --card-foreground:           oklch(0.24 0.035 285);
   --popover:                   oklch(1 0 0);
   --popover-foreground:        oklch(0.24 0.035 285);
-  --primary:                   oklch(0.585 0.212 292);
+  --primary:                   oklch(0.517 0.088 192);
   --primary-foreground:        oklch(0.99 0 0);
   --secondary:                 oklch(0.955 0.018 292);
   --secondary-foreground:      oklch(0.36 0.11 292);
@@ -99,10 +99,10 @@
   --destructive-foreground:    oklch(0.99 0 0);
   --border:                    oklch(0.925 0.014 292);
   --input:                     oklch(0.925 0.014 292);
-  --ring:                      oklch(0.585 0.212 292);
+  --ring:                      oklch(0.517 0.088 192);
   --sidebar:                   oklch(1 0 0);
   --sidebar-foreground:        oklch(0.36 0.04 288);
-  --sidebar-primary:           oklch(0.585 0.212 292);
+  --sidebar-primary:           oklch(0.517 0.088 192);
   --sidebar-primary-foreground: oklch(0.99 0 0);
   --sidebar-accent:            oklch(0.955 0.022 292);
   --sidebar-accent-foreground: oklch(0.42 0.16 292);
@@ -121,13 +121,16 @@
      and names are unchanged, so tenant overrides keep working exactly as before. */
   /* Sign-in page. Its backdrop and card are set with inline styles, so they
      need variables rather than utility classes to follow the theme. */
-  --auth-page-gradient: linear-gradient(160deg, #faf8ff 0%, #f4f0fe 45%, #f7f4ff 75%, #fdfcff 100%);
+  /* Drawn from --brand-primary (24/11/2026), so the sign-in wears the same
+     theme as the app behind it: Groomigo teal by default, a salon's own
+     colours once it switches. They were fixed violet. */
+  --auth-page-gradient: linear-gradient(160deg, color-mix(in oklch, var(--brand-primary) 3%, white) 0%, color-mix(in oklch, var(--brand-primary) 6%, white) 45%, color-mix(in oklch, var(--brand-primary) 4%, white) 75%, #ffffff 100%);
   --auth-card-bg: #ffffff;
-  --auth-card-border: rgba(124, 58, 237, 0.12);
-  --auth-card-shadow: 0 24px 48px -20px rgba(76, 29, 149, 0.18), inset 0 1px 0 rgba(124, 58, 237, 0.06);
-  --auth-grid-line: rgba(124, 58, 237, 0.30);
-  --auth-field-border: rgba(124, 58, 237, 0.16);
-  --auth-field-border-focus: rgba(124, 58, 237, 0.55);
+  --auth-card-border: color-mix(in oklch, var(--brand-primary) 12%, transparent);
+  --auth-card-shadow: 0 24px 48px -20px color-mix(in oklch, var(--brand-primary) 20%, transparent);
+  --auth-grid-line: color-mix(in oklch, var(--brand-primary) 22%, transparent);
+  --auth-field-border: color-mix(in oklch, var(--foreground) 12%, transparent);
+  --auth-field-border-focus: color-mix(in oklch, var(--brand-primary) 60%, transparent);
   /* The sign-in copy is coloured by inline styles too, so it needs variables
      as well. These light values are the hexes that were hardcoded in
      Login.tsx - unchanged, so light mode looks exactly as it did - while the
@@ -136,10 +139,10 @@
   --auth-text-body: #4b5563;
   --auth-text-muted: #6b7280;
   --auth-text-faint: #9ca3af;
-  --auth-text-brand: #7c3aed;
-  --auth-text-brand-mid: #7c3aedaa;
-  --auth-text-brand-soft: #7c3aed80;
-  --auth-text-brand-faint: #7c3aed66;
+  --auth-text-brand: var(--brand-primary);
+  --auth-text-brand-mid: color-mix(in oklch, var(--brand-primary) 67%, transparent);
+  --auth-text-brand-soft: color-mix(in oklch, var(--brand-primary) 50%, transparent);
+  --auth-text-brand-faint: color-mix(in oklch, var(--brand-primary) 40%, transparent);
   /* Membership tier colours. Also applied by inline style (they come from a
      lookup, not a class), so they need variables to follow the theme. Silver
      (#6b7280) and bronze (#b45309) came out at roughly 2.4:1 and 1.8:1 on a
@@ -150,12 +153,12 @@
   --tier-gold: #f59e0b;
   --tier-silver: #6b7280;
   --tier-bronze: #b45309;
-  --brand-primary: oklch(0.585 0.212 292);
-  --brand-primary-strong: oklch(0.487 0.216 290);
+  --brand-primary: oklch(0.517 0.088 192);
+  --brand-primary-strong: oklch(0.43 0.08 192);
   --brand-accent: oklch(0.905 0.058 295);
   --brand-page: oklch(0.985 0.006 295);
   --brand-ink: oklch(0.24 0.035 285);
-  --brand-sidebar: #1e1229;  /* deep sidebar — tenants override via Settings */
+  --brand-sidebar: #0a1a1c;  /* deep sidebar — tenants override via Settings */
 
   /* Soft tint ramp used for stat tiles, icon chips and empty states. */
   --tint-violet: oklch(0.955 0.030 292);
@@ -1564,3 +1567,286 @@ table tbody tr:hover {
 
   .gm-shimmer { animation: none !important; }
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Soft native — option B.
+ *
+ * Andy, 24/11/2026, picking B of four directions: "I still don't like the
+ * UI for the appointments cards and some other features. It just looks a
+ * little dated ... I think it might be the rounding of the elements and the
+ * whitespace between them."
+ *
+ * What B is, and why each rule below exists:
+ *
+ *  - ONE CORNER LANGUAGE. 10px on anything you press or type into, 14px on
+ *    cards and groups, 22px on dialogs. Full pills are gone from buttons,
+ *    tabs and badges: a pill everywhere is most of what read as dated, and
+ *    a pill tab bar on a pale track is the 2020 admin-template look.
+ *  - FLAT FILLS. The vertical gradients, inset highlights and coloured drop
+ *    shadows on buttons (05/11/2026) go. A 2026 button is one colour, and
+ *    depth is kept for things that float: dialogs, menus, popovers.
+ *  - NO HOVER JUMPS. Cards and buttons stop lifting 3px on hover. On a
+ *    tablet there is no hover anyway, and on a desktop the bounce is noise.
+ *  - TOUCH SIZE. Lauren books on a tablet all day, so controls are 40px and
+ *    the booking form's groups have 44px rows.
+ *
+ * Kept on purpose: the service colours on calendar cards and the workflow
+ * stage colours. The salon has learned them; only their form changes.
+ *
+ * Placed last in the file so these win over the earlier rules of the same
+ * specificity without !important.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --radius-control: var(--radius);                 /* 10px */
+  --radius-group: calc(var(--radius) + 0.25rem);   /* 14px */
+  --radius-sheet: 1.375rem;                        /* 22px */
+  /* The logo's neon teal. Drawn only on dark surfaces, and only while the
+     salon is on Groomigo's own theme (DashboardLayout sets the attribute). */
+  --brand-glow: #1fe3df;
+}
+
+/* Buttons: one flat colour. */
+[data-slot="button"].btn-solid,
+[data-slot="button"].btn-solid-destructive {
+  background-image: none;
+  background-color: var(--brand-primary);
+  box-shadow: none;
+}
+[data-slot="button"].btn-solid-destructive {
+  background-color: var(--destructive);
+}
+[data-slot="button"].btn-solid:not(:disabled):hover {
+  background-image: none;
+  background-color: var(--brand-primary-strong);
+  box-shadow: none;
+  transform: none;
+}
+[data-slot="button"].btn-solid-destructive:not(:disabled):hover {
+  background-image: none;
+  background-color: color-mix(in oklch, var(--destructive) 88%, black);
+  box-shadow: none;
+}
+[data-slot="button"].btn-solid:not(:disabled):active {
+  box-shadow: none;
+  transform: scale(0.985);
+}
+button[data-slot="button"]:not(:disabled):hover {
+  box-shadow: none;
+}
+
+/* Cards and the lift utility: still, not bouncing. */
+[data-slot="card"] {
+  border-radius: var(--radius-group);
+  box-shadow: none;
+}
+[data-slot="card"].cursor-pointer:hover,
+[data-slot="card"]:has(a):hover,
+[data-slot="card"][role="button"]:hover {
+  transform: none;
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.brand-lift:hover {
+  transform: none;
+  box-shadow: none;
+}
+.gm-surface { border-radius: var(--radius-group); box-shadow: none; }
+
+/* Fields: a soft filled well with a hairline, white and ringed on focus. */
+input[data-slot="input"],
+textarea[data-slot="textarea"],
+[data-slot="select-trigger"] {
+  border-radius: var(--radius-control);
+  background-color: color-mix(in oklch, var(--muted) 70%, var(--card));
+  border-color: color-mix(in oklch, var(--foreground) 9%, transparent);
+  box-shadow: none;
+}
+input[data-slot="input"]:focus-visible,
+textarea[data-slot="textarea"]:focus-visible,
+[data-slot="select-trigger"]:focus-visible {
+  background-color: var(--card);
+  border-color: var(--brand-primary);
+}
+
+/* Tags and badges: small rounded rectangles, not pills. */
+[data-slot="badge"] {
+  border-radius: 0.375rem;
+}
+
+/* Tab bars: a segmented control. A grey track and a white raised segment,
+   lettered in the brand so the current section is still the most visible
+   thing on it (the 05/11/2026 complaint was a white tab on pale pink with
+   nothing else to mark it). */
+[data-slot="tabs-list"] {
+  border-radius: calc(var(--radius-control) + 0.125rem);
+  padding: 0.1875rem;
+  border: 0;
+  background: color-mix(in oklch, var(--foreground) 7%, var(--muted));
+}
+[data-slot="tabs-trigger"],
+[role="tab"] {
+  border-radius: calc(var(--radius-control) - 0.125rem);
+}
+[data-slot="tabs-trigger"][data-state="active"],
+[role="tab"][aria-selected="true"] {
+  background-image: none;
+  background-color: var(--card);
+  color: var(--brand-primary);
+  box-shadow:
+    0 1px 2px color-mix(in oklch, var(--foreground) 12%, transparent),
+    0 0 0 0.5px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.dark [data-slot="tabs-trigger"][data-state="active"],
+.dark [role="tab"][aria-selected="true"] {
+  background-color: var(--accent);
+  color: var(--foreground);
+}
+[data-slot="tabs-trigger"]:hover:not([data-state="active"]):not(:disabled),
+[role="tab"]:hover:not([aria-selected="true"]):not(:disabled) {
+  background: color-mix(in oklch, var(--card) 55%, transparent);
+  color: var(--foreground);
+}
+[role="tab"][data-tone="warning"][aria-selected="true"],
+.dark [role="tab"][data-tone="warning"][aria-selected="true"] {
+  background-image: none;
+  background-color: #dc2626;
+  box-shadow: none;
+}
+
+/* Things that float keep their depth; the corners follow the scale. */
+[data-slot="dialog-content"] {
+  border-radius: var(--radius-sheet);
+  box-shadow:
+    0 30px 80px -24px color-mix(in oklch, var(--foreground) 35%, transparent),
+    0 0 0 1px color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+[data-slot="sheet-content"] { border-radius: 0; }
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="select-content"] {
+  border-radius: var(--radius-group);
+}
+
+/* Sidebar rows: 10px, no slide on hover. */
+[data-sidebar="sidebar"] [data-sidebar="menu-button"] {
+  border-radius: var(--radius-control);
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-button"]:hover,
+[data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"]:hover {
+  transform: none;
+}
+[data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"] {
+  box-shadow: none;
+}
+
+/* On Groomigo's own theme the active row glows the logo's teal on the deep
+   sidebar, the way the logo itself is drawn. A salon on its own brand keeps
+   the solid brand-coloured row. */
+:root[data-brand-theme="groomigo"] [data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"],
+:root[data-brand-theme="groomigo"] [data-sidebar="sidebar"] [data-sidebar="menu-sub-button"][data-active="true"] {
+  background: color-mix(in oklch, var(--brand-glow) 14%, transparent);
+  color: var(--brand-glow);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--brand-glow) 26%, transparent);
+}
+:root[data-brand-theme="groomigo"] [data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"]:hover {
+  background: color-mix(in oklch, var(--brand-glow) 20%, transparent);
+}
+:root[data-brand-theme="groomigo"] [data-sidebar="sidebar"] [data-sidebar="menu-button"][data-active="true"] svg,
+:root[data-brand-theme="groomigo"] [data-sidebar="sidebar"] [data-sidebar="menu-sub-button"][data-active="true"] svg {
+  color: var(--brand-glow) !important;
+}
+
+/* ── The booking form: a grey sheet holding white groups ──────────────────
+   The New Appointment dialog opts in with `.sheet-grouped`. Its bordered
+   sections (`.sheet-group`) become white rounded groups on a soft grey
+   sheet, the way iPadOS lays out a form, so the eye reads it a group at a
+   time instead of a long column of boxed fields. */
+[data-slot="dialog-content"].sheet-grouped {
+  background: color-mix(in oklch, var(--muted) 80%, var(--background));
+  gap: 0.875rem;
+}
+.sheet-grouped .sheet-group {
+  background: var(--card);
+  border: 0;
+  border-radius: var(--radius-group);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+.sheet-grouped input[data-slot="input"],
+.sheet-grouped textarea[data-slot="textarea"],
+.sheet-grouped [data-slot="select-trigger"] {
+  background-color: var(--card);
+}
+.sheet-grouped .sheet-group input[data-slot="input"],
+.sheet-grouped .sheet-group textarea[data-slot="textarea"],
+.sheet-grouped .sheet-group [data-slot="select-trigger"] {
+  background-color: color-mix(in oklch, var(--muted) 70%, var(--card));
+}
+.sheet-grouped [data-slot="dialog-title"] {
+  font-size: 1.1875rem;
+  letter-spacing: -0.015em;
+}
+
+/* A segmented choice built from plain buttons (cut, rate, pet chips). */
+.seg-track {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.125rem;
+  padding: 0.1875rem;
+  border-radius: calc(var(--radius-control) + 0.125rem);
+  background: color-mix(in oklch, var(--foreground) 7%, var(--muted));
+  max-width: 100%;
+}
+.seg-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border-radius: calc(var(--radius-control) - 0.125rem);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: color-mix(in oklch, var(--foreground) 68%, transparent);
+  white-space: nowrap;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.seg-option:hover:not(:disabled):not([aria-pressed="true"]) {
+  background: color-mix(in oklch, var(--card) 55%, transparent);
+  color: var(--foreground);
+}
+.seg-option[aria-pressed="true"] {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow:
+    0 1px 2px color-mix(in oklch, var(--foreground) 12%, transparent),
+    0 0 0 0.5px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.seg-option[aria-pressed="true"] .seg-price {
+  color: var(--brand-primary);
+}
+.seg-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.dark .seg-option[aria-pressed="true"] { background: var(--accent); }
+
+/* Equal columns with the price under the label, for a choice whose
+   options would otherwise wrap onto a second ragged row (the three rates
+   in a 448px dialog). Each column is a full-height touch target. */
+.seg-track.seg-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  width: 100%;
+}
+.seg-grid .seg-option {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  min-height: 2.75rem;
+  padding: 0.25rem 0.5rem;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.2;
+}
+
