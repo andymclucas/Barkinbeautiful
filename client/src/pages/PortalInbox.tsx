@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { MessageCircle, Send, UserRound } from "lucide-react";
+import { ArrowRight, MessageCircle, Send, UserRound } from "lucide-react";
+import { Link } from "wouter";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -94,9 +95,28 @@ export default function PortalInbox() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
+              <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                 <UserRound className="h-4 w-4 text-primary" />
-                {thread.data ? [thread.data.thread.firstName, thread.data.thread.lastName].filter(Boolean).join(" ") : "Pick a conversation"}
+                {/* The name opens the client's card (Lauren, 24/11/2026: "can
+                    we click on their name to be able to shortcut to their
+                    profiles"; Andy: it "needs to take the staff to the client
+                    card"). */}
+                {thread.data ? (
+                  <>
+                    <Link
+                      href={`/clients/${thread.data.thread.clientId}`}
+                      className="underline-offset-4 hover:text-primary hover:underline"
+                      data-testid="portal-thread-client-link"
+                    >
+                      {[thread.data.thread.firstName, thread.data.thread.lastName].filter(Boolean).join(" ") || "Client"}
+                    </Link>
+                    <Link href={`/clients/${thread.data.thread.clientId}`} className="ml-auto">
+                      <Button variant="outline" size="sm" className="h-7 gap-1 text-xs">
+                        Open client card <ArrowRight className="h-3 w-3" />
+                      </Button>
+                    </Link>
+                  </>
+                ) : "Pick a conversation"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
