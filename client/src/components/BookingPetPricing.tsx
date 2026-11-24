@@ -10,6 +10,7 @@ import { SIZE_BAND_IDS, SIZE_BAND_SOURCE_LABELS, sizeBandLabel, type DogSizeBand
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { addOnRequiresManualPrice } from "@shared/appointmentAddOns";
 import { serviceForPet } from "@shared/appointmentMembershipCoverage";
+import { daycareHourlyPrice, describeHours, isHourlyDaycareName, withHourlyDaycarePrices } from "@shared/daycarePricing";
 import {
   bookingTotal,
   formatPriceAud,
@@ -68,6 +69,11 @@ type Props = {
   addOnsByPetId: Record<string, StagedAddOn[]>;
   onAddOnsChange: (next: Record<string, StagedAddOn[]>) => void;
   onServiceTypeChange: (serviceType: string) => void;
+  /**
+   * How long the booking runs. Daycare charged by the hour is priced from
+   * it (shared/daycarePricing.ts); nothing else reads it.
+   */
+  durationMinutes?: number | null;
   /** Book again also restores the groomer and the length of the last groom. */
   onRepeatLast?: (last: { staffId: number | null; durationMinutes: number | null }) => void;
 };
@@ -148,22 +154,24 @@ export function BookingPetPricing(props: Props) {
   const optionsByPetId = useMemo(() => {
     const map: Record<string, PriceOption[]> = {};
     for (const row of petRows) {
-      map[String(row.petId)] = groomPriceOptions({ serviceType: serviceOf(row.petId), sizeBand: row.band, catalogue });
+      const service = serviceOf(row.petId);
+      map[String(row.petId)] = withHourlyDaycarePrices(groomPriceOptions({ serviceType: service, sizeBand: row.band, catalogue }), service, props.durationMinutes);
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petRows, serviceType, ownServiceKey, catalogue]);
+  }, [petRows, serviceType, ownServiceKey, catalogue, props.durationMinutes]);
 
   // What the dropdown lists.
   const shownOptionsByPetId = useMemo(() => {
     if (applicableOnly) return optionsByPetId;
     const map: Record<string, PriceOption[]> = {};
     for (const row of petRows) {
-      map[String(row.petId)] = groomPriceOptions({ serviceType: serviceOf(row.petId), sizeBand: row.band, catalogue, scope: "all" });
+      const service = serviceOf(row.petId);
+      map[String(row.petId)] = withHourlyDaycarePrices(groomPriceOptions({ serviceType: service, sizeBand: row.band, catalogue, scope: "all" }), service, props.durationMinutes);
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicableOnly, optionsByPetId, petRows, serviceType, ownServiceKey, catalogue]);
+  }, [applicableOnly, optionsByPetId, petRows, serviceType, ownServiceKey, catalogue, props.durationMinutes]);
 
   /**
    * Re-fill the boxes when the booking genuinely changes shape.
@@ -178,8 +186,12 @@ export function BookingPetPricing(props: Props) {
    * groom's figure is not a styled groom's, so carrying it over would
    * leave a wrong number in a box that looks filled in.
    */
+  // A daycare booking re-prices when its length changes, because an hourly
+  // rate depends on it. A groom does not: moving its end time must not
+  // wipe a figure somebody typed.
   const signatureFor = (service: string) =>
-    `${service}|${petRows.map((r) => `${r.petId}:${r.band ?? ""}:${r.tier}`).join(",")}|${catalogue.length}`;
+    `${service}|${petRows.map((r) => `${r.petId}:${r.band ?? ""}:${r.tier}`).join(",")}|${catalogue.length}`
+    + (service === "daycare" ? `|${props.durationMinutes ?? ""}` : "");
   const signature = signatureFor(serviceType);
   const lastSignature = useRef<string>("");
   const lastOwnServices = useRef<Record<string, string>>({});
@@ -360,6 +372,32 @@ export function BookingPetPricing(props: Props) {
       [String(petId)]: (props.addOnsByPetId[String(petId)] ?? []).filter((_, i) => i !== index),
     });
 
+  /*
+   * Daycare's hourly rate, typed by staff (Andy, 24/11/2026: "Give staff
+   * option to enter the rate manually for hourly rate"). Starts from the
+   * "per hour" daycare row in Pricing & Services when there is one; each
+   * daycare dog's price is this rate times the booking's length, and a
+   * dog's box can still be typed over afterwards.
+   */
+  const daycareDogs = petRows.filter((row) => serviceOf(row.petId) === "daycare" && !isCovered(row.petId));
+  const listedHourlyRate = useMemo(() => {
+    const row = catalogue.find((item) => item.legacyServiceType === "daycare" && item.priceMode === "fixed" && item.priceAud !== null && isHourlyDaycareName(item.name));
+    return row?.priceAud ?? "";
+  }, [catalogue]);
+  const [hourlyRate, setHourlyRate] = useState("");
+  const hasDaycare = daycareDogs.length > 0;
+  useEffect(() => {
+    if (hasDaycare && hourlyRate === "" && listedHourlyRate) setHourlyRate(Number(listedHourlyRate).toFixed(2));
+  }, [hasDaycare, listedHourlyRate]); // eslint-disable-line react-hooks/exhaustive-deps
+  const daycareDogKey = daycareDogs.map((row) => row.petId).join(",");
+  const perDogDaycarePrice = props.durationMinutes ? daycareHourlyPrice(hourlyRate, props.durationMinutes) : null;
+  useEffect(() => {
+    if (!hasDaycare || hourlyRate.trim() === "" || !perDogDaycarePrice) return;
+    const next = { ...props.priceByPetId };
+    for (const row of daycareDogs) next[String(row.petId)] = perDogDaycarePrice;
+    props.onPricesChange(next);
+  }, [hourlyRate, props.durationMinutes, daycareDogKey, signature]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (petIds.length === 0) return null;
 
   return (
@@ -391,6 +429,30 @@ export function BookingPetPricing(props: Props) {
           )}
         </span>
       </div>
+
+      {hasDaycare && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/40 px-2.5 py-2 text-xs">
+          <Label htmlFor="daycare-hourly-rate" className="text-xs">Daycare hourly rate</Label>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+            <Input
+              id="daycare-hourly-rate"
+              className="h-7 w-20 pl-5 text-xs"
+              inputMode="decimal"
+              placeholder="0.00"
+              value={hourlyRate}
+              onChange={(e) => setHourlyRate(e.target.value.replace(/[^0-9.]/g, ""))}
+            />
+          </div>
+          <span className="text-muted-foreground">
+            {props.durationMinutes
+              ? perDogDaycarePrice
+                ? `× ${describeHours(props.durationMinutes)} = $${perDogDaycarePrice} per dog`
+                : `× ${describeHours(props.durationMinutes)}`
+              : "Set the start and end time to work out the price"}
+          </span>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {/* The quick picks are the fast path Andy asked for: tap Classic or

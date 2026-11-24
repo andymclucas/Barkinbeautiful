@@ -59,6 +59,28 @@ function renderPricing(over: Partial<PricingProps> = {}) {
   return { props, ...render(<BookingPetPricing {...props} />) };
 }
 
+describe("BookingPetPricing daycare hourly rate (Andy, 24/11/2026)", () => {
+  beforeEach(() => { contextPets = [pet(100, "Teddy"), pet(200, "Bella")]; });
+
+  it("prices every daycare dog from the rate staff type and the booking's length", () => {
+    const onPricesChange = vi.fn();
+    renderPricing({ petIds: [100, 200], serviceType: "daycare", priceByPetId: {}, durationMinutes: 90, onPricesChange });
+    fireEvent.change(screen.getByLabelText("Daycare hourly rate"), { target: { value: "10" } });
+    expect(screen.getByText("× 1.5 hours = $15.00 per dog")).toBeInTheDocument();
+    expect(onPricesChange).toHaveBeenLastCalledWith({ "100": "15.00", "200": "15.00" });
+  });
+
+  it("is not shown for a groom", () => {
+    renderPricing({ serviceType: "classic_groom", durationMinutes: 90 });
+    expect(screen.queryByLabelText("Daycare hourly rate")).not.toBeInTheDocument();
+  });
+
+  it("asks for times before it can work out a price", () => {
+    renderPricing({ petIds: [100], serviceType: "daycare", priceByPetId: {}, durationMinutes: null });
+    expect(screen.getByText("Set the start and end time to work out the price")).toBeInTheDocument();
+  });
+});
+
 describe("BookingPetPricing", () => {
   beforeEach(() => { contextPets = [pet(100, "Teddy")]; });
 

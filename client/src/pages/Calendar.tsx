@@ -2518,6 +2518,12 @@ export default function Calendar() {
       return { ...prev, staffByPetId, petIds: prev.petIds.filter(id => !gone.includes(id)) };
     });
   }, [selectedClientPets.data]);
+  /** How long the new booking runs; daycare by the hour is priced from it. */
+  const newApptDurationMinutes = useMemo(() => {
+    if (!newAppt.scheduledStart || !newAppt.scheduledEnd) return null;
+    const minutes = (parseBrisbaneLocalDateTime(newAppt.scheduledEnd).getTime() - parseBrisbaneLocalDateTime(newAppt.scheduledStart).getTime()) / 60000;
+    return Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes) : null;
+  }, [newAppt.scheduledStart, newAppt.scheduledEnd]);
   const selectedAppointmentPetIds = useMemo(
     () => newAppt.petIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
     [newAppt.petIds],
@@ -5380,6 +5386,7 @@ export default function Calendar() {
                 petIds={selectedAppointmentPetIds}
                 serviceType={newAppt.serviceType}
                 serviceByPetId={perPetServices}
+                durationMinutes={newApptDurationMinutes}
                 membershipCovered={Boolean(membershipCoverage.data?.fullyCovered)}
                 coveredPetIds={membershipCoverage.data?.coveredPetIds}
                 priceByPetId={newAppt.priceByPetId}
