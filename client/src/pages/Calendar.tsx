@@ -3178,6 +3178,9 @@ export default function Calendar() {
         end: repeatEnd,
         notes: newAppt.notes || undefined,
         price: membershipCoverage.data?.fullyCovered ? "0.00" : newAppt.price || undefined,
+        // Each dog's price, as the one-off booking sends it; without it every
+        // repeat was booked with no price (Lauren, 24/11/2026).
+        priceByPetId: membershipCoverage.data?.fullyCovered ? undefined : newAppt.priceByPetId,
         // Not passed: createRecurringAppointments never sends a
         // confirmation, so there is nothing for the flag to suppress.
       });

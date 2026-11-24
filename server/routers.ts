@@ -2395,6 +2395,14 @@ const calendarRouter = router({
       untilDate: z.string().optional(), // yyyy-mm-dd, inclusive
       notes: z.string().optional(),
       price: z.string().optional(),
+      /*
+       * Each dog's own price, as createMultiPetAppointment takes it.
+       * Lauren, 24/11/2026: a booking made to repeat "doesn't save the
+       * price". The New Appointment dialog fills a price per dog and only
+       * sent the old single box, which is empty, so every repeat was
+       * booked with no price.
+       */
+      priceByPetId: z.record(z.string(), z.string()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       { const lengthProblem = bookingLengthProblem(input.scheduledStart, input.scheduledEnd); if (lengthProblem) throw new TRPCError({ code: "BAD_REQUEST", message: lengthProblem }); }
@@ -2512,7 +2520,12 @@ const calendarRouter = router({
             scheduledStart: occurrenceStart,
             scheduledEnd: occurrenceEnd,
             notes: input.notes,
-            price: priceForCoveredAppointment(coverage.fullyCovered, input.price),
+            /* Each dog's own figure and its own cover, the same rule as
+               a one-off booking (createMultiPetAppointment). */
+            price: priceForCoveredAppointment(
+              coverage.fullyCovered || coverage.coveredPetIds.includes(petId),
+              priceForPet({ petId, priceByPetId: input.priceByPetId, singlePrice: input.price, petCount: petIds.length }),
+            ),
             membershipId: coverage.membershipByPetId[petId]?.id ?? null,
             trackerToken: nanoid(32),
             sessionId,
