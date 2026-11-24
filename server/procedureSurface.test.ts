@@ -50,6 +50,7 @@ const PUBLIC = [
   // The client's own other contacts (18/11/2026), scoped by the portal
   // session like updateMyProfile: add one, correct one, remove one.
   "clientPortalRouter.addMyContact",
+  "clientPortalRouter.bookingNextAvailable",
   "clientPortalRouter.bookingOptions",
   "clientPortalRouter.bookingSlots",
   "clientPortalRouter.cancelAppointment",
@@ -648,7 +649,8 @@ describe("tRPC procedure surface", () => {
     // board changed?" check. operationalProcedure, like getBoard.
     // 465 since 24/11/2026: clientPortal.bookingOptions, bookingSlots,
     // createBooking and addExtras, in PUBLIC.
-    expect(surface).toHaveLength(465);
+    // 466 since 24/11/2026: clientPortal.bookingNextAvailable, in PUBLIC.
+    expect(surface).toHaveLength(466);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -663,7 +665,8 @@ describe("tRPC procedure surface", () => {
     // 63 since 12/11/2026: the two sign-in link procedures.
     // 64 since 12/11/2026: redeemSignInCode.
     // 72 since 24/11/2026: the four portal booking procedures.
-    expect(PUBLIC).toHaveLength(72);
+    // 73 since 24/11/2026: bookingNextAvailable.
+    expect(PUBLIC).toHaveLength(73);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

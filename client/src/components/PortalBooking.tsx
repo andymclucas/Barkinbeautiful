@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarPlus, Sparkles } from "lucide-react";
+import { CalendarClock, CalendarPlus, Sparkles } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -82,6 +82,26 @@ export function PortalBookingDialog({ token, open, onClose, onBooked }: { token?
     { token, petId: petId ?? 0, serviceType, staffId: staffId === "any" ? null : Number(staffId), date },
     { enabled: open && !!petId && !!serviceType && !!date },
   );
+  const utils = trpc.useUtils();
+  const [findingNext, setFindingNext] = useState(false);
+  /** Jump to the first free time, so the client need not hunt for a day. */
+  const findNextAvailable = async () => {
+    if (!petId || !serviceType) return;
+    setFindingNext(true);
+    try {
+      const next = await utils.clientPortal.bookingNextAvailable.fetch({ token, petId, serviceType, staffId: staffId === "any" ? null : Number(staffId) });
+      if (!next) {
+        toast.error("No free times in the next 8 weeks. Please contact the salon.");
+        return;
+      }
+      setDate(next.date);
+      setSlot(new Date(next.scheduledStart).toISOString());
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't look for a time. Please try again.");
+    } finally {
+      setFindingNext(false);
+    }
+  };
   const create = trpc.clientPortal.createBooking.useMutation({
     onSuccess: (r) => {
       toast.success(`Booked for ${dayOf(r.scheduledStart)} at ${timeOf(r.scheduledStart)}. We'll confirm it shortly.`);
@@ -166,6 +186,10 @@ export function PortalBookingDialog({ token, open, onClose, onBooked }: { token?
                         <DateField value={date} min={dayKeyFromToday(1)} max={dayKeyFromToday(90)} onChange={(next) => { setDate(next); setSlot(""); }} />
                       </div>
                     </div>
+                    <Button type="button" variant="outline" className="w-full gap-2" disabled={findingNext} onClick={findNextAvailable}>
+                      <CalendarClock className="h-4 w-4" aria-hidden="true" />
+                      {findingNext ? "Finding the next free time…" : "Book next available"}
+                    </Button>
 
                     {date && (
                       <div className="space-y-1.5">
