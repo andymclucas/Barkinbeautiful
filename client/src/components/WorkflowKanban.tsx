@@ -97,7 +97,7 @@ export function WorkflowKanban({
   };
 
   return (
-    // Scrolls sideways on a tablet rather than squeezing five areas into
+    // Scrolls sideways on a tablet rather than squeezing six areas into
     // cards too narrow to read.
     <div ref={scrollerRef} className="overflow-x-auto pb-1" data-testid="workflow-kanban">
     {touchDrag && (
