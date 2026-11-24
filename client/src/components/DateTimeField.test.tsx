@@ -139,6 +139,16 @@ describe("DateTimeField — disabled", () => {
   });
 });
 
+describe("DateTimeField — in two columns (Andy, 24/11/2026)", () => {
+  it("labels each half so they line up under Date and Start time", () => {
+    show("2026-11-24T14:00", { columns: { dateLabel: "End date", timeLabel: "End time" } });
+    expect(screen.getByText("End date")).toBeInTheDocument();
+    expect(screen.getByText("End time")).toBeInTheDocument();
+    expect(dateBox()).toBeInTheDocument();
+    expect(timeBox()).toHaveValue("14:00");
+  });
+});
+
 describe("DateTimeField — a fallback day", () => {
   /*
    * Lauren, 06/11/2026: "the ends date and time is annoying".
