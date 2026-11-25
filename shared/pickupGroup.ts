@@ -12,6 +12,7 @@
  * So the prompt waits for the last dog, and the message names them all.
  */
 
+import { isDaycareService } from "./bookingEnd";
 /** One of a client's dogs on the board today. */
 export type PickupSibling = {
   appointmentId: number;
@@ -19,6 +20,8 @@ export type PickupSibling = {
   workflowState: string;
   /** A pickup text already went out for this dog. */
   alreadyTexted?: boolean;
+  /** The booking's service; a day care dog is left out (see pickupPrompt). */
+  serviceType?: string | null;
 };
 
 /** Done and waiting to be collected. */
@@ -49,7 +52,13 @@ export type PickupPrompt = {
  * the one just marked ready.
  */
 export function pickupPrompt(siblings: ReadonlyArray<PickupSibling>): PickupPrompt {
-  const live = siblings.filter((s) => !NOT_COMING.has(s.workflowState));
+  // A day care dog is not groomed and never reaches Ready: it sits at
+  // "here" until its own collection time. It used to count as "still with
+  // the groomer" and held the family's text all day (Lauren, 25/11/2026:
+  // "It won't let us text to say Minnie is ready with its friend Peppi is
+  // only in for daycare"). So day care neither holds the text nor is named
+  // in it; its collection time is on the Day care card.
+  const live = siblings.filter((s) => !NOT_COMING.has(s.workflowState) && !isDaycareService(s.serviceType));
   const collectable = live.filter((s) => COLLECTABLE.has(s.workflowState));
   const stillWorking = live.filter((s) => !COLLECTABLE.has(s.workflowState));
 

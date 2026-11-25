@@ -214,3 +214,21 @@ describe("pickupSendDecision", () => {
     expect(d.ok).toBe(true);
   });
 });
+
+describe("a day care dog in the family (Lauren, 25/11/2026)", () => {
+  const minnie: PickupSibling = { appointmentId: 1, petName: "Minnie", workflowState: "ready", serviceType: "classic_groom" };
+  const peppy: PickupSibling = { appointmentId: 2, petName: "Peppy", workflowState: "checked_in", serviceType: "daycare" };
+
+  it("does not hold the groomed dog's pickup text", () => {
+    const group = pickupPrompt([minnie, peppy]);
+    expect(group.prompt).toBe(true);
+    expect(group.petNames).toEqual(["Minnie"]);
+    expect(group.appointmentIds).toEqual([1]);
+    expect(pickupSendDecision([minnie, peppy])).toEqual({ ok: true, petNames: ["Minnie"], appointmentIds: [1] });
+  });
+
+  it("still waits for a second dog that is being groomed", () => {
+    const sibling: PickupSibling = { appointmentId: 3, petName: "Ollie", workflowState: "bathing", serviceType: "bath_only" };
+    expect(pickupPrompt([minnie, peppy, sibling]).waitingFor).toEqual(["Ollie"]);
+  });
+});
