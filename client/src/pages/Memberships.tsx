@@ -496,9 +496,7 @@ function MembershipRow({ m }: { m: MembershipItem }) {
           {m.bookingSuspended && (
             <Badge className="text-xs bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300 block">Suspended</Badge>
           )}
-          <MembershipBillingControl m={m} />
-          <MembershipCycleControl m={m} />
-          <MembershipCancelControl m={m} />
+          <MembershipActions m={m} />
         </div>
       </td>
     </tr>
@@ -530,7 +528,7 @@ function MembershipCycleControl({ m }: { m: MembershipItem }) {
     onSuccess: (result) => {
       setConfirming(false);
       toast.success(result.changed ? `Now billing ${result.chargedLabel}` : "Already on that cycle");
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
     },
     onError: (error) => { setConfirming(false); toast.error(error.message); },
   });
@@ -594,7 +592,30 @@ function MembershipCycleControl({ m }: { m: MembershipItem }) {
  * a client who simply left the salon kept an active membership for ever, and
  * never appeared under Cancelled.
  */
-function MembershipCancelControl({ m }: { m: MembershipItem }) {
+/**
+ * Every action on a membership: billing (start, retry, pause, resume),
+ * the cycle switch, and cancel. One block, so the Memberships list and the
+ * client card offer exactly the same things (Andy, 25/11/2026: "Need to
+ * have the same functions in the client card > membership section as in
+ * the memberships").
+ *
+ * A Stripe-billed membership shows Cancel membership as a button beside
+ * Pause, inside the billing control; everything else keeps the small link
+ * underneath.
+ */
+export function MembershipActions({ m }: { m: MembershipItem }) {
+  return (
+    <>
+      <MembershipBillingControl m={m} />
+      <MembershipCycleControl m={m} />
+      {!m.stripeSubscriptionId && <MembershipCancelControl m={m} />}
+    </>
+  );
+}
+
+export type { MembershipItem };
+
+function MembershipCancelControl({ m, variant = "link" }: { m: MembershipItem; variant?: "link" | "button" }) {
   const utils = trpc.useUtils();
   const [confirming, setConfirming] = useState(false);
   const [futureChoice, setFutureChoice] = useState<FutureBookingChoice | null>(null);
@@ -620,7 +641,7 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
     onSuccess: (result) => {
       toast.success(["Membership cancelled.", result.summary].filter(Boolean).join(" "));
       utils.calendar.invalidate();
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
       utils.memberships.getFailedPayments.invalidate();
       setConfirming(false);
     },
@@ -628,7 +649,7 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
       toast.error(error.message);
       // The row may have changed underneath (billing is stopped before
       // anything else), so show what is true now.
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
       setConfirming(false);
     },
   });
@@ -637,14 +658,28 @@ function MembershipCancelControl({ m }: { m: MembershipItem }) {
 
   return (
     <>
-      <button
-        type="button"
-        className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-red-600 hover:underline disabled:opacity-50 dark:hover:text-red-400"
-        disabled={cancelMembership.isPending}
-        onClick={() => { setFutureChoice(null); setKeptDecisions({}); setKeptErrors({}); setConfirming(true); }}
-      >
-        {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
-      </button>
+      {variant === "button" ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 flex-1 gap-1.5 whitespace-nowrap border-red-200 px-2 text-[11px] font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+          disabled={cancelMembership.isPending}
+          onClick={() => { setFutureChoice(null); setKeptDecisions({}); setKeptErrors({}); setConfirming(true); }}
+        >
+          <XCircle className="h-3 w-3 shrink-0" />
+          {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
+        </Button>
+      ) : (
+        <button
+          type="button"
+          className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-red-600 hover:underline disabled:opacity-50 dark:hover:text-red-400"
+          disabled={cancelMembership.isPending}
+          onClick={() => { setFutureChoice(null); setKeptDecisions({}); setKeptErrors({}); setConfirming(true); }}
+        >
+          {cancelMembership.isPending ? "Cancelling…" : "Cancel membership"}
+        </button>
+      )}
       <Dialog open={confirming} onOpenChange={(open) => !open && !cancelMembership.isPending && setConfirming(false)}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Cancel this membership?</DialogTitle></DialogHeader>
@@ -794,7 +829,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
   const start = trpc.stripeCards.startSubscription.useMutation({
     onSuccess: (result) => {
       toast.success(result.alreadyExisted ? "Already billing automatically" : "Automatic billing started");
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
       setConfirming(null);
       setFirstChargeOn("");
     },
@@ -804,7 +839,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
     onSuccess: (result) => {
       if (result.ok) toast.success(result.message);
       else toast.error(result.message ?? "The card was declined");
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
       utils.memberships.getFailedPayments.invalidate();
       setConfirming(null);
     },
@@ -823,17 +858,17 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
             day: "numeric", month: "long", timeZone: "Australia/Brisbane",
           })}`
         : "Billing paused — nothing will be charged until you resume it here");
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
       setConfirming(null);
     },
     onError: (error) => { toast.error(error.message); setConfirming(null); },
   });
   const resume = trpc.stripeCards.resumeSubscription.useMutation({
-    onSuccess: () => { toast.success("Billing resumed"); utils.memberships.list.invalidate(); setConfirming(null); },
+    onSuccess: () => { toast.success("Billing resumed"); utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate(); setConfirming(null); },
     onError: (error) => { toast.error(error.message); setConfirming(null); },
   });
   const cancelBilling = trpc.stripeCards.cancelSubscription.useMutation({
-    onSuccess: () => { toast.success("Automatic billing cancelled"); utils.memberships.list.invalidate(); setConfirming(null); },
+    onSuccess: () => { toast.success("Automatic billing cancelled"); utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate(); setConfirming(null); },
     onError: (error) => { toast.error(error.message); setConfirming(null); },
   });
 
@@ -892,10 +927,15 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
         )}
         {confirming === "pause" && (
           <div className="grid gap-2 pt-1">
-            <Label className="text-xs">When should billing restart?</Label>
+            <Label className="text-xs">When should billing start again?</Label>
+            {/* Andy, 25/11/2026: "give the option to have a manual restart
+                date ... But also add the option to have 'Start again after
+                1 week, 2 weeks, 3 weeks etc.'" Both were here as "certain
+                cycles" and "certain date"; reworded, with the common
+                lengths one tap away. */}
             {([
-              { mode: "cycles", label: "After certain cycles" },
-              { mode: "date", label: "On certain date" },
+              { mode: "cycles", label: "Start again after…" },
+              { mode: "date", label: "Start again on a date" },
               { mode: "manual", label: "Restart manually" },
             ] as const).map(({ mode, label }) => (
               <label key={mode} className="flex items-center gap-2 text-sm cursor-pointer">
@@ -909,31 +949,48 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
                 <span>{label}</span>
               </label>
             ))}
-            {pauseMode === "cycles" && (
-              <div className="flex items-center gap-2 pl-6">
-                <Input
-                  type="number"
-                  min={1}
-                  max={52}
-                  className="h-8 w-20"
-                  aria-label="Billing cycles to pause for"
-                  value={pauseCycles}
-                  onChange={(e) => setPauseCycles(Math.max(1, Math.min(52, Number(e.target.value) || 1)))}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {m.billingCycle === "monthly" ? "month" : "week"}
-                  {pauseCycles === 1 ? "" : "s"} skipped
-                  {pausePreview ? <> &mdash; restarts <strong>{pausePreview}</strong></> : null}
-                </span>
-              </div>
-            )}
+            {pauseMode === "cycles" && (() => {
+              const unit = m.billingCycle === "monthly" ? "month" : cycle === "fortnightly" ? "fortnight" : "week";
+              return (
+                <div className="grid gap-2 pl-6">
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Start again after">
+                    {[1, 2, 3, 4].map((n) => (
+                      <Button
+                        key={n}
+                        type="button"
+                        size="sm"
+                        variant={pauseCycles === n ? "default" : "outline"}
+                        className="h-7 px-2.5 text-xs"
+                        aria-pressed={pauseCycles === n}
+                        onClick={() => setPauseCycles(n)}
+                      >
+                        {n} {unit}{n === 1 ? "" : "s"}
+                      </Button>
+                    ))}
+                    <Input
+                      type="number"
+                      min={1}
+                      max={52}
+                      className="h-7 w-16 text-xs"
+                      aria-label={`Other number of ${unit}s`}
+                      value={pauseCycles}
+                      onChange={(e) => setPauseCycles(Math.max(1, Math.min(52, Number(e.target.value) || 1)))}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {pauseCycles} {unit}{pauseCycles === 1 ? "" : "s"} skipped
+                    {pausePreview ? <> &mdash; starts again <strong>{pausePreview}</strong></> : null}
+                  </span>
+                </div>
+              );
+            })()}
             {pauseMode === "date" && (
               <div className="pl-6 grid gap-1">
                 <DateField className="h-8"
                   aria-label="Date billing restarts"
                   value={pauseResumeOn}
                   onChange={next => setPauseResumeOn(next)} />
-                <p className="text-xs text-muted-foreground">Billing restarts on this date.</p>
+                <p className="text-xs text-muted-foreground">Billing starts again on this date.</p>
               </div>
             )}
             {pauseMode === "manual" && (
@@ -1135,17 +1192,11 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
               {pause.isPending ? "Pausing…" : "Pause"}
             </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 flex-1 gap-1.5 whitespace-nowrap border-red-200 px-2 text-[11px] font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-            disabled={busy}
-            onClick={() => setConfirming("cancel")}
-          >
-            <XCircle className="h-3 w-3 shrink-0" />
-            {cancelBilling.isPending ? "Stopping…" : "Stop billing"}
-          </Button>
+          {/* Cancel membership in place of Stop billing (Andy, 25/11/2026:
+              "Pause | Cancel Membership (replace Stop Billing)"). Cancelling
+              stops the billing too; stopping billing alone left a live
+              membership nobody was charging for. */}
+          <MembershipCancelControl m={m} variant="button" />
         </div>
         {dialog}
       </div>
@@ -1338,7 +1389,7 @@ export default function Memberships() {
       setConfirmRecordFailure(null);
       setFailureReason("");
       utils.memberships.getFailedPayments.invalidate();
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -1347,7 +1398,7 @@ export default function Memberships() {
       toast.success("Payment failure cleared — membership restored to active.");
       setConfirmResolve(null);
       utils.memberships.getFailedPayments.invalidate();
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -1360,7 +1411,7 @@ export default function Memberships() {
       else toast.error(result.message ?? "The payment was declined again.", { duration: 10000 });
       setConfirmRetry(null);
       utils.memberships.getFailedPayments.invalidate();
-      utils.memberships.list.invalidate();
+      utils.memberships.list.invalidate(); utils.clients.getProfile.invalidate();
     },
     onError: (e) => { toast.error(e.message, { duration: 10000 }); setConfirmRetry(null); },
   });

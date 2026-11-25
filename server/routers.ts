@@ -6870,10 +6870,15 @@ const clientsRouter = router({
           // So the client's page can tell a failed-payment suspension from a
           // holiday pause and offer Retry payment (shared/membershipBillingState.ts).
           failedPaymentCount: memberships.failedPaymentCount,
+          // So the client card can show the same Pause / Resume controls as
+          // the Memberships list, with the restart date (Andy, 25/11/2026).
+          pauseMode: memberships.pauseMode,
+          pauseResumesAt: memberships.pauseResumesAt,
           startedAt: memberships.startedAt,
           cancelledAt: memberships.cancelledAt,
           petId: memberships.petId,
           petName: pets.name,
+          petBreed: pets.breed,
         })
         .from(memberships)
         .leftJoin(pets, eq(memberships.petId, pets.id))

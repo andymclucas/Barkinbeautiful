@@ -5,6 +5,7 @@ import { cleanClientName } from "@shared/clientName";
 import { canCancelFromClientPage } from "@shared/cancelFromClientPage";
 import { calendarAppointmentHref } from "@shared/calendarDeepLink";
 import { bookingCompanions } from "@shared/bookingCompanions";
+import { MembershipActions } from "@/pages/Memberships";
 import { brisbaneDateKey } from "@shared/localDateTime";
 import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -23,8 +24,8 @@ import { describeCancelledBookings } from "@shared/petPassingBookings";
 import { companionsOf, joinNames } from "@shared/familyBookingRows";
 import { billedTogetherWith, familyBillingOffer, formatCents, groupPayments, isSetupRow, paymentMergeOffer, paymentStatusLabel } from "@shared/familyBilling";
 import {
-  membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention, canStartBilling,
-  needsPaymentRetry, suspendedForPayment,
+  membershipBillingState, BILLING_STATE_LABEL, billingStateHint, needsAttention,
+  suspendedForPayment,
 } from "@shared/membershipBillingState";
 import { canAdministerStaff } from "@shared/staffAdministrators";
 import { shouldActOnSignal } from "@shared/openOnSignal";
@@ -33,7 +34,7 @@ import { membershipsByCoveredPet } from "@shared/membershipCoveredPets";
 import { parseClientTags, clientTagTone } from "@shared/clientTags";
 import { describePetCode, petCodeMeaning } from "@shared/petCodeMeanings";
 import { canChargeOffSession } from "@shared/stripeBilling";
-import { AddMembershipButton, CombinePaymentsPanel, FamilyBillingPanel, SetWeeklyBillingButton, SendCardLinkButton, RetryPaymentButton } from "@/components/client-record/MembershipActions";
+import { AddMembershipButton, CombinePaymentsPanel, FamilyBillingPanel, SendCardLinkButton } from "@/components/client-record/MembershipActions";
 import {
   SIZE_BAND_IDS, sizeBandLabel, SIZE_BAND_SOURCE_LABELS,
   type DogSizeBand, type SizeBandSource,
@@ -2987,13 +2988,6 @@ export default function ClientDetail() {
                           <p className="text-xs text-muted-foreground flex-1 min-w-[12rem]">
                             Stopped because the payment failed. A payment that goes through makes it active again.
                           </p>
-                          {isAdmin && (
-                            <RetryPaymentButton
-                              membership={{ id: m.id, petName: m.petName, failedPaymentCount: m.failedPaymentCount }}
-                              clientName={`${client.firstName ?? ""} ${client.lastName ?? ""}`.trim()}
-                              onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
-                            />
-                          )}
                         </div>
                       )}
                       {needsAttention(billing) && (
@@ -3008,26 +3002,41 @@ export default function ClientDetail() {
                               hasCardOnFile={hasCardOnFile}
                             />
                           )}
-                          {isAdmin && needsPaymentRetry(m) && (
-                            <RetryPaymentButton
-                              membership={{ id: m.id, petName: m.petName, failedPaymentCount: m.failedPaymentCount }}
-                              clientName={`${client.firstName ?? ""} ${client.lastName ?? ""}`.trim()}
-                              onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
-                            />
-                          )}
-                          {/* A failing payment is already billing — starting it
-                              again would bill twice or do nothing. */}
-                          {isOwner && canStartBilling(billing)
-                            ? <SetWeeklyBillingButton
-                                membership={{ id: m.id, name: m.name, pricePerCycle: m.pricePerCycle, petName: m.petName }}
-                                clientId={clientId}
-                                clientEmail={client.email}
-                                hasCardOnFile={hasCardOnFile}
-                                onChanged={() => { void utils.clients.getProfile.invalidate({ clientId }); }}
-                              />
-                            : !isOwner && canStartBilling(billing)
-                              ? <span className="text-xs text-muted-foreground">Lauren or Andy can start the billing.</span>
-                              : null}
+                        </div>
+                      )}
+                      {/* The same controls as the Memberships list: Set Weekly
+                          Billing, Retry payment, Pause (with a restart date or
+                          after 1-4 weeks), Resume, the cycle switch and Cancel
+                          membership (Andy, 25/11/2026). One shared block, so
+                          the two screens cannot drift apart. The Memberships
+                          list is admin-only; so is this. */}
+                      {isAdmin && m.status !== "cancelled" && m.status !== "expired" && (
+                        <div className="mt-4 max-w-sm border-t pt-3">
+                          <div className="flex flex-col gap-1.5">
+                            <MembershipActions m={{
+                              id: m.id,
+                              clientId,
+                              name: m.name,
+                              tier: m.tier,
+                              serviceType: m.serviceType,
+                              status: m.status,
+                              pauseMode: m.pauseMode ?? null,
+                              pauseResumesAt: m.pauseResumesAt ?? null,
+                              pricePerCycle: m.pricePerCycle,
+                              billingCycle: m.billingCycle ?? null,
+                              billingCycleWeeks: m.billingCycleWeeks,
+                              nextBillingDate: m.nextBillingDate,
+                              failedPaymentCount: m.failedPaymentCount,
+                              bookingSuspended: m.bookingSuspended,
+                              stripeSubscriptionId: m.stripeSubscriptionId ?? null,
+                              isTest: m.isTest,
+                              clientFirstName: client.firstName,
+                              clientLastName: client.lastName,
+                              clientPhone: client.phone,
+                              petName: m.petName,
+                              petBreed: m.petBreed ?? null,
+                            }} />
+                          </div>
                         </div>
                       )}
                     </CardContent>
