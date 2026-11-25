@@ -13,6 +13,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { billingCycleFromWeeks, retryWarning } from "@shared/stripeBilling";
+import { membershipTabCount } from "@shared/membershipTabCount";
 import { Label } from "@/components/ui/label";
 import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ArrowUpDown, ArrowUp, ArrowDown, Plus, CheckCircle, CheckCircle2, XCircle, RefreshCw, Landmark } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -1358,6 +1359,10 @@ export default function Memberships() {
   const items: MembershipItem[] = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // The list above is every membership on Failed Payments and Accounts
+  // Receivable, so the heading and pager follow the tab instead
+  // (shared/membershipTabCount.ts, Andy 25/11/2026).
+  const tabCount = membershipTabCount({ tab: activeTab, listTotal: total, failedPaymentCount: failedPayments?.length ?? 0 });
   // A remembered page can be past the end once plans have been cancelled.
   useEffect(() => {
     if (data && page > totalPages) setPage(totalPages);
@@ -1414,8 +1419,8 @@ export default function Memberships() {
           <div>
             <h1 className="text-2xl font-bold font-display">Memberships</h1>
             <p className="text-sm text-muted-foreground">
-              {total} {activeTab.replace("_", " ")} memberships
-              {tierFilter !== "all" ? ` · ${tierFilter} tier` : ""}
+              {tabCount.heading}
+              {tabCount.showPager && tierFilter !== "all" ? ` · ${tierFilter} tier` : ""}
             </p>
           </div>
           <Button onClick={() => setShowAddModal(true)} className="flex items-center gap-2">
@@ -1680,7 +1685,7 @@ export default function Memberships() {
             dogs as its name says. */}
         <MembershipPetAssignment />
 
-        <div className={`flex items-center justify-between text-sm text-muted-foreground pt-1 ${FLOATING_BUTTON_CLEARANCE}`}>
+        <div className={`flex items-center justify-between text-sm text-muted-foreground pt-1 ${FLOATING_BUTTON_CLEARANCE} ${tabCount.showPager ? "" : "invisible"}`}>
           <span>Showing {total === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, total)}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
           <PageNumbers page={page} totalPages={totalPages} onPage={goToPage} label="Membership pages, bottom" />
         </div>
