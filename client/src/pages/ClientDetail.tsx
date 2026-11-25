@@ -137,21 +137,37 @@ const TIER_ICONS: Record<string, string> = {
   diamond: "💎", platinum: "🥈", gold: "🥇", silver: "🪙", bronze: "🏅",
 };
 
-function MembershipBadge({ tier, name, status }: { tier: string; name: string; status: string }) {
+/**
+ * A dog's membership pill. With `onOpen` it is a button that takes staff to
+ * that membership on the Memberships tab, where it can be paused, billed or
+ * stopped (Andy, 25/11/2026: "Make the membership of any dog clickable to
+ * take them to the membership screen so we can pause, stop payments etc.").
+ */
+function MembershipBadge({ tier, name, status, onOpen }: { tier: string; name: string; status: string; onOpen?: () => void }) {
   const colours = TIER_COLOURS[tier] ?? TIER_COLOURS.bronze;
   const icon = TIER_ICONS[tier] ?? "🏅";
-  return (
-    // `max-w-full` + a truncating name keeps the pill on one line and inside
-    // its container: tier names run to "Gold VIP Styled - Giant (36-80 kg)",
-    // which overflowed every row it was put in. The full text stays on hover.
-    <span
-      title={name}
-      className={`inline-flex max-w-full items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${colours.bg} ${colours.text} ${colours.border}`}
-    >
+  // `max-w-full` + a truncating name keeps the pill on one line and inside
+  // its container: tier names run to "Gold VIP Styled - Giant (36-80 kg)",
+  // which overflowed every row it was put in. The full text stays on hover.
+  const className = `inline-flex max-w-full items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${colours.bg} ${colours.text} ${colours.border}`;
+  const content = (
+    <>
       <span aria-hidden="true">{icon}</span>
       <span className="truncate">{name}</span>
       {status !== "active" && <span className="shrink-0 opacity-60">({status})</span>}
-    </span>
+    </>
+  );
+  if (!onOpen) return <span title={name} className={className}>{content}</span>;
+  return (
+    <button
+      type="button"
+      title={`${name}: open membership`}
+      aria-label={`Open ${name} membership`}
+      onClick={(event) => { event.stopPropagation(); onOpen(); }}
+      className={`${className} cursor-pointer hover:ring-2 hover:ring-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+    >
+      {content}
+    </button>
   );
 }
 
@@ -370,7 +386,32 @@ export default function ClientDetail() {
     const id = Number(raw);
     return raw && Number.isInteger(id) && id > 0 ? id : null;
   })();
-  const [activeClientTab, setActiveClientTab] = useState(petFromUrl ? "pets" : "overview");
+  /**
+   * `?membership=` opens this record on Memberships, with that one scrolled
+   * to and ringed, so a membership can be linked to from anywhere.
+   */
+  const membershipFromUrl = (() => {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("membership");
+    const id = Number(raw);
+    return raw && Number.isInteger(id) && id > 0 ? id : null;
+  })();
+  const [activeClientTab, setActiveClientTab] = useState(membershipFromUrl ? "memberships" : petFromUrl ? "pets" : "overview");
+  /** The membership a badge was clicked for, ringed on the Memberships tab. */
+  const [focusedMembershipId, setFocusedMembershipId] = useState<number | null>(membershipFromUrl);
+  const openMembership = useCallback((membershipId: number) => {
+    setActiveClientTab("memberships");
+    setFocusedMembershipId(membershipId);
+  }, []);
+  // Scroll once the tab has rendered the card. A short wait rather than a
+  // ref, because the tab content mounts only when it becomes active.
+  useEffect(() => {
+    if (activeClientTab !== "memberships" || focusedMembershipId == null) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`membership-${focusedMembershipId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [activeClientTab, focusedMembershipId]);
   /**
    * Scrolled to and ringed. A client with eight dogs otherwise opens
    * the right tab and still leaves the one that was clicked somewhere
@@ -1363,7 +1404,7 @@ export default function ClientDetail() {
                   {client.status}
                 </Badge>
                 {activeMemberships.map(m => (
-                  <MembershipBadge key={m.id} tier={m.tier} name={m.name} status={m.status} />
+                  <MembershipBadge key={m.id} tier={m.tier} name={m.name} status={m.status} onOpen={() => openMembership(m.id)} />
                 ))}
                 {/* Portal access, beside the name (Lauren, 19/11/2026: "need
                     to move Portal access up the top near their name"). It
@@ -2169,7 +2210,7 @@ export default function ClientDetail() {
                               </Badge>
                             )}
                             {activePetMembership && (
-                              <MembershipBadge tier={activePetMembership.tier} name={activePetMembership.name} status={activePetMembership.status} />
+                              <MembershipBadge tier={activePetMembership.tier} name={activePetMembership.name} status={activePetMembership.status} onOpen={() => openMembership(activePetMembership.id)} />
                             )}
                           </div>
                         )}
@@ -2447,7 +2488,7 @@ export default function ClientDetail() {
                               {/* min-w-0 lets the pill truncate instead of
                                   shoving the price off the row. */}
                               <div className="min-w-0">
-                                <MembershipBadge tier={m.tier} name={m.name} status={m.status} />
+                                <MembershipBadge tier={m.tier} name={m.name} status={m.status} onOpen={() => openMembership(m.id)} />
                               </div>
                               <div className="flex shrink-0 items-center gap-1.5">
                                 <span className="text-muted-foreground">${m.pricePerCycle}/wk</span>
@@ -2881,7 +2922,7 @@ export default function ClientDetail() {
                   billing === "ended" ? "bg-red-100 text-red-800 border-red-200 dark:bg-red-950/50 dark:text-red-300" :
                   "bg-muted text-muted-foreground";
                 return (
-                  <Card key={m.id} className={`border-2 ${colours.border}`}>
+                  <Card key={m.id} id={`membership-${m.id}`} className={`scroll-mt-6 border-2 ${colours.border} ${m.id === focusedMembershipId ? "ring-2 ring-primary/60" : ""}`}>
                     <CardContent className="p-5">
                       <div className="flex items-start justify-between gap-4 flex-wrap">
                         <div className="flex items-center gap-3">

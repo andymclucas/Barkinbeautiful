@@ -449,7 +449,15 @@ function MembershipRow({ m }: { m: MembershipItem }) {
       <td className="p-3 hidden md:table-cell">
         <div className="flex items-center gap-1.5">
           <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-sm">{m.name}</span>
+          {/* Opens this membership on the client's card, where it can be
+              paused, billed or stopped (Andy, 25/11/2026). */}
+          {m.clientId ? (
+            <Link href={`/clients/${m.clientId}?membership=${m.id}`} className="text-sm hover:text-primary hover:underline">
+              {m.name}
+            </Link>
+          ) : (
+            <span className="text-sm">{m.name}</span>
+          )}
           {m.isTest && <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700 dark:text-amber-300">TEST</Badge>}
         </div>
       </td>
