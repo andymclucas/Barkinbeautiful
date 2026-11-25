@@ -9650,6 +9650,10 @@ const membershipsRouter = router({
     .input(z.object({
       tenantId: z.number().default(1),
       status: z.enum(["active", "paused", "cancelled", "pending_payment", "expired"]).optional(),
+      // Who is billing it (shared/membershipBillingSource.ts): Groomigo,
+      // through a subscription, or still MoeGo. Splits Active into "Active"
+      // and "To be migrated" (Andy, 25/11/2026).
+      billing: z.enum(["groomigo", "moego"]).optional(),
       tier: z.enum(["diamond", "platinum", "gold", "silver", "bronze"]).optional(),
       search: z.string().optional(),
       page: z.number().default(1),
@@ -9662,6 +9666,12 @@ const membershipsRouter = router({
       if (!db) return { items: [], total: 0 };
       const conditions = [eq(memberships.tenantId, tenantOf(ctx, input))];
       if (input.status) conditions.push(eq(memberships.status, input.status));
+      if (input.billing) {
+        // The same test as billingSourceOf: a non-blank subscription id of
+        // either kind means Groomigo is the one charging it.
+        const billedHere = sql`(COALESCE(TRIM(${memberships.stripeSubscriptionId}), '') <> '' OR COALESCE(TRIM(${memberships.gatewaySubscriptionId}), '') <> '')`;
+        conditions.push(input.billing === "groomigo" ? billedHere : sql`NOT ${billedHere}`);
+      }
       if (input.tier) conditions.push(eq(memberships.tier, input.tier));
       if (input.search) {
         // Every word must match something. Matching the whole input against

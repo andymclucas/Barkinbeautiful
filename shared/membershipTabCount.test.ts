@@ -11,7 +11,9 @@ describe("Memberships heading and pager count", () => {
 
   it("uses the paged list on the status tabs", () => {
     expect(membershipTabCount({ tab: "active", listTotal: 151, failedPaymentCount: 1 }))
-      .toEqual({ heading: "151 active memberships", showPager: true });
+      .toEqual({ heading: "151 active memberships, billed in Groomigo", showPager: true });
+    expect(membershipTabCount({ tab: "to_migrate", listTotal: 139, failedPaymentCount: 0 }))
+      .toEqual({ heading: "139 memberships to be migrated, still billed in MoeGo", showPager: true });
     expect(membershipTabCount({ tab: "pending_payment", listTotal: 1, failedPaymentCount: 0 }).heading)
       .toBe("1 pending payment membership");
   });
