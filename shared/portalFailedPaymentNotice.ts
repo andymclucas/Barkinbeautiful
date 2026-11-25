@@ -20,7 +20,9 @@ export function portalFailedPaymentNotice(
   if (failed.suspended) {
     return {
       title: "Your membership is paused",
-      body: "Your membership payment didn't go through, so bookings are on hold. Please update your card below or contact the salon.",
+      // Suspension stops the membership covering grooms; it does not block
+      // booking (bookingSuspended is read by the coverage resolver only).
+      body: "Your membership payment didn't go through, so your membership is paused until it's sorted. Please update your card below or contact the salon.",
     };
   }
   const retryAt = failed.retryAt ? new Date(failed.retryAt) : null;
