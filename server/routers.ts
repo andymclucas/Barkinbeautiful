@@ -157,7 +157,7 @@ import {
 } from "@shared/quickAppointment";
 import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
-import { slotsAroundTarget, describeNoSlotReason, combineGroomerSlots } from "../shared/rebookSlots";
+import { slotsAroundTarget, describeNoSlotReason, combineGroomerSlots, anyGroomerAllowed } from "../shared/rebookSlots";
 import { minutesToTimeValue, salonBookingStarts } from "../shared/bookingTimeSlots";
 
 /**
@@ -931,10 +931,20 @@ const calendarRouter = router({
           : and(eq(appointments.tenantId, tenantId), eq(appointments.id, source.id)));
 
       if (input.staffId != null) {
+        if (!anyGroomerAllowed(siblings.length)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "A visit with more than one dog keeps its own groomers" });
+        }
+        // The same people rebookFreeTimes offers: active, rostered, clipping.
         const [groomer] = await db
           .select({ id: staff.id })
           .from(staff)
-          .where(and(eq(staff.id, input.staffId), eq(staff.tenantId, tenantId), eq(staff.isActive, true)))
+          .where(and(
+            eq(staff.id, input.staffId),
+            eq(staff.tenantId, tenantId),
+            eq(staff.isActive, true),
+            eq(staff.rostered, true),
+            gt(staff.dailyClipCapacity, 0),
+          ))
           .limit(1);
         if (!groomer) throw new TRPCError({ code: "BAD_REQUEST", message: "That groomer is not on this salon's roster" });
       }

@@ -185,3 +185,26 @@ export function combineGroomerSlots(
 
   return { groomers, reason, alternatives };
 }
+
+/**
+ * "Any groomer" is for a one-dog visit only.
+ *
+ * Release Manager, 25/11/2026: every dog on the visit would go to the
+ * picked groomer at the same start, but the gap and the day's capacity
+ * are checked for one dog — so a family split across groomers would
+ * land stacked in one column. Splitting a family's dogs across groomers
+ * is a design question for Andy, not something to guess here.
+ */
+export function anyGroomerAllowed(dogCount: number): boolean {
+  return dogCount === 1;
+}
+
+/**
+ * The groomer picked from a time chip, but only while the date box still
+ * holds the time it was picked for. Changing the weeks or typing a new
+ * date refills the box with a time checked against the USUAL groomer, so
+ * a pick that outlived it would book an unchecked time with someone else.
+ */
+export function groomerPickFor<T extends { at: string }>(pick: T | null, when: string): T | null {
+  return pick && pick.at === when ? pick : null;
+}

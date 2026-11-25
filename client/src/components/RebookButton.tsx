@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { rebookWeekOptions } from "@shared/rebook";
+import { anyGroomerAllowed, groomerPickFor } from "@shared/rebookSlots";
 
 /** An ISO instant as the value a datetime-local input wants, in salon time. */
 function toLocalInput(iso: string): string {
@@ -82,7 +83,10 @@ export function RebookButton({ appointmentId, onRebooked }: {
    * first answer and moving a dog to someone else is a deliberate click.
    */
   const [anyGroomer, setAnyGroomer] = useState(false);
-  const [chosenGroomer, setChosenGroomer] = useState<{ id: number; name: string } | null>(null);
+  /** The groomer picked from a time chip, with the time it was picked for. */
+  const [groomerPick, setGroomerPick] = useState<{ id: number; name: string; at: string } | null>(null);
+  // Only while the box still holds that time: a new date or week clears it.
+  const chosenGroomer = groomerPickFor(groomerPick, when);
   const utils = trpc.useUtils();
 
   const { data: suggestion, isFetching } = trpc.calendar.rebookSuggestion.useQuery(
@@ -100,13 +104,20 @@ export function RebookButton({ appointmentId, onRebooked }: {
    *
    * Keyed off the DATE only, so retyping the time does not refetch.
    */
+  /**
+   * "Any groomer" only for a one-dog visit: a family would all go to the
+   * picked groomer at one start, with the gap checked for one dog.
+   */
+  const canChooseGroomer = Boolean(suggestion && anyGroomerAllowed(suggestion.dogs.length));
+  const groomerMode = anyGroomer && canChooseGroomer;
+
   const targetDate = when.slice(0, 10);
   const { data: free, isFetching: loadingFree } = trpc.calendar.rebookFreeTimes.useQuery(
     {
       targetDate,
       durationMinutes: suggestion?.durationMinutes ?? 60,
       staffIds: suggestion?.staffId ? [suggestion.staffId] : [],
-      byGroomer: anyGroomer,
+      byGroomer: groomerMode,
     },
     { enabled: open && targetDate.length === 10 && Boolean(suggestion) },
   );
@@ -118,12 +129,12 @@ export function RebookButton({ appointmentId, onRebooked }: {
     setWhen("");
     setWeeksOverride(null);
     setAnyGroomer(false);
-    setChosenGroomer(null);
+    setGroomerPick(null);
   };
 
   const chooseMode = (any: boolean) => {
     setAnyGroomer(any);
-    setChosenGroomer(null);
+    setGroomerPick(null);
   };
 
   /*
@@ -175,7 +186,7 @@ export function RebookButton({ appointmentId, onRebooked }: {
           <DialogHeader>
             <DialogTitle>Book the next visit</DialogTitle>
             <DialogDescription>
-              {anyGroomer
+              {groomerMode
                 ? "Same dogs, same service — with whichever groomer is free."
                 : "Same dogs, same groomer, same service — just a new day."}
             </DialogDescription>
@@ -211,6 +222,7 @@ export function RebookButton({ appointmentId, onRebooked }: {
                     <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                       Free that day
                     </p>
+                    {canChooseGroomer && (
                     <div className="flex rounded-full bg-muted p-0.5" role="group" aria-label="Whose free times">
                       {([false, true] as const).map((any) => (
                         <button
@@ -226,12 +238,13 @@ export function RebookButton({ appointmentId, onRebooked }: {
                         </button>
                       ))}
                     </div>
+                    )}
                   </div>
                   {loadingFree && !free ? (
                     <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                       <Loader2 className="h-3 w-3 animate-spin" /> Checking the diary…
                     </p>
-                  ) : anyGroomer && free && free.groomers.length > 0 ? (
+                  ) : groomerMode && free && free.groomers.length > 0 ? (
                     <div className="space-y-1.5">
                       {free.groomers.map((g) => (
                         <div key={g.staffId} className="space-y-1">
@@ -245,7 +258,7 @@ export function RebookButton({ appointmentId, onRebooked }: {
                                   type="button"
                                   onClick={() => {
                                     pick(free.target.date, time);
-                                    setChosenGroomer({ id: g.staffId, name: g.name });
+                                    setGroomerPick({ id: g.staffId, name: g.name, at: `${free.target.date}T${time}` });
                                   }}
                                   aria-pressed={chosen}
                                   aria-label={`${prettyTime(time)} with ${g.name}`}
@@ -263,7 +276,7 @@ export function RebookButton({ appointmentId, onRebooked }: {
                         </div>
                       ))}
                     </div>
-                  ) : !anyGroomer && free && free.target.times.length > 0 ? (
+                  ) : !groomerMode && free && free.target.times.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {free.target.times.map((time) => {
                         const chosen = when === `${free.target.date}T${time}`;
@@ -305,10 +318,9 @@ export function RebookButton({ appointmentId, onRebooked }: {
                             key={alt.date}
                             type="button"
                             onClick={() => {
-                              pick(alt.date, alt.times[0]!);
                               // Any groomer: this shows that day's groomers;
                               // the booking waits for one of their times.
-                              setChosenGroomer(null);
+                              pick(alt.date, alt.times[0]!);
                             }}
                             title={`${alt.times.length} time${alt.times.length === 1 ? "" : "s"} free — first is ${prettyTime(alt.times[0]!)}`}
                             className="rounded-full border border-transparent bg-muted px-2.5 py-1 text-[11px] font-semibold transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
@@ -394,10 +406,10 @@ export function RebookButton({ appointmentId, onRebooked }: {
                 </div>
               )}
 
-              {anyGroomer && (
+              {groomerMode && (
                 <p className="text-[11px] text-muted-foreground">
                   {chosenGroomer
-                    ? `Books with ${chosenGroomer.name}${suggestion && suggestion.dogs.length > 1 ? " — every dog on this visit" : ""}.`
+                    ? `Books with ${chosenGroomer.name}.`
                     : "Pick a time under a groomer's name to book with them."}
                 </p>
               )}
@@ -418,11 +430,11 @@ export function RebookButton({ appointmentId, onRebooked }: {
             <Button
               size="sm"
               className="gap-1.5"
-              disabled={!when || rebook.isPending || (anyGroomer && !chosenGroomer)}
+              disabled={!when || rebook.isPending || (groomerMode && !chosenGroomer)}
               onClick={() => rebook.mutate({
                 appointmentId,
                 start: fromLocalInput(when),
-                ...(anyGroomer && chosenGroomer ? { staffId: chosenGroomer.id } : {}),
+                ...(groomerMode && chosenGroomer ? { staffId: chosenGroomer.id } : {}),
               })}
             >
               {rebook.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
