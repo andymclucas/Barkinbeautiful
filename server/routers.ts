@@ -10443,6 +10443,8 @@ const membershipsRouter = router({
           pricePerCycle: memberships.pricePerCycle,
           billingCycle: memberships.billingCycle,
           failedPaymentCount: memberships.failedPaymentCount,
+          bookingSuspended: memberships.bookingSuspended,
+          membershipTenantId: memberships.tenantId,
           clientId: memberships.clientId,
           petId: memberships.petId,
           clientFirstName: clients.firstName,
@@ -10475,6 +10477,9 @@ const membershipsRouter = router({
         status: failurePlan.suspend ? "paused" : "pending_payment",
         paymentRetryScheduledAt: failurePlan.retryAt,
         bookingSuspended: failurePlan.suspend,
+        // A payment failure is not a holiday, as on the other two paths:
+        // no stale pause schedule may survive to be read as one.
+        ...(failurePlan.suspend ? { pauseMode: null, pauseResumesAt: null, pausedAt: null } : {}),
       }).where(eq(memberships.id, input.membershipId));
 
       // Insert failed payment record
@@ -10521,18 +10526,21 @@ const membershipsRouter = router({
       }).catch(() => {});
 
       // The client: portal notice only on the first, an email on the
-      // second, the suspension email on the last.
-      const { emailClientAboutFailedPayment } = await import("./failedPaymentClientEmail.js");
-      await emailClientAboutFailedPayment(db, {
-        tenantId: input.tenantId,
-        clientId: row.clientId,
-        notice: clientFailureNotice(newFailCount, failurePlan.suspend),
-        petName: row.petName ?? "your dog",
-        membershipName: row.name ?? "Membership",
-        pricePerCycle: parseFloat(row.pricePerCycle ?? "0").toFixed(2),
-        billingCycle: row.billingCycle,
-        retryAt: failurePlan.retryAt,
-      }).catch(() => undefined);
+      // second, the suspension email on the last, and nothing more once
+      // they have already been told they are suspended.
+      if (!row.bookingSuspended) {
+        const { emailClientAboutFailedPayment } = await import("./failedPaymentClientEmail.js");
+        await emailClientAboutFailedPayment(db, {
+          tenantId: row.membershipTenantId ?? input.tenantId,
+          clientId: row.clientId,
+          notice: clientFailureNotice(newFailCount, failurePlan.suspend),
+          petName: row.petName ?? "your dog",
+          membershipName: row.name ?? "Membership",
+          pricePerCycle: parseFloat(row.pricePerCycle ?? "0").toFixed(2),
+          billingCycle: row.billingCycle,
+          retryAt: failurePlan.retryAt,
+        }).catch(() => undefined);
+      }
 
       return { success: true, failedPaymentCount: newFailCount, retryDate: retryDate.toISOString(), suspended: failurePlan.suspend };
     }),
@@ -18291,7 +18299,9 @@ const clientPortalRouter = router({
           inArray(memberships.status, ["pending_payment", "paused"]),
           gt(memberships.failedPaymentCount, 0),
         ))
-        .orderBy(desc(memberships.failedPaymentCount))
+        // A suspended membership is the one to tell them about, even if
+        // another of theirs has failed more times and is still retrying.
+        .orderBy(desc(memberships.bookingSuspended), desc(memberships.failedPaymentCount))
         .limit(1);
 
       return {

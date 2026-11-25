@@ -235,6 +235,7 @@ type SubscriptionMembership = {
   billingCycle: "weekly" | "monthly" | null;
   billingCycleWeeks: number | null;
   pricePerCycle: string | null;
+  bookingSuspended: boolean | null;
 };
 
 /**
@@ -258,6 +259,7 @@ async function membershipsForSubscription(db: any, subscriptionId: string | null
       billingCycle: memberships.billingCycle,
       billingCycleWeeks: memberships.billingCycleWeeks,
       pricePerCycle: memberships.pricePerCycle,
+      bookingSuspended: memberships.bookingSuspended,
     })
     .from(memberships)
     .where(eq(memberships.stripeSubscriptionId, subscriptionId))
@@ -740,17 +742,26 @@ export async function processStripeEvent(event: Stripe.Event) {
     // it), an email on the second, the suspension email on the last
     // (Andy, 25/11/2026). This path never told the client anything
     // before, even when it suspended them.
+    //
+    // A membership already suspended is told once, not again on every
+    // later invoice Stripe raises and fails while the subscription runs.
+    const alreadySuspended = failedFor.some((row) => Boolean(row.bookingSuspended));
     const dogNames = Array.from(new Set(failedFor.flatMap((row) => who.dogsByMembership.get(row.id) ?? [])));
-    await emailClientAboutFailedPayment(db, {
-      tenantId: membership.tenantId ?? 1,
-      clientId: membership.clientId,
-      notice: clientFailureNotice(failedCount, plan.suspend),
-      petName: dogNames.length > 0 ? dogNames.join(" & ") : "your dog",
-      membershipName: failedFor.length > 1 ? "family membership" : (membership.name ?? "Membership"),
-      pricePerCycle: (fromStripeCents(invoice.amount_due ?? 0)).toFixed(2),
-      billingCycle: membership.billingCycle,
-      retryAt: plan.retryAt,
-    }).catch(() => undefined);
+    if (!alreadySuspended) {
+      await emailClientAboutFailedPayment(db, {
+        tenantId: membership.tenantId ?? 1,
+        clientId: membership.clientId,
+        notice: clientFailureNotice(failedCount, plan.suspend),
+        petName: dogNames.length > 0 ? dogNames.join(" & ") : "your dog",
+        membershipName: failedFor.length > 1 ? "family membership" : (membership.name ?? "Membership"),
+        // The weekly rate, as the email's amount line expects: it converts
+        // to the monthly figure itself. Stripe's amount_due is already
+        // per cycle and would be converted twice.
+        pricePerCycle: failedFor.reduce((sum, row) => sum + Number(row.pricePerCycle ?? 0), 0).toFixed(2),
+        billingCycle: membership.billingCycle,
+        retryAt: plan.retryAt,
+      }).catch(() => undefined);
+    }
     return { duplicate: false, handled: "subscription_failed" };
   }
 

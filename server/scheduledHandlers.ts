@@ -26,7 +26,6 @@ import { holdPausedMembershipsAfterPassing, resumeMembershipSubscription } from 
 import {
   sendEmail,
   buildAdminFailedPaymentEmail,
-  buildClientFailedPaymentEmail,
 } from "./email";
 import { notifyOwner } from "./ownerNotification";
 import { emailClientAboutFailedPayment } from "./failedPaymentClientEmail";
@@ -57,7 +56,6 @@ import { runClientStatusSweepQuietly } from "./clientStatusSweep";
 import { EARLIEST_AUTOMATED_TEXT_HOUR } from "@shared/sendingHours";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { loadSalonName } from "./salonName";
-import { clientSalonName } from "@shared/salonBrand";
 
 
 
@@ -638,8 +636,11 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         membershipId: m.id,
         amount: ownPriceStr,
         status: "failed",
-        // Kept on a shared payment so the next retry pays the same invoice.
-        ...(isFamilyPayment && attempt.invoiceId ? { stripeInvoiceId: attempt.invoiceId } : {}),
+        // Named on every payment, not only a shared one: the next retry
+        // finds the open invoice from this row. Without it a weekly
+        // membership's third attempt charged the card directly and left the
+        // invoice open for Stripe to collect again.
+        ...(attempt.invoiceId ? { stripeInvoiceId: attempt.invoiceId } : {}),
         failureReason: attempt.reason ?? plan.reason,
       });
 
@@ -664,23 +665,18 @@ export async function paymentRetryHandler(req: Request, res: Response) {
           })
           .where(onThisPayment);
 
-        // Email client
-        if (clientRow?.email) {
-          await sendEmail({
-            to: clientRow.email,
-            subject: `Important: Your ${membershipName} payment has failed`,
-            html: buildClientFailedPaymentEmail({
-              clientFirstName: clientRow.firstName ?? "Valued Client",
-              petName,
-              membershipName,
-              pricePerCycle: priceStr,
-              billingCycle: m.billingCycle,
-              businessName: clientSalonName(tenantRow?.name),
-              businessPhone: tenantRow?.phone,
-              businessEmail: tenantRow?.email,
-            }),
-          });
-        }
+        // Email client, through the same helper as the other two paths.
+        // A failed send must not stop the rest of the morning's retries.
+        await emailClientAboutFailedPayment(db, {
+          tenantId: m.tenantId ?? 1,
+          clientId: m.clientId ?? null,
+          notice: "suspended_email",
+          petName,
+          membershipName,
+          pricePerCycle: priceStr,
+          billingCycle: m.billingCycle,
+          retryAt: null,
+        }).catch(() => undefined);
 
         // Notify admin
         await notifyOwner({
