@@ -1437,6 +1437,58 @@ export default function Memberships() {
   const [confirmRecordFailure, setConfirmRecordFailure] = useState<{ id: number; clientName: string; petName: string | null; membershipName: string | null; failedCount: number } | null>(null);
   const [failureReason, setFailureReason] = useState("");
   const [confirmResolve, setConfirmResolve] = useState<{ id: number; clientName: string; petName: string | null } | null>(null);
+  /** Retry / Record Failure / Resolve for one failed payment: the table and the phone cards share these. */
+  const failedPaymentActions = (fp: NonNullable<typeof failedPayments>[number]) => (
+    <>
+      {/* Andy, 19/11/2026: a "retry payment" button
+          here that has Stripe try the payment again.
+          Only where Stripe bills the membership, so
+          there is something to retry. */}
+      {fp.stripeBilled && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 text-xs h-7"
+          disabled={retryPaymentMutation.isPending}
+          onClick={() => setConfirmRetry({
+            id: fp.membershipId,
+            clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),
+            petName: fp.petName,
+            failedCount: fp.failedCount,
+            reason: fp.failureReason,
+          })}
+        >
+          <CheckCircle2 className="h-3 w-3" /> Retry payment
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant="outline"
+        className="gap-1.5 text-xs h-7 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40"
+        onClick={() => setConfirmRecordFailure({
+          id: fp.membershipId,
+          clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),
+          petName: fp.petName,
+          membershipName: fp.membershipName,
+          failedCount: fp.failedCount,
+        })}
+      >
+        <XCircle className="h-3 w-3" /> Record Failure
+      </Button>
+      <Button
+        size="sm"
+        className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white"
+        disabled={resolveFailureMutation.isPending}
+        onClick={() => setConfirmResolve({
+          id: fp.membershipId,
+          clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),
+          petName: fp.petName,
+        })}
+      >
+        <RefreshCw className="h-3 w-3" /> Resolve
+      </Button>
+    </>
+  );
   const items: MembershipItem[] = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -1565,8 +1617,11 @@ export default function Memberships() {
         <MembershipSignupRequests />
         <Tabs value={activeTab} onValueChange={handleTabChange}>
           {/* Tabs are an inline-flex row: on a phone they ran past the
-              right edge and took the page with them. Scroll instead. */}
-          <TabsList className="max-w-full justify-start overflow-x-auto">
+              right edge and took the page with them. They wrap onto a
+              second line on a phone (25/11/2026: scrolling hid "Cancelled"
+              and the rest with no hint they were there), and scroll on a
+              wider screen. */}
+          <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1 sm:flex-nowrap sm:overflow-x-auto">
             {STATUS_TABS.map(tab => (
               <TabsTrigger key={tab.key} value={tab.key}>{tab.label}</TabsTrigger>
             ))}
@@ -1637,7 +1692,49 @@ export default function Memberships() {
                 <p className="text-sm mt-1">All membership payments are up to date.</p>
               </div>
             ) : (
-              <div className="bg-card rounded-xl border overflow-hidden">
+              <>
+              {/* Phones: one card per failed payment, buttons full width.
+                  Andy, 25/11/2026: "Alignment is out on mobile view. Can't
+                  scroll sideways to hit the buttons." The table needed
+                  sideways scrolling to reach Retry, Record and Resolve. */}
+              <div className="grid gap-3 md:hidden" data-testid="failed-payments-cards">
+                {failedPayments!.map(fp => (
+                  <div key={fp.membershipId} className="space-y-3 rounded-xl border bg-card p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/50">
+                        <Dog className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold">{fp.clientFirstName} {fp.clientLastName}</p>
+                        <p className="text-sm text-muted-foreground">{fp.petName}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {fp.membershipName}
+                          {fp.lastFailedAt
+                            ? ` · failed ${new Date(fp.lastFailedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: getActiveTimeZone() })}`
+                            : ""}
+                        </p>
+                      </div>
+                      <Badge className={`shrink-0 text-xs font-bold ${
+                        fp.failedCount >= 2 ? "bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300" : "bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300"
+                      }`}>
+                        {fp.failedCount}x
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {fp.suspended ? (
+                        <Badge className="text-xs bg-red-100 dark:bg-red-950/50 text-red-800 dark:text-red-300">Suspended</Badge>
+                      ) : (
+                        <Badge className="text-xs bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300">Pending Retry</Badge>
+                      )}
+                      {fp.failureReason && <span className="text-xs text-muted-foreground">{fp.failureReason}</span>}
+                    </div>
+                    <div className="grid gap-2 [&_button]:h-11 [&_button]:w-full [&_button]:justify-center [&_button]:text-sm [&_button_svg]:h-4 [&_button_svg]:w-4">
+                      {failedPaymentActions(fp)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden bg-card rounded-xl border overflow-hidden md:block">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 border-b">
                     <tr>
@@ -1699,53 +1796,7 @@ export default function Memberships() {
                         </td>
                         <td className="p-3">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {/* Andy, 19/11/2026: a "retry payment" button
-                                here that has Stripe try the payment again.
-                                Only where Stripe bills the membership, so
-                                there is something to retry. */}
-                            {fp.stripeBilled && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1.5 text-xs h-7"
-                                disabled={retryPaymentMutation.isPending}
-                                onClick={() => setConfirmRetry({
-                                  id: fp.membershipId,
-                                  clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),
-                                  petName: fp.petName,
-                                  failedCount: fp.failedCount,
-                                  reason: fp.failureReason,
-                                })}
-                              >
-                                <CheckCircle2 className="h-3 w-3" /> Retry payment
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="gap-1.5 text-xs h-7 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40"
-                              onClick={() => setConfirmRecordFailure({
-                                id: fp.membershipId,
-                                clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),
-                                petName: fp.petName,
-                                membershipName: fp.membershipName,
-                                failedCount: fp.failedCount,
-                              })}
-                            >
-                              <XCircle className="h-3 w-3" /> Record Failure
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white"
-                              disabled={resolveFailureMutation.isPending}
-                              onClick={() => setConfirmResolve({
-                                id: fp.membershipId,
-                                clientName: `${fp.clientFirstName ?? ""} ${fp.clientLastName ?? ""}`.trim(),
-                                petName: fp.petName,
-                              })}
-                            >
-                              <RefreshCw className="h-3 w-3" /> Resolve
-                            </Button>
+                            {failedPaymentActions(fp)}
                           </div>
                         </td>
                       </tr>
@@ -1753,6 +1804,7 @@ export default function Memberships() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </TabsContent>
         </Tabs>
