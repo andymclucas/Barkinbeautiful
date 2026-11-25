@@ -38,10 +38,12 @@ describe("the 154 memberships that read Active and charge nothing", () => {
 });
 
 describe("a membership that really is billing", () => {
-  it("counts a date plus a card", () => {
+  it("does not count a date plus a card: only a subscription charges (25/11/2026)", () => {
+    // The badge said "Billing weekly" while the Memberships list said To be
+    // migrated, for a membership nothing was charging.
     expect(membershipBillingState({
       status: "active", nextBillingDate: new Date(), hasCardOnFile: true,
-    })).toBe("live");
+    })).toBe("added_not_live");
   });
 
   it("counts a subscription on its own, because it charges itself", () => {

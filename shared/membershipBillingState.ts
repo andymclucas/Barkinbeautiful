@@ -55,7 +55,12 @@ export function membershipBillingState(m: MembershipBillingInput): MembershipBil
   // A subscription charges on its own. Without one, Groomigo needs both a
   // date to charge on and a card to charge — either alone takes no money.
   if (hasSubscription) return "live";
-  if (hasSchedule && m.hasCardOnFile) return "live";
+  // A date and a card used to count as live, so the badge said "Billing
+  // weekly" on a membership nothing was charging, while the Memberships
+  // list (shared/membershipBillingSource.ts) put the same one in To be
+  // migrated (Lauren and Andy, 25/11/2026). Nothing charges a date and a
+  // card on their own; only a subscription does. Ready to start, not live.
+  if (hasSchedule && m.hasCardOnFile) return "added_not_live";
 
   // Says active, cannot charge. This is every membership imported from
   // MoeGo, which is all of them today.
