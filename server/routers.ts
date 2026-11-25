@@ -133,7 +133,7 @@ const signInLinkByEmail = new Map<string, number>();
 const signInLinkByIp = new Map<string, number[]>();
 /** Wrong-code guesses per address, for redeemSignInCode. */
 const signInCodeAttempts = new Map<string, number[]>();
-import { describeCard, canChargeOffSession, isCardExpired, describeMembershipFailure } from "../shared/stripeBilling";
+import { describeCard, canChargeOffSession, isCardExpired, describeMembershipFailure, planAfterFailure, clientFailureNotice } from "../shared/stripeBilling";
 import { createCardSetupLink, clientCardLink, invoiceFailureDetail } from "./stripeCards";
 import { BATH_ORDER_LOCKED_MESSAGE, buildBathPriorityQueue, canChangeBathOrder, isBathPriorityMutable } from "../shared/bathPriorityQueue";
 import { partyKeyOf } from "../shared/linkedWorkflowCascade";
@@ -10463,20 +10463,18 @@ const membershipsRouter = router({
 
       const newFailCount = (row.failedPaymentCount ?? 0) + 1;
 
-      // Calculate next business day for retry
-      const retryDate = new Date();
-      retryDate.setDate(retryDate.getDate() + 1);
-      while (retryDate.getDay() === 0 || retryDate.getDay() === 6) {
-        retryDate.setDate(retryDate.getDate() + 1);
-      }
+      // The same ladder as the webhook and the 9 am retry (Andy,
+      // 25/11/2026): portal notice, then email, then suspension on the
+      // third weekly failure. It used to suspend on the second here.
+      const failurePlan = planAfterFailure(newFailCount, "retry", new Date(), row.billingCycle === "monthly" ? "monthly" : "weekly");
+      const retryDate = failurePlan.retryAt ?? new Date();
 
-      // Update membership: increment failure count, set retry date, suspend on 2nd failure
       await db.update(memberships).set({
         failedPaymentCount: newFailCount,
         lastFailedPaymentAt: new Date(),
-        status: "pending_payment",
-        paymentRetryScheduledAt: retryDate,
-        bookingSuspended: newFailCount >= 2,
+        status: failurePlan.suspend ? "paused" : "pending_payment",
+        paymentRetryScheduledAt: failurePlan.retryAt,
+        bookingSuspended: failurePlan.suspend,
       }).where(eq(memberships.id, input.membershipId));
 
       // Insert failed payment record
@@ -10487,8 +10485,10 @@ const membershipsRouter = router({
         failureReason: input.failureReason ?? "Payment declined",
       });
 
-      const retryDateStr = retryDate.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Brisbane" });
-      const { sendEmail, buildAdminFailedPaymentEmail, buildClientFailedPaymentEmail } = await import("./email.js");
+      const retryDateStr = failurePlan.retryAt
+        ? retryDate.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Brisbane" })
+        : "no further automatic attempt";
+      const { sendEmail, buildAdminFailedPaymentEmail } = await import("./email.js");
 
       // Always notify admin
       const adminHtml = buildAdminFailedPaymentEmail({
@@ -10520,26 +10520,21 @@ const membershipsRouter = router({
         content: `Failure #${newFailCount}. Retry scheduled for ${retryDateStr}. Amount: ${failedAmountLabel}.`,
       }).catch(() => {});
 
-      // On 2nd failure: email the client
-      if (newFailCount >= 2 && row.clientEmail) {
-        const clientHtml = buildClientFailedPaymentEmail({
-          clientFirstName: row.clientFirstName ?? "Valued Client",
-          petName: row.petName ?? "your pet",
-          membershipName: row.name,
-          pricePerCycle: parseFloat(row.pricePerCycle ?? "0").toFixed(2),
-          billingCycle: row.billingCycle,
-          businessName: clientSalonName(row.tenantName),
-          businessPhone: row.tenantPhone,
-          businessEmail: row.tenantEmail,
-        });
-        await sendEmail({
-          to: row.clientEmail,
-          subject: `Important: Your membership payment could not be processed — ${row.name}`,
-          html: clientHtml,
-        });
-      }
+      // The client: portal notice only on the first, an email on the
+      // second, the suspension email on the last.
+      const { emailClientAboutFailedPayment } = await import("./failedPaymentClientEmail.js");
+      await emailClientAboutFailedPayment(db, {
+        tenantId: input.tenantId,
+        clientId: row.clientId,
+        notice: clientFailureNotice(newFailCount, failurePlan.suspend),
+        petName: row.petName ?? "your dog",
+        membershipName: row.name ?? "Membership",
+        pricePerCycle: parseFloat(row.pricePerCycle ?? "0").toFixed(2),
+        billingCycle: row.billingCycle,
+        retryAt: failurePlan.retryAt,
+      }).catch(() => undefined);
 
-      return { success: true, failedPaymentCount: newFailCount, retryDate: retryDate.toISOString(), suspended: newFailCount >= 2 };
+      return { success: true, failedPaymentCount: newFailCount, retryDate: retryDate.toISOString(), suspended: failurePlan.suspend };
     }),
 
   /**
@@ -18278,12 +18273,36 @@ const clientPortalRouter = router({
         ))
         .limit(1);
 
+      // A membership payment that has failed and not been sorted. This is
+      // the client's first word of it (Andy, 25/11/2026: "a portal
+      // notification to the client first about the failed payment"), so
+      // it is read from the failure count itself rather than sent: it
+      // shows from the first failure until the payment goes through or
+      // staff resolve it, and nothing has to remember to clear it.
+      const [failing] = await db.select({
+        failedPaymentCount: memberships.failedPaymentCount,
+        retryAt: memberships.paymentRetryScheduledAt,
+        suspended: memberships.bookingSuspended,
+      })
+        .from(memberships)
+        .where(and(
+          eq(memberships.clientId, clientId),
+          eq(memberships.tenantId, tenantId),
+          inArray(memberships.status, ["pending_payment", "paused"]),
+          gt(memberships.failedPaymentCount, 0),
+        ))
+        .orderBy(desc(memberships.failedPaymentCount))
+        .limit(1);
+
       return {
         description: describeCard(client),
         hasCard: canChargeOffSession(client),
         expired,
         savedAt: client.stripeCardSavedAt,
         hasMembership: owing.length > 0,
+        failedPayment: failing
+          ? { retryAt: failing.retryAt, suspended: Boolean(failing.suspended) }
+          : null,
       };
     }),
 

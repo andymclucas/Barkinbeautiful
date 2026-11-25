@@ -29,6 +29,7 @@ import {
   buildClientFailedPaymentEmail,
 } from "./email";
 import { notifyOwner } from "./ownerNotification";
+import { emailClientAboutFailedPayment } from "./failedPaymentClientEmail";
 // Brisbane-correct, and tested in both timezones. The local version used
 // getDay(), which on Render (UTC) read the wrong weekday for anything after
 // 10:00 Brisbane and pushed retries a day late.
@@ -36,6 +37,7 @@ import { nextBrisbaneBusinessDay } from "../shared/businessDays";
 import {
   classifyFailure,
   planAfterFailure,
+  clientFailureNotice,
   canChargeOffSession,
   isCardExpired,
   describeCard,
@@ -142,7 +144,7 @@ async function attemptMembershipCharge(
         .limit(1);
 
   if (lastFailure?.stripeInvoiceId) {
-    const result = await payOpenInvoice(lastFailure.stripeInvoiceId, membership.tenantId ?? 1);
+    const result = await payOpenInvoice(lastFailure.stripeInvoiceId, membership.tenantId ?? 1, { scheduled: true });
     return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true, invoiceId: lastFailure.stripeInvoiceId };
   }
   if (isFamilyPayment) {
@@ -642,7 +644,8 @@ export async function paymentRetryHandler(req: Request, res: Response) {
       });
 
       if (plan.suspend) {
-        // Strike 2 — suspend and email client
+        // Final strike (the third, for weekly) or a card no retry can fix:
+        // suspend and email the client.
         await db
           .update(memberships)
           .set({
@@ -696,6 +699,19 @@ export async function paymentRetryHandler(req: Request, res: Response) {
             status: "pending_payment",
           })
           .where(onThisPayment);
+
+        // The client hears from the second failure on (Andy, 25/11/2026);
+        // the first is a notice in their portal and needs nothing sent.
+        await emailClientAboutFailedPayment(db, {
+          tenantId: m.tenantId ?? 1,
+          clientId: m.clientId ?? null,
+          notice: clientFailureNotice(newFailCount, false),
+          petName,
+          membershipName,
+          pricePerCycle: priceStr,
+          billingCycle: m.billingCycle,
+          retryAt: plan.retryAt,
+        }).catch(() => undefined);
 
         // Notify admin
         await notifyOwner({

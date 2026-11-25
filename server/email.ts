@@ -149,14 +149,83 @@ export function buildAdminFailedPaymentEmail({
     </table>
   </div>
   <p>The system will automatically retry on the next business day (<strong>${retryDate}</strong>).</p>
-  <p>If this is the <strong>second failure</strong>, the client has been notified by email and their bookings have been suspended.</p>
+  <p>The client sees a notice in their portal after the first failure and is emailed after the second. A <strong>third failure</strong> suspends their bookings and emails them again.</p>
   <div class="footer">Sent by Groomigo</div>
 </div>
 </body>
 </html>`;
 }
 
-/** Email template: client notification after 2 failed payments */
+/**
+ * Email template: a payment that failed again and will be tried once more.
+ *
+ * Andy, 25/11/2026: "Second day with fail attempt is an email to the
+ * client." The first failure is a notice in their portal; this is the
+ * second, while the membership is still running. Nothing is suspended yet,
+ * and it says so, with the date of the next try.
+ */
+export function buildClientPaymentRetryEmail({
+  clientFirstName,
+  petName,
+  membershipName,
+  pricePerCycle,
+  billingCycle,
+  retryDate,
+  portalUrl,
+  businessName,
+  businessPhone,
+  businessEmail,
+}: {
+  clientFirstName: string;
+  petName: string;
+  membershipName: string;
+  pricePerCycle: string;
+  billingCycle?: MembershipBillingCycle;
+  /** Already formatted in the salon's timezone, e.g. "Thursday 27 November". */
+  retryDate: string;
+  /** The client portal's front door, where they can update their card. */
+  portalUrl: string;
+  businessName: string;
+  businessPhone?: string | null;
+  businessEmail?: string | null;
+}): string {
+  const contactLine = [businessPhone, businessEmail].filter(Boolean).join(" or ");
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { font-family: Arial, sans-serif; color: #1a1a1a; background: #f9f9f9; margin: 0; padding: 0; }
+  .container { max-width: 560px; margin: 32px auto; background: #fff; border-radius: 8px; padding: 32px; border: 1px solid #e5e7eb; }
+  h2 { color: #b45309; margin-top: 0; }
+  .detail { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 16px; margin: 16px 0; }
+  .detail table { width: 100%; border-collapse: collapse; }
+  .detail td { padding: 4px 0; font-size: 14px; }
+  .detail td:first-child { color: #6b7280; width: 140px; }
+  .footer { margin-top: 24px; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; }
+</style></head>
+<body>
+<div class="container">
+  <h2>Your membership payment didn't go through</h2>
+  <p>Hi ${clientFirstName},</p>
+  <p>We tried your membership payment again and it was declined. Your membership is still active, and we'll try once more on <strong>${retryDate}</strong>.</p>
+  <div class="detail">
+    <table>
+      <tr><td>Pet</td><td><strong>${petName}</strong></td></tr>
+      <tr><td>Membership</td><td>${membershipName}</td></tr>
+      <tr><td>Amount</td><td>${chargedLabel(pricePerCycle, billingCycle)}</td></tr>
+    </table>
+  </div>
+  <p>If your card has changed or the account is low, you can update your card in your client portal: <a href="${portalUrl}">${portalUrl}</a></p>
+  <p>If that next payment fails too, your membership will be paused until it's sorted.</p>
+  ${contactLine ? `<p><strong>Questions?</strong> ${contactLine}</p>` : ""}
+  <p>Warm regards,<br/><strong>${businessName}</strong></p>
+  <div class="footer">This is an automated message from ${businessName}. Please do not reply to this email.</div>
+</div>
+</body>
+</html>`;
+}
+
+/** Email template: client notification when a membership is suspended for non-payment */
 export function buildClientFailedPaymentEmail({
   clientFirstName,
   petName,
@@ -195,7 +264,7 @@ export function buildClientFailedPaymentEmail({
 <div class="container">
   <h2>Important: Membership Payment Issue</h2>
   <p>Hi ${clientFirstName},</p>
-  <p>We've been unable to process your membership payment after two attempts. Your membership has been temporarily suspended.</p>
+  <p>We've been unable to process your membership payment, so your membership has been temporarily suspended.</p>
   <div class="detail">
     <table>
       <tr><td>Pet</td><td><strong>${petName}</strong></td></tr>
