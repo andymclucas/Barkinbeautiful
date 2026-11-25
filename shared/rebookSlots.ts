@@ -119,3 +119,69 @@ export function describeNoSlotReason(reason: NoSlotReason): string {
       return "That day is outside the dates looked at.";
   }
 }
+
+/**
+ * The rebook dialog's "Any groomer" view: who is free on the day, by name.
+ *
+ * Lauren, 25/11/2026: "it only shows the groomer that groomed the dog's
+ * availability... so I have to manually go through the appointment main
+ * page.. go to 8 weeks then see the available spots. can this get
+ * changes to any available spots for groomers? bonus points if it
+ * displays their name."
+ *
+ * Each groomer is looked at on their own — their own bookings, leave and
+ * capacity — through slotsAroundTarget, then combined here. The salon-wide
+ * view cannot do this: it answers "is anyone free" but not WHO, and the
+ * booking has to go in someone's column.
+ */
+export type GroomerAround = { staffId: number; name: string; around: SlotsAroundTarget };
+
+export type GroomerSlotsOnDay = {
+  /** Groomers with at least one free time on the target day, earliest first. */
+  groomers: { staffId: number; name: string; slots: number[] }[];
+  /** Why nobody is free, when nobody is. Null when somebody is. */
+  reason: NoSlotReason | null;
+  /** Nearest days on which ANY groomer has room, closest first. */
+  alternatives: DaySlots[];
+};
+
+function daysBetween(a: string, b: string): number {
+  return Math.round(Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
+}
+
+export function combineGroomerSlots(
+  targetDateKey: string,
+  perGroomer: readonly GroomerAround[],
+  maxAlternatives: number = DEFAULT_MAX_ALTERNATIVES,
+): GroomerSlotsOnDay {
+  const groomers = perGroomer
+    .filter((g) => g.around.target.slots.length > 0)
+    .map((g) => ({ staffId: g.staffId, name: g.name, slots: g.around.target.slots }))
+    .sort((a, b) => a.slots[0]! - b.slots[0]! || a.name.localeCompare(b.name));
+
+  // Everyone shut is "closed"; everyone full is "full"; any mix is
+  // simply "no gap", which is the honest summary of a mixed day.
+  const reasons = new Set(perGroomer.map((g) => g.around.target.reason ?? "noGaps"));
+  const reason: NoSlotReason | null = groomers.length > 0
+    ? null
+    : reasons.size === 1 ? [...reasons][0]! : perGroomer.length === 0 ? "unknown" : "noGaps";
+
+  // A day counts when any one groomer has room; its times are the union.
+  const byDate = new Map<string, Set<number>>();
+  for (const g of perGroomer) {
+    for (const alt of g.around.alternatives) {
+      if (alt.dateKey === targetDateKey) continue;
+      const set = byDate.get(alt.dateKey) ?? new Set<number>();
+      alt.slots.forEach((s) => set.add(s));
+      byDate.set(alt.dateKey, set);
+    }
+  }
+  const alternatives = [...byDate.entries()]
+    .map(([dateKey, set]) => ({ dateKey, slots: [...set].sort((a, b) => a - b) }))
+    .sort((a, b) =>
+      daysBetween(a.dateKey, targetDateKey) - daysBetween(b.dateKey, targetDateKey)
+      || a.dateKey.localeCompare(b.dateKey))
+    .slice(0, maxAlternatives);
+
+  return { groomers, reason, alternatives };
+}
