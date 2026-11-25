@@ -27,7 +27,7 @@ import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
 import { weeklyToMonthly, describeRate, annualisedCost } from "@shared/membershipBillingCycle";
 
-import { describePause, resolvePauseResumesAt } from "@shared/membershipPause";
+import { describePause, nextBillingLine, resolvePauseResumesAt } from "@shared/membershipPause";
 import { MembershipPetAssignment } from "@/components/MembershipPetAssignment";
 import { FLOATING_BUTTON_CLEARANCE } from "@/lib/floatingButtonClearance";
 type MembershipItem = {
@@ -486,7 +486,22 @@ function MembershipRow({ m }: { m: MembershipItem }) {
         )}
       </td>
       <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">
-        {m.nextBillingDate ? new Date(m.nextBillingDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }) : "—"}
+        {/* While paused, the restart date, not the old next billing date
+            (shared/membershipPause.ts, nextBillingLine; Andy, 25/11/2026). */}
+        {(() => {
+          const line = nextBillingLine({
+            status: m.status,
+            pauseMode: m.pauseMode ?? null,
+            pauseResumesAt: m.pauseResumesAt ? new Date(m.pauseResumesAt) : null,
+            failedPaymentCount: m.failedPaymentCount,
+            bookingSuspended: m.bookingSuspended,
+            nextBillingDate: m.nextBillingDate ? new Date(m.nextBillingDate) : null,
+          });
+          if (!line) return "—";
+          if (!("date" in line)) return line.text;
+          const day = line.date.toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() });
+          return line.label === "Restarts" ? `Restarts ${day}` : day;
+        })()}
       </td>
       <td className="p-3">
         <div className="space-y-1">
