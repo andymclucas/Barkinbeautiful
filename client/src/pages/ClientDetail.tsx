@@ -2952,10 +2952,47 @@ export default function ClientDetail() {
                             })()}
                           </div>
                         </div>
-                        <Badge className={tone} title={billingStateHint(billing) ?? undefined}>
-                          {billing === "live" ? "✓ " : needsAttention(billing) ? "⚠ " : ""}
-                          {BILLING_STATE_LABEL[billing]}
-                        </Badge>
+                        {/* Right-hand column: the billing state, and under it the
+                            same controls as the Memberships list (Pause, Cancel
+                            membership, Resume, Retry, Set Weekly Billing, the
+                            cycle switch). One shared block, so the two screens
+                            cannot drift apart; admin-only like that list.
+                            Andy, 25/11/2026: "Put the pause and cancel buttons
+                            over to the right hand side under the weekly billing
+                            section." */}
+                        <div className="flex w-full flex-col items-stretch gap-2 sm:w-64">
+                          <Badge className={`${tone} self-end`} title={billingStateHint(billing) ?? undefined}>
+                            {billing === "live" ? "✓ " : needsAttention(billing) ? "⚠ " : ""}
+                            {BILLING_STATE_LABEL[billing]}
+                          </Badge>
+                          {isAdmin && m.status !== "cancelled" && m.status !== "expired" && (
+                            <div className="flex flex-col gap-1.5">
+                              <MembershipActions m={{
+                                  id: m.id,
+                                  clientId,
+                                  name: m.name,
+                                  tier: m.tier,
+                                  serviceType: m.serviceType,
+                                  status: m.status,
+                                  pauseMode: m.pauseMode ?? null,
+                                  pauseResumesAt: m.pauseResumesAt ?? null,
+                                  pricePerCycle: m.pricePerCycle,
+                                  billingCycle: m.billingCycle ?? null,
+                                  billingCycleWeeks: m.billingCycleWeeks,
+                                  nextBillingDate: m.nextBillingDate,
+                                  failedPaymentCount: m.failedPaymentCount,
+                                  bookingSuspended: m.bookingSuspended,
+                                  stripeSubscriptionId: m.stripeSubscriptionId ?? null,
+                                  isTest: m.isTest,
+                                  clientFirstName: client.firstName,
+                                  clientLastName: client.lastName,
+                                  clientPhone: client.phone,
+                                  petName: m.petName,
+                                  petBreed: m.petBreed ?? null,
+                                }} />
+                            </div>
+                          )}
+                        </div>
                       </div>
                       <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
                         <div>
@@ -3002,41 +3039,6 @@ export default function ClientDetail() {
                               hasCardOnFile={hasCardOnFile}
                             />
                           )}
-                        </div>
-                      )}
-                      {/* The same controls as the Memberships list: Set Weekly
-                          Billing, Retry payment, Pause (with a restart date or
-                          after 1-4 weeks), Resume, the cycle switch and Cancel
-                          membership (Andy, 25/11/2026). One shared block, so
-                          the two screens cannot drift apart. The Memberships
-                          list is admin-only; so is this. */}
-                      {isAdmin && m.status !== "cancelled" && m.status !== "expired" && (
-                        <div className="mt-4 max-w-sm border-t pt-3">
-                          <div className="flex flex-col gap-1.5">
-                            <MembershipActions m={{
-                              id: m.id,
-                              clientId,
-                              name: m.name,
-                              tier: m.tier,
-                              serviceType: m.serviceType,
-                              status: m.status,
-                              pauseMode: m.pauseMode ?? null,
-                              pauseResumesAt: m.pauseResumesAt ?? null,
-                              pricePerCycle: m.pricePerCycle,
-                              billingCycle: m.billingCycle ?? null,
-                              billingCycleWeeks: m.billingCycleWeeks,
-                              nextBillingDate: m.nextBillingDate,
-                              failedPaymentCount: m.failedPaymentCount,
-                              bookingSuspended: m.bookingSuspended,
-                              stripeSubscriptionId: m.stripeSubscriptionId ?? null,
-                              isTest: m.isTest,
-                              clientFirstName: client.firstName,
-                              clientLastName: client.lastName,
-                              clientPhone: client.phone,
-                              petName: m.petName,
-                              petBreed: m.petBreed ?? null,
-                            }} />
-                          </div>
                         </div>
                       )}
                     </CardContent>
