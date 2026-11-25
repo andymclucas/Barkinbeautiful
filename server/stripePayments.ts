@@ -13,7 +13,8 @@ import { handleStripeRefund } from "./stripeRefunds";
 import { notifyOwner } from "./ownerNotification";
 import { getAppBaseUrl } from "./appUrl";
 import { buildFailedPaymentEmail } from "@shared/failedPaymentEmail";
-import { classifyFailure, fromStripeCents, isStaffPressedRetry, planAfterFailure, STAFF_RETRY_FAILURE_NOTE } from "@shared/stripeBilling";
+import { classifyFailure, clientFailureNotice, fromStripeCents, isScheduledRetry, isStaffPressedRetry, planAfterFailure, STAFF_RETRY_FAILURE_NOTE } from "@shared/stripeBilling";
+import { emailClientAboutFailedPayment } from "./failedPaymentClientEmail";
 import { nextBillingDateFromInvoice, type InvoicePeriodSource } from "@shared/stripeInvoicePeriod";
 import { isDuplicateEntryError } from "./dbErrors";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
@@ -234,6 +235,7 @@ type SubscriptionMembership = {
   billingCycle: "weekly" | "monthly" | null;
   billingCycleWeeks: number | null;
   pricePerCycle: string | null;
+  bookingSuspended: boolean | null;
 };
 
 /**
@@ -257,6 +259,7 @@ async function membershipsForSubscription(db: any, subscriptionId: string | null
       billingCycle: memberships.billingCycle,
       billingCycleWeeks: memberships.billingCycleWeeks,
       pricePerCycle: memberships.pricePerCycle,
+      bookingSuspended: memberships.bookingSuspended,
     })
     .from(memberships)
     .where(eq(memberships.stripeSubscriptionId, subscriptionId))
@@ -677,6 +680,16 @@ export async function processStripeEvent(event: Stripe.Event) {
       return { duplicate: false, handled: "subscription_failed_staff_retry" };
     }
 
+    /*
+     * The 9 am retry job's own attempt. The job has already written the
+     * failed row, the strike, the retry date and the client email for it;
+     * counting Stripe's report of the same decline would make it two
+     * strikes (shared/stripeBilling.ts, isScheduledRetry).
+     */
+    if (isScheduledRetry((invoice as unknown as { metadata?: Record<string, string> | null }).metadata, event.created)) {
+      return { duplicate: false, handled: "subscription_failed_scheduled_retry" };
+    }
+
     const now = new Date();
     const failedCount = (membership.failedPaymentCount ?? 0) + 1;
     const declineCode = (invoice as unknown as { last_finalization_error?: { decline_code?: string; code?: string } })
@@ -724,6 +737,31 @@ export async function processStripeEvent(event: Stripe.Event) {
       retryAt: plan.retryAt,
       appBaseUrl: getAppBaseUrl(),
     })).catch(() => undefined);
+
+    // The client: nothing sent on the first failure (their portal shows
+    // it), an email on the second, the suspension email on the last
+    // (Andy, 25/11/2026). This path never told the client anything
+    // before, even when it suspended them.
+    //
+    // A membership already suspended is told once, not again on every
+    // later invoice Stripe raises and fails while the subscription runs.
+    const alreadySuspended = failedFor.some((row) => Boolean(row.bookingSuspended));
+    const dogNames = Array.from(new Set(failedFor.flatMap((row) => who.dogsByMembership.get(row.id) ?? [])));
+    if (!alreadySuspended) {
+      await emailClientAboutFailedPayment(db, {
+        tenantId: membership.tenantId ?? 1,
+        clientId: membership.clientId,
+        notice: clientFailureNotice(failedCount, plan.suspend),
+        petName: dogNames.length > 0 ? dogNames.join(" & ") : "your dog",
+        membershipName: failedFor.length > 1 ? "family membership" : (membership.name ?? "Membership"),
+        // The weekly rate, as the email's amount line expects: it converts
+        // to the monthly figure itself. Stripe's amount_due is already
+        // per cycle and would be converted twice.
+        pricePerCycle: failedFor.reduce((sum, row) => sum + Number(row.pricePerCycle ?? 0), 0).toFixed(2),
+        billingCycle: membership.billingCycle,
+        retryAt: plan.retryAt,
+      }).catch(() => undefined);
+    }
     return { duplicate: false, handled: "subscription_failed" };
   }
 

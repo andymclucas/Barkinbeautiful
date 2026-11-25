@@ -85,12 +85,15 @@ describe("planAfterFailure", () => {
     expect(brisbaneDate(plan.retryAt!)).toBe("2026-10-05"); // Monday
   });
 
-  it("suspends on the second failure rather than retrying forever", () => {
-    const plan = planAfterFailure(2, "retry", thursday);
+  it("retries after the second failure and suspends on the third (Andy, 25/11/2026)", () => {
+    const second = planAfterFailure(2, "retry", thursday);
+    expect(second.retry).toBe(true);
+    expect(second.suspend).toBe(false);
+    const plan = planAfterFailure(3, "retry", thursday);
     expect(plan.retry).toBe(false);
     expect(plan.retryAt).toBeNull();
     expect(plan.suspend).toBe(true);
-    expect(plan.reason).toMatch(/2 failed payments/);
+    expect(plan.reason).toMatch(/3 failed payments/);
   });
 
   it("does not waste an attempt when the card can never work", () => {
@@ -224,15 +227,19 @@ describe("retry thresholds by billing cycle", () => {
   // A Monday, so the business-day maths is easy to follow.
   const monday = new Date("2026-10-26T04:00:00Z"); // 14:00 Brisbane
 
-  it("leaves weekly exactly as it was: two attempts, next business day", () => {
+  it("gives weekly three attempts, a business day apart (Andy, 25/11/2026)", () => {
     const first = planAfterFailure(1, "retry", monday, "weekly");
     expect(first.retry).toBe(true);
     expect(first.suspend).toBe(false);
     expect(brisbaneDate(first.retryAt!)).toBe("2026-10-27"); // Tuesday
 
-    const second = planAfterFailure(2, "retry", monday, "weekly");
-    expect(second.retry).toBe(false);
-    expect(second.suspend).toBe(true);
+    const second = planAfterFailure(2, "retry", first.retryAt!, "weekly");
+    expect(second.suspend).toBe(false);
+    expect(brisbaneDate(second.retryAt!)).toBe("2026-10-28"); // Wednesday
+
+    const third = planAfterFailure(3, "retry", second.retryAt!, "weekly");
+    expect(third.retry).toBe(false);
+    expect(third.suspend).toBe(true);
   });
 
   it("gives monthly four attempts, not two", () => {

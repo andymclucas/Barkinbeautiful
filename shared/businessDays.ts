@@ -81,12 +81,14 @@ export function nextBrisbaneBusinessDay(from: Date, atHourBrisbane = 9): Date {
 }
 
 /**
- * How many business days to allow before a failure stops being retried and
- * becomes a human problem. Two strikes matches the existing handler's
- * behaviour, and is exported so the policy lives in one place rather than as
- * a bare `>= 2` in the middle of a scheduled job.
+ * How many failed attempts a weekly membership gets before it is suspended.
+ *
+ * Andy, 25/11/2026: "Add in a portal notification to the client first about
+ * the failed payment. Second day with fail attempt is an email to the
+ * client. 3rd is suspended." Three, up from two: the first failure is a
+ * notice in the client's portal, the second an email, the third suspends.
  */
-export const MAX_PAYMENT_RETRIES = 2;
+export const MAX_PAYMENT_RETRIES = 3;
 
 export function shouldRetryPayment(failedCount: number): boolean {
   return failedCount < MAX_PAYMENT_RETRIES;

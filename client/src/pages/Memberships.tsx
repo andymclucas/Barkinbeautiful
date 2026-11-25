@@ -13,6 +13,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { billingCycleFromWeeks, retryWarning } from "@shared/stripeBilling";
+import { membershipTabCount } from "@shared/membershipTabCount";
 import { Label } from "@/components/ui/label";
 import { AlertTriangle, CreditCard, PauseCircle, PlayCircle, Search, Dog, Phone, ArrowUpDown, ArrowUp, ArrowDown, Plus, CheckCircle, CheckCircle2, XCircle, RefreshCw, Landmark } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -448,7 +449,15 @@ function MembershipRow({ m }: { m: MembershipItem }) {
       <td className="p-3 hidden md:table-cell">
         <div className="flex items-center gap-1.5">
           <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-sm">{m.name}</span>
+          {/* Opens this membership on the client's card, where it can be
+              paused, billed or stopped (Andy, 25/11/2026). */}
+          {m.clientId ? (
+            <Link href={`/clients/${m.clientId}?membership=${m.id}`} className="text-sm hover:text-primary hover:underline">
+              {m.name}
+            </Link>
+          ) : (
+            <span className="text-sm">{m.name}</span>
+          )}
           {m.isTest && <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-700 dark:text-amber-300">TEST</Badge>}
         </div>
       </td>
@@ -1320,9 +1329,12 @@ export default function Memberships() {
   // ── Failed payment mutations & state ──────────────────────────────────────
   const recordFailureMutation = trpc.memberships.recordPaymentFailure.useMutation({
     onSuccess: (res) => {
+      const strike = (res as { failedPaymentCount?: number }).failedPaymentCount ?? 1;
       toast.success((res as { suspended?: boolean }).suspended
-        ? `Strike 2 — bookings suspended. Client notified by email.`
-        : `Strike 1 recorded. Retry scheduled for next business day.`);
+        ? `Strike ${strike}: bookings suspended. Client emailed.`
+        : strike >= 2
+          ? `Strike ${strike} recorded. Client emailed; retry on the next business day.`
+          : `Strike 1 recorded. Client sees a notice in their portal; retry on the next business day.`);
       setConfirmRecordFailure(null);
       setFailureReason("");
       utils.memberships.getFailedPayments.invalidate();
@@ -1358,6 +1370,10 @@ export default function Memberships() {
   const items: MembershipItem[] = data?.items ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // The list above is every membership on Failed Payments and Accounts
+  // Receivable, so the heading and pager follow the tab instead
+  // (shared/membershipTabCount.ts, Andy 25/11/2026).
+  const tabCount = membershipTabCount({ tab: activeTab, listTotal: total, failedPaymentCount: failedPayments?.length ?? 0 });
   // A remembered page can be past the end once plans have been cancelled.
   useEffect(() => {
     if (data && page > totalPages) setPage(totalPages);
@@ -1414,8 +1430,8 @@ export default function Memberships() {
           <div>
             <h1 className="text-2xl font-bold font-display">Memberships</h1>
             <p className="text-sm text-muted-foreground">
-              {total} {activeTab.replace("_", " ")} memberships
-              {tierFilter !== "all" ? ` · ${tierFilter} tier` : ""}
+              {tabCount.heading}
+              {tabCount.showPager && tierFilter !== "all" ? ` · ${tierFilter} tier` : ""}
             </p>
           </div>
           <Button onClick={() => setShowAddModal(true)} className="flex items-center gap-2">
@@ -1680,7 +1696,7 @@ export default function Memberships() {
             dogs as its name says. */}
         <MembershipPetAssignment />
 
-        <div className={`flex items-center justify-between text-sm text-muted-foreground pt-1 ${FLOATING_BUTTON_CLEARANCE}`}>
+        <div className={`flex items-center justify-between text-sm text-muted-foreground pt-1 ${FLOATING_BUTTON_CLEARANCE} ${tabCount.showPager ? "" : "invisible"}`}>
           <span>Showing {total === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, total)}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
           <PageNumbers page={page} totalPages={totalPages} onPage={goToPage} label="Membership pages, bottom" />
         </div>
@@ -1707,10 +1723,14 @@ export default function Memberships() {
                 <p className="text-sm text-muted-foreground">
                   Recording a failure for <strong className="text-foreground">{confirmRecordFailure.clientName}</strong>
                   {confirmRecordFailure.petName ? ` (${confirmRecordFailure.petName})` : ""}.
-                  {confirmRecordFailure.failedCount >= 1 ? (
-                    <span className="block mt-1 text-red-600 dark:text-red-400 font-medium">⚠ This is Strike 2 — bookings will be suspended and the client will be notified by email.</span>
+                  {/* Weekly ladder (Andy, 25/11/2026): portal notice, then
+                      email, then suspension on the third. */}
+                  {confirmRecordFailure.failedCount >= 2 ? (
+                    <span className="block mt-1 text-red-600 dark:text-red-400 font-medium">⚠ This is Strike {confirmRecordFailure.failedCount + 1}. Bookings will be suspended and the client emailed.</span>
+                  ) : confirmRecordFailure.failedCount === 1 ? (
+                    <span className="block mt-1 text-amber-700 dark:text-amber-400 font-medium">This is Strike 2. The client will be emailed and a retry set for the next business day.</span>
                   ) : (
-                    <span className="block mt-1">This is Strike 1 — a retry will be scheduled for the next business day.</span>
+                    <span className="block mt-1">This is Strike 1. The client sees a notice in their portal and a retry is set for the next business day.</span>
                   )}
                 </p>
                 <div className="space-y-1">

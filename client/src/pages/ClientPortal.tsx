@@ -4,6 +4,7 @@ import { PortalSignInLinkForm } from "@/components/PortalSignInLinkForm";
 import { useLocation, useParams } from "wouter";
 import { clientFacingPortalError } from "@shared/clientFacingError";
 import { formatMoney } from "@shared/portalBilling";
+import { portalFailedPaymentNotice } from "@shared/portalFailedPaymentNotice";
 import { groomCardConditions, groomCardMoods, groomCardRating } from "@shared/groomingCard";
 import { PORTAL_CHAT_DISCLOSURE, PORTAL_PERSON_REQUEST } from "@shared/portalChat";
 import { PortalChatLauncher } from "@/components/PortalChatLauncher";
@@ -128,6 +129,34 @@ export function PortalCardNeededBanner({ token, readOnly, previewCard }: {
       </p>
       <a href="#payment-details" className="mt-3 inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">
         <CreditCard className="h-4 w-4" /> Add my card
+      </a>
+    </div>
+  );
+}
+
+/**
+ * The client's first word of a failed membership payment (Andy, 25/11/2026:
+ * "a portal notification to the client first about the failed payment").
+ * Shown from the first failure until the payment goes through or staff
+ * resolve it; the wording is shared/portalFailedPaymentNotice.ts. Not on a
+ * staff preview, which has no live payment state to read.
+ */
+export function PortalFailedPaymentNotice({ token, readOnly }: { token?: string; readOnly?: boolean }) {
+  const status = trpc.clientPortal.getMyPaymentMethod.useQuery(
+    { token },
+    { enabled: !readOnly, retry: false },
+  );
+  const notice = readOnly ? null : portalFailedPaymentNotice(status.data?.failedPayment);
+  if (!notice) return null;
+  return (
+    <div role="alert" className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 dark:border-amber-500 dark:bg-amber-950/40" data-testid="portal-failed-payment-notice">
+      <p className="flex items-center gap-2 text-lg font-bold text-amber-800 dark:text-amber-200">
+        <TriangleAlert className="h-5 w-5 shrink-0" />
+        {notice.title}
+      </p>
+      <p className="mt-1 text-sm text-amber-900 dark:text-amber-100">{notice.body}</p>
+      <a href="#payment-details" className="mt-3 inline-flex items-center gap-2 rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
+        <CreditCard className="h-4 w-4" /> Update my card
       </a>
     </div>
   );
@@ -1042,6 +1071,7 @@ export default function ClientPortal() {
 
     {/* Signed in on their own account: worth saving to the Home Screen. Not
         on a staff preview, and not on an access-token link. */}
+    <PortalFailedPaymentNotice token={token ?? undefined} readOnly={isPreview} />
     <PortalCardNeededBanner token={token ?? undefined} readOnly={isPreview} previewCard={isPreview ? data.previewCard : undefined} />
     <PortalBookCard token={token ?? undefined} readOnly={isPreview} onBook={() => setBookingOpen(true)} />
     <PortalMessagesCard token={token ?? undefined} readOnly={isPreview} onOpen={() => setChatOpen(true)} />
