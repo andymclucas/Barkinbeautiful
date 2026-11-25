@@ -45,3 +45,18 @@ describe("New Client Form (Andy, 25/11/2026)", () => {
     expect(dateOfBirthFromAge(null, now)).toBeNull();
   });
 });
+
+describe("New Client Form matching and sending", () => {
+  it("matches a phone however it was typed", async () => {
+    const { phoneMatchForms } = await import("./newClientForm");
+    expect(phoneMatchForms("0412 345 678")).toEqual(["0412345678", "61412345678", "+61412345678"]);
+    expect(phoneMatchForms("+61 412 345 678")).toEqual(["61412345678", "0412345678", "+61412345678"]);
+    expect(phoneMatchForms("")).toEqual([]);
+  });
+
+  it("words the SMS with the salon and the link", async () => {
+    const { newClientFormSms } = await import("./newClientForm");
+    expect(newClientFormSms("Test Salon", "https://example.com/new-client"))
+      .toBe("Hi, it's Test Salon. Please fill in our new client form so we can get you booked in: https://example.com/new-client");
+  });
+});

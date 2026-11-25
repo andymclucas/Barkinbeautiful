@@ -335,6 +335,9 @@ const OPERATIONAL = [
   "membershipsRouter.create",
   "membershipsRouter.getPackageOptions",
   "membershipsRouter.searchClients",
+  // Texting or emailing the New Client Form link (25/11/2026): a person
+  // presses Send, so it is a staff send, and it only shares a public link.
+  "newClientFormRouter.sendLink",
   "onlineBookingRouter.listAllMoegoIds",
   "paymentsRouter.cardEntryConfig",
   "paymentsRouter.cardOnFile",
@@ -654,7 +657,8 @@ describe("tRPC procedure surface", () => {
     // createBooking and addExtras, in PUBLIC.
     // 466 since 24/11/2026: clientPortal.bookingNextAvailable, in PUBLIC.
     // 467 since 25/11/2026: newClientForm.submit, the New Client Form, in PUBLIC.
-    expect(surface).toHaveLength(467);
+    // 468 since 25/11/2026: newClientForm.sendLink, in OPERATIONAL.
+    expect(surface).toHaveLength(468);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -736,7 +740,8 @@ describe("tRPC procedure surface", () => {
     // login can ask for help; the server keys each one to ctx.user.id.
     // 165 since 21/11/2026: calendarRouter.cancelAllUpcoming.
     // 166 since 23/11/2026: workflowRouter.getBoardVersion.
-    expect(OPERATIONAL).toHaveLength(166);
+    // 167 since 25/11/2026: newClientFormRouter.sendLink.
+    expect(OPERATIONAL).toHaveLength(167);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

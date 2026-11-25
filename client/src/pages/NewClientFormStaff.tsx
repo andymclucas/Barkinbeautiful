@@ -1,4 +1,5 @@
-import { ClipboardList, Copy, ExternalLink } from "lucide-react";
+import { useState } from "react";
+import { ClipboardList, Copy, ExternalLink, Mail, MessageSquare, Send } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -21,6 +22,18 @@ export default function NewClientFormStaff() {
   const display = salonName({ name: brand?.name ?? null }, "the salon");
   const link = brand?.newClientFormUrl ?? "";
 
+  // Send the link by SMS or email (Andy, 25/11/2026). A person presses
+  // Send; nothing goes out on its own.
+  const [channel, setChannel] = useState<"sms" | "email">("sms");
+  const [to, setTo] = useState("");
+  const sendLink = trpc.newClientForm.sendLink.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.channel === "sms" ? "Form sent by text" : "Form sent by email");
+      setTo("");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(link);
@@ -40,6 +53,38 @@ export default function NewClientFormStaff() {
           <p className="mt-1 text-sm text-muted-foreground">
             A one-page form for new clients: their details and their dogs. Sending it adds them to Clients straight away, ready to ring and book in.
           </p>
+        </div>
+
+        <div className="rounded-2xl border bg-card p-4 sm:p-5">
+          <p className="text-sm font-semibold">Send the form</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Text or email the form to someone who rang or walked in. When they fill it in, they and their dogs are added to Clients automatically.
+          </p>
+          <form
+            className="mt-3 flex flex-col gap-2 sm:flex-row"
+            onSubmit={(e) => { e.preventDefault(); if (to.trim()) sendLink.mutate({ channel, to: to.trim() }); }}
+          >
+            <div className="flex rounded-lg border p-0.5" role="group" aria-label="Send by">
+              <Button type="button" size="sm" variant={channel === "sms" ? "default" : "ghost"} className="h-9 gap-1.5" aria-pressed={channel === "sms"} onClick={() => setChannel("sms")}>
+                <MessageSquare className="h-4 w-4" /> SMS
+              </Button>
+              <Button type="button" size="sm" variant={channel === "email" ? "default" : "ghost"} className="h-9 gap-1.5" aria-pressed={channel === "email"} onClick={() => setChannel("email")}>
+                <Mail className="h-4 w-4" /> Email
+              </Button>
+            </div>
+            <Input
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              type={channel === "sms" ? "tel" : "email"}
+              inputMode={channel === "sms" ? "tel" : "email"}
+              placeholder={channel === "sms" ? "Mobile number" : "Email address"}
+              aria-label={channel === "sms" ? "Mobile number to text the form to" : "Email address to send the form to"}
+              className="h-10 flex-1"
+            />
+            <Button type="submit" className="h-10 gap-1.5" disabled={!to.trim() || sendLink.isPending}>
+              <Send className="h-4 w-4" /> {sendLink.isPending ? "Sending…" : "Send"}
+            </Button>
+          </form>
         </div>
 
         <div className="rounded-2xl border bg-card p-4 sm:p-5">

@@ -81,3 +81,29 @@ export function dateOfBirthFromAge(ageYears: number | null, now: Date): Date | n
   const birth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
   return birth;
 }
+
+/**
+ * The forms a phone number may be stored in, for matching an existing client.
+ *
+ * Numbers are typed every way: "0412 345 678", "0412345678", "+61412345678".
+ * The server compares these against the stored number with spaces, dashes,
+ * brackets and dots taken out, so the same person is not added twice.
+ */
+export function phoneMatchForms(phone: string): string[] {
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return [];
+  const forms = new Set<string>([digits]);
+  if (digits.startsWith("0") && digits.length === 10) {
+    forms.add(`61${digits.slice(1)}`);
+    forms.add(`+61${digits.slice(1)}`);
+  } else if (digits.startsWith("61") && digits.length === 11) {
+    forms.add(`0${digits.slice(2)}`);
+    forms.add(`+${digits}`);
+  }
+  return [...forms];
+}
+
+/** The text a staff member sends with the link (Andy, 25/11/2026). One SMS segment where it can be. */
+export function newClientFormSms(salonName: string, url: string): string {
+  return `Hi, it's ${salonName}. Please fill in our new client form so we can get you booked in: ${url}`;
+}
