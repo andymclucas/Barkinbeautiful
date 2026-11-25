@@ -253,3 +253,37 @@ export function describePause(
   }
   return `Paused — billing restarts ${formatDate(membership.pauseResumesAt)}`;
 }
+
+/**
+ * What a membership's "Next billing" line should say.
+ *
+ * Andy, 25/11/2026: "Fix the next billing date showing while paused." A
+ * paused membership kept showing its old next billing date (26 Nov for
+ * one paused until 3 Dec), which read as a charge about to happen.
+ *
+ * - Paused on purpose with a restart date: "Restarts" and that date.
+ * - Paused on purpose with no date: "Restarts" and "When resumed".
+ * - Held for a failed payment: "Next billing" and "On hold".
+ * - Cancelled or expired: nothing.
+ * - Otherwise: "Next billing" and the stored date, if there is one.
+ */
+export type NextBillingLine =
+  | { label: "Restarts"; date: Date }
+  | { label: "Restarts" | "Next billing"; text: string }
+  | { label: "Next billing"; date: Date }
+  | null;
+
+export function nextBillingLine(
+  membership: PausableMembership & { nextBillingDate?: Date | null },
+): NextBillingLine {
+  if (membership.status === "cancelled" || membership.status === "expired") return null;
+  if (isDeliberatePause(membership)) {
+    return membership.pauseMode !== "manual" && membership.pauseResumesAt
+      ? { label: "Restarts", date: membership.pauseResumesAt }
+      : { label: "Restarts", text: "When resumed" };
+  }
+  if (membership.status === "paused" || membership.bookingSuspended) {
+    return { label: "Next billing", text: "On hold" };
+  }
+  return membership.nextBillingDate ? { label: "Next billing", date: membership.nextBillingDate } : null;
+}

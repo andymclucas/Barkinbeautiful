@@ -6,6 +6,7 @@ import { canCancelFromClientPage } from "@shared/cancelFromClientPage";
 import { calendarAppointmentHref } from "@shared/calendarDeepLink";
 import { bookingCompanions } from "@shared/bookingCompanions";
 import { MembershipActions } from "@/pages/Memberships";
+import { nextBillingLine } from "@shared/membershipPause";
 import { brisbaneDateKey } from "@shared/localDateTime";
 import { VipMark } from "@/components/VipMark";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -3010,12 +3011,30 @@ export default function ClientDetail() {
                           <p className="text-xs text-muted-foreground">Started</p>
                           <p className="font-medium">{new Date(m.startedAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</p>
                         </div>
-                        {m.nextBillingDate && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Next Billing</p>
-                            <p className="font-medium">{new Date(m.nextBillingDate).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })}</p>
-                          </div>
-                        )}
+                        {/* While paused, the restart date, not the old next
+                            billing date (shared/membershipPause.ts,
+                            nextBillingLine; Andy, 25/11/2026). */}
+                        {(() => {
+                          const line = nextBillingLine({
+                            status: m.status,
+                            pauseMode: m.pauseMode ?? null,
+                            pauseResumesAt: m.pauseResumesAt ? new Date(m.pauseResumesAt) : null,
+                            failedPaymentCount: m.failedPaymentCount,
+                            bookingSuspended: m.bookingSuspended,
+                            nextBillingDate: m.nextBillingDate ? new Date(m.nextBillingDate) : null,
+                          });
+                          if (!line) return null;
+                          return (
+                            <div>
+                              <p className="text-xs text-muted-foreground">{line.label === "Restarts" ? "Billing restarts" : "Next Billing"}</p>
+                              <p className="font-medium">
+                                {"date" in line
+                                  ? line.date.toLocaleDateString("en-AU", { timeZone: getActiveTimeZone(), day: "numeric", month: "short", year: "numeric" })
+                                  : line.text}
+                              </p>
+                            </div>
+                          );
+                        })()}
                         {m.cancelledAt && (
                           <div>
                             <p className="text-xs text-muted-foreground">Cancelled</p>
