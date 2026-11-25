@@ -473,6 +473,7 @@ export default function WorkflowBoard() {
               appointmentId: row.id,
               petName: row.petName,
               workflowState: row.id === appointmentId ? "ready" : row.workflowState,
+              serviceType: row.serviceType,
             }));
           const group = siblings.length > 0
             ? pickupPrompt(siblings)

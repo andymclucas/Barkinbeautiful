@@ -14112,7 +14112,9 @@ async function loadPickupSiblings(db: any, appointment: { id: number; tenantId: 
       appointmentId: appointments.id,
       petName: pets.name,
       workflowState: appointments.workflowState,
-        scheduledStart: appointments.scheduledStart,
+      scheduledStart: appointments.scheduledStart,
+      // So a day care dog does not hold a groom's pickup text (25/11/2026).
+      serviceType: appointments.serviceType,
     })
     .from(appointments)
     .leftJoin(pets, eq(appointments.petId, pets.id))
