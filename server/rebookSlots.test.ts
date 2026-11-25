@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   slotsAroundTarget,
+  combineGroomerSlots,
+  anyGroomerAllowed,
+  groomerPickFor,
   describeNoSlotReason,
   DEFAULT_MAX_ALTERNATIVES,
   type DaySlots,
@@ -121,5 +124,87 @@ describe("slotsAroundTarget", () => {
     }));
     expect(times(result.target)).not.toContain("9:00");
     expect(times(result.target)[0]).toBe("13:00");
+  });
+});
+
+describe("combineGroomerSlots (rebook dialog, Any groomer)", () => {
+  const around = (
+    target: string,
+    slots: number[],
+    reason: "closed" | "atCapacity" | "noGaps" | null,
+    alternatives: DaySlots[] = [],
+  ) => ({ target: { dateKey: target, slots, reason }, alternatives });
+
+  it("names every groomer free on the day, earliest first, and leaves out the full ones", () => {
+    const result = combineGroomerSlots("2026-11-16", [
+      { staffId: 1, name: "Charlotte", around: around("2026-11-16", [], "atCapacity") },
+      { staffId: 2, name: "Megan", around: around("2026-11-16", [720, 750], null) },
+      { staffId: 3, name: "Amy", around: around("2026-11-16", [540], null) },
+    ]);
+    expect(result.groomers).toEqual([
+      { staffId: 3, name: "Amy", slots: [540] },
+      { staffId: 2, name: "Megan", slots: [720, 750] },
+    ]);
+    expect(result.reason).toBeNull();
+  });
+
+  it("says why when nobody is free, and offers nearby days any groomer has room on", () => {
+    const result = combineGroomerSlots("2026-11-16", [
+      { staffId: 1, name: "Charlotte", around: around("2026-11-16", [], "atCapacity", [
+        { dateKey: "2026-11-18", slots: [600] },
+        { dateKey: "2026-11-12", slots: [540] },
+      ]) },
+      { staffId: 2, name: "Megan", around: around("2026-11-16", [], "atCapacity", [
+        { dateKey: "2026-11-17", slots: [540] },
+        { dateKey: "2026-11-18", slots: [540] },
+      ]) },
+    ]);
+    expect(result.groomers).toEqual([]);
+    expect(result.reason).toBe("atCapacity");
+    expect(result.alternatives).toEqual([
+      { dateKey: "2026-11-17", slots: [540] },
+      { dateKey: "2026-11-18", slots: [540, 600] },
+      { dateKey: "2026-11-12", slots: [540] },
+    ]);
+  });
+
+  it("calls a mixed day 'no gap', and a day with nobody to look at unknown", () => {
+    expect(combineGroomerSlots("2026-11-16", [
+      { staffId: 1, name: "A", around: around("2026-11-16", [], "atCapacity") },
+      { staffId: 2, name: "B", around: around("2026-11-16", [], "noGaps") },
+    ]).reason).toBe("noGaps");
+    expect(combineGroomerSlots("2026-11-16", []).reason).toBe("unknown");
+  });
+});
+
+describe("anyGroomerAllowed (rebook dialog)", () => {
+  it("offers another groomer for a one-dog visit only", () => {
+    // A family would all land on the picked groomer at one start, with
+    // the gap checked for one dog — stacked in one column.
+    expect(anyGroomerAllowed(1)).toBe(true);
+    expect(anyGroomerAllowed(2)).toBe(false);
+    expect(anyGroomerAllowed(3)).toBe(false);
+    expect(anyGroomerAllowed(0)).toBe(false);
+  });
+});
+
+describe("groomerPickFor (rebook dialog)", () => {
+  const pick = { id: 7, name: "Groomer A", at: "2027-01-13T09:30" };
+
+  it("keeps the picked groomer while the box holds the time it was picked for", () => {
+    expect(groomerPickFor(pick, "2027-01-13T09:30")).toBe(pick);
+  });
+
+  it("drops it once the date or time changes, so an unchecked time is never booked with them", () => {
+    // A new week refills the box from the usual groomer's suggestion.
+    expect(groomerPickFor(pick, "2027-01-20T09:30")).toBeNull();
+    // Typing a different time on the same day.
+    expect(groomerPickFor(pick, "2027-01-13T11:00")).toBeNull();
+    // The box cleared while a new suggestion loads.
+    expect(groomerPickFor(pick, "")).toBeNull();
+  });
+
+  it("is null when nothing was picked", () => {
+    expect(groomerPickFor(null, "2027-01-13T09:30")).toBeNull();
   });
 });

@@ -157,7 +157,7 @@ import {
 } from "@shared/quickAppointment";
 import { phoneMatchKey } from "@shared/moegoImport";
 import { buildDayAvailability } from "./dayAvailability";
-import { slotsAroundTarget, describeNoSlotReason } from "../shared/rebookSlots";
+import { slotsAroundTarget, describeNoSlotReason, combineGroomerSlots, anyGroomerAllowed } from "../shared/rebookSlots";
 import { minutesToTimeValue, salonBookingStarts } from "../shared/bookingTimeSlots";
 
 /**
@@ -897,6 +897,11 @@ const calendarRouter = router({
       appointmentId: z.number(),
       /** ISO instant. The browser sends what the staff member confirmed. */
       start: z.string().min(10),
+      /**
+       * A different groomer, picked from the dialog's "Any groomer" view.
+       * Every dog on the visit goes to them. Absent: each dog keeps its own.
+       */
+      staffId: z.number().int().positive().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
@@ -924,6 +929,25 @@ const calendarRouter = router({
         .where(source.sessionId
           ? and(eq(appointments.tenantId, tenantId), eq(appointments.sessionId, source.sessionId))
           : and(eq(appointments.tenantId, tenantId), eq(appointments.id, source.id)));
+
+      if (input.staffId != null) {
+        if (!anyGroomerAllowed(siblings.length)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "A visit with more than one dog keeps its own groomers" });
+        }
+        // The same people rebookFreeTimes offers: active, rostered, clipping.
+        const [groomer] = await db
+          .select({ id: staff.id })
+          .from(staff)
+          .where(and(
+            eq(staff.id, input.staffId),
+            eq(staff.tenantId, tenantId),
+            eq(staff.isActive, true),
+            eq(staff.rostered, true),
+            gt(staff.dailyClipCapacity, 0),
+          ))
+          .limit(1);
+        if (!groomer) throw new TRPCError({ code: "BAD_REQUEST", message: "That groomer is not on this salon's roster" });
+      }
 
       const start = new Date(input.start);
       if (Number.isNaN(start.getTime())) throw new TRPCError({ code: "BAD_REQUEST", message: "That date is not valid" });
@@ -1017,7 +1041,7 @@ const calendarRouter = router({
           tenantId,
           clientId: source.clientId,
           petId: dog.petId,
-          staffId: dog.staffId,
+          staffId: input.staffId ?? dog.staffId,
           serviceType: dog.serviceType,
           scheduledStart: start,
           scheduledEnd: new Date(start.getTime() + minutes * 60000),
@@ -2205,11 +2229,17 @@ const calendarRouter = router({
       targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       /** How far either side still counts as "around" the mark. */
       windowDays: z.number().int().min(1).max(30).default(14),
+      /**
+       * Look at every rostered groomer separately and say who is free
+       * when (the dialog's "Any groomer"). staffIds is ignored.
+       */
+      byGroomer: z.boolean().default(false),
     }))
     .query(async ({ input, ctx }) => {
       const empty = {
         target: { date: input.targetDate, times: [] as string[], reason: "unknown" as const, message: "" },
         alternatives: [] as { date: string; times: string[] }[],
+        groomers: [] as { staffId: number; name: string; times: string[] }[],
       };
       const db = await getDb();
       if (!db) return empty;
@@ -2239,6 +2269,51 @@ const calendarRouter = router({
         ),
       );
 
+      const aroundOpts = (minutesInSalonDay: (at: Date) => number) => ({
+        durationMinutes: input.durationMinutes,
+        slotStartsFor: () => OFFERABLE_SLOT_STARTS,
+        todayKey,
+        nowMinutes: minutesInSalonDay(new Date()),
+        maxDistanceDays: input.windowDays,
+      });
+
+      if (input.byGroomer) {
+        // Each groomer on their own: their bookings, leave and capacity.
+        // Rostered, active and clipping — the people a groom can go to.
+        const groomerRows = await db
+          .select({ id: staff.id, name: staff.name })
+          .from(staff)
+          .where(and(
+            eq(staff.tenantId, tenantId),
+            eq(staff.isActive, true),
+            eq(staff.rostered, true),
+            gt(staff.dailyClipCapacity, 0),
+          ));
+        const perGroomer = [];
+        for (const g of groomerRows) {
+          const one = await buildDayAvailability(db, tenantId, { staffIds: [g.id], fromDate, days: spanDays });
+          if (one.error) continue;
+          perGroomer.push({
+            staffId: g.id,
+            name: g.name,
+            around: slotsAroundTarget(one.days, input.targetDate, aroundOpts(one.minutesInSalonDay)),
+          });
+        }
+        const combined = combineGroomerSlots(input.targetDate, perGroomer);
+        return {
+          target: {
+            date: input.targetDate,
+            times: [] as string[],
+            reason: combined.reason,
+            message: combined.reason ? describeNoSlotReason(combined.reason) : "",
+          },
+          alternatives: combined.alternatives.map((a) => ({ date: a.dateKey, times: a.slots.map(minutesToTimeValue) })),
+          groomers: combined.groomers.map((g) => ({
+            staffId: g.staffId, name: g.name, times: g.slots.map(minutesToTimeValue),
+          })),
+        };
+      }
+
       const { days, minutesInSalonDay, error } = await buildDayAvailability(db, tenantId, {
         staffIds: input.staffIds,
         fromDate,
@@ -2246,13 +2321,7 @@ const calendarRouter = router({
       });
       if (error) return { ...empty, target: { ...empty.target, message: error } };
 
-      const around = slotsAroundTarget(days, input.targetDate, {
-        durationMinutes: input.durationMinutes,
-        slotStartsFor: () => OFFERABLE_SLOT_STARTS,
-        todayKey,
-        nowMinutes: minutesInSalonDay(new Date()),
-        maxDistanceDays: input.windowDays,
-      });
+      const around = slotsAroundTarget(days, input.targetDate, aroundOpts(minutesInSalonDay));
 
       return {
         target: {
@@ -2265,6 +2334,7 @@ const calendarRouter = router({
           date: a.dateKey,
           times: a.slots.map(minutesToTimeValue),
         })),
+        groomers: empty.groomers,
       };
     }),
 
