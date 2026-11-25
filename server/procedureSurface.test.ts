@@ -142,6 +142,9 @@ const PUBLIC = [
   "membershipSignupRouter.packagesForWeight",
   "membershipSignupRouter.quote",
   "membershipSignupRouter.submit",
+  // The New Client Form (25/11/2026). Creates a NEW client and dogs only;
+  // a matching phone or email changes nothing (server/routers/newClientForm.ts).
+  "newClientFormRouter.submit",
   "onlineBookingRouter.createGuest",
   "onlineBookingRouter.listAvailableSlots",
   "onlineBookingRouter.listGroomerProfiles",
@@ -650,7 +653,8 @@ describe("tRPC procedure surface", () => {
     // 465 since 24/11/2026: clientPortal.bookingOptions, bookingSlots,
     // createBooking and addExtras, in PUBLIC.
     // 466 since 24/11/2026: clientPortal.bookingNextAvailable, in PUBLIC.
-    expect(surface).toHaveLength(466);
+    // 467 since 25/11/2026: newClientForm.submit, the New Client Form, in PUBLIC.
+    expect(surface).toHaveLength(467);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -666,7 +670,8 @@ describe("tRPC procedure surface", () => {
     // 64 since 12/11/2026: redeemSignInCode.
     // 72 since 24/11/2026: the four portal booking procedures.
     // 73 since 24/11/2026: bookingNextAvailable.
-    expect(PUBLIC).toHaveLength(73);
+    // 74 since 25/11/2026: newClientForm.submit.
+    expect(PUBLIC).toHaveLength(74);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

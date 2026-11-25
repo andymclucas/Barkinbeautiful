@@ -51,6 +51,9 @@ export const SECTION_BY_NAMESPACE: Readonly<Record<string, StaffSection>> = {
   groomingReports: "clients",
   clientPhotos: "clients",
   family: "clients",
+  // The New Client Form (25/11/2026). Its one procedure is public, so this
+  // only says which section it belongs to; it never gates the form.
+  newClientForm: "clients",
 
   memberships: "memberships",
   packages: "memberships",

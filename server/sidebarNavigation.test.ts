@@ -3,17 +3,19 @@ import { SIDEBAR_LAYOUT, sidebarEntriesFor, groupContaining } from "@shared/side
 import { STAFF_OPERATION_ROUTES } from "@shared/staffRoutes";
 
 const all = new Set([
-  "/calendar", "/workflow", "/clients", "/memberships", "/pricing",
+  "/calendar", "/workflow", "/clients", "/memberships", "/new-client-form", "/pricing",
   "/messages", "/portal-messages", "/email-campaigns",
   "/analytics", "/reporting", "/staff", "/christmas",
 ]);
 
 describe("sidebarEntriesFor", () => {
+  // Andy, 25/11/2026: Financials gone, Memberships under Clients & Pets,
+  // and a new Admin section for Pricing, Analytics and Reporting.
   it("lays the sidebar out in the order Andy gave", () => {
     const entries = sidebarEntriesFor(all);
     expect(entries.map((e) => (e.kind === "item" ? e.path : e.key))).toEqual([
-      "/calendar", "/workflow", "/clients",
-      "financials", "communication", "insights",
+      "/calendar", "/workflow",
+      "clients", "communication", "admin",
       "/staff", "/christmas",
     ]);
   });
@@ -23,25 +25,25 @@ describe("sidebarEntriesFor", () => {
     const groups = Object.fromEntries(
       entries.filter((e) => e.kind === "group").map((e: any) => [e.key, e.paths]),
     );
-    expect(groups.financials).toEqual(["/memberships", "/pricing"]);
+    expect(groups.clients).toEqual(["/clients", "/memberships", "/new-client-form"]);
     expect(groups.communication).toEqual(["/messages", "/portal-messages", "/email-campaigns"]);
-    expect(groups.insights).toEqual(["/analytics", "/reporting"]);
+    expect(groups.admin).toEqual(["/pricing", "/analytics", "/reporting"]);
   });
 
   /**
-   * The case this function exists for. A restricted groomer sees four
-   * operational screens; Financials then holds exactly one row and the
-   * other two groups hold none, so they must not be drawn at all. A
-   * group that opens onto nothing is worse than no group.
+   * The case this function exists for. A restricted groomer sees the
+   * operational screens; Clients & Pets holds their rows and Communication
+   * and Admin hold none, so those two must not be drawn at all. A group
+   * that opens onto nothing is worse than no group.
    */
   it("drops a group whose rows this person cannot see", () => {
     const entries = sidebarEntriesFor(new Set(STAFF_OPERATION_ROUTES));
     const keys = entries.map((e) => (e.kind === "item" ? e.path : e.key));
     expect(keys).not.toContain("communication");
-    expect(keys).not.toContain("insights");
-    const financials = entries.find((e) => e.kind === "group") as any;
-    expect(financials.key).toBe("financials");
-    expect(financials.paths).toEqual(["/memberships"]);
+    expect(keys).not.toContain("admin");
+    const clients = entries.find((e) => e.kind === "group") as any;
+    expect(clients.key).toBe("clients");
+    expect(clients.paths).toEqual(["/clients", "/memberships", "/new-client-form"]);
   });
 
   it("never invents a row the person was not given", () => {
@@ -79,8 +81,10 @@ describe("sidebarEntriesFor", () => {
 
 describe("groupContaining", () => {
   it("finds the group a page sits in, so the sidebar can open it", () => {
-    expect(groupContaining("/reporting")).toBe("insights");
-    expect(groupContaining("/pricing")).toBe("financials");
+    expect(groupContaining("/reporting")).toBe("admin");
+    expect(groupContaining("/pricing")).toBe("admin");
+    expect(groupContaining("/memberships")).toBe("clients");
+    expect(groupContaining("/new-client-form")).toBe("clients");
     expect(groupContaining("/portal-messages")).toBe("communication");
   });
 

@@ -52,6 +52,10 @@ export const CLIENT_PATH_ROOTS: readonly string[] = [
   // The service agreement, texted to clients with no email (11/11/2026).
   // Segment-matched, so "/signup" (a salon signing up) is unaffected.
   "/sign",
+  // The New Client Form (25/11/2026): a link the salon shares with people
+  // who are not clients yet. Segment-matched, so the staff page
+  // "/new-client-form" stays on the staff host.
+  "/new-client",
 ];
 
 /** Staff surface that happens to sit inside a client tree. */

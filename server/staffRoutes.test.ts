@@ -56,7 +56,8 @@ describe("isStaffOperationRoute", () => {
     expect(layout.split("isStaffOperationRoute(").length - 1).toBe(3);
     expect(layout).not.toContain('["/calendar", "/workflow", "/memberships"]');
     // 5 since 11/11/2026: /counter, the counter till.
-    expect(STAFF_OPERATION_ROUTES).toHaveLength(5);
+    // 6 since 25/11/2026: /new-client-form, the New Client Form.
+    expect(STAFF_OPERATION_ROUTES).toHaveLength(6);
   });
 });
 
