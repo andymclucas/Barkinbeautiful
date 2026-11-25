@@ -28,7 +28,7 @@ import { notifyOwner } from "./ownerNotification";
 import { requireClientStripe, tenantIdOfClient } from "./clientStripe";
 import { getPortalBaseUrl } from "./appUrl";
 import { cardLinkUrl } from "./cardLinkToken";
-import { toStripeCents, stripeRecurring, type StripeFailureDetail, STAFF_RETRY_METADATA_KEY } from "@shared/stripeBilling";
+import { toStripeCents, stripeRecurring, type StripeFailureDetail, STAFF_RETRY_METADATA_KEY, SCHEDULED_RETRY_METADATA_KEY } from "@shared/stripeBilling";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { combinablePaymentStates, FAMILY_BILLING_TEST_ONLY, householdPaymentToJoin, planFamilyBilling, planPaymentMerge } from "@shared/familyBilling";
 import { hasScheduledRestart, resolvePauseResumesAt, validatePausePlan, type PausePlan } from "@shared/membershipPause";
@@ -1398,9 +1398,21 @@ export async function payOpenInvoice(
   stripeInvoiceId: string,
   /** The salon the invoice belongs to: it lives on that salon's account. */
   tenantId: number,
-  options: { staffPressed?: boolean } = {},
+  options: { staffPressed?: boolean; scheduled?: boolean } = {},
 ): Promise<OffSessionChargeResult> {
   const stripe = await requireClientStripe(tenantId);
+  if (options.scheduled && !options.staffPressed) {
+    /*
+     * The 9 am retry job writes its own strike, so the decline Stripe
+     * reports for this attempt must not be counted a second time
+     * (shared/stripeBilling.ts, isScheduledRetry). If the stamp cannot be
+     * written the attempt still goes ahead, as it always did: a missed
+     * payment matters more than a strike counted twice.
+     */
+    await stripe.invoices.update(stripeInvoiceId, {
+      metadata: { [SCHEDULED_RETRY_METADATA_KEY]: String(Math.floor(Date.now() / 1000)) },
+    }).catch(() => undefined);
+  }
   if (options.staffPressed) {
     /*
      * Stamp the invoice BEFORE trying, so the failure Stripe reports is

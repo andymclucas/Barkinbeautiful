@@ -114,8 +114,10 @@ export interface RetryPlan {
  *     client whose pay lands mid-cycle gets caught by a retry instead
  *     of by a suspension.
  *
- * Weekly is deliberately UNCHANGED. It works, and widening it would
- * leave a non-paying weekly client booking for a fortnight.
+ * Weekly was two attempts until 25/11/2026, when Andy asked for three:
+ * a portal notice, then an email, then suspension (MAX_PAYMENT_RETRIES).
+ * Still one business day apart, so a weekly client is suspended on the
+ * third business day, well before the next weekly charge.
  *
  * None of this applies to a card that is simply wrong: `classifyFailure`
  * sends expired cards and bank refusals straight to suspension however
@@ -135,9 +137,9 @@ export const RETRY_POLICY: Record<"weekly" | "monthly", {
  * What happens after an attempt fails.
  *
  * `failedCount` is the count INCLUDING the attempt that just failed, so the
- * first failure arrives as 1. Two strikes and the membership is suspended,
- * which matches what the handler has always done and is now in one place
- * rather than as a bare `>= 2` in the middle of a scheduled job.
+ * first failure arrives as 1. A weekly membership is suspended on its third
+ * (RETRY_POLICY), and every path that records a failure asks here rather
+ * than counting for itself.
  */
 export function planAfterFailure(
   failedCount: number,
@@ -312,7 +314,53 @@ export function isStaffPressedRetry(
   metadata: Record<string, string | null | undefined> | null | undefined,
   eventCreated: number | null | undefined,
 ): boolean {
-  const stamped = Number(metadata?.[STAFF_RETRY_METADATA_KEY]);
+  return stampedWithin(metadata, STAFF_RETRY_METADATA_KEY, eventCreated);
+}
+
+/**
+ * The 9 am retry job's own attempt on an open invoice.
+ *
+ * Same shape as the staff button, for the same reason: Stripe reports the
+ * job's decline as invoice.payment_failed too, and the job has already
+ * written that strike itself. Counting it again in the webhook made one
+ * decline two strikes, which with three strikes to suspension would turn
+ * the client's email day straight into a suspension. The job stamps the
+ * invoice first and the webhook leaves a failure inside the window alone.
+ */
+export const SCHEDULED_RETRY_METADATA_KEY = "groomigo_scheduled_retry_at";
+
+export function isScheduledRetry(
+  metadata: Record<string, string | null | undefined> | null | undefined,
+  eventCreated: number | null | undefined,
+): boolean {
+  return stampedWithin(metadata, SCHEDULED_RETRY_METADATA_KEY, eventCreated);
+}
+
+/**
+ * What the client is told after a failed membership payment.
+ *
+ * Andy, 25/11/2026: "Add in a portal notification to the client first
+ * about the failed payment. Second day with fail attempt is an email to
+ * the client. 3rd is suspended."
+ *
+ * - First failure: a notice in their portal only, no email or text.
+ * - A later failure that will still be retried: an email.
+ * - Suspended (third weekly failure, or a card no retry can fix): the
+ *   suspension email.
+ */
+export type ClientFailureNotice = "portal" | "retry_email" | "suspended_email";
+
+export function clientFailureNotice(failedCount: number, suspended: boolean): ClientFailureNotice {
+  if (suspended) return "suspended_email";
+  return failedCount <= 1 ? "portal" : "retry_email";
+}
+
+function stampedWithin(
+  metadata: Record<string, string | null | undefined> | null | undefined,
+  key: string,
+  eventCreated: number | null | undefined,
+): boolean {
+  const stamped = Number(metadata?.[key]);
   const at = Number(eventCreated);
   if (!Number.isFinite(stamped) || stamped <= 0 || !Number.isFinite(at) || at <= 0) return false;
   const gap = at - stamped;

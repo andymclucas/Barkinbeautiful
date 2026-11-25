@@ -26,9 +26,9 @@ import { holdPausedMembershipsAfterPassing, resumeMembershipSubscription } from 
 import {
   sendEmail,
   buildAdminFailedPaymentEmail,
-  buildClientFailedPaymentEmail,
 } from "./email";
 import { notifyOwner } from "./ownerNotification";
+import { emailClientAboutFailedPayment } from "./failedPaymentClientEmail";
 // Brisbane-correct, and tested in both timezones. The local version used
 // getDay(), which on Render (UTC) read the wrong weekday for anything after
 // 10:00 Brisbane and pushed retries a day late.
@@ -36,6 +36,7 @@ import { nextBrisbaneBusinessDay } from "../shared/businessDays";
 import {
   classifyFailure,
   planAfterFailure,
+  clientFailureNotice,
   canChargeOffSession,
   isCardExpired,
   describeCard,
@@ -55,7 +56,6 @@ import { runClientStatusSweepQuietly } from "./clientStatusSweep";
 import { EARLIEST_AUTOMATED_TEXT_HOUR } from "@shared/sendingHours";
 import { resolveChargePlan } from "@shared/membershipBillingCycle";
 import { loadSalonName } from "./salonName";
-import { clientSalonName } from "@shared/salonBrand";
 
 
 
@@ -142,7 +142,7 @@ async function attemptMembershipCharge(
         .limit(1);
 
   if (lastFailure?.stripeInvoiceId) {
-    const result = await payOpenInvoice(lastFailure.stripeInvoiceId, membership.tenantId ?? 1);
+    const result = await payOpenInvoice(lastFailure.stripeInvoiceId, membership.tenantId ?? 1, { scheduled: true });
     return { ok: result.ok, skipped: false, reason: result.message, declineCode: result.declineCode, viaInvoice: true, invoiceId: lastFailure.stripeInvoiceId };
   }
   if (isFamilyPayment) {
@@ -636,13 +636,17 @@ export async function paymentRetryHandler(req: Request, res: Response) {
         membershipId: m.id,
         amount: ownPriceStr,
         status: "failed",
-        // Kept on a shared payment so the next retry pays the same invoice.
-        ...(isFamilyPayment && attempt.invoiceId ? { stripeInvoiceId: attempt.invoiceId } : {}),
+        // Named on every payment, not only a shared one: the next retry
+        // finds the open invoice from this row. Without it a weekly
+        // membership's third attempt charged the card directly and left the
+        // invoice open for Stripe to collect again.
+        ...(attempt.invoiceId ? { stripeInvoiceId: attempt.invoiceId } : {}),
         failureReason: attempt.reason ?? plan.reason,
       });
 
       if (plan.suspend) {
-        // Strike 2 — suspend and email client
+        // Final strike (the third, for weekly) or a card no retry can fix:
+        // suspend and email the client.
         await db
           .update(memberships)
           .set({
@@ -661,23 +665,18 @@ export async function paymentRetryHandler(req: Request, res: Response) {
           })
           .where(onThisPayment);
 
-        // Email client
-        if (clientRow?.email) {
-          await sendEmail({
-            to: clientRow.email,
-            subject: `Important: Your ${membershipName} payment has failed`,
-            html: buildClientFailedPaymentEmail({
-              clientFirstName: clientRow.firstName ?? "Valued Client",
-              petName,
-              membershipName,
-              pricePerCycle: priceStr,
-              billingCycle: m.billingCycle,
-              businessName: clientSalonName(tenantRow?.name),
-              businessPhone: tenantRow?.phone,
-              businessEmail: tenantRow?.email,
-            }),
-          });
-        }
+        // Email client, through the same helper as the other two paths.
+        // A failed send must not stop the rest of the morning's retries.
+        await emailClientAboutFailedPayment(db, {
+          tenantId: m.tenantId ?? 1,
+          clientId: m.clientId ?? null,
+          notice: "suspended_email",
+          petName,
+          membershipName,
+          pricePerCycle: priceStr,
+          billingCycle: m.billingCycle,
+          retryAt: null,
+        }).catch(() => undefined);
 
         // Notify admin
         await notifyOwner({
@@ -696,6 +695,19 @@ export async function paymentRetryHandler(req: Request, res: Response) {
             status: "pending_payment",
           })
           .where(onThisPayment);
+
+        // The client hears from the second failure on (Andy, 25/11/2026);
+        // the first is a notice in their portal and needs nothing sent.
+        await emailClientAboutFailedPayment(db, {
+          tenantId: m.tenantId ?? 1,
+          clientId: m.clientId ?? null,
+          notice: clientFailureNotice(newFailCount, false),
+          petName,
+          membershipName,
+          pricePerCycle: priceStr,
+          billingCycle: m.billingCycle,
+          retryAt: plan.retryAt,
+        }).catch(() => undefined);
 
         // Notify admin
         await notifyOwner({
