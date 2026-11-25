@@ -25,6 +25,14 @@ export function membershipTabCount(input: {
   listTotal: number;
   failedPaymentCount: number;
 }): { heading: string | null; showPager: boolean } {
+  // Active and To be migrated split the active memberships by who bills
+  // them (shared/membershipBillingSource.ts, Andy 25/11/2026).
+  if (input.tab === "active") {
+    return { heading: `${input.listTotal} active ${plural(input.listTotal)}, billed in Groomigo`, showPager: true };
+  }
+  if (input.tab === "to_migrate") {
+    return { heading: `${input.listTotal} ${plural(input.listTotal)} to be migrated, still billed in MoeGo`, showPager: true };
+  }
   const label = STATUS_TAB_LABELS[input.tab];
   if (label) {
     return { heading: `${input.listTotal} ${label} ${plural(input.listTotal)}`, showPager: true };

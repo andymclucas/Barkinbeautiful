@@ -28,6 +28,7 @@ import { getActiveTimeZone } from "@/lib/timezone";
 import { weeklyToMonthly, describeRate, annualisedCost } from "@shared/membershipBillingCycle";
 
 import { describePause, nextBillingLine, resolvePauseResumesAt } from "@shared/membershipPause";
+import { membershipListFilter } from "@shared/membershipBillingSource";
 import { MembershipPetAssignment } from "@/components/MembershipPetAssignment";
 import { FLOATING_BUTTON_CLEARANCE } from "@/lib/floatingButtonClearance";
 type MembershipItem = {
@@ -98,8 +99,11 @@ const MEMBERSHIP_TIER_OPTIONS: Array<{ value: MembershipTier; label: string }> =
   { value: "bronze", label: "Bronze" },
 ];
 
+// Active is billed in Groomigo; To be migrated is active but still billed
+// in MoeGo (shared/membershipBillingSource.ts, Andy 25/11/2026).
 const STATUS_TABS = [
   { key: "active", label: "Active" },
+  { key: "to_migrate", label: "To be migrated" },
   { key: "pending_payment", label: "Pending Payment" },
   { key: "paused", label: "Paused" },
   { key: "cancelled", label: "Cancelled" },
@@ -1329,7 +1333,7 @@ function MembershipBillingControl({ m }: { m: MembershipItem }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 const MEMBERSHIPS_VIEW_KEY = "memberships:view";
-const MEMBERSHIP_TABS = ["active", "pending_payment", "paused", "cancelled", "failed_payments", "accounts_receivable", "receivable"];
+const MEMBERSHIP_TABS = ["active", "to_migrate", "pending_payment", "paused", "cancelled", "failed_payments", "accounts_receivable", "receivable"];
 const MEMBERSHIP_SORT_KEYS: SortKey[] = ["client", "membership", "tier", "price", "nextBilling", "status"];
 
 /**
@@ -1375,14 +1379,14 @@ export default function Memberships() {
   const isAdmin = currentUser?.role === "admin";
 
   const tierParam = tierFilter === "all" ? undefined : tierFilter as "diamond" | "platinum" | "gold" | "silver" | "bronze";
-  const statusParam = STATUS_TABS.some(tab => tab.key === activeTab)
-    ? activeTab as "active" | "paused" | "cancelled" | "pending_payment" | "expired"
-    : undefined;
+  const listFilter = membershipListFilter(activeTab);
+  const statusParam = listFilter.status as "active" | "paused" | "cancelled" | "pending_payment" | "expired" | undefined;
 
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.memberships.list.useQuery({
     status: statusParam,
+    billing: listFilter.billing,
     tier: tierParam,
     search: search || undefined,
     page,
