@@ -2960,13 +2960,24 @@ export default function ClientDetail() {
                             Andy, 25/11/2026: "Put the pause and cancel buttons
                             over to the right hand side under the weekly billing
                             section." */}
-                        <div className="flex w-full flex-col items-stretch gap-2 sm:w-64">
-                          <Badge className={`${tone} self-end`} title={billingStateHint(billing) ?? undefined}>
+                        <div className="flex w-full flex-col items-stretch gap-3 sm:w-80">
+                          <Badge className={`${tone} self-end px-2.5 py-1 text-xs`} title={billingStateHint(billing) ?? undefined}>
                             {billing === "live" ? "✓ " : needsAttention(billing) ? "⚠ " : ""}
                             {BILLING_STATE_LABEL[billing]}
                           </Badge>
                           {isAdmin && m.status !== "cancelled" && m.status !== "expired" && (
-                            <div className="flex flex-col gap-1.5">
+                            /* Full-size here (Andy, 25/11/2026: "Make the
+                               buttons bigger and better aligned"). The same
+                               controls are table-sized on the Memberships
+                               list, so they are sized up from this wrapper
+                               rather than changed for both screens. */
+                            <div className="flex flex-col gap-2
+                              [&_[data-slot=button]]:h-10 [&_[data-slot=button]]:rounded-lg [&_[data-slot=button]]:px-4 [&_[data-slot=button]]:text-sm [&_[data-slot=button]]:font-medium [&_[data-slot=button]]:shadow-sm
+                              [&_[data-slot=button]_svg]:size-4
+                              [&_.gap-1]:gap-2
+                              [&_[data-slot=badge]]:self-start [&_[data-slot=badge]]:px-2.5 [&_[data-slot=badge]]:py-1 [&_[data-slot=badge]]:text-xs
+                              [&_button:not([data-slot])]:text-sm [&_button:not([data-slot])]:text-right">
+                              {/* Pause | Cancel side by side, equal width. */}
                               <MembershipActions m={{
                                   id: m.id,
                                   clientId,
