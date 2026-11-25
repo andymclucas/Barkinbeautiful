@@ -28,11 +28,14 @@ describe("working out whether a client has a card", () => {
     expect(canChargeOffSession({})).toBe(false);
   });
 
-  it("a scheduled membership counts as live only once the card is known about", () => {
+  it("a scheduled membership is ready to start only once the card is known about", () => {
     // The regression in one line: same row, and the only difference is
-    // whether we looked the card up in the right place.
+    // whether we looked the card up in the right place. Since 25/11/2026 a
+    // date and a card is "ready to start", not live: only a subscription
+    // charges (shared/membershipBillingState.ts).
     const scheduled = { status: "active", nextBillingDate: "2026-10-15" };
     expect(membershipBillingState({ ...scheduled, hasCardOnFile: false })).toBe("needs_migration");
-    expect(membershipBillingState({ ...scheduled, hasCardOnFile: true })).toBe("live");
+    expect(membershipBillingState({ ...scheduled, hasCardOnFile: true })).toBe("added_not_live");
+    expect(membershipBillingState({ ...scheduled, hasCardOnFile: true, stripeSubscriptionId: "sub_1" })).toBe("live");
   });
 });
