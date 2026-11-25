@@ -24,6 +24,10 @@ export const STAFF_OPERATION_ROUTES: readonly string[] = [
   // The counter till (11/11/2026): whoever is at the counter can ring up
   // a walk-in. The page is the till only, no product editing.
   "/counter",
+  // The New Client Form (25/11/2026): filling it in with someone at the
+  // counter is floor work. It only adds a client and dogs, like
+  // clients.create, which staff already have.
+  "/new-client-form",
 ];
 
 /**

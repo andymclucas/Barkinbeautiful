@@ -20,7 +20,15 @@
  * Communication or Insights, and those two must not render at all.
  */
 
-export type SidebarGroupKey = "financials" | "communication" | "insights";
+/*
+ * Andy, 25/11/2026: "Remove the Financials section and just have
+ * Memberships under Clients and Pets ... Create a new section that is
+ * called 'Admin' and these are the things that live under it: Pricing and
+ * Services, Analytics, Reporting." So Clients & Pets became a group
+ * (Clients, Memberships, New Client Form), Financials and Insights went,
+ * and Admin holds Pricing, Analytics and Reporting.
+ */
+export type SidebarGroupKey = "clients" | "communication" | "admin";
 
 export type SidebarEntry =
   | { kind: "item"; path: string }
@@ -35,18 +43,17 @@ export type SidebarEntry =
 export const SIDEBAR_LAYOUT: readonly SidebarEntry[] = [
   { kind: "item", path: "/calendar" },
   { kind: "item", path: "/workflow" },
-  { kind: "item", path: "/clients" },
+  { kind: "group", key: "clients", label: "Clients & Pets", paths: ["/clients", "/memberships", "/new-client-form"] },
   // Daily, and used by the whole floor, so a top-level row rather than
-  // inside Financials, which restricted staff never see.
+  // inside a group.
   { kind: "item", path: "/counter" },
-  { kind: "group", key: "financials", label: "Financials", paths: ["/memberships", "/pricing"] },
   {
     kind: "group",
     key: "communication",
     label: "Communication",
     paths: ["/messages", "/portal-messages", "/email-campaigns"],
   },
-  { kind: "group", key: "insights", label: "Insights", paths: ["/analytics", "/reporting"] },
+  { kind: "group", key: "admin", label: "Admin", paths: ["/pricing", "/analytics", "/reporting"] },
   { kind: "item", path: "/staff" },
   // Owners only (canAdministerStaff); everyone else never has it permitted.
   { kind: "item", path: "/issues" },

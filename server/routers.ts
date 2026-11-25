@@ -273,6 +273,7 @@ import { trialRouter } from "./routers/trial";
 import { revenueTargetsRouter } from "./routers/revenueTargets";
 import { stripeCardsRouter } from "./routers/stripeCards";
 import { membershipSignupRouter } from "./routers/membershipSignup";
+import { newClientFormRouter } from "./routers/newClientForm";
 import { clientPhotosRouter } from "./routers/clientPhotos";
 import { waitlistRouter } from "./routers/waitlist";
 import {
@@ -12740,7 +12741,9 @@ const settingsRouter = router({
         .from(tenants)
         .where(eq(tenants.id, input.tenantId))
         .limit(1);
-      return t ?? null;
+      // The New Client Form's public address, on the CLIENT host, for staff
+      // to share (25/11/2026). Already public: it is a page anyone may open.
+      return t ? { ...t, newClientFormUrl: `${getPortalBaseUrl()}/new-client` } : null;
     }),
 
   getTenantInfo: operationalProcedure
@@ -18595,6 +18598,8 @@ export const appRouter = router({
   payments: paymentsRouter,
   stripeCards: stripeCardsRouter,
   membershipSignup: membershipSignupRouter,
+  // The public New Client Form (Andy, 25/11/2026).
+  newClientForm: newClientFormRouter,
   clientPhotos: clientPhotosRouter,
   waitlist: waitlistRouter,
   bookingPricing: bookingPricingRouter,

@@ -142,6 +142,9 @@ const PUBLIC = [
   "membershipSignupRouter.packagesForWeight",
   "membershipSignupRouter.quote",
   "membershipSignupRouter.submit",
+  // The New Client Form (25/11/2026). Creates a NEW client and dogs only;
+  // a matching phone or email changes nothing (server/routers/newClientForm.ts).
+  "newClientFormRouter.submit",
   "onlineBookingRouter.createGuest",
   "onlineBookingRouter.listAvailableSlots",
   "onlineBookingRouter.listGroomerProfiles",
@@ -332,6 +335,9 @@ const OPERATIONAL = [
   "membershipsRouter.create",
   "membershipsRouter.getPackageOptions",
   "membershipsRouter.searchClients",
+  // Texting or emailing the New Client Form link (25/11/2026): a person
+  // presses Send, so it is a staff send, and it only shares a public link.
+  "newClientFormRouter.sendLink",
   "onlineBookingRouter.listAllMoegoIds",
   "paymentsRouter.cardEntryConfig",
   "paymentsRouter.cardOnFile",
@@ -650,7 +656,9 @@ describe("tRPC procedure surface", () => {
     // 465 since 24/11/2026: clientPortal.bookingOptions, bookingSlots,
     // createBooking and addExtras, in PUBLIC.
     // 466 since 24/11/2026: clientPortal.bookingNextAvailable, in PUBLIC.
-    expect(surface).toHaveLength(466);
+    // 467 since 25/11/2026: newClientForm.submit, the New Client Form, in PUBLIC.
+    // 468 since 25/11/2026: newClientForm.sendLink, in OPERATIONAL.
+    expect(surface).toHaveLength(468);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -666,7 +674,8 @@ describe("tRPC procedure surface", () => {
     // 64 since 12/11/2026: redeemSignInCode.
     // 72 since 24/11/2026: the four portal booking procedures.
     // 73 since 24/11/2026: bookingNextAvailable.
-    expect(PUBLIC).toHaveLength(73);
+    // 74 since 25/11/2026: newClientForm.submit.
+    expect(PUBLIC).toHaveLength(74);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
@@ -731,7 +740,8 @@ describe("tRPC procedure surface", () => {
     // login can ask for help; the server keys each one to ctx.user.id.
     // 165 since 21/11/2026: calendarRouter.cancelAllUpcoming.
     // 166 since 23/11/2026: workflowRouter.getBoardVersion.
-    expect(OPERATIONAL).toHaveLength(166);
+    // 167 since 25/11/2026: newClientFormRouter.sendLink.
+    expect(OPERATIONAL).toHaveLength(167);
   });
 
   it("keeps the client list and pet creation reachable by staff", () => {

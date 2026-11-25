@@ -63,9 +63,9 @@ import {
   MessageCircle,
   Mail,
   FileBarChart2,
-  Banknote,
+  ClipboardList,
   MessagesSquare,
-  LineChart,
+  Settings2,
   LogOut,
   PanelLeft,
   ChevronDown,
@@ -117,10 +117,12 @@ type NavItem = {
 const menuItems: NavItem[] = [
   { icon: CalendarDays,   label: "Appointments",      path: "/calendar" },
   { icon: Workflow,       label: "Workflow Board",    path: "/workflow" },
-  { icon: Users,          label: "Clients & Pets",    path: "/clients" },
+  // Inside the Clients & Pets group since 25/11/2026 (shared/sidebarNavigation.ts).
+  { icon: Users,          label: "Clients",           path: "/clients" },
   // The counter till (11/11/2026). Open to every staff login.
   { icon: ShoppingBag,    label: "Counter Sale",      path: "/counter" },
   { icon: CreditCard,     label: "Memberships",       path: "/memberships" },
+  { icon: ClipboardList,  label: "New Client Form",   path: "/new-client-form" },
   { icon: DollarSign,     label: "Pricing & Services", path: "/pricing" },
   { icon: MessageSquare,  label: "Messages",          path: "/messages" },
   { icon: MessageCircle,  label: "Portal Messages",   path: "/portal-messages" },
@@ -138,9 +140,9 @@ const menuItems: NavItem[] = [
  * other row, which reads as a rendering fault rather than a heading.
  */
 const GROUP_ICON: Record<SidebarGroupKey, ComponentType<{ className?: string }>> = {
-  financials: Banknote,
+  clients: Users,
   communication: MessagesSquare,
-  insights: LineChart,
+  admin: Settings2,
 };
 
 const sectionPath = (key: string): string => STAFF_SECTIONS.find((s) => s.key === key)?.path ?? "";

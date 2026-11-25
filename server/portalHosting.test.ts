@@ -69,6 +69,8 @@ describe("which door a page belongs to", () => {
       "/": "staff", "/christmas": "staff", "/calendar": "staff", "/workflow": "staff",
       "/workflow/display": "staff", "/my-day": "staff", "/clients": "staff",
       "/clients/overdue": "staff", "/clients/:id": "staff", "/memberships": "staff",
+      // The staff side of the New Client Form (25/11/2026).
+      "/new-client-form": "staff",
       "/pricing": "staff", "/retail": "staff", "/counter": "staff", "/issues": "staff", "/support": "staff", "/analytics": "staff",
       "/staff/review/:staffId": "staff", "/staff": "staff", "/messages": "staff",
       "/portal-messages": "staff", "/email-campaigns": "staff", "/reporting": "staff",
@@ -91,6 +93,9 @@ describe("which door a page belongs to", () => {
       "/slot/:token": "client", "/card/:token": "client",
       "/quote/:token": "client",
       "/sign/:token": "client",
+      // The public New Client Form (25/11/2026), shared with people who are
+      // not clients yet, so it lives on the client host.
+      "/new-client": "client",
     };
 
     const unlisted = declared.filter((p) => !(p in expected));

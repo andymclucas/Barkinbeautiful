@@ -51,6 +51,8 @@ const NotFound = lazyPage(() => import("./pages/NotFound"));
 const PetTracker = lazyPage(() => import("./pages/PetTracker"));
 const OnlineBooking = lazyPage(() => import("./pages/OnlineBooking"));
 const MembershipSignup = lazyPage(() => import("./pages/MembershipSignup"));
+const NewClientForm = lazyPage(() => import("./pages/NewClientForm"));
+const NewClientFormStaff = lazyPage(() => import("./pages/NewClientFormStaff"));
 const ClientPhotoUpload = lazyPage(() => import("./pages/ClientPhotoUpload"));
 const WaitlistOffer = lazyPage(() => import("./pages/WaitlistOffer"));
 const GroomQuote = lazyPage(() => import("./pages/GroomQuote"));
@@ -105,6 +107,7 @@ function Router() {
       <Route path="/clients/overdue" component={OverdueForGroom} />
       <Route path="/clients/:id" component={ClientDetail} />
       <Route path="/memberships" component={Memberships} />
+      <Route path="/new-client-form" component={NewClientFormStaff} />
       <Route path="/pricing" component={Pricing} />
       <Route path="/retail" component={Retail} />
       <Route path="/counter" component={CounterSalePage} />
@@ -127,6 +130,8 @@ function Router() {
       <Route path="/staff-invite/:token" component={StaffInvitationAccept} />
       <Route path="/book" component={OnlineBookingPublic} />
       <Route path="/join" component={MembershipSignup} />
+      {/* The public New Client Form (25/11/2026), on the client host. */}
+      <Route path="/new-client" component={NewClientForm} />
       <Route path="/photo/:token" component={ClientPhotoUpload} />
       <Route path="/slot/:token" component={WaitlistOffer} />
       <Route path="/waitlist" component={WaitlistJoin} />
