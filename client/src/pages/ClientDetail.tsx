@@ -403,14 +403,20 @@ export default function ClientDetail() {
     setActiveClientTab("memberships");
     setFocusedMembershipId(membershipId);
   }, []);
-  // Scroll once the tab has rendered the card. A short wait rather than a
-  // ref, because the tab content mounts only when it becomes active.
+  // Scroll once the card exists. It appears only when the tab is active
+  // AND the client's record has loaded, which on a ?membership= link is a
+  // second or so after this runs, so look for it a few times rather than
+  // once (one 80 ms try missed it on the live site, 25/11/2026).
   useEffect(() => {
     if (activeClientTab !== "memberships" || focusedMembershipId == null) return;
-    const timer = window.setTimeout(() => {
-      document.getElementById(`membership-${focusedMembershipId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }, 80);
-    return () => window.clearTimeout(timer);
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const card = document.getElementById(`membership-${focusedMembershipId}`);
+      tries += 1;
+      if (card) card.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (card || tries >= 40) window.clearInterval(timer);
+    }, 100);
+    return () => window.clearInterval(timer);
   }, [activeClientTab, focusedMembershipId]);
   /**
    * Scrolled to and ringed. A client with eight dogs otherwise opens
