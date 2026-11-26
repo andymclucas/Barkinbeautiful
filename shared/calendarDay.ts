@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Which calendar day it is somewhere, and simple arithmetic on that day.
  *
@@ -26,7 +27,7 @@ export function dayInZone(value: Date | string | number, timeZone: string): stri
   if (Number.isNaN(date.getTime())) return null;
   try {
     // en-CA renders ISO order natively, so there is nothing to reassemble.
-    return new Intl.DateTimeFormat("en-CA", {
+    return dateTimeFormat("en-CA", {
       timeZone, year: "numeric", month: "2-digit", day: "2-digit",
     }).format(date);
   } catch {
@@ -70,7 +71,7 @@ export function timeOfDayInZone(value: Date | string | number, timeZone: string)
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   try {
-    const parts = new Intl.DateTimeFormat("en-GB", {
+    const parts = dateTimeFormat("en-GB", {
       timeZone, hour: "2-digit", minute: "2-digit", hour12: false, hourCycle: "h23",
     }).formatToParts(date);
     const hour = parts.find((p) => p.type === "hour")?.value;

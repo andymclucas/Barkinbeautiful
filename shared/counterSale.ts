@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Selling retail to somebody who has not booked a groom.
  *
@@ -139,7 +140,7 @@ export function counterSaleRefusal(
  * member means when they say "that sale this morning".
  */
 export function counterSaleInvoiceNumber(at: Date, unique: string): string {
-  const day = new Intl.DateTimeFormat("en-AU", {
+  const day = dateTimeFormat("en-AU", {
     timeZone: "Australia/Brisbane",
     day: "2-digit",
     month: "2-digit",

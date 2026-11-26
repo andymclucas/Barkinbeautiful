@@ -9,6 +9,7 @@
  *
  * The month boundary is Brisbane's, not UTC's. See smsBillingPeriod.
  */
+import { dateTimeFormat } from "@shared/intlCache";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { smsLogs, tenants } from "../drizzle/schema";
@@ -19,7 +20,7 @@ import { tenantHasFeature } from "../shared/planEntitlements";
 
 /** First instant of the current Brisbane month, as a UTC Date. */
 export function brisbaneMonthBounds(when: Date = new Date()): { start: Date; end: Date } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = dateTimeFormat("en-CA", {
     timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit",
   }).formatToParts(when);
   const year = Number(parts.find(p => p.type === "year")!.value);

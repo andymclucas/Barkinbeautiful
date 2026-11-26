@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * How often a membership's payment has been declined, ever.
  *
@@ -61,9 +62,9 @@ export function describeDeclineHistory(
 ): string | null {
   if (!history || history.total <= 0) return null;
   const first = history.firstAt;
-  const yearOf = (d: Date) => new Intl.DateTimeFormat("en-AU", { year: "numeric", timeZone }).format(d);
+  const yearOf = (d: Date) => dateTimeFormat("en-AU", { year: "numeric", timeZone }).format(d);
   const day = first
-    ? new Intl.DateTimeFormat("en-AU", {
+    ? dateTimeFormat("en-AU", {
         day: "numeric",
         month: "short",
         ...(yearOf(first) !== yearOf(now) ? { year: "numeric" as const } : {}),

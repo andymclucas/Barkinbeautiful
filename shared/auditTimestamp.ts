@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Every timestamp shown anywhere in Groomigo — staff UI, client portal,
  * emails, SMS, audit logs — must render in an explicit timezone, never the
@@ -21,7 +22,7 @@ export const DEFAULT_TIMEZONE = "Australia/Brisbane";
 export function isValidTimeZone(timeZone: string | null | undefined): boolean {
   if (!timeZone) return false;
   try {
-    new Intl.DateTimeFormat("en-AU", { timeZone });
+    dateTimeFormat("en-AU", { timeZone });
     return true;
   } catch {
     return false;
@@ -32,7 +33,7 @@ export function isValidTimeZone(timeZone: string | null | undefined): boolean {
 export function safeTimeZone(timeZone: string | null | undefined): string {
   if (!timeZone) return DEFAULT_TIMEZONE;
   try {
-    new Intl.DateTimeFormat("en-AU", { timeZone });
+    dateTimeFormat("en-AU", { timeZone });
     return timeZone;
   } catch {
     return DEFAULT_TIMEZONE;
@@ -44,7 +45,7 @@ export function formatAustralianAuditTimestamp(timestamp: number | string | Date
   if (!timestamp) return "Timestamp unavailable";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "Timestamp unavailable";
-  return new Intl.DateTimeFormat("en-AU", {
+  return dateTimeFormat("en-AU", {
     timeZone: safeTimeZone(timeZone),
     day: "2-digit",
     month: "short",
@@ -62,7 +63,7 @@ export function formatAestTime(timestamp: number | string | Date | null | undefi
   if (!timestamp) return "--";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "--";
-  return new Intl.DateTimeFormat("en-AU", {
+  return dateTimeFormat("en-AU", {
     timeZone: safeTimeZone(timeZone),
     hour: "numeric",
     minute: "2-digit",
@@ -76,7 +77,7 @@ export function formatAestDate(timestamp: number | string | Date | null | undefi
   if (!timestamp) return "--";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "--";
-  return new Intl.DateTimeFormat("en-AU", {
+  return dateTimeFormat("en-AU", {
     timeZone: safeTimeZone(timeZone),
     day: "numeric",
     month: "short",
@@ -90,7 +91,7 @@ export function formatAestDateTime(timestamp: number | string | Date | null | un
   if (!timestamp) return "--";
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "--";
-  return new Intl.DateTimeFormat("en-AU", {
+  return dateTimeFormat("en-AU", {
     timeZone: safeTimeZone(timeZone),
     day: "numeric",
     month: "short",

@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "@shared/intlCache";
 import type { Request, Response } from "express";
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, notInArray } from "drizzle-orm";
 import { getDb } from "./db";
@@ -207,7 +208,7 @@ export async function rebookReminderHandler(req: Request, res: Response) {
     }[]) {
       const timeZone = salon.timezone || "Australia/Brisbane";
       const localHour = Number(
-        new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", hour12: false }).format(now),
+        dateTimeFormat("en-GB", { timeZone, hour: "2-digit", hour12: false }).format(now),
       );
       // A link to a page that refuses bookings is the dead-link failure
       // client-messaging-safety exists to prevent, so it is only included

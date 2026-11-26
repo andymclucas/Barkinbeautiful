@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "@shared/intlCache";
 import { petPhotoDeletionVerdict } from "@shared/petPhotoDeletion";
 import { declineHistoryByMembership, NO_DECLINES, type DeclineHistory } from "@shared/declineHistory";
 import { lapsedPetsByClient } from "@shared/lapsedPets";
@@ -505,7 +506,7 @@ async function buildUpcomingDatesForClient(db: any, tenantId: number, clientId: 
     ))
     .orderBy(asc(appointments.scheduledStart));
 
-  const formatter = new Intl.DateTimeFormat("en-AU", {
+  const formatter = dateTimeFormat("en-AU", {
     timeZone: SALON_TIME_ZONE, weekday: "short", day: "numeric", month: "short",
   });
   const seen = new Set<string>();
@@ -1239,7 +1240,7 @@ const calendarRouter = router({
 
       /** An instant to minutes past midnight in the salon's day. */
       const minutesInDay = (at: Date): number => {
-        const parts = new Intl.DateTimeFormat("en-GB", {
+        const parts = dateTimeFormat("en-GB", {
           timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false,
         }).formatToParts(at);
         const hour = Number(parts.find((pt) => pt.type === "hour")?.value ?? "0");
@@ -5393,7 +5394,7 @@ function timingReviewRules(rows: Array<typeof workflowTimingReviewThresholds.$in
 
 function brisbaneDateKey(value: Date | string | number) {
   const date = new Date(value);
-  const parts = new Intl.DateTimeFormat("en-AU", { timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const parts = dateTimeFormat("en-AU", { timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
   const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
@@ -8300,7 +8301,7 @@ const staffRouter = router({
       if (!db) return null;
       const [member] = await db.select().from(staff).where(and(eq(staff.id, input.staffId), eq(staff.tenantId, tenantOf(ctx, input)))).limit(1);
       if (!member) return null;
-      const brisbaneDateKey = (date: Date) => new Intl.DateTimeFormat("en-CA", {
+      const brisbaneDateKey = (date: Date) => dateTimeFormat("en-CA", {
         timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
       }).format(date);
       const addCalendarDays = (dateKey: string, days: number) => {
@@ -9851,7 +9852,7 @@ const membershipsRouter = router({
       }
 
       const day = input.nextBillingDate
-        ?? new Intl.DateTimeFormat("en-CA", {
+        ?? dateTimeFormat("en-CA", {
           timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(new Date());
       const [year, month, date] = day.split("-").map(Number);
@@ -13091,7 +13092,7 @@ async function blockoutReasonFor(input: { tenantId: number; staffId: number; sch
  * finishing before it started.
  */
 function brisbaneMinutesOfDay(instant: Date, asEnd = false): number {
-  const parts = new Intl.DateTimeFormat("en-GB", {
+  const parts = dateTimeFormat("en-GB", {
     timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(instant).split(":");
   const minutes = Number(parts[0]) * 60 + Number(parts[1]);
