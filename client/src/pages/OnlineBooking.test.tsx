@@ -5,6 +5,9 @@ import userEvent from "@testing-library/user-event";
 const nextAvailable = vi.fn();
 const previewNextAvailable = vi.fn();
 const slotQuery = vi.fn();
+const anySlotQuery = vi.fn();
+const createGuest = vi.fn();
+const g = globalThis as any;
 const toastError = vi.fn();
 
 vi.mock("@/lib/trpc", () => {
@@ -13,6 +16,7 @@ vi.mock("@/lib/trpc", () => {
     { id: 6, name: "Brooke", role: "groomer", colourHex: "#f59e0b", photoUrl: null, bio: null, services: null, maxDogsPerSlot: 1 },
   ];
   const idle = { isPending: false, mutate: vi.fn() };
+  const create = { isPending: false, mutate: (i: unknown) => createGuest(i) };
   return {
     trpc: {
       useUtils: () => ({
@@ -24,11 +28,13 @@ vi.mock("@/lib/trpc", () => {
       onlineBooking: {
         listGroomerProfiles: { useQuery: () => ({ data: groomers, isLoading: false }) },
         listPreviewGroomerProfiles: { useQuery: () => ({ data: groomers, isLoading: false }) },
-        createGuest: { useMutation: () => idle },
+        createGuest: { useMutation: () => create },
         createPreviewGuest: { useMutation: () => idle },
         priceEstimate: { useQuery: () => ({ data: undefined, isLoading: false }) },
         listAvailableSlots: { useQuery: (input: unknown, opts: { enabled: boolean }) => { slotQuery(input, opts); return { data: [], isLoading: false }; } },
         listPreviewAvailableSlots: { useQuery: () => ({ data: [], isLoading: false }) },
+        listAvailableSlotsAnyGroomer: { useQuery: (input: unknown, opts: { enabled: boolean }) => { anySlotQuery(input, opts); return { data: opts.enabled ? g.__anySlots ?? [] : undefined, isLoading: false }; } },
+        listPreviewAvailableSlotsAnyGroomer: { useQuery: () => ({ data: [], isLoading: false }) },
       },
     },
   };
@@ -52,6 +58,9 @@ beforeEach(() => {
   nextAvailable.mockReset();
   previewNextAvailable.mockReset();
   slotQuery.mockReset();
+  anySlotQuery.mockReset();
+  createGuest.mockReset();
+  g.__anySlots = undefined;
   toastError.mockReset();
 });
 
@@ -83,7 +92,7 @@ describe("Online booking: Find next available", () => {
     expect(button).toBeEnabled();
   });
 
-  it("with no groomer chosen, searches all of them and fills in groomer, day and time", async () => {
+  it("with no groomer chosen, searches all of them and lands on No preferred groomer with the time filled in", async () => {
     nextAvailable.mockResolvedValue(FOUND);
     const u = userEvent.setup();
     render(<OnlineBooking />);
@@ -91,12 +100,15 @@ describe("Online booking: Find next available", () => {
     await u.click(screen.getByRole("button", { name: "Find next available" }));
 
     expect(nextAvailable).toHaveBeenCalledWith({ staffId: null, serviceType: "classic_groom", petWeightKg: 8 });
-    expect(await screen.findByText(/Selected time:/)).toBeInTheDocument();
+    // The time, and the groomer who is free then (staff 6 is Brooke).
+    expect(await screen.findByText(/Selected time:.* with Brooke/)).toBeInTheDocument();
     expect(screen.getByLabelText("Date")).toHaveValue("2026-12-09");
-    // The groomer it found is now the one the slot list is loaded for.
-    const [lastInput, lastOpts] = slotQuery.mock.calls.at(-1)!;
-    expect(lastInput).toMatchObject({ staffId: 6, date: "2026-12-09", petWeightKg: 8 });
+    expect(screen.getByRole("button", { name: /No preferred groomer/ })).toHaveAttribute("aria-pressed", "true");
+    // The day's other times are loaded across every groomer, not for one.
+    const [lastInput, lastOpts] = anySlotQuery.mock.calls.at(-1)!;
+    expect(lastInput).toMatchObject({ date: "2026-12-09", petWeightKg: 8, serviceType: "classic_groom" });
     expect(lastOpts.enabled).toBe(true);
+    expect(slotQuery.mock.calls.at(-1)![1].enabled).toBe(false);
   });
 
   it("with a groomer chosen, searches only that groomer", async () => {
@@ -128,5 +140,68 @@ describe("Online booking: Find next available", () => {
     await u.click(screen.getByRole("button", { name: "Find next available" }));
     expect(previewNextAvailable).toHaveBeenCalled();
     expect(nextAvailable).not.toHaveBeenCalled();
+  });
+});
+
+describe("Online booking: No preferred groomer", () => {
+  const fill = async (u: ReturnType<typeof userEvent.setup>) => {
+    await u.type(screen.getByPlaceholderText("e.g. 14.5"), "8");
+    await u.type(screen.getByLabelText("Date"), "2026-12-09");
+  };
+
+  it("is offered first, ahead of the named groomers", () => {
+    render(<OnlineBooking />);
+    const cards = screen.getByLabelText("Available groomers").querySelectorAll("button");
+    expect(cards[0]).toHaveTextContent("No preferred groomer");
+    expect(cards[0]).toHaveAttribute("aria-pressed", "false");
+    expect(cards).toHaveLength(3);
+  });
+
+  it("lists the day's times across every groomer", async () => {
+    g.__anySlots = [{ scheduledStart: "2026-12-08T22:00:00.000Z", scheduledEnd: "2026-12-09T00:00:00.000Z", durationMinutes: 120, staffId: 5 }];
+    const u = userEvent.setup();
+    render(<OnlineBooking />);
+    await u.click(screen.getByRole("button", { name: /No preferred groomer/ }));
+    await fill(u);
+    const [input, opts] = anySlotQuery.mock.calls.at(-1)!;
+    expect(input).toEqual({ serviceType: "classic_groom", petWeightKg: 8, date: "2026-12-09" });
+    expect(opts.enabled).toBe(true);
+    // The single-groomer list is not asked for a groomer that was never chosen.
+    expect(slotQuery.mock.calls.every(([, o]) => o.enabled === false)).toBe(true);
+  });
+
+  it("books the chosen time with the groomer who is free then", async () => {
+    g.__anySlots = [{ scheduledStart: "2026-12-08T22:00:00.000Z", scheduledEnd: "2026-12-09T00:00:00.000Z", durationMinutes: 120, staffId: 5 }];
+    const u = userEvent.setup();
+    const { container } = render(<OnlineBooking />);
+    await u.click(screen.getByRole("button", { name: /No preferred groomer/ }));
+    await fill(u);
+    const request = screen.getByRole("button", { name: "Request this booking" });
+    // A time has to be picked before there is a groomer to book with.
+    expect(request).toBeDisabled();
+
+    const times = Array.from(container.querySelectorAll("button")).filter((b) => /^\d{1,2}:\d{2}/.test(b.textContent ?? ""));
+    expect(times).toHaveLength(1);
+    await u.click(times[0]);
+    expect(screen.getByText(/Selected time:.* with Ash/)).toBeInTheDocument();
+
+    const text = Array.from(container.querySelectorAll("input")).filter((i) => !i.getAttribute("aria-label") && i.type !== "number");
+    await u.type(text[0], "Sarah");
+    await u.type(text[1], "Jones");
+    await u.type(text[2], "0400000000");
+    await u.type(text[4], "Bella");
+    expect(request).toBeEnabled();
+    await u.click(request);
+    expect(createGuest).toHaveBeenCalledWith(expect.objectContaining({ staffId: 5, firstName: "Sarah", petName: "Bella", weightKg: 8 }));
+  });
+
+  it("with it chosen, Find next available searches every groomer", async () => {
+    nextAvailable.mockResolvedValue(FOUND);
+    const u = userEvent.setup();
+    render(<OnlineBooking />);
+    await u.click(screen.getByRole("button", { name: /No preferred groomer/ }));
+    await u.type(screen.getByPlaceholderText("e.g. 14.5"), "8");
+    await u.click(screen.getByRole("button", { name: "Find next available" }));
+    expect(nextAvailable).toHaveBeenCalledWith({ staffId: null, serviceType: "classic_groom", petWeightKg: 8 });
   });
 });
