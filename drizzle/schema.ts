@@ -225,6 +225,8 @@ export const staff = mysqlTable("staff", {
   onlineServices: text("online_services"),
   onlineMaxDogsPerSlot: int("online_max_dogs_per_slot").default(1).notNull(),
   onlineMaxDogsPerDay: int("online_max_dogs_per_day").default(0).notNull(),
+  /** JSON list of "HH:MM" Brisbane starts this groomer takes online; NULL = every start the salon offers (shared/groomerOnlineHours.ts). Migration 0177. */
+  onlineStartTimes: text("online_start_times"),
   portalStatus: mysqlEnum("portal_status", ["not_invited", "invited", "awaiting_approval", "approved", "revoked"]).default("not_invited").notNull(),
   /**
    * Admin rights, and the sections they cover.

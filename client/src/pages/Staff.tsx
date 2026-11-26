@@ -333,6 +333,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
       onlineServices: (() => { try { return ((data as any).onlineServices ? JSON.parse((data as any).onlineServices) : []).join(", "); } catch { return ""; } })(),
       onlineMaxDogsPerSlot: String((data as any).onlineMaxDogsPerSlot ?? 1),
       onlineMaxDogsPerDay: String((data as any).onlineMaxDogsPerDay ?? 0),
+      onlineStartTimes: (() => { try { return ((data as any).onlineStartTimes ? JSON.parse((data as any).onlineStartTimes) : []).join(", "); } catch { return ""; } })(),
       // Blank, not 0 — a bather genuinely has no clip figure and a 0
       // would read as "can clip none" rather than "does not clip".
       dailyClipCapacity: (data as any).dailyClipCapacity == null ? "" : String((data as any).dailyClipCapacity),
@@ -365,6 +366,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
       dailyClipCapacity: (form.dailyClipCapacity ?? "").trim() === "" ? null : Math.max(0, Number(form.dailyClipCapacity) || 0),
       dailyBathCapacity: (form.dailyBathCapacity ?? "").trim() === "" ? null : Math.max(0, Number(form.dailyBathCapacity) || 0),
       onlineMaxDogsPerDay: Math.max(0, Number(form.onlineMaxDogsPerDay) || 0),
+      onlineStartTimes: (form.onlineStartTimes ?? "").split(",").map(s => s.trim()).filter(Boolean),
     });
   };
 
@@ -575,6 +577,7 @@ function StaffProfilePanel({ staffId, onClose, initialTimingRange }: { staffId: 
               </p>
             </div>
             <div><Label>Online dogs per day</Label><Input className="mt-1" type="number" min="0" max="50" value={form.onlineMaxDogsPerDay} onChange={e => setForm(p => ({ ...p, onlineMaxDogsPerDay: e.target.value }))} /><p className="mt-1 text-xs text-muted-foreground">0 = no daily cap</p></div>
+            <div className="sm:col-span-2"><Label htmlFor="online-start-times">Online start times</Label><Input id="online-start-times" className="mt-1" value={form.onlineStartTimes ?? ""} onChange={e => setForm(p => ({ ...p, onlineStartTimes: e.target.value }))} placeholder="Every time the salon offers" /><p className="mt-1 text-xs text-muted-foreground">Only these start times are offered online for this person, for example 11:00, 12:00, 12:30, 13:00. Leave blank for every time the salon offers.</p></div>
             <div className="sm:col-span-2"><Label>Notes</Label><textarea className="mt-1 w-full rounded-md border px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-ring" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Internal notes..." /></div>
           </div>
           <div className="flex gap-2">
