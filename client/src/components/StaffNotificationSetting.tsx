@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { useStaffNotifications } from "@/hooks/useStaffNotifications";
 import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { flashTestBadge, badgingSupported } from "@/hooks/useAppBadge";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { canAdministerStaff } from "@shared/staffAdministrators";
 
 /**
  * The switch, and an honest account of what it can do on this device.
@@ -30,6 +32,8 @@ import { flashTestBadge, badgingSupported } from "@/hooks/useAppBadge";
  * and the commonest case — an iPhone in a Safari tab — is exactly that.
  */
 export function StaffNotificationSetting() {
+  const { user } = useAuth();
+  const getsBookingPushes = canAdministerStaff(user);
   const { supported, permission, enabled, setEnabled, canAsk, sendTest } = useStaffNotifications();
   const [testing, setTesting] = useState(false);
 
@@ -193,7 +197,12 @@ export function StaffNotificationSetting() {
                 Also notify me when Groomigo is closed
               </Label>
               <p className="text-xs text-muted-foreground">
-                Incoming calls and missed calls, on this device, with the app shut.
+                {/* Online bookings push only to the staff administrators
+                    (server/onlineBookingNotify.ts), so only they are told
+                    to expect them. Andy, 27/11/2026. */}
+                {getsBookingPushes
+                  ? "Calls, missed calls, messages and new online bookings, on this device, with the app shut."
+                  : "Calls, missed calls and messages, on this device, with the app shut."}
               </p>
             </div>
             <Switch
