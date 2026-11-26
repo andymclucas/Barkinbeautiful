@@ -202,3 +202,25 @@ describe("what the salon is told the dog weighs", () => {
     expect(describeBookedWeight(8, "giant")).toContain("8kg, as entered");
   });
 });
+
+describe("the new customer price label (Lauren, 26/11/2026)", () => {
+  it("says the figure is the new-client rate and gives the lowest member price", () => {
+    const out = estimateOnlineBookingPrice({ serviceType: "classic_groom", weightKg: 8, catalogue: TIERED });
+    expect(out).toMatchObject({ known: true, price: "145.00", newClientRate: true, regularFrom: "110.00" });
+  });
+
+  it("gives no member price when none is cheaper", () => {
+    const flat = [
+      row({ id: 1, name: "Full Groom (Classic) - VIP Client - Small", weightBand: "0-10kg", priceAud: "145.00" }),
+      row({ id: 3, name: "Full Groom (Classic) - New Client - Small", weightBand: "0-10kg", priceAud: "145.00" }),
+    ];
+    expect(estimateOnlineBookingPrice({ serviceType: "classic_groom", weightKg: 8, catalogue: flat }))
+      .toMatchObject({ newClientRate: true, regularFrom: null });
+  });
+
+  it("makes no new-client claim for a service with one price for everyone", () => {
+    const bath = [row({ id: 20, name: "Bath & Blow-dry - Small", legacyServiceType: "bath_only", weightBand: "0-10kg", priceAud: "60.00" })];
+    expect(estimateOnlineBookingPrice({ serviceType: "bath_only", weightKg: 8, catalogue: bath }))
+      .toMatchObject({ known: true, price: "60.00", newClientRate: false, regularFrom: null });
+  });
+});

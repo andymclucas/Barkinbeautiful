@@ -24,6 +24,8 @@ export function OnlineBookingEstimate({
   range,
   reason,
   disclaimer,
+  newClientRate = false,
+  regularFrom = null,
   loading = false,
   className = "",
 }: {
@@ -37,6 +39,14 @@ export function OnlineBookingEstimate({
   range?: { low: string; high: string } | null;
   reason?: string | null;
   disclaimer: string | null | undefined;
+  /**
+   * The figure is the New Client price. Lauren, 26/11/2026: "can we put
+   * next to that price new customer price $145 (I dont want to scare
+   * customers away not knowing 6 weekly customers are FROM $110".
+   */
+  newClientRate?: boolean;
+  /** The lowest Regular/VIP price for this dog, from the catalogue, when it is lower. */
+  regularFrom?: string | null;
   loading?: boolean;
   className?: string;
 }) {
@@ -90,11 +100,18 @@ export function OnlineBookingEstimate({
       data-testid="estimate"
     >
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-sm font-semibold text-foreground">Estimated price</span>
+        <span className="text-sm font-semibold text-foreground">
+          {newClientRate ? "New customer price" : "Estimated price"}
+        </span>
         <span className="text-2xl font-bold tabular-nums text-violet-800 dark:text-violet-200">
           {formatted}
         </span>
       </div>
+      {newClientRate && formatEstimate(regularFrom) && (
+        <p className="mt-1 text-sm font-medium text-violet-900 dark:text-violet-200" data-testid="estimate-regular-from">
+          Clients who come every 6 weeks pay from {formatEstimate(regularFrom)}.
+        </p>
+      )}
       {disclaimer && (
         <p className="mt-2 flex gap-2 text-xs leading-5 text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden />

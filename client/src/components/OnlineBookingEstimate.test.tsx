@@ -87,3 +87,17 @@ describe("a price range", () => {
     expect(screen.queryByTestId("estimate-range")).not.toBeInTheDocument();
   });
 });
+
+describe("new customer price label (Lauren, 26/11/2026)", () => {
+  it("names the new customer price and the 6-weekly price under it", () => {
+    render(<OnlineBookingEstimate price="145.00" disclaimer="d" newClientRate regularFrom="110.00" />);
+    expect(screen.getByText("New customer price")).toBeInTheDocument();
+    expect(screen.getByTestId("estimate-regular-from")).toHaveTextContent("Clients who come every 6 weeks pay from $110");
+  });
+
+  it("keeps the plain label when the price is the same for everyone", () => {
+    render(<OnlineBookingEstimate price="60.00" disclaimer="d" />);
+    expect(screen.getByText("Estimated price")).toBeInTheDocument();
+    expect(screen.queryByTestId("estimate-regular-from")).toBeNull();
+  });
+});
