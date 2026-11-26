@@ -40,7 +40,7 @@
  * way, dogs with no size, and families whose split does not resolve.
  */
 import { and, eq, gte, inArray, isNotNull, lt, ne, notInArray } from "drizzle-orm";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { getDb } from "../server/db";
 import { appointments, clients, membershipPets, memberships, pets, pricingServices } from "../drizzle/schema";
 import { clientPriceTier, groomPriceOptions, pickDefaultPriceOption, type PriceCatalogueItem, type PriceTier } from "../shared/groomPricing";
@@ -93,6 +93,13 @@ async function main() {
     notInArray(appointments.workflowState, ["cancelled", "no_show"]), ne(appointments.status, "cancelled"),
   ));
 
+  // --recheck <backup.json>: re-suggest rows this script already wrote, as
+  // they were before (the backup holds their old values).
+  const recheck = argOf("--recheck");
+  if (recheck) {
+    const before = new Map((JSON.parse(readFileSync(recheck, "utf8")) as Array<{ id: number; price: string | null }>).map((b) => [b.id, b.price]));
+    for (const r of upcoming) if (before.has(r.id)) r.price = before.get(r.id) ?? null;
+  }
   const petIds = Array.from(new Set(upcoming.map((r) => r.petId)));
   const clientIds = Array.from(new Set(upcoming.map((r) => r.clientId).filter((x): x is number => x !== null)));
 
@@ -163,7 +170,12 @@ async function main() {
     if (!pet) return { ok: false, hold: "dog not found" };
     if (isDaycareService(row.serviceType)) return { ok: false, hold: "day care: priced by the hour" };
     const paid = lastPaid(row.petId, row.serviceType);
-    if (paid) return { ok: true, price: paid.price, basis: `last paid ${paid.when}`, tier: "" };
+    const cat = catalogueFor(row, pet);
+    if (paid) return { ok: true, price: paid.price, basis: `last paid ${paid.when}${cat.ok && cat.price !== paid.price ? ` (catalogue ${money(cat.price)} ${cat.tier})` : ""}`, tier: "" };
+    return cat;
+  }
+
+  function catalogueFor(row: (typeof upcoming)[number], pet: NonNullable<ReturnType<typeof petById.get>>): Suggestion {
     const band: DogSizeBand | null = (pet.sizeBand as DogSizeBand | null) ?? bandForWeight(pet.weightKg);
     if (!band) return { ok: false, hold: "dog has no weight or size" };
     const planTier = planTierByPet.get(row.petId);
