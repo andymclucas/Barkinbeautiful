@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { TextClientLink } from "@/components/TextClientLink";
 import { VipMark } from "@/components/VipMark";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
@@ -112,7 +113,9 @@ export default function OverdueForGroom() {
                       </Badge>
                     </td>
                     <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">
-                      {pet.phone ? <a href={`tel:${pet.phone}`} className="hover:underline">{pet.phone}</a> : "—"}
+                      {pet.phone
+                        ? <span className="inline-flex items-center gap-1"><a href={`tel:${pet.phone}`} className="hover:underline">{pet.phone}</a><TextClientLink phone={pet.phone} /></span>
+                        : "—"}
                     </td>
                   </tr>
                 ))}

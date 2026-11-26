@@ -1,11 +1,12 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { smsHref } from "@shared/phoneLinks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { PageNumbers } from "@/components/PageNumbers";
 import { DateField } from "@/components/DateField";
-import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff, ArrowUp, ArrowDown, ChevronsUpDown, ChevronDown, ChevronRight } from "lucide-react";
+import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff, ArrowUp, ArrowDown, ChevronsUpDown, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 import { LAPSED_SORT_DEFAULT_DIR, type LapsedSortKey, type LapsedSortDir } from "@shared/lapsedClients";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
@@ -714,7 +715,13 @@ export default function Reporting() {
                               title="Opted out of messages — call, do not text"
                             >no texts</span>
                           )}
-                          {r.phone && <span className="block text-xs text-muted-foreground">{r.phone}</span>}
+                          {/* Tap the number to text them from your own phone (Lauren,
+                              26/11/2026: "click on the number to txt"). */}
+                          {r.phone && (smsHref(r.phone)
+                            ? <a href={smsHref(r.phone)!} title="Text this number" className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-primary hover:underline">
+                                <MessageSquare className="h-3 w-3" /> {r.phone}
+                              </a>
+                            : <span className="block text-xs text-muted-foreground">{r.phone}</span>)}
                           {expandedLapsed.has(r.clientId) && (
                             <ul className="mt-2 space-y-1.5 border-l-2 border-primary/30 pl-3" data-testid="lapsed-dogs">
                               {r.pets.length === 0 && (
@@ -858,7 +865,13 @@ export default function Reporting() {
                           </td>
                           <td>
                             <span>{`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "—"}</span>
-                            {r.phone && <span className="block text-xs text-muted-foreground">{r.phone}</span>}
+                            {/* Tap the number to text them from your own phone (Lauren,
+                              26/11/2026: "click on the number to txt"). */}
+                          {r.phone && (smsHref(r.phone)
+                            ? <a href={smsHref(r.phone)!} title="Text this number" className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-primary hover:underline">
+                                <MessageSquare className="h-3 w-3" /> {r.phone}
+                              </a>
+                            : <span className="block text-xs text-muted-foreground">{r.phone}</span>)}
                           </td>
                           <td className="num">{r.visits}</td>
                           <td className="num">
