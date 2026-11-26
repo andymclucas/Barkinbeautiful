@@ -25,6 +25,7 @@ import { readSavedListView, type SavedListView } from "@shared/listPaging";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
+import { describeDeclineHistory } from "@shared/declineHistory";
 import { weeklyToMonthly, describeRate, annualisedCost } from "@shared/membershipBillingCycle";
 
 import { describePause, nextBillingLine, resolvePauseResumesAt } from "@shared/membershipPause";
@@ -1728,6 +1729,11 @@ export default function Memberships() {
                       )}
                       {fp.failureReason && <span className="text-xs text-muted-foreground">{fp.failureReason}</span>}
                     </div>
+                    {describeDeclineHistory(fp.declineHistory, getActiveTimeZone()) && (
+                      <p className="text-xs font-medium text-red-700 dark:text-red-400" data-testid="decline-history">
+                        {describeDeclineHistory(fp.declineHistory, getActiveTimeZone())}
+                      </p>
+                    )}
                     <div className="grid gap-2 [&_button]:h-11 [&_button]:w-full [&_button]:justify-center [&_button]:text-sm [&_button_svg]:h-4 [&_button_svg]:w-4">
                       {failedPaymentActions(fp)}
                     </div>
@@ -1780,6 +1786,14 @@ export default function Memberships() {
                         </td>
                         <td className="p-3 hidden md:table-cell text-xs text-muted-foreground">
                           {fp.lastFailedAt ? new Date(fp.lastFailedAt).toLocaleDateString("en-AU", { timeZone: getActiveTimeZone() }) : "—"}
+                          {/* Every decline on record, not just this run
+                              (Lauren, 26/11/2026: "record how many times it
+                              happens"). The strike count resets on a success. */}
+                          {describeDeclineHistory(fp.declineHistory, getActiveTimeZone()) && (
+                            <p className="mt-1 font-medium text-red-700 dark:text-red-400">
+                              {describeDeclineHistory(fp.declineHistory, getActiveTimeZone())}
+                            </p>
+                          )}
                         </td>
                         <td className="p-3">
                           {fp.suspended ? (

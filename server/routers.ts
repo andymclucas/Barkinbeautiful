@@ -1,4 +1,5 @@
 import { petPhotoDeletionVerdict } from "@shared/petPhotoDeletion";
+import { declineHistoryByMembership, NO_DECLINES, type DeclineHistory } from "@shared/declineHistory";
 import { duplicateBookingMessage } from "@shared/duplicateBooking";
 import {
   assertDogsNotAlreadyBookedThatDay,
@@ -6986,8 +6987,20 @@ const clientsRouter = router({
           ...(assignedByMembership.get(row.membershipId) ?? []), row.petId,
         ]);
       }
+      // How often each plan's payment has ever been declined (Lauren,
+      // 26/11/2026: "I think we need to record how many times it happens").
+      const profileDeclines = coveredPlanIds.length === 0
+        ? new Map<number, DeclineHistory>()
+        : declineHistoryByMembership(await db
+            .select({ membershipId: membershipPayments.membershipId, createdAt: membershipPayments.createdAt })
+            .from(membershipPayments)
+            .where(and(
+              inArray(membershipPayments.membershipId, coveredPlanIds),
+              eq(membershipPayments.status, "failed"),
+            )));
       const clientMembershipsWithCover = clientMemberships.map(m => ({
         ...m,
+        declineHistory: profileDeclines.get(m.id) ?? NO_DECLINES,
         coveredPetIds: planCoveredPetIds({
           petId: m.petId,
           assignedPetIds: assignedByMembership.get(m.id),
@@ -10479,6 +10492,7 @@ const membershipsRouter = router({
           membershipId: membershipPayments.membershipId,
           stripeInvoiceId: membershipPayments.stripeInvoiceId,
           failureReason: membershipPayments.failureReason,
+          createdAt: membershipPayments.createdAt,
         })
         .from(membershipPayments)
         .where(and(
@@ -10486,6 +10500,8 @@ const membershipsRouter = router({
           eq(membershipPayments.status, "failed"),
         ))
         .orderBy(desc(membershipPayments.id));
+      // Every decline ever, not just this run (shared/declineHistory.ts).
+      const declines = declineHistoryByMembership(failedRows);
       const lastFailure = new Map<number, { stripeInvoiceId: string | null; failureReason: string | null }>();
       const lastInvoice = new Map<number, string>();
       for (const row of failedRows) {
@@ -10509,6 +10525,8 @@ const membershipsRouter = router({
           stripeBilled: Boolean(stripeSubscriptionId),
           /** Stripe's reason when it could be read, else the one written at the time. */
           failureReason: (invoiceId ? reasons.get(invoiceId) : null) ?? lastFailure.get(row.membershipId)?.failureReason ?? null,
+          /** Every declined payment on record, which failedCount is not: it resets on a success. */
+          declineHistory: declines.get(row.membershipId) ?? NO_DECLINES,
         };
       });
     }),
