@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarDays, CheckCircle2, Clock3, PawPrint, ShieldCheck, UserRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, ShieldCheck, UserRound } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,26 @@ import { OnlineBookingEstimate } from "@/components/OnlineBookingEstimate";
 import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 import { SalonLogo } from "@/components/SalonLogo";
 import { salonName } from "@shared/salonBrand";
+import { GroomigoLogo } from "@/components/GroomigoLogo";
+
+/**
+ * "Powered by" over the standard Groomigo logo: the teal dog with the
+ * word underneath (Andy, 17/11/2026, "in all instances"). Andy,
+ * 26/11/2026: the booking page showed a stock paw icon and plain text
+ * instead, and he asked for "the actual Groomigo logo with the correct
+ * colours", at the top right and again at the bottom of the page.
+ *
+ * Always the white-lettered drawing: this page's background is the dark
+ * gradient whatever the visitor's light or dark mode.
+ */
+function PoweredByGroomigo({ className = "" }: { className?: string }) {
+  return (
+    <div className={`flex flex-col gap-1 ${className}`} data-testid="powered-by-groomigo">
+      <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-violet-200/80">Powered by</span>
+      <GroomigoLogo tone="on-dark" height={64} />
+    </div>
+  );
+}
 export default function OnlineBooking({ previewMode = false }: { previewMode?: boolean }) {
   // This page is sent to the salon's own clients, so it wears the
   // salon's colours rather than stock Groomigo ones.
@@ -97,7 +117,7 @@ export default function OnlineBooking({ previewMode = false }: { previewMode?: b
   };
   if (complete) return <main className="min-h-screen bg-gradient-to-br from-violet-950 via-slate-950 to-violet-950 flex items-center justify-center px-5 py-12 text-white"><div className="max-w-md text-center rounded-3xl border border-violet-300/30 dark:border-violet-800/30 bg-white/10 backdrop-blur p-8 shadow-2xl"><div className="mx-auto w-fit rounded-2xl bg-emerald-400/20 p-4"><CheckCircle2 className="h-10 w-10 text-emerald-300" /></div><h1 className="mt-5 text-2xl font-bold">{previewMode ? "Preview booking recorded" : "Booking request received"}</h1><p className="mt-3 text-violet-100">{previewMode ? "This is a marked preview test. No client message, automatic confirmation or live booking release has occurred." : `Thank you. We have reserved your requested time pending confirmation from ${salonName(salon, "the salon")}.`}</p>{bookedEstimate?.price && <div className="mt-5 rounded-2xl border border-white/20 bg-white/10 p-4 text-left"><div className="flex items-baseline justify-between gap-3"><span className="text-sm font-semibold">Estimated price</span><span className="text-2xl font-bold tabular-nums">${Number(bookedEstimate.price).toFixed(2)}</span></div>{bookedEstimate.disclaimer && <p className="mt-2 text-xs leading-5 text-violet-100">{bookedEstimate.disclaimer}</p>}</div>}<Button className="mt-6 bg-violet-400 text-foreground hover:bg-violet-300 dark:hover:bg-violet-800" onClick={() => { setComplete(false); setSelectedDate(""); setForm({ firstName: "", lastName: "", phone: "", email: "", petName: "", breed: "", weightKg: "", staffId: "", serviceType: "classic_groom", scheduledStart: "", notes: "" }); }}>Book another visit</Button></div></main>;
 
-  return <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#5b21b688,_transparent_40%),linear-gradient(135deg,#1e1b3a,#0f172a_55%,#241f4d)] px-4 py-8 text-foreground sm:px-6"><div className="mx-auto max-w-5xl"><header className="mb-8 flex flex-col gap-4 text-white sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><SalonLogo brand={salon} className="h-14 w-14 rounded-xl bg-card p-1" badgeClassName="h-14 w-14 text-lg" /><div>{salon.name && <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">{salonName(salon)}</p>}<h1 className="text-2xl font-bold">Book your groom</h1></div></div><div className="flex items-center gap-2 text-sm text-violet-100"><PawPrint className="h-4 w-4 text-violet-300" /> Powered by Groomigo</div></header>
+  return <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#5b21b688,_transparent_40%),linear-gradient(135deg,#1e1b3a,#0f172a_55%,#241f4d)] px-4 py-8 text-foreground sm:px-6"><div className="mx-auto max-w-5xl"><header className="mb-8 flex flex-col gap-4 text-white sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><SalonLogo brand={salon} className="h-14 w-14 rounded-xl bg-card p-1" badgeClassName="h-14 w-14 text-lg" /><div>{salon.name && <p className="text-xs font-semibold uppercase tracking-[0.2em] text-violet-300">{salonName(salon)}</p>}<h1 className="text-2xl font-bold">Book your groom</h1></div></div><PoweredByGroomigo className="sm:items-end" /></header>
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]"><section className="rounded-3xl bg-card p-5 shadow-2xl sm:p-8">{previewMode && <div className="mb-5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-4 py-3 text-sm text-amber-900 dark:text-amber-200"><strong>Preview mode only.</strong> Every request is marked as a test. No client messages, automatic confirmations or live booking release will occur.</div>}<div className="mb-6"><h2 className="text-xl font-bold">Choose a preferred groomer</h2><p className="mt-1 text-sm text-muted-foreground">Availability is protected by live capacity limits. A booking request is confirmed only after the salon accepts it.</p></div>
       {isLoading ? <p className="py-12 text-center text-muted-foreground">Loading groomer profiles…</p> : !groomers?.length ? <div className="rounded-xl border border-dashed p-8 text-center"><ShieldCheck className="mx-auto h-8 w-8 text-violet-600 dark:text-violet-400" /><h3 className="mt-3 font-semibold">Online booking is coming soon</h3><p className="mt-1 text-sm text-muted-foreground">The salon has not released any groomer profiles for online bookings yet.</p></div> : <>
         <div className="grid gap-3 sm:grid-cols-2" aria-label="Available groomers">{groomers.map(groomer => <button type="button" key={groomer.id} onClick={() => { setForm(p => ({ ...p, staffId: String(groomer.id), scheduledStart: "" })); }} className={`rounded-2xl border p-4 text-left transition ${form.staffId === String(groomer.id) ? "border-violet-600 bg-violet-50 dark:bg-violet-950/40 ring-2 ring-violet-200" : "hover:border-violet-300 dark:hover:border-violet-800 hover:bg-violet-50/50 dark:hover:bg-violet-950/50"}`}><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full font-bold text-white" style={{ background: groomer.colourHex }}>{groomer.photoUrl ? <img src={groomer.photoUrl} alt="" className="h-full w-full object-cover" /> : groomer.name[0]}</div><div><p className="font-semibold">{getBookingGroomerDisplayName(groomer.name)}</p><p className="text-xs capitalize text-muted-foreground">{groomer.role}</p></div></div>{groomer.bio && <p className="mt-3 line-clamp-2 text-sm text-muted-foreground">{groomer.bio}</p>}</button>)}</div>
@@ -109,5 +129,7 @@ export default function OnlineBooking({ previewMode = false }: { previewMode?: b
         <Button className="mt-6 w-full bg-violet-700 hover:bg-violet-800" disabled={!form.scheduledStart || !selectedWeightBand || creating || !form.firstName || !form.lastName || !form.phone || !form.petName} onClick={submitRequest}>{creating ? "Submitting request…" : previewMode ? "Create preview booking" : "Request this booking"}</Button>
       </>}</section>
       <aside className="h-fit rounded-3xl border border-white/15 bg-white/10 p-5 text-white backdrop-blur"><Clock3 className="h-6 w-6 text-violet-300" /><h2 className="mt-3 font-bold">A calmer way to book</h2><p className="mt-2 text-sm leading-6 text-violet-50">Choose a groomer you know and love, or select first available when the salon opens that option. Slot capacity is checked live so the day never becomes overbooked.</p><div className="mt-5 space-y-3 border-t border-white/15 pt-5 text-sm text-violet-50"><div className="flex gap-2"><UserRound className="h-4 w-4 flex-none text-violet-300" />Each pet is assessed separately, even in multi-pet families.</div><div className="flex gap-2"><CalendarDays className="h-4 w-4 flex-none text-violet-300" />Bath-only services have a protected daily online limit.</div></div></aside>
-    </div></div></main>;
+    </div>
+    <footer className="mt-10 flex justify-center pb-4"><PoweredByGroomigo className="items-center" /></footer>
+    </div></main>;
 }

@@ -44,6 +44,7 @@ vi.mock("@/components/DateField", () => ({
 }));
 
 import OnlineBooking from "./OnlineBooking";
+import { GROOMIGO_LOGO_ON_DARK } from "@/components/GroomigoLogo";
 
 const FOUND = { date: "2026-12-09", scheduledStart: "2026-12-08T22:00:00.000Z", staffId: 6 };
 
@@ -52,6 +53,24 @@ beforeEach(() => {
   previewNextAvailable.mockReset();
   slotQuery.mockReset();
   toastError.mockReset();
+});
+
+describe("Online booking: Powered by Groomigo", () => {
+  it("shows the standard Groomigo logo at the top and again at the bottom", () => {
+    render(<OnlineBooking />);
+    const marks = screen.getAllByTestId("powered-by-groomigo");
+    expect(marks).toHaveLength(2);
+    for (const mark of marks) {
+      expect(mark).toHaveTextContent("Powered by");
+      // The white-lettered drawing, because the page is always dark.
+      const logo = mark.querySelector("img");
+      expect(logo?.getAttribute("src")).toBe(GROOMIGO_LOGO_ON_DARK);
+      expect(logo?.getAttribute("alt")).toBe("Groomigo");
+    }
+    // One in the page header, one in the footer.
+    expect(marks[0].closest("header")).not.toBeNull();
+    expect(marks[1].closest("footer")).not.toBeNull();
+  });
 });
 
 describe("Online booking: Find next available", () => {
