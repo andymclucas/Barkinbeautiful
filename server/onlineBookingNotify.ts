@@ -23,6 +23,9 @@ import { getDb } from "./db";
 import { clients, pets, systemNotifications, tenants } from "../drizzle/schema";
 import { sendEmail } from "./email";
 import { sendSms } from "./sms";
+import { sendPushToUser } from "./webPush";
+import { onlineBookingPush } from "../shared/pushNotification";
+import { STAFF_ADMINISTRATOR_USER_IDS } from "../shared/staffAdministrators";
 import { onlineBookingServiceLabel } from "../shared/onlineBookingWeightEligibility";
 import {
   buildOnlineBookingRequestSms,
@@ -93,6 +96,8 @@ export type OnlineBookingNotifyResult = {
   notified: boolean;
   emailed: boolean;
   texted: boolean;
+  /** A push was handed to the staff administrators' phones (delivery is not awaited). */
+  pushed: boolean;
   /** Why a channel did nothing, for the server log and the test. */
   skipped: string[];
 };
@@ -116,7 +121,7 @@ function asHtml(text: string): string {
 export async function notifyOnlineBooking(
   input: OnlineBookingNotifyInput,
 ): Promise<OnlineBookingNotifyResult> {
-  const out: OnlineBookingNotifyResult = { notified: false, emailed: false, texted: false, skipped: [] };
+  const out: OnlineBookingNotifyResult = { notified: false, emailed: false, texted: false, pushed: false, skipped: [] };
   const db = await getDb();
   if (!db) {
     out.skipped.push("no database");
@@ -168,6 +173,26 @@ export async function notifyOnlineBooking(
     console.error("[online-booking] could not record a system notification", err);
     out.skipped.push("bell write failed");
   }
+
+  // 1b. A push to the phones of the people who read that bell (the staff
+  //     administrators: canAdministerStaff gates getSystemNotifications).
+  //     Not awaited: the client's form must not wait on Apple or Google,
+  //     and a failed push must never fail the booking.
+  const push = onlineBookingPush({
+    appointmentId: input.appointmentId,
+    clientId: input.clientId,
+    clientName: [client?.firstName, client?.lastName].filter((n) => n?.trim()).join(" ") || null,
+    petName,
+    date: salonDate(input.scheduledStart),
+    time: salonTime(input.scheduledStart),
+    serviceLabel,
+    preview: input.preview,
+  });
+  for (const userId of STAFF_ADMINISTRATOR_USER_IDS) {
+    void sendPushToUser(input.tenantId, userId, push)
+      .catch((err) => console.error("[online-booking] push failed", userId, err));
+  }
+  out.pushed = true;
 
   const copy = {
     clientFirstName: client?.firstName?.trim() || "there",

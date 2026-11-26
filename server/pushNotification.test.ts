@@ -169,3 +169,35 @@ describe("what this device can do", () => {
       .toEqual({ usable: false, reason: "server_not_configured" });
   });
 });
+
+describe("onlineBookingPush", () => {
+  const base = {
+    appointmentId: 42, clientId: 7, clientName: "Pat Grant", petName: "Rex",
+    date: "Friday 4 December", time: "9:30 am", serviceLabel: "Full groom",
+  };
+
+  it("names the client, the dog, the service and when", async () => {
+    const { onlineBookingPush } = await import("../shared/pushNotification");
+    const p = onlineBookingPush(base);
+    expect(p.title).toBe("New online booking");
+    expect(p.body).toBe("Pat Grant booked Rex, Full groom, Friday 4 December at 9:30 am. Confirm it in Groomigo.");
+    expect(p.url).toBe("/clients/7");
+    expect(p.kind).toBe("online-booking");
+  });
+
+  it("gives each booking its own tag, so two bookings are two notifications", async () => {
+    const { onlineBookingPush } = await import("../shared/pushNotification");
+    expect(onlineBookingPush(base).tag).not.toBe(onlineBookingPush({ ...base, appointmentId: 43 }).tag);
+  });
+
+  it("copes with a client with no name", async () => {
+    const { onlineBookingPush } = await import("../shared/pushNotification");
+    expect(onlineBookingPush({ ...base, clientName: "  " }).body.startsWith("A new client booked Rex")).toBe(true);
+  });
+
+  it("has a TTL and an urgency like every other kind", async () => {
+    const { PUSH_TTL_SECONDS, PUSH_URGENCY } = await import("../shared/pushNotification");
+    expect(PUSH_TTL_SECONDS["online-booking"]).toBe(86400);
+    expect(PUSH_URGENCY["online-booking"]).toBe("normal");
+  });
+});

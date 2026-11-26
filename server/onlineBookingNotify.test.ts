@@ -34,6 +34,13 @@ vi.mock("./email", () => ({
 vi.mock("./sms", () => ({
   sendSms: (...a: unknown[]) => sendSms(...(a as Parameters<typeof sendSms>)),
 }));
+const sendPushToUser = vi.fn(
+  async (_tenantId: number, _userId: number, _payload: Record<string, unknown>) =>
+    ({ sent: 1, pruned: 0, failed: 0 }),
+);
+vi.mock("./webPush", () => ({
+  sendPushToUser: (...a: unknown[]) => sendPushToUser(...(a as Parameters<typeof sendPushToUser>)),
+}));
 vi.mock("./db", () => ({
   getDb: async () => ({
     select: () => ({
@@ -61,6 +68,7 @@ beforeEach(() => {
   sendEmail.mockClear();
   sendSms.mockClear();
   insertValues.mockClear();
+  sendPushToUser.mockClear();
   process.env.SMS_AUTOMATION_ENABLED = "true";
 });
 afterEach(() => { delete process.env.SMS_AUTOMATION_ENABLED; });
@@ -142,5 +150,45 @@ describe("a real booking", () => {
     const smsBody = sendSms.mock.calls[0][1] as string;
     expect(smsBody).toContain("Thursday 29 October");
     expect(smsBody).toMatch(/9:30\s*am/i);
+  });
+});
+
+describe("the push to the salon's phones (Andy, 27/11/2026)", () => {
+  it("goes to the two people who read the online-booking bell, and nobody else", async () => {
+    const { notifyOnlineBooking } = await import("./onlineBookingNotify");
+    const { STAFF_ADMINISTRATOR_USER_IDS } = await import("../shared/staffAdministrators");
+    const out = await notifyOnlineBooking(BASE);
+    expect(out.pushed).toBe(true);
+    expect(sendPushToUser.mock.calls.map((c) => c[1]).sort()).toEqual([...STAFF_ADMINISTRATOR_USER_IDS].sort());
+    for (const [tenantId, , payload] of sendPushToUser.mock.calls) {
+      expect(tenantId).toBe(1);
+      expect(payload.kind).toBe("online-booking");
+      expect(payload.title).toBe("New online booking");
+      expect(payload.url).toBe("/clients/1162");
+      expect(payload.body).toContain("Andy McLucas");
+      expect(payload.body).toContain("Thursday 29 October");
+      expect(payload.body).not.toContain("$");
+    }
+  });
+
+  it("is pushed even when SMS automation is off", async () => {
+    process.env.SMS_AUTOMATION_ENABLED = "false";
+    const { notifyOnlineBooking } = await import("./onlineBookingNotify");
+    await notifyOnlineBooking(BASE);
+    expect(sendPushToUser).toHaveBeenCalled();
+  });
+
+  it("says Test on a preview booking, so a trial is not mistaken for a real one", async () => {
+    const { notifyOnlineBooking } = await import("./onlineBookingNotify");
+    await notifyOnlineBooking({ ...BASE, preview: true });
+    expect(sendPushToUser.mock.calls[0][2].title).toBe("Test online booking");
+  });
+
+  it("does not fail the booking when a push throws", async () => {
+    sendPushToUser.mockRejectedValueOnce(new Error("push service down"));
+    const { notifyOnlineBooking } = await import("./onlineBookingNotify");
+    const out = await notifyOnlineBooking(BASE);
+    expect(out.notified).toBe(true);
+    expect(out.emailed).toBe(true);
   });
 });
