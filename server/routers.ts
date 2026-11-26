@@ -237,8 +237,9 @@ import { paymentsRouter } from "./routers/payments";
 import { randomUUID } from "node:crypto";
 import {
   expandDateRange, rangeLengthInDays, blockoutDateValue, blockoutDateKey,
-  findBlockingBlockout, MAX_BLOCKOUT_DAYS,
+  findBlockingBlockout, MAX_BLOCKOUT_DAYS, todayDateKey, addDaysToDateKey,
 } from "../shared/staffBlockouts";
+import { holidaysOnOpenDays } from "../shared/queenslandPublicHolidays";
 import { sidebarCountsRouter, smsUsageRouter } from "./routers/sidebarCounts";
 import { automatedMessagesRouter } from "./routers/automatedMessages";
 import { pushSubscriptionsRouter } from "./routers/pushSubscriptions";
@@ -9269,6 +9270,62 @@ const staffRouter = router({
         created: rows.length,
         alreadyBlocked: days.length * roster.length - rows.length,
       };
+    }),
+
+  /**
+   * Queensland public holidays on days the salon would open, for the next
+   * thirteen months, each with how many dogs are booked and whether the
+   * salon is already closed. Lauren, 27/11/2026 (ticket 0096). Closing one
+   * goes through closeSalon above, which still refuses a day with dogs.
+   */
+  publicHolidays: adminProcedure
+    .input(z.object({ tenantId: z.number().default(1) }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB unavailable");
+      const tenantId = tenantOf(ctx, input ?? {});
+      const fromKey = todayDateKey();
+      const toKey = addDaysToDateKey(fromKey, 400);
+      const holidays = holidaysOnOpenDays(fromKey, toKey);
+      if (holidays.length === 0) return [];
+      const keys = holidays.map((h) => h.date);
+
+      // Grouped by the select ALIAS: see closeSalon above for why the
+      // repeated expression fails on this TiDB.
+      const booked = await db.select({
+        day: sql<string>`DATE_FORMAT(CONVERT_TZ(${appointments.scheduledStart}, '+00:00', '+10:00'), '%Y-%m-%d')`.as("day"),
+        dogs: sql<number>`COUNT(*)`.as("dogs"),
+      }).from(appointments, appointmentsByDate).where(and(
+        eq(appointments.tenantId, tenantId),
+        notInArray(appointments.status, ["cancelled", "no_show"]),
+        notInArray(appointments.workflowState, ["cancelled", "no_show"]),
+        gte(appointments.scheduledStart, parseBrisbaneLocalDateTime(`${keys[0]}T00:00:00`)),
+        lt(appointments.scheduledStart, parseBrisbaneLocalDateTime(`${keys[keys.length - 1]}T23:59:59`)),
+      )).groupBy(sql`day`);
+      const dogsOn = new Map(booked.map((b) => [String(b.day), Number(b.dogs)]));
+
+      const roster = await db.select({ id: staff.id }).from(staff)
+        .where(and(eq(staff.tenantId, tenantId), eq(staff.isActive, true)));
+      const blocks = await db.select({ staffId: staffBlockouts.staffId, blockoutDate: staffBlockouts.blockoutDate })
+        .from(staffBlockouts).where(and(
+          eq(staffBlockouts.tenantId, tenantId),
+          eq(staffBlockouts.isFullDay, true),
+          inArray(staffBlockouts.blockoutDate, keys.map(blockoutDateValue)),
+        ));
+      const rosterIds = new Set(roster.map((r) => r.id));
+      const offOn = new Map<string, Set<number>>();
+      for (const b of blocks) {
+        if (!rosterIds.has(b.staffId)) continue;
+        const k = blockoutDateKey(b.blockoutDate as Date);
+        if (!offOn.has(k)) offOn.set(k, new Set());
+        offOn.get(k)!.add(b.staffId);
+      }
+
+      return holidays.map((h) => ({
+        ...h,
+        dogsBooked: dogsOn.get(h.date) ?? 0,
+        closed: roster.length > 0 && (offOn.get(h.date)?.size ?? 0) >= roster.length,
+      }));
     }),
 
   createBlockout: operationalProcedure
