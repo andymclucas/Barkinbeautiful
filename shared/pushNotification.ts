@@ -54,7 +54,7 @@ export type PushPayload = {
   /** Same tag replaces rather than stacks. */
   tag: string;
   /** Which event produced this, for the service worker's own logging. */
-  kind: "call-ringing" | "missed-call" | "new-message" | "issue-report";
+  kind: "call-ringing" | "missed-call" | "new-message" | "issue-report" | "online-booking";
   /**
    * Re-alert for a notification that replaces one with the same tag.
    * A second message in a thread you have not looked at should buzz
@@ -85,6 +85,8 @@ export const PUSH_TTL_SECONDS: Record<PushPayload["kind"], number> = {
   // A staff problem report (shared/issueReports.ts): still worth knowing
   // about tomorrow morning.
   "issue-report": 60 * 60 * 24,
+  // A booking from the public page: still needs confirming tomorrow.
+  "online-booking": 60 * 60 * 24,
 };
 
 /**
@@ -99,6 +101,7 @@ export const PUSH_URGENCY: Record<PushPayload["kind"], "high" | "normal"> = {
   "missed-call": "normal",
   "new-message": "normal",
   "issue-report": "normal",
+  "online-booking": "normal",
 };
 
 /** Who is on the other end, in the order we would rather say it. */
@@ -178,6 +181,41 @@ export function pushForEvent(event: PushEventInput): PushPayload | null {
   // not news to someone whose phone is in their pocket, and a push per
   // call leg would double the traffic for no one's benefit.
   return null;
+}
+
+/**
+ * The push for a booking made on the public online booking page.
+ *
+ * Andy, 27/11/2026: "How does the salon know when they get a booking
+ * through the online booking function on the website?" The only signal was
+ * a bell row, seen when someone happened to open Groomigo. This puts it on
+ * the phone. It lands on the client's card, where the bell already goes.
+ *
+ * No price in it: the estimate is on the bell and the booking, and a lock
+ * screen is not where money belongs.
+ */
+export function onlineBookingPush(b: {
+  appointmentId: number;
+  clientId: number;
+  clientName: string | null;
+  petName: string;
+  date: string;
+  time: string;
+  serviceLabel: string;
+  preview?: boolean;
+}): PushPayload {
+  const who = b.clientName?.trim() || "A new client";
+  return {
+    title: b.preview ? "Test online booking" : "New online booking",
+    body: `${who} booked ${b.petName}, ${b.serviceLabel}, ${b.date} at ${b.time}. Confirm it in Groomigo.`,
+    url: `/clients/${b.clientId}`,
+    // One per booking: two bookings are two notifications, never one
+    // rewritten.
+    tag: `online-booking:${b.appointmentId}`,
+    kind: "online-booking",
+    renotify: false,
+    requireInteraction: false,
+  };
 }
 
 /**
