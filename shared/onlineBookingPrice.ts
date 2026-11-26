@@ -46,7 +46,22 @@ export const ESTIMATE_DISCLAIMER_SHORT =
   "Price is an estimate and may change on the day.";
 
 export type OnlineBookingEstimate =
-  | { known: true; price: string; sizeBand: DogSizeBand; disclaimer: string }
+  | {
+      known: true;
+      price: string;
+      sizeBand: DogSizeBand;
+      disclaimer: string;
+      /** The figure is the catalogue's New Client row, so the page can say so. */
+      newClientRate: boolean;
+      /**
+       * The lowest Regular or VIP price for the same service and size, when
+       * it is below the new-client figure; otherwise null. Lauren,
+       * 26/11/2026: "I dont want to scare customers away not knowing 6
+       * weekly customers are FROM $110". Read from the same catalogue rows,
+       * never typed in.
+       */
+      regularFrom: string | null;
+    }
   | { known: false; reason: string; range?: { low: string; high: string } };
 
 /**
@@ -172,7 +187,24 @@ export function estimateOnlineBookingPrice(input: {
     price: chosen.priceAud,
     sizeBand,
     disclaimer: ESTIMATE_DISCLAIMER,
+    newClientRate: chosen.tier === "new",
+    regularFrom: chosen.tier === "new" ? memberFromPrice(options, chosen.priceAud) : null,
   };
+}
+
+/**
+ * The cheapest Regular or VIP price for this dog's service and size, if it
+ * is below `newPrice`. Only rows that name this dog's band count, so a
+ * catch-all row for every size cannot undercut the real figure. Null when
+ * there is no such row, or none is cheaper.
+ */
+function memberFromPrice(options: readonly PriceOption[], newPrice: string): string | null {
+  const member = options
+    .filter((o) => (o.tier === "regular" || o.tier === "vip") && o.bandSpecific && !o.requiresManualPrice && o.priceAud !== null)
+    .map((o) => o.priceAud as string)
+    .sort((a, b) => Number(a) - Number(b));
+  const lowest = member[0];
+  return lowest !== undefined && Number(lowest) < Number(newPrice) ? lowest : null;
 }
 
 /**

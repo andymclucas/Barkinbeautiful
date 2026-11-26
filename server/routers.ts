@@ -13581,7 +13581,10 @@ const onlineBookingRouter = router({
     const tenantId = tenantOf(ctx, input);
     const estimate = await estimateOnlineBookingPriceFor({ tenantId, serviceType: input.serviceType, weightKg: input.weightKg });
     if (estimate?.known) {
-      return { price: estimate.price, range: null, reason: null, disclaimer: ESTIMATE_DISCLAIMER };
+      return {
+        price: estimate.price, range: null, reason: null, disclaimer: ESTIMATE_DISCLAIMER,
+        newClientRate: estimate.newClientRate, regularFrom: estimate.regularFrom,
+      };
     }
     // No single figure. The range and the reason go out instead, and the
     // disclaimer with them: a range is still a statement about money.
@@ -13590,6 +13593,8 @@ const onlineBookingRouter = router({
       range: estimate?.range ?? null,
       reason: estimate?.reason ?? null,
       disclaimer: estimate?.range ? ESTIMATE_DISCLAIMER : null,
+      newClientRate: false,
+      regularFrom: null,
     };
   }),
   validateSlot: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number(), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80), scheduledStart: z.coerce.date() })).mutation(async ({ input }) => {
