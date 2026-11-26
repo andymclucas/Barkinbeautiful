@@ -1,4 +1,5 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { describeDeclineHistory } from "@shared/declineHistory";
 import { usualGroomerChangeQuestion } from "@shared/usualGroomerChange";
 import { portalSetupAddress, type PortalAccountStatus } from "@shared/portalSetupLink";
 import { cleanClientName } from "@shared/clientName";
@@ -2943,6 +2944,13 @@ export default function ClientDetail() {
                               {m.petName && <span>For <strong>{m.petName}</strong> · </span>}
                               ${m.pricePerCycle}/wk · {m.billingCycleWeeks}wk billing cycle
                             </p>
+                            {/* Every declined payment on record (Lauren,
+                                26/11/2026: "record how many times it happens"). */}
+                            {describeDeclineHistory(m.declineHistory, getActiveTimeZone()) && (
+                              <p className="text-xs font-medium text-red-700 dark:text-red-400">
+                                {describeDeclineHistory(m.declineHistory, getActiveTimeZone())}
+                              </p>
+                            )}
                             {(() => {
                               const together = billedTogetherWith(m, memberships);
                               return together.length > 0
