@@ -704,14 +704,32 @@ function BlockoutControls() {
   const [closeFrom, setCloseFrom] = useState("");
   const [closeTo, setCloseTo] = useState("");
   const [closeReason, setCloseReason] = useState("Salon closed");
+  // Queensland public holidays on open days (Lauren, 27/11/2026, ticket 0096).
+  const holidays = trpc.staff.publicHolidays.useQuery(undefined, { enabled: closeOpen });
+  const [holidayBusy, setHolidayBusy] = useState(false);
+  const closeHolidays = async (dates: string[]) => {
+    setHolidayBusy(true);
+    let closed = 0;
+    for (const date of dates) {
+      try {
+        await closeSalon.mutateAsync({ startDate: date, endDate: date, reason: "Public holiday" });
+        closed += 1;
+      } catch { /* closeSalon's own toast says why; carry on with the rest */ }
+    }
+    setHolidayBusy(false);
+    if (closed > 1) toast.success(`Closed ${closed} public holidays`);
+    void holidays.refetch();
+    void refetch();
+  };
   const closeSalon = trpc.staff.closeSalon.useMutation({
     onSuccess: (r) => {
       toast.success(
         `Salon closed for ${r.days} day${r.days === 1 ? "" : "s"}`,
         { description: `${r.created} blockouts across ${r.staff} staff${r.alreadyBlocked ? ` · ${r.alreadyBlocked} already blocked` : ""}` },
       );
-      setCloseOpen(false); setCloseFrom(""); setCloseTo("");
+      setCloseFrom(""); setCloseTo("");
       void refetch();
+      void holidays.refetch();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -827,6 +845,48 @@ function BlockoutControls() {
               {closeSalon.isPending ? "Closing…" : "Close these days"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setCloseOpen(false)}>Cancel</Button>
+          </div>
+
+          <div className="mt-4 border-t border-amber-200 pt-3 dark:border-amber-900/50" data-testid="qld-public-holidays">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Queensland public holidays</p>
+              {(() => {
+                const ready = (holidays.data ?? []).filter(h => !h.closed && h.dogsBooked === 0 && !h.brisbaneOnly);
+                return ready.length > 1 ? (
+                  <Button size="sm" variant="outline" disabled={holidayBusy} onClick={() => void closeHolidays(ready.map(h => h.date))}>
+                    Close all {ready.length}
+                  </Button>
+                ) : null;
+              })()}
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              The next 13 months, only those on a day the salon would open. Worked out each year, so nothing to keep up to date.
+            </p>
+            {holidays.isLoading ? (
+              <p className="mt-2 text-xs text-muted-foreground">Loading…</p>
+            ) : (holidays.data ?? []).length === 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">None coming up on an open day.</p>
+            ) : (
+              <ul className="mt-2 divide-y rounded-md border bg-background">
+                {(holidays.data ?? []).map(h => (
+                  <li key={h.date} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                    <span>
+                      <span className="font-medium">{new Date(`${h.date}T00:00:00Z`).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}</span>
+                      <span className="text-muted-foreground"> · {h.name}{h.brisbaneOnly ? " (Brisbane area)" : ""}</span>
+                    </span>
+                    {h.closed ? (
+                      <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Closed</span>
+                    ) : h.dogsBooked > 0 ? (
+                      <span className="text-xs text-amber-700 dark:text-amber-400">{h.dogsBooked} dog{h.dogsBooked === 1 ? "" : "s"} booked, move them first</span>
+                    ) : (
+                      <Button size="sm" variant="outline" className="h-7" disabled={holidayBusy || closeSalon.isPending} onClick={() => void closeHolidays([h.date])}>
+                        Close
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}
