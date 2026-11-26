@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Button } from "@/components/ui/button";
 import { PageNumbers } from "@/components/PageNumbers";
 import { DateField } from "@/components/DateField";
-import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
+import { FileBarChart2, TrendingUp, Users, Calendar, DollarSign, Download, Clock, PhoneOff, ArrowUp, ArrowDown, ChevronsUpDown, ChevronDown, ChevronRight } from "lucide-react";
 import { LAPSED_SORT_DEFAULT_DIR, type LapsedSortKey, type LapsedSortDir } from "@shared/lapsedClients";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
@@ -158,6 +158,13 @@ export default function Reporting() {
   const [lapsedSort, setLapsedSort] = useState<{ key: LapsedSortKey; dir: LapsedSortDir }>(
     { key: "notTaken", dir: "desc" },
   );
+  /** Which lapsed clients have their dogs dropped down. */
+  const [expandedLapsed, setExpandedLapsed] = useState<Set<number>>(() => new Set());
+  const toggleLapsedExpanded = (clientId: number) => setExpandedLapsed((prev) => {
+    const next = new Set(prev);
+    if (next.has(clientId)) next.delete(clientId); else next.add(clientId);
+    return next;
+  });
   /** Same column flips direction; a new column opens the way it is most useful. */
   const toggleLapsedSort = (key: LapsedSortKey) =>
     setLapsedSort((curr) =>
@@ -677,6 +684,21 @@ export default function Reporting() {
                     {lapsed.rows.map((r) => (
                       <tr key={r.clientId}>
                         <td>
+                          {/* Drop-down of the client's dogs (Andy, 26/11/2026:
+                              "Add in an expand button on these clients so it
+                              drops down with the dog details underneath the
+                              name"). */}
+                          <button
+                            type="button"
+                            className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-expanded={expandedLapsed.has(r.clientId)}
+                            aria-label={expandedLapsed.has(r.clientId) ? "Hide dogs" : "Show dogs"}
+                            onClick={() => toggleLapsedExpanded(r.clientId)}
+                          >
+                            {expandedLapsed.has(r.clientId)
+                              ? <ChevronDown className="h-4 w-4" />
+                              : <ChevronRight className="h-4 w-4" />}
+                          </button>
                           <span className="font-semibold">
                             {`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "\u2014"}
                           </span>
@@ -693,6 +715,33 @@ export default function Reporting() {
                             >no texts</span>
                           )}
                           {r.phone && <span className="block text-xs text-muted-foreground">{r.phone}</span>}
+                          {expandedLapsed.has(r.clientId) && (
+                            <ul className="mt-2 space-y-1.5 border-l-2 border-primary/30 pl-3" data-testid="lapsed-dogs">
+                              {r.pets.length === 0 && (
+                                <li className="text-xs text-muted-foreground">No dogs on file</li>
+                              )}
+                              {r.pets.map((p) => (
+                                <li key={p.id} className="text-xs">
+                                  <span className="font-semibold text-foreground">{p.name}</span>
+                                  {p.status !== "active" && (
+                                    <span className={`console-tag ml-1 ${p.status === "departed"
+                                      ? "bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300"
+                                      : "bg-muted text-muted-foreground"}`}>
+                                      {p.status === "departed" ? "departed" : "archived"}
+                                    </span>
+                                  )}
+                                  <span className="block text-muted-foreground">
+                                    {[
+                                      p.breed,
+                                      p.weightKg !== null ? `${p.weightKg} kg` : null,
+                                      `${p.grooms} ${p.grooms === 1 ? "groom" : "grooms"}`,
+                                      p.lastGroomed ? `last ${localCalendarDayKey(p.lastGroomed)}` : "never groomed",
+                                    ].filter(Boolean).join(" · ")}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </td>
                         <td className="num">{r.visits}</td>
                         <td className="num">{Math.round(r.usualGapDays / 7)} wks</td>
