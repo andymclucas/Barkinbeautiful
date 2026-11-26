@@ -200,7 +200,7 @@ import { lapsedClients as lapsedClientRows, sortLapsedRows, LAPSED_SORT_KEYS } f
 import { SETTABLE_CLIENT_STATUSES, CLIENT_STATUS_BULK_MAX } from "@shared/clientStatus";
 import { bufferedSearchWindow, isClearOfBookings, CLIENT_BOOKING_BUFFER_MINUTES } from "@shared/clientBookingBuffer";
 import { clearCandidatesOnDay, searchDayKeys } from "@shared/portalNextAvailable";
-import { groomersToSearch } from "@shared/onlineNextAvailable";
+import { groomersByStart, groomersToSearch } from "@shared/onlineNextAvailable";
 import { decidePortalBooking, isClientPickableAddOn, memberServiceFor, MEMBER_EXTRAS_MESSAGE, PORTAL_BOOKING_SERVICES, PORTAL_BOOKING_SERVICE_LABELS, type PlanState } from "@shared/portalSelfBooking";
 import { getAppointmentMembershipCoverage, getAppointmentMembershipCoverageByService } from "./appointmentCoverage";
 import { portalLinkIssueEffect, portalLinkExpiryEffect, portalSetupAddress, REDEEMABLE_PORTAL_STATUSES, type PortalAccountStatus } from "@shared/portalSetupLink";
@@ -13207,6 +13207,51 @@ async function listAvailableOnlineSlots(input: OnlineSlotListInput, options: { p
 }
 
 /**
+ * One day's live bookings for a set of groomers, grouped by groomer: one
+ * query, whatever the number of groomers. What the 30-minute-gap check in
+ * shared/portalNextAvailable.ts reads.
+ */
+async function loadDayBookingsByGroomer(tenantId: number, groomerIds: number[], dateKey: string) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const { start, end } = aestDayBounds(dateKey);
+  const rows: Array<{ staffId: number | null; scheduledStart: Date; scheduledEnd: Date }> = await db.select({
+    staffId: appointments.staffId, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd,
+  }).from(appointments).where(and(
+    eq(appointments.tenantId, tenantId),
+    inArray(appointments.staffId, groomerIds),
+    gte(appointments.scheduledStart, start),
+    lte(appointments.scheduledStart, end),
+    inArray(appointments.status, ["confirmed", "pending"]),
+  ));
+  const byGroomer = new Map<number, Array<{ scheduledStart: Date; scheduledEnd: Date }>>();
+  for (const row of rows) {
+    if (row.staffId === null) continue;
+    const list = byGroomer.get(row.staffId) ?? [];
+    list.push(row);
+    byGroomer.set(row.staffId, list);
+  }
+  return byGroomer;
+}
+
+/** The groomers on the public booking page, in the order the page shows them. */
+async function onlineGroomersFor(tenantId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  return db.select({ id: staff.id, services: staff.onlineServices }).from(staff)
+    .where(and(eq(staff.tenantId, tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true)))
+    .orderBy(asc(staff.name));
+}
+
+/** Is the public booking page switched on for this salon? */
+async function onlineBookingIsOpen(tenantId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const [tenant] = await db.select({ enabled: tenants.onlineBookingEnabled }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+  return Boolean(Number(tenant?.enabled));
+}
+
+/**
  * The first free online time for any of `groomerIds`, up to eight weeks
  * ahead. Null when nothing is free.
  *
@@ -13233,23 +13278,7 @@ async function findNextOnlineSlot(
 
   for (const dateKey of searchDayKeys(brisbaneDateKey(new Date()))) {
     if (buildOnlineBookingSlotStarts(dateKey, durationMinutes).length === 0) continue; // closed day, no query
-    const { start, end } = aestDayBounds(dateKey);
-    const rows: Array<{ staffId: number | null; scheduledStart: Date; scheduledEnd: Date }> = await db.select({
-      staffId: appointments.staffId, scheduledStart: appointments.scheduledStart, scheduledEnd: appointments.scheduledEnd,
-    }).from(appointments).where(and(
-      eq(appointments.tenantId, input.tenantId),
-      inArray(appointments.staffId, groomerIds),
-      gte(appointments.scheduledStart, start),
-      lte(appointments.scheduledStart, end),
-      inArray(appointments.status, ["confirmed", "pending"]),
-    ));
-    const byGroomer = new Map<number, Array<{ scheduledStart: Date; scheduledEnd: Date }>>();
-    for (const row of rows) {
-      if (row.staffId === null) continue;
-      const list = byGroomer.get(row.staffId) ?? [];
-      list.push(row);
-      byGroomer.set(row.staffId, list);
-    }
+    const byGroomer = await loadDayBookingsByGroomer(input.tenantId, groomerIds, dateKey);
     const candidates = clearCandidatesOnDay({ dateKey, durationMinutes, groomerIds, bookingsByGroomer: byGroomer, notBefore });
     for (const candidate of candidates.slice(0, 12)) {
       const verdict = await checkOnlineCapacity({ tenantId: input.tenantId, staffId: candidate.staffId, serviceType: input.serviceType, scheduledStart: candidate.scheduledStart, petWeightKg: input.petWeightKg }, options);
@@ -13276,22 +13305,52 @@ async function nextAvailableOnlineSlot(
   if (!isEligibleOnlineBookingService(input.serviceType, input.petWeightKg)) {
     throw new Error("Select a valid dog weight to see eligible booking services");
   }
-  const db = await getDb();
-  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-  if (!options.preview) {
-    const [tenant] = await db.select({ enabled: tenants.onlineBookingEnabled }).from(tenants).where(eq(tenants.id, input.tenantId)).limit(1);
-    if (!Boolean(Number(tenant?.enabled))) return null;
-  }
+  if (!options.preview && !(await onlineBookingIsOpen(input.tenantId))) return null;
   // Same list, same order, as the groomer cards on the page.
-  const groomers = await db.select({ id: staff.id, services: staff.onlineServices }).from(staff)
-    .where(and(eq(staff.tenantId, input.tenantId), eq(staff.isActive, true), eq(staff.onlineBookable, true)))
-    .orderBy(asc(staff.name));
+  const groomers = await onlineGroomersFor(input.tenantId);
   return findNextOnlineSlot({
     tenantId: input.tenantId,
     groomerIds: groomersToSearch(groomers, input.serviceType, input.staffId),
     serviceType: input.serviceType,
     petWeightKg: input.petWeightKg,
   }, options);
+}
+
+/**
+ * The day's times for "No preferred groomer" on the public booking page.
+ *
+ * Each time appears once and carries the groomer it would be booked with:
+ * the first on the page's list who passes the full capacity check at that
+ * time. The booking itself still names a groomer, so createGuest and its
+ * checks are unchanged; this only saves the client choosing one.
+ *
+ * One query for the day's diary, then the capacity check only on times
+ * the 30-minute gap leaves clear, as findNextOnlineSlot does.
+ */
+async function listOnlineSlotsAnyGroomer(
+  input: { tenantId: number; serviceType: keyof typeof ONLINE_SERVICE_MINUTES; petWeightKg: number; date: string },
+  options: { preview?: boolean } = {},
+) {
+  if (!isEligibleOnlineBookingService(input.serviceType, input.petWeightKg)) {
+    throw new Error("Select a valid dog weight to see eligible booking services");
+  }
+  if (!options.preview && !(await onlineBookingIsOpen(input.tenantId))) return [];
+  const groomerIds = groomersToSearch(await onlineGroomersFor(input.tenantId), input.serviceType, null);
+  if (groomerIds.length === 0) return [];
+  const durationMinutes = ONLINE_SERVICE_MINUTES[input.serviceType] ?? 60;
+  if (buildOnlineBookingSlotStarts(input.date, durationMinutes).length === 0) return []; // closed day, no query
+  const byGroomer = await loadDayBookingsByGroomer(input.tenantId, groomerIds, input.date);
+  // The notice period is enforced by the capacity check below; nothing is
+  // ruled out here on time alone.
+  const clear = clearCandidatesOnDay({ dateKey: input.date, durationMinutes, groomerIds, bookingsByGroomer: byGroomer, notBefore: new Date(0) });
+  const checked = await Promise.all(groomersByStart(clear).map(async ({ scheduledStart, staffIds }) => {
+    for (const staffId of staffIds) {
+      const verdict = await checkOnlineCapacity({ tenantId: input.tenantId, staffId, serviceType: input.serviceType, scheduledStart, petWeightKg: input.petWeightKg }, options);
+      if (verdict.available) return { scheduledStart, scheduledEnd: verdict.scheduledEnd, durationMinutes: verdict.durationMinutes, staffId };
+    }
+    return null;
+  }));
+  return checked.filter((slot): slot is NonNullable<typeof slot> => slot !== null);
 }
 
 // Real availability for RESCHEDULING an existing appointment: this is
@@ -13425,6 +13484,17 @@ const onlineBookingRouter = router({
    */
   nextAvailable: publicProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number().int().positive().nullable().default(null), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80) })).query(async ({ input }) => {
     return nextAvailableOnlineSlot(input);
+  }),
+  /**
+   * The day's times for "No preferred groomer" (Andy, 26/11/2026). Each
+   * time names the groomer it would be booked with.
+   */
+  listAvailableSlotsAnyGroomer: publicProcedure.input(z.object({ tenantId: z.number().default(1), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input }) => {
+    return listOnlineSlotsAnyGroomer(input);
+  }),
+  listPreviewAvailableSlotsAnyGroomer: protectedProcedure.input(z.object({ tenantId: z.number().default(1), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).query(async ({ input, ctx }) => {
+    if (ctx.user.role !== "admin") throw new Error("Administrator access required");
+    return listOnlineSlotsAnyGroomer(input, { preview: true });
   }),
   /** The same search for the admin preview page, which ignores the on/off switch. */
   previewNextAvailable: protectedProcedure.input(z.object({ tenantId: z.number().default(1), staffId: z.number().int().positive().nullable().default(null), serviceType: z.enum(SERVICE_TYPES), petWeightKg: z.coerce.number().min(0).max(80) })).query(async ({ input, ctx }) => {

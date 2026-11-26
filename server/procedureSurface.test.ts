@@ -147,6 +147,10 @@ const PUBLIC = [
   "newClientFormRouter.submit",
   "onlineBookingRouter.createGuest",
   "onlineBookingRouter.listAvailableSlots",
+  // The day's times for "No preferred groomer" (26/11/2026). The same
+  // capacity check as listAvailableSlots, tried across the online
+  // groomers; reads no client data and books nothing.
+  "onlineBookingRouter.listAvailableSlotsAnyGroomer",
   "onlineBookingRouter.listGroomerProfiles",
   // Slots for the membership sign-up page. Same capacity engine as
   // listAvailableSlots, gated on the membership switch instead of the
@@ -665,7 +669,9 @@ describe("tRPC procedure surface", () => {
     // 468 since 25/11/2026: newClientForm.sendLink, in OPERATIONAL.
     // 470 since 26/11/2026: onlineBooking.nextAvailable, in PUBLIC, and
     // previewNextAvailable, its admin-preview twin (protectedProcedure).
-    expect(surface).toHaveLength(470);
+    // 472 since 26/11/2026: onlineBooking.listAvailableSlotsAnyGroomer, in
+    // PUBLIC, and its admin-preview twin (protectedProcedure).
+    expect(surface).toHaveLength(472);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -683,7 +689,8 @@ describe("tRPC procedure surface", () => {
     // 73 since 24/11/2026: bookingNextAvailable.
     // 74 since 25/11/2026: newClientForm.submit.
     // 75 since 26/11/2026: onlineBooking.nextAvailable.
-    expect(PUBLIC).toHaveLength(75);
+    // 76 since 26/11/2026: onlineBooking.listAvailableSlotsAnyGroomer.
+    expect(PUBLIC).toHaveLength(76);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {

@@ -55,3 +55,26 @@ export function groomersToSearch(
     .filter((groomer) => groomerOffersOnlineService(groomer.services, serviceType))
     .map((groomer) => groomer.id);
 }
+
+/**
+ * "No preferred groomer" (Andy, 26/11/2026: "if people are new, or don't
+ * mind, they can just try and take the next available appointment").
+ *
+ * The time list for that choice shows each time once, however many
+ * groomers are free then. This groups the clear (time, groomer) pairs by
+ * time, earliest first, keeping the groomers in the order given, so the
+ * caller can give each time to the first groomer who passes the full
+ * capacity check.
+ */
+export function groomersByStart(
+  candidates: readonly { scheduledStart: Date; staffId: number }[],
+): Array<{ scheduledStart: Date; staffIds: number[] }> {
+  const byTime = new Map<number, { scheduledStart: Date; staffIds: number[] }>();
+  for (const candidate of candidates) {
+    const key = candidate.scheduledStart.getTime();
+    const entry = byTime.get(key) ?? { scheduledStart: candidate.scheduledStart, staffIds: [] };
+    if (!entry.staffIds.includes(candidate.staffId)) entry.staffIds.push(candidate.staffId);
+    byTime.set(key, entry);
+  }
+  return [...byTime.values()].sort((a, b) => a.scheduledStart.getTime() - b.scheduledStart.getTime());
+}
