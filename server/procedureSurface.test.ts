@@ -153,6 +153,11 @@ const PUBLIC = [
   // public booking one, and it books nothing — sign-ups still need
   // approving.
   "onlineBookingRouter.listMembershipSignupSlots",
+  // "Find next available" on the public booking page (26/11/2026). Weight
+  // and service in, one free time out; it reads no client data and books
+  // nothing, and every time it returns has passed the same capacity check
+  // as listAvailableSlots.
+  "onlineBookingRouter.nextAvailable",
   // Weight and service in, a catalogue price out. No client data, and the
   // figure has to appear before anyone has identified themselves.
   "onlineBookingRouter.priceEstimate",
@@ -658,7 +663,9 @@ describe("tRPC procedure surface", () => {
     // 466 since 24/11/2026: clientPortal.bookingNextAvailable, in PUBLIC.
     // 467 since 25/11/2026: newClientForm.submit, the New Client Form, in PUBLIC.
     // 468 since 25/11/2026: newClientForm.sendLink, in OPERATIONAL.
-    expect(surface).toHaveLength(468);
+    // 470 since 26/11/2026: onlineBooking.nextAvailable, in PUBLIC, and
+    // previewNextAvailable, its admin-preview twin (protectedProcedure).
+    expect(surface).toHaveLength(470);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 
@@ -675,7 +682,8 @@ describe("tRPC procedure surface", () => {
     // 72 since 24/11/2026: the four portal booking procedures.
     // 73 since 24/11/2026: bookingNextAvailable.
     // 74 since 25/11/2026: newClientForm.submit.
-    expect(PUBLIC).toHaveLength(74);
+    // 75 since 26/11/2026: onlineBooking.nextAvailable.
+    expect(PUBLIC).toHaveLength(75);
   });
 
   it("exposes exactly these procedures to restricted staff", () => {
