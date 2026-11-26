@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, MessageCircle, Send, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, MessageCircle, Send, UserRound } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { getActiveTimeZone } from "@/lib/timezone";
@@ -58,7 +58,13 @@ export default function PortalInbox() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-          <Card className="h-fit">
+          {/* Phones show the list OR the open conversation, never both.
+              Lauren, 26/11/2026: "when you go on your phone to click on
+              portal messages it won't open". The two cards stacked, so a
+              tapped conversation opened below the whole list, off screen,
+              and nothing seemed to happen. From lg up they sit side by side
+              as before. */}
+          <Card className={`h-fit ${selected ? "hidden lg:block" : ""}`} data-testid="portal-conversation-list">
             <CardHeader><CardTitle className="text-base">Conversations</CardTitle></CardHeader>
             <CardContent className="space-y-1">
               {threads.isLoading && <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>}
@@ -70,7 +76,7 @@ export default function PortalInbox() {
               {rows.map(t => (
                 <button
                   key={t.id}
-                  onClick={() => setSelected(t.id)}
+                  onClick={() => { setSelected(t.id); window.scrollTo?.({ top: 0 }); }}
                   className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition hover:bg-muted/50 ${selected === t.id ? "border-primary bg-primary/5" : ""}`}
                 >
                   <span className="flex items-center justify-between gap-2">
@@ -93,8 +99,18 @@ export default function PortalInbox() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className={selected ? "" : "hidden lg:block"} data-testid="portal-conversation-thread">
             <CardHeader>
+              {selected && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-2 mb-1 h-8 w-fit gap-1 lg:hidden"
+                  onClick={() => setSelected(null)}
+                >
+                  <ArrowLeft className="h-4 w-4" /> Conversations
+                </Button>
+              )}
               <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                 <UserRound className="h-4 w-4 text-primary" />
                 {/* The name opens the client's card (Lauren, 24/11/2026: "can

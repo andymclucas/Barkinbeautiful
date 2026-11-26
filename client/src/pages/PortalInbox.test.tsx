@@ -29,3 +29,19 @@ describe("Portal messages", () => {
     expect(screen.getByRole("button", { name: /Open client card/ }).closest("a")).toHaveAttribute("href", "/clients/1162");
   });
 });
+
+describe("Portal messages on a phone (Lauren, 26/11/2026)", () => {
+  it("swaps the list for the conversation when one is tapped, and back again", () => {
+    render(<PortalInbox />);
+    // Nothing open: the list shows, the empty thread card is desktop-only.
+    expect(screen.getByTestId("portal-conversation-list").className).not.toContain("hidden");
+    expect(screen.getByTestId("portal-conversation-thread").className).toContain("hidden lg:block");
+
+    fireEvent.click(screen.getByText("Andy McLucas"));
+    expect(screen.getByTestId("portal-conversation-list").className).toContain("hidden lg:block");
+    expect(screen.getByTestId("portal-conversation-thread").className).not.toContain("hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: /Conversations/ }));
+    expect(screen.getByTestId("portal-conversation-list").className).not.toContain("hidden");
+  });
+});
