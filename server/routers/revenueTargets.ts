@@ -14,6 +14,7 @@
  * explicit list is the only thing that actually separates the owner from the
  * floor, which is why shared/staffAdministrators.ts exists.
  */
+import { dateTimeFormat } from "@shared/intlCache";
 import { z } from "zod";
 import { and, eq, gt, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { router, protectedProcedure, tenantOf } from "../_core/trpc";
@@ -212,7 +213,7 @@ export const revenueTargetsRouter = router({
 
       /** Brisbane calendar date of an appointment, as YYYY-MM-DD. */
       const dateKey = (at: Date | string) =>
-        new Intl.DateTimeFormat("en-CA", {
+        dateTimeFormat("en-CA", {
           timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(new Date(at));
 

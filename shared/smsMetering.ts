@@ -15,6 +15,7 @@
  * thing nobody notices until a salon disputes an invoice.
  */
 
+import { dateTimeFormat } from "./intlCache";
 import type { Feature } from "./planEntitlements";
 
 /**
@@ -71,7 +72,7 @@ export type SmsOverage = {
  * invoice, and the salon would be right to argue.
  */
 export function smsBillingPeriod(when: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = dateTimeFormat("en-CA", {
     timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit",
   }).formatToParts(when);
   const year = parts.find(p => p.type === "year")!.value;

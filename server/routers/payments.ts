@@ -25,6 +25,7 @@
  * leaves the building, it cannot be unsent, and it can change a client's
  * saved email address on the way past.
  */
+import { dateTimeFormat } from "@shared/intlCache";
 import { clientMoneyAccountFor } from "../clientStripe";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -273,12 +274,12 @@ async function loadBillingBreakdown(db: any, appointmentIds: number[]) {
 function formatSalonDate(instant: Date | null | undefined, timeZone: string): string {
   if (!instant) return "";
   try {
-    return new Intl.DateTimeFormat("en-AU", {
+    return dateTimeFormat("en-AU", {
       timeZone, day: "numeric", month: "long", year: "numeric",
     }).format(instant);
   } catch {
     // An unknown timezone must not stop a bill going out.
-    return new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "long", year: "numeric" }).format(instant);
+    return dateTimeFormat("en-AU", { day: "numeric", month: "long", year: "numeric" }).format(instant);
   }
 }
 

@@ -11,6 +11,7 @@
  * than by comparing instants: `blockout_date` is a date, and a row with
  * `is_full_day` covers midnight to midnight of that salon day.
  */
+import { dateTimeFormat } from "@shared/intlCache";
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { staff, staffBlockouts } from "../drizzle/schema";
 import { brisbaneDateKey } from "../shared/localDateTime";
@@ -21,7 +22,7 @@ const DAY_END_MINUTES = 24 * 60;
 
 /** Minutes from Brisbane midnight, for an instant. */
 function brisbaneMinutes(at: Date): number {
-  const parts = new Intl.DateTimeFormat("en-GB", {
+  const parts = dateTimeFormat("en-GB", {
     timeZone: "Australia/Brisbane",
     hour: "2-digit",
     minute: "2-digit",

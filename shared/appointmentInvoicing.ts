@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Whether completing an appointment should raise an invoice for it.
  *
@@ -126,7 +127,7 @@ export function invoiceStatusForPayments(total: string | number, paidSoFar: stri
  */
 export function groomInvoiceNumber(petName: string | null | undefined, startedAt: Date, unique: string): string {
   const petSlug = (petName ?? "PET").toUpperCase().replace(/[^A-Z0-9]/g, "-").slice(0, 8);
-  const d = new Intl.DateTimeFormat("en-AU", {
+  const d = dateTimeFormat("en-AU", {
     timeZone: "Australia/Brisbane", day: "2-digit", month: "2-digit", year: "2-digit",
   }).format(startedAt).replace(/\//g, "");
   return `GROOM-${petSlug}-${d}-${unique.toUpperCase()}`;

@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Revenue targets for each staff member, and how they read over a day, a
  * week, a month or a quarter.
@@ -193,7 +194,7 @@ function isoDate(date: Date): string {
 
 /** Today's date in the salon's timezone, as YYYY-MM-DD. */
 export function brisbaneToday(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
+  return dateTimeFormat("en-CA", {
     timeZone: "Australia/Brisbane",
     year: "numeric", month: "2-digit", day: "2-digit",
   }).format(now);

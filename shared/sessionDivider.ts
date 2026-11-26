@@ -17,6 +17,7 @@
  * CLAUDE.md §6), so the constant lives here in ONE place until then
  * rather than being spelled into the calendar.
  */
+import { dateTimeFormat } from "./intlCache";
 import { isDeadAppointment } from "./calendarSummary";
 
 export const AFTERNOON_SESSION_START = { hour: 11, minute: 30 } as const;
@@ -57,7 +58,7 @@ export function minutesIntoLocalDay(
 ): number | null {
   const at = new Date(value);
   if (Number.isNaN(at.getTime())) return null;
-  const parts = new Intl.DateTimeFormat("en-AU", {
+  const parts = dateTimeFormat("en-AU", {
     timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(at);
   const hour = Number(parts.find((p) => p.type === "hour")?.value);

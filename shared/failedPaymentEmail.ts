@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * The email the salon gets when a membership payment fails.
  *
@@ -31,7 +32,7 @@ const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 /** "Mon 23 Nov", assembled from parts so the wording does not move with the ICU version. */
 const brisbaneDay = (value: Date) => {
-  const parts = new Intl.DateTimeFormat("en-AU", {
+  const parts = dateTimeFormat("en-AU", {
     timeZone: "Australia/Brisbane",
     weekday: "short",
     day: "numeric",

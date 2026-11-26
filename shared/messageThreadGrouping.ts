@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Turns a flat list of SMS log rows into the sequence an iMessage-style thread
  * renders: day separators, runs of consecutive messages from the same side, and
@@ -56,7 +57,7 @@ export function messageInstant(message: ThreadMessageInput | null | undefined): 
 
 /** Calendar day in the given zone, e.g. "2026-09-25". */
 function dayKey(at: number, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
+  return dateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -71,7 +72,7 @@ export function dayLabel(at: number, timeZone: string, now: number = Date.now())
   if (key === dayKey(now - 24 * 60 * 60 * 1000, timeZone)) return "Yesterday";
 
   const sameYear = dayKey(at, timeZone).slice(0, 4) === dayKey(now, timeZone).slice(0, 4);
-  return new Intl.DateTimeFormat("en-AU", {
+  return dateTimeFormat("en-AU", {
     timeZone,
     weekday: "long",
     day: "numeric",

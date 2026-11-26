@@ -12,6 +12,7 @@
  * 11:00 with a midday deadline is in trouble; a small dog that is Ready is
  * not, however close the deadline.
  */
+import { dateTimeFormat } from "./intlCache";
 import { SIZE_HOURS } from "./sizeWeightedTargets";
 import type { DogSizeBand } from "./dogSizeBand";
 
@@ -55,7 +56,7 @@ export function formatCollectBy(collectBy: Date | string | null | undefined): st
   if (!collectBy) return null;
   const date = collectBy instanceof Date ? collectBy : new Date(collectBy);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-AU", {
+  return dateTimeFormat("en-AU", {
     timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(date);
 }
@@ -143,7 +144,7 @@ export function collectByInstant(
 export function brisbaneDay(value: Date | string | number): string | null {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-CA", {
+  return dateTimeFormat("en-CA", {
     timeZone: "Australia/Brisbane", year: "numeric", month: "2-digit", day: "2-digit",
   }).format(date);
 }

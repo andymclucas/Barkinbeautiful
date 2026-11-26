@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Returns the requested pets that are not already represented in a shared
  * appointment session. Order is preserved and repeated requests are ignored.
@@ -78,7 +79,7 @@ export function sortRequestedSessionPets(
 
 /** "Thu 19 Nov, 12:30 pm", assembled from parts so the wording does not move with the ICU version. */
 const whenInBrisbane = (value: Date | string | number) => {
-  const parts = new Intl.DateTimeFormat("en-AU", {
+  const parts = dateTimeFormat("en-AU", {
     timeZone: "Australia/Brisbane",
     weekday: "short",
     day: "numeric",

@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Parses an appointment scheduling datetime string into the correct UTC Date,
  * handling two distinct formats that appear across this codebase:
@@ -80,7 +81,7 @@ export function brisbaneLocalInputValue(instant: Date): string {
  */
 export function brisbaneDateKey(instant: Date = new Date()): string {
   // en-CA formats as YYYY-MM-DD, which is what parseBrisbaneLocalDateTime wants.
-  return new Intl.DateTimeFormat("en-CA", {
+  return dateTimeFormat("en-CA", {
     timeZone: "Australia/Brisbane",
     year: "numeric",
     month: "2-digit",

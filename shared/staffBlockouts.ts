@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * When a groomer is unavailable, and what that stops.
  *
@@ -180,7 +181,7 @@ export function blockoutBusyInterval(row: BlockoutRow): { start: Date; end: Date
  * salon's clock says and never an offset away from it.
  */
 export function todayDateKey(timeZone = "Australia/Brisbane", now: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  const parts = dateTimeFormat("en-CA", {
     timeZone, year: "numeric", month: "2-digit", day: "2-digit",
   }).formatToParts(now);
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";

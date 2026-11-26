@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "./intlCache";
 /**
  * Business-day arithmetic in the salon's timezone.
  *
@@ -17,7 +18,7 @@ const BRISBANE = "Australia/Brisbane";
 
 /** The Brisbane calendar date of an instant, as YYYY-MM-DD. */
 export function brisbaneDate(instant: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
+  return dateTimeFormat("en-CA", {
     timeZone: BRISBANE,
     year: "numeric",
     month: "2-digit",

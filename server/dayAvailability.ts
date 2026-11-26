@@ -1,3 +1,4 @@
+import { dateTimeFormat } from "@shared/intlCache";
 import { and, eq, gte, inArray, lt, ne, notInArray, sql } from "drizzle-orm";
 import { appointments, pets, staff, staffBlockouts } from "../drizzle/schema";
 import { tradingWeekdays, type DayAvailability } from "../shared/nextAvailableSlot";
@@ -48,7 +49,7 @@ export async function buildDayAvailability(
   const from = parseBrisbaneLocalDateTime(`${options.fromDate}T00:00:00`);
   const to = new Date(from.getTime() + options.days * 86_400_000);
   const minutesInSalonDay = (at: Date): number => {
-    const parts = new Intl.DateTimeFormat("en-GB", {
+    const parts = dateTimeFormat("en-GB", {
       timeZone: "Australia/Brisbane", hour: "2-digit", minute: "2-digit", hour12: false,
     }).formatToParts(at);
     return Number(parts.find((p) => p.type === "hour")?.value ?? "0") * 60

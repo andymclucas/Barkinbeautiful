@@ -21,6 +21,7 @@
  * live in shared/bookingConfirmationSms.ts so they are testable without
  * a database or a Twilio key.
  */
+import { dateTimeFormat } from "@shared/intlCache";
 import { automatedSmsPermitted } from "@shared/automatedSms";
 import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
 import { appointments, clients, pets, staff, tenants, smsLogs } from "../drizzle/schema";
@@ -39,13 +40,13 @@ export type ConfirmationOutcome =
 /** The salon's clock, never the server's. */
 function formatWhen(at: Date, timeZone: string) {
   const zone = safeTimeZone(timeZone);
-  const date = new Intl.DateTimeFormat("en-AU", {
+  const date = dateTimeFormat("en-AU", {
     timeZone: zone, weekday: "long", day: "numeric", month: "long",
   }).format(at);
-  const time = new Intl.DateTimeFormat("en-AU", {
+  const time = dateTimeFormat("en-AU", {
     timeZone: zone, hour: "numeric", minute: "2-digit", hour12: true,
   }).format(at);
-  const hour = Number(new Intl.DateTimeFormat("en-AU", {
+  const hour = Number(dateTimeFormat("en-AU", {
     timeZone: zone, hour: "numeric", hour12: false, hourCycle: "h23",
   }).formatToParts(new Date()).find((p) => p.type === "hour")?.value ?? NaN);
   return { date, time, localHour: Number.isFinite(hour) ? hour : undefined };
