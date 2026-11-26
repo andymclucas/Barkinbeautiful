@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { TextClientLink } from "@/components/TextClientLink";
 import { VipMark } from "@/components/VipMark";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -138,9 +139,12 @@ function ClientHoverCard({
               {(client.phone || client.email) ? (
                 <div className="mt-1.5 space-y-1 text-xs text-muted-foreground">
                   {client.phone && (
-                    <a href={`tel:${client.phone.replace(/\s/g, "")}`} className="flex w-fit items-center gap-1.5 hover:text-primary">
-                      <Phone className="h-3 w-3" /> {client.phone}
-                    </a>
+                    <span className="flex w-fit items-center gap-1">
+                      <a href={`tel:${client.phone.replace(/\s/g, "")}`} className="flex w-fit items-center gap-1.5 hover:text-primary">
+                        <Phone className="h-3 w-3" /> {client.phone}
+                      </a>
+                      <TextClientLink phone={client.phone} className="h-5 w-5" />
+                    </span>
                   )}
                   {client.email && (
                     <a href={`mailto:${client.email}`} className="flex w-fit max-w-full items-center gap-1.5 hover:text-primary">

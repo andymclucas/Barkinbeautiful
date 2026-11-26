@@ -1,4 +1,5 @@
 import DashboardLayout from "@/components/DashboardLayout";
+import { TextClientLink } from "@/components/TextClientLink";
 import { CancelMembershipFutureBookings } from "@/components/CancelMembershipFutureBookings";
 import { resolveKeptPrices, type FutureBookingChoice } from "@shared/membershipCancelBookings";
 import type { SizePriceDecision } from "@shared/sizeChangePricing";
@@ -142,9 +143,12 @@ function MembershipClientPreview({ m, children }: { m: MembershipItem; children:
             <div className="bg-primary/[0.06] px-3 py-2.5">
               <p className="truncate text-sm font-semibold">{m.clientFirstName} {m.clientLastName}</p>
               {m.clientPhone ? (
-                <a href={`tel:${m.clientPhone.replace(/\s/g, "")}`} className="mt-1.5 flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-primary">
-                  <Phone className="h-3 w-3" /> {m.clientPhone}
-                </a>
+                <span className="mt-1.5 flex w-fit items-center gap-1">
+                  <a href={`tel:${m.clientPhone.replace(/\s/g, "")}`} className="flex w-fit items-center gap-1.5 text-xs text-muted-foreground hover:text-primary">
+                    <Phone className="h-3 w-3" /> {m.clientPhone}
+                  </a>
+                  <TextClientLink phone={m.clientPhone} className="h-5 w-5" />
+                </span>
               ) : <p className="mt-1 text-xs text-muted-foreground">No phone number on file</p>}
             </div>
             <div className="p-3">

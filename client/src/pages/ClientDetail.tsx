@@ -1,4 +1,5 @@
 import { clientVisitDates, BRISBANE_TIME_ZONE } from "@shared/clientVisitDates";
+import { TextClientLink } from "@/components/TextClientLink";
 import { describeDeclineHistory } from "@shared/declineHistory";
 import { usualGroomerChangeQuestion } from "@shared/usualGroomerChange";
 import { portalSetupAddress, type PortalAccountStatus } from "@shared/portalSetupLink";
@@ -1441,9 +1442,12 @@ export default function ClientDetail() {
 
               <div className="flex items-center gap-4 mt-2 flex-wrap text-sm text-muted-foreground">
                 {client.phone && (
-                  <a href={`tel:${client.phone}`} className="flex items-center gap-1.5 hover:text-foreground transition-colors">
-                    <Phone className="h-3.5 w-3.5" /> {client.phone}
-                  </a>
+                  <span className="flex items-center gap-1">
+                    <a href={`tel:${client.phone}`} className="flex items-center gap-1.5 hover:text-foreground transition-colors">
+                      <Phone className="h-3.5 w-3.5" /> {client.phone}
+                    </a>
+                    <TextClientLink phone={client.phone} />
+                  </span>
                 )}
                 {client.email && (
                   <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 hover:text-foreground transition-colors">
