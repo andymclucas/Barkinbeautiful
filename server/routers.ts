@@ -1,5 +1,6 @@
 import { petPhotoDeletionVerdict } from "@shared/petPhotoDeletion";
 import { declineHistoryByMembership, NO_DECLINES, type DeclineHistory } from "@shared/declineHistory";
+import { lapsedPetsByClient } from "@shared/lapsedPets";
 import { duplicateBookingMessage } from "@shared/duplicateBooking";
 import {
   assertDogsNotAlreadyBookedThatDay,
@@ -6024,6 +6025,7 @@ const clientsRouter = router({
       const visits = await db
         .select({
           clientId: appointments.clientId,
+          petId: appointments.petId,
           scheduledStart: appointments.scheduledStart,
           price: appointments.price,
         })
@@ -6126,6 +6128,30 @@ const clientsRouter = router({
         input?.sortDir ?? "desc",
       );
 
+      /*
+       * The dogs behind each row shown, for the drop-down under the name
+       * (Andy, 26/11/2026). Only the page being returned, not every lapsed
+       * client, and their grooms come from the visits already loaded.
+       */
+      const page = ranked.slice(0, input?.limit ?? 100);
+      const pageClientIds = page.map((r) => r.clientId);
+      const pagePets = pageClientIds.length === 0 ? [] : await db
+        .select({
+          id: pets.id,
+          clientId: pets.clientId,
+          name: pets.name,
+          breed: pets.breed,
+          weightKg: pets.weightKg,
+          status: pets.status,
+        })
+        .from(pets)
+        .where(and(eq(pets.tenantId, tenantId), inArray(pets.clientId, pageClientIds)));
+      const pageClientSet = new Set(pageClientIds);
+      const petsByClient = lapsedPetsByClient(
+        pagePets,
+        visits.filter((v) => pageClientSet.has(v.clientId as number)),
+      );
+
       return {
         total: ranked.length,
         /*
@@ -6138,7 +6164,7 @@ const clientsRouter = router({
          * different list from the sidebar two inches away.
          */
         totalLostRevenue: ranked.reduce((sum, r) => sum + r.estimatedLostRevenue, 0),
-        rows: ranked.slice(0, input?.limit ?? 100),
+        rows: page.map((r) => ({ ...r, pets: petsByClient.get(r.clientId) ?? [] })),
       };
     }),
 
