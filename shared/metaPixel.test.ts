@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BOOKING_META_PIXEL_IDS, bookingMetaPixelId } from "./metaPixel";
+import { BOOKING_META_PIXEL_IDS, bookingMetaPixelId, bookingPrivacyUrl } from "./metaPixel";
 
 describe("bookingMetaPixelId", () => {
   it("gives Barkin' Beautiful its own pixel on the live booking page", () => {
@@ -16,5 +16,15 @@ describe("bookingMetaPixelId", () => {
 
   it("only holds numeric ids", () => {
     for (const id of Object.values(BOOKING_META_PIXEL_IDS)) expect(id).toMatch(/^\d+$/);
+  });
+});
+
+describe("bookingPrivacyUrl", () => {
+  it("links Barkin' Beautiful's booking page to its own privacy policy", () => {
+    expect(bookingPrivacyUrl(1)).toBe("https://barkinbeautiful.com.au/privacy/");
+  });
+
+  it("gives a salon without a policy no link, never Barkin' Beautiful's", () => {
+    expect(bookingPrivacyUrl(2)).toBeNull();
   });
 });
