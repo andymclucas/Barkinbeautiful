@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const nextAvailable = vi.fn();
@@ -176,7 +176,7 @@ describe("Online booking: No preferred groomer", () => {
     const { container } = render(<OnlineBooking />);
     await u.click(screen.getByRole("button", { name: /No preferred groomer/ }));
     await fill(u);
-    const request = screen.getByRole("button", { name: "Request this booking" });
+    const request = screen.getByRole("button", { name: "Check my booking" });
     // A time has to be picked before there is a groomer to book with.
     expect(request).toBeDisabled();
 
@@ -192,6 +192,12 @@ describe("Online booking: No preferred groomer", () => {
     await u.type(text[4], "Bella");
     expect(request).toBeEnabled();
     await u.click(request);
+    // The check step comes first (27/11/2026): nothing is sent until Yes.
+    expect(createGuest).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Check your booking" })).toBeInTheDocument();
+    // The groomer who is free then, not "First available".
+    expect(within(screen.getByRole("dialog", { name: "Check your booking" })).getByText(/Ash/)).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Yes, send my request" }));
     expect(createGuest).toHaveBeenCalledWith(expect.objectContaining({ staffId: 5, firstName: "Sarah", petName: "Bella", weightKg: 8 }));
   });
 
