@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarDays, CheckCircle2, Clock3, ShieldCheck, Sparkles, UserRound } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ import { usePublicBrandTheme } from "@/hooks/usePublicBrandTheme";
 import { SalonLogo } from "@/components/SalonLogo";
 import { salonName } from "@shared/salonBrand";
 import { GroomigoLogo } from "@/components/GroomigoLogo";
+import { bookingMetaPixelId } from "@shared/metaPixel";
+import { loadMetaPixel, trackMetaPixel } from "@/lib/metaPixel";
 
 /**
  * "Powered by" over the standard Groomigo logo: the teal dog with the
@@ -53,6 +55,12 @@ export default function OnlineBooking({ previewMode = false }: { previewMode?: b
   // salon's colours rather than stock Groomigo ones.
   const publicBrand = usePublicBrandTheme();
   const salon = { name: publicBrand.salonName, logoUrl: publicBrand.logoUrl };
+  // Meta Pixel for the salon's booking-page ads. Live page only, never the
+  // staff preview, and only for a salon that has one (shared/metaPixel.ts).
+  const metaPixelId = bookingMetaPixelId(1, { previewMode });
+  useEffect(() => {
+    if (metaPixelId) loadMetaPixel(metaPixelId);
+  }, [metaPixelId]);
   const publicProfiles = trpc.onlineBooking.listGroomerProfiles.useQuery({}, { enabled: !previewMode });
   const previewProfiles = trpc.onlineBooking.listPreviewGroomerProfiles.useQuery({}, { enabled: previewMode });
   const groomers = previewMode ? previewProfiles.data : publicProfiles.data;
@@ -61,7 +69,7 @@ export default function OnlineBooking({ previewMode = false }: { previewMode?: b
   const [selectedDate, setSelectedDate] = useState("");
   const [complete, setComplete] = useState(false);
   const create = trpc.onlineBooking.createGuest.useMutation({
-    onSuccess: (result) => { setBookedEstimate({ price: result.estimatePrice, disclaimer: result.disclaimer }); setComplete(true); toast.success("Booking request received"); },
+    onSuccess: (result) => { setBookedEstimate({ price: result.estimatePrice, disclaimer: result.disclaimer }); setComplete(true); toast.success("Booking request received"); if (metaPixelId) trackMetaPixel("Schedule"); },
     onError: error => toast.error(error.message),
   });
   const createPreview = trpc.onlineBooking.createPreviewGuest.useMutation({
