@@ -73,7 +73,7 @@ describe("which door a page belongs to", () => {
       "/new-client-form": "staff",
       "/pricing": "staff", "/retail": "staff", "/counter": "staff", "/issues": "staff", "/support": "staff", "/analytics": "staff",
       "/staff/review/:staffId": "staff", "/staff": "staff", "/messages": "staff",
-      "/portal-messages": "staff", "/email-campaigns": "staff", "/reporting": "staff",
+      "/portal-messages": "staff", "/booking-requests": "staff", "/email-campaigns": "staff", "/reporting": "staff",
       "/migration": "staff", "/settings": "staff", "/login": "staff", "/signup": "staff",
       "/staff-invite/:token": "staff", "/book/preview": "staff",
       "/portal/preview/:previewClientId": "staff",

@@ -137,6 +137,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import { MassTextDialog } from "@/components/MassTextDialog";
 import { AppointmentRetail } from "@/components/AppointmentRetail";
 import { calendarAppointmentFromSearch, calendarDateFromSearch } from "@shared/calendarDeepLink";
+import { isOpenBookingRequest } from "@shared/bookingRequests";
 import { calendarTextLabel, calendarTextRange, canSendMassText } from "@shared/calendarMassText";
 import { StaffAvatar } from "@/components/StaffAvatar";
 import { BlockoutDialog, type BlockoutEditing } from "@/components/BlockoutDialog";
@@ -387,6 +388,8 @@ type Appt = {
   workflowState: string;
   collectBy?: string | Date | null;
   status: string;
+  /** Made by the client online or in the portal (shared/bookingRequests.ts). */
+  bookedOnline?: boolean | number | null;
   serviceType: string;
   notes: string | null;
   price: string | null;
@@ -1340,6 +1343,17 @@ export default function Calendar() {
   // by the dashboard shell, so this costs nothing.
   const { user } = useAuth();
   const utils = trpc.useUtils();
+  /* Approving a client's online booking request (shared/bookingRequests.ts). */
+  const approveRequest = trpc.bookingRequests.approve.useMutation({
+    onSuccess: (r) => {
+      toast.success(r.approved > 1 ? `Approved ${r.approved} bookings` : "Booking approved");
+      setEditAppt((prev) => (prev && r.ids.includes(prev.id) ? { ...prev, status: "confirmed" } : prev));
+      void utils.calendar.getAppointments.invalidate();
+      void utils.bookingRequests.list.invalidate();
+      void utils.sidebarCounts.get.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
   /*
    * Whether to offer "Text the day" at all.
    *
@@ -5697,6 +5711,19 @@ export default function Calendar() {
                 and would grow to its content instead of scrolling,
                 pushing the bar off the bottom of the screen. */}
             <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6">
+            {/* A booking the client made online, not yet approved (Andy,
+                27/11/2026). Staff check the details here, then approve. */}
+            {isOpenBookingRequest({ ...editAppt, bookedOnline: editAppt.bookedOnline ?? null }) && (
+              <div role="note" data-testid="booking-request-banner" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-300 bg-violet-50 p-3 text-sm text-violet-900 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-100">
+                <div>
+                  <p className="font-semibold">Online booking request</p>
+                  <p className="text-xs opacity-80">Tentative until approved. Check the details, add anything missing, then approve.</p>
+                </div>
+                <Button size="sm" disabled={approveRequest.isPending} onClick={() => approveRequest.mutate({ appointmentId: editAppt.id })}>
+                  Approve booking
+                </Button>
+              </div>
+            )}
             {/* A dog that belongs to this booking but is due at another
                 time (one of a pair was moved and the other left behind).
                 Lauren, 19/11/2026: "Its saying its there.. but sonny isnt

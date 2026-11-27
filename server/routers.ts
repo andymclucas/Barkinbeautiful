@@ -234,6 +234,7 @@ import { PORTAL_NO_CARD_AUDIENCE_TYPE, portalNoCardRecipients } from "@shared/po
 import { audienceFilterIs, audienceTypeForDisplay, audienceTypeForSend, campaignsWithAudience } from "@shared/campaignAudienceFilter";
 import { normaliseAustralianMobile } from "./inboundSms";
 import { paymentsRouter } from "./routers/payments";
+import { bookingRequestsRouter } from "./routers/bookingRequests";
 import { randomUUID } from "node:crypto";
 import {
   expandDateRange, rangeLengthInDays, blockoutDateValue, blockoutDateKey,
@@ -1366,6 +1367,9 @@ const calendarRouter = router({
           scheduledEnd: appointments.scheduledEnd,
           workflowState: appointments.workflowState,
           status: appointments.status,
+          /* A client-made booking still "pending" is a request to approve
+             (shared/bookingRequests.ts); the edit panel offers Approve. */
+          bookedOnline: appointments.bookedOnline,
           serviceType: appointments.serviceType,
           notes: appointments.notes,
           price: appointments.price,
@@ -18845,6 +18849,7 @@ export const appRouter = router({
   clientPortal: clientPortalRouter,
   portalChat: portalChatRouter,
   sidebarCounts: sidebarCountsRouter,
+  bookingRequests: bookingRequestsRouter,
   smsUsage: smsUsageRouter,
   automatedMessages: automatedMessagesRouter,
   pushSubscriptions: pushSubscriptionsRouter,

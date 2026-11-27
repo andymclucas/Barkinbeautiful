@@ -41,6 +41,7 @@ const Staff = lazyPage(() => import("./pages/Staff").then(m => ({ default: m.def
 const StaffReviewProfile = lazyPage(() => import("./pages/Staff").then(m => ({ default: m.StaffReviewProfile })));
 const Messages = lazyPage(() => import("./pages/Messages"));
 const PortalInbox = lazyPage(() => import("./pages/PortalInbox"));
+const BookingRequests = lazyPage(() => import("./pages/BookingRequests"));
 const EmailCampaigns = lazyPage(() => import("./pages/EmailCampaigns"));
 const Reporting = lazyPage(() => import("./pages/Reporting"));
 const Migration = lazyPage(() => import("./pages/Migration"));
@@ -118,6 +119,7 @@ function Router() {
       <Route path="/staff" component={Staff} />
       <Route path="/messages" component={Messages} />
       <Route path="/portal-messages" component={PortalInbox} />
+      <Route path="/booking-requests" component={BookingRequests} />
       <Route path="/email-campaigns" component={EmailCampaigns} />
       <Route path="/reporting" component={Reporting} />
       <Route path="/migration" component={Migration} />
