@@ -53,6 +53,22 @@ function brisbaneHHMM(when: Date): string {
   return `${h.padStart(2, "0")}:${m}`;
 }
 
+/**
+ * Does this groomer take a dog this heavy online?
+ *
+ * Lauren, 27/11/2026: "I dont really want to book in large dogs in my box".
+ * No limit set, or a dog whose weight is not known (a portal dog the salon
+ * has never weighed), is allowed: staff approve every online booking
+ * before it is confirmed (shared/bookingRequests.ts).
+ */
+export function groomerTakesDogWeight(maxKg: number | null | undefined, weightKg: number | string | null | undefined): boolean {
+  if (maxKg === null || maxKg === undefined || !(maxKg > 0)) return true;
+  // A decimal column can arrive as "40.00"; read it as a number.
+  const kg = weightKg === null || weightKg === undefined ? NaN : Number(weightKg);
+  if (!Number.isFinite(kg) || kg <= 0) return true;
+  return kg <= maxKg;
+}
+
 /** Does this groomer take an online booking starting then? */
 export function groomerTakesOnlineStart(stored: string | null | undefined, scheduledStart: Date): boolean {
   const times = parseStartTimes(stored);

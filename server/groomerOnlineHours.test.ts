@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groomerTakesOnlineStart, normaliseStartTimes, parseStartTimes } from "@shared/groomerOnlineHours";
+import { groomerTakesDogWeight, groomerTakesOnlineStart, normaliseStartTimes, parseStartTimes } from "@shared/groomerOnlineHours";
 
 // 27/11/2026 is a Friday. Brisbane is UTC+10 all year.
 const at = (hhmm: string) => new Date(`2026-11-27T${hhmm}:00+10:00`);
@@ -51,5 +51,25 @@ describe("groomerTakesOnlineStart", () => {
     // 03:00 UTC is 13:00 in Brisbane.
     expect(groomerTakesOnlineStart(lauren, new Date("2026-11-27T03:00:00Z"))).toBe(true);
     expect(groomerTakesOnlineStart(ash, new Date("2026-11-27T03:00:00Z"))).toBe(false);
+  });
+});
+
+describe("groomerTakesDogWeight (Lauren, 27/11/2026)", () => {
+  it("refuses a dog over the groomer's limit, as Poppy (40kg) would have been", () => {
+    expect(groomerTakesDogWeight(16, 40)).toBe(false);
+    expect(groomerTakesDogWeight(16, "40.00")).toBe(false);
+  });
+  it("allows a dog at or under the limit", () => {
+    expect(groomerTakesDogWeight(16, 16)).toBe(true);
+    expect(groomerTakesDogWeight(16, 8)).toBe(true);
+  });
+  it("allows anything when no limit is set", () => {
+    expect(groomerTakesDogWeight(null, 60)).toBe(true);
+    expect(groomerTakesDogWeight(undefined, 60)).toBe(true);
+    expect(groomerTakesDogWeight(0, 60)).toBe(true);
+  });
+  it("allows a dog whose weight is not known; staff approve it anyway", () => {
+    expect(groomerTakesDogWeight(16, undefined)).toBe(true);
+    expect(groomerTakesDogWeight(16, null)).toBe(true);
   });
 });

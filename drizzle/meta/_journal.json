@@ -1247,6 +1247,13 @@
       "when": 1795726534510,
       "tag": "0177_staff_online_start_times",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "5",
+      "when": 1795760948636,
+      "tag": "0178_staff_online_max_weight",
+      "breakpoints": true
     }
   ]
 }

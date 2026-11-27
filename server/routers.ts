@@ -68,7 +68,7 @@ import { getPetWeightBand, isEligibleOnlineBookingService, isEligibleOnlineBooki
 import { bandForWeight, type DogSizeBand } from "../shared/dogSizeBand";
 import { buildOnlineBookingNotes } from "../shared/onlineBookingPreview";
 import { buildOnlineBookingSlotStarts, isOfferedOnlineStart } from "../shared/onlineBookingSlots";
-import { groomerTakesOnlineStart, normaliseStartTimes } from "../shared/groomerOnlineHours";
+import { groomerTakesDogWeight, groomerTakesOnlineStart, normaliseStartTimes } from "../shared/groomerOnlineHours";
 import { planMembershipSeries } from "../shared/membershipSeries";
 import { busyForStaff } from "./staffBusy";
 import { addWeeks, gapsBetween, manualInterval, rebookInterval } from "../shared/rebook";
@@ -8477,6 +8477,8 @@ const staffRouter = router({
       onlineMaxDogsPerDay: z.number().int().min(0).max(50).optional(),
       /** "HH:MM" starts this person takes online; empty = every start the salon offers. */
       onlineStartTimes: z.array(z.string().max(10)).max(48).optional(),
+      /** Heaviest dog (kg) taken online; null = no limit. */
+      onlineMaxWeightKg: z.number().int().min(1).max(80).nullable().optional(),
       /**
        * A day's work, per person. Null means they do not do that job —
        * a bather has no clip figure and a groomer no bath figure, which
@@ -8554,6 +8556,7 @@ const staffRouter = router({
       if (fields.onlineServices !== undefined) updateData.onlineServices = fields.onlineServices;
       if (fields.onlineMaxDogsPerSlot !== undefined) updateData.onlineMaxDogsPerSlot = fields.onlineMaxDogsPerSlot;
       if (fields.onlineMaxDogsPerDay !== undefined) updateData.onlineMaxDogsPerDay = fields.onlineMaxDogsPerDay;
+      if (fields.onlineMaxWeightKg !== undefined) updateData.onlineMaxWeightKg = fields.onlineMaxWeightKg;
       if (fields.onlineStartTimes !== undefined) {
         const times = normaliseStartTimes(fields.onlineStartTimes);
         updateData.onlineStartTimes = times.length ? JSON.stringify(times) : null;
@@ -13187,7 +13190,7 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   if (!gateOpen && !options.preview) {
     return { available: false, reason: options.forMembershipSignup ? "Membership sign-up is not enabled yet" : "Online booking is not enabled yet" } as const;
   }
-  const [groomer] = await db.select({ onlineBookable: staff.onlineBookable, isActive: staff.isActive, slotLimit: staff.onlineMaxDogsPerSlot, dailyLimit: staff.onlineMaxDogsPerDay, dailyClipCapacity: staff.dailyClipCapacity, services: staff.onlineServices, startTimes: staff.onlineStartTimes })
+  const [groomer] = await db.select({ onlineBookable: staff.onlineBookable, isActive: staff.isActive, slotLimit: staff.onlineMaxDogsPerSlot, dailyLimit: staff.onlineMaxDogsPerDay, dailyClipCapacity: staff.dailyClipCapacity, services: staff.onlineServices, startTimes: staff.onlineStartTimes, maxWeightKg: staff.onlineMaxWeightKg })
     .from(staff).where(and(eq(staff.id, input.staffId), eq(staff.tenantId, input.tenantId))).limit(1);
   if (!groomer?.isActive || !groomer.onlineBookable) return { available: false, reason: "This groomer is not available for online booking" } as const;
   if (groomer.services) {
@@ -13207,6 +13210,9 @@ async function checkOnlineCapacity(input: { tenantId: number; staffId: number; s
   // 27/11/2026: herself afternoons only, Ash no later than 12:30).
   if (!groomerTakesOnlineStart(groomer.startTimes, input.scheduledStart)) {
     return { available: false, reason: "This groomer does not take online bookings at that time" } as const;
+  }
+  if (!groomerTakesDogWeight(groomer.maxWeightKg, input.petWeightKg)) {
+    return { available: false, reason: "This groomer does not take dogs of this size online. Choose another groomer or No preferred groomer." } as const;
   }
   const scheduledEnd = new Date(input.scheduledStart.getTime() + durationMinutes * 60000);
   const dateKey = input.scheduledStart.toLocaleDateString("en-CA", { timeZone: "Australia/Brisbane" });
