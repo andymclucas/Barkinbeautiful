@@ -114,3 +114,25 @@ export function onlineBookingServiceLabel(serviceType: string): string {
   return ONLINE_BOOKING_SERVICE_LABELS[serviceType as OnlineBookingServiceType]
     ?? serviceType.replace(/_/g, " ");
 }
+
+/**
+ * What each service includes, in one line, shown under the service picker
+ * and on the "Check your booking" step.
+ *
+ * Andy, 27/11/2026: a client booked a de-shed when she wanted her shepherd
+ * shaved, and nothing on the page said a de-shed involves no clipping.
+ * DRAFT wording, for Lauren to approve before it goes live.
+ */
+export const ONLINE_BOOKING_SERVICE_DESCRIPTIONS: Record<OnlineBookingServiceType, string> = {
+  classic_groom: "Bath, blow-dry and a full clip all over to a short, even length.",
+  styled_groom: "Bath, blow-dry and a hand-scissored style, such as a teddy face or breed cut.",
+  bath_only: "Bath, blow-dry and brush-out. No clipping.",
+  deshed: "Bath, blow-dry and a deep brush-out to remove loose undercoat. No clipping or shaving.",
+  nail_trim: "Nails clipped only. No bath.",
+  daycare: "A day at the salon with our playgroup.",
+  other: "Something not listed here. Tell us what you need in the notes.",
+};
+
+export function onlineBookingServiceDescription(serviceType: string): string | null {
+  return ONLINE_BOOKING_SERVICE_DESCRIPTIONS[serviceType as OnlineBookingServiceType] ?? null;
+}
