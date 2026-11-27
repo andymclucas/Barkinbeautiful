@@ -59,6 +59,10 @@ export default function BookingRequests() {
                       <p className="font-semibold">{when(r.scheduledStart)}</p>
                       <p className="text-sm">
                         <span className="font-medium">{r.petName}</span>
+                        {/* Lauren, 27/11/2026: "Can it display the breed". */}
+                        {(r.petBreed || r.petWeightKg) && (
+                          <span className="text-muted-foreground"> ({[r.petBreed, r.petWeightKg && Number(r.petWeightKg) > 0 ? `${Number(r.petWeightKg)} kg` : null].filter(Boolean).join(", ")})</span>
+                        )}
                         <span className="text-muted-foreground"> · {[r.clientFirstName, r.clientLastName].filter(Boolean).join(" ")}</span>
                       </p>
                       <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">

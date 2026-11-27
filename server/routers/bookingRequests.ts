@@ -50,6 +50,8 @@ export const bookingRequestsRouter = router({
       clientPhone: clients.phone,
       petId: appointments.petId,
       petName: pets.name,
+      petBreed: pets.breed,
+      petWeightKg: pets.weightKg,
       staffName: staff.name,
     })
       .from(appointments)
