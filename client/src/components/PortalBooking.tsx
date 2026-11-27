@@ -44,7 +44,7 @@ export function PortalBookCard({ token, readOnly, onBook }: { token?: string; re
           </span>
           <div className="min-w-0">
             <h2 className="text-lg font-bold">Book an appointment</h2>
-            <p className="text-sm text-muted-foreground">Pick a day and time that suits you. We&rsquo;ll confirm it shortly.</p>
+            <p className="text-sm text-muted-foreground">Pick a day and time that suits you. Your booking is a request until one of our team approves it.</p>
           </div>
         </div>
         <Button size="lg" className="text-base font-bold" onClick={onBook}>Book now</Button>
@@ -104,7 +104,8 @@ export function PortalBookingDialog({ token, open, onClose, onBooked }: { token?
   };
   const create = trpc.clientPortal.createBooking.useMutation({
     onSuccess: (r) => {
-      toast.success(`Booked for ${dayOf(r.scheduledStart)} at ${timeOf(r.scheduledStart)}. We'll confirm it shortly.`);
+      // Andy, 27/11/2026: the client must be told it is tentative until approved.
+      toast.success(`Thank you for your booking request for ${dayOf(r.scheduledStart)} at ${timeOf(r.scheduledStart)}. It is tentative until one of our team approves it.`, { duration: 12000 });
       if (r.extrasNotAdded?.length) toast.error(`We couldn't add ${r.extrasNotAdded.join(", ")}. Please let us know and we'll add it.`);
       onBooked();
       onClose();

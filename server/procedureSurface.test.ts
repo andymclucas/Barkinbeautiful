@@ -673,7 +673,9 @@ describe("tRPC procedure surface", () => {
     // PUBLIC, and its admin-preview twin (protectedProcedure).
     // 473 since 27/11/2026: staff.publicHolidays, the Queensland holiday
     // list under Close the salon. adminProcedure, like closeSalon.
-    expect(surface).toHaveLength(473);
+    // 475 since 27/11/2026: bookingRequests.list and approve, the online
+    // booking request inbox. protectedProcedure (owners and admins).
+    expect(surface).toHaveLength(475);
     expect(surface.filter((p) => p.router === "(none)")).toEqual([]);
   });
 

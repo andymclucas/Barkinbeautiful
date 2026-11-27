@@ -26,6 +26,8 @@ import type { StaffSection } from "./staffPermissions";
 /** Namespace → the section that may change it. */
 export const SECTION_BY_NAMESPACE: Readonly<Record<string, StaffSection>> = {
   calendar: "appointments",
+  // Approving clients' online booking requests (27/11/2026).
+  bookingRequests: "appointments",
   appointmentAddOns: "appointments",
   bookingPricing: "appointments",
   waitlist: "appointments",

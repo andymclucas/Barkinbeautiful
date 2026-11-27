@@ -78,6 +78,7 @@ import {
   ImageOff,
   Palette,
   Settings,
+  Inbox,
 } from "lucide-react";
 import { ComponentType, CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -116,6 +117,7 @@ type NavItem = {
 
 const menuItems: NavItem[] = [
   { icon: CalendarDays,   label: "Appointments",      path: "/calendar" },
+  { icon: Inbox,          label: "Booking Requests",  path: "/booking-requests" },
   { icon: Workflow,       label: "Workflow Board",    path: "/workflow" },
   // Inside the Clients & Pets group since 25/11/2026 (shared/sidebarNavigation.ts).
   { icon: Users,          label: "Clients",           path: "/clients" },
@@ -409,6 +411,7 @@ function DashboardLayoutContent({
   const navBadges: Record<string, number> = {
     "/messages": counts?.messages ?? 0,
     "/portal-messages": counts?.portalMessages ?? 0,
+    "/booking-requests": counts?.bookingRequests ?? 0,
   };
 
   const permittedMenuItems =

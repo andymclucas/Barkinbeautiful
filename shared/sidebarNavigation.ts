@@ -42,6 +42,8 @@ export type SidebarEntry =
  */
 export const SIDEBAR_LAYOUT: readonly SidebarEntry[] = [
   { kind: "item", path: "/calendar" },
+  // Bookings clients made online, waiting for approval (Andy, 27/11/2026).
+  { kind: "item", path: "/booking-requests" },
   { kind: "item", path: "/workflow" },
   { kind: "group", key: "clients", label: "Clients & Pets", paths: ["/clients", "/memberships", "/new-client-form"] },
   // Daily, and used by the whole floor, so a top-level row rather than

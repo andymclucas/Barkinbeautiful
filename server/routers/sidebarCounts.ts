@@ -19,7 +19,8 @@ import { z } from "zod";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { router, operationalProcedure, requireCallerTenant, tenantOf } from "../_core/trpc";
 import { getDb } from "../db";
-import { missedCalls, portalMessages, portalThreads, smsLogs } from "../../drizzle/schema";
+import { appointments, missedCalls, portalMessages, portalThreads, smsLogs } from "../../drizzle/schema";
+import { openRequestWhere } from "./bookingRequests";
 import { getSmsUsage } from "../smsUsage";
 
 export type SidebarCounts = {
@@ -27,6 +28,8 @@ export type SidebarCounts = {
   messages: number;
   /** Client portal messages nobody at the salon has read yet. */
   portalMessages: number;
+  /** Bookings clients made online that nobody has approved yet (shared/bookingRequests.ts). */
+  bookingRequests: number;
 };
 
 export const smsUsageRouter = router({
@@ -51,10 +54,10 @@ export const sidebarCountsRouter = router({
     .input(z.object({ tenantId: z.number().int().positive().default(1) }).optional())
     .query(async ({ input, ctx }): Promise<SidebarCounts> => {
       const db = await getDb();
-      if (!db) return { messages: 0, portalMessages: 0 };
+      if (!db) return { messages: 0, portalMessages: 0, bookingRequests: 0 };
       const tenantId = tenantOf(ctx, input) ?? 1;
 
-      const [[sms], [calls], [portal]] = await Promise.all([
+      const [[sms], [calls], [portal], [requests]] = await Promise.all([
         db.select({ n: sql<number>`COUNT(*)` }).from(smsLogs).where(and(
           eq(smsLogs.tenantId, tenantId),
           eq(smsLogs.direction, "inbound"),
@@ -78,11 +81,13 @@ export const sidebarCountsRouter = router({
               sql`${portalMessages.createdAt} > ${portalThreads.staffLastReadAt}`,
             ),
           )),
+        db.select({ n: sql<number>`COUNT(*)` }).from(appointments).where(openRequestWhere(tenantId)),
       ]);
 
       return {
         messages: Number(sms?.n ?? 0) + Number(calls?.n ?? 0),
         portalMessages: Number(portal?.n ?? 0),
+        bookingRequests: Number(requests?.n ?? 0),
       };
     }),
 });
