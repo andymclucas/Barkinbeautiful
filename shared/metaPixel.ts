@@ -23,3 +23,18 @@ export function bookingMetaPixelId(tenantId: number, options: { previewMode: boo
   const id = BOOKING_META_PIXEL_IDS[tenantId];
   return id && /^\d+$/.test(id) ? id : null;
 }
+
+/**
+ * Each salon's own privacy policy, linked from its public booking page.
+ * The pixel above is why it matters: a page that loads it should say so,
+ * and Barkin' Beautiful's policy has a section on the Meta Pixel.
+ * A salon without an entry gets no link rather than someone else's policy.
+ */
+export const BOOKING_PRIVACY_URLS: Readonly<Record<number, string>> = {
+  1: "https://barkinbeautiful.com.au/privacy/", // Barkin' Beautiful, live 27/11/2026
+};
+
+export function bookingPrivacyUrl(tenantId: number): string | null {
+  const url = BOOKING_PRIVACY_URLS[tenantId];
+  return url && url.startsWith("https://") ? url : null;
+}
